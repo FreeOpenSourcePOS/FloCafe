@@ -25,6 +25,14 @@ on:
         required: true
         default: false
         type: boolean
+      candidate_manifest_asset_id:
+        description: GitHub asset ID of the immutable candidate-manifest.json used for promotion
+        required: false
+        type: string
+      candidate_manifest_sha256:
+        description: SHA-256 of the immutable candidate-manifest.json used for promotion
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -35,8 +43,6 @@ concurrency:
   # the same ref is a re-run of the same release, not new work superseding it.
   # Cancelling mid-flight can leave a release with some platforms' assets
   # uploaded and others missing/corrupt, with no clear signal that happened.
-  # A duplicate run queues behind the first and completing it re-uploads the
-  # same tagged version's assets with --clobber, which is a harmless no-op.
   cancel-in-progress: false
 
 jobs:
@@ -206,10 +212,11 @@ jobs:
         # per-platform uninstaller (e.g. a broken install).
         if: steps.release-metadata.outputs.promotion_only != 'true'
         run: |
-          gh release upload "$RELEASE_TAG" \
-            scripts/uninstallers/uninstall-macos.sh \
-            scripts/uninstallers/uninstall-windows.ps1 \
-            --repo "${{ github.repository }}" --clobber
+          node scripts/release-gate/ensure-release-assets.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$RELEASE_TAG" \
+            --file scripts/uninstallers/uninstall-macos.sh \
+            --file scripts/uninstallers/uninstall-windows.ps1
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
@@ -320,7 +327,9 @@ jobs:
           [ -f "release/${MANIFEST_NAME}" ] || { echo "::error::release/${MANIFEST_NAME} is missing for ${{ matrix.arch }}"; exit 1; }
           FILES+=("release/${MANIFEST_NAME}")
           [ ${#FILES[@]} -gt 0 ] || { echo "::error::no Linux artifacts produced for ${{ matrix.arch }}"; exit 1; }
-          gh release upload "${VERSION}" "${FILES[@]}" --repo "${{ github.repository }}" --clobber
+          UPLOAD_ARGS=(--repo "${{ github.repository }}" --tag "$VERSION")
+          for FILE in "${FILES[@]}"; do UPLOAD_ARGS+=(--file "$FILE"); done
+          node scripts/release-gate/ensure-release-assets.cjs "${UPLOAD_ARGS[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -362,6 +371,21 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$UPLOAD_OUT"
+          # A sanitized, per-architecture marker is uploaded to the draft only
+          # after Snap Store publication succeeds. Stable promotion checks these
+          # markers, so a missing/failed stable Snap can never be mistaken for
+          # a published stable release. No snapcraft output or credentials are
+          # retained in the evidence.
+          SNAP_EVIDENCE="$RUNNER_TEMP/snap-publication-${{ matrix.arch }}.json"
+          node scripts/release-gate/snap-evidence.cjs \
+            --tag "$(node -p "require('./package.json').version")" \
+            --channel "$SNAP_CHANNEL" \
+            --arch "${{ matrix.arch }}" \
+            --output "$SNAP_EVIDENCE"
+          node scripts/release-gate/ensure-release-assets.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$(node -p "require('./package.json').version")" \
+            --file "$SNAP_EVIDENCE"
 
   release-mac:
     runs-on: macos-latest
@@ -445,7 +469,7 @@ jobs:
         # Linux), and merges same-named update-info tasks by concatenating their
         # `files` entries — so one process building both archs produces a single
         # correctly-merged latest-mac.yml instead of two per-arch ones stepping on
-        # each other via --clobber.
+        # each other via per-architecture asset names.
         run: |
           npm run build:frontend && npm run build && npx electron-builder --mac --x64 --arm64 --publish never \
             -c.publish.channel="${{ needs.create-release.outputs.manifest_prefix }}"
@@ -502,20 +526,19 @@ jobs:
         # has 404'd since v1.6.7 (see main.log: "Cannot find latest-mac.yml").
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          gh release upload "${VERSION}" \
-            release/*.dmg \
-            release/*.zip \
-            release/*.zip.blockmap \
-            "release/${{ needs.create-release.outputs.manifest_prefix }}-mac.yml" \
-            --repo "${{ github.repository }}" --clobber
+          UPLOAD_ARGS=(--repo "${{ github.repository }}" --tag "$VERSION")
+          for FILE in release/*.dmg release/*.zip release/*.zip.blockmap "release/${{ needs.create-release.outputs.manifest_prefix }}-mac.yml"; do
+            UPLOAD_ARGS+=(--file "$FILE")
+          done
+          node scripts/release-gate/ensure-release-assets.cjs "${UPLOAD_ARGS[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Verify freshly downloaded macOS release artifact
         # The "Verify macOS release assets" step above only checks the local
         # electron-builder output directory — it can't catch anything that
-        # goes wrong between build and publish (upload corruption, the
-        # `--clobber` overwrite, GitHub's own storage). Re-download what was
+        # goes wrong between build and publish (upload corruption or GitHub's
+        # own storage). Re-download what was
         # just published and run the same signature/Gatekeeper/notarization
         # checks against that, so a "clean" local build can't mask a broken
         # published release.
@@ -570,7 +593,7 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:CSC_LINK) -or [string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) {
             Write-Warning "WINDOWS_CERTS/WINDOWS_CERTS_PASSWORD not set — building an UNSIGNED Windows installer. Users will see a SmartScreen 'Windows protected your PC' prompt until this is wired up."
           } else {
-            Write-Host "Windows signing credentials present — building a signed installer."
+            Write-Host "Windows signing credentials present — signing remains NOT-VERIFIED until release-boundary verification."
           }
 
       - name: Build Windows
@@ -680,7 +703,12 @@ jobs:
         run: |
           $VERSION = node -p "require('./package.json').version"
           $manifestPrefix = "${{ needs.create-release.outputs.manifest_prefix }}"
-          gh release upload "$VERSION" (Get-ChildItem release\*.exe, release\*.exe.blockmap, release\*.appx, "release\$manifestPrefix.yml" | Select-Object -ExpandProperty FullName) --repo "${{ github.repository }}" --clobber
+          $files = @(Get-ChildItem release\*.exe, release\*.exe.blockmap, release\*.appx, "release\$manifestPrefix.yml" | Select-Object -ExpandProperty FullName)
+          if ($files.Count -eq 0) { throw "No Windows release assets were produced." }
+          $uploadArgs = @('scripts/release-gate/ensure-release-assets.cjs', '--repo', '${{ github.repository }}', '--tag', $VERSION)
+          foreach ($file in $files) { $uploadArgs += @('--file', $file) }
+          & node @uploadArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -762,17 +790,81 @@ jobs:
       - name: Install verifier dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Download and verify every release manifest and referenced artifact
-        # Stable verification covers latest.yml, latest-mac.yml,
-        # latest-linux.yml, and latest-linux-arm64.yml. Beta substitutes its
-        # explicit channel prefix.
+      - name: Create immutable candidate manifest from uploaded draft bytes
+        # This is deliberately after every platform upload and before any feed
+        # pointer changes. The manifest binds GitHub asset IDs, names, sizes,
+        # platform/architecture, SHA-256/SHA-512, and explicit signing status.
         run: |
-          node scripts/verify-release-assets.cjs \
+          node scripts/release-gate/candidate-manifest.cjs \
             --repo "${{ github.repository }}" \
             --tag "${{ needs.create-release.outputs.version }}" \
-            --channel "${{ needs.create-release.outputs.manifest_prefix }}"
+            --commit "${{ github.sha }}" \
+            --channel "${{ needs.create-release.outputs.channel }}" \
+            --windows-signing-status not-verified \
+            --output "$RUNNER_TEMP/candidate-manifest.json"
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Attach immutable candidate manifest and permanent sanitized summary
+        # Never overwrite a candidate manifest on a rerun. A rerun must prove
+        # that the bytes are identical, otherwise the release remains blocked.
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.create-release.outputs.version }}"
+          for NAME in candidate-manifest.json release-summary.json; do
+            LOCAL="$RUNNER_TEMP/$NAME"
+            if [ "$NAME" = "release-summary.json" ]; then
+              node scripts/release-gate/evidence.cjs \
+                --manifest "$RUNNER_TEMP/candidate-manifest.json" \
+                --output "$LOCAL"
+            fi
+            EXISTING_URL=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+              --jq ".[] | select(.tag_name == \"$TAG\") | .assets[] | select(.name == \"$NAME\") | .url" | head -1 || true)
+            if [ -n "$EXISTING_URL" ]; then
+              EXISTING="$RUNNER_TEMP/existing-$NAME"
+              gh api "$EXISTING_URL" -H 'Accept: application/octet-stream' > "$EXISTING"
+              cmp -s "$LOCAL" "$EXISTING" || {
+                echo "::error::$NAME already exists with different bytes; refusing to mutate an immutable release binding"
+                exit 1
+              }
+            else
+              gh release upload "$TAG" "$LOCAL" --repo "${{ github.repository }}"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Download and verify every release manifest and referenced artifact
+        # Verification includes the immutable candidate binding, per-arch Snap
+        # publication markers, and the permanent sanitized summary before the
+        # draft can become a public feed.
+        run: |
+          CANDIDATE_MANIFEST_ASSET_ID=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .assets[] | select(.name == \"candidate-manifest.json\") | .id" | head -1)
+          if [ -z "$CANDIDATE_MANIFEST_ASSET_ID" ]; then
+            echo "::error::candidate-manifest.json asset ID is missing; refusing to verify or publish the release"
+            exit 1
+          fi
+          VERIFY_ARGS=(
+            scripts/verify-release-assets.cjs
+            --repo "${{ github.repository }}"
+            --tag "$RELEASE_TAG"
+            --channel "${{ needs.create-release.outputs.manifest_prefix }}"
+            --require-candidate-manifest
+            --require-release-summary
+          )
+          if [ "$RELEASE_CHANNEL" = "stable" ]; then
+            VERIFY_ARGS+=(--require-snap-evidence)
+          fi
+          VERIFY_ARGS+=(
+            --candidate-manifest-asset-id "$CANDIDATE_MANIFEST_ASSET_ID"
+            --candidate-manifest-commit "${{ github.sha }}"
+          )
+          node "${VERIFY_ARGS[@]}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+          RELEASE_CHANNEL: ${{ needs.create-release.outputs.channel }}
 
   publish-release:
     name: Publish verified release
@@ -783,8 +875,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
       - name: Publish draft without changing GitHub Latest by default
         run: |
+          set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
           PRERELEASE="${{ needs.create-release.outputs.prerelease }}"
           # Draft releases are not addressable via /releases/tags/{tag} (that
@@ -797,18 +896,21 @@ jobs:
             echo "::error::No release found for tag $VERSION"
             exit 1
           fi
+          LATEST_BEFORE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
           # Draft and prerelease state are changed only after verification. The
-          # explicit false prevents an ordinary stable build from moving the
-          # stable pointer; the promotion input is handled in the next call.
+          # explicit false prevents an ordinary stable or beta build from
+          # moving the stable pointer. Promotion remains a separate job.
           gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
             -F draft=false \
             -F prerelease="${PRERELEASE}" \
             -F make_latest=false
-          if [ "${{ needs.create-release.outputs.make_latest }}" = "true" ]; then
-            gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
-              -F make_latest=true
-          fi
-          echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }})"
+          node scripts/release-gate/published-readiness.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$VERSION" \
+            --commit "${{ github.sha }}" \
+            --channel "${{ needs.create-release.outputs.channel }}" \
+            --expected-latest "$LATEST_BEFORE"
+          echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }}); Stable Latest remained ${LATEST_BEFORE:-'(none)'}"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -819,6 +921,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify stable Snap publication and permanent evidence
+        run: |
+          node scripts/release-gate/verify-stable-promotion.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$RELEASE_TAG" \
+            --candidate-asset-id "${{ inputs.candidate_manifest_asset_id }}" \
+            --manifest-sha256 "${{ inputs.candidate_manifest_sha256 }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+
       - name: Promote published stable release to GitHub Latest
         run: |
           if [ "$RELEASE_CHANNEL" != "stable" ]; then

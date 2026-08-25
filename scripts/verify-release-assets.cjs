@@ -11,6 +11,16 @@
 
 const crypto = require('node:crypto');
 const YAML = require('js-yaml');
+const {
+  assertSnapEvidence,
+} = require('./release-gate/release-state.cjs');
+const {
+  assertReleaseSummary,
+} = require('./release-gate/evidence.cjs');
+const {
+  findReleaseByTag,
+  verifyCandidateManifest,
+} = require('./release-gate/candidate-manifest.cjs');
 
 function requiredArg(args, name) {
   const index = args.indexOf(name);
@@ -20,12 +30,22 @@ function requiredArg(args, name) {
   return args[index + 1];
 }
 
+function optionalArg(args, name, fallback = null) {
+  const index = args.indexOf(name);
+  return index === -1 ? fallback : (args[index + 1] || fallback);
+}
+
 function parseArgs(argv) {
   const args = [...argv];
   const result = {
     repo: requiredArg(args, '--repo'),
     tag: requiredArg(args, '--tag'),
     channel: requiredArg(args, '--channel'),
+    requireCandidateManifest: args.includes('--require-candidate-manifest'),
+    requireReleaseSummary: args.includes('--require-release-summary'),
+    requireSnapEvidence: args.includes('--require-snap-evidence'),
+    candidateManifestAssetId: optionalArg(args, '--candidate-manifest-asset-id'),
+    candidateManifestCommit: optionalArg(args, '--candidate-manifest-commit'),
   };
   const repositoryParts = result.repo.split('/');
   if (repositoryParts.length !== 2 || repositoryParts.some((part) => !/^[a-zA-Z0-9.-]+$/.test(part))) {
@@ -36,6 +56,12 @@ function parseArgs(argv) {
   }
   if (!['latest', 'beta'].includes(result.channel)) {
     throw new Error(`unsupported release channel ${result.channel} (nightlies are rejected by #503)`);
+  }
+  if (result.candidateManifestAssetId !== null && !/^\d+$/.test(result.candidateManifestAssetId)) {
+    throw new Error('--candidate-manifest-asset-id must be a positive integer');
+  }
+  if (result.candidateManifestCommit !== null && !/^[0-9a-f]{40,64}$/i.test(result.candidateManifestCommit)) {
+    throw new Error('--candidate-manifest-commit must be a commit SHA');
   }
   return result;
 }
@@ -230,16 +256,27 @@ function expectedArtifactNames(version) {
   ];
 }
 
-function assertReleaseAssetInventory(assets, manifestNames, version) {
+function assertReleaseAssetInventory(assets, manifestNames, version, { requiredEvidence = [] } = {}) {
   if (!version) throw new Error('release asset inventory requires an expected release version');
   const names = assets.map((asset) => asset.name);
+  const optionalEvidence = new Set([
+    'candidate-manifest.json',
+    'release-summary.json',
+    'snap-publication-x64.json',
+    'snap-publication-arm64.json',
+  ]);
+  const requiredEvidenceSet = new Set(requiredEvidence);
+  for (const name of requiredEvidenceSet) {
+    if (!optionalEvidence.has(name)) throw new Error(`unsupported required release evidence asset ${name}`);
+  }
   if (new Set(names).size !== names.length) {
     throw new Error('release asset inventory contains duplicate asset names');
   }
 
   const manifestSet = new Set(manifestNames);
-  const expected = new Set([...manifestNames, ...expectedArtifactNames(version)]);
-  const unexpected = names.filter((name) => !expected.has(name));
+  const expected = new Set([...manifestNames, ...expectedArtifactNames(version), ...requiredEvidenceSet]);
+  const allowed = new Set([...expected, ...optionalEvidence]);
+  const unexpected = names.filter((name) => !allowed.has(name));
   if (unexpected.length > 0) {
     throw new Error(`release asset inventory contains unexpected assets: ${unexpected.join(', ')}`);
   }
@@ -334,9 +371,22 @@ async function verifyArtifact(asset, expectedSha512, requestAsset) {
   return bytes;
 }
 
-async function verifyReleaseAssets(release, { channel, tag = release && release.tag_name, requestAsset = defaultAssetRequest } = {}) {
-  if (!release || release.draft !== true) {
+async function verifyReleaseAssets(release, {
+  channel,
+  tag = release && release.tag_name,
+  requestAsset = defaultAssetRequest,
+  requireCandidateManifest = false,
+  requireReleaseSummary = false,
+  requireSnapEvidence = false,
+  allowPublished = false,
+  candidateManifestAssetId = null,
+  candidateManifestCommit = null,
+} = {}) {
+  if (!release || (release.draft !== true && !allowPublished)) {
     throw new Error(`release ${tag || '(unknown)'} is not a draft; refusing to verify a mutable published release`);
+  }
+  if (allowPublished && release.draft !== false) {
+    throw new Error(`release ${tag || '(unknown)'} is not a published release`);
   }
   if (typeof tag !== 'string' || tag === '') throw new Error('release verification requires a release tag');
   if (release.tag_name && release.tag_name !== tag) {
@@ -346,10 +396,14 @@ async function verifyReleaseAssets(release, { channel, tag = release && release.
   const assets = Array.isArray(release.assets) ? release.assets : [];
   const assetsByName = new Map(assets.map((asset) => [asset.name, asset]));
   const manifestNames = expectedManifestNames(channel);
+  const requiredEvidence = [];
+  if (requireCandidateManifest) requiredEvidence.push('candidate-manifest.json');
+  if (requireReleaseSummary) requiredEvidence.push('release-summary.json');
+  if (requireSnapEvidence) requiredEvidence.push('snap-publication-x64.json', 'snap-publication-arm64.json');
   for (const name of manifestNames) {
     if (!assetsByName.has(name)) throw new Error(`release ${tag} is missing ${name}`);
   }
-  assertReleaseAssetInventory(assets, manifestNames, tag);
+  assertReleaseAssetInventory(assets, manifestNames, tag, { requiredEvidence });
 
   // Inventory-only assets (store packages, blockmaps, and uninstall helpers)
   // still have to be reachable from the uploaded draft, but do not have an
@@ -357,6 +411,51 @@ async function verifyReleaseAssets(release, { channel, tag = release && release.
   // fully and hash-checked.
   for (const asset of assets) {
     if (!manifestNames.includes(asset.name)) await verifyAssetAvailability(asset, requestAsset);
+  }
+
+  const releaseChannel = channel === 'latest' ? 'stable' : channel;
+  let candidateManifest = null;
+  let candidateManifestBytes = null;
+  if (requireReleaseSummary && !requireCandidateManifest) {
+    throw new Error('release summary verification requires candidate-manifest.json verification');
+  }
+  if (requireCandidateManifest) {
+    const candidateAsset = assetsByName.get('candidate-manifest.json');
+    if (!candidateAsset) throw new Error(`release ${tag} is missing candidate-manifest.json`);
+    if (candidateManifestAssetId !== null && String(candidateAsset.id) !== String(candidateManifestAssetId)) {
+      throw new Error(`candidate manifest asset ID ${candidateAsset.id} does not match expected ${candidateManifestAssetId}`);
+    }
+    candidateManifestBytes = await readAsset(candidateAsset, requestAsset);
+    try {
+      candidateManifest = JSON.parse(candidateManifestBytes.toString('utf8'));
+    } catch (error) {
+      throw new Error(`candidate-manifest.json is not valid JSON: ${error.message}`);
+    }
+    await verifyCandidateManifest(candidateManifest, release, {
+      requestAsset,
+      tag,
+      commit: candidateManifestCommit,
+      channel: releaseChannel,
+    });
+  }
+  if (requireSnapEvidence) {
+    for (const architecture of ['x64', 'arm64']) {
+      const evidenceAsset = assetsByName.get(`snap-publication-${architecture}.json`);
+      const evidenceBytes = await readAsset(evidenceAsset, requestAsset);
+      let evidence;
+      try { evidence = JSON.parse(evidenceBytes.toString('utf8')); } catch (error) {
+        throw new Error(`snap-publication-${architecture}.json is not valid JSON: ${error.message}`);
+      }
+      assertSnapEvidence(evidence, { tag, channel: releaseChannel, architecture });
+    }
+  }
+  if (requireReleaseSummary) {
+    const summaryBytes = await readAsset(assetsByName.get('release-summary.json'), requestAsset);
+    let summary;
+    try { summary = JSON.parse(summaryBytes.toString('utf8')); } catch (error) {
+      throw new Error(`release-summary.json is not valid JSON: ${error.message}`);
+    }
+    assertReleaseSummary(summary, { manifest: candidateManifest, candidateManifestBytes });
   }
 
   for (const manifestName of manifestNames) {
@@ -395,18 +494,15 @@ async function main() {
   // real run of this step 404'd because no release had ever been verified
   // as a draft before.
   const release = await findReleaseByTag(apiBase, options.tag);
-  await verifyReleaseAssets(release, { channel: options.channel, tag: options.tag });
-}
-
-async function findReleaseByTag(apiBase, tag) {
-  const perPage = 100;
-  for (let page = 1; page <= 10; page++) {
-    const releases = await githubJson(`${apiBase}/releases?per_page=${perPage}&page=${page}`);
-    if (!Array.isArray(releases) || releases.length === 0) break;
-    const match = releases.find((release) => release.tag_name === tag);
-    if (match) return match;
-  }
-  throw new Error(`No draft or published release found for tag ${tag}`);
+  await verifyReleaseAssets(release, {
+    channel: options.channel,
+    tag: options.tag,
+    requireCandidateManifest: options.requireCandidateManifest,
+    requireReleaseSummary: options.requireReleaseSummary,
+    requireSnapEvidence: options.requireSnapEvidence,
+    candidateManifestAssetId: options.candidateManifestAssetId,
+    candidateManifestCommit: options.candidateManifestCommit,
+  });
 }
 
 if (require.main === module) {

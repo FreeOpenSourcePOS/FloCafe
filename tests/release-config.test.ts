@@ -73,6 +73,7 @@ function executeWorkflowStep(step: any, options: {
           ...options.env,
           GITHUB_OUTPUT: outputPath,
           RELEASE_TEST_LOG: logPath,
+          RUNNER_TEMP: tempDir,
           PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
         },
         encoding: 'utf8',
@@ -199,6 +200,8 @@ function run() {
   assert.equal(triggers.workflow_dispatch.inputs.release_tag.required, true);
   assert.equal(triggers.workflow_dispatch.inputs.release_tag.type, 'string');
   assert.equal(triggers.workflow_dispatch.inputs.promote_stable.type, 'boolean');
+  assert.equal(triggers.workflow_dispatch.inputs.candidate_manifest_asset_id.required, false);
+  assert.equal(triggers.workflow_dispatch.inputs.candidate_manifest_sha256.required, false);
 
   for (const scriptName of ['release:linux', 'release:mac', 'release:win']) {
     assert.match(pkg.scripts?.[scriptName], /--publish never$/, `${scriptName} must not publish outside the release workflow`);
@@ -240,11 +243,122 @@ function run() {
   assert.deepEqual(verifyJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows']);
   assert.deepEqual(publishJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release']);
   assertShellStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
+  const verifyAssetsStep = findStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
+  assert.equal(verifyAssetsStep.env.GH_TOKEN, '${{ github.token }}');
+  const captureNodeArgs = `#!/bin/sh
+printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
+`;
+  const betaVerify = executeWorkflowStep(verifyAssetsStep, {
+    env: {
+      RELEASE_TAG: '3.3.1-beta.1',
+      RELEASE_CHANNEL: 'beta',
+    },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'needs.create-release.outputs.manifest_prefix': 'beta', 'github.sha': 'a'.repeat(40) },
+    fakeCommands: { gh: fakeGh, node: captureNodeArgs },
+  });
+  assert.equal(betaVerify.status, 0, betaVerify.stderr);
+  assert.doesNotMatch(betaVerify.log, /--require-snap-evidence/, 'beta Snap permission degradation must not require stable evidence');
+  const stableVerify = executeWorkflowStep(verifyAssetsStep, {
+    env: {
+      RELEASE_TAG: '3.3.0',
+      RELEASE_CHANNEL: 'stable',
+    },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'needs.create-release.outputs.manifest_prefix': 'latest', 'github.sha': 'b'.repeat(40) },
+    fakeCommands: { gh: fakeGh, node: captureNodeArgs },
+  });
+  assert.equal(stableVerify.status, 0, stableVerify.stderr);
+  assert.match(stableVerify.log, /--require-snap-evidence/, 'stable verification must require both Snap markers');
+  const missingCandidateManifestId = executeWorkflowStep(verifyAssetsStep, {
+    env: {
+      RELEASE_TAG: '3.3.0',
+      RELEASE_CHANNEL: 'stable',
+    },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'needs.create-release.outputs.manifest_prefix': 'latest', 'github.sha': 'b'.repeat(40) },
+    fakeCommands: { gh: '#!/bin/sh\nexit 0\n' },
+  });
+  assert.notEqual(missingCandidateManifestId.status, 0);
+  assert.match(missingCandidateManifestId.stdout, /candidate-manifest\.json asset ID is missing/);
   assertShellStep(publishJob, 'Publish draft without changing GitHub Latest by default');
+  assert.equal(findStep(publishJob, 'Publish draft without changing GitHub Latest by default').env.GH_TOKEN, '${{ github.token }}');
   const promoteJob = jobs['promote-release'];
   assert.equal(promoteJob.needs, 'create-release');
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
+  const promoteVerifierDependencies = findStep(promoteJob, 'Install verifier dependencies');
+  const promoteVerifier = findStep(promoteJob, 'Verify stable Snap publication and permanent evidence');
+  const promoteBoundaryRun = promoteJob.steps
+    .filter((step: any) => step.name === promoteVerifierDependencies.name || step.name === promoteVerifier.name)
+    .map((step: any) => step.run)
+    .join('\n');
+  const promoteBoundary = executeWorkflowStep(
+    { run: promoteBoundaryRun },
+    {
+      env: { RELEASE_TAG: '3.3.0' },
+      expressions: {
+        'github.repository': 'FreeOpenSourcePOS/FloCafe',
+        'inputs.candidate_manifest_asset_id': '299',
+        'inputs.candidate_manifest_sha256': 'a'.repeat(64),
+      },
+      fakeCommands: {
+        npm: `#!/bin/sh
+printf 'npm %s\\n' "$*" >> "$RELEASE_TEST_LOG"
+`,
+        node: `#!/bin/sh
+if printf '%s\\n' "$*" | grep -q 'verify-stable-promotion.cjs'; then
+  grep -q '^npm ci --ignore-scripts --no-audit --no-fund$' "$RELEASE_TEST_LOG" || exit 1
+fi
+printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
+`,
+      },
+    }
+  );
+  assert.equal(promoteBoundary.status, 0, promoteBoundary.stderr);
   assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
+
+  const candidateWorkflow = loadWorkflow('release-candidate-gate.yml');
+  const candidateTriggers = candidateWorkflow.on || candidateWorkflow['true'];
+  assert.ok(candidateTriggers.workflow_dispatch, 'candidate gate must be manual and must not publish on pushes');
+  assert.equal(candidateTriggers.push, undefined);
+  const candidateInputs = candidateTriggers.workflow_dispatch.inputs;
+  for (const input of ['candidate_tag', 'candidate_commit', 'candidate_manifest_sha256', 'candidate_manifest_asset_id', 'stable_tag', 'from_version']) {
+    assert.equal(candidateInputs[input].required, true, `${input} must be exact and required`);
+  }
+  assert.equal(candidateInputs.run_installed_matrix.type, 'boolean');
+  const candidateEvidenceJob = candidateWorkflow.jobs['retain-candidate-evidence'];
+  assert.deepEqual(candidateEvidenceJob.needs, ['verify-candidate', 'installed-artifact-matrix', 'matrix-not-run-boundary']);
+  assert.equal(candidateEvidenceJob.if, "always() && needs.verify-candidate.result == 'success'");
+  const candidateEvidenceUpload = findStep(candidateEvidenceJob, 'Retain sanitized evidence for 90 days');
+  assert.equal(candidateEvidenceUpload.with['retention-days'], 90);
+  const candidateEvidenceStep = findStep(candidateEvidenceJob, 'Build final sanitized evidence bundle');
+  for (const [matrixResult, expectedStatus] of [['success', 'PASS'], ['skipped', 'NOT-RUN'], ['cancelled', 'FAIL']] as const) {
+    const matrixEvidence = executeWorkflowStep(candidateEvidenceStep, {
+      env: {
+        RELEASE_REPOSITORY: 'FreeOpenSourcePOS/FloCafe',
+        CANDIDATE_TAG: '3.3.1-beta.1',
+        MATRIX_RESULT: matrixResult,
+      },
+      fakeCommands: { gh: fakeGh, node: captureNodeArgs },
+    });
+    assert.equal(matrixEvidence.status, 0, matrixEvidence.stderr);
+    assert.match(matrixEvidence.log, new RegExp(`--matrix-status ${expectedStatus}`));
+  }
+  const candidateVerifyStep = findStep(candidateWorkflow.jobs['verify-candidate'], 'Verify exact candidate manifest, tag, commit, and bytes');
+  const shellInjection = 'safe"; echo injected >&2; #';
+  const safeCandidateVerification = executeWorkflowStep(candidateVerifyStep, {
+    env: {
+      RELEASE_REPOSITORY: 'FreeOpenSourcePOS/FloCafe',
+      CANDIDATE_TAG: shellInjection,
+      CANDIDATE_COMMIT: 'a'.repeat(40),
+      CANDIDATE_MANIFEST_SHA256: 'b'.repeat(64),
+      CANDIDATE_MANIFEST_ASSET_ID: '113',
+    },
+    fakeNodeVersion: '3.3.1-beta.1',
+  });
+  assert.equal(safeCandidateVerification.status, 0, safeCandidateVerification.stderr);
+  assert.doesNotMatch(safeCandidateVerification.stderr, /injected/);
+  const candidateMatrixJob = candidateWorkflow.jobs['installed-artifact-matrix'];
+  assert.equal(candidateMatrixJob.if, 'inputs.run_installed_matrix == true');
+  assert.equal(candidateWorkflow.jobs['matrix-not-run-boundary'].if, 'inputs.run_installed_matrix != true');
+  assert.equal(findStep(candidateMatrixJob, 'Require the #512 runtime-matrix integration contract').env.GH_TOKEN, '${{ github.token }}');
 
   const metadataStable = executeWorkflowStep(metadata, {
     env: {
@@ -349,7 +463,9 @@ function run() {
       'needs.create-release.outputs.make_latest': 'false',
       'needs.create-release.outputs.channel': 'stable',
       'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'github.sha': 'a'.repeat(40),
     },
+    fakeNodeVersion: '3.3.0',
     fakeCommands: { gh: fakeGh },
   });
   assert.equal(publishStable.status, 0, publishStable.stderr);
@@ -363,7 +479,9 @@ function run() {
       'needs.create-release.outputs.make_latest': 'false',
       'needs.create-release.outputs.channel': 'beta',
       'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'github.sha': 'a'.repeat(40),
     },
+    fakeNodeVersion: '3.3.1-beta.1',
     fakeCommands: { gh: fakeGh },
   });
   assert.equal(publishBeta.status, 0, publishBeta.stderr);

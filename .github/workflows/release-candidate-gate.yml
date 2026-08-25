@@ -1,0 +1,197 @@
+name: Release candidate confidence gate
+
+# This workflow is intentionally manual. Release.yml owns build/upload/publish
+# ordering; this workflow consumes one already-published immutable beta and does
+# not publish, promote, or mutate a release.
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_tag:
+        description: Exact published beta tag to validate
+        required: true
+        type: string
+      candidate_commit:
+        description: Exact commit SHA bound by candidate-manifest.json
+        required: true
+        type: string
+      candidate_manifest_sha256:
+        description: SHA-256 of the published candidate-manifest.json bytes
+        required: true
+        type: string
+      candidate_manifest_asset_id:
+        description: GitHub asset ID of candidate-manifest.json
+        required: true
+        type: string
+      stable_tag:
+        description: Stable Latest tag that must remain unchanged
+        required: true
+        type: string
+      from_version:
+        description: Exact stable version installed as N by the runtime matrix
+        required: true
+        type: string
+      run_installed_matrix:
+        description: Dispatch and wait for the durable #468/#512 matrix
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: release-candidate-gate-${{ inputs.candidate_tag }}
+  cancel-in-progress: false
+
+jobs:
+  verify-candidate:
+    name: Verify immutable published beta candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+      CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+      CANDIDATE_MANIFEST_SHA256: ${{ inputs.candidate_manifest_sha256 }}
+      CANDIDATE_MANIFEST_ASSET_ID: ${{ inputs.candidate_manifest_asset_id }}
+      STABLE_TAG: ${{ inputs.stable_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Verify exact candidate manifest, tag, commit, and bytes
+        run: |
+          node scripts/release-gate/candidate-manifest.cjs \
+            --verify \
+            --repo "$RELEASE_REPOSITORY" \
+            --tag "$CANDIDATE_TAG" \
+            --commit "$CANDIDATE_COMMIT" \
+            --channel beta \
+            --candidate-asset-id "$CANDIDATE_MANIFEST_ASSET_ID" \
+            --manifest-sha256 "$CANDIDATE_MANIFEST_SHA256"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Verify beta propagation and Stable Latest immutability
+        run: |
+          node scripts/release-gate/published-readiness.cjs \
+            --repo "$RELEASE_REPOSITORY" \
+            --tag "$CANDIDATE_TAG" \
+            --commit "$CANDIDATE_COMMIT" \
+            --channel beta \
+            --expected-latest "$STABLE_TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  installed-artifact-matrix:
+    name: Invoke exact installed-artifact matrix
+    needs: verify-candidate
+    if: inputs.run_installed_matrix == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+      CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+      CANDIDATE_MANIFEST_SHA256: ${{ inputs.candidate_manifest_sha256 }}
+      CANDIDATE_MANIFEST_ASSET_ID: ${{ inputs.candidate_manifest_asset_id }}
+      FROM_VERSION: ${{ inputs.from_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install release-gate dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: 'Require the #512 runtime-matrix integration contract'
+        run: |
+          set -euo pipefail
+          MATRIX_FILE="$RUNNER_TEMP/upgrade-matrix.yml"
+          gh api "repos/${{ github.repository }}/contents/.github/workflows/upgrade-matrix.yml?ref=main" \
+            --jq .content | tr -d '\n' | base64 --decode > "$MATRIX_FILE"
+          node - "$MATRIX_FILE" <<'NODE'
+          const fs = require('node:fs');
+          const { assertMatrixContract } = require('./scripts/release-gate/matrix-contract.cjs');
+          assertMatrixContract(fs.readFileSync(process.argv[2], 'utf8'));
+          NODE
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: 'Dispatch and wait for #512 matrix using exact candidate binding'
+        run: |
+          node scripts/release-gate/matrix-dispatch.cjs \
+            --repo "$RELEASE_REPOSITORY" \
+            --workflow upgrade-matrix.yml \
+            --workflow-file "$RUNNER_TEMP/upgrade-matrix.yml" \
+            --from-version "$FROM_VERSION" \
+            --candidate-tag "$CANDIDATE_TAG" \
+            --candidate-commit "$CANDIDATE_COMMIT" \
+            --candidate-manifest-asset-id "$CANDIDATE_MANIFEST_ASSET_ID" \
+            --candidate-manifest-sha256 "$CANDIDATE_MANIFEST_SHA256"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  matrix-not-run-boundary:
+    name: Record explicit #512 integration boundary
+    needs: verify-candidate
+    if: inputs.run_installed_matrix != true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark installed artifact rows NOT-RUN, never PASS
+        run: |
+          echo "::notice::Installed-artifact upgrade rows are NOT-RUN. Enable run_installed_matrix to execute the exact candidate-bound matrix."
+          echo "Hosted candidate integrity passed; this is not a complete runtime upgrade gate."
+
+  retain-candidate-evidence:
+    name: Retain final sanitized candidate evidence
+    needs: [verify-candidate, installed-artifact-matrix, matrix-not-run-boundary]
+    if: always() && needs.verify-candidate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+      MATRIX_RESULT: ${{ needs.installed-artifact-matrix.result }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Build final sanitized evidence bundle
+        run: |
+          set -euo pipefail
+          MANIFEST_URL=$(gh api "repos/$RELEASE_REPOSITORY/releases/tags/$CANDIDATE_TAG" \
+            --jq '.assets[] | select(.name == "candidate-manifest.json") | .url')
+          gh api "$MANIFEST_URL" -H 'Accept: application/octet-stream' > "$RUNNER_TEMP/candidate-manifest.json"
+          case "$MATRIX_RESULT" in
+            success) MATRIX_STATUS=PASS ;;
+            skipped) MATRIX_STATUS=NOT-RUN ;;
+            failure) MATRIX_STATUS=FAIL ;;
+            cancelled|timed_out|timeout) MATRIX_STATUS=FAIL ;;
+            *) MATRIX_STATUS=FAIL ;;
+          esac
+          node scripts/release-gate/evidence.cjs \
+            --manifest "$RUNNER_TEMP/candidate-manifest.json" \
+            --matrix-status "$MATRIX_STATUS" \
+            --output "$RUNNER_TEMP/release-summary.json"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Retain sanitized evidence for 90 days
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-${{ inputs.candidate_tag }}-evidence
+          path: |
+            ${{ runner.temp }}/candidate-manifest.json
+            ${{ runner.temp }}/release-summary.json
+          retention-days: 90
+          if-no-files-found: error

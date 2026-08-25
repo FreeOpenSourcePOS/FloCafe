@@ -1,4 +1,5 @@
 name: Runtime upgrade matrix
+run-name: Runtime upgrade matrix ${{ inputs.matrix_dispatch_id }}
 
 # Real N -> N+1 in-app upgrade rows for epic #468. Each job installs a
 # RELEASED build, seeds identifiable data through the app's own API, opts into
@@ -21,8 +22,28 @@ on:
     inputs:
       from_version:
         description: Released version to install as N
-        required: false
-        default: 3.3.0
+        required: true
+        type: string
+      candidate_tag:
+        description: Exact beta candidate tag to install and test as N+1
+        required: true
+        type: string
+      candidate_commit:
+        description: Exact commit bound by the candidate manifest
+        required: true
+        type: string
+      candidate_manifest_asset_id:
+        description: GitHub asset ID of candidate-manifest.json
+        required: true
+        type: string
+      candidate_manifest_sha256:
+        description: SHA-256 of the candidate-manifest.json bytes
+        required: true
+        type: string
+      matrix_dispatch_id:
+        description: Unique release-gate dispatch correlation ID
+        required: true
+        type: string
       to_version:
         description: Expected upgraded version (N+1)
         required: false
@@ -49,7 +70,7 @@ env:
 
 jobs:
   windows-nsis-x64:
-    name: Windows NSIS x64 (${{ inputs.from_version || '3.3.0' }} → ${{ inputs.to_version || '3.3.1-beta.1' }})
+    name: Windows NSIS x64 (${{ inputs.from_version || '3.3.0' }} → ${{ inputs.candidate_tag || inputs.to_version || '3.3.1-beta.1' }})
     runs-on: windows-latest
     timeout-minutes: 45
     defaults:
@@ -57,7 +78,14 @@ jobs:
         shell: bash
     env:
       FROM_VERSION: ${{ inputs.from_version || '3.3.0' }}
-      TO_VERSION: ${{ inputs.to_version || '3.3.1-beta.1' }}
+      TO_VERSION: ${{ inputs.candidate_tag || inputs.to_version || '3.3.1-beta.1' }}
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      CANDIDATE_FROM_VERSION: ${{ inputs.from_version }}
+      CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+      CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+      CANDIDATE_MANIFEST_ASSET_ID: ${{ inputs.candidate_manifest_asset_id }}
+      CANDIDATE_MANIFEST_SHA256: ${{ inputs.candidate_manifest_sha256 }}
+      MATRIX_DISPATCH_ID: ${{ inputs.matrix_dispatch_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -118,6 +146,19 @@ jobs:
 
       - name: Seed data, opt into beta, wait for staged update, restart-and-install
         run: |
+          if [ -n "$CANDIDATE_TAG" ]; then
+            [ "$FROM_VERSION" = "$CANDIDATE_FROM_VERSION" ] || { echo "::error::matrix source version does not match the exact candidate input"; exit 1; }
+            [ "$TO_VERSION" = "$CANDIDATE_TAG" ] || { echo "::error::matrix target version is not the exact candidate tag"; exit 1; }
+            echo "::notice::Verifying candidate $CANDIDATE_TAG for matrix dispatch $MATRIX_DISPATCH_ID"
+            node scripts/release-gate/candidate-manifest.cjs \
+              --verify \
+              --repo "$RELEASE_REPOSITORY" \
+              --tag "$CANDIDATE_TAG" \
+              --commit "$CANDIDATE_COMMIT" \
+              --channel beta \
+              --candidate-asset-id "$CANDIDATE_MANIFEST_ASSET_ID" \
+              --manifest-sha256 "$CANDIDATE_MANIFEST_SHA256"
+          fi
           # Keep fixture credentials in shell locals; GitHub's step env dump
           # must not print credential-like names and values into public logs.
           MATRIX_EMAIL=matrix-bot@flocafe.invalid

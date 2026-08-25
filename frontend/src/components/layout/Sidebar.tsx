@@ -196,7 +196,7 @@ export default function AppSidebar() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton
-                  className="border border-sidebar-border/70 bg-sidebar-accent/30 shadow-xs hover:bg-sidebar-accent hover:border-sidebar-border hover:shadow-sm data-[state=open]:bg-sidebar-accent data-[state=open]:border-sidebar-border data-[state=open]:shadow-sm transition-all rounded-lg h-9 px-2.5 font-normal group-data-[collapsible=icon]:h-8! group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:shadow-none"
+                  className="rounded-xl border-0 bg-sidebar-accent/60 hover:bg-sidebar-accent hover:shadow-xs data-[state=open]:bg-sidebar-accent/90 transition-all h-9 px-3 font-normal group-data-[collapsible=icon]:h-8! group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:rounded-lg"
                   tooltip={user?.name || user?.email || t('user')}
                 >
                   <UserCircle className="size-4 shrink-0 text-sidebar-primary" />

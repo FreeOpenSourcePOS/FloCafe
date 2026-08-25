@@ -23,6 +23,7 @@ const path = require('node:path');
 const http = require('node:http');
 
 const API_PORT = Number(process.env.FLO_API_PORT || 3001);
+const OFFLINE_CLOUD_SERVER_URL = 'http://127.0.0.1:9';
 
 class HarnessError extends Error {}
 
@@ -198,6 +199,7 @@ async function setupAndSeed({ email, password, masterPin }) {
       country: 'IN',
       currency: 'INR',
       timezone: 'Asia/Kolkata',
+      cloud_server_url: OFFLINE_CLOUD_SERVER_URL,
     },
   });
   const login = await apiRequest('POST', '/api/auth/login', { body: { email, password } });

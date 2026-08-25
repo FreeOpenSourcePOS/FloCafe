@@ -155,6 +155,7 @@ test('setupAndSeed sends the required first-run data through the public API', as
     country: 'IN',
     currency: 'INR',
     timezone: 'Asia/Kolkata',
+    cloud_server_url: 'http://127.0.0.1:9',
   });
   assert.ok(state.requests.some(({ method, path }) => method === 'POST' && path === '/api/orders'));
   assert.ok(state.requests.some(({ method, path }) => method === 'POST' && path === '/api/printers'));

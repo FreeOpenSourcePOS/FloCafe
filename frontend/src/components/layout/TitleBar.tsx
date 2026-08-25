@@ -4,6 +4,7 @@ import { UserCircle } from 'lucide-react';
 import { useEffect, useSyncExternalStore } from 'react';
 import { useTranslations } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Ltr } from './Ltr';
 import UpdateBadge from './UpdateBadge';
 
@@ -11,14 +12,6 @@ const subscribeToElectronCapability = () => () => {};
 const getElectronCapability = () => typeof window !== 'undefined' && Boolean(window.electronAPI?.getStatus);
 const getServerElectronCapability = () => false;
 
-/**
- * Native-controls title-bar content for the desktop POS window.
- *
- * The same frontend is served to LAN browsers, so this component must remain
- * absent unless the preload capability is present. Electron supplies native
- * caption buttons when available; the root desktop chrome owns the HTML
- * fallback buttons so they remain available on every renderer route.
- */
 export default function TitleBar() {
   const { currentTenant, user } = useAuthStore();
   const tCommon = useTranslations('common');
@@ -29,9 +22,7 @@ export default function TitleBar() {
     getElectronCapability,
     getServerElectronCapability,
   );
-  // Expose the desktop capability to CSS so fixed app chrome (the sidebar)
-  // can offset below the title bar. Browsers/LAN never receive the flag and
-  // keep today's viewport-top geometry.
+
   useEffect(() => {
     if (isElectron) {
       document.documentElement.dataset.floDesktopTitlebar = 'true';
@@ -43,6 +34,23 @@ export default function TitleBar() {
       delete document.documentElement.dataset.floPlatform;
     }
   }, [isElectron]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      document.documentElement.dataset.floWindowFocused = 'true';
+    };
+    const handleBlur = () => {
+      document.documentElement.dataset.floWindowFocused = 'false';
+    };
+    document.documentElement.dataset.floWindowFocused = typeof document !== 'undefined' && document.hasFocus() ? 'true' : 'false';
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('blur', handleBlur);
+      delete document.documentElement.dataset.floWindowFocused;
+    };
+  }, []);
 
   if (!isElectron) return null;
 
@@ -71,8 +79,23 @@ export default function TitleBar() {
       className="flo-title-bar hidden shrink-0 md:flex"
       aria-label={businessName}
     >
+      <div className="flo-title-bar__safe-area pointer-events-none flex w-full items-center justify-between">
+        {/* Leading edge: Sidebar toggle button (placed after traffic lights on macOS, top-left on Windows/Linux) */}
+        <div className="flo-title-bar__interactive pointer-events-auto flex items-center">
+          <SidebarTrigger
+            aria-label={tNav('toggleSidebar')}
+            className="size-7 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+          />
+        </div>
+
+        {/* Trailing edge: Update badge */}
+        <div className="flo-title-bar__interactive pointer-events-auto ms-auto flex items-center">
+          <UpdateBadge />
+        </div>
+      </div>
+
       {/* Centered business name and user identity */}
-      <div className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center leading-tight text-center max-w-[min(60vw,32rem)] select-none">
+      <div className="pointer-events-none absolute inset-0 m-auto flex h-fit w-fit flex-col items-center justify-center leading-tight text-center max-w-[min(60vw,32rem)] select-none">
         <span className="truncate text-xs font-semibold text-foreground max-w-full" title={businessName}>
           {businessName}
         </span>
@@ -86,12 +109,6 @@ export default function TitleBar() {
             {roleLabel ? ` (${roleLabel})` : ''}
           </span>
         </span>
-      </div>
-
-      <div className="flo-title-bar__safe-area pointer-events-none flex w-full items-center justify-end">
-        <div className="flo-title-bar__interactive pointer-events-auto ms-auto flex items-center">
-          <UpdateBadge />
-        </div>
       </div>
     </header>
   );

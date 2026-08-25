@@ -13,11 +13,11 @@ import {
   UserCog,
   Settings,
   LogOut,
-  PanelLeft,
   ChefHat,
   UserCircle,
   MessageCircle,
   LifeBuoy,
+  ChevronsUpDown,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -27,6 +27,13 @@ import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
 import { useConfirm } from '@/hooks/use-confirm';
 import { ROLE_ACCESS, hasRole, type Role } from '@shared/role-permissions';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Sidebar,
   SidebarContent,
@@ -64,14 +71,13 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, roles: ROLE_ACCESS.ownerManager, businessTypes: ['restaurant'] },
   { href: '/customers', labelKey: 'customers', icon: Users, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
   { href: '/staff', labelKey: 'staff', icon: UserCog, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
-  { href: '/settings', labelKey: 'settings', icon: Settings, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
 ];
 
 export default function AppSidebar() {
   const pathname = usePathname();
   const { user, currentTenant, logout } = useAuthStore();
   const { tablesRequired, kdsEnabled, whatsappEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled } = usePosSettingsStore();
-  const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
+  const { isMobile, setOpenMobile } = useSidebar();
   const t = useTranslations('nav');
   const tCommon = useTranslations('common');
   const { confirm, ConfirmDialog } = useConfirm();
@@ -187,35 +193,62 @@ export default function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={pathname === '/support'} tooltip={t('support')}>
-              <Link href="/support" onClick={closeMobile}>
-                <LifeBuoy />
-                <span>{t('support')}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={toggleSidebar} tooltip={t('toggleSidebar')}>
-              <PanelLeft />
-              <span>{t('collapse')}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            {/* Identity label, not a button — nothing to click through to, so it
-                deliberately skips SidebarMenuButton's interactive/hover styling. */}
-            <div
-              title={user?.name || user?.email || t('user')}
-              className="flex w-full items-center gap-2 rounded-md p-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0"
-            >
-              <UserCircle />
-              <span className="truncate">{user?.name || user?.email || t('user')}</span>
-            </div>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={async () => { if (await confirm(t('confirmLogout'))) logout(); }} tooltip={t('logoutTooltip')}>
-              <LogOut />
-              <span>{t('logout')}</span>
-            </SidebarMenuButton>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton
+                  size="lg"
+                  className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                  tooltip={user?.name || user?.email || t('user')}
+                >
+                  <UserCircle className="size-5 shrink-0" />
+                  <div className="flex flex-col gap-0.5 min-w-0 text-start leading-none group-data-[collapsible=icon]:hidden">
+                    <span className="font-medium text-sm truncate">{user?.name || user?.email || t('user')}</span>
+                    {user?.name && user?.email && (
+                      <span className="text-xs text-muted-foreground truncate">{user.email}</span>
+                    )}
+                  </div>
+                  <ChevronsUpDown className="ms-auto size-4 shrink-0 group-data-[collapsible=icon]:hidden" />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                side={isMobile ? "bottom" : "top"}
+                align={isMobile ? "end" : "start"}
+                className="w-56 rounded-lg"
+              >
+                {hasRole(role, ROLE_ACCESS.ownerManager) && (
+                  <DropdownMenuItem asChild className="cursor-pointer">
+                    <Link href="/settings" onClick={closeMobile} className="flex items-center gap-2">
+                      <span className="relative flex size-4 items-center justify-center">
+                        <Settings className="size-4 shrink-0" />
+                        {emailNeedsAttention && (
+                          <span
+                            aria-label="Email verification required"
+                            className="absolute -end-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-sidebar"
+                          />
+                        )}
+                      </span>
+                      <span>{t('settings')}</span>
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem asChild className="cursor-pointer">
+                  <Link href="/support" onClick={closeMobile} className="flex items-center gap-2">
+                    <LifeBuoy className="size-4 shrink-0" />
+                    <span>{t('support')}</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={async () => {
+                    if (await confirm(t('confirmLogout'))) logout();
+                  }}
+                  className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50 flex items-center gap-2"
+                >
+                  <LogOut className="size-4 shrink-0" />
+                  <span>{t('logout')}</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

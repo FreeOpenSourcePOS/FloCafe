@@ -67,6 +67,11 @@ body {
   color: var(--foreground);
   -webkit-app-region: drag;
   app-region: drag;
+  transition: opacity 150ms ease;
+}
+
+html[data-flo-window-focused='false'] .flo-title-bar {
+  opacity: 0.6;
 }
 
 .flo-title-bar__safe-area {

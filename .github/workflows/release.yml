@@ -923,6 +923,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Verify stable Snap publication and permanent evidence
         run: |
           node scripts/release-gate/verify-stable-promotion.cjs \

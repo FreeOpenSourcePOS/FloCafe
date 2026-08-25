@@ -272,6 +272,13 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   const promoteJob = jobs['promote-release'];
   assert.equal(promoteJob.needs, 'create-release');
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
+  const promoteVerifierDependencies = findStep(promoteJob, 'Install verifier dependencies');
+  assert.equal(promoteVerifierDependencies.run, 'npm ci --ignore-scripts --no-audit --no-fund');
+  const promoteStepNames = promoteJob.steps.map((step: any) => step.name);
+  assert.ok(
+    promoteStepNames.indexOf('Install verifier dependencies') < promoteStepNames.indexOf('Verify stable Snap publication and permanent evidence'),
+    'stable promotion must install verifier dependencies before running its verifier'
+  );
   assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
 
   const candidateWorkflow = loadWorkflow('release-candidate-gate.yml');

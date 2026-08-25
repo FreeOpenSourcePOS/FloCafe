@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const net = require('node:net');
 const test = require('node:test');
 const { WebSocketServer } = require('ws');
 
@@ -172,4 +173,40 @@ test('waitReadyToInstall and verifySeeds observe staged version and persistence'
     printerId: 'printer-1',
   }, '3.3.1-beta.1');
   assert.deepEqual(evidence, { version: '3.3.1-beta.1', betaCheck: 'PASS' });
+});
+
+test('cdpEval bounds target discovery and websocket handshakes', async () => {
+  const stalledSockets = new Set();
+  const stalledTarget = net.createServer((socket) => {
+    stalledSockets.add(socket);
+    socket.once('close', () => stalledSockets.delete(socket));
+  });
+  const targetPort = await listen(stalledTarget);
+  const targetServer = http.createServer((request, response) => {
+    if (request.url !== '/json') return response.writeHead(404).end();
+    sendJson(response, 200, [{
+      type: 'page',
+      title: 'Flo Cafe',
+      webSocketDebuggerUrl: `ws://127.0.0.1:${targetPort}`,
+    }]);
+  });
+  const targetServerPort = await listen(targetServer);
+  const stalledDiscoveryServer = http.createServer(() => {});
+  const stalledDiscoveryPort = await listen(stalledDiscoveryServer);
+
+  try {
+    await assert.rejects(
+      harness.cdpEval(targetServerPort, 'true', 50),
+      /CDP websocket handshake timed out after 50ms/
+    );
+    await assert.rejects(
+      harness.cdpEval(stalledDiscoveryPort, 'true', 50),
+      /CDP target discovery timed out after 50ms/
+    );
+  } finally {
+    for (const socket of stalledSockets) socket.destroy();
+    await new Promise((resolve) => targetServer.close(resolve));
+    await new Promise((resolve) => stalledDiscoveryServer.close(resolve));
+    await new Promise((resolve) => stalledTarget.close(resolve));
+  }
 });

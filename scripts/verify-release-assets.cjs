@@ -166,6 +166,7 @@ function assertManifestPlatformMapping(manifestName, version, files, selectedPat
       `${base}-mac-arm64.zip`,
     ]);
     required = [`${base}-mac-x64.zip`, `${base}-mac-arm64.zip`];
+    requiredUpdaterPath = required[0];
   } else if (/^(latest|beta)-linux\.yml$/.test(manifestName)) {
     // electron-builder lists every Linux target from the same build
     // invocation in this manifest; electron-updater ignores those extra

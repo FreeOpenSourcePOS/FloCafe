@@ -133,7 +133,14 @@ assert.doesNotThrow(() => assertManifestPlatformMapping('latest-mac.yml', VERSIO
   { url: `flocafe-${VERSION}-mac-arm64.zip` },
   { url: `flocafe-${VERSION}-mac-x64.dmg` },
   { url: `flocafe-${VERSION}-mac-arm64.dmg` },
-]));
+], `flocafe-${VERSION}-mac-x64.zip`));
+assert.throws(
+  () => assertManifestPlatformMapping('latest-mac.yml', VERSION, [
+    { url: `flocafe-${VERSION}-mac-x64.zip` },
+    { url: `flocafe-${VERSION}-mac-arm64.zip` },
+  ], `flocafe-${VERSION}-mac-x64.dmg`),
+  /updater path must/,
+);
 assert.doesNotThrow(() => assertManifestPlatformMapping('latest-linux.yml', VERSION, [
   { url: `flocafe-${VERSION}-linux-x64.appimage` },
   // electron-builder lists every Linux target from the same invocation (#468).

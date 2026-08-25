@@ -89,8 +89,49 @@ function apiRequest(method, pathname, { token, body } = {}) {
 
 let cdpMessageId = 0;
 
+async function fetchCdpTargets(port, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/json`, { signal: controller.signal });
+    return await response.json();
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new HarnessError(`CDP target discovery timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function waitForCdpWebSocket(ws, url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let timer;
+    const cleanup = () => {
+      clearTimeout(timer);
+      ws.removeEventListener('open', onOpen);
+      ws.removeEventListener('error', onError);
+    };
+    const onOpen = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new HarnessError(`CDP websocket to ${url} failed`));
+    };
+    timer = setTimeout(() => {
+      cleanup();
+      reject(new HarnessError(`CDP websocket handshake timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    ws.addEventListener('open', onOpen);
+    ws.addEventListener('error', onError);
+  });
+}
+
 async function cdpEval(port, expression, timeoutMs = 20000) {
-  const targets = await fetch(`http://127.0.0.1:${port}/json`).then((r) => r.json());
+  const targets = await fetchCdpTargets(port, timeoutMs);
   // Prefer the main POS window page; fall back to any page target.
   const pages = targets.filter((t) => t.type === 'page');
   if (pages.length === 0) throw new HarnessError(`No page targets on :${port}: ${JSON.stringify(targets)}`);
@@ -98,10 +139,7 @@ async function cdpEval(port, expression, timeoutMs = 20000) {
 
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   try {
-    await new Promise((resolve, reject) => {
-      ws.addEventListener('open', resolve, { once: true });
-      ws.addEventListener('error', () => reject(new HarnessError(`CDP websocket to ${target.webSocketDebuggerUrl} failed`)), { once: true });
-    });
+    await waitForCdpWebSocket(ws, target.webSocketDebuggerUrl, timeoutMs);
     const result = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new HarnessError(`CDP eval timed out: ${expression.slice(0, 80)}`)), timeoutMs);
       ws.addEventListener('message', (event) => {

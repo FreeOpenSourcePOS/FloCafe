@@ -46,6 +46,10 @@ function maskSetting(key: string, value: string): string {
   return value ? `****${value.slice(-4)}` : '';
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /**
  * The only window permitted to invoke privileged IPC is the main POS renderer,
  * which the embedded server serves from localhost/127.0.0.1. The KDS window is
@@ -61,19 +65,57 @@ function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender'>): bo
   }
 }
 
-function handle(channel: string, listener: (...args: any[]) => any): void {
-  ipcMain.handle(channel, (event: Electron.IpcMainInvokeEvent, ...args: any[]) => {
+type MainWindowGetter = () => BrowserWindow | null;
+type IpcHandler<Args extends unknown[] = unknown[]> =
+  (event: Electron.IpcMainInvokeEvent, ...args: Args) => unknown | Promise<unknown>;
+
+interface IpcPrinterInput {
+  id?: string;
+  name: string;
+  connection_type: 'network' | 'usb' | 'webusb';
+  ip_address?: string | null;
+  port?: number | null;
+  is_default?: boolean | number;
+}
+
+/**
+ * The preload can run before Chromium has committed the localhost URL. In
+ * that narrow interval origin is unavailable, so accept only the expected
+ * POS BrowserWindow (and still require the current top-level frame below).
+ * Every other pre-navigation sender fails closed; once a URL exists the
+ * normal localhost origin check remains mandatory.
+ */
+function isEarlyMainWindowSender(
+  event: Pick<Electron.IpcMainEvent, 'sender'>,
+  getMainWindow?: MainWindowGetter,
+): boolean {
+  if (!getMainWindow) return false;
+  try {
+    const url = event.sender?.getURL?.() ?? '';
+    if (url !== '' && url !== 'about:blank') return false;
+    const expectedWindow = getMainWindow();
+    return Boolean(
+      expectedWindow
+      && !expectedWindow.isDestroyed()
+      && BrowserWindow.fromWebContents(event.sender) === expectedWindow,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function handle<Args extends unknown[]>(channel: string, listener: IpcHandler<Args>): void {
+  ipcMain.handle(channel, (event: Electron.IpcMainInvokeEvent, ...args: Args) => {
     if (!isTrustedSender(event)) return { error: 'Unauthorized sender' };
     return listener(event, ...args);
   });
 }
 
-export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
+export function registerIpcHandlers(
+  shutdownSignal?: AbortSignal,
+  getMainWindow?: MainWindowGetter,
+): void {
   ipcMain.on('window-document', (event, documentNonce: unknown) => {
-    if (!isTrustedSender(event)) {
-      event.returnValue = { error: 'Unauthorized sender' };
-      return;
-    }
     let currentFrame: Electron.WebFrameMain | null = null;
     try {
       currentFrame = event.sender.mainFrame;
@@ -83,6 +125,10 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     }
     if (!isCurrentRendererFrame(event.senderFrame, currentFrame)) {
       event.returnValue = { success: false, error: 'Invalid document registration' };
+      return;
+    }
+    if (!isTrustedSender(event) && !isEarlyMainWindowSender(event, getMainWindow)) {
+      event.returnValue = { error: 'Unauthorized sender' };
       return;
     }
     event.returnValue = registerRendererDocument(documentNonce)
@@ -117,9 +163,9 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
         schemaVersion,
         message: `Backup saved (Schema v${schemaVersion})`
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[IPC] backup-database: Error:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -208,9 +254,9 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
         message: restoreResult.success ? 'Database restored successfully' : `Restore failed: ${restoreResult.error}`,
         error: restoreResult.error
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[IPC] restore-backup: Error:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -219,8 +265,8 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     return withDatabaseRequest(async () => {
     try {
       return runHealthCheck();
-    } catch (error: any) {
-      return { error: error.message };
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) };
     }
     });
   });
@@ -229,8 +275,8 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     return withDatabaseRequest(async () => {
     try {
       return applySafeFixes(findingIds);
-    } catch (error: any) {
-      return { applied: [], skipped: [], errors: [{ id: 'all', error: error.message }] };
+    } catch (error: unknown) {
+      return { applied: [], skipped: [], errors: [{ id: 'all', error: getErrorMessage(error) }] };
     }
     });
   });
@@ -252,9 +298,9 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
       clearInMemoryRevokedTokens();
       clearJWTSecretCache();
       return { success: true, backupPath };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[IPC] db-initialize: Error:', error);
-      return { success: false, error: error.message };
+      return { success: false, error: getErrorMessage(error) };
     }
   });
 
@@ -304,8 +350,8 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
         settings[row.key] = maskSetting(row.key, row.value);
       });
       return settings;
-    } catch (error: any) {
-      return { error: error.message };
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) };
     }
     });
   });
@@ -323,8 +369,8 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
       db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
         .run(key, value, now());
       return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
     });
   });
@@ -333,8 +379,8 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   handle('whatsapp-get-status', async () => withDatabaseRequest(async () => {
     try {
       return getWhatsAppStatus();
-    } catch (err: any) {
-      return { error: err.message };
+    } catch (err: unknown) {
+      return { error: getErrorMessage(err) };
     }
   }));
 
@@ -404,13 +450,13 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
       const db = getDatabase();
       const printers = db.prepare('SELECT * FROM printers ORDER BY name').all();
       return printers;
-    } catch (error: any) {
-      return { error: error.message };
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) };
     }
     });
   });
 
-  handle('save-printer', async (event, printer: any) => {
+  handle('save-printer', async (event, printer: IpcPrinterInput) => {
     return withDatabaseRequest(async () => {
     try {
       // Validate printer name — reject names with shell metacharacters (command injection defense)
@@ -435,8 +481,8 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
           port, printer.is_default ? 1 : 0, now(), now());
       }
       return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      return { success: false, error: getErrorMessage(error) };
     }
     });
   });
@@ -469,8 +515,8 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
         covers: covers.covers,
         pending_orders: pendingOrders.count,
       };
-    } catch (error: any) {
-      return { error: error.message };
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) };
     }
     });
   });

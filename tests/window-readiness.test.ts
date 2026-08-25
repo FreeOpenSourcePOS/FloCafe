@@ -4,8 +4,9 @@
  * Covers the three review-mandated scenarios as one coherent epoch lifecycle:
  *   1. Reject path: malformed/failed readiness reports never mark the document
  *      ready; the bounded fail-safe shows the window and fires exactly once.
- *   2. Reload path: a new document (did-start-loading) invalidates the previous
- *      document's reports, so a reload can never inherit a stale ready flag.
+ *   2. Reload path: a new document (did-start-navigation with
+ *      isSameDocument=false) invalidates the previous document's reports, so a
+ *      reload can never inherit a stale ready flag.
  *   3. Fail-safe path: an unconfirmed current epoch surfaces the window after
  *      the bounded timeout; a confirmed epoch cancels it.
  *
@@ -20,6 +21,7 @@ import {
   getRendererReadinessEpoch,
   initWindowReadiness,
   isCurrentRendererFrame,
+  isFullDocumentMainFrameNavigation,
   isRendererReadinessFailSafeShown,
   isWindowRendererReady,
   markWindowRendererReady,
@@ -34,6 +36,21 @@ async function run(): Promise<void> {
   const firstEpoch = beginRendererDocument();
   assert.equal(firstEpoch, 1);
   assert.equal(isWindowRendererReady(), false);
+  assert.equal(
+    isFullDocumentMainFrameNavigation({ isMainFrame: true, isSameDocument: false }),
+    true,
+    'full main-frame navigation starts a new document epoch',
+  );
+  assert.equal(
+    isFullDocumentMainFrameNavigation({ isMainFrame: true, isSameDocument: true }),
+    false,
+    'Next.js same-document navigation keeps the current epoch',
+  );
+  assert.equal(
+    isFullDocumentMainFrameNavigation({ isMainFrame: false, isSameDocument: false }),
+    false,
+    'sub-frame navigation cannot reset the main document epoch',
+  );
   const firstNonce = '123e4567-e89b-42d3-a456-426614174000';
   assert.equal(registerRendererDocument('not-a-document-nonce'), false);
   assert.equal(registerRendererDocument(firstNonce), true);

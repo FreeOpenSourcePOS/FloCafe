@@ -99,7 +99,7 @@ async function phaseSeed(args) {
   // undefined on success — treat an explicit failure object as the only error.
   const installResult = await cdpEval(
     DEBUG_PORT(),
-    `window.electronAPI.restartAndInstall(${pinArg}).then(r => r).catch(e => ({ success: false, error: String(e) }))`
+    `Promise.resolve(window.electronAPI.restartAndInstall(${pinArg})).then(r => r).catch(e => ({ success: false, error: String(e) }))`
   );
   if (installResult && installResult.success === false) {
     throw new HarnessError(`restart-and-install failed: ${JSON.stringify(installResult)}`);

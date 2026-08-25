@@ -21,8 +21,9 @@ try {
     root,
   ], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /"telemetry_replacements":1/);
-  assert.match(result.stdout, /"cloud_replacements":1/);
+  const fixtureResult = JSON.parse(result.stdout);
+  assert.equal(fixtureResult.telemetry_replacements, 1);
+  assert.equal(fixtureResult.cloud_replacements, 1);
 
   const patched = fs.readFileSync(file, 'utf8');
   assert.doesNotMatch(patched, /https:\/\/telemetry\.flopos\.com\/collect/);

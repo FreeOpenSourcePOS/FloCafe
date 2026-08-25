@@ -2,8 +2,8 @@
 // Prepends a <release> entry to assets/com.flo.desktop.metainfo.xml at release
 // time so the AppImage ships with an up-to-date AppStream release history.
 // Reads version from package.json and release notes from RELEASE_NOTES_FILE,
-// /tmp/release-notes.md, or CHANGELOG.md (via scripts/changelog-notes.sh). The
-// on-disk source file is rewritten; the running pipeline does NOT auto-commit
+// /tmp/release-notes.md, git-cliff, or CHANGELOG.md (via scripts/changelog-notes.sh).
+// The on-disk source file is rewritten; the running pipeline does NOT auto-commit
 // this change back to the repo.
 
 const { readFileSync, writeFileSync } = require('node:fs');

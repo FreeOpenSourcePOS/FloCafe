@@ -73,7 +73,7 @@ body {
   position: absolute;
   inset-block-start: env(titlebar-area-y, 0px);
   left: env(titlebar-area-x, 0px);
-  inline-size: env(titlebar-area-width, calc(100% - var(--flo-titlebar-fallback-controls-width)));
+  inline-size: env(titlebar-area-width, 100%);
   block-size: env(titlebar-area-height, var(--flo-titlebar-height));
   max-inline-size: 100%;
   box-sizing: border-box;
@@ -81,6 +81,17 @@ body {
   align-items: center;
   gap: 0.75rem;
   padding-inline: 0.75rem;
+}
+
+/* macOS uses native traffic lights on the top-left (occupying ~80px).
+ * Traffic lights stay physically on the left even in RTL locales.
+ * Safe area spans full width with 80px left padding and 0.75rem right padding. */
+html[data-flo-platform='darwin'] .flo-title-bar__safe-area {
+  left: 0;
+  right: 0;
+  inline-size: 100%;
+  padding-left: 80px;
+  padding-right: 0.75rem;
 }
 
 body:has(.flo-title-bar__fallback-controls) .flo-title-bar__safe-area {

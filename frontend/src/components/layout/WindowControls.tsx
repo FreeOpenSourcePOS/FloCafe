@@ -77,7 +77,7 @@ export default function WindowControls() {
     windowAction(action).catch(() => {});
   }, []);
 
-  if (!isElectron || resolved?.mode !== 'html-fallback') return null;
+  if (!isElectron || resolved?.mode !== 'html-fallback' || window.electronAPI?.platform === 'darwin') return null;
 
   return (
     <div className="flo-title-bar__fallback-controls" role="group" aria-label={tCommon('windowControls')}>

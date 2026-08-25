@@ -52,9 +52,12 @@ async function main() {
   // --- Row A: mode resolution decision -------------------------------------
   const overlayApiPresent = typeof BrowserWindow.prototype.setTitleBarOverlay === 'function';
   const resolved = resolveTitleBarMode({ platform, electronVersion, overlayApiPresent });
-  const expectedReal = ['darwin', 'win32', 'linux'].includes(platform) && major >= 33 && overlayApiPresent
-    ? 'native-overlay'
-    : 'html-fallback';
+  const expectedReal =
+    platform === 'darwin'
+      ? 'native-overlay'
+      : ['win32', 'linux'].includes(platform) && major >= 33 && overlayApiPresent
+      ? 'native-overlay'
+      : 'html-fallback';
   record(
     'mode-resolution: real environment decision matches contract',
     resolved === expectedReal,
@@ -62,9 +65,15 @@ async function main() {
   );
 
   record(
-    'mode-resolution: missing overlay API fails closed to html-fallback',
-    resolveTitleBarMode({ platform, electronVersion, overlayApiPresent: false }) === 'html-fallback',
-    'overlayApiPresent=false -> html-fallback',
+    'mode-resolution: missing overlay API fails closed to html-fallback on Windows/Linux',
+    resolveTitleBarMode({ platform: 'win32', electronVersion, overlayApiPresent: false }) === 'html-fallback'
+      && resolveTitleBarMode({ platform: 'linux', electronVersion, overlayApiPresent: false }) === 'html-fallback',
+    'overlayApiPresent=false -> html-fallback on win32/linux',
+  );
+  record(
+    'mode-resolution: macOS resolves to native-overlay even without overlay API',
+    resolveTitleBarMode({ platform: 'darwin', electronVersion, overlayApiPresent: false }) === 'native-overlay',
+    'platform=darwin -> native-overlay',
   );
   record(
     'mode-resolution: pre-33 Electron fails closed to html-fallback',

@@ -131,3 +131,24 @@ test('sidebar offset regression (#504): expanded/collapsed states at md+ viewpor
   });
   expect(forced.y, 'desktop flag offsets sidebar below title bar').toBeCloseTo(40, 0);
 });
+
+test('macOS titlebar safe-area styling reserves leading space for traffic lights', async ({ page }) => {
+  await page.goto(`${BASE}/auth/login`);
+  const paddingLeft = await page.evaluate(() => {
+    const html = document.documentElement;
+    const testHeader = document.createElement('header');
+    testHeader.className = 'flo-title-bar';
+    const safeArea = document.createElement('div');
+    safeArea.className = 'flo-title-bar__safe-area';
+    testHeader.appendChild(safeArea);
+    document.body.appendChild(testHeader);
+    try {
+      html.dataset.floPlatform = 'darwin';
+      return getComputedStyle(safeArea).paddingLeft;
+    } finally {
+      delete html.dataset.floPlatform;
+      testHeader.remove();
+    }
+  });
+  expect(paddingLeft, 'macOS safe area reserves 80px for traffic lights').toBe('80px');
+});

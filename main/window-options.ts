@@ -39,6 +39,11 @@ export function resolveTitleBarMode(probe: {
   if (probe.platform !== 'darwin' && probe.platform !== 'win32' && probe.platform !== 'linux') {
     return 'html-fallback';
   }
+  if (probe.platform === 'darwin') {
+    // macOS supplies native traffic lights via titleBarStyle: 'hiddenInset'.
+    // It never needs HTML fallback caption buttons.
+    return 'native-overlay';
+  }
   const versionMatch = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
     probe.electronVersion,
   );

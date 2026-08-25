@@ -227,7 +227,7 @@ function run() {
   assert.equal(downloadNotes.uses, 'actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16');
   assert.equal(downloadNotes.with?.name, 'release-notes');
   assert.equal(downloadNotes.with?.path, '/tmp');
-  assert.equal(downloadNotes['continue-on-error'], true);
+  assert.equal(downloadNotes['continue-on-error'], undefined, 'Download release notes artifact must strictly require artifact to guarantee note parity');
   const linuxBuild = findStep(linuxJob, 'Build Linux artifacts');
   assertShellStep(linuxJob, 'Build Linux artifacts');
   assert.equal(linuxBuild.env.FLO_LINUX_ARCH, '${{ matrix.arch }}', 'Linux release names must use the safe matrix architecture labels');

@@ -315,14 +315,42 @@ function SidebarTrigger({
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
   const { toggleSidebar, sidebarWidth, setSidebarWidth, setIsResizing, open, setOpen } = useSidebar()
-  const startDragRef = React.useRef<{ startX: number; startWidth: number; moved: boolean } | null>(null)
+  const startDragRef = React.useRef<{
+    startX: number
+    startWidth: number
+    moved: boolean
+    currentOpen: boolean
+    cleanup?: () => void
+  } | null>(null)
+
+  // Ensure any active drag cleanup runs if component unmounts
+  React.useEffect(() => {
+    return () => {
+      if (startDragRef.current?.cleanup) {
+        startDragRef.current.cleanup()
+      }
+    }
+  }, [])
 
   const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     e.preventDefault()
+    // Cleanup any existing drag listeners if any
+    if (startDragRef.current?.cleanup) {
+      startDragRef.current.cleanup()
+    }
+
     const startX = e.clientX
     const startWidth = open ? sidebarWidth : 48
-    startDragRef.current = { startX, startWidth, moved: false }
     setIsResizing(true)
+
+    const dragInfo = {
+      startX,
+      startWidth,
+      moved: false,
+      currentOpen: open,
+      cleanup: () => {},
+    }
+    startDragRef.current = dragInfo
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       if (!startDragRef.current) return
@@ -333,9 +361,15 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       }
       const rawWidth = startDragRef.current.startWidth + delta
       if (rawWidth < 90) {
-        if (open) setOpen(false)
+        if (startDragRef.current.currentOpen) {
+          startDragRef.current.currentOpen = false
+          setOpen(false)
+        }
       } else {
-        if (!open) setOpen(true)
+        if (!startDragRef.current.currentOpen) {
+          startDragRef.current.currentOpen = true
+          setOpen(true)
+        }
         const clampedWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, rawWidth))
         setSidebarWidth(clampedWidth)
         try {
@@ -346,18 +380,36 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       }
     }
 
-    const handlePointerUp = () => {
+    const stopDragging = (isCancel = false) => {
       setIsResizing(false)
       window.removeEventListener("pointermove", handlePointerMove)
       window.removeEventListener("pointerup", handlePointerUp)
-      if (!startDragRef.current?.moved) {
+      window.removeEventListener("pointercancel", handlePointerCancel)
+      window.removeEventListener("blur", handleBlur)
+
+      if (!isCancel && !startDragRef.current?.moved) {
         toggleSidebar()
       }
       startDragRef.current = null
     }
 
+    const handlePointerUp = () => stopDragging(false)
+    const handlePointerCancel = () => stopDragging(true)
+    const handleBlur = () => stopDragging(true)
+
+    dragInfo.cleanup = () => {
+      setIsResizing(false)
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", handlePointerUp)
+      window.removeEventListener("pointercancel", handlePointerCancel)
+      window.removeEventListener("blur", handleBlur)
+      startDragRef.current = null
+    }
+
     window.addEventListener("pointermove", handlePointerMove)
     window.addEventListener("pointerup", handlePointerUp)
+    window.addEventListener("pointercancel", handlePointerCancel)
+    window.addEventListener("blur", handleBlur)
   }
 
   return (

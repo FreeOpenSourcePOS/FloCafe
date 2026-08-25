@@ -17,6 +17,8 @@ logs.
   `scripts/release-gate/published-readiness.cjs`.
 - Stable Snap publication: one sanitized marker per architecture, checked by
   `scripts/release-gate/verify-stable-promotion.cjs`.
+- Beta Snap Store permission denial: explicitly degraded/NOT-RUN; beta draft
+  verification does not treat missing permission-denied markers as a pass.
 
 ## Explicit external/manual boundaries
 

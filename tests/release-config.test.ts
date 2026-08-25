@@ -244,6 +244,29 @@ function run() {
   assertShellStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
   const verifyAssetsStep = findStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
   assert.equal(verifyAssetsStep.env.GH_TOKEN, '${{ github.token }}');
+  const captureNodeArgs = `#!/bin/sh
+printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
+`;
+  const betaVerify = executeWorkflowStep(verifyAssetsStep, {
+    env: {
+      RELEASE_TAG: '3.3.1-beta.1',
+      RELEASE_CHANNEL: 'beta',
+    },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'needs.create-release.outputs.manifest_prefix': 'beta', 'github.sha': 'a'.repeat(40) },
+    fakeCommands: { gh: fakeGh, node: captureNodeArgs },
+  });
+  assert.equal(betaVerify.status, 0, betaVerify.stderr);
+  assert.doesNotMatch(betaVerify.log, /--require-snap-evidence/, 'beta Snap permission degradation must not require stable evidence');
+  const stableVerify = executeWorkflowStep(verifyAssetsStep, {
+    env: {
+      RELEASE_TAG: '3.3.0',
+      RELEASE_CHANNEL: 'stable',
+    },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'needs.create-release.outputs.manifest_prefix': 'latest', 'github.sha': 'b'.repeat(40) },
+    fakeCommands: { gh: fakeGh, node: captureNodeArgs },
+  });
+  assert.equal(stableVerify.status, 0, stableVerify.stderr);
+  assert.match(stableVerify.log, /--require-snap-evidence/, 'stable verification must require both Snap markers');
   assertShellStep(publishJob, 'Publish draft without changing GitHub Latest by default');
   assert.equal(findStep(publishJob, 'Publish draft without changing GitHub Latest by default').env.GH_TOKEN, '${{ github.token }}');
   const promoteJob = jobs['promote-release'];

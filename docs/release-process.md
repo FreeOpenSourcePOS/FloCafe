@@ -7,7 +7,9 @@ are not consumed by `electron-updater`. Snap Store uploads target the stable or
 beta channel matching the release when the configured macaroon permits that
 channel; a beta upload denied with `invalid-channel-permission` is downgraded
 to a warning and the GitHub release remains publishable until credentials are
-re-exported. Snap installations are updated by snapd rather than
+re-exported. Stable draft verification requires both per-architecture Snap
+publication markers; the beta permission-denied path is explicitly degraded as
+NOT-RUN and does not claim a Snap Store pass. Snap installations are updated by snapd rather than
 `electron-updater`.
 
 Nightly releases are explicitly rejected (#503): beta is the only prerelease
@@ -114,8 +116,11 @@ not publish a second expected SHA-512 for them.
    A rerun refuses to overwrite different manifest or summary bytes.
 7. Each Linux job uploads a sanitized `snap-publication-x64.json` or
    `snap-publication-arm64.json` marker only after `snapcraft upload` succeeds.
-   Draft verification requires both markers, and stable promotion refuses to
-   select Latest if either stable marker is absent or not `status=published`.
+   Stable draft verification requires both markers, and stable promotion refuses
+   to select Latest if either stable marker is absent or not `status=published`.
+   Beta verification uses a stable-only marker requirement, so a beta
+   `invalid-channel-permission` outcome remains an explicit degraded/NOT-RUN
+   Snap Store result rather than blocking GitHub publication or claiming a pass.
 8. `release-candidate-gate.yml` consumes only a published beta with the exact
    candidate manifest asset ID and SHA-256. It verifies propagation and that
    Stable Latest is unchanged, then retains only sanitized JSON evidence for 90

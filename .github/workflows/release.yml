@@ -841,18 +841,26 @@ jobs:
         run: |
           CANDIDATE_MANIFEST_ASSET_ID=$(gh api "repos/${{ github.repository }}/releases" --paginate \
             --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .assets[] | select(.name == \"candidate-manifest.json\") | .id" | head -1)
-          node scripts/verify-release-assets.cjs \
-            --repo "${{ github.repository }}" \
-            --tag "$RELEASE_TAG" \
-            --channel "${{ needs.create-release.outputs.manifest_prefix }}" \
-            --require-candidate-manifest \
-            --require-release-summary \
-            --require-snap-evidence \
-            --candidate-manifest-asset-id "$CANDIDATE_MANIFEST_ASSET_ID" \
+          VERIFY_ARGS=(
+            scripts/verify-release-assets.cjs
+            --repo "${{ github.repository }}"
+            --tag "$RELEASE_TAG"
+            --channel "${{ needs.create-release.outputs.manifest_prefix }}"
+            --require-candidate-manifest
+            --require-release-summary
+          )
+          if [ "$RELEASE_CHANNEL" = "stable" ]; then
+            VERIFY_ARGS+=(--require-snap-evidence)
+          fi
+          VERIFY_ARGS+=(
+            --candidate-manifest-asset-id "$CANDIDATE_MANIFEST_ASSET_ID"
             --candidate-manifest-commit "${{ github.sha }}"
+          )
+          node "${VERIFY_ARGS[@]}"
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+          RELEASE_CHANNEL: ${{ needs.create-release.outputs.channel }}
 
   publish-release:
     name: Publish verified release

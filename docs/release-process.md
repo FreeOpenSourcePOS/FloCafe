@@ -72,10 +72,11 @@ automatic promotion path.
 
 This follows electron-builder's channel model: GitHub publishing requires an
 explicit `publish.channel`, while prerelease versions select prerelease releases
-for opted-in clients. `autoUpdater.channel` enables a non-stable client and
-implicitly permits channel transitions; FloCafe sets `allowDowngrade` explicitly
-because returning from a prerelease to stable can be a lower semver comparison.
-Stable clients keep `allowPrerelease` and `allowDowngrade` disabled.
+for opted-in clients. `autoUpdater.channel` enables a beta-channel client and
+implicitly permits channel transitions; FloCafe enables `allowDowngrade` only
+for beta builds remaining on the beta feed. Opting out or following stable disables
+`allowPrerelease` and `allowDowngrade` so installs safely wait for the next matching
+or newer stable release without database rollbacks.
 
 ## Release gates
 

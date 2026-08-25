@@ -47,9 +47,9 @@ export interface ElectronAPI {
   // Updates
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);
   getUpdateStatus: () => Promise<{ status: UpdateStatus['status']; version?: string; percent?: number; reason?: UpdateFailureReason; error?: string; info: { version: string } }>;
-  /** Persisted beta opt-in (#463); beta-stamped builds still follow beta when false. */
+  /** Persisted beta opt-in (#463); returns true if subscribed to the beta feed. */
   getBetaChannel: () => Promise<boolean>;
-  /** Change the stable-build beta opt-in; refused while an update is staged or in flight. */
+  /** Change the beta channel opt-in; refused while an update is staged or in flight. */
   setBetaChannel: (enabled: boolean) => Promise<ElectronActionResult>;
   checkForUpdates: () => Promise<void>;
   // #463: the main process authorizes the manager/owner PIN before quitting

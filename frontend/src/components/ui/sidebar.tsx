@@ -356,6 +356,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       if (!startDragRef.current) return
       const isRtl = document.documentElement.dir === "rtl"
       const delta = (moveEvent.clientX - startDragRef.current.startX) * (isRtl ? -1 : 1)
+      // Enforce 3px deadband threshold before updating width to avoid accidental collapse toggles on click
       if (Math.abs(delta) <= 3) return
       startDragRef.current.moved = true
 

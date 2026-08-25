@@ -17,7 +17,19 @@ const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const version = pkg.version;
 const date = new Date().toISOString().slice(0, 10);
 
-const notes = execFileSync(NOTES_HELPER, [version], { encoding: 'utf8' })
+let notes = '';
+if (process.env.RELEASE_NOTES_FILE && require('node:fs').existsSync(process.env.RELEASE_NOTES_FILE)) {
+  notes = readFileSync(process.env.RELEASE_NOTES_FILE, 'utf8');
+} else if (require('node:fs').existsSync('/tmp/release-notes.md')) {
+  notes = readFileSync('/tmp/release-notes.md', 'utf8');
+} else {
+  try {
+    notes = execFileSync(NOTES_HELPER, [version.split('-')[0]], { encoding: 'utf8' });
+  } catch (_e) {
+    notes = `Flo Cafe ${version}`;
+  }
+}
+notes = notes
   .trim()
   .replace(/[\r\n]+/g, ' ')
   .replace(/&/g, '&amp;')

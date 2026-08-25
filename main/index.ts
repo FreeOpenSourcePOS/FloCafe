@@ -800,7 +800,7 @@ function showAbout(): void {
   dialog.showMessageBox({
     type: 'info',
     title: 'About Flo',
-    message: 'Flo Desktop',
+    message: 'Flo Cafe',
     detail: [
       `Version: ${app.getVersion()}`,
       `Electron: ${process.versions.electron}`,

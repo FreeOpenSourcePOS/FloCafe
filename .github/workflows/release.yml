@@ -177,15 +177,18 @@ jobs:
             fi
             echo "Draft release ${TAG} already exists, reusing it."
           else
-            if ! ./scripts/changelog-notes.sh "${BASE_VERSION}" > /tmp/release-notes.md; then
-              echo "::error::CHANGELOG.md has no '## [${BASE_VERSION}]' entry — add one before tagging a release."
+            # Generate release notes using git-cliff, falling back to changelog-notes.sh
+            if npx --yes git-cliff@2.8.0 --tag "${TAG}" --strip header > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then
+              echo "Generated release notes for ${TAG} via git-cliff"
+            elif ./scripts/changelog-notes.sh "${BASE_VERSION}" > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then
+              echo "Extracted release notes for ${BASE_VERSION} from CHANGELOG.md"
+            else
+              echo "::error::Could not generate release notes via git-cliff or CHANGELOG.md for tag ${TAG}."
               exit 1
             fi
 
-            # A fresh checkout may not have any tags yet. With pipefail, grep
-            # returns 1 for that valid empty result, so keep the release step
-            # successful and omit the optional comparison link.
-            PREV_TAG=$(git tag --list --sort=-v:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | grep -Ev "^(v)?${BASE_VERSION}\$" | head -1 || true)
+            # Determine previous tag using semver sort (-V) so 'v' prefixes and numeric tags compare accurately
+            PREV_TAG=$(git tag --list | grep -E '^(v)?[0-9]+\.[0-9]+\.[0-9]+' | grep -v '^tax-pack-' | grep -Ev "^(v)?${VERSION}\$" | sort -V -r | head -1 || true)
             if [ -n "$PREV_TAG" ]; then
               echo "" >> /tmp/release-notes.md
               echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}" >> /tmp/release-notes.md

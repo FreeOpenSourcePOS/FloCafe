@@ -2143,7 +2143,8 @@
     "betaUnavailable": "Cambiar al canal beta aún no está disponible en esta versión de la aplicación. Actualiza la aplicación de escritorio para participar.",
     "betaOn": "Activado",
     "betaOff": "Desactivado",
-    "betaToggleFailed": "No se pudo cambiar la configuración del canal beta."
+    "betaToggleFailed": "No se pudo cambiar la configuración del canal beta.",
+    "betaGraduationNote": "Salir del canal beta mantiene tu versión actual hasta que se publique la siguiente versión estable, protegiendo tu base de datos contra desactualizaciones."
   },
   "whatsapp": {
     "active": {

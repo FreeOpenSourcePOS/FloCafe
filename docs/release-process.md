@@ -32,15 +32,15 @@ exactly one channel manifest set per GitHub publish config, a beta build can
 never emit a stable (`latest*.yml`) manifest and vice versa - the stable feed
 is structurally isolated from betas.
 
-A beta installation derives its channel from its version in `main/index.ts`; a
-stable installation leaves `autoUpdater.channel` unset by default but can opt
-in through the in-app switch exposed as the IPC pair `updates:get-beta-channel`
-/ `updates:set-beta-channel` (persisted in the SQLite settings store under
-`updates.beta_channel_enabled`, resolved in `main/update-channel.ts`). An
-opted-in stable install follows the same beta manifest as a beta-stamped
-build, and can opt out again to return to stable updates. A beta-stamped build
-continues following beta regardless of the preference; leaving that channel
-requires manually installing a stable build.
+A beta installation enables beta updates by default; a stable installation
+leaves `autoUpdater.channel` unset by default but can opt in through the in-app
+switch exposed as the IPC pair `updates:get-beta-channel` / `updates:set-beta-channel`
+(persisted in the SQLite settings store under `updates.beta_channel_enabled`,
+resolved in `main/update-channel.ts`). An opted-in install follows the beta manifest.
+Opting out returns the updater to the stable feed (`latest.yml`). A beta-stamped
+build that opts out does not downgrade immediately; instead, it safely waits on
+its current version until the next matching or newer stable release is published,
+graduating to stable without database schema rollbacks or corruption.
 
 Desktop builds that expose the beta-channel IPC contract provide a beta
 pre-release toggle in **Settings > Updates**. The toggle reads and persists its
@@ -72,10 +72,11 @@ automatic promotion path.
 
 This follows electron-builder's channel model: GitHub publishing requires an
 explicit `publish.channel`, while prerelease versions select prerelease releases
-for opted-in clients. `autoUpdater.channel` enables a non-stable client and
-implicitly permits channel transitions; FloCafe sets `allowDowngrade` explicitly
-because returning from a prerelease to stable can be a lower semver comparison.
-Stable clients keep `allowPrerelease` and `allowDowngrade` disabled.
+for opted-in clients. `autoUpdater.channel` enables a beta-channel client and
+implicitly permits channel transitions; FloCafe enables `allowDowngrade` only
+for beta builds remaining on the beta feed. Opting out or following stable disables
+`allowPrerelease` and `allowDowngrade` so installs safely wait for the next matching
+or newer stable release without database rollbacks.
 
 ## Release gates
 

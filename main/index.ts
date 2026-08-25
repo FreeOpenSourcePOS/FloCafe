@@ -110,7 +110,9 @@ function readBetaChannelEnabled(): boolean {
     const row = getDatabase()
       .prepare('SELECT value FROM settings WHERE key = ?')
       .get(BETA_CHANNEL_SETTING_KEY) as { value: string | null } | undefined;
-    return parseStoredBetaChannelEnabled(row?.value);
+    const prerelease = autoUpdater.currentVersion.prerelease[0];
+    const isBetaBuild = prerelease === 'beta';
+    return parseStoredBetaChannelEnabled(row?.value, isBetaBuild);
   } catch (error) {
     log.warn('[Update] Could not read beta-channel preference; using stable:', error);
     return false;
@@ -139,8 +141,9 @@ function configureAutoUpdaterChannel(betaOptInOverride?: boolean): void {
 
   autoUpdater.channel = resolved.channel;
   autoUpdater.allowPrerelease = resolved.allowPrerelease;
-  // A beta-stamped build may move to a lower semver stable release during an
-  // explicit promotion; a stable build joining beta must never downgrade.
+  // Downgrade is only enabled for beta builds remaining on the beta feed;
+  // opting out or running stable disables downgrades to safely graduate on
+  // the next matching or newer stable release.
   autoUpdater.allowDowngrade = resolved.allowDowngrade;
 
   if (resolved.channel) {

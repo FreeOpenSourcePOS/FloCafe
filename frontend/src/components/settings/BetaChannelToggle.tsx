@@ -57,6 +57,7 @@ export default function BetaChannelToggle() {
         <div>
           <h3 className="font-semibold text-gray-900">{t('betaTitle')}</h3>
           <p className="text-sm text-gray-500 mt-1">{t('betaDescription')}</p>
+          <p className="text-xs text-gray-500 mt-2">{t('betaGraduationNote')}</p>
           {supported === false && (
             <p className="text-xs text-amber-600 mt-2">{t('betaUnavailable')}</p>
           )}

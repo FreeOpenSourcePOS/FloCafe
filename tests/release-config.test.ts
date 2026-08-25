@@ -445,6 +445,11 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   assert.match(draftStable.log, /release create 3\.3\.0/);
   assert.match(draftStable.log, /--latest=false/);
   assert.doesNotMatch(draftStable.log, /--prerelease/);
+  assert.ok(
+    fs.existsSync('/tmp/release-notes.md') &&
+      fs.readFileSync('/tmp/release-notes.md', 'utf8').includes('compare/3.2.3...3.3.0'),
+    'draft release notes must contain comparison link to predecessor tag'
+  );
 
   const draftBeta = executeWorkflowStep(draftReleaseStep, {
     env: { RELEASE_TAG: '3.3.1-beta.1', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'beta' },

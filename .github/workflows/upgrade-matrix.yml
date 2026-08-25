@@ -105,6 +105,7 @@ jobs:
           fs.writeFileSync(file, source);
           NODE
           npx --yes @electron/asar@3.3.1 pack "$ASAR_DIR" "$FLO_APP_DIR/resources/app.asar"
+          node scripts/upgrade-matrix/patch-offline-fixture.cjs "$FLO_APP_DIR/resources/app.asar" | tee "$RUNNER_TEMP/offline-fixture.log"
 
       - name: Launch release N with a CDP port
         run: |
@@ -138,7 +139,9 @@ jobs:
           # IPC-triggered handoff, then rerun that exact staged installer
           # silently and relaunch the installed app with the matrix CDP port.
           & "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/complete-nsis-install.ps1" `
-            -ExpectedAppPath "$env:FLO_EXE"
+            -ExpectedAppPath "$env:FLO_EXE" `
+            -OfflineFixtureScript "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/patch-offline-fixture.cjs" `
+            -OfflineFixtureLogPath "$env:RUNNER_TEMP/offline-fixture-post-upgrade.log"
 
       - name: Wait for the upgraded build to come back up
         run: |
@@ -190,6 +193,8 @@ jobs:
             ${{ runner.temp }}/evidence.json
             ${{ runner.temp }}/log-analysis.txt
             ${{ runner.temp }}/process-tree.txt
+            ${{ runner.temp }}/offline-fixture.log
+            ${{ runner.temp }}/offline-fixture-post-upgrade.log
           if-no-files-found: warn
 
   linux-appimage:
@@ -478,6 +483,11 @@ jobs:
           EXE=$(find "$APP_DIR" -maxdepth 1 -name "*.exe" | head -1)
           [ -n "$EXE" ] || { find "$LOCALAPPDATA/Programs" -maxdepth 2 -print | head -30; exit 1; }
           echo "FLO_EXE=$EXE" >> "$GITHUB_ENV"
+          echo "FLO_APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
+      - name: Apply offline fixture to older release N
+        run: |
+          node scripts/upgrade-matrix/patch-offline-fixture.cjs "$FLO_APP_DIR/resources/app.asar" | tee "$RUNNER_TEMP/offline-fixture.log"
 
       - name: Launch release N with a CDP port
         run: |
@@ -515,7 +525,9 @@ jobs:
           # installer. Finish its real staged handoff silently on the runner
           # so the legacy cohort can relaunch without interactive UI.
           & "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/complete-nsis-install.ps1" `
-            -ExpectedAppPath "$env:FLO_EXE"
+            -ExpectedAppPath "$env:FLO_EXE" `
+            -OfflineFixtureScript "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/patch-offline-fixture.cjs" `
+            -OfflineFixtureLogPath "$env:RUNNER_TEMP/offline-fixture-post-upgrade.log"
 
       - name: Wait for the upgraded build to come back up
         run: |
@@ -551,4 +563,6 @@ jobs:
           path: |
             ${{ runner.temp }}/update-status.log
             ${{ runner.temp }}/evidence.json
+            ${{ runner.temp }}/offline-fixture.log
+            ${{ runner.temp }}/offline-fixture-post-upgrade.log
           if-no-files-found: warn

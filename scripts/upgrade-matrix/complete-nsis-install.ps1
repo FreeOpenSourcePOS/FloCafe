@@ -2,6 +2,10 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ExpectedAppPath,
 
+  [string]$OfflineFixtureScript,
+
+  [string]$OfflineFixtureLogPath,
+
   [int]$TimeoutSeconds = 120
 )
 
@@ -56,6 +60,22 @@ $completed.WaitForExit()
 
 if ($completed.ExitCode -ne 0) {
   throw "Silent NSIS update failed with exit code $($completed.ExitCode)."
+}
+
+if (-not [string]::IsNullOrWhiteSpace($OfflineFixtureScript)) {
+  $appAsarPath = Join-Path ([System.IO.Path]::GetDirectoryName($expectedPath)) 'resources/app.asar'
+  if (-not (Test-Path -LiteralPath $appAsarPath)) {
+    throw "Installed app ASAR not found at $appAsarPath."
+  }
+  $fixtureOutput = & node $OfflineFixtureScript $appAsarPath 2>&1
+  $fixtureExitCode = $LASTEXITCODE
+  $fixtureOutput | ForEach-Object { Write-Host $_ }
+  if (-not [string]::IsNullOrWhiteSpace($OfflineFixtureLogPath)) {
+    $fixtureOutput | Set-Content -LiteralPath $OfflineFixtureLogPath -Encoding utf8
+  }
+  if ($fixtureExitCode -ne 0) {
+    throw "Offline fixture failed for $appAsarPath with exit code $fixtureExitCode."
+  }
 }
 
 Write-Host "Silent NSIS update completed successfully; relaunching the installed build with the matrix CDP port."

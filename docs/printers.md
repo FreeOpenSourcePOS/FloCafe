@@ -14,6 +14,8 @@ FloCafe prints receipts and kitchen order tickets from the desktop app. Configur
 
 Set the paper width to match the printer: 58 mm or 80 mm. The first configured printer becomes the default; choose another default in Settings when a different printer should receive ordinary receipts. If no hardware printer is configured, FloCafe automatically falls back to system print when printing bills.
 
+Enable **Open cash drawer on checkout** on a receipt printer only when a till is connected to that printer's drawer-kick port. When enabled, FloCafe appends the standard ESC/POS drawer pulse to printed receipt jobs for that printer.
+
 ## Arabic and Persian text
 
 In **Settings → Printers**, enable **Printer supports Arabic/Persian shaping** only for a thermal printer whose firmware performs Arabic/Persian contextual shaping and bidirectional ordering. With this setting enabled, receipt, tax-bill, and kitchen-ticket lines containing Arabic or Persian text are sent to the printer for it to shape; the setting is off by default for generic ESC/POS hardware. On the shared document-driven ESC/POS paths, guarded renderer-managed text that the printer cannot render is skipped instead of being sent as garbled bytes, and FloCafe displays a warning after printing. The migrated WebUSB receipt path follows this contract for `safePrinterText`-managed text, but `buildClassicReceiptBytes` writes the masked customer phone directly with `enc.text`, so that field may emit unsupported text without a warning. Legacy WebUSB KOT and print-test tax-bill encoders have their own warning behavior; see [printing-architecture.md](printing-architecture.md) for the scope. On those shared paths, lines that also contain another unsupported script remain skipped.

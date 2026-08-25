@@ -17,6 +17,7 @@ import {
   printViaUSB,
   printViaNetwork,
   classifyPrintFailure,
+  appendCashDrawerPulse,
 } from '../main/printers/thermal';
 import { matchSupportedPrinterProfile } from '../main/printers/profiles';
 import { getCountryByCode, getCurrencySymbol } from '../main/countries';
@@ -286,6 +287,15 @@ console.log('\n✅ Test 1: buildEscPos emits correct control bytes');
   assert('contains visible "HEADER" text', buf.toString('utf8').includes('HEADER'));
   assert('contains visible "plain line" text', buf.toString('utf8').includes('plain line'));
   assert('no stray {TOKEN} markers remain', !/\{[A-Z_/]+\}/.test(buf.toString('utf8')));
+}
+
+console.log('\n✅ Test 1a: cash drawer pulse is opt-in');
+{
+  const base = buildEscPos(['{INIT}', 'Sale complete', '{CUT}']);
+  const withPulse = appendCashDrawerPulse(base);
+
+  assert('default receipt bytes do not pulse the cash drawer', !bytesContain(base, [ESC, 0x70, 0x00, 0x19, 0xFA]));
+  assert('appendCashDrawerPulse adds ESC p drawer-kick bytes', bytesContain(withPulse, [ESC, 0x70, 0x00, 0x19, 0xFA]));
 }
 
 console.log('\n✅ Test 1b: Unsupported receipt text is skipped with a warning');

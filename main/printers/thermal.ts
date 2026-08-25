@@ -595,11 +595,12 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
       return { ok: false, detail: 'No printer configured' };
     }
     const { data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language, additionalLanguage);
+    const receiptData = printer.cash_drawer_pulse_enabled === 1 ? appendCashDrawerPulse(data) : data;
     console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
-    console.log('[Printer] Receipt data length:', data.length, 'bytes');
-    console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
+    console.log('[Printer] Receipt data length:', receiptData.length, 'bytes');
+    console.log('[Printer] First 100 bytes:', Array.from(receiptData.slice(0, 100)).map(b => b.toString(16)).join(' '));
 
-    const dispatch = await dispatchPrint(printer, data, signal);
+    const dispatch = await dispatchPrint(printer, receiptData, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
   } catch (error: any) {
     console.error('[Printer] Print error:', error);
@@ -1523,6 +1524,10 @@ function makeUnsupportedLineWarning(isStoreName: boolean, text: string): string 
     ? 'it contains Persian/Arabic script and the printer does not declare Arabic shaping support'
     : 'it contains unsupported characters';
   return `${label} was not printed because ${why}: ${text}`;
+}
+
+export function appendCashDrawerPulse(data: Buffer): Buffer {
+  return Buffer.concat([data, Buffer.from([0x1B, 0x70, 0x00, 0x19, 0xFA])]);
 }
 
 export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number } = {}, warnings?: PrintWarning[]): Buffer {

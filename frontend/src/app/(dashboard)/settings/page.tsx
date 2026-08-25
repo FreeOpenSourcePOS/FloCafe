@@ -787,17 +787,19 @@ export default function SettingsPage() {
   type HwPrinter = {
     id: string; name: string; connection_type: 'network' | 'usb' | 'webusb';
     ip_address?: string; port?: number;
+    cash_drawer_pulse_enabled: number;
     paper_width: string; is_default: number; profile_id?: string; profile_name?: string;
   };
 
   type PrinterForm = {
     name: string; connection_type: 'network' | 'usb' | 'webusb';
     ip_address: string; port: string; paper_width: string;
+    cash_drawer_pulse_enabled: boolean;
   };
 
   const emptyPrinterForm: PrinterForm = {
     name: '', connection_type: 'network', ip_address: '', port: '9100',
-    paper_width: 'cols-42',
+    paper_width: 'cols-42', cash_drawer_pulse_enabled: false,
   };
 
   type DetectedPrinter = {
@@ -886,6 +888,7 @@ export default function SettingsPage() {
       name: p.name, connection_type: p.connection_type,
       ip_address: p.ip_address || '', port: String(p.port || 9100),
       paper_width: normalizePrinterWidthValue(p.paper_width),
+      cash_drawer_pulse_enabled: p.cash_drawer_pulse_enabled === 1,
     });
     setEditingPrinterId(p.id);
     setShowPrinterForm(true);
@@ -901,6 +904,7 @@ export default function SettingsPage() {
         ip_address: printerForm.connection_type === 'network' ? printerForm.ip_address : undefined,
         port: printerForm.connection_type === 'network' ? Number(printerForm.port) : undefined,
         paper_width: printerForm.paper_width,
+        cash_drawer_pulse_enabled: printerForm.cash_drawer_pulse_enabled,
       };
       if (editingPrinterId) {
         await api.put(`/printers/${editingPrinterId}`, payload);
@@ -3758,6 +3762,7 @@ export default function SettingsPage() {
                          t('browserWebusb')}
                         {' · '}{printWidthLabel(p.paper_width)}
                         {p.profile_name ? ` · ${p.profile_name}` : ''}
+                        {p.cash_drawer_pulse_enabled === 1 ? ` · ${t('cashDrawerPulseEnabledShort')}` : ''}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
@@ -3845,6 +3850,13 @@ export default function SettingsPage() {
                         <option value="cols-44">{t('printColumns44')}</option>
                         <option value="cols-48">{t('printColumns48')}</option>
                       </select>
+                    </div>
+                    <div className="md:col-span-2 flex items-center justify-between gap-4 rounded-lg border border-gray-100 p-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-gray-900 text-sm">{t('cashDrawerPulse')}</p>
+                        <p className="text-xs text-gray-500">{t('cashDrawerPulseHint')}</p>
+                      </div>
+                      <Toggle value={printerForm.cash_drawer_pulse_enabled} onChange={(v) => setPrinterForm((p) => ({ ...p, cash_drawer_pulse_enabled: v }))} />
                     </div>
                   </div>
 

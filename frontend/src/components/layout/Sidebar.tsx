@@ -196,11 +196,10 @@ export default function AppSidebar() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton
-                  size="lg"
                   className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                   tooltip={user?.name || user?.email || t('user')}
                 >
-                  <UserCircle className="size-5 shrink-0" />
+                  <UserCircle className="size-4 shrink-0" />
                   <div className="flex flex-col gap-0.5 min-w-0 text-start leading-none group-data-[collapsible=icon]:hidden">
                     <span className="font-medium text-sm truncate">{user?.name || user?.email || t('user')}</span>
                     {user?.name && user?.email && (

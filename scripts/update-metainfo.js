@@ -20,23 +20,28 @@ const date = new Date().toISOString().slice(0, 10);
 
 let notes = '';
 if (process.env.RELEASE_NOTES_FILE && require('node:fs').existsSync(process.env.RELEASE_NOTES_FILE)) {
-  notes = readFileSync(process.env.RELEASE_NOTES_FILE, 'utf8');
-} else if (require('node:fs').existsSync('/tmp/release-notes.md')) {
-  notes = readFileSync('/tmp/release-notes.md', 'utf8');
-} else {
+  notes = readFileSync(process.env.RELEASE_NOTES_FILE, 'utf8').trim();
+}
+if (!notes && require('node:fs').existsSync('/tmp/release-notes.md')) {
+  notes = readFileSync('/tmp/release-notes.md', 'utf8').trim();
+}
+if (!notes) {
   try {
     notes = execFileSync('npx', ['--yes', 'git-cliff@2.8.0', '--latest', '--strip', 'header'], {
       encoding: 'utf8',
       cwd: ROOT,
       stdio: ['pipe', 'pipe', 'ignore'],
-    });
+    }).trim();
   } catch (_e) {
     try {
-      notes = execFileSync(NOTES_HELPER, [version.split('-')[0]], { encoding: 'utf8' });
+      notes = execFileSync(NOTES_HELPER, [version.split('-')[0]], { encoding: 'utf8' }).trim();
     } catch (_e2) {
       notes = `Flo Cafe ${version}`;
     }
   }
+}
+if (!notes) {
+  notes = `Flo Cafe ${version}`;
 }
 notes = notes
   .trim()

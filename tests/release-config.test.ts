@@ -504,6 +504,25 @@ exit 1
     'existing draft rerun must extract existing release notes directly from GitHub release body'
   );
 
+  const fakeGhEmptyDraft = `#!/bin/sh
+printf '%s\n' "$*" >> "$RELEASE_TEST_LOG"
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then
+  case "$*" in
+    *--json*isDraft*) printf 'true\n'; exit 0 ;;
+    *--json*body*) printf ''; exit 0 ;;
+    *) exit 0 ;;
+  esac
+fi
+exit 1
+`;
+  const draftEmpty = executeWorkflowStep(draftReleaseStep, {
+    env: { RELEASE_TAG: '3.3.0', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'stable' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhEmptyDraft, git: fakeGit },
+  });
+  assert.notEqual(draftEmpty.status, 0, 'existing draft with empty body must be rejected');
+  assert.match(draftEmpty.stdout, /Existing draft release 3\.3\.0 has an empty body/);
+
   const publishStep = findStep(publishJob, 'Publish draft without changing GitHub Latest by default');
   const publishStable = executeWorkflowStep(publishStep, {
     expressions: {

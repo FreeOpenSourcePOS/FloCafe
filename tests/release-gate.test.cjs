@@ -139,6 +139,14 @@ const requestAsset = async (entry) => payloads.get(entry.name);
     x64: snapEvidence.x64,
     arm64: { ...snapEvidence.arm64, status: 'failed' },
   }, '3.3.0'), /status=published/);
+  assert.throws(() => assertStableSnapEvidence({
+    x64: { ...snapEvidence.x64, snapName: 'other-snap' },
+    arm64: snapEvidence.arm64,
+  }, '3.3.0'), /snapName/);
+  assert.throws(() => assertStableSnapEvidence({
+    x64: { ...snapEvidence.x64, type: 'other-type' },
+    arm64: snapEvidence.arm64,
+  }, '3.3.0'), /type/);
 
   assertOrdering(['draft-verified', 'published', 'readiness-verified'], { channel: 'beta' });
   assertOrdering(['draft-verified', 'published', 'readiness-verified', 'matrix-started', 'matrix-completed'], { channel: 'beta', requireMatrix: true });

@@ -46,6 +46,8 @@ function assertCandidateReadiness({ release, tag, channel, expectedAssetIds, ava
 
 function assertSnapEvidence(evidence, { tag, channel, architecture, requireBoth = true } = {}) {
   if (!evidence || evidence.status !== 'published') throw new Error('Snap publication evidence must have status=published');
+  if (evidence.type !== 'flocafe-snap-publication') throw new Error('Snap publication evidence type must be flocafe-snap-publication');
+  if (evidence.snapName !== 'flocafe') throw new Error('Snap publication evidence snapName must be flocafe');
   if (evidence.tag !== tag) throw new Error(`Snap publication evidence tag does not match ${tag}`);
   if (evidence.channel !== channel) throw new Error(`Snap publication evidence channel does not match ${channel}`);
   if (!SNAP_ARCHES.includes(evidence.architecture)) throw new Error(`Snap publication evidence has unsupported architecture ${evidence.architecture}`);

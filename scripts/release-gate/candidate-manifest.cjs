@@ -246,6 +246,9 @@ function assertSigningStatus(asset) {
   if (asset.signing.status === 'unsigned' && asset.signing.verification === 'signed') {
     throw new Error(`${asset.name} cannot describe an unsigned asset as signed`);
   }
+  if (asset.signing.status === 'signed' && asset.signing.verification !== 'release-build-verification') {
+    throw new Error(`${asset.name} cannot claim signed status without release-build verification`);
+  }
 }
 
 function assertCandidateManifest(manifest) {

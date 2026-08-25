@@ -63,6 +63,24 @@ function usesEnvironment(run, name) {
   ].some((reference) => reference.test(run));
 }
 
+function isExecutionStep(step) {
+  if (step.uses) return true;
+  const run = executableRun(step.run);
+  if (!run.trim()) return false;
+  const lines = run.split(/\r?\n/).filter((line) => {
+    const trimmed = line.trim();
+    return trimmed !== '' && !trimmed.startsWith('#');
+  });
+  if (lines.length === 0) return false;
+  const nonTrivial = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (/^echo\s/.test(trimmed)) return false;
+    if (/^[A-Z_][A-Z0-9_]*=/.test(trimmed) && !trimmed.includes(' ')) return false;
+    return true;
+  });
+  return nonTrivial.length > 0;
+}
+
 function executableInputReferences(job) {
   const addBindings = (scope, bindings) => {
     if (!isRecord(scope)) return;
@@ -76,6 +94,7 @@ function executableInputReferences(job) {
   const referencesByStep = [];
   for (const step of job.steps) {
     if (!isRecord(step)) continue;
+    if (!isExecutionStep(step)) continue;
     const bindings = new Map(jobBindings);
     addBindings(step.env, bindings);
     const run = executableRun(step.run);

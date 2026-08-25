@@ -73,6 +73,7 @@ function executeWorkflowStep(step: any, options: {
           ...options.env,
           GITHUB_OUTPUT: outputPath,
           RELEASE_TEST_LOG: logPath,
+          RUNNER_TEMP: tempDir,
           PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
         },
         encoding: 'utf8',
@@ -267,6 +268,16 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   });
   assert.equal(stableVerify.status, 0, stableVerify.stderr);
   assert.match(stableVerify.log, /--require-snap-evidence/, 'stable verification must require both Snap markers');
+  const missingCandidateManifestId = executeWorkflowStep(verifyAssetsStep, {
+    env: {
+      RELEASE_TAG: '3.3.0',
+      RELEASE_CHANNEL: 'stable',
+    },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'needs.create-release.outputs.manifest_prefix': 'latest', 'github.sha': 'b'.repeat(40) },
+    fakeCommands: { gh: '#!/bin/sh\nexit 0\n' },
+  });
+  assert.notEqual(missingCandidateManifestId.status, 0);
+  assert.match(missingCandidateManifestId.stdout, /candidate-manifest\.json asset ID is missing/);
   assertShellStep(publishJob, 'Publish draft without changing GitHub Latest by default');
   assert.equal(findStep(publishJob, 'Publish draft without changing GitHub Latest by default').env.GH_TOKEN, '${{ github.token }}');
   const promoteJob = jobs['promote-release'];
@@ -317,6 +328,19 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   assert.equal(candidateEvidenceJob.if, "always() && needs.verify-candidate.result == 'success'");
   const candidateEvidenceUpload = findStep(candidateEvidenceJob, 'Retain sanitized evidence for 90 days');
   assert.equal(candidateEvidenceUpload.with['retention-days'], 90);
+  const candidateEvidenceStep = findStep(candidateEvidenceJob, 'Build final sanitized evidence bundle');
+  for (const [matrixResult, expectedStatus] of [['success', 'PASS'], ['skipped', 'NOT-RUN'], ['cancelled', 'FAIL']] as const) {
+    const matrixEvidence = executeWorkflowStep(candidateEvidenceStep, {
+      env: {
+        RELEASE_REPOSITORY: 'FreeOpenSourcePOS/FloCafe',
+        CANDIDATE_TAG: '3.3.1-beta.1',
+        MATRIX_RESULT: matrixResult,
+      },
+      fakeCommands: { gh: fakeGh, node: captureNodeArgs },
+    });
+    assert.equal(matrixEvidence.status, 0, matrixEvidence.stderr);
+    assert.match(matrixEvidence.log, new RegExp(`--matrix-status ${expectedStatus}`));
+  }
   const candidateVerifyStep = findStep(candidateWorkflow.jobs['verify-candidate'], 'Verify exact candidate manifest, tag, commit, and bytes');
   const shellInjection = 'safe"; echo injected >&2; #';
   const safeCandidateVerification = executeWorkflowStep(candidateVerifyStep, {

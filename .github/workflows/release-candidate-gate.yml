@@ -172,8 +172,10 @@ jobs:
           gh api "$MANIFEST_URL" -H 'Accept: application/octet-stream' > "$RUNNER_TEMP/candidate-manifest.json"
           case "$MATRIX_RESULT" in
             success) MATRIX_STATUS=PASS ;;
+            skipped) MATRIX_STATUS=NOT-RUN ;;
             failure) MATRIX_STATUS=FAIL ;;
-            *) MATRIX_STATUS=NOT-RUN ;;
+            cancelled|timed_out|timeout) MATRIX_STATUS=FAIL ;;
+            *) MATRIX_STATUS=FAIL ;;
           esac
           node scripts/release-gate/evidence.cjs \
             --manifest "$RUNNER_TEMP/candidate-manifest.json" \

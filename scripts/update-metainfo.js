@@ -25,9 +25,17 @@ if (process.env.RELEASE_NOTES_FILE && require('node:fs').existsSync(process.env.
   notes = readFileSync('/tmp/release-notes.md', 'utf8');
 } else {
   try {
-    notes = execFileSync(NOTES_HELPER, [version.split('-')[0]], { encoding: 'utf8' });
+    notes = execFileSync('npx', ['--yes', 'git-cliff@2.8.0', '--latest', '--strip', 'header'], {
+      encoding: 'utf8',
+      cwd: ROOT,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
   } catch (_e) {
-    notes = `Flo Cafe ${version}`;
+    try {
+      notes = execFileSync(NOTES_HELPER, [version.split('-')[0]], { encoding: 'utf8' });
+    } catch (_e2) {
+      notes = `Flo Cafe ${version}`;
+    }
   }
 }
 notes = notes

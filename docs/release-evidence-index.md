@@ -32,9 +32,12 @@ approved manual release record:
 - Mac App Store signing, Transporter submission, and Apple App Review.
 - Microsoft Store submission, listing, flight, and review.
 
-Unsigned Windows direct-download artifacts are recorded as an explicit residual
-risk. A Windows signature, if later added, does not constitute SmartScreen
-reputation evidence.
+Windows direct-download signing is always recorded as an explicit status in the
+candidate manifest and summary. The current release workflow records
+`NOT-VERIFIED` at the release boundary; a build explicitly marked `UNSIGNED`
+is summarized as `UNSIGNED (accepted residual risk)`. Neither status is signing
+or SmartScreen evidence. A Windows signature, if later added, does not
+constitute SmartScreen reputation evidence.
 
 ## Installed-artifact integration boundary
 

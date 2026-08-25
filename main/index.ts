@@ -110,7 +110,9 @@ function readBetaChannelEnabled(): boolean {
     const row = getDatabase()
       .prepare('SELECT value FROM settings WHERE key = ?')
       .get(BETA_CHANNEL_SETTING_KEY) as { value: string | null } | undefined;
-    return parseStoredBetaChannelEnabled(row?.value);
+    const prerelease = autoUpdater.currentVersion.prerelease[0];
+    const isBetaBuild = prerelease === 'beta';
+    return parseStoredBetaChannelEnabled(row?.value, isBetaBuild);
   } catch (error) {
     log.warn('[Update] Could not read beta-channel preference; using stable:', error);
     return false;

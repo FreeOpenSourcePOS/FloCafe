@@ -2143,7 +2143,8 @@
     "betaUnavailable": "Beta channel switching is not available in this app build yet. Update the desktop app to opt in.",
     "betaOn": "On",
     "betaOff": "Off",
-    "betaToggleFailed": "Could not change the beta channel setting."
+    "betaToggleFailed": "Could not change the beta channel setting.",
+    "betaGraduationNote": "Leaving the beta channel keeps your current version until the next stable release is published, protecting your database from downgrades."
   },
   "whatsapp": {
     "active": {

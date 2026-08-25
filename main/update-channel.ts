@@ -49,30 +49,40 @@ export interface UpdateChannelInputs {
 /**
  * Resolve the effective updater channel from the running version and the
  * persisted opt-in:
- *  - A beta-stamped build always follows its own channel.
- *  - A stable build follows the beta channel only through an explicit opt-in.
- *  - Any other prerelease stamp (nightly, alpha, local experiments) is NOT a
- *    channel: without an explicit opt-in the install gets stable updates so
- *    an untracked stamp never subscribes it to a dead feed.
+ *  - A build follows the beta channel whenever `betaOptIn` is true (whether
+ *    running stable or beta).
+ *  - When `betaOptIn` is false, the install follows the stable feed (`channel: null`)
+ *    with `allowDowngrade: false`. If currently running a beta build, it safely
+ *    remains on that version until the next matching or newer stable release
+ *    is published (graduating to stable without database rollbacks).
+ *  - Any other prerelease stamp (nightly, alpha, local experiments) without an
+ *    explicit opt-in gets stable updates so an untracked stamp never subscribes
+ *    it to a dead feed.
  *
- * `allowDowngrade` is only needed for a beta-stamped build, whose stable
- * promotion may move to a lower semver value (e.g. 3.4.0-beta.1 -> 3.3.2).
- * A stable build joining beta must wait for a beta at or above its version.
+ * `allowDowngrade` is only enabled for a beta build that remains on the beta
+ * feed, whose promotional testing may move between prerelease comparisons.
  */
 export function resolveUpdateChannel(inputs: UpdateChannelInputs): ResolvedUpdateChannel {
   const betaBuild = inputs.versionPrereleaseChannel === 'beta';
-  const onBetaFeed = inputs.betaOptIn || betaBuild;
-  if (onBetaFeed) {
+  if (inputs.betaOptIn) {
     return { channel: 'beta', allowPrerelease: true, allowDowngrade: betaBuild };
   }
   return { channel: null, allowPrerelease: false, allowDowngrade: false };
 }
 
 /**
- * Interpret the raw settings-table value for the beta opt-in. Only the exact
- * string 'true' enables the channel — anything missing or malformed means
- * "stable", which is the safe default.
+ * Interpret the raw settings-table value for the beta opt-in.
+ *  - Explicit 'true' enables the channel.
+ *  - Explicit 'false' disables the channel.
+ *  - Unset or malformed values fall back to `defaultForBetaBuild` (true for beta builds,
+ *    false for stable).
  */
-export function parseStoredBetaChannelEnabled(value: string | null | undefined): boolean {
-  return value === 'true';
+export function parseStoredBetaChannelEnabled(
+  value: string | null | undefined,
+  defaultForBetaBuild: boolean = false
+): boolean {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  return defaultForBetaBuild;
 }
+

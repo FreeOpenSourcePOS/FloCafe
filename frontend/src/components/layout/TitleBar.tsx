@@ -1,6 +1,6 @@
 'use client';
 
-import { Store, UserCircle } from 'lucide-react';
+import { UserCircle } from 'lucide-react';
 import { useEffect, useSyncExternalStore } from 'react';
 import { useTranslations } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
@@ -57,12 +57,6 @@ export default function TitleBar() {
     >
       <div className="flo-title-bar__safe-area">
         <div className="flex min-w-0 items-center gap-2 text-start">
-          <div
-            aria-hidden="true"
-            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-xs font-semibold text-sidebar-primary-foreground"
-          >
-            <Store className="size-4" />
-          </div>
           <div className="flex min-w-0 flex-col justify-center gap-0.5 leading-none">
             <span className="max-w-[min(32vw,20rem)] truncate text-xs font-semibold text-foreground" title={businessName}>
               {businessName}

@@ -6,10 +6,12 @@
 **Stable feed:** unchanged; GitHub Latest remained `3.3.0` throughout.
 
 This matrix records real installed-artifact runs, not unit tests or artifact-only
-checks. A row is marked **PASS-verified** only when the installed N process
+checks. For self-updating rows, **PASS-verified** means the installed N process
 seeded data, the app's updater downloaded and applied N+1, and a relaunch
-verified version and persistence. **NOT-RUN** is explicit and includes the
-reason; no unobserved behavior is inferred.
+verified version and persistence. Managed-package rows are a separate gate:
+their **PASS-verified** result means the package-manager install emitted its
+managed-update state and did not invoke the in-app updater. **NOT-RUN** is
+explicit and includes the reason; no unobserved behavior is inferred.
 
 ## Release evidence
 

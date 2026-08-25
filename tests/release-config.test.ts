@@ -22,6 +22,25 @@ function findStep(job: any, name: string): any {
   return step;
 }
 
+function readReleaseNotes(): string {
+  const candidates = [
+    '/tmp/release-notes.md',
+    path.join(process.env.LOCALAPPDATA || '', 'Temp/release-notes.md'),
+    path.join(process.env.TEMP || '', 'release-notes.md'),
+    path.join(process.env.TMP || '', 'release-notes.md'),
+    path.join(os.tmpdir(), 'release-notes.md'),
+    'C:/Program Files/Git/tmp/release-notes.md',
+    'C:/tmp/release-notes.md',
+    'D:/tmp/release-notes.md',
+  ];
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return fs.readFileSync(candidate, 'utf8');
+    }
+  }
+  return '';
+}
+
 function assertShellStep(job: any, name: string): void {
   const step = findStep(job, name);
   assert.equal(typeof step.run, 'string', `workflow step "${name}" must execute a shell script`);
@@ -467,8 +486,7 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   assert.match(draftStable.log, /--latest=false/);
   assert.doesNotMatch(draftStable.log, /--prerelease/);
   assert.ok(
-    fs.existsSync('/tmp/release-notes.md') &&
-      fs.readFileSync('/tmp/release-notes.md', 'utf8').includes('compare/3.2.3...3.3.0'),
+    readReleaseNotes().includes('compare/3.2.3...3.3.0'),
     'draft release notes must contain comparison link to predecessor tag'
   );
 
@@ -501,8 +519,7 @@ exit 1
   assert.match(draftExisting.stdout, /Draft release 3\.3\.0 already exists, extracting existing release notes/);
   assert.doesNotMatch(draftExisting.log, /release create/);
   assert.ok(
-    fs.existsSync('/tmp/release-notes.md') &&
-      fs.readFileSync('/tmp/release-notes.md', 'utf8').includes('Existing draft release notes for 3.3.0'),
+    readReleaseNotes().includes('Existing draft release notes for 3.3.0'),
     'existing draft rerun must extract existing release notes directly from GitHub release body'
   );
 

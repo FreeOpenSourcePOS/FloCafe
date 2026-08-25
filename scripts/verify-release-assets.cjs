@@ -112,6 +112,8 @@ function parseManifest(text, name) {
     throw new Error(`${name} references the same update artifact more than once: ${duplicateUrls.join(', ')}`);
   }
 
+  let topLevelPath = null;
+
   // electron-builder repeats the preferred update artifact as top-level
   // path/sha512. Keep that contract checked too: a disagreement here would
   // make the updater use a different checksum than the files entry we verify.
@@ -122,7 +124,7 @@ function parseManifest(text, name) {
     if (typeof document.sha512 !== 'string' || !isSha512(document.sha512)) {
       throw new Error(`${name} has a top-level path without a valid SHA-512`);
     }
-    const topLevelPath = document.path.trim();
+    topLevelPath = document.path.trim();
     const topLevelSha512 = normalizeSha512(document.sha512);
     const matchingFile = files.find((file) => file.url === topLevelPath);
     if (matchingFile) {
@@ -134,7 +136,7 @@ function parseManifest(text, name) {
     }
   }
 
-  return { version: document.version.trim(), files };
+  return { version: document.version.trim(), path: topLevelPath, files };
 }
 
 function expectedManifestNames(channel) {
@@ -146,7 +148,7 @@ function expectedManifestNames(channel) {
   ];
 }
 
-function assertManifestPlatformMapping(manifestName, version, files) {
+function assertManifestPlatformMapping(manifestName, version, files, selectedPath) {
   const base = `flocafe-${version}`;
   const urls = files.map((file) => file.url);
   let allowed;
@@ -164,14 +166,30 @@ function assertManifestPlatformMapping(manifestName, version, files) {
     ]);
     required = [`${base}-mac-x64.zip`, `${base}-mac-arm64.zip`];
   } else if (/^(latest|beta)-linux\.yml$/.test(manifestName)) {
-    allowed = new Set([`${base}-linux-x64.appimage`]);
+    // electron-builder lists every Linux target from the same build
+    // invocation in this manifest; electron-updater ignores those extra
+    // `files` entries and downloads the one named by `path`. Observed on a
+    // real draft in #468: beta-linux.yml carries the x64 deb and rpm.
+    allowed = new Set([
+      `${base}-linux-x64.appimage`,
+      `${base}-linux-x64.deb`,
+      `${base}-linux-x64.rpm`,
+      `${base}-linux-x64.snap`,
+    ]);
     required = [`${base}-linux-x64.appimage`];
   } else if (/^(latest|beta)-linux-arm64\.yml$/.test(manifestName)) {
-    allowed = new Set([`${base}-linux-arm64.appimage`]);
+    allowed = new Set([
+      `${base}-linux-arm64.appimage`,
+      `${base}-linux-arm64.deb`,
+      `${base}-linux-arm64.rpm`,
+      `${base}-linux-arm64.snap`,
+    ]);
     required = [`${base}-linux-arm64.appimage`];
   } else {
     throw new Error(`unsupported release manifest ${manifestName}`);
   }
+
+  const requiredUpdaterPath = required[0];
 
   const mismatched = urls.filter((url) => !allowed.has(url));
   if (mismatched.length > 0) {
@@ -180,6 +198,9 @@ function assertManifestPlatformMapping(manifestName, version, files) {
   const missing = required.filter((url) => !urls.includes(url));
   if (missing.length > 0) {
     throw new Error(`${manifestName} is missing required platform artifacts: ${missing.join(', ')}`);
+  }
+  if (requiredUpdaterPath && selectedPath !== requiredUpdaterPath) {
+    throw new Error(`${manifestName} updater path must be ${requiredUpdaterPath}, got ${selectedPath ?? '(missing)'}`);
   }
 }
 
@@ -345,7 +366,7 @@ async function verifyReleaseAssets(release, { channel, tag = release && release.
     if (manifest.version !== tag) {
       throw new Error(`${manifestName} declares version ${manifest.version}, expected ${tag}`);
     }
-    assertManifestPlatformMapping(manifestName, tag, manifest.files);
+    assertManifestPlatformMapping(manifestName, tag, manifest.files, manifest.path);
 
     for (const file of manifest.files) {
       if (file.url !== file.url.split('/').pop() || !/^[a-z0-9.-]+$/.test(file.url)) {
@@ -367,8 +388,25 @@ async function verifyReleaseAssets(release, { channel, tag = release && release.
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const apiBase = `https://api.github.com/repos/${options.repo}`;
-  const release = await githubJson(`${apiBase}/releases/tags/${encodeURIComponent(options.tag)}`);
+  // GET /releases/tags/{tag} only resolves published releases; this verifier
+  // runs against a DRAFT before the publish job flips it, so look the release
+  // up through the releases list instead (drafts are included for tokens
+  // with push access). Found while cutting 3.3.1-beta.1 (#468): the first
+  // real run of this step 404'd because no release had ever been verified
+  // as a draft before.
+  const release = await findReleaseByTag(apiBase, options.tag);
   await verifyReleaseAssets(release, { channel: options.channel, tag: options.tag });
+}
+
+async function findReleaseByTag(apiBase, tag) {
+  const perPage = 100;
+  for (let page = 1; page <= 10; page++) {
+    const releases = await githubJson(`${apiBase}/releases?per_page=${perPage}&page=${page}`);
+    if (!Array.isArray(releases) || releases.length === 0) break;
+    const match = releases.find((release) => release.tag_name === tag);
+    if (match) return match;
+  }
+  throw new Error(`No draft or published release found for tag ${tag}`);
 }
 
 if (require.main === module) {

@@ -1,0 +1,592 @@
+name: Runtime upgrade matrix
+
+# Real N -> N+1 in-app upgrade rows for epic #468. Each job installs a
+# RELEASED build, seeds identifiable data through the app's own API, opts into
+# an update channel, lets the in-app updater stage the next release, applies
+# it via the same Master-PIN-gated IPC the UI uses, and verifies version and
+# data persistence after relaunch.
+#
+# macOS rows run locally (see docs/upgrade-support-matrix.md); this workflow
+# covers the GitHub-hosted-runner platforms.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/upgrade-matrix.yml'
+      - 'scripts/upgrade-matrix/**'
+      - 'main/services/telemetry.ts'
+      - 'docs/upgrade-support-matrix.md'
+  workflow_dispatch:
+    inputs:
+      from_version:
+        description: Released version to install as N
+        required: false
+        default: 3.3.0
+      to_version:
+        description: Expected upgraded version (N+1)
+        required: false
+        default: 3.3.1-beta.1
+      old_from_version:
+        description: Older-cohort released version to install as N
+        required: false
+        default: 2.9.7
+      run_linux:
+        description: Also run GitHub-hosted Linux rows (real Debian row is preferred for #468)
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLO_MATRIX_OFFLINE: '1'
+
+jobs:
+  windows-nsis-x64:
+    name: Windows NSIS x64 (${{ inputs.from_version || '3.3.0' }} → ${{ inputs.to_version || '3.3.1-beta.1' }})
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      FROM_VERSION: ${{ inputs.from_version || '3.3.0' }}
+      TO_VERSION: ${{ inputs.to_version || '3.3.1-beta.1' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
+      - name: Install release N (silent NSIS)
+        run: |
+          mkdir -p "$RUNNER_TEMP/matrix" && cd "$RUNNER_TEMP/matrix"
+          curl -sSL -o "setup-N.exe" \
+            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-win-x64.exe"
+          ls -la setup-N.exe
+          # Git Bash path-converts the leading slash in NSIS switches unless
+          # disabled, which would leave the assisted installer waiting for UI
+          # input on the headless runner.
+          MSYS_NO_PATHCONV=1 ./setup-N.exe /S
+          # Per-user NSIS installs under %LOCALAPPDATA%\Programs\<productName>.
+          APP_DIR=""
+          for _ in $(seq 1 60); do
+            APP_DIR=$(find "$LOCALAPPDATA/Programs" -maxdepth 1 -iname "*flo*" -type d 2>/dev/null | head -1)
+            [ -n "$APP_DIR" ] && [ -f "$APP_DIR/Flo Cafe.exe" ] && break
+            sleep 2
+          done
+          [ -f "$APP_DIR/Flo Cafe.exe" ] || { ls "$LOCALAPPDATA/Programs"; exit 1; }
+          echo "FLO_EXE=$APP_DIR/Flo Cafe.exe" >> "$GITHUB_ENV"
+          echo "FLO_APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
+      - name: Apply isolated beta-channel fixture to pre-toggle N
+        run: |
+          # 3.3.0 predates #507's beta toggle. This modifies only the test
+          # install in the runner, mirroring the opted-in updater settings;
+          # the repository and released artifact remain untouched.
+          export ASAR_DIR="$RUNNER_TEMP/flo-asar"
+          npx --yes @electron/asar@3.3.1 extract "$FLO_APP_DIR/resources/app.asar" "$ASAR_DIR"
+          ASAR_DIR="$ASAR_DIR" node - <<'NODE'
+          const fs = require('node:fs');
+          const file = `${process.env.ASAR_DIR}/dist/index.js`;
+          let source = fs.readFileSync(file, 'utf8');
+          const anchor = 'autoUpdater.autoInstallOnAppQuit = false;';
+          if (!source.includes(anchor)) throw new Error(`fixture anchor missing in ${file}`);
+          const prefix = source.includes('electron_updater_1.autoUpdater.autoInstallOnAppQuit')
+            ? 'electron_updater_1.autoUpdater' : 'autoUpdater';
+          source = source.replace(anchor, `${anchor}\n    // #468 pre-toggle fixture: simulate #507 beta opt-in.\n    ${prefix}.channel = "beta";\n    ${prefix}.allowPrerelease = true;\n    ${prefix}.allowDowngrade = false;`);
+          fs.writeFileSync(file, source);
+          NODE
+          npx --yes @electron/asar@3.3.1 pack "$ASAR_DIR" "$FLO_APP_DIR/resources/app.asar"
+          node scripts/upgrade-matrix/patch-offline-fixture.cjs "$FLO_APP_DIR/resources/app.asar" | tee "$RUNNER_TEMP/offline-fixture.log"
+
+      - name: Launch release N with a CDP port
+        run: |
+          "$FLO_EXE" --remote-debugging-port=9222 &
+          for _ in $(seq 1 90); do
+            curl -sf http://127.0.0.1:9222/json >/dev/null && break
+            sleep 2
+          done
+          curl -s http://127.0.0.1:9222/json | head -c 400; echo
+
+      - name: Seed data, opt into beta, wait for staged update, restart-and-install
+        run: |
+          # Keep fixture credentials in shell locals; GitHub's step env dump
+          # must not print credential-like names and values into public logs.
+          MATRIX_EMAIL=matrix-bot@flocafe.invalid
+          MATRIX_PASSWORD=Upgrade-Matrix-468x
+          MATRIX_PIN=4681
+          export FLO_STATUS_LOG="$RUNNER_TEMP/update-status.log"
+          node scripts/upgrade-matrix/run-upgrade.cjs seed \
+            --row windows-nsis-x64 \
+            --channel beta --pre-toggle-fixture \
+            --expected-version "$TO_VERSION" \
+            --email "$MATRIX_EMAIL" --password "$MATRIX_PASSWORD" --pin "$MATRIX_PIN" \
+            --seed-file "$RUNNER_TEMP/seeds.json"
+
+      - name: Complete staged NSIS installer in headless mode
+        shell: pwsh
+        run: |
+          # Released N clients invoke the assisted NSIS installer without /S.
+          # On a UI-less runner that process waits forever; preserve the real
+          # IPC-triggered handoff, then rerun that exact staged installer
+          # silently and relaunch the installed app with the matrix CDP port.
+          & "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/complete-nsis-install.ps1" `
+            -ExpectedAppPath "$env:FLO_EXE" `
+            -OfflineFixtureScript "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/patch-offline-fixture.cjs" `
+            -OfflineFixtureLogPath "$env:RUNNER_TEMP/offline-fixture-post-upgrade.log"
+
+      - name: Wait for the upgraded build to come back up
+        run: |
+          # quitAndInstall hands off to the staged installer; give it time,
+          # then require both a live app process and the API back up.
+          for _ in $(seq 1 120); do
+            RUNNING=$(powershell -NoProfile -Command "(Get-Process 'Flo Cafe' -ErrorAction SilentlyContinue).Count" | tr -d '\r')
+            if [ "${RUNNING:-0}" -ge 1 ] && curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1; then
+              echo "upgraded app is back up"; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::App did not come back after restart-and-install"
+          exit 1
+
+      - name: Verify version + persistence after relaunch
+        run: |
+          node scripts/upgrade-matrix/run-upgrade.cjs verify \
+            --row windows-nsis-x64 \
+            --pre-toggle-fixture \
+            --expected-version "$TO_VERSION" \
+            --seed-file "$RUNNER_TEMP/seeds.json" \
+            | tee "$RUNNER_TEMP/evidence.json"
+
+      - name: Updater log analysis + process-tree check
+        run: |
+          LOG="$APPDATA/flo-desktop/logs/main.log"
+          {
+            echo "## Differential-vs-full download evidence"
+            grep -iE "differential|full download|Downloading update|blockmap" "$LOG" | tail -20
+            echo "## Update status transitions"
+            cat "$RUNNER_TEMP/update-status.log"
+          } | tee "$RUNNER_TEMP/log-analysis.txt"
+          {
+            echo "## Process tree after relaunch"
+            powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='Flo Cafe.exe'\" | Select-Object ProcessId,ParentProcessId,CommandLine | Format-List"
+          } | tee "$RUNNER_TEMP/process-tree.txt"
+          # Exactly one root Flo Cafe process (children carry --type=).
+          ROOTS=$(powershell -NoProfile -Command "@(Get-CimInstance Win32_Process -Filter \"Name='Flo Cafe.exe'\" | Where-Object { \$_.CommandLine -notmatch '--type=' }).Count" | tr -d '\r')
+          echo "root processes: ${ROOTS:-0}"
+          [ "${ROOTS:-0}" = "1" ] || { echo "::error::expected exactly 1 root process after relaunch"; exit 1; }
+
+      - name: Upload row evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-windows-nsis-x64
+          path: |
+            ${{ runner.temp }}/update-status.log
+            ${{ runner.temp }}/evidence.json
+            ${{ runner.temp }}/log-analysis.txt
+            ${{ runner.temp }}/process-tree.txt
+            ${{ runner.temp }}/offline-fixture.log
+            ${{ runner.temp }}/offline-fixture-post-upgrade.log
+          if-no-files-found: warn
+
+  linux-appimage:
+    if: inputs.run_linux == true
+    name: Linux AppImage ${{ matrix.arch }} (${{ inputs.from_version || '3.3.0' }} → ${{ inputs.to_version || '3.3.1-beta.1' }})
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runs-on: ubuntu-latest
+            asset_suffix: linux-x64.appimage
+            legacy_asset_suffix: x86_64.AppImage
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+            asset_suffix: linux-arm64.appimage
+            legacy_asset_suffix: arm64.AppImage
+    env:
+      FROM_VERSION: ${{ inputs.from_version || '3.3.0' }}
+      TO_VERSION: ${{ inputs.to_version || '3.3.1-beta.1' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
+      - name: Install FUSE, Xvfb, keyring daemon
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libfuse2 xvfb gnome-keyring dbus-x11 squashfs-tools >/dev/null
+          # Start a session dbus + unlocked secret service so Electron's
+          # safeStorage (and therefore the Master-PIN gate) works headless.
+          dbus-launch > dbus.env || true
+          cat dbus.env >> "$GITHUB_ENV" || true
+
+      - name: Install release N
+        run: |
+          mkdir -p "$RUNNER_TEMP/matrix" && cd "$RUNNER_TEMP/matrix"
+          if ! curl -fsSL -o flocafe.AppImage \
+            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.asset_suffix }}"; then
+            curl -fsSL -o flocafe.AppImage \
+              "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.legacy_asset_suffix }}"
+          fi
+          chmod +x flocafe.AppImage
+          echo "FLO_APPIMAGE=$RUNNER_TEMP/matrix/flocafe.AppImage" >> "$GITHUB_ENV"
+
+      - name: Apply offline fixture to AppImage release N
+        run: |
+          node scripts/upgrade-matrix/patch-appimage-offline.cjs \
+            "$FLO_APPIMAGE" "$RUNNER_TEMP/appimage-offline-n" \
+            | tee "$RUNNER_TEMP/offline-fixture.log"
+
+      - name: Launch release N under Xvfb with a CDP port
+        run: |
+          eval "$(dbus-launch)"
+          echo -n ci | gnome-keyring-daemon --unlock >/dev/null
+          eval "$(echo -n ci | gnome-keyring-daemon --start --components=secrets)"
+          xvfb-run -a "$FLO_APPIMAGE" --remote-debugging-port=9222 > app-n.log 2>&1 &
+          echo $! > app.pid
+          READY=false
+          for _ in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1 \
+              && curl -sf http://127.0.0.1:9222/json >/dev/null 2>&1; then
+              READY=true
+              break
+            fi
+            sleep 2
+          done
+          [ "$READY" = true ] || { echo "::error::release N API/CDP endpoints did not become ready"; exit 1; }
+
+      - name: Seed data, opt into beta, wait for staged update, restart-and-install
+        run: |
+          MATRIX_EMAIL=matrix-bot@flocafe.invalid
+          MATRIX_PASSWORD=Upgrade-Matrix-468x
+          MATRIX_PIN=4681
+          export FLO_STATUS_LOG="$RUNNER_TEMP/update-status.log"
+          node scripts/upgrade-matrix/run-upgrade.cjs seed \
+            --row linux-appimage-${{ matrix.arch }} \
+            --channel beta \
+            --expected-version "$TO_VERSION" \
+            --email "$MATRIX_EMAIL" --password "$MATRIX_PASSWORD" --pin "$MATRIX_PIN" \
+            --seed-file "$RUNNER_TEMP/seeds.json"
+
+      - name: Relaunch into the upgraded AppImage
+        run: |
+          # AppImageUpdater swaps the file in place; wait for the old process
+          # to exit before starting the new one.
+          APP_PID=$(cat app.pid)
+          for _ in $(seq 1 60); do
+            kill -0 "$APP_PID" 2>/dev/null || break
+            sleep 2
+          done
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "::error::release N process did not exit before relaunch"
+            exit 1
+          fi
+          node scripts/upgrade-matrix/patch-appimage-offline.cjs \
+            "$FLO_APPIMAGE" "$RUNNER_TEMP/appimage-offline-nplus1" \
+            | tee "$RUNNER_TEMP/offline-fixture-post-upgrade.log"
+          eval "$(dbus-launch)"
+          echo -n ci | gnome-keyring-daemon --unlock >/dev/null
+          eval "$(echo -n ci | gnome-keyring-daemon --start --components=secrets)"
+          xvfb-run -a "$FLO_APPIMAGE" --remote-debugging-port=9222 > app-nplus1.log 2>&1 &
+          NEW_APP_PID=$!
+          echo "$NEW_APP_PID" > app-nplus1.pid
+          NEW_APP_READY=false
+          for _ in $(seq 1 90); do
+            kill -0 "$NEW_APP_PID" 2>/dev/null || {
+              echo "::error::N+1 process exited before the API became ready"
+              exit 1
+            }
+            if curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1; then
+              NEW_APP_READY=true
+              break
+            fi
+            sleep 2
+          done
+          [ "$NEW_APP_READY" = true ] || {
+            echo "::error::N+1 app did not become ready after relaunch"
+            exit 1
+          }
+          kill -0 "$NEW_APP_PID" 2>/dev/null || {
+            echo "::error::N+1 process exited after becoming ready"
+            exit 1
+          }
+
+      - name: Verify version + persistence after relaunch
+        run: |
+          node scripts/upgrade-matrix/run-upgrade.cjs verify \
+            --row linux-appimage-${{ matrix.arch }} \
+            --expected-version "$TO_VERSION" \
+            --seed-file "$RUNNER_TEMP/seeds.json" \
+            | tee "$RUNNER_TEMP/evidence.json"
+
+      - name: Updater log analysis + process-tree check
+        run: |
+          LOG="$HOME/.config/flo-desktop/logs/main.log"
+          {
+            echo "## Differential-vs-full download evidence"
+            grep -iE "differential|full download|Downloading update|blockmap" "$LOG" | tail -20
+            echo "## Update status transitions"
+            cat "$RUNNER_TEMP/update-status.log"
+            echo "## Processes after relaunch (roots only)"
+            pgrep -af 'Flo Cafe|flocafe' | grep -v -- '--type='
+          } | tee "$RUNNER_TEMP/evidence-extra.txt"
+
+      - name: Upload row evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-linux-appimage-${{ matrix.arch }}
+          path: |
+            ${{ runner.temp }}/update-status.log
+            ${{ runner.temp }}/evidence.json
+            ${{ runner.temp }}/evidence-extra.txt
+            ${{ runner.temp }}/offline-fixture.log
+            ${{ runner.temp }}/offline-fixture-post-upgrade.log
+          if-no-files-found: warn
+
+  linux-managed-gating:
+    if: inputs.run_linux == true
+    name: deb/rpm/snap linux-managed gating check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: deb
+            asset_suffix: linux-x64.deb
+            legacy_asset_suffix: amd64.deb
+            experimental: false
+          - pkg: snap
+            asset_suffix: linux-x64.snap
+            legacy_asset_suffix: amd64.snap
+            experimental: true
+    continue-on-error: ${{ matrix.experimental }}
+    env:
+      FROM_VERSION: ${{ inputs.from_version || '3.3.0' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
+      - name: Install Xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb dbus-x11 squashfs-tools >/dev/null
+
+      - name: Install package manager build of release N
+        run: |
+          cd "$RUNNER_TEMP"
+          if ! curl -fsSL -o pkg.${{ matrix.pkg }} \
+            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.asset_suffix }}"; then
+            curl -fsSL -o pkg.${{ matrix.pkg }} \
+              "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.legacy_asset_suffix }}"
+          fi
+          if [ "${{ matrix.pkg }}" = deb ]; then
+            sudo dpkg -i pkg.deb || sudo apt-get install -y -f -qq
+            dpkg -l | grep -i flo
+          else
+            node "$GITHUB_WORKSPACE/scripts/upgrade-matrix/patch-squashfs-offline.cjs" \
+              "$RUNNER_TEMP/pkg.snap" "$RUNNER_TEMP/snap-offline" \
+              | tee "$RUNNER_TEMP/offline-fixture.log"
+            sudo snap install --dangerous pkg.snap
+            snap list | grep -i flo
+          fi
+
+      - name: Apply offline fixture to deb release N
+        if: matrix.pkg == 'deb'
+        run: |
+          ASAR=$(find /opt -type f -path '*/resources/app.asar' 2>/dev/null | head -1)
+          [ -n "$ASAR" ] || { echo "::error::deb app.asar not found"; exit 1; }
+          sudo "$(command -v node)" scripts/upgrade-matrix/patch-offline-fixture.cjs "$ASAR" \
+            | tee "$RUNNER_TEMP/offline-fixture.log"
+
+      - name: Launch under Xvfb with a CDP port
+        run: |
+          BIN=$(find /opt -maxdepth 3 -type f \( -name "Flo Cafe" -o -name flo-cafe -o -name flocafe \) 2>/dev/null | head -1)
+          if [ -z "$BIN" ] && [ "${{ matrix.pkg }}" = snap ]; then BIN="/snap/bin/flocafe"; fi
+          echo "binary: $BIN"
+          [ -n "$BIN" ] || { find /opt /usr -maxdepth 4 -iname '*flo*' 2>/dev/null | head; exit 1; }
+          xvfb-run -a "$BIN" --remote-debugging-port=9222 > app.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:9222/json >/dev/null 2>&1 && break
+            sleep 2
+          done
+
+      - name: Assert linux-managed updater state and no self-update attempt
+        run: |
+          STATUS=$(node <<'NODE'
+          const { cdpEval } = require('./scripts/upgrade-matrix/harness.cjs');
+          const expression = `new Promise((resolve, reject) => {
+            let unsubscribe;
+            const timer = setTimeout(() => {
+              unsubscribe?.();
+              reject(new Error('timed out waiting for managed updater status'));
+            }, 30000);
+            unsubscribe = window.electronAPI.onUpdateStatus((status) => {
+              if (status?.status !== 'linux-managed' && status?.status !== 'store-managed') return;
+              clearTimeout(timer);
+              unsubscribe?.();
+              resolve(status);
+            });
+            Promise.resolve()
+              .then(() => window.electronAPI.checkForUpdates())
+              .catch((error) => {
+                clearTimeout(timer);
+                unsubscribe?.();
+                reject(error);
+              });
+          })`;
+          cdpEval(9222, expression)
+            .then((status) => console.log(JSON.stringify(status)))
+            .catch((error) => { console.error(error.message); process.exit(1); });
+          NODE
+          )
+          echo "update status: $STATUS"
+          printf '%s\n' "$STATUS" | tee "$RUNNER_TEMP/gating-status.json" >/dev/null
+          node -e "const status = JSON.parse(process.argv[1]); if (!['linux-managed', 'store-managed'].includes(status.status)) process.exit(1);" "$STATUS"
+          LOG=$(ls "$HOME/.config/flo-desktop/logs/main.log" 2>/dev/null || true)
+          if [ -n "$LOG" ]; then
+            grep -F "Linux non-AppImage install — updates managed by package manager" "$LOG" | tail -3 | tee "$RUNNER_TEMP/gating-log.txt"
+            ! grep -qiE "Downloading update|beta.yml|latest.yml" "$LOG" || { echo "::error::package-manager install attempted a self-update"; exit 1; }
+          fi
+
+      - name: Upload gating evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-linux-managed-${{ matrix.pkg }}
+          path: |
+            ${{ runner.temp }}/gating-*
+            ${{ runner.temp }}/offline-fixture.log
+          if-no-files-found: warn
+
+  older-cohort-windows:
+    name: Older cohort Windows NSIS (${{ inputs.old_from_version || '2.9.7' }} → latest stable)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      OLD_VERSION: ${{ inputs.old_from_version || '2.9.7' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
+      - name: Install older cohort release N (silent NSIS)
+        run: |
+          mkdir -p "$RUNNER_TEMP/matrix" && cd "$RUNNER_TEMP/matrix"
+          curl -sSL -o "setup-old.exe" \
+            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${OLD_VERSION}/Flo.Cafe.Setup.${OLD_VERSION}.exe"
+          # Keep the NSIS /S switch intact when invoking the Windows binary
+          # from Git Bash; otherwise the silent installer waits for UI input.
+          MSYS_NO_PATHCONV=1 ./setup-old.exe /S
+          APP_DIR=""
+          for _ in $(seq 1 60); do
+            APP_DIR=$(find "$LOCALAPPDATA/Programs" -maxdepth 1 -iname "*flo*" -type d 2>/dev/null | head -1)
+            [ -n "$APP_DIR" ] && break
+            sleep 2
+          done
+          EXE=$(find "$APP_DIR" -maxdepth 1 -name "*.exe" | head -1)
+          [ -n "$EXE" ] || { find "$LOCALAPPDATA/Programs" -maxdepth 2 -print | head -30; exit 1; }
+          echo "FLO_EXE=$EXE" >> "$GITHUB_ENV"
+          echo "FLO_APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
+      - name: Apply offline fixture to older release N
+        run: |
+          node scripts/upgrade-matrix/patch-offline-fixture.cjs "$FLO_APP_DIR/resources/app.asar" | tee "$RUNNER_TEMP/offline-fixture.log"
+
+      - name: Launch release N with a CDP port
+        run: |
+          "$FLO_EXE" --remote-debugging-port=9222 &
+          for _ in $(seq 1 90); do
+            curl -sf http://127.0.0.1:9222/json >/dev/null && break
+            sleep 2
+          done
+
+      - name: Resolve stable target before seeding
+        run: |
+          TARGET=$(curl -fsSL -H "Accept: application/vnd.github+json" https://api.github.com/repos/FreeOpenSourcePOS/FloCafe/releases/latest \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).tag_name))")
+          [ -n "$TARGET" ] || { echo "::error::stable release target is empty"; exit 1; }
+          echo "TARGET_VERSION=$TARGET" >> "$GITHUB_ENV"
+          echo "stable target: $TARGET"
+
+      - name: Seed data and let the stable feed stage the current stable release
+        run: |
+          MATRIX_EMAIL=matrix-bot@flocafe.invalid
+          MATRIX_PASSWORD=Upgrade-Matrix-468x
+          MATRIX_PIN=4681
+          export FLO_STATUS_LOG="$RUNNER_TEMP/update-status.log"
+          node scripts/upgrade-matrix/run-upgrade.cjs seed \
+            --row older-cohort-windows \
+            --channel stable \
+            --expected-version "$TARGET_VERSION" \
+            --email "$MATRIX_EMAIL" --password "$MATRIX_PASSWORD" --pin "$MATRIX_PIN" \
+            --seed-file "$RUNNER_TEMP/seeds.json"
+
+      - name: Complete staged NSIS installer in headless mode
+        shell: pwsh
+        run: |
+          # The 2.9.x client is immutable and also starts an assisted NSIS
+          # installer. Finish its real staged handoff silently on the runner
+          # so the legacy cohort can relaunch without interactive UI.
+          & "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/complete-nsis-install.ps1" `
+            -ExpectedAppPath "$env:FLO_EXE" `
+            -OfflineFixtureScript "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/patch-offline-fixture.cjs" `
+            -OfflineFixtureLogPath "$env:RUNNER_TEMP/offline-fixture-post-upgrade.log"
+
+      - name: Wait for the upgraded build to come back up
+        run: |
+          for _ in $(seq 1 120); do
+            if curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1; then
+              VERSION_OK=$(node -e '
+                const { cdpEval } = require("./scripts/upgrade-matrix/harness.cjs");
+                cdpEval(9222, "window.electronAPI.getAppInfo()")
+                  .then(i => process.exit(i.version === process.env.OLD_VERSION ? 1 : 0))
+                  .catch(() => process.exit(1));
+              ' && echo yes || echo no)
+              [ "$VERSION_OK" = "yes" ] && { echo "upgraded app is back up"; exit 0; }
+            fi
+            sleep 5
+          done
+          echo "::error::App did not come back after restart-and-install"
+          exit 1
+
+      - name: Verify version + persistence after relaunch
+        run: |
+          echo "stable target: $TARGET_VERSION"
+          node scripts/upgrade-matrix/run-upgrade.cjs verify \
+            --row older-cohort-windows \
+            --skip-beta-preference \
+            --expected-version "$TARGET_VERSION" \
+            --seed-file "$RUNNER_TEMP/seeds.json" \
+            | tee "$RUNNER_TEMP/evidence.json"
+
+      - name: Upload row evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evidence-older-cohort-windows
+          path: |
+            ${{ runner.temp }}/update-status.log
+            ${{ runner.temp }}/evidence.json
+            ${{ runner.temp }}/offline-fixture.log
+            ${{ runner.temp }}/offline-fixture-post-upgrade.log
+          if-no-files-found: warn

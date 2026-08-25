@@ -110,6 +110,7 @@ assert.throws(
 const parsedManifest = parseManifest(fixture.payloads.get('latest.yml').toString('utf8'), 'latest.yml');
 assert.deepEqual(parsedManifest, {
   version: VERSION,
+  path: `flocafe-${VERSION}-win-x64.exe`,
   files: [{
     url: `flocafe-${VERSION}-win-x64.exe`,
     sha512: sha512(fixture.payloads.get(`flocafe-${VERSION}-win-x64.exe`)),
@@ -126,19 +127,36 @@ assert.throws(
 
 assert.doesNotThrow(() => assertManifestPlatformMapping('latest.yml', VERSION, [
   { url: `flocafe-${VERSION}-win-x64.exe` },
-]));
+], `flocafe-${VERSION}-win-x64.exe`));
+assert.throws(
+  () => assertManifestPlatformMapping('latest.yml', VERSION, [
+    { url: `flocafe-${VERSION}-win-x64.exe` },
+  ]),
+  /updater path must/,
+);
 assert.doesNotThrow(() => assertManifestPlatformMapping('latest-mac.yml', VERSION, [
   { url: `flocafe-${VERSION}-mac-x64.zip` },
   { url: `flocafe-${VERSION}-mac-arm64.zip` },
   { url: `flocafe-${VERSION}-mac-x64.dmg` },
   { url: `flocafe-${VERSION}-mac-arm64.dmg` },
-]));
+], `flocafe-${VERSION}-mac-x64.zip`));
+assert.throws(
+  () => assertManifestPlatformMapping('latest-mac.yml', VERSION, [
+    { url: `flocafe-${VERSION}-mac-x64.zip` },
+    { url: `flocafe-${VERSION}-mac-arm64.zip` },
+  ], `flocafe-${VERSION}-mac-x64.dmg`),
+  /updater path must/,
+);
 assert.doesNotThrow(() => assertManifestPlatformMapping('latest-linux.yml', VERSION, [
   { url: `flocafe-${VERSION}-linux-x64.appimage` },
-]));
+  // electron-builder lists every Linux target from the same invocation (#468).
+  { url: `flocafe-${VERSION}-linux-x64.deb` },
+  { url: `flocafe-${VERSION}-linux-x64.rpm` },
+], `flocafe-${VERSION}-linux-x64.appimage`));
 assert.doesNotThrow(() => assertManifestPlatformMapping('latest-linux-arm64.yml', VERSION, [
   { url: `flocafe-${VERSION}-linux-arm64.appimage` },
-]));
+  { url: `flocafe-${VERSION}-linux-arm64.deb` },
+], `flocafe-${VERSION}-linux-arm64.appimage`));
 assert.throws(
   () => assertManifestPlatformMapping('latest.yml', VERSION, [
     { url: `flocafe-${VERSION}-mac-x64.zip` },
@@ -148,8 +166,15 @@ assert.throws(
 assert.throws(
   () => assertManifestPlatformMapping('latest-linux-arm64.yml', VERSION, [
     { url: `flocafe-${VERSION}-linux-x64.appimage` },
-  ]),
+  ], `flocafe-${VERSION}-linux-x64.appimage`),
   /another platform or architecture/,
+);
+assert.throws(
+  () => assertManifestPlatformMapping('latest-linux.yml', VERSION, [
+    { url: `flocafe-${VERSION}-linux-x64.appimage` },
+    { url: `flocafe-${VERSION}-linux-x64.deb` },
+  ], `flocafe-${VERSION}-linux-x64.deb`),
+  /updater path must/,
 );
 assert.throws(
   () => assertManifestPlatformMapping('latest-mac.yml', VERSION, [

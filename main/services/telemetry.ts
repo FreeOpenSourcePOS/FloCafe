@@ -26,6 +26,10 @@ let telemetryStopping = false;
 let telemetryStopPromise: Promise<void> | null = null;
 const inFlightTelemetry = new Set<Promise<unknown>>();
 
+function matrixOffline(): boolean {
+  return process.env.FLO_MATRIX_OFFLINE === '1';
+}
+
 function trackTelemetry<T>(operation: Promise<T>): Promise<T> {
   inFlightTelemetry.add(operation);
   void operation.finally(() => inFlightTelemetry.delete(operation)).catch(() => {});
@@ -33,7 +37,7 @@ function trackTelemetry<T>(operation: Promise<T>): Promise<T> {
 }
 
 async function sendEventImpl(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
-  if (!isTelemetryEnabled()) return false;
+  if (matrixOffline() || !isTelemetryEnabled()) return false;
 
   try {
     const anonId = ensureTelemetryAnonId();
@@ -72,12 +76,12 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
 }
 
 export function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
-  if (telemetryStopping) return Promise.resolve(false);
+  if (matrixOffline() || telemetryStopping) return Promise.resolve(false);
   return trackTelemetry(sendEventImpl(eventType, payload));
 }
 
 function maybeSendDailyPing(): void {
-  if (telemetryStopping) return;
+  if (matrixOffline() || telemetryStopping) return;
   if (!isTelemetryEnabled()) return;
 
   const lastPingAt = getSettingValue('telemetry_last_ping_at');
@@ -99,6 +103,7 @@ export const telemetry = {
       clearInterval(dailyPingTimer);
       dailyPingTimer = null;
     }
+    if (matrixOffline()) return;
     void sendEvent('app_launch');
     maybeSendDailyPing();
     dailyPingTimer = setInterval(maybeSendDailyPing, DAILY_PING_INTERVAL_MS);

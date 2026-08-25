@@ -150,5 +150,5 @@ test('macOS titlebar safe-area styling reserves leading space for traffic lights
       testHeader.remove();
     }
   });
-  expect(paddingLeft, 'macOS safe area reserves 80px for traffic lights').toBe('80px');
+  expect(paddingLeft, 'macOS safe area reserves 96px for traffic lights').toBe('96px');
 });

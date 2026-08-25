@@ -86,6 +86,7 @@ async function main() {
   const inputs = buildDispatchInputs({
     fromVersion: arg(argv, '--from-version'),
     candidateTag: arg(argv, '--candidate-tag'),
+    candidateCommit: arg(argv, '--candidate-commit'),
     candidateManifestAssetId: arg(argv, '--candidate-manifest-asset-id'),
     candidateManifestSha256: arg(argv, '--candidate-manifest-sha256'),
     dispatchId: createDispatchId(),

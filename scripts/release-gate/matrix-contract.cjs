@@ -15,6 +15,7 @@ const YAML = require('js-yaml');
 const REQUIRED_INPUTS = [
   'from_version',
   'candidate_tag',
+  'candidate_commit',
   'candidate_manifest_asset_id',
   'candidate_manifest_sha256',
   'matrix_dispatch_id',
@@ -53,6 +54,19 @@ function executableRun(run) {
   return run.split(/\r?\n/).filter((line) => !line.trim().startsWith('#')).join('\n');
 }
 
+function normalizedRun(run) {
+  return executableRun(run).replace(/\\\r?\n/g, ' ');
+}
+
+function hasCandidateManifestVerification(run) {
+  const normalized = normalizedRun(run);
+  return /^\s*node\s+scripts\/release-gate\/candidate-manifest\.cjs\b[^\n]*--verify\b/m.test(normalized);
+}
+
+function hasMatrixSeedInvocation(run) {
+  return /^\s*node\s+scripts\/upgrade-matrix\/run-upgrade\.cjs\s+seed\b/m.test(normalizedRun(run));
+}
+
 function usesEnvironment(run, name) {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return [
@@ -76,6 +90,10 @@ function isExecutionStep(step) {
     const trimmed = line.trim();
     if (/^echo\s/.test(trimmed)) return false;
     if (/^[A-Z_][A-Z0-9_]*=/.test(trimmed) && !trimmed.includes(' ')) return false;
+    // Pure test/[ guard commands with no side effects do not satisfy the
+    // matrix contract boundary: they reference inputs but never execute the
+    // candidate artifact.
+    if (/^test\s/.test(trimmed) || /^\[\s/.test(trimmed)) return false;
     return true;
   });
   return nonTrivial.length > 0;
@@ -103,7 +121,7 @@ function executableInputReferences(job) {
     for (const [name, input] of bindings.entries()) {
       if (usesEnvironment(run, name)) references.add(input);
     }
-    referencesByStep.push(references);
+    referencesByStep.push({ references, run });
   }
   return referencesByStep;
 }
@@ -128,7 +146,11 @@ function assertMatrixContract(workflowText) {
   for (const [jobId, job] of Object.entries(workflow.jobs)) {
     if (!isRecord(job) || !Array.isArray(job.steps)) continue;
     const referencesByStep = executableInputReferences(job);
-    if (referencesByStep.some((references) => REQUIRED_INPUTS.every((input) => references.has(input)))) referencedJobs.push(jobId);
+    if (referencesByStep.some(({ references, run }) => (
+      REQUIRED_INPUTS.every((input) => references.has(input))
+      && hasCandidateManifestVerification(run)
+      && hasMatrixSeedInvocation(run)
+    ))) referencedJobs.push(jobId);
   }
   if (referencedJobs.length === 0) {
     throw new Error('runtime matrix must validate the exact candidate inputs in an executable job');
@@ -136,12 +158,13 @@ function assertMatrixContract(workflowText) {
   return true;
 }
 
-function buildDispatchInputs({ fromVersion, candidateTag, candidateManifestAssetId, candidateManifestSha256, dispatchId }) {
-  if (!fromVersion || !candidateTag || !candidateManifestAssetId || !candidateManifestSha256 || !dispatchId) {
-    throw new Error('matrix dispatch requires source version, candidate tag, candidate manifest asset ID, candidate SHA-256, and dispatch ID');
+function buildDispatchInputs({ fromVersion, candidateTag, candidateCommit, candidateManifestAssetId, candidateManifestSha256, dispatchId }) {
+  if (!fromVersion || !candidateTag || !candidateCommit || !candidateManifestAssetId || !candidateManifestSha256 || !dispatchId) {
+    throw new Error('matrix dispatch requires source version, candidate tag, candidate commit, candidate manifest asset ID, candidate SHA-256, and dispatch ID');
   }
   if (!SEMVER.test(fromVersion)) throw new Error('invalid matrix source version');
   if (!SEMVER.test(candidateTag)) throw new Error('invalid matrix candidate tag');
+  if (!/^[0-9a-f]{40,64}$/i.test(candidateCommit)) throw new Error('invalid matrix candidate commit');
   if (!/^\d+$/.test(String(candidateManifestAssetId))) throw new Error('invalid candidate manifest asset ID');
   if (!/^[0-9a-f]{64}$/i.test(candidateManifestSha256)) throw new Error('invalid candidate manifest SHA-256');
   if (!DISPATCH_ID.test(dispatchId)) throw new Error('invalid matrix dispatch ID');
@@ -149,6 +172,7 @@ function buildDispatchInputs({ fromVersion, candidateTag, candidateManifestAsset
     from_version: fromVersion,
     to_version: candidateTag,
     candidate_tag: candidateTag,
+    candidate_commit: candidateCommit.toLowerCase(),
     candidate_manifest_asset_id: String(candidateManifestAssetId),
     candidate_manifest_sha256: candidateManifestSha256.toLowerCase(),
     matrix_dispatch_id: dispatchId,

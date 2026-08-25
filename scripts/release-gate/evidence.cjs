@@ -15,7 +15,7 @@ const RETENTION_DAYS = 90;
 const MATRIX_STATUSES = new Set(['PASS', 'FAIL', 'NOT-RUN']);
 const SUMMARY_KEYS = ['schemaVersion', 'type', 'release', 'automated', 'residualRisk', 'manual', 'retention'];
 const RELEASE_KEYS = ['tag', 'channel', 'commit', 'candidateManifestSha256', 'boundAssetCount'];
-const AUTOMATED_KEYS = ['candidateManifest', 'draftInventoryAndDownloads', 'channelPublication', 'installedArtifactMatrix'];
+const AUTOMATED_KEYS = ['candidateManifest', 'draftInventoryAndDownloads', 'channelPublication', 'snapStorePublication', 'installedArtifactMatrix'];
 const RESIDUAL_RISK_KEYS = ['windowsDirectDownloadSigning', 'windowsSmartScreen'];
 const MANUAL_KEYS = ['desktopCompositor', 'physicalPrinters', 'masReview', 'microsoftStore'];
 const RETENTION_KEYS = ['sanitizedWorkflowArtifactsDays', 'permanentSummary', 'sensitiveLogsExcluded'];
@@ -66,6 +66,15 @@ function windowsSigningSummary(manifest) {
   return 'NOT-VERIFIED';
 }
 
+function snapStorePublicationSummary(manifest) {
+  const markerCount = new Set((manifest.assets || [])
+    .filter((asset) => /^snap-publication-(x64|arm64)\.json$/.test(asset.name))
+    .map((asset) => asset.name)).size;
+  if (markerCount === 2) return 'PASS (x64 and arm64 publication evidence recorded)';
+  if (manifest.release.channel === 'beta') return 'NOT-RUN (beta Snap Store publication is optional or permission-limited)';
+  return 'FAIL (stable Snap Store publication evidence is incomplete; promotion is blocked)';
+}
+
 function summaryContract(manifest, candidateManifestBytes, matrixStatus) {
   if (!MATRIX_STATUSES.has(matrixStatus)) throw new Error(`installed artifact matrix status must be PASS, FAIL, or NOT-RUN`);
   return {
@@ -82,6 +91,7 @@ function summaryContract(manifest, candidateManifestBytes, matrixStatus) {
       candidateManifest: 'PASS',
       draftInventoryAndDownloads: 'PASS',
       channelPublication: manifest.release.channel === 'beta' ? 'PASS (prerelease, Latest unchanged)' : 'PASS (Latest unchanged until promotion)',
+      snapStorePublication: snapStorePublicationSummary(manifest),
       installedArtifactMatrix: matrixStatus,
     },
     residualRisk: {

@@ -96,6 +96,7 @@ jobs:
     env:
       RELEASE_REPOSITORY: ${{ github.repository }}
       CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+      CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
       CANDIDATE_MANIFEST_SHA256: ${{ inputs.candidate_manifest_sha256 }}
       CANDIDATE_MANIFEST_ASSET_ID: ${{ inputs.candidate_manifest_asset_id }}
       FROM_VERSION: ${{ inputs.from_version }}
@@ -131,6 +132,7 @@ jobs:
             --workflow-file "$RUNNER_TEMP/upgrade-matrix.yml" \
             --from-version "$FROM_VERSION" \
             --candidate-tag "$CANDIDATE_TAG" \
+            --candidate-commit "$CANDIDATE_COMMIT" \
             --candidate-manifest-asset-id "$CANDIDATE_MANIFEST_ASSET_ID" \
             --candidate-manifest-sha256 "$CANDIDATE_MANIFEST_SHA256"
         env:
@@ -144,7 +146,7 @@ jobs:
     steps:
       - name: Mark installed artifact rows NOT-RUN, never PASS
         run: |
-          echo "::notice::Installed-artifact upgrade rows are NOT-RUN. Enable run_installed_matrix only after PR #512 lands with the exact candidate binding inputs."
+          echo "::notice::Installed-artifact upgrade rows are NOT-RUN. Enable run_installed_matrix to execute the exact candidate-bound matrix."
           echo "Hosted candidate integrity passed; this is not a complete runtime upgrade gate."
 
   retain-candidate-evidence:

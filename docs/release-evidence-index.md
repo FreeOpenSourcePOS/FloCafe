@@ -43,14 +43,16 @@ constitute SmartScreen reputation evidence.
 
 The release-candidate workflow does not duplicate the runtime upgrade harness.
 It dispatches and waits for the durable #468 workflow only after that workflow
-(from PR #512) exposes and validates these exact inputs:
+exposes and validates these exact inputs:
 
 - `candidate_tag`
+- `candidate_commit`
 - `from_version`
 - `candidate_manifest_asset_id`
 - `candidate_manifest_sha256`
 - `matrix_dispatch_id` (included in the matrix run name for correlation)
 
-Until #512 lands with that contract, installed-artifact rows remain
-**NOT-RUN** and the candidate gate must not be described as a complete runtime
-upgrade pass.
+The matrix verifies the immutable candidate manifest immediately before its
+installed-artifact seed operation. If `run_installed_matrix=false`, the rows
+remain explicitly **NOT-RUN** and the candidate gate must not be described as a
+complete runtime upgrade pass.

@@ -155,12 +155,14 @@ directly to GitHub `Latest`.
 5. Run **Actions > Release candidate confidence gate** with the exact published
    beta tag, commit, candidate-manifest asset ID/SHA-256, Stable Latest tag, and
    the exact stable `from_version` installed as N by the runtime matrix.
-   Set `run_installed_matrix=false` until PR #512's runtime-matrix workflow lands
-   with the candidate-manifest inputs. The gate then records the installed rows
-   as explicit **NOT-RUN** rather than claiming a pass. Once #512 lands, the
-   gate dispatches that existing matrix and waits for its result; it never
-   starts a competing upgrade harness. Final retained evidence records the
-   matrix as `PASS`, `FAIL`, or `NOT-RUN` after that result is known.
+   Set `run_installed_matrix=true` when the exact installed-artifact rows should
+   run. The matrix verifies the immutable candidate manifest immediately before
+   seeding the installed N client, then waits for the real update flow. Set it
+   to `false` when those rows are intentionally omitted; the gate records them
+   as explicit **NOT-RUN** rather than claiming a pass. The gate dispatches the
+   existing matrix and waits for its result; it never starts a competing
+   upgrade harness. Final retained evidence records the matrix as `PASS`,
+   `FAIL`, or `NOT-RUN` after that result is known.
 6. Sanity-check from a beta-enabled install (or an opted-in stable one):
    Check for Updates should offer `X.Y.Z-beta.N` via `beta.yml`.
 

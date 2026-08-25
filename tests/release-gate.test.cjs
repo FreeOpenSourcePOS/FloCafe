@@ -168,7 +168,16 @@ const requestAsset = async (entry) => payloads.get(entry.name);
     release: { ...summary.release, candidateManifestSha256: '0'.repeat(64) },
   }, { manifest, candidateManifestBytes: Buffer.from('manifest') }), /candidate manifest digest/);
   assert.equal(summary.retention.sanitizedWorkflowArtifactsDays, RETENTION_DAYS);
+  assert.equal(summary.automated.snapStorePublication, 'PASS (x64 and arm64 publication evidence recorded)');
   assert.equal(summary.automated.installedArtifactMatrix, 'NOT-RUN');
+  const betaWithoutSnapSummary = createReleaseSummary({
+    manifest: {
+      ...manifest,
+      assets: manifest.assets.filter((entry) => !entry.name.startsWith('snap-publication-')),
+    },
+    candidateManifestBytes: Buffer.from('manifest'),
+  });
+  assert.equal(betaWithoutSnapSummary.automated.snapStorePublication, 'NOT-RUN (beta Snap Store publication is optional or permission-limited)');
   assertRetentionPolicy(summary.retention);
   const passedMatrixSummary = createReleaseSummary({
     manifest,
@@ -238,6 +247,14 @@ const requestAsset = async (entry) => payloads.get(entry.name);
     manifest: stableManifest,
     candidateManifestBytes: stableCandidateBytes,
   });
+  const incompleteStableSummary = createReleaseSummary({
+    manifest: {
+      ...stableManifest,
+      assets: stableManifest.assets.filter((entry) => entry.name !== 'snap-publication-arm64.json'),
+    },
+    candidateManifestBytes: stableCandidateBytes,
+  });
+  assert.equal(incompleteStableSummary.automated.snapStorePublication, 'FAIL (stable Snap Store publication evidence is incomplete; promotion is blocked)');
   stablePayloads.set('candidate-manifest.json', stableCandidateBytes);
   const stableSummaryBytes = Buffer.from(`${JSON.stringify(stableSummary, null, 2)}\n`);
   stablePayloads.set('release-summary.json', stableSummaryBytes);
@@ -318,6 +335,7 @@ on:
     inputs:
       from_version: { required: true, type: string }
       candidate_tag: { required: true, type: string }
+      candidate_commit: { required: true, type: string }
       candidate_manifest_asset_id: { required: true, type: string }
       candidate_manifest_sha256: { required: true, type: string }
       matrix_dispatch_id: { required: true, type: string }
@@ -325,6 +343,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     env:
+      COMMIT: \${{ inputs.candidate_commit }}
       FROM_VERSION: \${{ inputs.from_version }}
       TAG: \${{ inputs.candidate_tag }}
       ASSET_ID: \${{ inputs.candidate_manifest_asset_id }}
@@ -332,19 +351,31 @@ jobs:
       DISPATCH_ID: \${{ inputs.matrix_dispatch_id }}
     steps:
       - name: Validate exact candidate binding
-        run: test -n "$FROM_VERSION" -a -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"
+        run: |
+          echo "::notice::Candidate matrix dispatch $DISPATCH_ID"
+          node scripts/release-gate/candidate-manifest.cjs \
+            --verify --repo example/repo --tag "$TAG" --commit "$COMMIT" \
+            --channel beta --candidate-asset-id "$ASSET_ID" \
+            --manifest-sha256 "$MANIFEST_SHA"
+          node scripts/upgrade-matrix/run-upgrade.cjs seed \
+            --expected-version "$TAG" --from-version "$FROM_VERSION"
 `;
   assert.doesNotThrow(() => assertMatrixContract(integratedMatrix));
   assert.throws(() => assertMatrixContract(integratedMatrix.replace('TAG: ${{ inputs.candidate_tag }}', 'TAG: candidate')), /exact candidate inputs/);
-  assert.throws(() => assertMatrixContract(integratedMatrix.replace('test -n "$FROM_VERSION" -a -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"', 'test -n ready')), /exact candidate inputs/);
-  assert.throws(() => assertMatrixContract(integratedMatrix.replace('"$TAG"', '"$TAG_SUFFIX"')), /exact candidate inputs/);
+  assert.throws(() => assertMatrixContract(integratedMatrix.replace('node scripts/upgrade-matrix/run-upgrade.cjs seed', 'echo ready')), /exact candidate inputs/);
+  assert.throws(() => assertMatrixContract(integratedMatrix.replace('node scripts/release-gate/candidate-manifest.cjs', 'echo candidate-manifest.cjs')), /exact candidate inputs/);
   assert.throws(() => assertMatrixContract(integratedMatrix.replace(
-    'run: test -n "$FROM_VERSION" -a -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"',
-    'uses: example/runtime-matrix@main\n        with:\n          tag: \${{ inputs.candidate_tag }}\n          asset-id: \${{ inputs.candidate_manifest_asset_id }}\n          sha256: \${{ inputs.candidate_manifest_sha256 }}\n          from-version: \${{ inputs.from_version }}\n          dispatch-id: \${{ inputs.matrix_dispatch_id }}',
+    'node scripts/upgrade-matrix/run-upgrade.cjs seed',
+    'echo "$FROM_VERSION $TAG $ASSET_ID $MANIFEST_SHA $DISPATCH_ID"',
+  )), /exact candidate inputs/);
+  assert.throws(() => assertMatrixContract(integratedMatrix.replaceAll('"$TAG"', '"$TAG_SUFFIX"')), /exact candidate inputs/);
+  assert.throws(() => assertMatrixContract(integratedMatrix.replace(
+    'node scripts/release-gate/candidate-manifest.cjs',
+    'test -n "$TAG" && echo candidate-manifest.cjs',
   )), /exact candidate inputs/);
   assert.throws(() => assertMatrixContract(integratedMatrix.replace(
-    'run: test -n "$FROM_VERSION" -a -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"',
-    'run: echo "$FROM_VERSION $TAG $ASSET_ID $MANIFEST_SHA $DISPATCH_ID"',
+    'node scripts/release-gate/candidate-manifest.cjs',
+    'uses: example/runtime-matrix@main',
   )), /exact candidate inputs/);
   const dispatchId = createDispatchId();
   assert.doesNotThrow(() => assertCorrelatedRun({
@@ -362,6 +393,7 @@ jobs:
   assert.deepEqual(buildDispatchInputs({
     fromVersion: '3.3.0',
     candidateTag: '3.3.1-beta.1',
+    candidateCommit: 'a'.repeat(40),
     candidateManifestAssetId: 115,
     candidateManifestSha256: 'B'.repeat(64),
     dispatchId,
@@ -369,6 +401,7 @@ jobs:
     from_version: '3.3.0',
     to_version: '3.3.1-beta.1',
     candidate_tag: '3.3.1-beta.1',
+    candidate_commit: 'a'.repeat(40),
     candidate_manifest_asset_id: '115',
     candidate_manifest_sha256: 'b'.repeat(64),
     matrix_dispatch_id: dispatchId,

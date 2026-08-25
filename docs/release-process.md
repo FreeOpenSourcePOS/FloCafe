@@ -139,8 +139,9 @@ directly to GitHub `Latest`.
 
 1. Pick the next version as `X.Y.Z-beta.N` (`N` counts up within the same
    `X.Y.Z`: `3.3.1-beta.1`, then `3.3.1-beta.2`, ...). Bump `package.json`
-   and add a `## [X.Y.Z-beta.N]` entry to `CHANGELOG.md` - the draft-release
-   step fails without one.
+   and ensure conventional commits exist or update `CHANGELOG.md` via
+   `npm run changelog:generate` (CI generates release notes via `git-cliff`,
+   falling back to `CHANGELOG.md`).
 2. Commit to `main`, tag exactly `X.Y.Z-beta.N`, and push the tag.
 3. Run **Actions > Release > Run workflow** from that tag:
    `release_tag=X.Y.Z-beta.N`, `channel=beta`, `promote_stable=false`.
@@ -172,7 +173,7 @@ There is no automatic promotion. Promoting a beta means cutting the real
 stable release:
 
 1. Decide the final stable version `X.Y.Z`, bump `package.json` (dropping the
-   prerelease suffix), add the final `CHANGELOG.md` entry, commit to `main`,
+   prerelease suffix), update `CHANGELOG.md` via `npm run changelog:generate` if needed, commit to `main`,
    tag `X.Y.Z`, and push the tag.
 2. Let the tag push run the full stable release. It publishes with
    `make_latest=false` like every release.

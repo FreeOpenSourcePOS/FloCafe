@@ -155,14 +155,14 @@ jobs:
           RELEASE_EVENT_NAME: ${{ github.event_name }}
 
       - name: Create GitHub draft release (if not exists)
-        # Release notes come from CHANGELOG.md, not --generate-notes: this repo
-        # pushes straight to main instead of merging PRs, so GitHub's PR-based
-        # auto-generated notes come back empty (see git history around
-        # v2.0.0/v2.0.3 for what that looked like). A CHANGELOG.md entry is
-        # mandatory for every release — this step fails loudly instead of
-        # publishing a release with no notes if one is missing. The release is
-        # deliberately kept as a draft until all platform assets pass the
-        # post-upload verification job.
+        # Release notes are extracted from an existing draft release body if present,
+        # or generated via git-cliff (falling back to changelog-notes.sh / CHANGELOG.md),
+        # not --generate-notes: this repo pushes straight to main instead of merging PRs,
+        # so GitHub's PR-based auto-generated notes come back empty (see git history around
+        # v2.0.0/v2.0.3 for what that looked like). Valid non-empty release notes are
+        # mandatory for every release — this step fails loudly instead of publishing a
+        # release with empty notes. The release is deliberately kept as a draft until all
+        # platform assets pass the post-upload verification job.
         if: steps.release-metadata.outputs.promotion_only != 'true'
         run: |
           TAG="$RELEASE_TAG"
@@ -175,17 +175,65 @@ jobs:
               echo "::error::Release ${TAG} already exists and is published; refusing to overwrite it."
               exit 1
             fi
-            echo "Draft release ${TAG} already exists, reusing it."
+            echo "Draft release ${TAG} already exists, extracting existing release notes."
+            BODY=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json body --jq .body)
+            if [ -z "$(echo "${BODY}" | tr -d '[:space:]')" ]; then
+              echo "::error::Existing draft release ${TAG} has an empty body; refusing to package release with empty notes."
+              exit 1
+            fi
+            printf '%s\n' "${BODY}" > /tmp/release-notes.md
           else
-            if ! ./scripts/changelog-notes.sh "${BASE_VERSION}" > /tmp/release-notes.md; then
-              echo "::error::CHANGELOG.md has no '## [${BASE_VERSION}]' entry — add one before tagging a release."
+            # Generate release notes using git-cliff, falling back to changelog-notes.sh
+            if npx --yes git-cliff@2.8.0 --latest --strip header > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then
+              echo "Generated release notes for ${TAG} via git-cliff"
+            elif ./scripts/changelog-notes.sh "${BASE_VERSION}" > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then
+              echo "Extracted release notes for ${BASE_VERSION} from CHANGELOG.md"
+            else
+              echo "::error::Could not generate release notes via git-cliff or CHANGELOG.md for tag ${TAG}."
               exit 1
             fi
 
-            # A fresh checkout may not have any tags yet. With pipefail, grep
-            # returns 1 for that valid empty result, so keep the release step
-            # successful and omit the optional comparison link.
-            PREV_TAG=$(git tag --list --sort=-v:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | grep -Ev "^(v)?${BASE_VERSION}\$" | head -1 || true)
+            # Determine previous tag using semver (strictly less than current version)
+            PREV_TAG=$(node -e '
+              const { execSync } = require("child_process");
+              function parse(v) {
+                const m = (v || "").trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/);
+                if (!m) return null;
+                return { major: +m[1], minor: +m[2], patch: +m[3], pre: m[4] ? m[4].split(".") : null, tag: v.trim() };
+              }
+              function comparePre(a, b) {
+                if (!a && !b) return 0;
+                if (!a && b) return 1;
+                if (a && !b) return -1;
+                for (let i = 0; i < Math.max(a.length, b.length); i++) {
+                  if (i >= a.length) return -1;
+                  if (i >= b.length) return 1;
+                  if (a[i] === b[i]) continue;
+                  const aNum = /^\d+$/.test(a[i]), bNum = /^\d+$/.test(b[i]);
+                  if (aNum && bNum) return +a[i] - +b[i];
+                  if (aNum && !bNum) return -1;
+                  if (!aNum && bNum) return 1;
+                  return a[i] < b[i] ? -1 : 1;
+                }
+                return 0;
+              }
+              function compare(a, b) {
+                if (a.major !== b.major) return a.major - b.major;
+                if (a.minor !== b.minor) return a.minor - b.minor;
+                if (a.patch !== b.patch) return a.patch - b.patch;
+                return comparePre(a.pre, b.pre);
+              }
+              const current = parse(process.argv[1]);
+              if (!current) process.exit(0);
+              const tags = execSync("git tag --list", { encoding: "utf8" }).split("\n").filter(Boolean);
+              const prev = tags
+                .filter(t => !t.startsWith("tax-pack-"))
+                .map(parse)
+                .filter(Boolean)
+                .filter(t => compare(t, current) < 0)
+                .sort((a, b) => compare(b, a))[0];
+              if (prev) console.log(prev.tag);
+            ' "$VERSION" 2>/dev/null || true)
             if [ -n "$PREV_TAG" ]; then
               echo "" >> /tmp/release-notes.md
               echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}" >> /tmp/release-notes.md
@@ -205,6 +253,15 @@ jobs:
           RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
           RELEASE_VERSION: ${{ steps.release-metadata.outputs.version }}
           RELEASE_CHANNEL: ${{ steps.release-metadata.outputs.channel }}
+
+      - name: Upload release notes artifact
+        if: steps.release-metadata.outputs.promotion_only != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-notes
+          path: /tmp/release-notes.md
+          retention-days: 30
+          overwrite: true
 
       - name: Upload standalone uninstaller scripts
         # Independent utility scripts, not part of the app bundle — for
@@ -254,6 +311,12 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+
+      - name: Download release notes artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-notes
+          path: /tmp
 
       - name: Install system dependencies
         # rpm packaging tools are x86-only via apt — arm64 runner ships its

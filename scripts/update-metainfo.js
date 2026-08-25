@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Prepends a <release> entry to assets/com.flo.desktop.metainfo.xml at release
 // time so the AppImage ships with an up-to-date AppStream release history.
-// Reads version from package.json and release notes from CHANGELOG.md (via
-// scripts/changelog-notes.sh). The on-disk source file is rewritten; the
-// running pipeline does NOT auto-commit this change back to the repo.
+// Reads version from package.json and release notes from RELEASE_NOTES_FILE,
+// /tmp/release-notes.md, git-cliff, or CHANGELOG.md (via scripts/changelog-notes.sh).
+// The on-disk source file is rewritten; the running pipeline does NOT auto-commit
+// this change back to the repo.
 
 const { readFileSync, writeFileSync } = require('node:fs');
 const { execFileSync } = require('node:child_process');
@@ -17,7 +18,32 @@ const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const version = pkg.version;
 const date = new Date().toISOString().slice(0, 10);
 
-const notes = execFileSync(NOTES_HELPER, [version], { encoding: 'utf8' })
+let notes = '';
+if (process.env.RELEASE_NOTES_FILE && require('node:fs').existsSync(process.env.RELEASE_NOTES_FILE)) {
+  notes = readFileSync(process.env.RELEASE_NOTES_FILE, 'utf8').trim();
+}
+if (!notes && require('node:fs').existsSync('/tmp/release-notes.md')) {
+  notes = readFileSync('/tmp/release-notes.md', 'utf8').trim();
+}
+if (!notes) {
+  try {
+    notes = execFileSync('npx', ['--yes', 'git-cliff@2.8.0', '--latest', '--strip', 'header'], {
+      encoding: 'utf8',
+      cwd: ROOT,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    }).trim();
+  } catch (_e) {
+    try {
+      notes = execFileSync(NOTES_HELPER, [version.split('-')[0]], { encoding: 'utf8' }).trim();
+    } catch (_e2) {
+      notes = `Flo Cafe ${version}`;
+    }
+  }
+}
+if (!notes) {
+  notes = `Flo Cafe ${version}`;
+}
+notes = notes
   .trim()
   .replace(/[\r\n]+/g, ' ')
   .replace(/&/g, '&amp;')

@@ -116,6 +116,14 @@ case "$*" in
 esac
 `;
 
+const fakeGit = `#!/bin/sh
+if [ "$1" = "tag" ]; then
+  printf '2.8.0\\n3.2.0\\n3.2.3\\n3.3.0\\ntax-pack-1.0.0\\n'
+  exit 0
+fi
+exit 0
+`;
+
 function run() {
   console.log('Testing release config + workflow integrity...');
 
@@ -207,7 +215,20 @@ function run() {
     assert.match(pkg.scripts?.[scriptName], /--publish never$/, `${scriptName} must not publish outside the release workflow`);
   }
 
+  const uploadNotes = findStep(createRelease, 'Upload release notes artifact');
+  assert.equal(uploadNotes.uses, 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+  assert.equal(uploadNotes.with?.name, 'release-notes');
+  assert.equal(uploadNotes.with?.path, '/tmp/release-notes.md');
+  assert.equal(uploadNotes.with?.['retention-days'], 30);
+  assert.equal(uploadNotes.with?.overwrite, true);
+  assert.equal(uploadNotes.if, "steps.release-metadata.outputs.promotion_only != 'true'");
+
   const linuxJob = jobs['release-linux'];
+  const downloadNotes = findStep(linuxJob, 'Download release notes artifact');
+  assert.equal(downloadNotes.uses, 'actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16');
+  assert.equal(downloadNotes.with?.name, 'release-notes');
+  assert.equal(downloadNotes.with?.path, '/tmp');
+  assert.equal(downloadNotes['continue-on-error'], undefined, 'Download release notes artifact must strictly require artifact to guarantee note parity');
   const linuxBuild = findStep(linuxJob, 'Build Linux artifacts');
   assertShellStep(linuxJob, 'Build Linux artifacts');
   assert.equal(linuxBuild.env.FLO_LINUX_ARCH, '${{ matrix.arch }}', 'Linux release names must use the safe matrix architecture labels');
@@ -439,21 +460,70 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   const draftStable = executeWorkflowStep(draftReleaseStep, {
     env: { RELEASE_TAG: '3.3.0', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'stable' },
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
-    fakeCommands: { gh: fakeGh },
+    fakeCommands: { gh: fakeGh, git: fakeGit },
   });
   assert.equal(draftStable.status, 0, draftStable.stderr);
   assert.match(draftStable.log, /release create 3\.3\.0/);
   assert.match(draftStable.log, /--latest=false/);
   assert.doesNotMatch(draftStable.log, /--prerelease/);
+  assert.ok(
+    fs.existsSync('/tmp/release-notes.md') &&
+      fs.readFileSync('/tmp/release-notes.md', 'utf8').includes('compare/3.2.3...3.3.0'),
+    'draft release notes must contain comparison link to predecessor tag'
+  );
 
   const draftBeta = executeWorkflowStep(draftReleaseStep, {
     env: { RELEASE_TAG: '3.3.1-beta.1', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'beta' },
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
-    fakeCommands: { gh: fakeGh },
+    fakeCommands: { gh: fakeGh, git: fakeGit },
   });
   assert.equal(draftBeta.status, 0, draftBeta.stderr);
   assert.match(draftBeta.log, /--latest=false/);
   assert.match(draftBeta.log, /--prerelease/);
+
+  const fakeGhExistingDraft = `#!/bin/sh
+printf '%s\n' "$*" >> "$RELEASE_TEST_LOG"
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then
+  case "$*" in
+    *--json*isDraft*) printf 'true\n'; exit 0 ;;
+    *--json*body*) printf 'Existing draft release notes for 3.3.0\n'; exit 0 ;;
+    *) exit 0 ;;
+  esac
+fi
+exit 1
+`;
+  const draftExisting = executeWorkflowStep(draftReleaseStep, {
+    env: { RELEASE_TAG: '3.3.0', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'stable' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhExistingDraft, git: fakeGit },
+  });
+  assert.equal(draftExisting.status, 0, draftExisting.stderr);
+  assert.match(draftExisting.stdout, /Draft release 3\.3\.0 already exists, extracting existing release notes/);
+  assert.doesNotMatch(draftExisting.log, /release create/);
+  assert.ok(
+    fs.existsSync('/tmp/release-notes.md') &&
+      fs.readFileSync('/tmp/release-notes.md', 'utf8').includes('Existing draft release notes for 3.3.0'),
+    'existing draft rerun must extract existing release notes directly from GitHub release body'
+  );
+
+  const fakeGhEmptyDraft = `#!/bin/sh
+printf '%s\n' "$*" >> "$RELEASE_TEST_LOG"
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then
+  case "$*" in
+    *--json*isDraft*) printf 'true\n'; exit 0 ;;
+    *--json*body*) printf '   \\n\\t  \\n'; exit 0 ;;
+    *) exit 0 ;;
+  esac
+fi
+exit 1
+`;
+  const draftEmpty = executeWorkflowStep(draftReleaseStep, {
+    env: { RELEASE_TAG: '3.3.0', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'stable' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhEmptyDraft, git: fakeGit },
+  });
+  assert.notEqual(draftEmpty.status, 0, 'existing draft with empty or whitespace-only body must be rejected');
+  assert.match(draftEmpty.stdout, /Existing draft release 3\.3\.0 has an empty body/);
 
   const publishStep = findStep(publishJob, 'Publish draft without changing GitHub Latest by default');
   const publishStable = executeWorkflowStep(publishStep, {
@@ -553,6 +623,38 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   const evidenceUpload = (e2eJob.steps || []).find((step: any) => step.with?.name === 'release-regression-evidence');
   assert.ok(evidenceUpload, 'CI must upload release regression evidence');
   assert.equal(evidenceUpload.with.path, '${{ runner.temp }}/flocafe-release-regressions/');
+
+  const metaFilePath = path.join(__dirname, '../assets/com.flo.desktop.metainfo.xml');
+  const originalMetaContent = fs.readFileSync(metaFilePath, 'utf8');
+  const testNotesPath = path.join(os.tmpdir(), `flocafe-release-notes-${Date.now()}.md`);
+  try {
+    fs.writeFileSync(testNotesPath, 'Features & fixes:\n- Added <parity> & metadata synchronization');
+    const updateResult = childProcess.spawnSync(
+      process.execPath,
+      [path.join(__dirname, '../scripts/update-metainfo.js')],
+      {
+        cwd: path.join(__dirname, '..'),
+        env: {
+          ...process.env,
+          RELEASE_NOTES_FILE: testNotesPath,
+        },
+        encoding: 'utf8',
+      }
+    );
+    assert.equal(updateResult.status, 0, updateResult.stderr);
+    const updatedMetaContent = fs.readFileSync(metaFilePath, 'utf8');
+    assert.ok(
+      updatedMetaContent.includes(`<release version="${pkg.version}"`),
+      'update-metainfo.js must prepend release entry for current package version'
+    );
+    assert.ok(
+      updatedMetaContent.includes('&lt;parity&gt; &amp; metadata synchronization'),
+      'update-metainfo.js must escape XML entities and preserve release notes text'
+    );
+  } finally {
+    fs.writeFileSync(metaFilePath, originalMetaContent);
+    if (fs.existsSync(testNotesPath)) fs.unlinkSync(testNotesPath);
+  }
 
   console.log('✅ Release config + workflow integrity checks passed');
 }

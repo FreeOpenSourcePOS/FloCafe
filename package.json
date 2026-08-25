@@ -21,6 +21,8 @@
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",
     "verify:electron": "node scripts/verify-electron-runtime.cjs",
     "verify:release-artifacts": "node scripts/assert-release-artifact-names.cjs",
+    "changelog": "npx --yes git-cliff@2.8.0 --unreleased",
+    "changelog:generate": "npx --yes git-cliff@2.8.0 --prepend CHANGELOG.md",
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
     "build:appx": "npm run build:frontend && npm run build && electron-builder --win appx --x64 --arm64 --config.npmRebuild=false",
     "build:mac": "npm run build:frontend && npm run build && electron-builder --mac",

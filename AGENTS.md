@@ -52,6 +52,7 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 - **Legacy code check:** Before modifying legacy-looking files, verify they are part of the active build, import, or packaging path (search imports, routes, and `package.json`).
 - **Discovered issues:** If you encounter an adjacent bug or potential improvement during a task, note it in your report rather than expanding implementation scope.
 - **No unapproved mutations:** Do not create, edit, close, label, or assign GitHub issues or pull requests unless the task specifically instructs issue maintenance. Do not commit, tag, or push without instruction.
+- **Changelog & commit governance:** Use Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `ci:`). Release notes and `CHANGELOG.md` are automated via `git-cliff` (`npm run changelog`) and CI; do not manually draft or invent ad-hoc changelog formats.
 - **Dependencies:** Evaluate built-in Node/Electron/browser APIs and existing project packages before proposing new dependencies.
 
 ## Commands

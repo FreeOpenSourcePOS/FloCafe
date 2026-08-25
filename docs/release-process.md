@@ -9,8 +9,8 @@ channel; a beta upload denied with `invalid-channel-permission` is downgraded
 to a warning and the GitHub release remains publishable until credentials are
 re-exported. Stable draft verification requires both per-architecture Snap
 publication markers; the beta permission-denied path is explicitly degraded as
-NOT-RUN and does not claim a Snap Store pass. Snap installations are updated by snapd rather than
-`electron-updater`.
+NOT-RUN and does not claim a Snap Store pass. Snap installations are updated
+by snapd rather than `electron-updater`.
 
 Nightly releases are explicitly rejected (#503): beta is the only prerelease
 distribution channel, and no nightly publish path exists anywhere in the
@@ -107,24 +107,20 @@ not publish a second expected SHA-512 for them.
 5. The dedicated publish job changes `draft` to false. It sets `make_latest`
    false for every normal release. A separate explicit stable-promotion dispatch
    is the only path that changes GitHub's `Latest` pointer.
-6. After all platform uploads, `candidate-manifest.json` is created from bytes
-   fetched back from the draft. It binds the release tag, exact commit, GitHub
-   asset IDs/names/sizes, platform/architecture, SHA-256, SHA-512, and explicit
-   signing status. Windows direct-download assets are currently recorded as
-   `NOT-VERIFIED` until release-boundary signature verification is recorded;
-   SmartScreen is always `NOT-RUN`, never inferred from a signature.
-   A rerun refuses to overwrite different manifest or summary bytes.
-7. Each Linux job uploads a sanitized `snap-publication-x64.json` or
-   `snap-publication-arm64.json` marker only after `snapcraft upload` succeeds.
-   Stable draft verification requires both markers, and stable promotion refuses
-   to select Latest if either stable marker is absent or not `status=published`.
-   Beta verification uses a stable-only marker requirement, so a beta
-   `invalid-channel-permission` outcome remains an explicit degraded/NOT-RUN
-   Snap Store result rather than blocking GitHub publication or claiming a pass.
+6. After all platform uploads, the workflow creates and attaches the immutable
+   candidate manifest and sanitized release summary defined in the [release
+   evidence index](release-evidence-index.md). The candidate manifest is made
+   from bytes fetched back from the draft, and a rerun refuses to overwrite
+   different manifest or summary bytes.
+7. Each Linux job uploads a per-architecture Snap marker only after
+   `snapcraft upload` succeeds. The [release evidence index](release-evidence-index.md)
+   defines the stable and beta Snap evidence boundaries; stable draft
+   verification and promotion both fail closed on missing or invalid markers.
 8. `release-candidate-gate.yml` consumes only a published beta with the exact
    candidate manifest asset ID and SHA-256. It verifies propagation and that
-   Stable Latest is unchanged, then retains only sanitized JSON evidence for 90
-   days. It does not publish or promote a release.
+   Stable Latest is unchanged, then retains the sanitized JSON evidence defined
+   by the [release evidence index](release-evidence-index.md) for 90 days. It
+   does not publish or promote a release.
 
 For a beta release, use the exact `X.Y.Z-beta.N` prerelease tag, set
 `release_tag` to that tag, and choose `channel=beta`. For a stable build, leave

@@ -2,7 +2,7 @@
 
 This file defines the permanent, sanitized release summary contract. Each
 published desktop release carries a `release-summary.json` asset produced by
-`release.yml`; detailed hosted-runner evidence is retained for 90 days by
+`release.yml`; sanitized candidate evidence is retained for 90 days by
 `release-candidate-gate.yml`. The release asset is the durable index and must
 never contain credentials, passwords, PINs, tokens, or raw credential-bearing
 logs.
@@ -15,8 +15,9 @@ logs.
   `scripts/verify-release-assets.cjs`.
 - Beta publication, propagation, and Stable Latest immutability:
   `scripts/release-gate/published-readiness.cjs`.
-- Stable Snap publication: one sanitized marker per architecture, checked by
-  `scripts/release-gate/verify-stable-promotion.cjs`.
+- Stable Snap publication: one sanitized marker per architecture, required by
+  draft verification in `scripts/verify-release-assets.cjs` and rechecked by
+  `scripts/release-gate/verify-stable-promotion.cjs` before promotion.
 - Beta Snap Store permission denial: explicitly degraded/NOT-RUN; beta draft
   verification does not treat missing permission-denied markers as a pass.
 

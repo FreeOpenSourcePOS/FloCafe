@@ -98,6 +98,21 @@ async function githubJson(url) {
   return (await githubRequest(url)).json();
 }
 
+async function findReleaseByTag(apiBase, tag, requestPage = githubRequest) {
+  let url = `${apiBase}/releases?per_page=100&page=1`;
+  while (url) {
+    const response = await requestPage(url);
+    const releases = await response.json();
+    if (!Array.isArray(releases)) throw new Error(`GitHub releases response for ${tag} was not an array`);
+    const match = releases.find((release) => release && release.tag_name === tag);
+    if (match) return match;
+    const link = typeof response.headers?.get === 'function' ? response.headers.get('link') || '' : '';
+    const next = link.match(/<([^>]+)>;\s*rel="next"/i);
+    url = next ? next[1] : null;
+  }
+  throw new Error(`No draft or published release found for tag ${tag}`);
+}
+
 async function resolveTagCommit(apiBase, tag) {
   let object = (await githubJson(`${apiBase}/git/ref/tags/${encodeURIComponent(tag)}`)).object;
   for (let depth = 0; depth < 4; depth++) {
@@ -361,7 +376,7 @@ async function createFromGitHub(options) {
   if (resolvedCommit !== options.commit.toLowerCase()) {
     throw new Error(`release tag ${options.tag} resolves to ${resolvedCommit}, not the supplied commit ${options.commit}`);
   }
-  const release = await githubJson(`${apiBase}/releases/tags/${encodeURIComponent(options.tag)}`);
+  const release = await findReleaseByTag(apiBase, options.tag);
   const manifest = await createCandidateManifest({
     release,
     commit: resolvedCommit,
@@ -386,7 +401,7 @@ async function verifyFromGitHub(options) {
   if (resolvedCommit !== options.commit.toLowerCase()) {
     throw new Error(`release tag ${options.tag} resolves to ${resolvedCommit}, not the supplied commit ${options.commit}`);
   }
-  const release = await githubJson(`${apiBase}/releases/tags/${encodeURIComponent(options.tag)}`);
+  const release = await findReleaseByTag(apiBase, options.tag);
   const candidateAsset = (release.assets || []).find((asset) => asset.name === 'candidate-manifest.json');
   if (!candidateAsset) throw new Error(`release ${options.tag} is missing candidate-manifest.json`);
   if (options.candidateAssetId && String(candidateAsset.id) !== String(options.candidateAssetId)) {
@@ -425,6 +440,7 @@ module.exports = {
   assertCandidateManifest,
   classifyAsset,
   createCandidateManifest,
+  findReleaseByTag,
   hashAsset,
   manifestSha256,
   resolveTagCommit,

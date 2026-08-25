@@ -818,8 +818,8 @@ jobs:
                 --manifest "$RUNNER_TEMP/candidate-manifest.json" \
                 --output "$LOCAL"
             fi
-            EXISTING_URL=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" \
-              --jq ".assets[] | select(.name == \"$NAME\") | .url" || true)
+            EXISTING_URL=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+              --jq ".[] | select(.tag_name == \"$TAG\") | .assets[] | select(.name == \"$NAME\") | .url" | head -1 || true)
             if [ -n "$EXISTING_URL" ]; then
               EXISTING="$RUNNER_TEMP/existing-$NAME"
               gh api "$EXISTING_URL" -H 'Accept: application/octet-stream' > "$EXISTING"
@@ -839,8 +839,8 @@ jobs:
         # publication markers, and the permanent sanitized summary before the
         # draft can become a public feed.
         run: |
-          CANDIDATE_MANIFEST_ASSET_ID=$(gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" \
-            --jq '.assets[] | select(.name == "candidate-manifest.json") | .id')
+          CANDIDATE_MANIFEST_ASSET_ID=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .assets[] | select(.name == \"candidate-manifest.json\") | .id" | head -1)
           node scripts/verify-release-assets.cjs \
             --repo "${{ github.repository }}" \
             --tag "$RELEASE_TAG" \

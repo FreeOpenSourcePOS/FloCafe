@@ -8,6 +8,7 @@ const {
   assertCandidateManifest,
   classifyAsset,
   createCandidateManifest,
+  findReleaseByTag,
   manifestSha256,
   resolveTagCommit,
   verifyCandidateManifest,
@@ -183,6 +184,8 @@ const requestAsset = async (entry) => payloads.get(entry.name);
   for (const [manifestName, fileNames] of Object.entries(stableManifestFiles)) {
     const manifestText = [
       `version: ${stableVersion}`,
+      `path: ${fileNames[0]}`,
+      `sha512: ${crypto.createHash('sha512').update(stablePayloads.get(fileNames[0])).digest('base64')}`,
       'files:',
       ...fileNames.flatMap((name) => [
         `  - url: ${name}`,
@@ -350,6 +353,21 @@ jobs:
     candidate_manifest_sha256: 'b'.repeat(64),
     matrix_dispatch_id: dispatchId,
   });
+
+  const releaseLookupUrls = [];
+  const draftRelease = await findReleaseByTag(
+    'https://api.github.test/repos/example/repo',
+    '3.3.1-beta.1',
+    async (url) => {
+      releaseLookupUrls.push(url);
+      return new Response(JSON.stringify([{ tag_name: '3.3.1-beta.1', draft: true, assets: [] }]), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  );
+  assert.equal(draftRelease.draft, true);
+  assert.deepEqual(releaseLookupUrls, ['https://api.github.test/repos/example/repo/releases?per_page=100&page=1']);
 
   const originalFetch = global.fetch;
   const originalGhToken = process.env.GH_TOKEN;

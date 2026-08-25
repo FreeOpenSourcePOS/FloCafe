@@ -18,6 +18,7 @@ const {
   assertReleaseSummary,
 } = require('./release-gate/evidence.cjs');
 const {
+  findReleaseByTag,
   verifyCandidateManifest,
 } = require('./release-gate/candidate-manifest.cjs');
 
@@ -502,17 +503,6 @@ async function main() {
     candidateManifestAssetId: options.candidateManifestAssetId,
     candidateManifestCommit: options.candidateManifestCommit,
   });
-}
-
-async function findReleaseByTag(apiBase, tag) {
-  const perPage = 100;
-  for (let page = 1; page <= 10; page++) {
-    const releases = await githubJson(`${apiBase}/releases?per_page=${perPage}&page=${page}`);
-    if (!Array.isArray(releases) || releases.length === 0) break;
-    const match = releases.find((release) => release.tag_name === tag);
-    if (match) return match;
-  }
-  throw new Error(`No draft or published release found for tag ${tag}`);
 }
 
 if (require.main === module) {

@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { findReleaseByTag } = require('./candidate-manifest.cjs');
 
 function requiredArg(args, name) {
   const index = args.indexOf(name);
@@ -103,7 +104,7 @@ async function main() {
   const tag = requiredArg(argv, '--tag');
   const files = fileArgs(argv);
   const apiBase = `https://api.github.com/repos/${repo}`;
-  const release = await (await request(`${apiBase}/releases/tags/${encodeURIComponent(tag)}`)).json();
+  const release = await findReleaseByTag(apiBase, tag);
   const results = await ensureReleaseAssets({ release, files });
   for (const result of results) console.log(`${result.action} ${result.name}${result.id ? ` (${result.id})` : ''}`);
 }

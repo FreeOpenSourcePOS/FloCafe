@@ -59,7 +59,7 @@ The local runtime is macOS with Electron 43.4.1. `npx electron tests/platform-ti
 
 | Cell | Result | Evidence / reason |
 | --- | --- | --- |
-| `hiddenInset` and traffic-light centering in 40px bar | **PASS-verified (runtime configuration)** | The probe constructs a real Electron `BrowserWindow` through an observing constructor and asserts `titleBarStyle=hiddenInset` plus `trafficLightPosition={x:16,y:14}`; `(40-12)/2=14` centers the 12px traffic lights. Pixel-level visual capture was not independently performed. macOS correctly resolves to HTML fallback because `setTitleBarOverlay` is not available on darwin. |
+| `hiddenInset` and traffic-light centering in 40px bar | **PASS-verified (runtime configuration)** | The probe constructs a real Electron `BrowserWindow` through an observing constructor and asserts `titleBarStyle=hiddenInset` plus `trafficLightPosition={x:16,y:14}`; `(40-12)/2=14` centers the 12px traffic lights. Pixel-level visual capture was not independently performed. macOS resolves to `native-overlay` via native traffic lights and never needs HTML fallback caption buttons. |
 | Fullscreen enter/exit | **PASS-verified** | The local `--fullscreen-check` probe entered and exited native fullscreen and asserted both states. |
 | Kiosk mode | **NOT-RUN** | No kiosk codepath or `setKiosk` usage exists in the current FloCafe source. This is a product-scope finding, not an unverified claim. |
 | RTL/Persian (`fa`) logical-property layout | **PASS-verified** | `tests/rtl-foundation.test.ts`, `tests/rtl-dashboard-pos-common.test.ts`, `tests/rtl-setup-auth-settings.test.ts`, and the corresponding existing Playwright coverage pass. Title-bar CSS uses logical inline/block properties; no physical left/right fallback-control placement was added. |

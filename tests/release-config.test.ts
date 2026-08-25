@@ -219,7 +219,7 @@ function run() {
   assert.equal(uploadNotes.uses, 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
   assert.equal(uploadNotes.with?.name, 'release-notes');
   assert.equal(uploadNotes.with?.path, '/tmp/release-notes.md');
-  assert.equal(uploadNotes.with?.['retention-days'], 1);
+  assert.equal(uploadNotes.with?.['retention-days'], 30);
   assert.equal(uploadNotes.if, "steps.release-metadata.outputs.promotion_only != 'true'");
 
   const linuxJob = jobs['release-linux'];
@@ -227,6 +227,7 @@ function run() {
   assert.equal(downloadNotes.uses, 'actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16');
   assert.equal(downloadNotes.with?.name, 'release-notes');
   assert.equal(downloadNotes.with?.path, '/tmp');
+  assert.equal(downloadNotes['continue-on-error'], true);
   const linuxBuild = findStep(linuxJob, 'Build Linux artifacts');
   assertShellStep(linuxJob, 'Build Linux artifacts');
   assert.equal(linuxBuild.env.FLO_LINUX_ARCH, '${{ matrix.arch }}', 'Linux release names must use the safe matrix architecture labels');

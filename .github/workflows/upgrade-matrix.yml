@@ -15,6 +15,7 @@ on:
     paths:
       - '.github/workflows/upgrade-matrix.yml'
       - 'scripts/upgrade-matrix/**'
+      - 'main/services/telemetry.ts'
       - 'docs/upgrade-support-matrix.md'
   workflow_dispatch:
     inputs:
@@ -42,6 +43,9 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  FLO_MATRIX_OFFLINE: '1'
 
 jobs:
   windows-nsis-x64:

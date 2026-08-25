@@ -111,6 +111,19 @@ async function main() {
     assert.equal(await sendEvent('app_launch'), false, 'disabled telemetry remains a no-op');
     assert.equal(calledWhileDisabled, false);
 
+    set.run('telemetry_enabled', 'true', now());
+    let calledWhileMatrixOffline = false;
+    globalThis.fetch = (async () => {
+      calledWhileMatrixOffline = true;
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    process.env.FLO_MATRIX_OFFLINE = '1';
+    telemetry.start();
+    assert.equal(await sendEvent('app_launch'), false, 'matrix fixture telemetry is disabled');
+    assert.equal(calledWhileMatrixOffline, false);
+    await telemetry.stop();
+    delete process.env.FLO_MATRIX_OFFLINE;
+
     console.log('✅ Telemetry delivery contract checks passed');
   } finally {
     globalThis.fetch = originalFetch;

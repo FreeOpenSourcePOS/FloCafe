@@ -8,10 +8,12 @@
 This matrix records real installed-artifact runs, not unit tests or artifact-only
 checks. For self-updating rows, **PASS-verified** means the installed N process
 seeded data, the app's updater downloaded and applied N+1, and a relaunch
-verified version and persistence. Managed-package rows are a separate gate:
-their **PASS-verified** result means the package-manager install emitted its
-managed-update state and did not invoke the in-app updater. **NOT-RUN** is
-explicit and includes the reason; no unobserved behavior is inferred.
+verified version and persistence. Managed-package installation rows are
+**PASS-verified** only when the package manager itself installed the artifact
+and the installed app emitted its managed-update state without invoking the
+in-app updater. A separate **bounded gate** may exercise the shared
+linux-managed IPC branch without proving package-manager delivery. **NOT-RUN**
+is explicit and includes the reason; no unobserved behavior is inferred.
 
 ## Release evidence
 
@@ -36,8 +38,8 @@ explicit and includes the reason; no unobserved behavior is inferred.
 | Linux AppImage x64 | `flocafe-3.3.0-x86_64.AppImage` -> `3.3.1-beta.1` | **PASS-verified** | [Real Debian 13 GNOME machine evidence](#linux-appimage-x64) |
 | Linux AppImage arm64 | `flocafe-3.3.0-arm64.AppImage` -> `3.3.1-beta.1` | **NOT-RUN** | The approved real Linux machine is x86_64; no arm64 Linux machine was available in this run. The arm64 beta artifact did build and publish. |
 | Older cohort Windows NSIS x64 | `Flo.Cafe.Setup.2.9.7.exe` -> stable `3.3.0` | **PASS-verified** | [Run 32775289667](https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/32775289667), artifact `evidence-older-cohort-windows`. |
-| Linux managed: deb | `flocafe-3.3.0-amd64.deb` | **PASS-verified** | [Live `linux-managed` IPC event](#linux-managed-gating) |
-| Linux managed: rpm | `flocafe-3.3.0-x86_64.rpm` | **NOT-RUN** | No system package installation was permitted on the real Debian box; the same main-process gate is covered by the deb row. |
+| Linux managed: deb | `flocafe-3.3.0-amd64.deb` | **NOT-RUN** | [Bounded `linux-managed` gate](#linux-managed-gating); the approved Debian evidence extracted/launched the `.deb` without package-manager installation. |
+| Linux managed: rpm | `flocafe-3.3.0-x86_64.rpm` | **NOT-RUN** | No RPM package-manager installation was permitted on the real Debian box; the bounded shared-branch gate below is not RPM installation evidence. |
 | Linux managed: snap | `flocafe-3.3.0-amd64.snap` | **NOT-RUN** | No snapd/system mutation was permitted on the real Debian box. Beta Snap Store publishing was also blocked by the repository macaroon's `stable, edge` channel restriction; the `.snap` GitHub asset still published. |
 | Windows SmartScreen interactive prompt | Unsigned NSIS | **NOT-RUN** | GitHub-hosted headless execution cannot observe the interactive SmartScreen UI. The release build logs explicitly identify the installer as unsigned when signing credentials are absent. |
 
@@ -152,20 +154,24 @@ PASS, and the uploaded artifact is
 
 ## Linux managed gating
 
-**Result: PASS-verified for deb.** On the real Debian machine, the 3.3.0 deb
-was extracted and launched without system mutation, with a separate HOME and
-ports. A live CDP listener captured the main-process event after requesting a
-check:
+**Package-manager installation: NOT-RUN for deb.** On the approved Debian
+machine, the 3.3.0 deb was extracted and launched without system mutation,
+with a separate HOME and ports. It was not installed through `dpkg` or `apt`,
+so this evidence does not prove the deb package-manager cell.
+
+**Bounded shared-branch gate: PASS-verified.** A live CDP listener captured
+the main-process event after requesting a check from that extracted deb:
 
 ```text
 EVENT:{"status":"linux-managed"}
 updater fetch attempts in app stdout: 0
 ```
 
-This proves a package-manager installation does not call the self-updater.
-The old 3.3.0 client broadcasts this one-shot state without persisting it in
-`get-update-status`; the evidence therefore captures the event itself rather
-than incorrectly polling a default `up-to-date` value.
+This proves the shared linux-managed branch does not call the self-updater.
+It is not package-manager installation evidence. The old 3.3.0 client
+broadcasts this one-shot state without persisting it in `get-update-status`;
+the evidence therefore captures the event itself rather than incorrectly
+polling a default `up-to-date` value.
 
 ## Findings and scoped fixes
 
@@ -182,13 +188,16 @@ than incorrectly polling a default `up-to-date` value.
    process, reruns that exact installer silently, checks exit status, and
    relaunches with CDP. This is a scoped test-harness fix; SmartScreen trust
    behavior remains separately NOT-RUN.
-4. **Release pipeline:** the first real beta build exposed pwsh argument
+4. **Linux managed packages:** deb, rpm, and snap package-manager
+   installation cells remain NOT-RUN. The deb row has a separately labelled
+   bounded shared-branch gate, which does not overclaim package delivery.
+5. **Release pipeline:** the first real beta build exposed pwsh argument
    parsing, draft-release lookup, an over-strict Linux manifest allow-list, and
    a Snap Store macaroon restricted to stable/edge. Scoped fixes are in the
    release workflow/verifier; Snap restriction is a loud warning while GitHub
    artifacts remain publishable. The store credential still needs owner
    rotation to enable beta publishing.
-5. **CI log hygiene:** the initial Windows workflow exposed fixture
+6. **CI log hygiene:** the initial Windows workflow exposed fixture
    credential-like environment values through Actions' automatic step env dump.
    The current workflow keeps those values as step-local shell variables so
    future logs do not print a credential-like env block. The fixtures are

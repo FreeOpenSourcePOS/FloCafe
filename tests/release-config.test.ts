@@ -116,6 +116,14 @@ case "$*" in
 esac
 `;
 
+const fakeGit = `#!/bin/sh
+if [ "$1" = "tag" ]; then
+  printf '2.8.0\\n3.2.0\\n3.2.3\\n3.3.0\\ntax-pack-1.0.0\\n'
+  exit 0
+fi
+exit 0
+`;
+
 function run() {
   console.log('Testing release config + workflow integrity...');
 
@@ -439,7 +447,7 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   const draftStable = executeWorkflowStep(draftReleaseStep, {
     env: { RELEASE_TAG: '3.3.0', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'stable' },
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
-    fakeCommands: { gh: fakeGh },
+    fakeCommands: { gh: fakeGh, git: fakeGit },
   });
   assert.equal(draftStable.status, 0, draftStable.stderr);
   assert.match(draftStable.log, /release create 3\.3\.0/);
@@ -454,7 +462,7 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   const draftBeta = executeWorkflowStep(draftReleaseStep, {
     env: { RELEASE_TAG: '3.3.1-beta.1', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'beta' },
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
-    fakeCommands: { gh: fakeGh },
+    fakeCommands: { gh: fakeGh, git: fakeGit },
   });
   assert.equal(draftBeta.status, 0, draftBeta.stderr);
   assert.match(draftBeta.log, /--latest=false/);

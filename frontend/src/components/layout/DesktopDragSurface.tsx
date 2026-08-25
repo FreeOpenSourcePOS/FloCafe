@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import WindowControls from './WindowControls';
 
 const subscribeToElectronCapability = () => () => {};
@@ -13,6 +13,18 @@ export default function DesktopDragSurface() {
     getElectronCapability,
     getServerElectronCapability,
   );
+
+  useEffect(() => {
+    if (isElectron) {
+      document.documentElement.dataset.floDesktopTitlebar = 'true';
+      if (window.electronAPI?.platform) {
+        document.documentElement.dataset.floPlatform = window.electronAPI.platform;
+      }
+    } else {
+      delete document.documentElement.dataset.floDesktopTitlebar;
+      delete document.documentElement.dataset.floPlatform;
+    }
+  }, [isElectron]);
 
   if (!isElectron) return null;
 

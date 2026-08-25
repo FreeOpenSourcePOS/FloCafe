@@ -131,3 +131,42 @@ test('sidebar offset regression (#504): expanded/collapsed states at md+ viewpor
   });
   expect(forced.y, 'desktop flag offsets sidebar below title bar').toBeCloseTo(40, 0);
 });
+
+test('macOS titlebar safe-area styling reserves leading space for traffic lights', async ({ page }) => {
+  await page.goto(`${BASE}/auth/login`);
+  const paddingLeft = await page.evaluate(() => {
+    const html = document.documentElement;
+    const testHeader = document.createElement('header');
+    testHeader.className = 'flo-title-bar';
+    const safeArea = document.createElement('div');
+    safeArea.className = 'flo-title-bar__safe-area';
+    testHeader.appendChild(safeArea);
+    document.body.appendChild(testHeader);
+    try {
+      html.dataset.floPlatform = 'darwin';
+      return getComputedStyle(safeArea).paddingLeft;
+    } finally {
+      delete html.dataset.floPlatform;
+      testHeader.remove();
+    }
+  });
+  expect(paddingLeft, 'macOS safe area reserves 96px for traffic lights').toBe('96px');
+});
+
+test('sidebar renders profile dropup trigger and supports drag rail resizing', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/auth/login`);
+  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#password').fill('E2ePass123!');
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/pos/, { timeout: 20000 });
+
+  // Sidebar footer profile button renders
+  const profileButton = page.locator('[data-sidebar="footer"] button[data-sidebar="menu-button"]');
+  await expect(profileButton).toBeVisible();
+
+  // Rail has cursor-col-resize
+  const rail = page.locator('[data-sidebar="rail"]');
+  await expect(rail).toHaveClass(/cursor-col-resize/);
+});
+

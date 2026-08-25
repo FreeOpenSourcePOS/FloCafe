@@ -68,6 +68,16 @@ assert.equal(
   'native-overlay',
 );
 assert.equal(
+  resolveTitleBarMode({ platform: 'darwin', electronVersion: '43.4.0', overlayApiPresent: false }),
+  'native-overlay',
+  'macOS supplies native traffic lights and resolves to native-overlay even without WCO overlay API',
+);
+assert.equal(
+  resolveTitleBarMode({ platform: 'darwin', electronVersion: '32.0.0', overlayApiPresent: false }),
+  'native-overlay',
+  'macOS supplies native traffic lights across runtime versions',
+);
+assert.equal(
   resolveTitleBarMode({ platform: 'win32', electronVersion: '33.0.0', overlayApiPresent: true }),
   'native-overlay',
 );
@@ -77,9 +87,17 @@ assert.equal(
   resolveTitleBarMode({ platform: 'linux', electronVersion: '32.3.1', overlayApiPresent: true }),
   'html-fallback',
 );
-// Missing runtime overlay API (defensive probe) forces the fallback.
+assert.equal(
+  resolveTitleBarMode({ platform: 'win32', electronVersion: '32.3.1', overlayApiPresent: true }),
+  'html-fallback',
+);
+// Missing runtime overlay API (defensive probe) forces the fallback on Windows/Linux.
 assert.equal(
   resolveTitleBarMode({ platform: 'linux', electronVersion: '43.4.0', overlayApiPresent: false }),
+  'html-fallback',
+);
+assert.equal(
+  resolveTitleBarMode({ platform: 'win32', electronVersion: '43.4.0', overlayApiPresent: false }),
   'html-fallback',
 );
 assert.equal(

@@ -15,9 +15,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthGuard>
-      <div className="flex h-screen min-h-0 flex-col">
+      <SidebarProvider defaultOpen className="flex h-screen min-h-0 flex-col w-full" style={{ minHeight: 0 }}>
         <TitleBar />
-        <SidebarProvider defaultOpen className="min-h-0 flex-1" style={{ minHeight: 0 }}>
+        <div className="flex min-h-0 flex-1 w-full overflow-hidden">
           <AppSidebar />
           <SidebarInset className="h-full min-h-0 overflow-hidden flex flex-col">
             {/* Mobile-only app bar: below md the sidebar renders as a Sheet with
@@ -36,8 +36,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             <StatusBar showUpdateBadge={false} />
           </SidebarInset>
-        </SidebarProvider>
-      </div>
+        </div>
+      </SidebarProvider>
     </AuthGuard>
   );
 }

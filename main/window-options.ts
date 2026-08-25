@@ -24,12 +24,13 @@ const MIN_OVERLAY_ELECTRON_MAJOR = 33;
 
 /**
  * Decides whether the main window can rely on Electron's native
- * titleBarOverlay caption buttons, or whether the renderer must draw HTML
- * fallback controls.
+ * titleBarOverlay caption buttons (or macOS hiddenInset traffic lights), or
+ * whether the renderer must draw HTML fallback controls.
  *
- * Deliberately defensive: an unknown platform, a pre-33 Electron, or a
- * missing runtime overlay API all resolve to 'html-fallback' so the window
- * never ends up frameless with no visible way to minimize/close it.
+ * Deliberately defensive: macOS always resolves to 'native-overlay'; on Windows
+ * and Linux, an unknown platform, a pre-33 Electron, or a missing runtime
+ * overlay API all resolve to 'html-fallback' so the window never ends up
+ * frameless with no visible way to minimize/close it.
  */
 export function resolveTitleBarMode(probe: {
   platform: NodeJS.Platform;
@@ -38,6 +39,11 @@ export function resolveTitleBarMode(probe: {
 }): TitleBarMode {
   if (probe.platform !== 'darwin' && probe.platform !== 'win32' && probe.platform !== 'linux') {
     return 'html-fallback';
+  }
+  if (probe.platform === 'darwin') {
+    // macOS supplies native traffic lights via titleBarStyle: 'hiddenInset'.
+    // It never needs HTML fallback caption buttons.
+    return 'native-overlay';
   }
   const versionMatch = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
     probe.electronVersion,

@@ -17,7 +17,7 @@ import {
   UserCircle,
   MessageCircle,
   LifeBuoy,
-  ChevronsUpDown,
+  ChevronUp,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -196,17 +196,14 @@ export default function AppSidebar() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton
-                  className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                  className="border border-sidebar-border/70 bg-sidebar-accent/30 shadow-xs hover:bg-sidebar-accent hover:border-sidebar-border hover:shadow-sm data-[state=open]:bg-sidebar-accent data-[state=open]:border-sidebar-border data-[state=open]:shadow-sm transition-all rounded-lg h-9 px-2.5 font-normal group-data-[collapsible=icon]:h-8! group-data-[collapsible=icon]:p-2! group-data-[collapsible=icon]:border-transparent group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:shadow-none"
                   tooltip={user?.name || user?.email || t('user')}
                 >
-                  <UserCircle className="size-4 shrink-0" />
-                  <div className="flex flex-col gap-0.5 min-w-0 text-start leading-none group-data-[collapsible=icon]:hidden">
-                    <span className="font-medium text-sm truncate">{user?.name || user?.email || t('user')}</span>
-                    {user?.name && user?.email && (
-                      <span className="text-xs text-muted-foreground truncate">{user.email}</span>
-                    )}
-                  </div>
-                  <ChevronsUpDown className="ms-auto size-4 shrink-0 group-data-[collapsible=icon]:hidden" />
+                  <UserCircle className="size-4 shrink-0 text-sidebar-primary" />
+                  <span className="font-medium text-sm truncate group-data-[collapsible=icon]:hidden text-sidebar-foreground">
+                    {user?.name || user?.email || t('user')}
+                  </span>
+                  <ChevronUp className="ms-auto size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden transition-transform duration-200 group-data-[state=open]:rotate-180" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent

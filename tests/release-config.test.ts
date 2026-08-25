@@ -70,11 +70,17 @@ function executeWorkflowStep(step: any, options: {
       const fakeNode = path.join(binDir, 'node');
       fs.writeFileSync(fakeNode, `#!/bin/sh\nprintf '%s\\n' '${options.fakeNodeVersion}'\n`);
       fs.chmodSync(fakeNode, 0o755);
+      if (process.platform === 'win32') {
+        fs.writeFileSync(path.join(binDir, 'node.cmd'), `@sh "%~dp0\\node" %*\n`);
+      }
     }
     for (const [name, script] of Object.entries(options.fakeCommands || {})) {
       const commandPath = path.join(binDir, name);
       fs.writeFileSync(commandPath, script);
       fs.chmodSync(commandPath, 0o755);
+      if (process.platform === 'win32') {
+        fs.writeFileSync(path.join(binDir, `${name}.cmd`), `@sh "%~dp0\\${name}" %*\n`);
+      }
     }
 
     // GitHub Actions runs these steps under bash on every OS, including the

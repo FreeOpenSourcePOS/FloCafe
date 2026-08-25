@@ -43,6 +43,7 @@ import {
   isFullDocumentMainFrameNavigation,
   isWindowRendererReady,
 } from './window-readiness';
+import { setupWindowLoadRetry } from './window-load-retry';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -524,10 +525,7 @@ function createWindow(): void {
     }
   });
 
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    log.error('[Window] Failed to load:', errorCode, errorDescription);
-    console.error('[Window] Failed to load:', errorCode, errorDescription);
-  });
+  setupWindowLoadRetry(mainWindow, () => `http://localhost:${getServerPort()}`, { log });
 
   mainWindow.webContents.on('unresponsive', () => {
     console.warn('[Window] Window became unresponsive');

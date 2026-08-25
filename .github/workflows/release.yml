@@ -176,11 +176,12 @@ jobs:
               exit 1
             fi
             echo "Draft release ${TAG} already exists, extracting existing release notes."
-            gh release view "${TAG}" --repo "${{ github.repository }}" --json body --jq .body > /tmp/release-notes.md
-            if [ ! -s /tmp/release-notes.md ]; then
+            BODY=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json body --jq .body)
+            if [ -z "$(echo "${BODY}" | tr -d '[:space:]')" ]; then
               echo "::error::Existing draft release ${TAG} has an empty body; refusing to package release with empty notes."
               exit 1
             fi
+            printf '%s\n' "${BODY}" > /tmp/release-notes.md
           else
             # Generate release notes using git-cliff, falling back to changelog-notes.sh
             if npx --yes git-cliff@2.8.0 --latest --strip header > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then

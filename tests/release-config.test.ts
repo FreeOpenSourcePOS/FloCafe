@@ -510,7 +510,7 @@ printf '%s\n' "$*" >> "$RELEASE_TEST_LOG"
 if [ "$1" = "release" ] && [ "$2" = "view" ]; then
   case "$*" in
     *--json*isDraft*) printf 'true\n'; exit 0 ;;
-    *--json*body*) printf ''; exit 0 ;;
+    *--json*body*) printf '   \\n\\t  \\n'; exit 0 ;;
     *) exit 0 ;;
   esac
 fi
@@ -521,7 +521,7 @@ exit 1
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
     fakeCommands: { gh: fakeGhEmptyDraft, git: fakeGit },
   });
-  assert.notEqual(draftEmpty.status, 0, 'existing draft with empty body must be rejected');
+  assert.notEqual(draftEmpty.status, 0, 'existing draft with empty or whitespace-only body must be rejected');
   assert.match(draftEmpty.stdout, /Existing draft release 3\.3\.0 has an empty body/);
 
   const publishStep = findStep(publishJob, 'Publish draft without changing GitHub Latest by default');

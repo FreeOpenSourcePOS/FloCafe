@@ -105,6 +105,13 @@ const requestAsset = async (entry) => payloads.get(entry.name);
   const dishonest = JSON.parse(JSON.stringify(manifest));
   dishonest.assets.find((entry) => entry.platform === 'windows').signing.smartScreen = 'pass';
   assert.throws(() => assertCandidateManifest(dishonest), /cannot use signing metadata as SmartScreen evidence/);
+  const unverifiedSigned = JSON.parse(JSON.stringify(manifest));
+  unverifiedSigned.assets.find((entry) => entry.name.endsWith('.exe')).signing = {
+    status: 'signed',
+    smartScreen: 'not-run',
+    verification: 'not-run',
+  };
+  assert.throws(() => assertCandidateManifest(unverifiedSigned), /cannot claim signed status without release-build verification/);
 
   assertPublishedRelease(published, { tag: release.tag_name, channel: 'beta' });
   assertStableLatestUnchanged('3.3.0', '3.3.0');
@@ -334,6 +341,10 @@ jobs:
   assert.throws(() => assertMatrixContract(integratedMatrix.replace(
     'run: test -n "$FROM_VERSION" -a -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"',
     'uses: example/runtime-matrix@main\n        with:\n          tag: \${{ inputs.candidate_tag }}\n          asset-id: \${{ inputs.candidate_manifest_asset_id }}\n          sha256: \${{ inputs.candidate_manifest_sha256 }}\n          from-version: \${{ inputs.from_version }}\n          dispatch-id: \${{ inputs.matrix_dispatch_id }}',
+  )), /exact candidate inputs/);
+  assert.throws(() => assertMatrixContract(integratedMatrix.replace(
+    'run: test -n "$FROM_VERSION" -a -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"',
+    'run: echo "$FROM_VERSION $TAG $ASSET_ID $MANIFEST_SHA $DISPATCH_ID"',
   )), /exact candidate inputs/);
   const dispatchId = createDispatchId();
   assert.doesNotThrow(() => assertCorrelatedRun({

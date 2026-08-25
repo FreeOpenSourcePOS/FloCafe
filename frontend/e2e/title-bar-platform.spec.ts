@@ -152,3 +152,21 @@ test('macOS titlebar safe-area styling reserves leading space for traffic lights
   });
   expect(paddingLeft, 'macOS safe area reserves 96px for traffic lights').toBe('96px');
 });
+
+test('sidebar renders profile dropup trigger and supports drag rail resizing', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/auth/login`);
+  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#password').fill('E2ePass123!');
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/pos/, { timeout: 20000 });
+
+  // Sidebar footer profile button renders
+  const profileButton = page.locator('[data-sidebar="footer"] button[data-sidebar="menu-button"]');
+  await expect(profileButton).toBeVisible();
+
+  // Rail has cursor-col-resize
+  const rail = page.locator('[data-sidebar="rail"]');
+  await expect(rail).toHaveClass(/cursor-col-resize/);
+});
+

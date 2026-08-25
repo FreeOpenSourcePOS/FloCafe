@@ -356,9 +356,9 @@ function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
       if (!startDragRef.current) return
       const isRtl = document.documentElement.dir === "rtl"
       const delta = (moveEvent.clientX - startDragRef.current.startX) * (isRtl ? -1 : 1)
-      if (Math.abs(delta) > 3) {
-        startDragRef.current.moved = true
-      }
+      if (Math.abs(delta) <= 3) return
+      startDragRef.current.moved = true
+
       const rawWidth = startDragRef.current.startWidth + delta
       if (rawWidth < 90) {
         if (startDragRef.current.currentOpen) {

@@ -191,7 +191,7 @@ function run(): void {
 
   React.useSyncExternalStore = (_subscribe: any, getSnapshot: () => any) => getSnapshot();
 
-  function renderDirectionalToaster(locale: string): { position?: string; markup: string } {
+  function renderDirectionalToaster(locale: string): { position?: string; containerStyle?: any; markup: string } {
     let capturedProps: any;
     function Probe() {
       const elem = DirectionalToaster();
@@ -201,7 +201,7 @@ function run(): void {
     const markup = ReactDOMServer.renderToStaticMarkup(
       React.createElement(IntlProvider, { locale }, React.createElement(Probe))
     );
-    return { position: capturedProps?.position, markup };
+    return { position: capturedProps?.position, containerStyle: capturedProps?.containerStyle, markup };
   }
 
   usePosSettingsStore.getState().setLanguage('fa');
@@ -209,6 +209,10 @@ function run(): void {
   assert(
     renderedFa.position === 'top-left',
     `DirectionalToaster must set position="top-left" (inline-end) for Persian (fa), got: ${renderedFa.position}`
+  );
+  assert(
+    renderedFa.containerStyle?.top === 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',
+    `DirectionalToaster must set containerStyle.top with titlebar offset, got: ${renderedFa.containerStyle?.top}`
   );
   assert(
     typeof renderedFa.markup === 'string' && renderedFa.markup.length > 0,
@@ -223,11 +227,15 @@ function run(): void {
       `DirectionalToaster must set position="top-right" for ${ltrLang}, got: ${renderedLtr.position}`
     );
     assert(
+      renderedLtr.containerStyle?.top === 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',
+      `DirectionalToaster must set containerStyle.top with titlebar offset, got: ${renderedLtr.containerStyle?.top}`
+    );
+    assert(
       typeof renderedLtr.markup === 'string' && renderedLtr.markup.length > 0,
       `DirectionalToaster must render static markup for ${ltrLang}`
     );
   }
-  console.log('  ✓ DirectionalToaster dynamically adapts toast placement across RTL/LTR languages');
+  console.log('  ✓ DirectionalToaster dynamically adapts toast placement across RTL/LTR languages with titlebar offset');
 
   // 5. Executable Ltr component rendering for POS/operational values.
   const orderRender = ReactDOMServer.renderToStaticMarkup(

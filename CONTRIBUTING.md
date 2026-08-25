@@ -98,7 +98,7 @@ Create a branch from `main` with a descriptive prefix:
 - `refactor/` — Code refactoring within approved scope
 - `chore/` — Maintenance tasks
 
-Use clear commit messages. Conventional Commit formatting (e.g., `fix(printer): handle USB disconnect`) is encouraged.
+Use clear commit messages following Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `ci:`, `chore:`). Release notes and `CHANGELOG.md` are automated via `git-cliff` (`npm run changelog`).
 
 ### Scope discipline
 

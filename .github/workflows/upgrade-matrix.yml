@@ -227,7 +227,7 @@ jobs:
       - name: Install FUSE, Xvfb, keyring daemon
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libfuse2 xvfb gnome-keyring dbus-x11 >/dev/null
+          sudo apt-get install -y -qq libfuse2 xvfb gnome-keyring dbus-x11 squashfs-tools >/dev/null
           # Start a session dbus + unlocked secret service so Electron's
           # safeStorage (and therefore the Master-PIN gate) works headless.
           dbus-launch > dbus.env || true
@@ -243,6 +243,12 @@ jobs:
           fi
           chmod +x flocafe.AppImage
           echo "FLO_APPIMAGE=$RUNNER_TEMP/matrix/flocafe.AppImage" >> "$GITHUB_ENV"
+
+      - name: Apply offline fixture to AppImage release N
+        run: |
+          node scripts/upgrade-matrix/patch-appimage-offline.cjs \
+            "$FLO_APPIMAGE" "$RUNNER_TEMP/appimage-offline-n" \
+            | tee "$RUNNER_TEMP/offline-fixture.log"
 
       - name: Launch release N under Xvfb with a CDP port
         run: |
@@ -288,6 +294,9 @@ jobs:
             echo "::error::release N process did not exit before relaunch"
             exit 1
           fi
+          node scripts/upgrade-matrix/patch-appimage-offline.cjs \
+            "$FLO_APPIMAGE" "$RUNNER_TEMP/appimage-offline-nplus1" \
+            | tee "$RUNNER_TEMP/offline-fixture-post-upgrade.log"
           eval "$(dbus-launch)"
           echo -n ci | gnome-keyring-daemon --unlock >/dev/null
           eval "$(echo -n ci | gnome-keyring-daemon --start --components=secrets)"
@@ -343,6 +352,8 @@ jobs:
             ${{ runner.temp }}/update-status.log
             ${{ runner.temp }}/evidence.json
             ${{ runner.temp }}/evidence-extra.txt
+            ${{ runner.temp }}/offline-fixture.log
+            ${{ runner.temp }}/offline-fixture-post-upgrade.log
           if-no-files-found: warn
 
   linux-managed-gating:
@@ -375,7 +386,7 @@ jobs:
       - name: Install Xvfb
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb dbus-x11 >/dev/null
+          sudo apt-get install -y -qq xvfb dbus-x11 squashfs-tools >/dev/null
 
       - name: Install package manager build of release N
         run: |
@@ -389,9 +400,20 @@ jobs:
             sudo dpkg -i pkg.deb || sudo apt-get install -y -f -qq
             dpkg -l | grep -i flo
           else
+            node "$GITHUB_WORKSPACE/scripts/upgrade-matrix/patch-squashfs-offline.cjs" \
+              "$RUNNER_TEMP/pkg.snap" "$RUNNER_TEMP/snap-offline" \
+              | tee "$RUNNER_TEMP/offline-fixture.log"
             sudo snap install --dangerous pkg.snap
             snap list | grep -i flo
           fi
+
+      - name: Apply offline fixture to deb release N
+        if: matrix.pkg == 'deb'
+        run: |
+          ASAR=$(find /opt -type f -path '*/resources/app.asar' 2>/dev/null | head -1)
+          [ -n "$ASAR" ] || { echo "::error::deb app.asar not found"; exit 1; }
+          sudo "$(command -v node)" scripts/upgrade-matrix/patch-offline-fixture.cjs "$ASAR" \
+            | tee "$RUNNER_TEMP/offline-fixture.log"
 
       - name: Launch under Xvfb with a CDP port
         run: |
@@ -447,7 +469,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: evidence-linux-managed-${{ matrix.pkg }}
-          path: ${{ runner.temp }}/gating-*
+          path: |
+            ${{ runner.temp }}/gating-*
+            ${{ runner.temp }}/offline-fixture.log
           if-no-files-found: warn
 
   older-cohort-windows:

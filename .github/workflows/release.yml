@@ -248,6 +248,14 @@ jobs:
           RELEASE_VERSION: ${{ steps.release-metadata.outputs.version }}
           RELEASE_CHANNEL: ${{ steps.release-metadata.outputs.channel }}
 
+      - name: Upload release notes artifact
+        if: steps.release-metadata.outputs.promotion_only != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-notes
+          path: /tmp/release-notes.md
+          retention-days: 1
+
       - name: Upload standalone uninstaller scripts
         # Independent utility scripts, not part of the app bundle — for
         # users who need to fully remove/reinstall outside the packaged
@@ -296,6 +304,12 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+
+      - name: Download release notes artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: release-notes
+          path: /tmp
 
       - name: Install system dependencies
         # rpm packaging tools are x86-only via apt — arm64 runner ships its

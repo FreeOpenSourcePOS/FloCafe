@@ -127,7 +127,13 @@ assert.throws(
 
 assert.doesNotThrow(() => assertManifestPlatformMapping('latest.yml', VERSION, [
   { url: `flocafe-${VERSION}-win-x64.exe` },
-]));
+], `flocafe-${VERSION}-win-x64.exe`));
+assert.throws(
+  () => assertManifestPlatformMapping('latest.yml', VERSION, [
+    { url: `flocafe-${VERSION}-win-x64.exe` },
+  ]),
+  /updater path must/,
+);
 assert.doesNotThrow(() => assertManifestPlatformMapping('latest-mac.yml', VERSION, [
   { url: `flocafe-${VERSION}-mac-x64.zip` },
   { url: `flocafe-${VERSION}-mac-arm64.zip` },

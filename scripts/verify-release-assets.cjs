@@ -153,7 +153,6 @@ function assertManifestPlatformMapping(manifestName, version, files, selectedPat
   const urls = files.map((file) => file.url);
   let allowed;
   let required;
-  let requiredUpdaterPath;
 
   if (/^(latest|beta)\.yml$/.test(manifestName)) {
     allowed = new Set([`${base}-win-x64.exe`]);
@@ -166,7 +165,6 @@ function assertManifestPlatformMapping(manifestName, version, files, selectedPat
       `${base}-mac-arm64.zip`,
     ]);
     required = [`${base}-mac-x64.zip`, `${base}-mac-arm64.zip`];
-    requiredUpdaterPath = required[0];
   } else if (/^(latest|beta)-linux\.yml$/.test(manifestName)) {
     // electron-builder lists every Linux target from the same build
     // invocation in this manifest; electron-updater ignores those extra
@@ -179,7 +177,6 @@ function assertManifestPlatformMapping(manifestName, version, files, selectedPat
       `${base}-linux-x64.snap`,
     ]);
     required = [`${base}-linux-x64.appimage`];
-    requiredUpdaterPath = required[0];
   } else if (/^(latest|beta)-linux-arm64\.yml$/.test(manifestName)) {
     allowed = new Set([
       `${base}-linux-arm64.appimage`,
@@ -188,10 +185,11 @@ function assertManifestPlatformMapping(manifestName, version, files, selectedPat
       `${base}-linux-arm64.snap`,
     ]);
     required = [`${base}-linux-arm64.appimage`];
-    requiredUpdaterPath = required[0];
   } else {
     throw new Error(`unsupported release manifest ${manifestName}`);
   }
+
+  const requiredUpdaterPath = required[0];
 
   const mismatched = urls.filter((url) => !allowed.has(url));
   if (mismatched.length > 0) {

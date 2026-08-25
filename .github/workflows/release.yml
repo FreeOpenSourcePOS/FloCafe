@@ -169,6 +169,62 @@ jobs:
           VERSION="$RELEASE_VERSION"
           CHANNEL="$RELEASE_CHANNEL"
           BASE_VERSION="${VERSION%%-*}"
+          # Generate release notes using git-cliff, falling back to changelog-notes.sh
+          if npx --yes git-cliff@2.8.0 --latest --strip header > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then
+            echo "Generated release notes for ${TAG} via git-cliff"
+          elif ./scripts/changelog-notes.sh "${BASE_VERSION}" > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then
+            echo "Extracted release notes for ${BASE_VERSION} from CHANGELOG.md"
+          else
+            echo "::error::Could not generate release notes via git-cliff or CHANGELOG.md for tag ${TAG}."
+            exit 1
+          fi
+
+          # Determine previous tag using semver (strictly less than current version)
+          PREV_TAG=$(node -e '
+            const { execSync } = require("child_process");
+            function parse(v) {
+              const m = (v || "").trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/);
+              if (!m) return null;
+              return { major: +m[1], minor: +m[2], patch: +m[3], pre: m[4] ? m[4].split(".") : null, tag: v.trim() };
+            }
+            function comparePre(a, b) {
+              if (!a && !b) return 0;
+              if (!a && b) return 1;
+              if (a && !b) return -1;
+              for (let i = 0; i < Math.max(a.length, b.length); i++) {
+                if (i >= a.length) return -1;
+                if (i >= b.length) return 1;
+                if (a[i] === b[i]) continue;
+                const aNum = /^\d+$/.test(a[i]), bNum = /^\d+$/.test(b[i]);
+                if (aNum && bNum) return +a[i] - +b[i];
+                if (aNum && !bNum) return -1;
+                if (!aNum && bNum) return 1;
+                return a[i] < b[i] ? -1 : 1;
+              }
+              return 0;
+            }
+            function compare(a, b) {
+              if (a.major !== b.major) return a.major - b.major;
+              if (a.minor !== b.minor) return a.minor - b.minor;
+              if (a.patch !== b.patch) return a.patch - b.patch;
+              return comparePre(a.pre, b.pre);
+            }
+            const current = parse(process.argv[1]);
+            if (!current) process.exit(0);
+            const tags = execSync("git tag --list", { encoding: "utf8" }).split("\n").filter(Boolean);
+            const prev = tags
+              .filter(t => !t.startsWith("tax-pack-"))
+              .map(parse)
+              .filter(Boolean)
+              .filter(t => compare(t, current) < 0)
+              .sort((a, b) => compare(b, a))[0];
+            if (prev) console.log(prev.tag);
+          ' "$VERSION" 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then
+            echo "" >> /tmp/release-notes.md
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}" >> /tmp/release-notes.md
+          fi
+
           if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             DRAFT=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json isDraft --jq .isDraft)
             if [ "$DRAFT" != "true" ]; then
@@ -177,62 +233,6 @@ jobs:
             fi
             echo "Draft release ${TAG} already exists, reusing it."
           else
-            # Generate release notes using git-cliff, falling back to changelog-notes.sh
-            if npx --yes git-cliff@2.8.0 --latest --strip header > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then
-              echo "Generated release notes for ${TAG} via git-cliff"
-            elif ./scripts/changelog-notes.sh "${BASE_VERSION}" > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then
-              echo "Extracted release notes for ${BASE_VERSION} from CHANGELOG.md"
-            else
-              echo "::error::Could not generate release notes via git-cliff or CHANGELOG.md for tag ${TAG}."
-              exit 1
-            fi
-
-            # Determine previous tag using semver (strictly less than current version)
-            PREV_TAG=$(node -e '
-              const { execSync } = require("child_process");
-              function parse(v) {
-                const m = (v || "").trim().match(/^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/);
-                if (!m) return null;
-                return { major: +m[1], minor: +m[2], patch: +m[3], pre: m[4] ? m[4].split(".") : null, tag: v.trim() };
-              }
-              function comparePre(a, b) {
-                if (!a && !b) return 0;
-                if (!a && b) return 1;
-                if (a && !b) return -1;
-                for (let i = 0; i < Math.max(a.length, b.length); i++) {
-                  if (i >= a.length) return -1;
-                  if (i >= b.length) return 1;
-                  if (a[i] === b[i]) continue;
-                  const aNum = /^\d+$/.test(a[i]), bNum = /^\d+$/.test(b[i]);
-                  if (aNum && bNum) return +a[i] - +b[i];
-                  if (aNum && !bNum) return -1;
-                  if (!aNum && bNum) return 1;
-                  return a[i] < b[i] ? -1 : 1;
-                }
-                return 0;
-              }
-              function compare(a, b) {
-                if (a.major !== b.major) return a.major - b.major;
-                if (a.minor !== b.minor) return a.minor - b.minor;
-                if (a.patch !== b.patch) return a.patch - b.patch;
-                return comparePre(a.pre, b.pre);
-              }
-              const current = parse(process.argv[1]);
-              if (!current) process.exit(0);
-              const tags = execSync("git tag --list", { encoding: "utf8" }).split("\n").filter(Boolean);
-              const prev = tags
-                .filter(t => !t.startsWith("tax-pack-"))
-                .map(parse)
-                .filter(Boolean)
-                .filter(t => compare(t, current) < 0)
-                .sort((a, b) => compare(b, a))[0];
-              if (prev) console.log(prev.tag);
-            ' "$VERSION" 2>/dev/null || true)
-            if [ -n "$PREV_TAG" ]; then
-              echo "" >> /tmp/release-notes.md
-              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}" >> /tmp/release-notes.md
-            fi
-
             RELEASE_ARGS=(--draft --latest=false)
             [ "$CHANNEL" != "stable" ] && RELEASE_ARGS+=(--prerelease)
             gh release create "${TAG}" \

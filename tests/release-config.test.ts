@@ -479,6 +479,30 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   assert.match(draftBeta.log, /--latest=false/);
   assert.match(draftBeta.log, /--prerelease/);
 
+  const fakeGhExistingDraft = `#!/bin/sh
+printf '%s\n' "$*" >> "$RELEASE_TEST_LOG"
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then
+  case "$*" in
+    *--json*isDraft*) printf 'true\n'; exit 0 ;;
+    *) exit 0 ;;
+  esac
+fi
+exit 1
+`;
+  const draftExisting = executeWorkflowStep(draftReleaseStep, {
+    env: { RELEASE_TAG: '3.3.0', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'stable' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhExistingDraft, git: fakeGit },
+  });
+  assert.equal(draftExisting.status, 0, draftExisting.stderr);
+  assert.match(draftExisting.stdout, /Draft release 3\.3\.0 already exists, reusing it/);
+  assert.doesNotMatch(draftExisting.log, /release create/);
+  assert.ok(
+    fs.existsSync('/tmp/release-notes.md') &&
+      fs.readFileSync('/tmp/release-notes.md', 'utf8').includes('compare/3.2.3...3.3.0'),
+    'existing draft rerun must still generate /tmp/release-notes.md for downstream jobs'
+  );
+
   const publishStep = findStep(publishJob, 'Publish draft without changing GitHub Latest by default');
   const publishStable = executeWorkflowStep(publishStep, {
     expressions: {

@@ -273,12 +273,34 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   assert.equal(promoteJob.needs, 'create-release');
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
   const promoteVerifierDependencies = findStep(promoteJob, 'Install verifier dependencies');
-  assert.equal(promoteVerifierDependencies.run, 'npm ci --ignore-scripts --no-audit --no-fund');
-  const promoteStepNames = promoteJob.steps.map((step: any) => step.name);
-  assert.ok(
-    promoteStepNames.indexOf('Install verifier dependencies') < promoteStepNames.indexOf('Verify stable Snap publication and permanent evidence'),
-    'stable promotion must install verifier dependencies before running its verifier'
+  const promoteVerifier = findStep(promoteJob, 'Verify stable Snap publication and permanent evidence');
+  const promoteBoundaryRun = promoteJob.steps
+    .filter((step: any) => step.name === promoteVerifierDependencies.name || step.name === promoteVerifier.name)
+    .map((step: any) => step.run)
+    .join('\n');
+  const promoteBoundary = executeWorkflowStep(
+    { run: promoteBoundaryRun },
+    {
+      env: { RELEASE_TAG: '3.3.0' },
+      expressions: {
+        'github.repository': 'FreeOpenSourcePOS/FloCafe',
+        'inputs.candidate_manifest_asset_id': '299',
+        'inputs.candidate_manifest_sha256': 'a'.repeat(64),
+      },
+      fakeCommands: {
+        npm: `#!/bin/sh
+printf 'npm %s\\n' "$*" >> "$RELEASE_TEST_LOG"
+`,
+        node: `#!/bin/sh
+if printf '%s\\n' "$*" | grep -q 'verify-stable-promotion.cjs'; then
+  grep -q '^npm ci --ignore-scripts --no-audit --no-fund$' "$RELEASE_TEST_LOG" || exit 1
+fi
+printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
+`,
+      },
+    }
   );
+  assert.equal(promoteBoundary.status, 0, promoteBoundary.stderr);
   assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
 
   const candidateWorkflow = loadWorkflow('release-candidate-gate.yml');

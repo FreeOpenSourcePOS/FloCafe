@@ -140,8 +140,9 @@ const requestAsset = async (entry) => payloads.get(entry.name);
     arm64: { ...snapEvidence.arm64, status: 'failed' },
   }, '3.3.0'), /status=published/);
 
-  assertOrdering(['draft-verified', 'snap-published', 'published', 'readiness-verified', 'matrix-started'], { channel: 'beta' });
-  assert.throws(() => assertOrdering(['draft-verified', 'published', 'snap-published'], { channel: 'beta' }), /snap-published.*published/);
+  assertOrdering(['draft-verified', 'published', 'readiness-verified'], { channel: 'beta' });
+  assertOrdering(['draft-verified', 'published', 'readiness-verified', 'matrix-started', 'matrix-completed'], { channel: 'beta', requireMatrix: true });
+  assert.throws(() => assertOrdering(['draft-verified', 'published', 'readiness-verified', 'matrix-completed'], { channel: 'beta', requireMatrix: true }), /readiness-verified.*matrix-started/);
   assertOrdering(['draft-verified', 'snap-published', 'published', 'promoted-latest'], { channel: 'stable' });
   assert.throws(() => assertOrdering(['draft-verified', 'published', 'promoted-latest'], { channel: 'stable' }), /snap-published.*published/);
 

@@ -74,12 +74,14 @@ function assertOrdering(events, { channel = 'beta', requireMatrix = false } = {}
     }
   };
   before('draft-verified', 'published');
-  before('snap-published', 'published');
   if (channel === 'beta') {
     before('published', 'readiness-verified');
-    before('readiness-verified', 'matrix-started');
+    if (requireMatrix) before('readiness-verified', 'matrix-started');
   }
-  if (channel === 'stable') before('published', 'promoted-latest');
+  if (channel === 'stable') {
+    before('snap-published', 'published');
+    before('published', 'promoted-latest');
+  }
   if (requireMatrix) before('readiness-verified', 'matrix-completed');
   return true;
 }

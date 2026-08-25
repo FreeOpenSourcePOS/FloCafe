@@ -43,6 +43,7 @@ import {
   isFullDocumentMainFrameNavigation,
   isWindowRendererReady,
 } from './window-readiness';
+import { setupWindowLoadRetry } from './window-load-retry';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -524,36 +525,7 @@ function createWindow(): void {
     }
   });
 
-  let loadRetries = 0;
-  let loadRetryTimer: NodeJS.Timeout | null = null;
-
-  mainWindow.webContents.on('did-finish-load', () => {
-    loadRetries = 0;
-    if (loadRetryTimer) {
-      clearTimeout(loadRetryTimer);
-      loadRetryTimer = null;
-    }
-  });
-
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    log.error('[Window] Failed to load:', errorCode, errorDescription, validatedURL);
-    console.error('[Window] Failed to load:', errorCode, errorDescription, validatedURL);
-
-    // Auto-retry transient network errors (e.g. -102 ERR_CONNECTION_REFUSED when
-    // Squirrel.Mac or OS relaunch fires before the embedded server finishes socket binding).
-    const transientErrors = [-102, -105, -106, -118];
-    if (transientErrors.includes(errorCode) && loadRetries < 10) {
-      loadRetries++;
-      const delay = Math.min(250 * Math.pow(1.5, loadRetries), 2000);
-      log.info(`[Window] Retrying loadURL in ${delay}ms (attempt ${loadRetries}/10)...`);
-      if (loadRetryTimer) clearTimeout(loadRetryTimer);
-      loadRetryTimer = setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.loadURL(`http://localhost:${getServerPort()}`);
-        }
-      }, delay);
-    }
-  });
+  setupWindowLoadRetry(mainWindow, () => `http://localhost:${getServerPort()}`, { log });
 
   mainWindow.webContents.on('unresponsive', () => {
     console.warn('[Window] Window became unresponsive');

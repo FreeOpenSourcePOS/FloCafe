@@ -215,7 +215,18 @@ function run() {
     assert.match(pkg.scripts?.[scriptName], /--publish never$/, `${scriptName} must not publish outside the release workflow`);
   }
 
+  const uploadNotes = findStep(createRelease, 'Upload release notes artifact');
+  assert.equal(uploadNotes.uses, 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a');
+  assert.equal(uploadNotes.with?.name, 'release-notes');
+  assert.equal(uploadNotes.with?.path, '/tmp/release-notes.md');
+  assert.equal(uploadNotes.with?.['retention-days'], 1);
+  assert.equal(uploadNotes.if, "steps.release-metadata.outputs.promotion_only != 'true'");
+
   const linuxJob = jobs['release-linux'];
+  const downloadNotes = findStep(linuxJob, 'Download release notes artifact');
+  assert.equal(downloadNotes.uses, 'actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16');
+  assert.equal(downloadNotes.with?.name, 'release-notes');
+  assert.equal(downloadNotes.with?.path, '/tmp');
   const linuxBuild = findStep(linuxJob, 'Build Linux artifacts');
   assertShellStep(linuxJob, 'Build Linux artifacts');
   assert.equal(linuxBuild.env.FLO_LINUX_ARCH, '${{ matrix.arch }}', 'Linux release names must use the safe matrix architecture labels');
@@ -566,6 +577,38 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   const evidenceUpload = (e2eJob.steps || []).find((step: any) => step.with?.name === 'release-regression-evidence');
   assert.ok(evidenceUpload, 'CI must upload release regression evidence');
   assert.equal(evidenceUpload.with.path, '${{ runner.temp }}/flocafe-release-regressions/');
+
+  const metaFilePath = path.join(__dirname, '../assets/com.flo.desktop.metainfo.xml');
+  const originalMetaContent = fs.readFileSync(metaFilePath, 'utf8');
+  const testNotesPath = path.join(os.tmpdir(), `flocafe-release-notes-${Date.now()}.md`);
+  try {
+    fs.writeFileSync(testNotesPath, 'Features & fixes:\n- Added <parity> & metadata synchronization');
+    const updateResult = childProcess.spawnSync(
+      process.execPath,
+      [path.join(__dirname, '../scripts/update-metainfo.js')],
+      {
+        cwd: path.join(__dirname, '..'),
+        env: {
+          ...process.env,
+          RELEASE_NOTES_FILE: testNotesPath,
+        },
+        encoding: 'utf8',
+      }
+    );
+    assert.equal(updateResult.status, 0, updateResult.stderr);
+    const updatedMetaContent = fs.readFileSync(metaFilePath, 'utf8');
+    assert.ok(
+      updatedMetaContent.includes(`<release version="${pkg.version}"`),
+      'update-metainfo.js must prepend release entry for current package version'
+    );
+    assert.ok(
+      updatedMetaContent.includes('&lt;parity&gt; &amp; metadata synchronization'),
+      'update-metainfo.js must escape XML entities and preserve release notes text'
+    );
+  } finally {
+    fs.writeFileSync(metaFilePath, originalMetaContent);
+    if (fs.existsSync(testNotesPath)) fs.unlinkSync(testNotesPath);
+  }
 
   console.log('✅ Release config + workflow integrity checks passed');
 }

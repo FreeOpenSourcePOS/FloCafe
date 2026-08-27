@@ -15,12 +15,23 @@ import type { Session } from 'electron';
  * a real browser's picker. With more than one matching device connected,
  * the first one reported is selected; a POS terminal with multiple
  * simultaneously-attached USB printers isn't a supported configuration.
+ *
+ * Both handlers are scoped to `trustedOrigin` (the app's own served origin,
+ * e.g. `http://localhost:<port>`) — this app never intentionally loads
+ * third-party content, but nothing else in the renderer's security model
+ * stops a compromised dependency or a stray external navigation from
+ * requesting USB access, so any request from another origin is refused
+ * rather than silently auto-approved.
  */
-export function registerUsbDevicePermissions(session: Session): void {
+export function registerUsbDevicePermissions(session: Session, trustedOrigin: string): void {
   session.on('select-usb-device', (event, details, callback) => {
     event.preventDefault();
+    if (details.frame?.origin !== trustedOrigin) {
+      callback();
+      return;
+    }
     callback(details.deviceList[0]?.deviceId);
   });
 
-  session.setDevicePermissionHandler((details) => details.deviceType === 'usb');
+  session.setDevicePermissionHandler((details) => details.deviceType === 'usb' && details.origin === trustedOrigin);
 }

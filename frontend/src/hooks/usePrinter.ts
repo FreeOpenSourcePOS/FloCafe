@@ -159,6 +159,12 @@ export const usePrinterStore = create<PrinterState>()(
             }
           }
 
+          // A silent reconnect kicked off at app startup may still be in
+          // flight (e.g. a print triggered moments after launch) — wait for
+          // it to settle before trusting isConnected, or a printer that's
+          // about to reattach would wrongly fall back to browser print.
+          await printerService.awaitPendingReconnect();
+
           if (get().printMethod === 'browser' || (!hw && !printerService.isConnected && get().printMethod === 'escpos')) {
             if (!hw && !printerService.isConnected && get().printMethod === 'escpos') {
               toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
@@ -231,6 +237,9 @@ export const usePrinterStore = create<PrinterState>()(
           // it can't fall back to a backend hardware printer. Without a
           // connected WebUSB device it must fall back to browser print
           // instead of throwing "Printer is not connected" (issue #534).
+          // A startup silent-reconnect attempt may still be in flight — wait
+          // for it to settle before trusting isConnected.
+          await printerService.awaitPendingReconnect();
           const noThermalTransport = !printerService.isConnected && get().printMethod === 'escpos';
           if (get().printMethod === 'browser' || noThermalTransport) {
             if (noThermalTransport) {
@@ -313,6 +322,10 @@ export const usePrinterStore = create<PrinterState>()(
             }
           }
 
+          // A startup silent-reconnect attempt may still be in flight (e.g.
+          // KOT auto-print firing on the first order right after launch) —
+          // wait for it to settle before trusting isConnected.
+          await printerService.awaitPendingReconnect();
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             const { paperWidth } = get();
             const warnings: PrintWarning[] = [];

@@ -168,6 +168,8 @@ class PrinterService {
     await this.openDevice(device);
   }
 
+  private reconnectPromise: Promise<boolean> | null = null;
+
   /**
    * Silently re-attaches to a printer the user already granted permission
    * for in a previous session, using the non-prompting getDevices() API.
@@ -175,23 +177,45 @@ class PrinterService {
    * throws; returns whether a device was reattached. Without this, the
    * WebUSB connection is lost on every reload/relaunch and print() throws
    * "Printer is not connected" until the user manually reconnects.
+   *
+   * Concurrent calls (and calls made while one is already in flight) share
+   * the same in-flight promise rather than racing multiple getDevices()/open()
+   * attempts against each other.
    */
   async tryReconnect(): Promise<boolean> {
+    if (this.reconnectPromise) return this.reconnectPromise;
     if (this._printMode === 'browser' || this.device || !navigator.usb) {
       return false;
     }
-    try {
-      const devices = await navigator.usb.getDevices();
-      const previouslyGranted = devices[0];
-      if (!previouslyGranted) return false;
-      this.setStatus('connecting');
-      await this.openDevice(previouslyGranted);
-      return true;
-    } catch (err) {
-      console.warn('[PrinterService] Silent reconnect failed:', err);
-      this.setStatus('disconnected');
-      return false;
-    }
+    this.reconnectPromise = (async () => {
+      try {
+        const devices = await navigator.usb.getDevices();
+        const previouslyGranted = devices[0];
+        if (!previouslyGranted) return false;
+        this.setStatus('connecting');
+        await this.openDevice(previouslyGranted);
+        return true;
+      } catch (err) {
+        console.warn('[PrinterService] Silent reconnect failed:', err);
+        this.setStatus('disconnected');
+        return false;
+      } finally {
+        this.reconnectPromise = null;
+      }
+    })();
+    return this.reconnectPromise;
+  }
+
+  /**
+   * Waits for a silent reconnect already in flight (started at app startup)
+   * to settle, without starting a new one. Callers that gate on `isConnected`
+   * right before printing should await this first — otherwise a print
+   * triggered moments after startup (e.g. KOT auto-print on the first order)
+   * can read `isConnected` as false and fall back to browser print even
+   * though the WebUSB printer reconnects a beat later.
+   */
+  async awaitPendingReconnect(): Promise<void> {
+    if (this.reconnectPromise) await this.reconnectPromise;
   }
 
   async disconnect(): Promise<void> {

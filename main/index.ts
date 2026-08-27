@@ -501,7 +501,7 @@ function createWindow(): void {
 
   // Required for the renderer's WebUSB printer flow (PrinterService.connect())
   // to resolve at all — see usb-device-permissions.ts.
-  registerUsbDevicePermissions(mainWindow.webContents.session);
+  registerUsbDevicePermissions(mainWindow.webContents.session, `http://localhost:${getServerPort()}`);
 
   mainWindow.on('close', (event) => {
     if (!isQuitting) {

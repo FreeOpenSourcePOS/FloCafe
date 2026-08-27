@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, powerMonitor } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -559,6 +559,29 @@ function createWindow(): void {
   });
 }
 
+// ── Sleep/wake repaint recovery ─────────────────────────────────────────────
+// macOS/Chromium's GPU compositor can fail to repaint after the display goes
+// to sleep and wakes back up, leaving the window fully white until the user
+// force-quits it. No crash occurs — render-process-gone never fires because
+// the renderer is still alive, it just stops painting. Nudging the window
+// size by a pixel forces the native compositor to recompute and redraw
+// without touching webContents (no reload, no loss of in-progress renderer
+// state). Registered once; mainWindow is re-read from the module-level `let`
+// on every resume, so it stays correct across window recreation.
+function registerPowerMonitorRecovery(): void {
+  powerMonitor.on('resume', () => {
+    console.log('[Window] System resumed from sleep, forcing repaint');
+    // The display/GPU pipeline isn't necessarily back immediately on resume;
+    // give it a moment before nudging so the repaint has something to show.
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
+      const [width, height] = mainWindow.getSize();
+      mainWindow.setSize(width + 1, height);
+      mainWindow.setSize(width, height);
+    }, 1000);
+  });
+}
+
 function createTray(): void {
   if (process.platform === 'linux') {
     // ── Linux system tray ────────────────────────────────────────────────────
@@ -975,6 +998,7 @@ async function initialize(): Promise<void> {
 
     console.log('[Flo] Creating window...');
     createWindow();
+    registerPowerMonitorRecovery();
     createTray();
     createMenu();
     // Auto-updater: wired up on every non-store platform, including Linux now

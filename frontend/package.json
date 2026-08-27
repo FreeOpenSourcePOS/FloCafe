@@ -7,7 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test --config=playwright.config.ts --project=chromium",
+    "test:e2e:electron": "playwright test --config=playwright.electron.config.ts --project=electron-desktop"
   },
   "dependencies": {
     "@dnd-kit/dom": "^0.5.0",

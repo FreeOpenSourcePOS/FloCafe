@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE, E2E_KDS_BASE_URL } from './helpers/urls';
+import { injectElectronFixture, readFixtureActions } from './helpers/electron-fixture';
 
 /**
  * Platform test-matrix rows for the custom title-bar work (Refs #457/#462)
@@ -170,3 +171,65 @@ test('sidebar renders profile dropup trigger and supports drag rail resizing', a
   await expect(rail).toHaveClass(/cursor-col-resize/);
 });
 
+test('browser Electron fixture exposes the complete renderer API and explicit initial focus', async ({ page }) => {
+  await injectElectronFixture(page, { platform: 'darwin', focused: false });
+  await page.goto(`${BASE}/auth/login`);
+
+  const contract = await page.evaluate(async () => ({
+    keys: Object.keys(window.electronAPI || {}).sort(),
+    focus: document.documentElement.dataset.floWindowFocused,
+    appInfo: await window.electronAPI?.getAppInfo(),
+    updateStatus: await window.electronAPI?.getUpdateStatus(),
+  }));
+  expect(contract.keys).toEqual([
+    'backupDatabase',
+    'checkForUpdates',
+    'dbApplySafeFixes',
+    'dbHealthCheck',
+    'dbInitialize',
+    'getAppInfo',
+    'getBetaChannel',
+    'getDailySummary',
+    'getKdsInfo',
+    'getMasterPinStatus',
+    'getPrinters',
+    'getSettings',
+    'getStatus',
+    'getUpdateStatus',
+    'onMenuAction',
+    'onUpdateStatus',
+    'openKdsWindow',
+    'platform',
+    'restartAndInstall',
+    'restoreBackup',
+    'savePrinter',
+    'setBetaChannel',
+    'setSetting',
+    'windowAction',
+    'windowReady',
+  ]);
+  expect(contract.focus).toBe('false');
+  expect(contract.appInfo).toMatchObject({ version: 'e2e', platform: 'darwin' });
+  expect(contract.updateStatus).toMatchObject({ status: 'dev-mode', info: { version: 'e2e' } });
+});
+
+test('browser Electron fixture drives authenticated title-bar and fallback controls', async ({ page }) => {
+  await injectElectronFixture(page, {
+    platform: 'win32',
+    titleBarMode: 'html-fallback',
+    focused: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/auth/login`);
+  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#password').fill('E2ePass123!');
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL(/\/pos/, { timeout: 20000 });
+  await expect(page.locator('[data-slot="sidebar-container"]')).toBeVisible();
+  await expect(page.getByTestId('desktop-title-bar')).toBeVisible();
+  await expect(page.locator('.flo-title-bar__fallback-controls')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-flo-window-focused', 'true');
+
+  await page.locator('.flo-title-bar__fallback-button').first().click();
+  await expect.poll(() => readFixtureActions(page)).toContain('minimize');
+});

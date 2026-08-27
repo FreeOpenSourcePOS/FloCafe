@@ -16,6 +16,7 @@ This record uses assertion and log evidence first. The Linux XWD capture is supp
 | [`tests/window-readiness.test.ts`](../tests/window-readiness.test.ts) | Epoch/nonce-bound renderer readiness and fail-safe contract. |
 | [`tests/electron-api-contract.test.ts`](../tests/electron-api-contract.test.ts) | Preload `windowAction` and `windowReady` contract. |
 | [`frontend/e2e/title-bar-platform.spec.ts`](../frontend/e2e/title-bar-platform.spec.ts) | Browser/LAN multi-viewport and #504 sidebar regression checks. |
+| [`frontend/e2e/desktop/title-bar.electron.spec.ts`](../frontend/e2e/desktop/title-bar.electron.spec.ts) | Dedicated native Electron readiness, authenticated dashboard, and window-boundary checks. |
 | [`frontend/e2e/layout-integrity.spec.ts`](../frontend/e2e/layout-integrity.spec.ts) | Existing browser/LAN geometry and zero-title-bar checks. |
 | [`docs/images/title-bar-platform-matrix/linux-runtime-probe.log`](images/title-bar-platform-matrix/linux-runtime-probe.log) | Debian 13 GNOME, Electron 43.4.1, Xvfb: 9/9 probe checks passed; WM-dependent action round-trip explicitly skipped because Xvfb had no WM. |
 | [`docs/images/title-bar-platform-matrix/appimage-run-summary.log`](images/title-bar-platform-matrix/appimage-run-summary.log) | Current-branch packaged AppImage startup under dedicated Xvfb display. |
@@ -71,6 +72,12 @@ The local runtime is macOS with Electron 43.4.1. `npx electron tests/platform-ti
 ### 5. Sidebar-offset regression (#504/#505)
 
 **PASS-verified.** The same Playwright run checks expanded and collapsed/rail states on POS and settings at all three md+ viewports, plus the KDS and browser/LAN route geometry in the existing layout-integrity test. Browser mode remains at viewport top (`0px`); forcing the Electron capability flag moves the sidebar to the 40px title-bar boundary.
+
+### 6. Dedicated native Electron harness (#525)
+
+The native suite runs from `playwright.electron.config.ts` with a disposable Electron user-data directory/database, a deterministic available three-port set, seeded owner authentication, and HTTP plus renderer IPC readiness barriers. It exercises the real preload, renderer, and main-process boundaries on the dashboard and verifies graceful shutdown closes the known PID and listeners.
+
+The hosted native job uses Linux Xvfb without a window manager. Native minimize/restore and pixel-level caption geometry are therefore explicit skips; the suite does not claim shell behavior that the environment cannot observe. The existing Windows matrix remains configuration/probe evidence only, and no macOS or Windows native Playwright result is claimed by CI.
 
 ## Findings
 

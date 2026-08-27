@@ -174,11 +174,15 @@ class PrinterService {
     try {
       device = await navigator.usb.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
     } catch (err: unknown) {
+      // A concurrent tryReconnect() can finish and set this.device while the
+      // picker is still open (requestDevice() intentionally isn't gated by
+      // connectLock — see above). Don't stomp that real connection's status
+      // just because this particular request was cancelled or failed.
       if (err instanceof DOMException && err.name === 'NotFoundError') {
-        this.setStatus('disconnected');
+        if (!this.device) this.setStatus('disconnected');
         return;
       }
-      this.setStatus('error');
+      if (!this.device) this.setStatus('error');
       throw new Error(`USB device selection failed: ${(err as Error).message}`);
     }
 

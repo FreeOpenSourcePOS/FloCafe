@@ -588,8 +588,9 @@ export default function OrdersPage() {
       toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
       showPrintWarningsToast(printWarnings);
       fetchPrintHistory(billId);
-    } catch {
-      toast.error(tOrders('printReceiptFailed'));
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : undefined;
+      toast.error(detail ? `${tOrders('printReceiptFailed')}: ${detail}` : tOrders('printReceiptFailed'));
     } finally {
       setPrintingBillId(null);
       setConfirmPrintBillId(null);

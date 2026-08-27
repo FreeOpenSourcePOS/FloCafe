@@ -11,12 +11,13 @@ import {
   parseStoredKotLanguagePolicy,
   parseStoredReceiptLanguagePolicy,
 } from '@/lib/print-language-policies';
-import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
+import { usePrinterStore } from '@/hooks/usePrinter';
 import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
+import axios from 'axios';
 import toast from 'react-hot-toast';
 import { COUNTRIES, getCountryByCode, getLocalizedCountryName, sortCountriesByLocalizedName, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
@@ -268,7 +269,7 @@ export default function SettingsPage() {
   const posSettings = usePosSettingsStore();
   const whatsappEnabled = posSettings.whatsappEnabled;
   const { printMethod, setPrintMethod, refreshHardwarePrinter } = usePrinterStore();
-  usePrinterStatusSync();
+  // Synced at the dashboard layout level now (issue #534).
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
   const locale = useLocale();
@@ -836,6 +837,17 @@ export default function SettingsPage() {
     return t('printColumnsShort', { cols });
   };
 
+  // Printer failures carry a specific, actionable reason from the backend
+  // (wrong OS queue name, offline, out of paper, etc.) — showing only a
+  // generic toast forces a support ticket for what the app already knows.
+  const printerErrorMessage = (err: unknown, fallback: string): string => {
+    if (axios.isAxiosError(err)) {
+      const apiError = err.response?.data?.error;
+      if (typeof apiError === 'string' && apiError.trim()) return `${fallback}: ${apiError}`;
+    }
+    return fallback;
+  };
+
   const fetchPrinters = () => {
     api.get('/printers').then((res) => setHwPrinters(res.data.printers || [])).catch(() => {});
   };
@@ -916,8 +928,8 @@ export default function SettingsPage() {
       fetchPrinters();
       refreshHardwarePrinter();
       setShowPrinterForm(false);
-    } catch {
-      toast.error(t('printerSaveFailed'));
+    } catch (err) {
+      toast.error(printerErrorMessage(err, t('printerSaveFailed')));
     } finally {
       setSavingPrinter(false);
     }
@@ -951,8 +963,8 @@ export default function SettingsPage() {
     try {
       await api.post(`/printers/${printer.id}/test`);
       toast.success(t('testPrintSent'));
-    } catch {
-      toast.error(t('testPrintFailed'));
+    } catch (err) {
+      toast.error(printerErrorMessage(err, t('testPrintFailed')));
     } finally {
       setTestingPrinterId(null);
     }
@@ -3802,7 +3814,15 @@ export default function SettingsPage() {
                       <input type="text" value={printerForm.name}
                         onChange={(e) => setPrinterForm((p) => ({ ...p, name: e.target.value }))}
                         placeholder={t('printerNamePlaceholder')}
+                        list="detected-printer-names"
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                      <datalist id="detected-printer-names">
+                        {detectedPrinters.map((dp) => <option key={dp.name} value={dp.name} />)}
+                      </datalist>
+                      {printerForm.connection_type !== 'webusb' && printerForm.name.trim() && detectedPrinters.length > 0
+                        && !detectedPrinters.some((dp) => dp.name === printerForm.name) && (
+                        <p className="mt-1 text-xs text-amber-600">{t('printerNameMismatchWarning')}</p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-xs text-gray-500 mb-1">{t('connectionType')}</label>

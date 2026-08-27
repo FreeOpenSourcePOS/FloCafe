@@ -7,11 +7,16 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/s
 import StatusBar from '@/components/layout/StatusBar';
 import GlobalNotifications from '@/components/layout/GlobalNotifications';
 import TitleBar from '@/components/layout/TitleBar';
+import { usePrinterStatusSync } from '@/hooks/usePrinter';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isPos = pathname === '/pos' || pathname === '/kds';
   const isSettings = pathname === '/settings';
+  // Hoisted here (rather than only in PrinterStatus/Settings) so hardwarePrinter
+  // and the WebUSB reconnect attempt are ready before the POS page can place
+  // its first order — closes the startup race described in issue #534.
+  usePrinterStatusSync();
 
   return (
     <AuthGuard>

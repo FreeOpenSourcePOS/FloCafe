@@ -45,6 +45,15 @@ KOT printing can be disabled for the business. When it is disabled, neither auto
 1. Use **Settings → Printers → Test Print** to verify printer connectivity before live service.
 2. Ensure FloCafe's local API and network printers are confined to your private business network.
 
+### Adding a printer manually by name
+
+FloCafe dispatches USB/OS-queue print jobs by sending the printer's exact name to the OS (`lp -d <name>` on macOS/Linux, `OpenPrinterW` on Windows) — there is no fuzzy matching. If a printer isn't found by **Settings → Printers → Detect**, use **Add Manually**, but the name must match the OS print queue identifier exactly, not just what appears to be the printer's name on your desktop:
+
+- Prefer picking the name from the autocomplete list under the name field (sourced from the same detection FloCafe uses) over typing it by hand.
+- On macOS/Linux, the CUPS queue name can differ from the display name shown in System Settings (for example, spaces are sometimes replaced with underscores). Check the exact queue name with `lpstat -p` in a terminal.
+- On Windows, check **Settings → Printers & scanners** for the exact printer name, including any suffix like `(Copy 1)`.
+- If you rename or reinstall the printer at the OS level later, its queue identifier can change — re-add or edit the printer in FloCafe with the new name.
+
 ### Network printers
 
 - Confirm FloCafe's machine can reach the printer on the trusted/local business network.
@@ -72,7 +81,7 @@ FloCafe does not manage standalone Bluetooth RFCOMM transport or discovery. To u
 
 ### WebUSB printers
 
-WebUSB printers are paired through the POS toolbar in a supported browser. The saved printer entry retains formatting preferences, but browser permissions control physical device access.
+WebUSB printers are paired through the POS toolbar's **Connect** button, in the desktop app or in a supported browser. The saved printer entry retains formatting preferences, but browser (or, in the desktop app, Electron) permissions control physical device access. If more than one matching USB device is connected at once, the desktop app connects to the first one it finds — using a single USB thermal printer per terminal is the supported configuration. The connection is re-established automatically on the next app start once granted; if the printer isn't detected after a fresh install or a permissions reset, click **Connect** again to re-grant access.
 
 ### Diagnostic logs
 

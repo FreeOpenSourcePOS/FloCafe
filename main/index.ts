@@ -44,6 +44,7 @@ import {
   isWindowRendererReady,
 } from './window-readiness';
 import { setupWindowLoadRetry } from './window-load-retry';
+import { registerUsbDevicePermissions } from './usb-device-permissions';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -360,6 +361,12 @@ async function checkTaxPackUpdatesOnStartup(): Promise<void> {
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+// createWindow() can run more than once per app lifetime (renderer crash
+// recovery, macOS 'activate') but every window shares the same default
+// session (no partition/session is set in webPreferences) — registering
+// again on each call would stack duplicate 'select-usb-device' listeners
+// on that shared session, firing multiple confirmation dialogs per request.
+let usbDevicePermissionsRegistered = false;
 
 // Title-bar capability reported to the renderer via get-status; updated each
 // time the main window is created.
@@ -497,6 +504,14 @@ function createWindow(): void {
       defaultPath: path.join(app.getPath('documents'), item.getFilename()),
     });
   });
+
+  // Required for the renderer's WebUSB printer flow (PrinterService.connect())
+  // to resolve at all — see usb-device-permissions.ts. Registered at most
+  // once per app lifetime; see usbDevicePermissionsRegistered above.
+  if (!usbDevicePermissionsRegistered) {
+    registerUsbDevicePermissions(mainWindow.webContents.session, `http://localhost:${getServerPort()}`);
+    usbDevicePermissionsRegistered = true;
+  }
 
   mainWindow.on('close', (event) => {
     if (!isQuitting) {

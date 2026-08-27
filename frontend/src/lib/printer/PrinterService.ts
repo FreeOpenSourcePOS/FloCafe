@@ -69,57 +69,55 @@ class PrinterService {
     return () => this.listeners.delete(listener);
   }
 
+  private static readonly DEVICE_FILTERS: USBDeviceFilter[] = [
+    { classCode: ESCPOS_USB_CLASS },
+    { vendorId: 0x0483 },
+    { vendorId: 0x04b8 },
+    { vendorId: 0x0519 },
+    { vendorId: 0x0dd4 },
+    { vendorId: 0x1504 },
+    { vendorId: 0x1a86 },
+    { vendorId: 0x1fc9 },
+    { vendorId: 0x20d1 },
+    { vendorId: 0x2109 },
+    { vendorId: 0x22e0 },
+    { vendorId: 0x2e8d },
+    { vendorId: 0x37b9 },
+    { vendorId: 0x41c9 },
+    { vendorId: 0x4d42 },
+    { vendorId: 0x5255 },
+    { vendorId: 0x525a },
+    { vendorId: 0x0fe6 },
+    { vendorId: 0x1b24 },
+    { vendorId: 0x0922 },
+  ];
+
   /**
-   * Opens the browser's USB device picker and connects to a thermal printer.
-   * Must be called from a user-gesture handler (click, etc.).
+   * Opens (or re-opens) a device that has already been granted, claiming its
+   * ESC/POS interface. Shared by connect() (fresh grant) and tryReconnect()
+   * (silent re-grant), which differ only in how they obtain `device`.
    */
-  async connect(): Promise<void> {
-    if (this._printMode === 'browser') {
-      return;
-    }
-
-    if (!navigator.usb) {
-      throw new Error(
-        'WebUSB API is not supported in this browser. Use Chrome or Edge 89+.'
-      );
-    }
-
-    this.setStatus('connecting');
-
-    try {
-      this.device = await navigator.usb.requestDevice({
-        filters: [
-          { classCode: ESCPOS_USB_CLASS },
-          { vendorId: 0x0483 },
-          { vendorId: 0x04b8 },
-          { vendorId: 0x0519 },
-          { vendorId: 0x0dd4 },
-          { vendorId: 0x1504 },
-          { vendorId: 0x1a86 },
-          { vendorId: 0x1fc9 },
-          { vendorId: 0x20d1 },
-          { vendorId: 0x2109 },
-          { vendorId: 0x22e0 },
-          { vendorId: 0x2e8d },
-          { vendorId: 0x37b9 },
-          { vendorId: 0x41c9 },
-          { vendorId: 0x4d42 },
-          { vendorId: 0x5255 },
-          { vendorId: 0x525a },
-          { vendorId: 0x0fe6 },
-          { vendorId: 0x1b24 },
-          { vendorId: 0x0922 },
-        ],
-      });
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'NotFoundError') {
-        this.setStatus('disconnected');
+  private async openDevice(device: USBDevice): Promise<void> {
+    if (this.device) {
+      // The Web USB API has no persistent device-id field — vendorId +
+      // productId + serialNumber is the closest thing to a stable identity
+      // for "is this the same physical device".
+      const sameDevice = this.device.vendorId === device.vendorId
+        && this.device.productId === device.productId
+        && this.device.serialNumber === device.serialNumber;
+      if (sameDevice) {
+        // Already open on this exact device (e.g. tryReconnect() and a
+        // concurrent connect() both resolved to the same printer) — nothing
+        // to do.
         return;
       }
-      this.setStatus('error');
-      throw new Error(`USB device selection failed: ${(err as Error).message}`);
+      // A different device is already connected (e.g. tryReconnect()
+      // succeeded while the user's picker was still open and they picked
+      // another device) — release its claim/interface before switching,
+      // rather than overwriting the reference and leaking the old claim.
+      await this.disconnect();
     }
-
+    this.device = device;
     try {
       await this.device.open();
 
@@ -155,6 +153,112 @@ class PrinterService {
 
     this.setStatus('connected', this.deviceInfo ?? undefined);
     navigator.usb.addEventListener('disconnect', this.handleDisconnect);
+  }
+
+  // Serializes only the openDevice() step (connect() and tryReconnect() alike)
+  // so at most one attempt is ever mutating `this.device`/interface state at
+  // a time — a claim failure in one would otherwise run openDevice()'s
+  // disconnect() cleanup and tear down a connection the other just
+  // established. requestDevice() itself must NOT wait on this lock: it needs
+  // to run on the same tick as the user's click (transient activation expires
+  // quickly), so queuing it behind an in-flight tryReconnect() could make the
+  // browser reject it with SecurityError and the picker would never open.
+  private connectLock: Promise<unknown> = Promise.resolve();
+
+  private async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this.connectLock.catch(() => undefined);
+    const run = previous.then(fn, fn);
+    this.connectLock = run.catch(() => undefined);
+    return run;
+  }
+
+  /**
+   * Opens the browser's USB device picker and connects to a thermal printer.
+   * Must be called from a user-gesture handler (click, etc.).
+   */
+  async connect(): Promise<void> {
+    if (this._printMode === 'browser') {
+      return;
+    }
+
+    if (!navigator.usb) {
+      throw new Error(
+        'WebUSB API is not supported in this browser. Use Chrome or Edge 89+.'
+      );
+    }
+
+    this.setStatus('connecting');
+
+    let device: USBDevice;
+    try {
+      device = await navigator.usb.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
+    } catch (err: unknown) {
+      // A concurrent tryReconnect() can finish and set this.device while the
+      // picker is still open (requestDevice() intentionally isn't gated by
+      // connectLock — see above). Don't stomp that real connection's status
+      // just because this particular request was cancelled or failed.
+      if (err instanceof DOMException && err.name === 'NotFoundError') {
+        if (!this.device) this.setStatus('disconnected');
+        return;
+      }
+      if (!this.device) this.setStatus('error');
+      throw new Error(`USB device selection failed: ${(err as Error).message}`);
+    }
+
+    await this.runExclusive(() => this.openDevice(device));
+  }
+
+  private reconnectPromise: Promise<boolean> | null = null;
+
+  /**
+   * Silently re-attaches to a printer the user already granted permission
+   * for in a previous session, using the non-prompting getDevices() API.
+   * Safe to call on every app start/reload — never shows a picker and never
+   * throws; returns whether a device was reattached. Without this, the
+   * WebUSB connection is lost on every reload/relaunch and print() throws
+   * "Printer is not connected" until the user manually reconnects.
+   *
+   * Concurrent calls (and calls made while one is already in flight) share
+   * the same in-flight promise rather than racing multiple getDevices()/open()
+   * attempts against each other.
+   */
+  async tryReconnect(): Promise<boolean> {
+    if (this.reconnectPromise) return this.reconnectPromise;
+    if (this._printMode === 'browser' || this.device || !navigator.usb) {
+      return false;
+    }
+    this.reconnectPromise = this.runExclusive(async () => {
+      // Re-check after acquiring the lock: a concurrent connect() may have
+      // already opened a device while this call was waiting its turn.
+      if (this.device) return true;
+      try {
+        const devices = await navigator.usb!.getDevices();
+        const previouslyGranted = devices[0];
+        if (!previouslyGranted) return false;
+        this.setStatus('connecting');
+        await this.openDevice(previouslyGranted);
+        return true;
+      } catch (err) {
+        console.warn('[PrinterService] Silent reconnect failed:', err);
+        this.setStatus('disconnected');
+        return false;
+      }
+    }).finally(() => {
+      this.reconnectPromise = null;
+    });
+    return this.reconnectPromise;
+  }
+
+  /**
+   * Waits for a silent reconnect already in flight (started at app startup)
+   * to settle, without starting a new one. Callers that gate on `isConnected`
+   * right before printing should await this first — otherwise a print
+   * triggered moments after startup (e.g. KOT auto-print on the first order)
+   * can read `isConnected` as false and fall back to browser print even
+   * though the WebUSB printer reconnects a beat later.
+   */
+  async awaitPendingReconnect(): Promise<void> {
+    if (this.reconnectPromise) await this.reconnectPromise;
   }
 
   async disconnect(): Promise<void> {

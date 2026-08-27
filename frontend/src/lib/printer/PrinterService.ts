@@ -136,6 +136,21 @@ class PrinterService {
     navigator.usb.addEventListener('disconnect', this.handleDisconnect);
   }
 
+  // Serializes every device-acquisition attempt (connect() and tryReconnect()
+  // alike) so at most one is ever inside openDevice() at a time. Without this,
+  // a user clicking Connect while the startup tryReconnect() is still in
+  // flight would have both concurrently mutate `this.device`/interface state;
+  // a claim failure in one then runs openDevice()'s disconnect() cleanup and
+  // tears down the connection the other just established.
+  private connectLock: Promise<unknown> = Promise.resolve();
+
+  private async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this.connectLock.catch(() => undefined);
+    const run = previous.then(fn, fn);
+    this.connectLock = run.catch(() => undefined);
+    return run;
+  }
+
   /**
    * Opens the browser's USB device picker and connects to a thermal printer.
    * Must be called from a user-gesture handler (click, etc.).
@@ -151,21 +166,23 @@ class PrinterService {
       );
     }
 
-    this.setStatus('connecting');
+    return this.runExclusive(async () => {
+      this.setStatus('connecting');
 
-    let device: USBDevice;
-    try {
-      device = await navigator.usb.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'NotFoundError') {
-        this.setStatus('disconnected');
-        return;
+      let device: USBDevice;
+      try {
+        device = await navigator.usb!.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === 'NotFoundError') {
+          this.setStatus('disconnected');
+          return;
+        }
+        this.setStatus('error');
+        throw new Error(`USB device selection failed: ${(err as Error).message}`);
       }
-      this.setStatus('error');
-      throw new Error(`USB device selection failed: ${(err as Error).message}`);
-    }
 
-    await this.openDevice(device);
+      await this.openDevice(device);
+    });
   }
 
   private reconnectPromise: Promise<boolean> | null = null;
@@ -187,9 +204,12 @@ class PrinterService {
     if (this._printMode === 'browser' || this.device || !navigator.usb) {
       return false;
     }
-    this.reconnectPromise = (async () => {
+    this.reconnectPromise = this.runExclusive(async () => {
+      // Re-check after acquiring the lock: a concurrent connect() may have
+      // already opened a device while this call was waiting its turn.
+      if (this.device) return true;
       try {
-        const devices = await navigator.usb.getDevices();
+        const devices = await navigator.usb!.getDevices();
         const previouslyGranted = devices[0];
         if (!previouslyGranted) return false;
         this.setStatus('connecting');
@@ -199,10 +219,10 @@ class PrinterService {
         console.warn('[PrinterService] Silent reconnect failed:', err);
         this.setStatus('disconnected');
         return false;
-      } finally {
-        this.reconnectPromise = null;
       }
-    })();
+    }).finally(() => {
+      this.reconnectPromise = null;
+    });
     return this.reconnectPromise;
   }
 

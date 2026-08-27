@@ -1,4 +1,4 @@
-import type { Session } from 'electron';
+import { dialog, type Session } from 'electron';
 
 /**
  * Wires up Electron's main-process USB device permission handlers, which a
@@ -7,31 +7,64 @@ import type { Session } from 'electron';
  * this, PrinterService's WebUSB connect flow has no device picker to select
  * from and silently never resolves in the packaged desktop app (issue #534).
  *
- * FloCafe is a single-origin app serving its own trusted renderer, so there
- * is no cross-site device-picker UX to build: any USB device offered by the
- * WebUSB filters (see PrinterService.DEVICE_FILTERS — ESC/POS printer class
- * plus known thermal-printer vendor IDs) is auto-selected and the origin is
- * granted standing permission to it, mirroring what a user would approve in
- * a real browser's picker. With more than one matching device connected,
- * the first one reported is selected; a POS terminal with multiple
- * simultaneously-attached USB printers isn't a supported configuration.
+ * Electron has no built-in device-chooser UI (unlike Chrome), so this shows
+ * a native confirmation dialog naming the specific device the first time it
+ * is offered — restoring the same user-mediated, per-device authorization a
+ * real browser's picker provides, rather than auto-granting access. Once a
+ * device is explicitly approved it is remembered for the running app
+ * session (matches the printer being connected once via the POS toolbar's
+ * Connect button, not re-prompted on every reload/print).
  *
- * Both handlers are scoped to `trustedOrigin` (the app's own served origin,
- * e.g. `http://localhost:<port>`) — this app never intentionally loads
- * third-party content, but nothing else in the renderer's security model
- * stops a compromised dependency or a stray external navigation from
+ * Both handlers are also scoped to `trustedOrigin` (the app's own served
+ * origin, e.g. `http://localhost:<port>`) — this app never intentionally
+ * loads third-party content, but nothing else in the renderer's security
+ * model stops a compromised dependency or a stray external navigation from
  * requesting USB access, so any request from another origin is refused
- * rather than silently auto-approved.
+ * outright rather than reaching the dialog at all.
  */
 export function registerUsbDevicePermissions(session: Session, trustedOrigin: string): void {
+  const approvedDeviceIds = new Set<string>();
+
   session.on('select-usb-device', (event, details, callback) => {
     event.preventDefault();
     if (details.frame?.origin !== trustedOrigin) {
       callback();
       return;
     }
-    callback(details.deviceList[0]?.deviceId);
+    const device = details.deviceList[0];
+    if (!device) {
+      callback();
+      return;
+    }
+    if (approvedDeviceIds.has(device.deviceId)) {
+      callback(device.deviceId);
+      return;
+    }
+
+    const deviceLabel = device.productName
+      ? `${device.productName}${device.manufacturerName ? ` (${device.manufacturerName})` : ''}`
+      : `USB device ${device.vendorId.toString(16).padStart(4, '0')}:${device.productId.toString(16).padStart(4, '0')}`;
+
+    dialog.showMessageBox({
+      type: 'question',
+      buttons: ['Allow', 'Deny'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Connect USB printer',
+      message: 'FloCafe wants to connect to a USB device',
+      detail: deviceLabel,
+    }).then((result) => {
+      if (result.response === 0) {
+        approvedDeviceIds.add(device.deviceId);
+        callback(device.deviceId);
+      } else {
+        callback();
+      }
+    }).catch(() => callback());
   });
 
-  session.setDevicePermissionHandler((details) => details.deviceType === 'usb' && details.origin === trustedOrigin);
+  session.setDevicePermissionHandler((details) => {
+    if (details.deviceType !== 'usb' || details.origin !== trustedOrigin) return false;
+    return approvedDeviceIds.has((details.device as { deviceId: string }).deviceId);
+  });
 }

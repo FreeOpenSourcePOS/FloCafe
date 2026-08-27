@@ -355,6 +355,9 @@ export function getDbHealth(): { ok: boolean; error?: string } {
 }
 
 export function getDbPath(): string {
+  // Native Playwright owns this path for its disposable local Electron run.
+  // It is intentionally opt-in and has no effect on normal desktop installs.
+  if (process.env.FLO_E2E_DB_PATH) return path.resolve(process.env.FLO_E2E_DB_PATH);
   const projectRoot = path.basename(path.dirname(__dirname)) === 'dist'
     ? path.resolve(__dirname, '../..')
     : path.resolve(__dirname, '..');

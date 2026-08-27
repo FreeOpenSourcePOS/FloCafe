@@ -1,0 +1,80 @@
+import { expect, test } from '@playwright/test';
+import type { NativeElectronHarness } from './native-harness';
+import { createNativeElectronHarness } from './native-harness';
+
+test.describe.configure({ mode: 'serial' });
+test.setTimeout(90_000);
+
+let harness: NativeElectronHarness;
+
+test.beforeAll(async () => {
+  harness = await createNativeElectronHarness();
+});
+
+test.afterAll(async () => {
+  await harness?.close();
+});
+
+test('real Electron mounts the root drag surface before authentication', async () => {
+  await expect(harness.page.getByTestId('desktop-drag-surface')).toBeVisible();
+  await expect(harness.page.locator('html')).toHaveAttribute('data-flo-desktop-titlebar', 'true');
+});
+
+test('real preload, renderer, and main boundaries reach an authenticated dashboard', async () => {
+  await harness.authenticateDashboard();
+  await expect(harness.page.locator('[data-slot="sidebar-container"]')).toBeVisible();
+  await expect(harness.page.getByTestId('desktop-title-bar')).toBeVisible();
+
+  const runtime = await harness.page.evaluate(async () => {
+    const api = window.electronAPI;
+    if (!api) throw new Error('Native E2E preload did not expose electronAPI');
+    const status = await api.getStatus();
+    const appInfo = await api.getAppInfo();
+    const updateStatus = await api.getUpdateStatus();
+    const readiness = await api.windowReady({ epoch: status.titleBarEpoch ?? 0 });
+    return {
+      hasApi: true,
+      platform: api.platform,
+      titleBarMode: status?.titleBarMode,
+      titleBarEpoch: status?.titleBarEpoch,
+      titleBarDocumentNonce: status?.titleBarDocumentNonce,
+      focusedAttribute: document.documentElement.dataset.floWindowFocused,
+      desktopAttribute: document.documentElement.dataset.floDesktopTitlebar,
+      appInfo,
+      updateStatus,
+      readiness,
+    };
+  });
+
+  expect(runtime.hasApi).toBe(true);
+  expect(runtime.platform).toBe(process.platform);
+  expect(runtime.titleBarMode).toBe('native-overlay');
+  expect(runtime.titleBarEpoch).toBeGreaterThan(0);
+  expect(runtime.titleBarDocumentNonce).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(runtime.focusedAttribute).toBe('true');
+  expect(runtime.desktopAttribute).toBe('true');
+  expect(runtime.appInfo).toMatchObject({ name: 'flo-desktop', platform: process.platform });
+  expect(runtime.updateStatus.status).toBeTruthy();
+  expect(runtime.updateStatus.info.version).toBeTruthy();
+  expect(runtime.readiness).toEqual({ success: true });
+});
+
+test('native window lifecycle is observable through the Electron boundary', async () => {
+  test.skip(!['darwin', 'win32', 'linux'].includes(process.platform), 'FloCafe native window lifecycle is unsupported on this platform');
+  test.skip(process.platform === 'linux', 'Linux CI uses Xvfb without a window manager, so native minimize/restore is not observable');
+  await harness.app.evaluate(({ app, BrowserWindow }) => {
+    app.focus({ steal: true });
+    const window = BrowserWindow.getAllWindows()[0];
+    window?.show();
+    window?.focus();
+  });
+  const nativeWindow = await harness.app.browserWindow(harness.page);
+  await nativeWindow.evaluate((window) => window.minimize());
+  await expect.poll(() => nativeWindow.evaluate((window) => window.isMinimized())).toBe(true);
+  await nativeWindow.evaluate((window) => window.restore());
+  await expect.poll(() => nativeWindow.evaluate((window) => !window.isMinimized())).toBe(true);
+});
+
+test('native shell geometry remains an explicit platform boundary', async () => {
+  test.skip(true, 'Traffic-light and caption-button geometry is OS-managed and is not observable through Playwright in this harness; platform unit/runtime probes own that evidence');
+});

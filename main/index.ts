@@ -393,7 +393,12 @@ let gotSingleInstanceLock = false;
 // Prevent multiple instances of the app from running simultaneously.
 // This is especially important on Linux where the AppImage can be launched
 // multiple times without the OS preventing it.
-if (process.platform === 'linux') {
+if (process.env.FLO_E2E_USER_DATA_DIR) {
+  // Native Playwright supplies a disposable profile so Electron's single
+  // instance lock, caches, and session storage cannot collide with a user or
+  // another test run. Normal launches retain their platform-specific paths.
+  app.setPath('userData', path.resolve(process.env.FLO_E2E_USER_DATA_DIR));
+} else if (process.platform === 'linux') {
   // Explicitly set app name and userData path to prevent Electron from
   // resolving them inside temporary mount paths (e.g. /tmp/.mount_FloXXXXXX)
   app.name = 'flo-desktop';
@@ -863,8 +868,12 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Initializing WhatsApp service...');
     initWhatsAppFromDb();
 
-    console.log('[Flo] Starting mDNS advertisement...');
-    startMdns();
+    // Native E2E owns an offline fixture; optional LAN discovery must not
+    // contend with a developer session or keep the test process alive.
+    if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
+      console.log('[Flo] Starting mDNS advertisement...');
+      startMdns();
+    }
 
     console.log('[Flo] Initializing printer...');
     await initPrinter();
@@ -972,15 +981,19 @@ async function initialize(): Promise<void> {
     // (#58) — checkForUpdates() itself decides whether Linux's build format
     // (AppImage vs deb/rpm/snap) actually supports self-update.
     if (!isStoreBuild) {
-      setupAutoUpdater();
-      setTimeout(() => checkForUpdates(), 5000);
+      if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
+        setupAutoUpdater();
+        setTimeout(() => checkForUpdates(), 5000);
+      }
     } else {
       // Store builds skip electron-updater entirely; seed the persisted state
       // so the renderer shows honest "managed by the store" status from the
       // first load instead of a stale never-checked default (#467).
       setUpdateStatus(oneShotUpdateState('store-managed'));
     }
-    setTimeout(() => { void checkTaxPackUpdatesOnStartup(); }, 5000);
+    if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
+      setTimeout(() => { void checkTaxPackUpdatesOnStartup(); }, 5000);
+    }
 
     console.log('[Flo] Ready!');
   } catch (error) {

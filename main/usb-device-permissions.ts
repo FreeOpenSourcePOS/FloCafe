@@ -1,4 +1,50 @@
-import { dialog, type Session } from 'electron';
+import { app, dialog, type Session } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+
+type ApprovableUsbDevice = {
+  deviceId: string;
+  vendorId: number;
+  productId: number;
+  serialNumber?: string;
+  productName?: string;
+  manufacturerName?: string;
+};
+
+/**
+ * A `deviceId` is only stable for the current session/enumeration — it is
+ * not guaranteed to match after an app restart or device replug, so it
+ * can't be used as the persisted identity. vendorId+productId+serialNumber
+ * (falling back to just vendorId+productId when a printer doesn't report a
+ * serial) is stable across restarts and is what's actually persisted.
+ */
+function stableDeviceKey(device: ApprovableUsbDevice): string {
+  return device.serialNumber
+    ? `${device.vendorId}:${device.productId}:${device.serialNumber}`
+    : `${device.vendorId}:${device.productId}`;
+}
+
+function approvalsFilePath(): string {
+  return path.join(app.getPath('userData'), 'usb-printer-approvals.json');
+}
+
+function loadPersistedApprovals(): Set<string> {
+  try {
+    const raw = fs.readFileSync(approvalsFilePath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function savePersistedApprovals(keys: Set<string>): void {
+  try {
+    fs.writeFileSync(approvalsFilePath(), JSON.stringify([...keys]), { mode: 0o600 });
+  } catch (err) {
+    console.warn('[Printer] Failed to persist USB device approval:', err);
+  }
+}
 
 /**
  * Wires up Electron's main-process USB device permission handlers, which a
@@ -10,10 +56,11 @@ import { dialog, type Session } from 'electron';
  * Electron has no built-in device-chooser UI (unlike Chrome), so this shows
  * a native confirmation dialog naming the specific device the first time it
  * is offered — restoring the same user-mediated, per-device authorization a
- * real browser's picker provides, rather than auto-granting access. Once a
- * device is explicitly approved it is remembered for the running app
- * session (matches the printer being connected once via the POS toolbar's
- * Connect button, not re-prompted on every reload/print).
+ * real browser's picker provides, rather than auto-granting access. Once
+ * approved, the device's stable identity (see stableDeviceKey) is persisted
+ * to disk so PrinterService's silent startup reconnect keeps working across
+ * app restarts without re-prompting — an in-memory-only approval set would
+ * make every relaunch require re-approving the same printer.
  *
  * Both handlers are also scoped to `trustedOrigin` (the app's own served
  * origin, e.g. `http://localhost:<port>`) — this app never intentionally
@@ -23,7 +70,7 @@ import { dialog, type Session } from 'electron';
  * outright rather than reaching the dialog at all.
  */
 export function registerUsbDevicePermissions(session: Session, trustedOrigin: string): void {
-  const approvedDeviceIds = new Set<string>();
+  const approvedDeviceKeys = loadPersistedApprovals();
 
   session.on('select-usb-device', (event, details, callback) => {
     event.preventDefault();
@@ -36,7 +83,7 @@ export function registerUsbDevicePermissions(session: Session, trustedOrigin: st
       callback();
       return;
     }
-    if (approvedDeviceIds.has(device.deviceId)) {
+    if (approvedDeviceKeys.has(stableDeviceKey(device))) {
       callback(device.deviceId);
       return;
     }
@@ -55,7 +102,8 @@ export function registerUsbDevicePermissions(session: Session, trustedOrigin: st
       detail: deviceLabel,
     }).then((result) => {
       if (result.response === 0) {
-        approvedDeviceIds.add(device.deviceId);
+        approvedDeviceKeys.add(stableDeviceKey(device));
+        savePersistedApprovals(approvedDeviceKeys);
         callback(device.deviceId);
       } else {
         callback();
@@ -65,6 +113,6 @@ export function registerUsbDevicePermissions(session: Session, trustedOrigin: st
 
   session.setDevicePermissionHandler((details) => {
     if (details.deviceType !== 'usb' || details.origin !== trustedOrigin) return false;
-    return approvedDeviceIds.has((details.device as { deviceId: string }).deviceId);
+    return approvedDeviceKeys.has(stableDeviceKey(details.device as ApprovableUsbDevice));
   });
 }

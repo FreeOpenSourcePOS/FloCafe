@@ -98,6 +98,25 @@ class PrinterService {
    * (silent re-grant), which differ only in how they obtain `device`.
    */
   private async openDevice(device: USBDevice): Promise<void> {
+    if (this.device) {
+      // The Web USB API has no persistent device-id field — vendorId +
+      // productId + serialNumber is the closest thing to a stable identity
+      // for "is this the same physical device".
+      const sameDevice = this.device.vendorId === device.vendorId
+        && this.device.productId === device.productId
+        && this.device.serialNumber === device.serialNumber;
+      if (sameDevice) {
+        // Already open on this exact device (e.g. tryReconnect() and a
+        // concurrent connect() both resolved to the same printer) — nothing
+        // to do.
+        return;
+      }
+      // A different device is already connected (e.g. tryReconnect()
+      // succeeded while the user's picker was still open and they picked
+      // another device) — release its claim/interface before switching,
+      // rather than overwriting the reference and leaking the old claim.
+      await this.disconnect();
+    }
     this.device = device;
     try {
       await this.device.open();

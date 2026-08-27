@@ -136,12 +136,14 @@ class PrinterService {
     navigator.usb.addEventListener('disconnect', this.handleDisconnect);
   }
 
-  // Serializes every device-acquisition attempt (connect() and tryReconnect()
-  // alike) so at most one is ever inside openDevice() at a time. Without this,
-  // a user clicking Connect while the startup tryReconnect() is still in
-  // flight would have both concurrently mutate `this.device`/interface state;
-  // a claim failure in one then runs openDevice()'s disconnect() cleanup and
-  // tears down the connection the other just established.
+  // Serializes only the openDevice() step (connect() and tryReconnect() alike)
+  // so at most one attempt is ever mutating `this.device`/interface state at
+  // a time — a claim failure in one would otherwise run openDevice()'s
+  // disconnect() cleanup and tear down a connection the other just
+  // established. requestDevice() itself must NOT wait on this lock: it needs
+  // to run on the same tick as the user's click (transient activation expires
+  // quickly), so queuing it behind an in-flight tryReconnect() could make the
+  // browser reject it with SecurityError and the picker would never open.
   private connectLock: Promise<unknown> = Promise.resolve();
 
   private async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -166,23 +168,21 @@ class PrinterService {
       );
     }
 
-    return this.runExclusive(async () => {
-      this.setStatus('connecting');
+    this.setStatus('connecting');
 
-      let device: USBDevice;
-      try {
-        device = await navigator.usb!.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
-      } catch (err: unknown) {
-        if (err instanceof DOMException && err.name === 'NotFoundError') {
-          this.setStatus('disconnected');
-          return;
-        }
-        this.setStatus('error');
-        throw new Error(`USB device selection failed: ${(err as Error).message}`);
+    let device: USBDevice;
+    try {
+      device = await navigator.usb.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'NotFoundError') {
+        this.setStatus('disconnected');
+        return;
       }
+      this.setStatus('error');
+      throw new Error(`USB device selection failed: ${(err as Error).message}`);
+    }
 
-      await this.openDevice(device);
-    });
+    await this.runExclusive(() => this.openDevice(device));
   }
 
   private reconnectPromise: Promise<boolean> | null = null;

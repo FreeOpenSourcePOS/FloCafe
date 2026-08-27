@@ -18,12 +18,22 @@ test.afterAll(async () => {
 test('real Electron mounts the root drag surface before authentication', async () => {
   await expect(harness.page.getByTestId('desktop-drag-surface')).toBeVisible();
   await expect(harness.page.locator('html')).toHaveAttribute('data-flo-desktop-titlebar', 'true');
+  if (process.env.FLO_E2E_EVIDENCE_DIR) {
+    await harness.page.screenshot({
+      path: `${process.env.FLO_E2E_EVIDENCE_DIR}/01-native-electron-login-screen.png`,
+    });
+  }
 });
 
 test('real preload, renderer, and main boundaries reach an authenticated dashboard', async () => {
   await harness.authenticateDashboard();
   await expect(harness.page.locator('[data-slot="sidebar-container"]')).toBeVisible();
   await expect(harness.page.getByTestId('desktop-title-bar')).toBeVisible();
+  if (process.env.FLO_E2E_EVIDENCE_DIR) {
+    await harness.page.screenshot({
+      path: `${process.env.FLO_E2E_EVIDENCE_DIR}/02-native-electron-authenticated-dashboard.png`,
+    });
+  }
 
   const runtime = await harness.page.evaluate(async () => {
     const api = window.electronAPI;

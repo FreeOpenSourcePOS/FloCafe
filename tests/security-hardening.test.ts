@@ -192,7 +192,7 @@ async function main() {
   // ── vuln-0006: Password Policy Enforcement ────────────────────────────────
   // Test staff creation
   const weakCreateRes = await request(app).post('/api/staff').set(ownerAuth).send({
-    name: 'test', password: '1', role: 'cashier'
+    name: 'test', email: 'weak-password@test.local', password: '1', role: 'cashier'
   });
   assertEqual(weakCreateRes.status, 400, 'owner cannot create staff with weak password (vuln-0006)');
   assert(weakCreateRes.body.error.includes('at least 8 characters'), 'create staff returns policy error');

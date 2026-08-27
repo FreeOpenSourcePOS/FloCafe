@@ -12,16 +12,16 @@ type ApprovableUsbDevice = {
 };
 
 /**
- * A `deviceId` is only stable for the current session/enumeration — it is
- * not guaranteed to match after an app restart or device replug, so it
- * can't be used as the persisted identity. vendorId+productId+serialNumber
- * (falling back to just vendorId+productId when a printer doesn't report a
- * serial) is stable across restarts and is what's actually persisted.
+ * vendorId+productId+serialNumber is the only combination that reliably
+ * identifies one physical device — many printers share generic VID/PID pairs
+ * from the same USB-to-serial chipset, so vendorId+productId alone can match
+ * a different physical unit. Returns null when the device has no serial
+ * number, meaning it has no identity trustworthy enough to persist or match
+ * across restarts (mirrors how browsers scope WebUSB's own persisted-grant
+ * store to devices that report a serial number).
  */
-function stableDeviceKey(device: ApprovableUsbDevice): string {
-  return device.serialNumber
-    ? `${device.vendorId}:${device.productId}:${device.serialNumber}`
-    : `${device.vendorId}:${device.productId}`;
+function persistableDeviceKey(device: ApprovableUsbDevice): string | null {
+  return device.serialNumber ? `${device.vendorId}:${device.productId}:${device.serialNumber}` : null;
 }
 
 function approvalsFilePath(): string {
@@ -56,11 +56,17 @@ function savePersistedApprovals(keys: Set<string>): void {
  * Electron has no built-in device-chooser UI (unlike Chrome), so this shows
  * a native confirmation dialog naming the specific device the first time it
  * is offered — restoring the same user-mediated, per-device authorization a
- * real browser's picker provides, rather than auto-granting access. Once
- * approved, the device's stable identity (see stableDeviceKey) is persisted
- * to disk so PrinterService's silent startup reconnect keeps working across
- * app restarts without re-prompting — an in-memory-only approval set would
- * make every relaunch require re-approving the same printer.
+ * real browser's picker provides, rather than auto-granting access.
+ *
+ * A device that reports a serial number gets a durable approval persisted to
+ * disk (see persistableDeviceKey), so PrinterService's silent startup
+ * reconnect keeps working across app restarts without re-prompting. A
+ * device without a serial number has no identity that safely survives a
+ * restart — persisting a bare vendorId+productId match would let a
+ * different physical unit sharing that pair silently inherit another
+ * device's approval — so it only gets a session-scoped approval (keyed by
+ * Electron's own per-session deviceId) and must be re-confirmed after every
+ * restart.
  *
  * Both handlers are also scoped to `trustedOrigin` (the app's own served
  * origin, e.g. `http://localhost:<port>`) — this app never intentionally
@@ -70,7 +76,23 @@ function savePersistedApprovals(keys: Set<string>): void {
  * outright rather than reaching the dialog at all.
  */
 export function registerUsbDevicePermissions(session: Session, trustedOrigin: string): void {
-  const approvedDeviceKeys = loadPersistedApprovals();
+  const persistedApprovedKeys = loadPersistedApprovals();
+  const sessionApprovedDeviceIds = new Set<string>();
+
+  const isApproved = (device: ApprovableUsbDevice): boolean => {
+    const persistKey = persistableDeviceKey(device);
+    if (persistKey && persistedApprovedKeys.has(persistKey)) return true;
+    return sessionApprovedDeviceIds.has(device.deviceId);
+  };
+
+  const markApproved = (device: ApprovableUsbDevice): void => {
+    sessionApprovedDeviceIds.add(device.deviceId);
+    const persistKey = persistableDeviceKey(device);
+    if (persistKey) {
+      persistedApprovedKeys.add(persistKey);
+      savePersistedApprovals(persistedApprovedKeys);
+    }
+  };
 
   session.on('select-usb-device', (event, details, callback) => {
     event.preventDefault();
@@ -83,7 +105,7 @@ export function registerUsbDevicePermissions(session: Session, trustedOrigin: st
       callback();
       return;
     }
-    if (approvedDeviceKeys.has(stableDeviceKey(device))) {
+    if (isApproved(device)) {
       callback(device.deviceId);
       return;
     }
@@ -102,8 +124,7 @@ export function registerUsbDevicePermissions(session: Session, trustedOrigin: st
       detail: deviceLabel,
     }).then((result) => {
       if (result.response === 0) {
-        approvedDeviceKeys.add(stableDeviceKey(device));
-        savePersistedApprovals(approvedDeviceKeys);
+        markApproved(device);
         callback(device.deviceId);
       } else {
         callback();
@@ -113,6 +134,6 @@ export function registerUsbDevicePermissions(session: Session, trustedOrigin: st
 
   session.setDevicePermissionHandler((details) => {
     if (details.deviceType !== 'usb' || details.origin !== trustedOrigin) return false;
-    return approvedDeviceKeys.has(stableDeviceKey(details.device as ApprovableUsbDevice));
+    return isApproved(details.device as ApprovableUsbDevice);
   });
 }

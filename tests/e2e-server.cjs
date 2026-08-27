@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const Module = require('module');
+const { createServer } = require('node:net');
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-e2e-'));
 
@@ -41,8 +42,8 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests, now } = require('../dist/main/db');
 const { createExitCodeAwareShutdown, waitForHttpShutdownWork, isShutdownTimeout } = require('../dist/main/shutdown');
-const { startServer, stopServer } = require('../dist/main/server');
-const { startServerApp, stopServerApp } = require('../dist/main/server-app');
+const { startServer, stopServer, getServerPort } = require('../dist/main/server');
+const { startServerApp, stopServerApp, getServerAppPort } = require('../dist/main/server-app');
 const { shutdown: shutdownWhatsApp, requestShutdown: requestWhatsAppShutdown } = require('../dist/main/services/whatsapp');
 const { startStandaloneServers } = require('../dist/main/standalone-startup');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
@@ -120,7 +121,30 @@ function installAndActivateTaxPack(db, pack) {
     );
   }
 }
-const { startKdsServer, stopKdsServer } = require('../dist/main/kds-server');
+const { startKdsServer, stopKdsServer, getKdsPort } = require('../dist/main/kds-server');
+
+function expectedPort(rawUrl, fallback) {
+  if (!rawUrl) return fallback;
+  const port = Number(new URL(rawUrl).port);
+  return Number.isInteger(port) && port > 0 ? port : fallback;
+}
+
+function assertRequiredPortAvailable(port, service) {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once('error', (error) => {
+      probe.close();
+      if (error.code === 'EADDRINUSE') {
+        reject(new Error(`E2E ${service} port ${port} is unavailable`));
+      } else {
+        reject(error);
+      }
+    });
+    probe.listen(port, '127.0.0.1', () => {
+      probe.close(() => resolve());
+    });
+  });
+}
 
 function seedUser(id, email, role) {
   getDatabase().prepare(
@@ -230,6 +254,9 @@ async function stop(exitCode = 0) {
 }
 
 (async () => {
+  await assertRequiredPortAvailable(expectedPort(process.env.E2E_BASE_URL, 3001), 'Main API');
+  await assertRequiredPortAvailable(expectedPort(process.env.E2E_KDS_BASE_URL, 3002), 'KDS');
+  await assertRequiredPortAvailable(expectedPort(process.env.E2E_SERVER_APP_BASE_URL, 3003), 'Server App');
   await startStandaloneServers({
     initializeDatabase: initDatabase,
     prepare: () => {
@@ -243,6 +270,15 @@ async function stop(exitCode = 0) {
     startServerApp,
     isShutdownRequested: () => shutdownRequested,
   });
+  const expectedPorts = {
+    main: expectedPort(process.env.E2E_BASE_URL, 3001),
+    kds: expectedPort(process.env.E2E_KDS_BASE_URL, 3002),
+    serverApp: expectedPort(process.env.E2E_SERVER_APP_BASE_URL, 3003),
+  };
+  const actualPorts = { main: getServerPort(), kds: getKdsPort(), serverApp: getServerAppPort() };
+  if (Object.entries(expectedPorts).some(([key, port]) => actualPorts[key] !== port)) {
+    throw new Error(`E2E service port mismatch: expected ${JSON.stringify(expectedPorts)}, got ${JSON.stringify(actualPorts)}`);
+  }
   console.log('[E2E] Main, KDS, and Server App servers ready');
 })().catch((error) => {
   console.error(error);

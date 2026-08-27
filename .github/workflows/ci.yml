@@ -227,7 +227,9 @@ jobs:
 
       - name: Run Playwright tests
         working-directory: frontend
-        run: npx playwright test
+        # This job is the browser-only layer. The Electron project has its own
+        # config and dedicated native job with an explicit display server.
+        run: npx playwright test --config=playwright.config.ts --project=chromium
         env:
           CI: true
 
@@ -244,6 +246,56 @@ jobs:
           name: release-regression-evidence
           path: ${{ runner.temp }}/flocafe-release-regressions/
           if-no-files-found: ignore
+          retention-days: 10
+
+  # 5b. Native Electron E2E
+  # Keep this lifecycle separate from the browser webServer. The native
+  # harness owns its temporary profile, database, ports, and app services.
+  native-e2e-playwright:
+    name: Native Electron Playwright Tests
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules for Electron
+        run: npx @electron/rebuild -f -w better-sqlite3 || npm rebuild better-sqlite3
+
+      - name: Build main backend process
+        run: npm run build
+
+      - name: Build frontend
+        run: npm run build:frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Install frontend dependencies for Playwright
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run native Electron tests under Xvfb
+        # Playwright supplies --no-sandbox for Electron on Linux. Xvfb is the
+        # required visible display; no packaged or modified app is launched.
+        run: xvfb-run -a --server-args='-screen 0 1280x800x24' npm run test:e2e:electron
+        env:
+          CI: true
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: native-playwright-report
+          path: frontend/playwright-report/
           retention-days: 10
 
   # 6. Windows Uninstaller Pester Suite

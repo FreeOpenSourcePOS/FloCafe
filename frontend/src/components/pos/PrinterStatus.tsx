@@ -32,7 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
+import { usePrinterStore } from '@/hooks/usePrinter';
 import type { PrinterStatus } from '@/lib/printer/PrinterService';
 import toast from 'react-hot-toast';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -67,8 +67,8 @@ const STATUS_CONFIG: Record<
 };
 
 export default function PrinterStatus() {
-  usePrinterStatusSync();
-
+  // Synced at the dashboard layout level now, so status/hardwarePrinter are
+  // already fresh by the time this mounts (issue #534).
   const {
     status, deviceInfo, lastError,
     connect, disconnect, clearError,

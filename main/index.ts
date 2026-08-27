@@ -44,6 +44,7 @@ import {
   isWindowRendererReady,
 } from './window-readiness';
 import { setupWindowLoadRetry } from './window-load-retry';
+import { registerUsbDevicePermissions } from './usb-device-permissions';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -497,6 +498,10 @@ function createWindow(): void {
       defaultPath: path.join(app.getPath('documents'), item.getFilename()),
     });
   });
+
+  // Required for the renderer's WebUSB printer flow (PrinterService.connect())
+  // to resolve at all — see usb-device-permissions.ts.
+  registerUsbDevicePermissions(mainWindow.webContents.session);
 
   mainWindow.on('close', (event) => {
     if (!isQuitting) {

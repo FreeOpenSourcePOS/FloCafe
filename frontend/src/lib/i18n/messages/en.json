@@ -1467,6 +1467,7 @@
     "printerDeleted": "Printer deleted",
     "printerHint": "Click Add on an installed printer, or use Add Manually.",
     "printerName": "Printer Name *",
+    "printerNameMismatchWarning": "This name doesn't match any detected printer. It must exactly match the printer's name on this computer, or the test print will fail.",
     "printerNamePlaceholder": "e.g. Kitchen Printer",
     "printerNameRequired": "Printer name is required",
     "printerOffline": "Offline",

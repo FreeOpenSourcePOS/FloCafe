@@ -918,6 +918,9 @@ export default function POSPage() {
             <>
               <p className="font-semibold text-red-800">{t('printingFailed')}</p>
               <p className="mt-1 text-sm text-gray-600">{supportError.message}</p>
+              {typeof supportError.payload.diagnostics === 'object' && supportError.payload.diagnostics && 'message' in (supportError.payload.diagnostics as Record<string, unknown>) ? (
+                <p className="mt-1 text-xs text-gray-500">{String((supportError.payload.diagnostics as Record<string, unknown>).message)}</p>
+              ) : null}
               <details className="mt-2 text-xs text-gray-500">
                 <summary className="cursor-pointer">{tSupport('showPayload')}</summary>
                 <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2">{JSON.stringify(

@@ -69,57 +69,36 @@ class PrinterService {
     return () => this.listeners.delete(listener);
   }
 
+  private static readonly DEVICE_FILTERS: USBDeviceFilter[] = [
+    { classCode: ESCPOS_USB_CLASS },
+    { vendorId: 0x0483 },
+    { vendorId: 0x04b8 },
+    { vendorId: 0x0519 },
+    { vendorId: 0x0dd4 },
+    { vendorId: 0x1504 },
+    { vendorId: 0x1a86 },
+    { vendorId: 0x1fc9 },
+    { vendorId: 0x20d1 },
+    { vendorId: 0x2109 },
+    { vendorId: 0x22e0 },
+    { vendorId: 0x2e8d },
+    { vendorId: 0x37b9 },
+    { vendorId: 0x41c9 },
+    { vendorId: 0x4d42 },
+    { vendorId: 0x5255 },
+    { vendorId: 0x525a },
+    { vendorId: 0x0fe6 },
+    { vendorId: 0x1b24 },
+    { vendorId: 0x0922 },
+  ];
+
   /**
-   * Opens the browser's USB device picker and connects to a thermal printer.
-   * Must be called from a user-gesture handler (click, etc.).
+   * Opens (or re-opens) a device that has already been granted, claiming its
+   * ESC/POS interface. Shared by connect() (fresh grant) and tryReconnect()
+   * (silent re-grant), which differ only in how they obtain `device`.
    */
-  async connect(): Promise<void> {
-    if (this._printMode === 'browser') {
-      return;
-    }
-
-    if (!navigator.usb) {
-      throw new Error(
-        'WebUSB API is not supported in this browser. Use Chrome or Edge 89+.'
-      );
-    }
-
-    this.setStatus('connecting');
-
-    try {
-      this.device = await navigator.usb.requestDevice({
-        filters: [
-          { classCode: ESCPOS_USB_CLASS },
-          { vendorId: 0x0483 },
-          { vendorId: 0x04b8 },
-          { vendorId: 0x0519 },
-          { vendorId: 0x0dd4 },
-          { vendorId: 0x1504 },
-          { vendorId: 0x1a86 },
-          { vendorId: 0x1fc9 },
-          { vendorId: 0x20d1 },
-          { vendorId: 0x2109 },
-          { vendorId: 0x22e0 },
-          { vendorId: 0x2e8d },
-          { vendorId: 0x37b9 },
-          { vendorId: 0x41c9 },
-          { vendorId: 0x4d42 },
-          { vendorId: 0x5255 },
-          { vendorId: 0x525a },
-          { vendorId: 0x0fe6 },
-          { vendorId: 0x1b24 },
-          { vendorId: 0x0922 },
-        ],
-      });
-    } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === 'NotFoundError') {
-        this.setStatus('disconnected');
-        return;
-      }
-      this.setStatus('error');
-      throw new Error(`USB device selection failed: ${(err as Error).message}`);
-    }
-
+  private async openDevice(device: USBDevice): Promise<void> {
+    this.device = device;
     try {
       await this.device.open();
 
@@ -155,6 +134,64 @@ class PrinterService {
 
     this.setStatus('connected', this.deviceInfo ?? undefined);
     navigator.usb.addEventListener('disconnect', this.handleDisconnect);
+  }
+
+  /**
+   * Opens the browser's USB device picker and connects to a thermal printer.
+   * Must be called from a user-gesture handler (click, etc.).
+   */
+  async connect(): Promise<void> {
+    if (this._printMode === 'browser') {
+      return;
+    }
+
+    if (!navigator.usb) {
+      throw new Error(
+        'WebUSB API is not supported in this browser. Use Chrome or Edge 89+.'
+      );
+    }
+
+    this.setStatus('connecting');
+
+    let device: USBDevice;
+    try {
+      device = await navigator.usb.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
+    } catch (err: unknown) {
+      if (err instanceof DOMException && err.name === 'NotFoundError') {
+        this.setStatus('disconnected');
+        return;
+      }
+      this.setStatus('error');
+      throw new Error(`USB device selection failed: ${(err as Error).message}`);
+    }
+
+    await this.openDevice(device);
+  }
+
+  /**
+   * Silently re-attaches to a printer the user already granted permission
+   * for in a previous session, using the non-prompting getDevices() API.
+   * Safe to call on every app start/reload — never shows a picker and never
+   * throws; returns whether a device was reattached. Without this, the
+   * WebUSB connection is lost on every reload/relaunch and print() throws
+   * "Printer is not connected" until the user manually reconnects.
+   */
+  async tryReconnect(): Promise<boolean> {
+    if (this._printMode === 'browser' || this.device || !navigator.usb) {
+      return false;
+    }
+    try {
+      const devices = await navigator.usb.getDevices();
+      const previouslyGranted = devices[0];
+      if (!previouslyGranted) return false;
+      this.setStatus('connecting');
+      await this.openDevice(previouslyGranted);
+      return true;
+    } catch (err) {
+      console.warn('[PrinterService] Silent reconnect failed:', err);
+      this.setStatus('disconnected');
+      return false;
+    }
   }
 
   async disconnect(): Promise<void> {

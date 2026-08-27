@@ -1467,6 +1467,7 @@
     "printerDeleted": "Impressora excluída",
     "printerHint": "Clique em Adicionar numa impressora instalada, ou use Adicionar Manualmente.",
     "printerName": "Nome da Impressora *",
+    "printerNameMismatchWarning": "Este nome não corresponde a nenhuma impressora detectada. Ele deve corresponder exatamente ao nome da impressora neste computador, ou a impressão de teste falhará.",
     "printerNamePlaceholder": "ex.: Impressora da Cozinha",
     "printerNameRequired": "O nome da impressora é obrigatório",
     "printerOffline": "Offline",

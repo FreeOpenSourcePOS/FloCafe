@@ -19,8 +19,14 @@ import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
-// Printer name must contain only safe characters (no shell metacharacters)
-const PRINTER_NAME_REGEX = /^[a-zA-Z0-9 _\-\.]+$/;
+// Printer names are passed to OS print commands via execFile array args (CUPS)
+// or an environment variable (Windows raw spooler) — never through a shell —
+// so there is no shell-injection risk from the characters themselves. Real OS
+// printer queue names commonly include parentheses, slashes, ampersands, and
+// non-ASCII characters (e.g. "POS-58 (Copy 1)"), so only control characters
+// (which can't appear in a real queue name) and empty/oversized input are
+// rejected, letting a manually-typed name match the actual OS queue name.
+const PRINTER_NAME_REGEX = /^[^\x00-\x1f\x7f]{1,128}$/;
 const CONNECTION_TYPES = ['network', 'usb', 'webusb'] as const;
 const PRINTER_COLUMN_WIDTHS = ['cols-32', 'cols-36', 'cols-40', 'cols-42', 'cols-44', 'cols-48'] as const;
 
@@ -30,7 +36,7 @@ function isValidPort(port: unknown): port is number {
 
 function validatePrinterFields(body: any, existing?: any): string | null {
   if (body.name !== undefined && (typeof body.name !== 'string' || body.name.length === 0 || !PRINTER_NAME_REGEX.test(body.name))) {
-    return 'name contains invalid characters. Only letters, numbers, spaces, hyphens, underscores, and dots are allowed.';
+    return 'name must be 1-128 characters and cannot contain control characters.';
   }
   if (body.connection_type !== undefined && !CONNECTION_TYPES.includes(body.connection_type)) {
     return 'connection_type must be network | usb | webusb';
@@ -144,11 +150,15 @@ router.get('/:id', (req: Request, res: Response) => {
 // POST /api/printers — create
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
-    const { name, connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled } = req.body;
+    const { connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled } = req.body;
+    // Trim accidental leading/trailing whitespace — the OS print queue name
+    // must be matched exactly at dispatch time, and stray whitespace from
+    // copy-pasting a name is a common cause of manual-add mismatches.
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : req.body.name;
 
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (typeof name !== 'string' || !PRINTER_NAME_REGEX.test(name)) {
-      return res.status(400).json({ error: 'name contains invalid characters. Only letters, numbers, spaces, hyphens, underscores, and dots are allowed.' });
+      return res.status(400).json({ error: 'name must be 1-128 characters and cannot contain control characters.' });
     }
     if (!connection_type) return res.status(400).json({ error: 'connection_type is required' });
     if (!CONNECTION_TYPES.includes(connection_type)) {
@@ -201,9 +211,10 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const existing = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
     if (!existing) return res.status(404).json({ error: 'Printer not found' });
 
-    const { name, connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled } = req.body;
+    const { connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled } = req.body;
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : req.body.name;
 
-    const fieldError = validatePrinterFields(req.body, existing);
+    const fieldError = validatePrinterFields({ ...req.body, name }, existing);
     if (fieldError) return res.status(400).json({ error: fieldError });
 
     db.transaction(() => {
@@ -482,7 +493,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
     if (result.ok) {
       res.json({ success: true, warnings: result.warnings || [] });
     } else {
-      res.status(502).json({ error: 'Print failed. Check printer connection and settings.', code: result.code, correlation_id: result.correlationId, stage: result.stage });
+      res.status(502).json({ error: result.detail || 'Print failed. Check printer connection and settings.', detail: result.detail, failure_class: result.failureClass, code: result.code, correlation_id: result.correlationId, stage: result.stage });
     }
   } catch (error: any) {
     console.error('[Print Bill] Error:', error);
@@ -618,7 +629,7 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     if (success) {
       res.json({ success: true, warnings });
     } else {
-      res.status(502).json({ error: 'KOT print failed. Check printer connection.', code: failure?.code, correlation_id: failure?.correlationId, stage: failure?.stage });
+      res.status(502).json({ error: failure?.detail || 'KOT print failed. Check printer connection.', detail: failure?.detail, failure_class: failure?.failureClass, code: failure?.code, correlation_id: failure?.correlationId, stage: failure?.stage });
     }
   } catch (error: any) {
     console.error('[Print KOT] Error:', error);

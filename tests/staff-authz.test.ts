@@ -9,6 +9,7 @@ import * as path from 'node:path';
 const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-staff-authz-'));
+process.env.FLO_AUTH_RATE_LIMIT_MAX = process.env.FLO_AUTH_RATE_LIMIT_MAX || '100';
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
@@ -120,6 +121,28 @@ async function main() {
     });
     assertEqual(result.status, 200, `manager can edit ${role}`);
   }
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'Missing email server', password: 'StrongPass1', role: 'server',
+  });
+  assertEqual(result.status, 400, 'staff creation requires email');
+  assertEqual(result.body.error, 'name, email, password, and role are required', 'missing email returns a clear validation error');
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'Invalid email server', email: 'not-an-email', password: 'StrongPass1', role: 'server',
+  });
+  assertEqual(result.status, 400, 'staff creation rejects invalid email');
+  assertEqual(result.body.error, 'Enter a valid email address', 'invalid email returns a clear validation error');
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'Normalized email server', email: '  Mixed.Server@Test.Local  ', password: 'StrongPass1', role: 'server',
+  });
+  assertEqual(result.status, 201, 'staff creation trims and normalizes required email');
+  assertEqual(result.body.staff.email, 'mixed.server@test.local', 'created staff email is stored normalized');
+
+  result = await request(app).put(`/api/staff/${managerCreated.server}`).set(managerAuth).send({ email: '   ' });
+  assertEqual(result.status, 400, 'staff update rejects blank email');
+  assertEqual(result.body.error, 'email is required', 'blank email update returns a clear validation error');
 
   result = await request(app).post('/api/staff').set(managerAuth).send({
     name: 'Pinned cashier', email: 'pinned-cashier@test.local', password: 'StrongPass1', role: 'cashier', pin: '1234',

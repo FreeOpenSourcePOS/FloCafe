@@ -9,6 +9,7 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, now } from '../db';
 import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
+import { isValidEmail } from './auth';
 import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
 
 const router = Router();
@@ -32,6 +33,10 @@ function hasNonEmptyPin(pin: unknown): boolean {
 
 function isValidPin(pin: unknown): boolean {
   return /^\d{4,6}$/.test(String(pin));
+}
+
+function normalizeStaffEmail(email: unknown): string {
+  return String(email || '').trim().toLowerCase();
 }
 
 // ── List ──────────────────────────────────────────────────────────────────────
@@ -97,9 +102,13 @@ router.get('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req: Request, res: Response) => {
   try {
     const { name, email, password, role, pin } = req.body;
+    const normalizedEmail = normalizeStaffEmail(email);
 
-    if (!name || !password || !role) {
-      return res.status(400).json({ error: 'name, password, and role are required' });
+    if (!name || !normalizedEmail || !password || !role) {
+      return res.status(400).json({ error: 'name, email, password, and role are required' });
+    }
+    if (!isValidEmail(normalizedEmail)) {
+      return res.status(400).json({ error: 'Enter a valid email address' });
     }
     if (!validatePassword(password)) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
@@ -123,11 +132,9 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
 
     const db = getDatabase();
 
-    if (email) {
-      const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-      if (existing) {
-        return res.status(400).json({ error: 'Email already in use' });
-      }
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(normalizedEmail);
+    if (existing) {
+      return res.status(400).json({ error: 'Email already in use' });
     }
 
     const id = uuidv4();
@@ -138,7 +145,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, name, email || null, hashedPassword, role, hashedPin, now(), now());
+    `).run(id, name, normalizedEmail, hashedPassword, role, hashedPin, now(), now());
 
     const member = db.prepare(
       `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
@@ -156,6 +163,8 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
 router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req: Request, res: Response) => {
   try {
     const { name, email, password, role, pin, is_active } = req.body;
+    const emailProvided = email !== undefined;
+    const normalizedEmail = emailProvided ? normalizeStaffEmail(email) : undefined;
     const db = getDatabase();
 
     if (is_active !== undefined) {
@@ -189,8 +198,14 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
       return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
     }
 
-    if (email && email !== member.email) {
-      const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.params.id);
+    if (emailProvided && !normalizedEmail) {
+      return res.status(400).json({ error: 'email is required' });
+    }
+    if (normalizedEmail && !isValidEmail(normalizedEmail)) {
+      return res.status(400).json({ error: 'Enter a valid email address' });
+    }
+    if (normalizedEmail && normalizedEmail !== member.email) {
+      const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(normalizedEmail, req.params.id);
       if (existing) {
         return res.status(400).json({ error: 'Email already in use' });
       }
@@ -229,7 +244,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
           OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1
         )
     `).run(
-      name || null, email || null, hashedPassword,
+      name || null, normalizedEmail || null, hashedPassword,
       role || null, hashedPin, tokensValidAfter,
       now(), req.params.id, demotesActiveOwner ? 1 : 0,
     );

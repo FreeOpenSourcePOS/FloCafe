@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
@@ -27,6 +28,14 @@ const roleColors: Record<string, string> = {
 function roleLabel(role: string, t: (key: StaffKey) => string): string {
   const key = ROLE_LABEL_KEYS[role];
   return key ? t(key) : role;
+}
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const apiError = error.response?.data?.error;
+    if (typeof apiError === 'string' && apiError.trim()) return apiError;
+  }
+  return fallback;
 }
 
 export default function StaffPage() {
@@ -109,7 +118,7 @@ export default function StaffPage() {
       if (editingStaff) {
         await api.put(`/staff/${editingStaff.id}`, {
           name: form.name,
-          email: form.email || null,
+          email: form.email,
           role: form.role,
           ...(form.password ? { password: form.password } : {}),
           ...(form.pin ? { pin: form.pin } : {}),
@@ -118,7 +127,7 @@ export default function StaffPage() {
       } else {
         await api.post('/staff', {
           name: form.name,
-          email: form.email || null,
+          email: form.email,
           password: form.password,
           role: form.role,
           ...(form.pin ? { pin: form.pin } : {}),
@@ -127,8 +136,8 @@ export default function StaffPage() {
       }
       closeForm();
       fetchStaff();
-    } catch {
-      toast.error(t('failedToSave'));
+    } catch (error: unknown) {
+      toast.error(extractErrorMessage(error, t('failedToSave')));
     }
   };
 
@@ -142,8 +151,8 @@ export default function StaffPage() {
       await api.put(`/staff/${resetPwStaff.id}`, { password: newPassword });
       toast.success(t('resetPasswordToast'));
       closeResetPassword();
-    } catch {
-      toast.error(t('failedToReset'));
+    } catch (error: unknown) {
+      toast.error(extractErrorMessage(error, t('failedToReset')));
     }
   };
 
@@ -231,9 +240,12 @@ export default function StaffPage() {
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required
               />
               <input
-                type="email" placeholder={`${tAuth('email')} (${tCommon('optional')})`} value={form.email}
+                type="email" placeholder={tAuth('email')} value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                autoComplete="email"
+                dir="ltr"
+                required
               />
               <div className="relative">
                 <input

@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { randomBytes } from 'node:crypto';
 import { createConnection, createServer } from 'node:net';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -221,7 +222,9 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
   const env: Record<string, string> = {
     ...inheritedEnv,
     NODE_ENV: 'test',
-    JWT_SECRET: 'native-e2e-test-secret',
+    JWT_SECRET: randomBytes(32).toString('hex'),
+    FLO_E2E_OWNER_EMAIL: `native-e2e-owner-${randomBytes(8).toString('hex')}@flo.local`,
+    FLO_E2E_OWNER_PASSWORD: `${randomBytes(24).toString('base64url')}Aa1!`,
     FLO_E2E_SKIP_OPTIONAL_NETWORK: '1',
     FLO_MATRIX_OFFLINE: '1',
     FLO_E2E_USER_DATA_DIR: profileDir,
@@ -265,8 +268,8 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
           throw new Error(`Native E2E expected a stable auth route, got ${page.url()}`);
         }
         if (currentPath !== '/pos') {
-          await page.locator('#email').fill('owner@flo.local');
-          await page.locator('#password').fill('E2ePass123!');
+          await page.locator('#email').fill(env.FLO_E2E_OWNER_EMAIL);
+          await page.locator('#password').fill(env.FLO_E2E_OWNER_PASSWORD);
           await page.locator('button[type="submit"]').click();
           await page.waitForURL((url) => url.pathname.replace(/\/+$/, '') === '/pos', { timeout: 30_000 });
         }

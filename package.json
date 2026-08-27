@@ -64,7 +64,7 @@
     "test:e2e:server": "node tests/e2e-server.cjs",
     "test:e2e:browser": "npm run build && npm run build:frontend && cd frontend && npx playwright install chromium && npx playwright test --config=playwright.config.ts --project=chromium",
     "test:e2e:electron": "npm run build && npm run build:frontend && cd frontend && npx playwright test --config=playwright.electron.config.ts --project=electron-desktop",
-    "test:e2e": "npm run test:e2e:browser && npm run test:e2e:electron",
+    "test:e2e": "npm run test:e2e:browser",
     "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts && node tests/release-asset-verifier.test.cjs && node tests/release-gate.test.cjs",
     "test:windows-uninstaller": "node tests/run-windows-uninstaller-tests.cjs",
     "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts",

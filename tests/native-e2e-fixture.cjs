@@ -2,6 +2,8 @@ const Module = require('node:module');
 const bcrypt = require('bcryptjs');
 
 const userDataDir = process.env.FLO_E2E_USER_DATA_DIR;
+const ownerEmail = process.env.FLO_E2E_OWNER_EMAIL;
+const ownerPassword = process.env.FLO_E2E_OWNER_PASSWORD;
 const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
   if (request === 'electron') {
@@ -19,8 +21,8 @@ Module._load = function (request, parent, isMain) {
 const { initDatabase, getDatabase, closeDatabase, now } = require('../dist/main/db');
 
 try {
-  if (!userDataDir || !process.env.FLO_E2E_DB_PATH) {
-    throw new Error('Native E2E fixture requires FLO_E2E_USER_DATA_DIR and FLO_E2E_DB_PATH');
+  if (!userDataDir || !process.env.FLO_E2E_DB_PATH || !ownerEmail || !ownerPassword) {
+    throw new Error('Native E2E fixture requires isolated profile, database, and owner credentials');
   }
 
   initDatabase();
@@ -57,8 +59,8 @@ try {
   `).run(
     'native-e2e-owner',
     'Native E2E Owner',
-    'owner@flo.local',
-    bcrypt.hashSync('E2ePass123!', 10),
+    ownerEmail,
+    bcrypt.hashSync(ownerPassword, 10),
     'owner',
     createdAt,
     createdAt,

@@ -295,7 +295,8 @@ export function startServerApp(): Promise<void> {
       res.status(500).json({ error: 'Internal server error' });
     });
 
-    let currentPort = SERVER_APP_PORT;
+    const baseServerAppPort = parseInt(process.env.SERVER_APP_PORT || String(SERVER_APP_PORT), 10);
+    let currentPort = baseServerAppPort;
     let attempts = 0;
     const listeningServer = http.createServer(app);
     serverApp = listeningServer;
@@ -317,16 +318,16 @@ export function startServerApp(): Promise<void> {
       const onError = (err: NodeJS.ErrnoException) => {
         if (stopping) return;
         listeningServer.off('listening', onListening);
-        if (err.code === 'EADDRINUSE') {
+        if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
           attempts++;
           if (attempts >= 10) {
-            const errorMsg = `[Server App] Failed to bind to any port after 10 attempts starting from ${SERVER_APP_PORT}`;
+            const errorMsg = `[Server App] Failed to bind to any port after 10 attempts starting from ${baseServerAppPort}`;
             console.error(errorMsg);
             reject(new Error(errorMsg));
             return;
           }
           currentPort++;
-          console.log(`[Server App] Port ${attemptedPort} in use, trying ${currentPort}`);
+          console.log(`[Server App] Port ${attemptedPort} in use (${err.code}), trying ${currentPort}`);
           tryListen();
           return;
         }

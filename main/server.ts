@@ -273,96 +273,108 @@ export function startServer(): Promise<void> {
       res.status(status).json({ error: status >= 500 ? 'Internal server error' : (err.message || 'Client error') });
     });
 
-    let currentPort = PORT;
+    const basePort = parseInt(process.env.PORT || '3001', 10);
+    let currentPort = basePort;
     let attempts = 0;
 
-    let listeningServer: http.Server;
-    const onListening = () => {
-      if (stopping) {
-        try { listeningServer.close(); } catch { return; }
-        return;
-      }
-      startReject = null;
-      const address = listeningServer.address();
-      activePort = address && typeof address !== 'string' ? address.port : currentPort;
-      console.log(`[Server] HTTP server running on http://localhost:${activePort}`);
-
-      if (listeningServer) {
-        // noServer + a manual 'upgrade' handler (rather than passing `server`
-        // straight to WebSocketServer) so a disabled KDS can 404 the upgrade
-        // instead of completing it — checked fresh on every request since
-        // kds_enabled can change at runtime without a restart (issue #133).
-        const websocketServer = new WebSocketServer({ noServer: true });
-        wss = websocketServer;
-        setupKdsWebSocket(websocketServer);
-
-        listeningServer.on('upgrade', (request, socket, head) => {
-          const pathname = (request.url || '').split('?')[0];
-          if (pathname !== '/kds') {
-            socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
-            socket.destroy();
-            return;
-          }
-
-          if (isDatabaseMaintenanceActive()) {
-            socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
-            socket.destroy();
-            return;
-          }
-
-          if (!isKdsEnabled()) {
-            // Pretend the endpoint doesn't exist rather than confirming it's
-            // just disabled — less to probe from a stale/misconfigured KDS
-            // device on the LAN (issue #133).
-            socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-            socket.destroy();
-            return;
-          }
-
-          try {
-            websocketServer.handleUpgrade(request, socket, head, (ws) => {
-              websocketServer.emit('connection', ws, request);
-            });
-          } catch (error) {
-            console.error('[Server] KDS WebSocket upgrade failed:', error);
-            socket.destroy();
-          }
-        });
-
-        console.log(`[Server] KDS WebSocket running on ws://localhost:${activePort}/kds`);
-      }
-
-      // main/index.ts (Electron) also calls this; dev-server and pm2 boot
-      // through here instead and would otherwise start with module defaults.
-      try {
-        initWhatsAppFromDb();
-      } catch (error) {
-        console.error('[Server] WhatsApp startup initialization failed:', error);
-      }
-
-      resolve();
-    };
-    listeningServer = app.listen(currentPort, '0.0.0.0', onListening);
+    const listeningServer = http.createServer(app);
     server = listeningServer;
     installHttpShutdownTracking(listeningServer);
 
-    listeningServer.on('error', (err: NodeJS.ErrnoException) => {
-      if (stopping) return;
-      if (err.code === 'EADDRINUSE') {
-        attempts++;
-        if (attempts >= 10) {
-          const errorMsg = `[Server] Failed to bind to any port after 10 attempts starting from ${PORT}`;
-          console.error(errorMsg);
-          reject(new Error(errorMsg));
+    const tryListen = () => {
+      const attemptedPort = currentPort;
+      const onListening = () => {
+        if (stopping) {
+          try { listeningServer.close(); } catch { return; }
           return;
         }
-        currentPort++;
-        console.log(`[Server] Port ${currentPort - 1} in use, trying ${currentPort}`);
-        listeningServer.listen(currentPort, '0.0.0.0');
-      } else {
+        startReject = null;
+        listeningServer.off('error', onError);
+        const address = listeningServer.address();
+        activePort = address && typeof address !== 'string' ? address.port : attemptedPort;
+        console.log(`[Server] HTTP server running on http://localhost:${activePort}`);
+
+        if (listeningServer) {
+          // noServer + a manual 'upgrade' handler (rather than passing `server`
+          // straight to WebSocketServer) so a disabled KDS can 404 the upgrade
+          // instead of completing it — checked fresh on every request since
+          // kds_enabled can change at runtime without a restart (issue #133).
+          const websocketServer = new WebSocketServer({ noServer: true });
+          wss = websocketServer;
+          setupKdsWebSocket(websocketServer);
+
+          listeningServer.on('upgrade', (request, socket, head) => {
+            const pathname = (request.url || '').split('?')[0];
+            if (pathname !== '/kds') {
+              socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+              socket.destroy();
+              return;
+            }
+
+            if (isDatabaseMaintenanceActive()) {
+              socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+              socket.destroy();
+              return;
+            }
+
+            if (!isKdsEnabled()) {
+              // Pretend the endpoint doesn't exist rather than confirming it's
+              // just disabled — less to probe from a stale/misconfigured KDS
+              // device on the LAN (issue #133).
+              socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+              socket.destroy();
+              return;
+            }
+
+            try {
+              websocketServer.handleUpgrade(request, socket, head, (ws) => {
+                websocketServer.emit('connection', ws, request);
+              });
+            } catch (error) {
+              console.error('[Server] KDS WebSocket upgrade failed:', error);
+              socket.destroy();
+            }
+          });
+
+          console.log(`[Server] KDS WebSocket running on ws://localhost:${activePort}/kds`);
+        }
+
+        // main/index.ts (Electron) also calls this; dev-server and pm2 boot
+        // through here instead and would otherwise start with module defaults.
+        try {
+          initWhatsAppFromDb();
+        } catch (error) {
+          console.error('[Server] WhatsApp startup initialization failed:', error);
+        }
+
+        resolve();
+      };
+
+      const onError = (err: NodeJS.ErrnoException) => {
+        if (stopping) return;
+        listeningServer.off('listening', onListening);
+        if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+          attempts++;
+          if (attempts >= 10) {
+            const errorMsg = `[Server] Failed to bind to any port after 10 attempts starting from ${basePort}`;
+            console.error(errorMsg);
+            reject(new Error(errorMsg));
+            return;
+          }
+          currentPort++;
+          console.log(`[Server] Port ${attemptedPort} in use (${err.code}), trying ${currentPort}`);
+          tryListen();
+          return;
+        }
         reject(err);
-      }
-    });
+      };
+
+      listeningServer.once('listening', onListening);
+      listeningServer.once('error', onError);
+      listeningServer.listen(attemptedPort, '0.0.0.0');
+    };
+
+    tryListen();
   });
 }
 

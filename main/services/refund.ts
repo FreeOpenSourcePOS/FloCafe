@@ -107,6 +107,17 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     if (String(item.order_id) !== String(bill.order_id)) {
       throw httpError("Item does not belong to this bill's order", 400);
     }
+    if (bill.split_group_id) {
+      const allocation = db.prepare(`
+        SELECT quantity FROM bill_items WHERE bill_id = ? AND order_item_id = ?
+      `).get(bill.id, item.id) as { quantity: number } | undefined;
+      if (!allocation) {
+        throw httpError('Item is not allocated to this split bill', 400);
+      }
+      if (Number(allocation.quantity) !== Number(item.quantity)) {
+        throw httpError('Partially allocated split items cannot be refunded as a whole item', 409);
+      }
+    }
     if (!REFUND_ITEM_ELIGIBLE_STATUSES.includes(item.status)) {
       throw httpError('Item is not eligible for refund', 409);
     }
@@ -145,7 +156,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     // (main/routes/index.ts) verbatim, except the original item transitions
     // to 'refunded' (not 'voided') so refund and void stay distinguishable
     // in reporting, and inventory is never touched either way.
-    db.prepare(`
+    const adjustmentResult = db.prepare(`
       INSERT INTO order_items (
         order_id, product_id, product_name, product_sku, unit_price, quantity,
         subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total,
@@ -158,6 +169,10 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
       -(item.discount_amount || 0), -item.total,
       item.variant_selection, item.modifier_selection, timestamp, timestamp,
     );
+    if (bill.split_group_id) {
+      db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, ?)')
+        .run(bill.id, adjustmentResult.lastInsertRowid, item.quantity);
+    }
     db.prepare("UPDATE order_items SET status = 'refunded', voided_at = ?, updated_at = ? WHERE id = ?")
       .run(timestamp, timestamp, item.id);
   }

@@ -23,7 +23,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser, seedTable,
+  seedOwnerUser, seedCategory, seedProduct, seedTable,
   api, assert, assertEqual,
   closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
@@ -36,6 +36,11 @@ async function main() {
 
   const db = initTestDb();
   const { authHeader } = seedOwnerUser(db);
+  seedCategory(db, 'cat-held-365', 'Weighted products');
+  seedProduct(db, 'product-mango', 'cat-held-365', 'Mango', 120, {
+    sale_unit: 'kg', allow_fractional_quantity: true, weight_precision: 3,
+  });
+  seedProduct(db, 'product-each', 'cat-held-365', 'Each item', 10);
 
   const app = createApp({
     '/api/held-orders': heldOrderRoutes,
@@ -114,6 +119,16 @@ async function main() {
       { method: 'DELETE', headers: authHeader },
     );
     console.log('  ✓ Fractional held-order quantities round-trip');
+
+    const disallowedFraction = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: {
+        tableId: weightedTableId,
+        items: [{ ...weightedItems[0], product: { id: 'product-each', name: 'Each item', price: 10 }, quantity: 1.25 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(disallowedFraction.status, 400, 'POST /held-orders rejects fractional quantity for a whole-unit product');
 
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario C: POST /held-orders validates request data ───');

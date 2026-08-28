@@ -33,6 +33,7 @@ const {
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { refundRoutes } = require('../main/routes/refunds');
+const { reportRoutes } = require('../main/routes/reports');
 const { getJWTSecret } = require('../main/routes/auth');
 
 async function main() {
@@ -43,6 +44,9 @@ async function main() {
   seedCategory(db, 'cat-refund', 'Refund menu');
   seedProduct(db, 'prod-refund', 'cat-refund', 'Refund item', 100);
   seedProduct(db, 'prod-refund-inv', 'cat-refund', 'Refund inventory item', 50, { track_inventory: true, stock_quantity: 20 });
+  seedProduct(db, 'prod-refund-weighted', 'cat-refund', 'Weighted refund item', 80, {
+    sale_unit: 'kg', allow_fractional_quantity: true, weight_precision: 3,
+  });
 
   const forbiddenAuth = {
     Authorization: `Bearer ${jwt.sign({ userId: 'chef-refund', email: 'chef@test.local', role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}`,
@@ -52,6 +56,7 @@ async function main() {
     '/api/orders': orderRoutes,
     '/api/bills': billRoutes,
     '/api/refunds': refundRoutes,
+    '/api/reports': reportRoutes,
   });
   const { baseUrl, server } = await startServer(app);
 
@@ -71,6 +76,20 @@ async function main() {
   }
 
   try {
+    // ── Product quantity policy is backend-authoritative ──────────────────
+    const wholeUnitFraction = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'takeaway', items: [{ product_id: 'prod-refund', quantity: 1.25 }] }, headers: ownerAuth,
+    });
+    assertEqual(wholeUnitFraction.status, 400, 'order creation rejects fractional quantity for a whole-unit product');
+    const weightedOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'takeaway', items: [{ product_id: 'prod-refund-weighted', quantity: 1.25 }] }, headers: ownerAuth,
+    });
+    assertEqual(weightedOrder.status, 201, 'order creation accepts fractional quantity for an enabled weighted product');
+    const wholeUnitAppend = await api(baseUrl, `/api/orders/${weightedOrder.data.order.id}/items`, {
+      method: 'POST', body: { items: [{ product_id: 'prod-refund', quantity: 0.5 }] }, headers: ownerAuth,
+    });
+    assertEqual(wholeUnitAppend.status, 400, 'order append rejects fractional quantity for a whole-unit product');
+
     // ── Role gating ──────────────────────────────────────────────────────
     const { bill: gatedBill } = await newPaidBill('prod-refund');
     const gated = await api(baseUrl, '/api/refunds', {
@@ -134,12 +153,21 @@ async function main() {
 
     // ── Partial refund (budget point 4) ────────────────────────────────────
     const partialBill = await newPaidBill('prod-refund');
+    const salesBeforePartialRefund = await api(baseUrl, '/api/reports/daily-stats', { headers: ownerAuth });
     const partialAmount = (Number(partialBill.bill.paid_amount) * 0.4).toFixed(2);
     const partial = await api(baseUrl, '/api/refunds', {
       method: 'POST', body: { bill_id: partialBill.bill.id, amount: partialAmount, method: 'cash', override_pin: '1234', manager_id: managerId }, headers: ownerAuth,
     });
     assertEqual(partial.status, 201, 'a partial refund is accepted');
     assertEqual(partial.data.bill.payment_status, 'partially_refunded', 'a partial refund marks the bill partially_refunded');
+    const salesAfterPartialRefund = await api(baseUrl, '/api/reports/daily-stats', { headers: ownerAuth });
+    assertEqual(
+      Number((salesBeforePartialRefund.data.sales - salesAfterPartialRefund.data.sales).toFixed(2)),
+      Number(partialAmount),
+      'paid-sales reporting subtracts a partial refund without dropping the whole bill',
+    );
+    const cashAfterPartialRefund = salesAfterPartialRefund.data.paymentMethods.find((row: any) => row.method === 'cash');
+    assertEqual(cashAfterPartialRefund.total, salesAfterPartialRefund.data.sales, 'cash payment reporting includes refund lines as negative cash movement');
     const overRemainder = await api(baseUrl, '/api/refunds', {
       method: 'POST', body: { bill_id: partialBill.bill.id, amount: partialBill.bill.paid_amount, method: 'cash', override_pin: '1234', manager_id: managerId }, headers: ownerAuth,
     });
@@ -156,6 +184,33 @@ async function main() {
       method: 'POST', body: { bill_id: 999999999, amount: 10, method: 'cash', override_pin: '1234', manager_id: managerId }, headers: ownerAuth,
     });
     assertEqual(notFound.status, 404, 'a refund against a non-existent bill returns 404');
+
+    // ── Split allocation ownership is checked before approval ─────────────
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'split_checks_enabled'").run();
+    const splitOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'dine_in', items: [{ product_id: 'prod-refund', quantity: 2 }] }, headers: ownerAuth,
+    });
+    const splitItem = splitOrder.data.order.items[0];
+    db.prepare("UPDATE order_items SET status = 'ready' WHERE id = ?").run(splitItem.id);
+    const splitSource = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST', body: { order_id: splitOrder.data.order.id }, headers: ownerAuth,
+    });
+    const splitChecks = await api(baseUrl, `/api/bills/${splitSource.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Guest 1', items: [{ order_item_id: splitItem.id, quantity: 1 }] },
+        { label: 'Guest 2', items: [{ order_item_id: splitItem.id, quantity: 1 }] },
+      ] },
+      headers: ownerAuth,
+    });
+    assertEqual(splitChecks.status, 201, 'split-refund fixture creates two guest checks');
+    const partialAllocationRefund = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: splitChecks.data.bills[0].id, order_item_id: splitItem.id, method: 'cash', override_pin: '1234', manager_id: managerId },
+      headers: ownerAuth,
+    });
+    assertEqual(partialAllocationRefund.status, 409, 'a split check cannot refund an order item it owns only partially');
+    assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(splitItem.id) as any).status, 'ready', 'rejected split refund preserves the shared item');
 
     // ── Item-level refund on a paid bill (budget point 5) ──────────────────
     const invItem = await newPaidBill('prod-refund-inv', 2);

@@ -28,3 +28,25 @@ export function validateOrderNotes(db: any, notes: string | null | undefined): v
 export function validateItemNotes(db: any, notes: string | null | undefined): void {
   validateNoteLength(db, 'max_item_notes_length', DEFAULT_MAX_ITEM_NOTES_LENGTH, notes, 'Item notes');
 }
+
+export function validateProductQuantity(
+  product: { name?: string; allow_fractional_quantity?: boolean | number; weight_precision?: number },
+  quantity: unknown,
+): asserts quantity is number {
+  const productName = product.name || 'product';
+  if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity <= 0) {
+    throw Object.assign(new Error(`Invalid quantity for ${productName}: must be a positive number`), { statusCode: 400 });
+  }
+  if (Number.isInteger(quantity)) return;
+  if (Number(product.allow_fractional_quantity) !== 1) {
+    throw Object.assign(new Error(`Invalid quantity for ${productName}: fractional quantities are not allowed`), { statusCode: 400 });
+  }
+
+  const precision = Number.isInteger(product.weight_precision)
+    ? Math.min(Math.max(Number(product.weight_precision), 0), 4)
+    : 3;
+  const scale = 10 ** precision;
+  if (Math.abs(quantity * scale - Math.round(quantity * scale)) > 1e-8) {
+    throw Object.assign(new Error(`Invalid quantity for ${productName}: use at most ${precision} decimal places`), { statusCode: 400 });
+  }
+}

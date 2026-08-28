@@ -68,7 +68,7 @@ function paymentMethodBreakdown(
       WHERE b.payment_details IS NOT NULL
         AND b.created_at < ?
         AND (b.paid_at IS NULL OR b.paid_at >= ?)
-        AND (? = 0 OR b.payment_status = 'paid')
+        AND (? = 0 OR b.payment_status IN ('paid', 'partially_refunded'))
         AND json_type(je.value) = 'object'
     ), normalized AS (
       SELECT
@@ -81,6 +81,9 @@ function paymentMethodBreakdown(
           datetime(NULLIF(created_at, ''))
         ) AS payment_time
       FROM payment_lines
+      UNION ALL
+      SELECT method, NULL, -(amount_cents / 100.0), datetime(created_at)
+      FROM refunds
     )
     SELECT COALESCE(pm.name, normalized.method) AS method, COUNT(*) AS count,
       COALESCE(SUM(CASE WHEN typeof(amount) IN ('integer', 'real') THEN amount ELSE 0 END), 0) AS total
@@ -109,7 +112,9 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     const today = utcTodayDate();
     const [start, end] = utcDayBounds(today);
     const salesToday = db.prepare(`
-      SELECT COALESCE(SUM(paid_amount), 0) AS sales
+      SELECT COALESCE(SUM(paid_amount - COALESCE((
+        SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
+      ), 0)), 0) AS sales
       FROM bills WHERE created_at >= ? AND created_at < ?
     `).get(start, end) as { sales: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, today) as { total: number }[];
@@ -154,7 +159,9 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
 
     const billsToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total,
-        COALESCE(SUM(paid_amount), 0) as collected
+        COALESCE(SUM(paid_amount - COALESCE((
+          SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
+        ), 0)), 0) as collected
       FROM bills WHERE created_at >= ? AND created_at < ?
     `).get(start, end) as { count: number; total: number; collected: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, date);
@@ -425,9 +432,11 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
     // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
     const revenue = db.prepare(`
-      SELECT COUNT(*) as billCount, COALESCE(SUM(paid_amount), 0) as total
+      SELECT COUNT(*) as billCount, COALESCE(SUM(paid_amount - COALESCE((
+        SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
+      ), 0)), 0) as total
       FROM bills
-      WHERE payment_status = 'paid' AND paid_at >= ?
+      WHERE payment_status IN ('paid', 'partially_refunded') AND paid_at >= ?
     `).get(windowStart) as { billCount: number; total: number };
     const aov = revenue.billCount > 0 ? revenue.total / revenue.billCount : 0;
 

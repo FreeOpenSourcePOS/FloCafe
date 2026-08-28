@@ -654,7 +654,7 @@ export function startKdsServer(): Promise<void> {
         }
         currentKdsPort++;
         console.log(`[KDS Server] Port ${currentKdsPort - 1} in use (${err.code}), trying ${currentKdsPort}`);
-        listeningServer.listen(currentKdsPort, '0.0.0.0', onListening);
+        listeningServer.listen(currentKdsPort, '0.0.0.0');
       } else {
         reject(err);
       }

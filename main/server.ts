@@ -358,7 +358,7 @@ export function startServer(): Promise<void> {
         }
         currentPort++;
         console.log(`[Server] Port ${currentPort - 1} in use (${err.code}), trying ${currentPort}`);
-        listeningServer.listen(currentPort, '0.0.0.0', onListening);
+        listeningServer.listen(currentPort, '0.0.0.0');
       } else {
         reject(err);
       }

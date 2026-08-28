@@ -644,7 +644,7 @@ export function startKdsServer(): Promise<void> {
 
     listeningServer.on('error', (err: NodeJS.ErrnoException) => {
       if (stopping) return;
-      if (err.code === 'EADDRINUSE') {
+      if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
         attempts++;
         if (attempts >= 10) {
           const errorMsg = `[KDS Server] Failed to bind to any port after 10 attempts starting from ${KDS_PORT}`;
@@ -653,7 +653,7 @@ export function startKdsServer(): Promise<void> {
           return;
         }
         currentKdsPort++;
-        console.log(`[KDS Server] Port ${currentKdsPort - 1} in use, trying ${currentKdsPort}`);
+        console.log(`[KDS Server] Port ${currentKdsPort - 1} in use (${err.code}), trying ${currentKdsPort}`);
         listeningServer.listen(currentKdsPort, '0.0.0.0', onListening);
       } else {
         reject(err);

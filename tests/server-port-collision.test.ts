@@ -49,8 +49,36 @@ async function run(): Promise<void> {
       });
       req.once('error', reject);
     });
-    assert.equal(status, 200, 'health check responds on the port reported by getServerPort()');
+    console.log('✅ Ephemeral port test passed');
 
+    await stopServer().catch(() => {});
+
+    // Test port collision fallback (e.g. when configured port is already occupied)
+    const dummyServer = http.createServer((_, res) => res.end('occupied'));
+    const dummyPort = await new Promise<number>((resolve) => {
+      dummyServer.listen(0, '0.0.0.0', () => {
+        const addr = dummyServer.address();
+        resolve(typeof addr === 'object' && addr ? addr.port : 0);
+      });
+    });
+
+    process.env.PORT = String(dummyPort);
+    await startServer();
+
+    const collidedPort = getServerPort();
+    assert.notEqual(collidedPort, dummyPort, 'Server shifted away from occupied port');
+    assert.equal(collidedPort, dummyPort + 1, 'Server incremented to next port');
+
+    const collidedStatus = await new Promise<number>((resolve, reject) => {
+      const req = http.get({ host: '127.0.0.1', port: collidedPort, path: '/api/health' }, (res) => {
+        res.resume();
+        res.once('end', () => resolve(res.statusCode ?? 0));
+      });
+      req.once('error', reject);
+    });
+    assert.equal(collidedStatus, 200, 'Health check succeeds on fallback port');
+
+    dummyServer.close();
     console.log('✅ Server port-collision tests passed');
   } finally {
     await stopServer().catch(() => {});

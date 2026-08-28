@@ -348,7 +348,7 @@ export function startServer(): Promise<void> {
 
     listeningServer.on('error', (err: NodeJS.ErrnoException) => {
       if (stopping) return;
-      if (err.code === 'EADDRINUSE') {
+      if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
         attempts++;
         if (attempts >= 10) {
           const errorMsg = `[Server] Failed to bind to any port after 10 attempts starting from ${PORT}`;
@@ -357,8 +357,8 @@ export function startServer(): Promise<void> {
           return;
         }
         currentPort++;
-        console.log(`[Server] Port ${currentPort - 1} in use, trying ${currentPort}`);
-        listeningServer.listen(currentPort, '0.0.0.0');
+        console.log(`[Server] Port ${currentPort - 1} in use (${err.code}), trying ${currentPort}`);
+        listeningServer.listen(currentPort, '0.0.0.0', onListening);
       } else {
         reject(err);
       }

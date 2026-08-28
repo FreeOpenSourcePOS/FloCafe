@@ -495,11 +495,11 @@ export function registerIpcHandlers(
       const today = new Date().toISOString().slice(0, 10);
 
       const bills = db.prepare(`
-        SELECT COUNT(*) as bill_count, COALESCE(SUM(paid_amount - COALESCE((
-          SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-        ), 0)), 0) as revenue
-        FROM bills WHERE date(created_at) = date(?) AND payment_status IN ('paid', 'partially_refunded')
-      `).get(today) as { bill_count: number; revenue: number };
+        SELECT
+          (SELECT COUNT(*) FROM bills WHERE date(paid_at) = date(?)) as bill_count,
+          COALESCE((SELECT SUM(paid_amount) FROM bills WHERE date(paid_at) = date(?)), 0)
+          - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE date(created_at) = date(?)), 0) as revenue
+      `).get(today, today, today) as { bill_count: number; revenue: number };
 
       const covers = db.prepare(`
         SELECT COALESCE(SUM(guest_count), 0) as covers FROM orders

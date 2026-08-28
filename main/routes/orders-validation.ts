@@ -30,7 +30,7 @@ export function validateItemNotes(db: any, notes: string | null | undefined): vo
 }
 
 export function validateProductQuantity(
-  product: { name?: string; allow_fractional_quantity?: boolean | number; weight_precision?: number },
+  product: { name?: string; sale_unit?: string; allow_fractional_quantity?: boolean | number; weight_precision?: number },
   quantity: unknown,
 ): asserts quantity is number {
   const productName = product.name || 'product';
@@ -38,7 +38,7 @@ export function validateProductQuantity(
     throw Object.assign(new Error(`Invalid quantity for ${productName}: must be a positive number`), { statusCode: 400 });
   }
   if (Number.isInteger(quantity)) return;
-  if (Number(product.allow_fractional_quantity) !== 1) {
+  if (!['kg', 'g', 'lb'].includes(product.sale_unit || 'each') || Number(product.allow_fractional_quantity) !== 1) {
     throw Object.assign(new Error(`Invalid quantity for ${productName}: fractional quantities are not allowed`), { statusCode: 400 });
   }
 

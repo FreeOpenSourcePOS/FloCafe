@@ -1072,12 +1072,11 @@ export class CloudSyncService {
     // instead of date() on every row.
     const [ts, te] = utcDayBounds(utcTodayDate());
     const todaySales = db.prepare(`
-      SELECT COALESCE(SUM(paid_amount - COALESCE((
-        SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-      ), 0)), 0) as total, COUNT(*) as count
-      FROM bills
-      WHERE payment_status IN ('paid', 'partially_refunded') AND paid_at >= ? AND paid_at < ?
-    `).get(ts, te) as { total: number; count: number };
+      SELECT
+        COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
+        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as total,
+        (SELECT COUNT(*) FROM bills WHERE paid_at >= ? AND paid_at < ?) as count
+    `).get(ts, te, ts, te, ts, te) as { total: number; count: number };
     return {
       pos_hash: cfg.pos_hash,
       pos_id: cfg.pos_id || null,
@@ -1627,28 +1626,25 @@ export class CloudSyncService {
         COALESCE(SUM(subtotal), 0) as subtotal,
         COALESCE(SUM(tax_amount), 0) as tax_amount,
         COALESCE(SUM(discount_amount), 0) as discount_amount,
-        COALESCE(SUM(paid_amount - COALESCE((
-          SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-        ), 0)), 0) as paid_amount
+        COALESCE(SUM(paid_amount), 0)
+          - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at <= ?), 0) as paid_amount
       FROM bills
-      WHERE payment_status IN ('paid', 'partially_refunded')
-        AND COALESCE(paid_at, created_at) >= ?
-        AND COALESCE(paid_at, created_at) <= ?
-    `).get(range.from, range.to);
+      WHERE paid_at >= ? AND paid_at <= ?
+    `).get(range.from, range.to, range.from, range.to);
 
     const byDay = db.prepare(`
-      SELECT date(COALESCE(paid_at, created_at)) as date,
-        COUNT(*) as bill_count,
-        COALESCE(SUM(paid_amount - COALESCE((
-          SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-        ), 0)), 0) as gross_sales
-      FROM bills
-      WHERE payment_status IN ('paid', 'partially_refunded')
-        AND COALESCE(paid_at, created_at) >= ?
-        AND COALESCE(paid_at, created_at) <= ?
-      GROUP BY date(COALESCE(paid_at, created_at))
+      WITH events AS (
+        SELECT date(paid_at) as date, 1 as bill_count, paid_amount as gross_sales
+        FROM bills WHERE paid_at >= ? AND paid_at <= ?
+        UNION ALL
+        SELECT date(created_at), 0, -(amount_cents / 100.0)
+        FROM refunds WHERE created_at >= ? AND created_at <= ?
+      )
+      SELECT date, SUM(bill_count) as bill_count, COALESCE(SUM(gross_sales), 0) as gross_sales
+      FROM events
+      GROUP BY date
       ORDER BY date ASC
-    `).all(range.from, range.to);
+    `).all(range.from, range.to, range.from, range.to);
 
     const topItems = db.prepare(`
       SELECT oi.product_id, oi.product_name,
@@ -1656,7 +1652,7 @@ export class CloudSyncService {
         COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) as total
       FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
-      WHERE b.payment_status IN ('paid', 'partially_refunded')
+      WHERE b.paid_at IS NOT NULL
         AND (b.split_group_id IS NULL OR bi.bill_id IS NOT NULL)
         AND COALESCE(b.paid_at, b.created_at) >= ?
         AND COALESCE(b.paid_at, b.created_at) <= ?
@@ -1677,21 +1673,20 @@ export class CloudSyncService {
     const range = dateRange({ from: payload?.date, to: payload?.date });
     const db = getDatabase();
     const totals = db.prepare(`
-      SELECT COUNT(*) AS bill_count, COALESCE(SUM(paid_amount - COALESCE((
-               SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-             ), 0)), 0) AS total_sales,
+      SELECT COUNT(*) AS bill_count, COALESCE(SUM(paid_amount), 0)
+             - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)), 0) AS total_sales,
              COALESCE(SUM(tax_amount), 0) AS total_tax,
              COALESCE(SUM(discount_amount), 0) AS total_discount
         FROM bills
-       WHERE payment_status IN ('paid', 'partially_refunded') AND date(COALESCE(paid_at, created_at)) BETWEEN date(?) AND date(?)
-    `).get(range.from, range.to) as any;
+       WHERE paid_at IS NOT NULL AND date(paid_at) BETWEEN date(?) AND date(?)
+    `).get(range.from, range.to, range.from, range.to) as any;
     const topItems = db.prepare(`
       SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) AS qty,
              COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) AS revenue,
              COALESCE(AVG(oi.unit_price), 0) AS price
         FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
         LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
-       WHERE b.payment_status IN ('paid', 'partially_refunded') AND date(COALESCE(b.paid_at, b.created_at)) BETWEEN date(?) AND date(?)
+       WHERE b.paid_at IS NOT NULL AND date(b.paid_at) BETWEEN date(?) AND date(?)
          AND (b.split_group_id IS NULL OR bi.bill_id IS NOT NULL)
        GROUP BY oi.product_id, oi.product_name ORDER BY revenue DESC LIMIT 5
     `).all(range.from, range.to);
@@ -1708,14 +1703,16 @@ export class CloudSyncService {
   private hourlyReport(payload?: Record<string, unknown>) {
     const range = dateRange({ from: payload?.date, to: payload?.date });
     const rows = getDatabase().prepare(`
-      SELECT strftime('%H', COALESCE(paid_at, created_at)) AS hour,
-             COALESCE(SUM(paid_amount - COALESCE((
-               SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-             ), 0)), 0) AS sales, COUNT(*) AS bills
-        FROM bills
-       WHERE payment_status IN ('paid', 'partially_refunded') AND date(COALESCE(paid_at, created_at)) BETWEEN date(?) AND date(?)
-       GROUP BY hour ORDER BY hour
-    `).all(range.from, range.to) as any[];
+      WITH events AS (
+        SELECT strftime('%H', paid_at) AS hour, paid_amount AS sales, 1 AS bills
+        FROM bills WHERE paid_at IS NOT NULL AND date(paid_at) BETWEEN date(?) AND date(?)
+        UNION ALL
+        SELECT strftime('%H', created_at), -(amount_cents / 100.0), 0
+        FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)
+      )
+      SELECT hour, COALESCE(SUM(sales), 0) AS sales, SUM(bills) AS bills
+      FROM events GROUP BY hour ORDER BY hour
+    `).all(range.from, range.to, range.from, range.to) as any[];
     const byHour = new Map(rows.map((row) => [String(row.hour).padStart(2, '0'), row]));
     return { hours: Array.from({ length: 24 }, (_, hour) => {
       const row = byHour.get(String(hour).padStart(2, '0'));
@@ -1732,7 +1729,7 @@ export class CloudSyncService {
              COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) AS revenue
         FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
         LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
-       WHERE b.payment_status IN ('paid', 'partially_refunded') AND date(COALESCE(b.paid_at, b.created_at)) BETWEEN date(?) AND date(?)
+       WHERE b.paid_at IS NOT NULL AND date(b.paid_at) BETWEEN date(?) AND date(?)
          AND (b.split_group_id IS NULL OR bi.bill_id IS NOT NULL)
        GROUP BY oi.product_id, oi.product_name ORDER BY revenue DESC LIMIT ?
     `).all(range.from, range.to, limit);

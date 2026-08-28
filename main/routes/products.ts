@@ -346,7 +346,10 @@ function normalizeSaleUnit(value: unknown): typeof VALID_SALE_UNITS[number] {
   return VALID_SALE_UNITS.includes(value as any) ? value as typeof VALID_SALE_UNITS[number] : 'each';
 }
 
-function validateWeightedProductFields(values: Record<string, unknown>): string | null {
+function validateWeightedProductFields(
+  values: Record<string, unknown>,
+  current?: { sale_unit?: string; allow_fractional_quantity?: boolean | number },
+): string | null {
   if (values.sale_unit !== undefined && !VALID_SALE_UNITS.includes(values.sale_unit as any)) {
     return `sale_unit must be one of: ${VALID_SALE_UNITS.join(', ')}`;
   }
@@ -357,6 +360,13 @@ function validateWeightedProductFields(values: Record<string, unknown>): string 
     if (!Number.isSafeInteger(values.weight_precision) || (values.weight_precision as number) < 0 || (values.weight_precision as number) > 4) {
       return 'weight_precision must be an integer between 0 and 4';
     }
+  }
+  const effectiveSaleUnit = values.sale_unit !== undefined ? values.sale_unit : current?.sale_unit ?? 'each';
+  const effectiveAllowFractional = values.allow_fractional_quantity !== undefined
+    ? values.allow_fractional_quantity
+    : Number(current?.allow_fractional_quantity) === 1;
+  if (effectiveSaleUnit === 'each' && effectiveAllowFractional === true) {
+    return 'allow_fractional_quantity requires a weighted sale_unit';
   }
   return null;
 }
@@ -826,7 +836,10 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
 router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
+    const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as {
+      sale_unit?: string;
+      allow_fractional_quantity?: number;
+    } | undefined;
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
     }
@@ -846,7 +859,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
 
     const numericError = validateProductNumericFields(req.body, false);
     if (numericError) return res.status(400).json({ error: numericError });
-    const weightedFieldError = validateWeightedProductFields(req.body);
+    const weightedFieldError = validateWeightedProductFields(req.body, product);
     if (weightedFieldError) return res.status(400).json({ error: weightedFieldError });
 
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {

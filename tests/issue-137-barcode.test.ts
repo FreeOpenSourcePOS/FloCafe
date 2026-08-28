@@ -192,6 +192,18 @@ async function main() {
         headers: authHeader,
       });
       assertEqual(invalidPrecision.status, 400, 'H: out-of-range weight precision rejected');
+
+      const fractionalEach = await api(baseUrl, '/api/products', {
+        method: 'POST',
+        body: { category_id: 'cat-137', name: 'Fractional Each', price: 10, sale_unit: 'each', allow_fractional_quantity: true },
+        headers: authHeader,
+      });
+      assertEqual(fractionalEach.status, 400, 'H: each-unit product cannot enable fractional quantities');
+
+      const weightedToEach = await api(baseUrl, `/api/products/${createdId}`, {
+        method: 'PUT', body: { sale_unit: 'each' }, headers: authHeader,
+      });
+      assertEqual(weightedToEach.status, 400, 'H: partial update cannot leave an each-unit product fractional');
     }
 
   } finally {

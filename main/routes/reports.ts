@@ -68,7 +68,7 @@ function paymentMethodBreakdown(
       WHERE b.payment_details IS NOT NULL
         AND b.created_at < ?
         AND (b.paid_at IS NULL OR b.paid_at >= ?)
-        AND (? = 0 OR b.payment_status IN ('paid', 'partially_refunded'))
+        AND (? = 0 OR b.paid_at IS NOT NULL)
         AND json_type(je.value) = 'object'
     ), normalized AS (
       SELECT
@@ -112,11 +112,10 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     const today = utcTodayDate();
     const [start, end] = utcDayBounds(today);
     const salesToday = db.prepare(`
-      SELECT COALESCE(SUM(paid_amount - COALESCE((
-        SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-      ), 0)), 0) AS sales
-      FROM bills WHERE created_at >= ? AND created_at < ?
-    `).get(start, end) as { sales: number };
+      SELECT
+        COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
+        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) AS sales
+    `).get(start, end, start, end) as { sales: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, today) as { total: number }[];
 
     const runningOrders = db.prepare(`
@@ -159,11 +158,10 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
 
     const billsToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total,
-        COALESCE(SUM(paid_amount - COALESCE((
-          SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-        ), 0)), 0) as collected
+        COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
+        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
       FROM bills WHERE created_at >= ? AND created_at < ?
-    `).get(start, end) as { count: number; total: number; collected: number };
+    `).get(start, end, start, end, start, end) as { count: number; total: number; collected: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, date);
 
     const customersToday = db.prepare(`
@@ -432,12 +430,12 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
     // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
     const revenue = db.prepare(`
-      SELECT COUNT(*) as billCount, COALESCE(SUM(paid_amount - COALESCE((
-        SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-      ), 0)), 0) as total
+      SELECT COUNT(*) as billCount,
+        COALESCE(SUM(paid_amount), 0)
+        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ?), 0) as total
       FROM bills
-      WHERE payment_status IN ('paid', 'partially_refunded') AND paid_at >= ?
-    `).get(windowStart) as { billCount: number; total: number };
+      WHERE paid_at >= ?
+    `).get(windowStart, windowStart) as { billCount: number; total: number };
     const aov = revenue.billCount > 0 ? revenue.total / revenue.billCount : 0;
 
     // Kitchen velocity — substitutes for "best cook", which isn't derivable:

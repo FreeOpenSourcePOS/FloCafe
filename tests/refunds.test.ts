@@ -89,6 +89,12 @@ async function main() {
       method: 'POST', body: { items: [{ product_id: 'prod-refund', quantity: 0.5 }] }, headers: ownerAuth,
     });
     assertEqual(wholeUnitAppend.status, 400, 'order append rejects fractional quantity for a whole-unit product');
+    db.prepare("UPDATE products SET allow_fractional_quantity = 1 WHERE id = 'prod-refund'").run();
+    const inconsistentWholeUnit = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: { type: 'takeaway', items: [{ product_id: 'prod-refund', quantity: 0.5 }] }, headers: ownerAuth,
+    });
+    assertEqual(inconsistentWholeUnit.status, 400, 'order creation rejects fractional each-unit quantity even with inconsistent catalog metadata');
+    db.prepare("UPDATE products SET allow_fractional_quantity = 0 WHERE id = 'prod-refund'").run();
 
     // ── Role gating ──────────────────────────────────────────────────────
     const { bill: gatedBill } = await newPaidBill('prod-refund');
@@ -168,6 +174,20 @@ async function main() {
     );
     const cashAfterPartialRefund = salesAfterPartialRefund.data.paymentMethods.find((row: any) => row.method === 'cash');
     assertEqual(cashAfterPartialRefund.total, salesAfterPartialRefund.data.sales, 'cash payment reporting includes refund lines as negative cash movement');
+
+    const paymentDate = '2025-01-10T12:00:00.000Z';
+    const refundDate = '2025-01-11T12:00:00.000Z';
+    const paymentDetails = JSON.parse((db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(partialBill.bill.id) as any).payment_details);
+    paymentDetails.forEach((line: any) => { line.timestamp = paymentDate; });
+    db.prepare('UPDATE bills SET created_at = ?, paid_at = ?, payment_details = ? WHERE id = ?')
+      .run(paymentDate, paymentDate, JSON.stringify(paymentDetails), partialBill.bill.id);
+    db.prepare('UPDATE refunds SET created_at = ? WHERE bill_id = ?').run(refundDate, partialBill.bill.id);
+    const paymentDay = await api(baseUrl, '/api/reports/summary?date=2025-01-10', { headers: ownerAuth });
+    const lateRefundDay = await api(baseUrl, '/api/reports/summary?date=2025-01-11', { headers: ownerAuth });
+    assertEqual(paymentDay.data.summary.bills.collected, partialBill.bill.paid_amount, 'payment-day revenue keeps the original payment when a refund is posted later');
+    assertEqual(paymentDay.data.summary.paymentMethods[0].total, partialBill.bill.paid_amount, 'payment-day method total matches payment-day revenue');
+    assertEqual(lateRefundDay.data.summary.bills.collected, -Number(partialAmount), 'late refund reduces revenue on the refund day');
+    assertEqual(lateRefundDay.data.summary.paymentMethods[0].total, -Number(partialAmount), 'refund-day method total matches refund-day revenue');
     const overRemainder = await api(baseUrl, '/api/refunds', {
       method: 'POST', body: { bill_id: partialBill.bill.id, amount: partialBill.bill.paid_amount, method: 'cash', override_pin: '1234', manager_id: managerId }, headers: ownerAuth,
     });

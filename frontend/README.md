@@ -2,7 +2,7 @@
 
 **Frontend for FloCafe POS** — a Next.js 16 + React 19 application with Tailwind CSS v4 and shadcn/ui components.
 
-FloUI is the user interface for the FloCafe point-of-sale system. It runs as a static export inside Electron and communicates with the local Express backend (`:3001`) and KDS server (`:3002`).
+FloUI is the user interface for the FloCafe point-of-sale system. It runs as a static export inside Electron and communicates with the local Express backend (`:3001`), KDS server (`:3002`), and Server App (`:3003`).
 
 ## Features
 

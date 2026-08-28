@@ -1,6 +1,6 @@
 # FloCafe agent guide
 
-FloCafe is an open-source, offline-first Electron desktop POS. `main/` contains the Electron main process, Express API (`:3001`), standalone KDS server (`:3002`), SQLite database, printing, and background services. `frontend/` is a statically exported Next.js 16 and React 19 application. `tests/` contains backend, integration, and release test suites.
+FloCafe is an open-source, offline-first Electron desktop POS. `main/` contains the Electron main process, Express API (`:3001`), standalone KDS server (`:3002`), server app (`:3003`), SQLite database, printing, and background services. `frontend/` is a statically exported Next.js 16 and React 19 application. `tests/` contains backend, integration, and release test suites.
 
 ## Progressive disclosure
 
@@ -61,7 +61,7 @@ FloCafe requires **Node.js 22 or later**.
 
 ```sh
 npm run dev              # Full Electron app (cleans ports, builds frontend & backend)
-node dev-server.js       # Backend only (Express API on :3001, KDS on :3002)
+node dev-server.js       # Backend only (Express API on :3001, KDS on :3002, Server App on :3003)
 npm run dev:frontend     # Frontend browser development server
 npm run lint             # Lint backend (main/) and frontend (frontend/)
 npm run build            # Compile TypeScript backend to dist/

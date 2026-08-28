@@ -9,9 +9,6 @@ contact_links:
   - name: Architecture & general discussions
     url: https://github.com/FreeOpenSourcePOS/FloCafe/discussions
     about: Propose architecture changes, ask questions, or discuss early ideas.
-  - name: Community support (Reddit)
-    url: https://www.reddit.com/r/FloPOS/
-    about: Share restaurant operator experiences and tips with the community.
   - name: Report a security vulnerability
     url: https://github.com/FreeOpenSourcePOS/FloCafe/security/advisories/new
     about: Report potential vulnerabilities privately per SECURITY.md.

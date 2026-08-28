@@ -188,6 +188,6 @@ For complete authoring instructions, see the [Tax packs developer guide](docs/ta
 
 ## Getting help
 
-- **Operator & general questions:** [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions) or [Reddit r/FloPOS](https://www.reddit.com/r/FloPOS/)
+- **Operator & general questions:** [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)
 - **Bug reports & feature requests:** [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - **Security vulnerabilities:** Report privately per [SECURITY.md](SECURITY.md) (do not open public issues)

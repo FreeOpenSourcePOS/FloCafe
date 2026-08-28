@@ -33,6 +33,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+import { resolveScannedProduct } from '@/lib/scale-barcode';
 import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
@@ -48,10 +49,6 @@ import {
 
 const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
 const POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
-
-function normalizeBarcode(value: string | null | undefined) {
-  return value?.trim() || '';
-}
 
 interface PostpaidAttempt {
   userId: string;
@@ -415,10 +412,10 @@ export default function POSPage() {
     || !!paymentBill || showCustomerPrompt || showPrepaidCheckout;
 
   useBarcodeScanner((code) => {
-    const normalizedCode = normalizeBarcode(code);
-    const product = products.find((p) => normalizeBarcode(p.barcode) === normalizedCode);
-    if (product) {
-      handleProductClick(product);
+    const scan = resolveScannedProduct(code, products);
+    if (scan) {
+      if (scan.scaleBarcode) cart.addItem(scan.product, scan.quantity);
+      else handleProductClick(scan.product);
     } else {
       toast.error(t('barcodeNotFound', { code }));
     }

@@ -4086,6 +4086,67 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 76,
+    name: 'add_refunds_and_refund_idempotency',
+    up: () => {
+      // Bill-level, amount-based refunds (#278), optionally linked to a
+      // single order_item for the "already prepared, must be pulled off a
+      // paid bill" case. Deliberately not linked to order_items for the
+      // common case — a refund is "amount_cents refunded via original_method
+      // against bill_id", mirroring how payments are recorded as free-form
+      // lines in bills.payment_details rather than tied to line items.
+      // shift_id is nullable with no FK: no `shifts` table exists yet
+      // (day-close/shift reconciliation is deferred to #279).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS refunds (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          bill_id INTEGER NOT NULL REFERENCES bills(id),
+          order_item_id INTEGER REFERENCES order_items(id),
+          amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+          method TEXT NOT NULL,
+          reason TEXT,
+          shift_id TEXT,
+          approved_by TEXT NOT NULL REFERENCES users(id),
+          created_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_refunds_bill ON refunds(bill_id);
+        CREATE INDEX IF NOT EXISTS idx_refunds_order_item ON refunds(order_item_id);
+
+        -- Mirrors payment_idempotency's FINAL (post v53/v54) user-scoped
+        -- shape directly: this table is brand new, so it never has
+        -- pre-user-scoped rows and needs no 'legacy' compat owner.
+        CREATE TABLE IF NOT EXISTS refund_idempotency (
+          user_id TEXT NOT NULL,
+          idempotency_key TEXT NOT NULL,
+          bill_id TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          response_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (user_id, idempotency_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_refund_idempotency_bill ON refund_idempotency(bill_id);
+      `);
+    },
+  },
+  {
+    version: 77,
+    name: 'add_weighted_product_metadata',
+    up: () => {
+      const columns = db.prepare(`PRAGMA table_info(products)`).all() as Array<{ name: string }>;
+      const hasColumn = (name: string) => columns.some((column) => column.name === name);
+      if (!hasColumn('sale_unit')) {
+        db.exec(`ALTER TABLE products ADD COLUMN sale_unit TEXT NOT NULL DEFAULT 'each' CHECK (sale_unit IN ('each', 'kg', 'g', 'lb'))`);
+      }
+      if (!hasColumn('allow_fractional_quantity')) {
+        db.exec(`ALTER TABLE products ADD COLUMN allow_fractional_quantity INTEGER NOT NULL DEFAULT 0`);
+      }
+      if (!hasColumn('weight_precision')) {
+        db.exec(`ALTER TABLE products ADD COLUMN weight_precision INTEGER NOT NULL DEFAULT 3 CHECK (weight_precision BETWEEN 0 AND 4)`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4242,6 +4303,9 @@ function createSchema(): void {
       cost REAL DEFAULT 0,
       sku TEXT,
       barcode TEXT,
+      sale_unit TEXT NOT NULL DEFAULT 'each' CHECK (sale_unit IN ('each', 'kg', 'g', 'lb')),
+      allow_fractional_quantity INTEGER NOT NULL DEFAULT 0,
+      weight_precision INTEGER NOT NULL DEFAULT 3 CHECK (weight_precision BETWEEN 0 AND 4),
       image_url TEXT,
       is_active INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,

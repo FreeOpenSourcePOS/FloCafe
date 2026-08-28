@@ -270,6 +270,7 @@ function loadProductRelationsBatch(db: any, products: any[]) {
 }
 
 const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
+const VALID_SALE_UNITS = ['each', 'kg', 'g', 'lb'] as const;
 
 const router = Router();
 
@@ -312,6 +313,7 @@ function serializeProduct(product: any): any {
     ...product,
     is_active: toBoolean(product.is_active),
     track_inventory: toBoolean(product.track_inventory),
+    allow_fractional_quantity: toBoolean(product.allow_fractional_quantity),
     has_image: toBoolean(product.has_image),
     category: serializeCategory(product.category),
     addon_groups: Array.isArray(product.addon_groups) ? product.addon_groups.map(serializeAddonGroup) : product.addon_groups,
@@ -335,6 +337,25 @@ function validateProductNumericFields(values: Record<string, unknown>, requirePr
     if (value === undefined || value === null) continue;
     if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
       return `${field} must be a finite number between ${minimum} and ${maximum === Number.POSITIVE_INFINITY ? 'the maximum supported value' : maximum}`;
+    }
+  }
+  return null;
+}
+
+function normalizeSaleUnit(value: unknown): typeof VALID_SALE_UNITS[number] {
+  return VALID_SALE_UNITS.includes(value as any) ? value as typeof VALID_SALE_UNITS[number] : 'each';
+}
+
+function validateWeightedProductFields(values: Record<string, unknown>): string | null {
+  if (values.sale_unit !== undefined && !VALID_SALE_UNITS.includes(values.sale_unit as any)) {
+    return `sale_unit must be one of: ${VALID_SALE_UNITS.join(', ')}`;
+  }
+  if (values.allow_fractional_quantity !== undefined && typeof values.allow_fractional_quantity !== 'boolean') {
+    return 'allow_fractional_quantity must be a boolean';
+  }
+  if (values.weight_precision !== undefined) {
+    if (!Number.isSafeInteger(values.weight_precision) || (values.weight_precision as number) < 0 || (values.weight_precision as number) > 4) {
+      return 'weight_precision must be an integer between 0 and 4';
     }
   }
   return null;
@@ -431,6 +452,7 @@ router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = `SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
+      p.sale_unit, p.allow_fractional_quantity, p.weight_precision,
       p.is_active, p.sort_order, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
       p.tax_type, p.tax_rate, p.tax_category_id, p.tax_behavior, p.cb_percent, p.tags, p.deleted_at, p.created_at, p.updated_at,
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
@@ -706,6 +728,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
   try {
     const {
       category_id, name, sku, barcode, description, price, cost_price,
+      sale_unit, allow_fractional_quantity, weight_precision,
       tax_category_id, tax_behavior, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
@@ -717,6 +740,8 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     }
     const numericError = validateProductNumericFields(req.body, true);
     if (numericError) return res.status(400).json({ error: numericError });
+    const weightedFieldError = validateWeightedProductFields(req.body);
+    if (weightedFieldError) return res.status(400).json({ error: weightedFieldError });
 
     if (cb_percent !== undefined && cb_percent !== null) {
       if (typeof cb_percent !== 'number' || !Number.isFinite(cb_percent) || cb_percent < 0 || cb_percent > 100) {
@@ -767,11 +792,13 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     const insertProduct = db.transaction(() => {
       db.prepare(`
         INSERT INTO products (id, category_id, name, sku, barcode, description, price, cost,
+          sale_unit, allow_fractional_quantity, weight_precision,
           tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity, low_stock_threshold,
           is_active, image_url, sort_order, cb_percent, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, normalizeNullableString(category_id), productName, normalizeNullableString(sku), normalizedBarcode, normalizeNullableString(description), price, cost_price || 0,
+        normalizeSaleUnit(sale_unit), allow_fractional_quantity ? 1 : 0, weight_precision ?? 3,
         'none', 0, normalizeNullableString(tax_category_id), tax_behavior || 'country_default',
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, normalizeNullableString(image_url),
@@ -806,6 +833,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
 
     const {
       category_id, name, sku, barcode, description, price, cost_price,
+      sale_unit, allow_fractional_quantity, weight_precision,
       tax_category_id, tax_behavior, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
@@ -818,6 +846,8 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
 
     const numericError = validateProductNumericFields(req.body, false);
     if (numericError) return res.status(400).json({ error: numericError });
+    const weightedFieldError = validateWeightedProductFields(req.body);
+    if (weightedFieldError) return res.status(400).json({ error: weightedFieldError });
 
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
       return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
@@ -867,6 +897,9 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const hasDescription = hasOwn(req.body, 'description');
     const hasCostPrice = hasOwn(req.body, 'cost_price');
     const hasTags = hasOwn(req.body, 'tags');
+    const hasSaleUnit = hasOwn(req.body, 'sale_unit');
+    const hasAllowFractionalQuantity = hasOwn(req.body, 'allow_fractional_quantity');
+    const hasWeightPrecision = hasOwn(req.body, 'weight_precision');
 
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
@@ -882,6 +915,9 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
           name = CASE WHEN @has_name = 1 THEN @name ELSE name END,
           sku = CASE WHEN @has_sku = 1 THEN @sku ELSE sku END,
           barcode = CASE WHEN @has_barcode = 1 THEN @barcode ELSE barcode END,
+          sale_unit = CASE WHEN @has_sale_unit = 1 THEN @sale_unit ELSE sale_unit END,
+          allow_fractional_quantity = CASE WHEN @has_allow_fractional_quantity = 1 THEN @allow_fractional_quantity ELSE allow_fractional_quantity END,
+          weight_precision = CASE WHEN @has_weight_precision = 1 THEN @weight_precision ELSE weight_precision END,
           description = CASE WHEN @has_description = 1 THEN @description ELSE description END,
           price = COALESCE(@price, price),
           cost = CASE WHEN @has_cost = 1 THEN @cost ELSE cost END,
@@ -908,6 +944,12 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
         sku: normalizeNullableString(sku),
         has_barcode: hasBarcode ? 1 : 0,
         barcode: normalizedBarcode,
+        has_sale_unit: hasSaleUnit ? 1 : 0,
+        sale_unit: normalizeSaleUnit(sale_unit),
+        has_allow_fractional_quantity: hasAllowFractionalQuantity ? 1 : 0,
+        allow_fractional_quantity: allow_fractional_quantity ? 1 : 0,
+        has_weight_precision: hasWeightPrecision ? 1 : 0,
+        weight_precision: weight_precision ?? null,
         has_description: hasDescription ? 1 : 0,
         description: normalizeNullableString(description),
         price: price ?? null,

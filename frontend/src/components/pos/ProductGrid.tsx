@@ -11,6 +11,7 @@ import api from '@/lib/api';
 import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { resolveScannedProduct } from '@/lib/scale-barcode';
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; activeBg: string; activeText: string }> = {
   red: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', activeBg: 'bg-red-500', activeText: 'text-white' },
@@ -35,10 +36,6 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string
 function getCategoryColorClasses(color: string | null | undefined) {
   if (!color) return null;
   return CATEGORY_COLORS[color.toLowerCase()] || null;
-}
-
-function normalizeBarcode(value: string | null | undefined) {
-  return value?.trim() || '';
 }
 
 interface Props {
@@ -90,9 +87,10 @@ export default function ProductGrid({
               // action into this field works regardless of typing speed.
               const trimmed = search.trim();
               if (!trimmed) return;
-              const match = products.find((p) => normalizeBarcode(p.barcode) === trimmed);
+              const match = resolveScannedProduct(trimmed, products);
               if (match) {
-                onProductClick(match);
+                if (match.scaleBarcode) cart.addItem(match.product, match.quantity);
+                else onProductClick(match.product);
                 setSearch('');
               }
             }}

@@ -94,6 +94,7 @@ export default function ProductsPage() {
   const [addonList, setAddonList] = useState<{ id?: number | string; name: string; price: number; is_active?: boolean }[]>([]);
   const [form, setForm] = useState({
     name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
+    sale_unit: 'each' as Product['sale_unit'], allow_fractional_quantity: false, weight_precision: '3',
     tax_category_id: '', tax_behavior: 'country_default', description: '',
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
@@ -238,6 +239,7 @@ export default function ProductsPage() {
   const resetForm = () => {
     setForm({
       name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
+      sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3',
       tax_category_id: '', tax_behavior: 'country_default', description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
@@ -263,6 +265,9 @@ export default function ProductsPage() {
       cb_percent: product.cb_percent === null || product.cb_percent === undefined ? '' : String(product.cb_percent),
       sku: product.sku || '',
       barcode: product.barcode || '',
+      sale_unit: product.sale_unit || 'each',
+      allow_fractional_quantity: !!product.allow_fractional_quantity,
+      weight_precision: String(product.weight_precision ?? 3),
       tax_category_id: product.tax_category_id || '',
       tax_behavior: product.tax_behavior || 'country_default',
       description: product.description || '',
@@ -298,6 +303,9 @@ export default function ProductsPage() {
         cb_percent: cbPercentVal,
         sku: form.sku || null,
         barcode: form.barcode || null,
+        sale_unit: form.sale_unit,
+        allow_fractional_quantity: form.allow_fractional_quantity,
+        weight_precision: Number(form.weight_precision),
         tax_category_id: form.tax_category_id || null,
         tax_behavior: form.tax_category_id ? form.tax_behavior : 'country_default',
         description: form.description || null,
@@ -702,6 +710,48 @@ export default function ProductsPage() {
                   placeholder={t('fieldBarcodePlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none font-mono" />
                 <p className="text-xs text-gray-400 mt-1">{t('fieldBarcodeHint')}</p>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldSaleUnit')}</label>
+                  <select
+                    value={form.sale_unit}
+                    onChange={(e) => {
+                      const saleUnit = e.target.value as Product['sale_unit'];
+                      setForm({
+                        ...form,
+                        sale_unit: saleUnit,
+                        allow_fractional_quantity: saleUnit === 'each' ? false : true,
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                  >
+                    <option value="each">{t('saleUnitEach')}</option>
+                    <option value="kg">{t('saleUnitKg')}</option>
+                    <option value="g">{t('saleUnitG')}</option>
+                    <option value="lb">{t('saleUnitLb')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldWeightPrecision')}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="4"
+                    value={form.weight_precision}
+                    onChange={(e) => setForm({ ...form, weight_precision: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                  />
+                </div>
+                <label className="flex items-center gap-2 pt-7">
+                  <input
+                    type="checkbox"
+                    checked={form.allow_fractional_quantity}
+                    onChange={(e) => setForm({ ...form, allow_fractional_quantity: e.target.checked })}
+                    className="rounded border-gray-300 text-brand focus:ring-brand"
+                  />
+                  <span className="text-sm text-gray-700">{t('fieldAllowFractionalQuantity')}</span>
+                </label>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

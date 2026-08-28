@@ -89,6 +89,32 @@ async function main() {
     assertEqual(held.items[0].product.name, 'Latte', 'Items parsed correctly');
     console.log('  ✓ GET /held-orders retrieves held order');
 
+    console.log('\n─── Scenario B2: fractional quantities can be held ───');
+    const weightedTableId = 'tbl-weighted-365';
+    seedTable(db, weightedTableId, 3);
+    const weightedItems = [{
+      id: 'mango-line',
+      product: { id: 'product-mango', name: 'Mango', price: 120, sale_unit: 'kg', allow_fractional_quantity: true },
+      quantity: 1.25,
+      addons: [],
+      special_instructions: '',
+    }];
+    const weightedPost = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: { tableId: weightedTableId, items: weightedItems },
+      headers: authHeader,
+    });
+    assertEqual(weightedPost.status, 200, 'POST /held-orders accepts fractional weighted quantity');
+    const weightedList = await api(baseUrl, '/api/held-orders', { headers: authHeader });
+    const weightedHeld = weightedList.data.orders.find((order: any) => order.tableId === weightedTableId);
+    assertEqual(weightedHeld?.items[0].quantity, 1.25, 'Fractional quantity survives storage and parsing');
+    await api(
+      baseUrl,
+      `/api/held-orders/${weightedTableId}?heldOrderId=${encodeURIComponent(weightedPost.data.id)}`,
+      { method: 'DELETE', headers: authHeader },
+    );
+    console.log('  ✓ Fractional held-order quantities round-trip');
+
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario C: POST /held-orders validates request data ───');
     const invalidRequests = [

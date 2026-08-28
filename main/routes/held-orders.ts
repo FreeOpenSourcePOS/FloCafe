@@ -43,8 +43,8 @@ function validateHeldOrderItem(item: unknown, db: any): void {
   if (!isRecord(item.product) || !isValidIdentifier(item.product.id)) {
     throw new Error('Each held-order item must have a valid product');
   }
-  if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
-    throw new Error('Each held-order item must have a positive integer quantity');
+  if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) {
+    throw new Error('Each held-order item must have a positive quantity');
   }
   if (!Array.isArray(item.addons) || item.addons.some((addon: unknown) => !isRecord(addon) || !isValidIdentifier(addon.id))) {
     throw new Error('Held-order item addons must be an array of valid addons');

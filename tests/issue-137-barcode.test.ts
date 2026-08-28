@@ -48,11 +48,22 @@ async function main() {
     {
       const res = await api(baseUrl, '/api/products', {
         method: 'POST',
-        body: { category_id: 'cat-137', name: 'Water Bottle', price: 20, barcode: '8901234567890' },
+        body: {
+          category_id: 'cat-137',
+          name: 'Water Bottle',
+          price: 20,
+          barcode: '8901234567890',
+          sale_unit: 'kg',
+          allow_fractional_quantity: true,
+          weight_precision: 3,
+        },
         headers: authHeader,
       });
       assertEqual(res.status, 201, `product with barcode created (got ${res.status}, ${JSON.stringify(res.data)})`);
       assertEqual(res.data.product.barcode, '8901234567890', 'barcode persisted on create');
+      assertEqual(res.data.product.sale_unit, 'kg', 'weighted sale unit persisted on create');
+      assertEqual(res.data.product.allow_fractional_quantity, true, 'fractional quantity flag serialized as boolean');
+      assertEqual(res.data.product.weight_precision, 3, 'weight precision persisted on create');
       createdId = res.data.product.id;
     }
 
@@ -114,11 +125,14 @@ async function main() {
 
       const res = await api(baseUrl, `/api/products/${updateTargetId}`, {
         method: 'PUT',
-        body: { barcode: '7501234567891' },
+        body: { barcode: '7501234567891', sale_unit: 'g', allow_fractional_quantity: true, weight_precision: 0 },
         headers: authHeader,
       });
       assertEqual(res.status, 200, 'E: update with a new barcode succeeds');
       assertEqual(res.data.product.barcode, '7501234567891', 'E: barcode set via update');
+      assertEqual(res.data.product.sale_unit, 'g', 'E: weighted sale unit updates');
+      assertEqual(res.data.product.allow_fractional_quantity, true, 'E: fractional quantity flag updates');
+      assertEqual(res.data.product.weight_precision, 0, 'E: weight precision updates');
     }
 
     console.log('\n─── Scenario F: duplicate barcode is rejected on update (excluding self) ───');
@@ -154,6 +168,30 @@ async function main() {
       assertEqual(lookup.status, 200, 'G: leading-zero lookup succeeds');
       assertEqual(lookup.data.products.length, 1, 'G: exactly one leading-zero product matches');
       assertEqual(lookup.data.products[0].id, created.data.product.id, 'G: correct leading-zero product returned');
+    }
+
+    console.log('\n─── Scenario H: invalid weighted metadata is rejected ───');
+    {
+      const invalidUnit = await api(baseUrl, '/api/products', {
+        method: 'POST',
+        body: { category_id: 'cat-137', name: 'Bulk Bad Unit', price: 10, sale_unit: 'stone' },
+        headers: authHeader,
+      });
+      assertEqual(invalidUnit.status, 400, 'H: invalid sale_unit rejected');
+
+      const invalidFlag = await api(baseUrl, `/api/products/${createdId}`, {
+        method: 'PUT',
+        body: { allow_fractional_quantity: 'yes' },
+        headers: authHeader,
+      });
+      assertEqual(invalidFlag.status, 400, 'H: non-boolean fractional flag rejected');
+
+      const invalidPrecision = await api(baseUrl, `/api/products/${createdId}`, {
+        method: 'PUT',
+        body: { weight_precision: 5 },
+        headers: authHeader,
+      });
+      assertEqual(invalidPrecision.status, 400, 'H: out-of-range weight precision rejected');
     }
 
   } finally {

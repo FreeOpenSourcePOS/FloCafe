@@ -157,6 +157,21 @@ async function main() {
     });
     assertEqual(noBalanceLeft.status, 400, 'a further refund on a fully refunded bill is rejected before touching the PIN budget');
 
+    // ── Two-hour eligibility window (rejected before PIN budget) ─────────
+    const expiredBill = await newPaidBill('prod-refund');
+    db.prepare("UPDATE orders SET created_at = datetime('now', '-121 minutes') WHERE id = ?").run(expiredBill.order.id);
+    const expiredRefund = await api(baseUrl, '/api/refunds', {
+      method: 'POST',
+      body: { bill_id: expiredBill.bill.id, amount: expiredBill.bill.paid_amount, method: 'cash', override_pin: '1234', manager_id: managerId },
+      headers: ownerAuth,
+    });
+    assertEqual(expiredRefund.status, 409, 'a refund more than two hours after order creation is rejected');
+    assertEqual(
+      (db.prepare('SELECT COUNT(*) AS count FROM refunds WHERE bill_id = ?').get(expiredBill.bill.id) as any).count,
+      0,
+      'an expired refund does not create a refund row',
+    );
+
     // ── Partial refund (budget point 4) ────────────────────────────────────
     const partialBill = await newPaidBill('prod-refund');
     const salesBeforePartialRefund = await api(baseUrl, '/api/reports/daily-stats', { headers: ownerAuth });

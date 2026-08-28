@@ -8,7 +8,7 @@
  * blocks. Inventory is deliberately not restored — it was already consumed
  * when the item was prepared, same rule as the existing void path.
  */
-import { getDatabase, now, verifyPin } from '../db';
+import { getDatabase, now, parseDbTimestamp, verifyPin } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 
@@ -16,6 +16,7 @@ type Database = ReturnType<typeof getDatabase>;
 
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 const REFUND_ITEM_ELIGIBLE_STATUSES = ['preparing', 'ready'];
+const REFUND_WINDOW_MS = 2 * 60 * 60 * 1000;
 // Kept in sync with the ['cancelled', 'voided', 'void_adjustment'] exclusion
 // list used throughout main/routes/bills.ts, main/routes/index.ts, and
 // main/routes/orders.ts — 'refunded' is the new terminal item status this
@@ -98,6 +99,12 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
 
   const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.billId) as any;
   if (!bill) throw httpError('Bill not found', 404);
+  const order = db.prepare('SELECT created_at FROM orders WHERE id = ?').get(bill.order_id) as { created_at: string } | undefined;
+  if (!order) throw httpError('Order not found', 404);
+  const orderCreatedAt = parseDbTimestamp(order.created_at).getTime();
+  if (!Number.isFinite(orderCreatedAt) || Date.now() - orderCreatedAt > REFUND_WINDOW_MS) {
+    throw httpError('Refund window has expired. Refunds are allowed within 2 hours of order creation.', 409);
+  }
 
   let amountCents = req.amountCents;
   let item: any = null;

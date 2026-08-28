@@ -75,13 +75,15 @@ npm run dev
 
 ```sh
 npm run dev              # Build frontend & backend, launch Electron
-node dev-server.js       # Backend only (Express API on :3001, KDS on :3002)
+node dev-server.js       # Backend only (Express API on :3001, KDS on :3002, Server App on :3003)
 npm run dev:frontend     # Frontend development server in browser
 npm run lint             # Lint backend and frontend
 npm run build            # Compile TypeScript backend to dist/
 npm run build:frontend   # Export static Next.js frontend
 npm test                 # Run default test suite
 ```
+
+> **Port configuration:** FloCafe uses ports `3001` (Main API), `3002` (KDS), and `3003` (Server App). If these ports are in use (e.g. by Docker), FloCafe automatically falls back to subsequent available ports. You can also customize them via `PORT`, `KDS_PORT`, and `SERVER_APP_PORT` in `.env`.
 
 ---
 

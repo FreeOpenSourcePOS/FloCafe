@@ -248,6 +248,9 @@ async function killPort(port) {
     console.log(
       `[kill-ports] Port ${port}: no Flo processes found. ${procs.length} other process(es) using this port.`
     );
+    console.log(
+      `[kill-ports] Note: Non-Flo process is holding port ${port}. FloCafe will attempt fallback ports automatically on startup, or you can configure custom ports (PORT, KDS_PORT, SERVER_APP_PORT) in .env.`
+    );
     return;
   }
 

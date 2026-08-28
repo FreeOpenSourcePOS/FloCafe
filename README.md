@@ -275,6 +275,7 @@ npm run dev
 Electron main process
 ├── Express API and WebSocket server       :3001
 ├── Standalone kitchen-display server      :3002
+├── Server / waiter app server             :3003
 └── SQLite database, migrations, and printing
                  ↕ HTTP and WebSocket
 Next.js renderer

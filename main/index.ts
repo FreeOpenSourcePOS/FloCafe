@@ -223,6 +223,7 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on('error', (err) => {
     isInstallingUpdate = false;
+    isQuitting = false;
     // #467: classify by error code/phase — never emit up-to-date from an
     // error path. The historical substring mask (404 / Cannot find latest /
     // ENOENT => "up to date") hid real check failures from users.
@@ -990,8 +991,6 @@ async function initialize(): Promise<void> {
         // Cleanup failure or timeout is logged but does not block the installer - the
         // new version launching is more important than a clean drain.
         log.error('[Update] Pre-install cleanup failed (proceeding with install):', error);
-      } finally {
-        isInstallingUpdate = false;
       }
       // isSilent=false shows the installer UI; isForceRunAfter=true ensures
       // the new version relaunches on Windows (NSIS) and Linux (AppImage).
@@ -999,6 +998,8 @@ async function initialize(): Promise<void> {
         autoUpdater.quitAndInstall(false, true);
         return { success: true };
       } catch (installError) {
+        isQuitting = false;
+        isInstallingUpdate = false;
         log.error('[Update] quitAndInstall failed:', installError);
         return { success: false, error: installError instanceof Error ? installError.message : String(installError) };
       }

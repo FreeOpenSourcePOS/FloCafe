@@ -928,6 +928,51 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     await cleanupPromise;
     await delay(0);
   }
+
+  // --- Timeout during pre-install cleanup: rejection settles and allows updater quit ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    const timeout = Object.assign(new Error('Cleanup step timed out'), { code: 'ERR_SHUTDOWN_TIMEOUT' });
+    let isInstallingUpdate = true;
+    let fatalExitCalled = false;
+
+    const coordinator = createShutdownCoordinator(() => [
+      {
+        name: 'timed out service',
+        run: () => { throw timeout; },
+      },
+    ], {
+      onFatalTimeout: () => {
+        if (!isInstallingUpdate) {
+          fatalExitCalled = true;
+          app.exit(1);
+        }
+      },
+    });
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: coordinator,
+      setQuitting: () => {},
+      destroyWindow: () => {},
+    });
+
+    // When isInstallingUpdate = true, runCleanup() rejects with the timeout error
+    // but onFatalTimeout does NOT force-kill the process via app.exit(1)
+    await assert.rejects(entrypoints.runCleanup(), (error: unknown) => error === timeout);
+    assert.equal(fatalExitCalled, false, 'pre-install timeout does not invoke fatal app.exit');
+    assert.deepEqual(app.exitCodes, [], 'app.exit was not called on pre-install cleanup timeout');
+
+    // Rejection still marks cleanup as finished, so subsequent quitAndInstall's will-quit is allowed
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    await delay(0);
+
+    assert.equal(willQuit.prevented, false,
+      'will-quit is NOT blocked even if cleanup timed out (updater can still proceed to install)');
+  }
 }
 
 (async () => {

@@ -100,6 +100,7 @@ let storedUpdateStatus: StoredUpdateStatus = initialUpdateState();
 let updaterPhase: UpdateErrorPhase = 'check';
 let stagedUpdateReady = false;
 let startupFailure = false;
+let isInstallingUpdate = false;
 let betaChannelTransitionTail: Promise<void> = Promise.resolve();
 
 // Beta-channel opt-in persistence (#463, decision #503). The preference lives
@@ -980,6 +981,7 @@ async function initialize(): Promise<void> {
         log.warn(`[Update] Restart-to-install denied by Master PIN gate: ${auth.error}`);
         return { success: false, error: auth.error };
       }
+      isInstallingUpdate = true;
       isQuitting = true;
       try {
         await runCleanup();
@@ -1124,7 +1126,16 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   // Database closure is deliberately last: all HTTP and WebSocket work must
   // have settled before handlers can lose access to SQLite.
   { name: 'database', run: () => closeDatabase(), databaseClose: true },
-], { onFatalTimeout: () => app.exit(1) });
+], {
+  onFatalTimeout: () => {
+    // When shutting down to install an update, do not force-kill the process
+    // via app.exit(1) on a timeout; let runCleanup() reject and hand off to
+    // autoUpdater.quitAndInstall() so the update can still proceed.
+    if (!isInstallingUpdate) {
+      app.exit(1);
+    }
+  },
+});
 
 const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntrypoints({
   app: app as unknown as ShutdownEntrypointApp,

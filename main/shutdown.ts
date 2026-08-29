@@ -331,7 +331,8 @@ export async function runShutdownSteps(
   for (const step of steps) {
     if (step.databaseClose && databaseBlocked) continue;
     try {
-      await step.run();
+      const stepPromise = Promise.resolve().then(() => step.run());
+      await withShutdownTimeout(stepPromise, step.name, () => {}, SHUTDOWN_TIMEOUT_MS);
     } catch (error) {
       errors.push(error);
       console.error(`[Shutdown] ${step.name} failed:`, error);

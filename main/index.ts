@@ -984,9 +984,14 @@ async function initialize(): Promise<void> {
       isInstallingUpdate = true;
       isQuitting = true;
       try {
-        await runCleanup();
+        await Promise.race([
+          runCleanup(),
+          new Promise<void>((_, reject) => {
+            setTimeout(() => reject(new Error(`Pre-install cleanup timed out after ${SHUTDOWN_TIMEOUT_MS}ms`)), SHUTDOWN_TIMEOUT_MS);
+          }),
+        ]);
       } catch (error) {
-        // Cleanup failure is logged but does not block the installer — the
+        // Cleanup failure or timeout is logged but does not block the installer — the
         // new version launching is more important than a clean drain.
         log.error('[Update] Pre-install cleanup failed (proceeding with install):', error);
       }

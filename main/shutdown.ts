@@ -391,6 +391,7 @@ export type ShutdownEntrypointOptions = {
   setQuitting: () => void;
   onShutdownRequested?: () => void;
   destroyWindow: () => void;
+  isInstallingUpdate?: () => boolean;
   reportFailure?: (context: 'quit' | 'signal', error: unknown) => void;
   getSignalExitCode?: () => number;
   getQuitExitCode?: () => number;
@@ -403,6 +404,7 @@ export function createShutdownEntrypoints({
   setQuitting,
   onShutdownRequested = () => {},
   destroyWindow,
+  isInstallingUpdate = () => false,
   reportFailure = () => {},
   getSignalExitCode = () => 0,
   getQuitExitCode = () => 0,
@@ -457,7 +459,9 @@ export function createShutdownEntrypoints({
       },
       (error) => {
         reportFailure('quit', error);
-        app.exit(1);
+        if (!isInstallingUpdate()) {
+          app.exit(1);
+        }
       },
     );
   };

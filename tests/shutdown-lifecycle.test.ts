@@ -973,6 +973,36 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     assert.equal(willQuit.prevented, false,
       'will-quit is NOT blocked even if cleanup timed out (updater can still proceed to install)');
   }
+
+  // --- Concurrent quit during failing cleanup does not force app.exit when isInstallingUpdate is true ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    const failure = new Error('Cleanup failed during concurrent quit');
+    let reportedFailure = false;
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { throw failure; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => true,
+      reportFailure: () => { reportedFailure = true; },
+    });
+
+    // Concurrent quit triggers will-quit before cleanup completes
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    assert.equal(willQuit.prevented, true, 'concurrent quit waits for in-flight cleanup');
+
+    // Let cleanup reject
+    await assert.rejects(entrypoints.runCleanup(), (err: unknown) => err === failure);
+    await delay(0);
+
+    assert.equal(reportedFailure, true, 'failure is reported');
+    assert.deepEqual(app.exitCodes, [], 'app.exit was NOT called on concurrent quit rejection during update');
+  }
 }
 
 (async () => {

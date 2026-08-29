@@ -863,6 +863,73 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   }
 }
 
+// ── quitAndInstall ordering regression (#544) ────────────────────────────────
+// When restart-and-install is invoked, cleanup must run *before*
+// autoUpdater.quitAndInstall() calls app.quit(). If cleanup runs after, the
+// shutdown coordinator's will-quit handler blocks the first quit with
+// event.preventDefault() and later re-issues a plain app.quit() — causing the
+// platform installer (Squirrel.Mac / NSIS / AppImage) to never relaunch the
+// new version. This test verifies the coordinator's will-quit behaviour in
+// both orderings so a regression is immediately visible.
+async function testQuitAndInstallCleanupOrdering(): Promise<void> {
+  // --- Correct ordering: cleanup finishes before quitAndInstall's will-quit ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let cleanupCalls = 0;
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { cleanupCalls++; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+    });
+
+    // Simulate: await runCleanup() completes first (as the fixed handler does)
+    await entrypoints.runCleanup();
+
+    // Now quitAndInstall calls app.quit() → will-quit fires
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    await delay(0);
+
+    assert.equal(willQuit.prevented, false,
+      'will-quit is NOT blocked when cleanup already finished (installer can relaunch)');
+    assert.equal(cleanupCalls, 1, 'cleanup ran exactly once');
+  }
+
+  // --- Regression: quitAndInstall fires will-quit before cleanup completes ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let cleanupCalls = 0;
+    let releaseCleanup: (() => void) | null = null;
+    const cleanupHeld = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { cleanupCalls++; await cleanupHeld; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+    });
+
+    // Simulate old (broken) ordering: quitAndInstall fires before cleanup
+    const cleanupPromise = entrypoints.runCleanup();
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    await delay(0);
+
+    assert.equal(willQuit.prevented, true,
+      'will-quit IS blocked when cleanup is still in progress (regression: installer hook is lost)');
+
+    // Let cleanup finish so we don't leak
+    releaseCleanup?.();
+    await cleanupPromise;
+    await delay(0);
+  }
+}
+
 (async () => {
   console.log('phase coordinator');
   await testCoordinatorOrderingAndIdempotency();
@@ -885,8 +952,11 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   await testDatabaseImportShutdownCancellation();
   console.log('phase owned servers');
   await testOwnedServerStopEntrypoints();
+  console.log('phase update install ordering');
+  await testQuitAndInstallCleanupOrdering();
   console.log('Shutdown lifecycle tests passed.');
 })().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+

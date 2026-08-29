@@ -962,7 +962,15 @@ async function initialize(): Promise<void> {
     // owner PIN approval. The PIN check runs here in the main process — the
     // same authorizeMasterPin used by every other master-PIN-gated IPC
     // handler — so no renderer path can bypass the guard.
-    ipcMain.handle('restart-and-install', (_event, pin?: unknown) => {
+    //
+    // Cleanup runs *before* quitAndInstall so the shutdown coordinator's
+    // will-quit handler sees cleanupFinished=true and exits immediately,
+    // allowing the platform installer hook (Squirrel.Mac / NSIS / AppImage)
+    // to relaunch the new version. Without this ordering, the coordinator
+    // calls event.preventDefault() on the first will-quit (blocking the
+    // installer's relaunch), then calls app.quit() a second time as a plain
+    // quit with no relaunch — the new version is never launched.
+    ipcMain.handle('restart-and-install', async (_event, pin?: unknown) => {
       if (!isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
         log.warn('[Update] Ignoring install request before an update is downloaded');
         return { success: false, error: 'No downloaded update is ready to install.' };
@@ -973,7 +981,16 @@ async function initialize(): Promise<void> {
         return { success: false, error: auth.error };
       }
       isQuitting = true;
-      autoUpdater.quitAndInstall();
+      try {
+        await runCleanup();
+      } catch (error) {
+        // Cleanup failure is logged but does not block the installer — the
+        // new version launching is more important than a clean drain.
+        log.error('[Update] Pre-install cleanup failed (proceeding with install):', error);
+      }
+      // isSilent=false shows the installer UI; isForceRunAfter=true ensures
+      // the new version relaunches on Windows (NSIS) and Linux (AppImage).
+      autoUpdater.quitAndInstall(false, true);
       return { success: true };
     });
 

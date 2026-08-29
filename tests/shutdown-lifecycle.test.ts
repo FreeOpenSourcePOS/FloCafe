@@ -1128,4 +1128,3 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
   console.error(error);
   process.exit(1);
 });
-

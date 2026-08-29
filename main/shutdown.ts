@@ -488,10 +488,15 @@ export function createShutdownEntrypoints({
     signalExitRequested = true;
     requestShutdown();
     void runCleanup().then(
-      () => process.exit(getSignalExitCode()),
+      () => {
+        if (isInstallingUpdate()) return;
+        process.exit(getSignalExitCode());
+      },
       (error) => {
         reportFailure('signal', error);
-        process.exit(1);
+        if (!isInstallingUpdate()) {
+          process.exit(1);
+        }
       },
     );
   };

@@ -222,26 +222,12 @@ function setupAutoUpdater(): void {
     });
   });
 
-  autoUpdater.on('error', createAutoUpdaterErrorHandler((err) => {
-    // #467: classify by error code/phase — never emit up-to-date from an
-    // error path. The historical substring mask (404 / Cannot find latest /
-    // ENOENT => "up to date") hid real check failures from users.
-    const errorPhase = updaterPhase;
-    const classified = classifyUpdateError(err, errorPhase);
-    updaterPhase = 'check';
-    log.info(
-      `[Update] Updater error classified as ${classified.state}` +
-      `/${classified.reason}:`, classified.detail
-    );
-    if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
-      log.info('[Update] Preserving ready-to-install status while staged update awaits installation');
-      return;
-    }
-    setUpdateStatus({
-      status: classified.state,
-      reason: classified.reason,
-      error: classified.detail
-    });
+  autoUpdater.on('error', createAutoUpdaterErrorHandler({
+    getPhase: () => updaterPhase,
+    setPhase: (phase) => { updaterPhase = phase; },
+    isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+    setUpdateStatus,
+    logInfo: (message, detail) => log.info(message, detail),
   }));
 }
 

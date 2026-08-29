@@ -1,3 +1,9 @@
+import {
+  classifyUpdateError,
+  type StoredUpdateStatus,
+  type UpdateErrorPhase,
+} from './update-state';
+
 export type UpdateShutdownState = {
   setInstallingUpdate: (value: boolean) => void;
   setQuitting: (value: boolean) => void;
@@ -26,11 +32,40 @@ export function resetUpdateShutdownState(updateState: UpdateShutdownState): void
   updateState.setQuitting(false);
 }
 
+type AutoUpdaterErrorHandlerOptions = {
+  getPhase: () => UpdateErrorPhase;
+  setPhase: (phase: UpdateErrorPhase) => void;
+  isInstallReady: () => boolean;
+  setUpdateStatus: (next: StoredUpdateStatus) => void;
+  logInfo: (message: string, detail?: unknown) => void;
+};
+
 export function createAutoUpdaterErrorHandler(
-  handleError: (error: unknown) => void,
+  {
+    getPhase,
+    setPhase,
+    isInstallReady,
+    setUpdateStatus,
+    logInfo,
+  }: AutoUpdaterErrorHandlerOptions,
 ): (error: unknown) => void {
   return (error) => {
-    handleError(error);
+    const errorPhase = getPhase();
+    const classified = classifyUpdateError(error, errorPhase);
+    setPhase('check');
+    logInfo(
+      `[Update] Updater error classified as ${classified.state}` +
+      `/${classified.reason}:`, classified.detail
+    );
+    if (isInstallReady()) {
+      logInfo('[Update] Preserving ready-to-install status while staged update awaits installation');
+      return;
+    }
+    setUpdateStatus({
+      status: classified.state,
+      reason: classified.reason,
+      error: classified.detail
+    });
   };
 }
 

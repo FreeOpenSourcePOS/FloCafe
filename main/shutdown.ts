@@ -331,7 +331,8 @@ export async function runShutdownSteps(
   for (const step of steps) {
     if (step.databaseClose && databaseBlocked) continue;
     try {
-      await step.run();
+      const stepPromise = Promise.resolve().then(() => step.run());
+      await withShutdownTimeout(stepPromise, step.name, () => {}, SHUTDOWN_TIMEOUT_MS);
     } catch (error) {
       errors.push(error);
       console.error(`[Shutdown] ${step.name} failed:`, error);
@@ -390,6 +391,7 @@ export type ShutdownEntrypointOptions = {
   setQuitting: () => void;
   onShutdownRequested?: () => void;
   destroyWindow: () => void;
+  isInstallingUpdate?: () => boolean;
   reportFailure?: (context: 'quit' | 'signal', error: unknown) => void;
   getSignalExitCode?: () => number;
   getQuitExitCode?: () => number;
@@ -402,6 +404,7 @@ export function createShutdownEntrypoints({
   setQuitting,
   onShutdownRequested = () => {},
   destroyWindow,
+  isInstallingUpdate = () => false,
   reportFailure = () => {},
   getSignalExitCode = () => 0,
   getQuitExitCode = () => 0,
@@ -451,12 +454,15 @@ export function createShutdownEntrypoints({
       () => {
         const exitCode = getQuitExitCode();
         destroyWindow();
+        if (isInstallingUpdate()) return;
         if (exitCode === 0) app.quit();
         else app.exit(exitCode);
       },
       (error) => {
         reportFailure('quit', error);
-        app.exit(1);
+        if (!isInstallingUpdate()) {
+          app.exit(1);
+        }
       },
     );
   };
@@ -482,10 +488,15 @@ export function createShutdownEntrypoints({
     signalExitRequested = true;
     requestShutdown();
     void runCleanup().then(
-      () => process.exit(getSignalExitCode()),
+      () => {
+        if (isInstallingUpdate()) return;
+        process.exit(getSignalExitCode());
+      },
       (error) => {
         reportFailure('signal', error);
-        process.exit(1);
+        if (!isInstallingUpdate()) {
+          process.exit(1);
+        }
       },
     );
   };

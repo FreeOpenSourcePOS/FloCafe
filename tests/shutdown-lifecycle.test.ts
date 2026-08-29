@@ -18,6 +18,7 @@ import {
   trackHttpRequestWork,
   waitForHttpShutdownWork,
 } from '../main/shutdown';
+import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from '../main/updater-shutdown';
 import { startStandaloneServers } from '../main/standalone-startup';
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-shutdown-lifecycle-'));
@@ -423,6 +424,62 @@ async function testEntrypointCoverage(): Promise<void> {
     const secondWillQuit = { prevented: false, preventDefault: () => { secondWillQuit.prevented = true; } };
     app.emit('will-quit', secondWillQuit);
     assert.equal(secondWillQuit.prevented, false, `${label} allows the resumed quit`);
+  }
+
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let isInstallingUpdate = false;
+    let cleanupStarted = false;
+    let releaseCleanup: (() => void) | null = null;
+    const cleanupHeld = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => {
+        cleanupStarted = true;
+        await cleanupHeld;
+      },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => isInstallingUpdate,
+    });
+
+    process.emit('SIGTERM');
+    await delay(0);
+    assert.equal(cleanupStarted, true, 'signal starts shared cleanup before updater handoff');
+    isInstallingUpdate = true;
+    releaseCleanup?.();
+    await entrypoints.runCleanup();
+    await delay(0);
+
+    assert.deepEqual(process.exitCodes, [], 'signal does not exit while updater handoff is active');
+  }
+
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let isInstallingUpdate = false;
+    let rejectCleanup: ((error: Error) => void) | null = null;
+    const cleanupFailed = new Promise<void>((_resolve, reject) => { rejectCleanup = reject; });
+    const failure = new Error('signal cleanup failed during updater handoff');
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { await cleanupFailed; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => isInstallingUpdate,
+    });
+
+    process.emit('SIGTERM');
+    await delay(0);
+    isInstallingUpdate = true;
+    rejectCleanup?.(failure);
+    await assert.rejects(entrypoints.runCleanup(), (error: unknown) => error === failure);
+    await delay(0);
+
+    assert.deepEqual(process.exitCodes, [], 'signal does not exit after failed cleanup during updater handoff');
   }
 
   await runScenario('SIGTERM');
@@ -863,6 +920,331 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   }
 }
 
+// ── quitAndInstall ordering regression (#544) ────────────────────────────────
+// When restart-and-install is invoked, cleanup must run *before*
+// autoUpdater.quitAndInstall() calls app.quit(). If cleanup runs after, the
+// shutdown coordinator's will-quit handler blocks the first quit with
+// event.preventDefault() and later re-issues a plain app.quit() — causing the
+// platform installer (Squirrel.Mac / NSIS / AppImage) to never relaunch the
+// new version. This test verifies the coordinator's will-quit behaviour in
+// both orderings so a regression is immediately visible.
+async function testQuitAndInstallCleanupOrdering(): Promise<void> {
+  // --- Correct ordering: cleanup finishes before quitAndInstall's will-quit ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let isInstallingUpdate = false;
+    let cleanupCalls = 0;
+    let installCalls = 0;
+    let installWillQuitPrevented = false;
+    const updateState: UpdateShutdownState = {
+      setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+      setQuitting: () => {},
+    };
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { cleanupCalls++; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => isInstallingUpdate,
+    });
+    const handler = createRestartAndInstallHandler({
+      isInstallReady: () => true,
+      authorize: () => ({ ok: true }),
+      runCleanup: entrypoints.runCleanup,
+      quitAndInstall: () => {
+        installCalls++;
+        const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+        app.emit('will-quit', willQuit);
+        installWillQuitPrevented = willQuit.prevented;
+      },
+      updateState,
+      warn: () => {},
+      error: () => {},
+    });
+
+    const result = await handler({}, '1234');
+
+    assert.deepEqual(result, { success: true });
+    assert.equal(installCalls, 1, 'quitAndInstall runs once after handler cleanup');
+    assert.equal(installWillQuitPrevented, false,
+      'will-quit is NOT blocked after the handler cleanup (installer can relaunch)');
+    assert.equal(cleanupCalls, 1, 'cleanup ran exactly once');
+  }
+
+  // --- Handler waits for cleanup before installing ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let isInstallingUpdate = false;
+    let cleanupFinished = false;
+    let installCalls = 0;
+    let releaseCleanup: (() => void) | null = null;
+    const cleanupHeld = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    const updateState: UpdateShutdownState = {
+      setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+      setQuitting: () => {},
+    };
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { await cleanupHeld; cleanupFinished = true; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => isInstallingUpdate,
+    });
+    const handler = createRestartAndInstallHandler({
+      isInstallReady: () => true,
+      authorize: () => ({ ok: true }),
+      runCleanup: entrypoints.runCleanup,
+      quitAndInstall: () => { installCalls++; },
+      updateState,
+      warn: () => {},
+      error: () => {},
+    });
+
+    const installPromise = handler({}, '1234');
+    await delay(0);
+    assert.equal(installCalls, 0, 'quitAndInstall waits for handler cleanup');
+    assert.equal(cleanupFinished, false, 'handler cleanup is still pending');
+
+    releaseCleanup?.();
+    const result = await installPromise;
+
+    assert.deepEqual(result, { success: true });
+    assert.equal(installCalls, 1, 'quitAndInstall runs after handler cleanup');
+    assert.equal(cleanupFinished, true, 'handler cleanup settles before installation');
+  }
+
+  // --- A concurrent normal quit does not preempt the updater handoff ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let releaseCleanup: (() => void) | null = null;
+    const cleanupHeld = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    let isInstallingUpdate = true;
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { await cleanupHeld; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => isInstallingUpdate,
+    });
+
+    const cleanupPromise = entrypoints.runCleanup();
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    assert.equal(willQuit.prevented, true, 'concurrent quit waits for in-flight cleanup');
+
+    releaseCleanup?.();
+    await cleanupPromise;
+    await delay(0);
+
+    assert.equal(app.quitCount, 0, 'normal quit does not preempt quitAndInstall after cleanup');
+    isInstallingUpdate = false;
+  }
+
+  // --- Timeout during pre-install cleanup: rejection settles and allows updater quit ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    const timeout = Object.assign(new Error('Cleanup step timed out'), { code: 'ERR_SHUTDOWN_TIMEOUT' });
+    let isInstallingUpdate = true;
+    let fatalExitCalled = false;
+
+    const coordinator = createShutdownCoordinator(() => [
+      {
+        name: 'timed out service',
+        run: () => { throw timeout; },
+      },
+    ], {
+      onFatalTimeout: () => {
+        if (!isInstallingUpdate) {
+          fatalExitCalled = true;
+          app.exit(1);
+        }
+      },
+    });
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: coordinator,
+      setQuitting: () => {},
+      destroyWindow: () => {},
+    });
+
+    // When isInstallingUpdate = true, runCleanup() rejects with the timeout error
+    // but onFatalTimeout does NOT force-kill the process via app.exit(1)
+    await assert.rejects(entrypoints.runCleanup(), (error: unknown) => error === timeout);
+    assert.equal(fatalExitCalled, false, 'pre-install timeout does not invoke fatal app.exit');
+    assert.deepEqual(app.exitCodes, [], 'app.exit was not called on pre-install cleanup timeout');
+
+    // Rejection still marks cleanup as finished, so subsequent quitAndInstall's will-quit is allowed
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    await delay(0);
+
+    assert.equal(willQuit.prevented, false,
+      'will-quit is NOT blocked even if cleanup timed out (updater can still proceed to install)');
+  }
+
+  // --- Concurrent quit during failing cleanup does not force app.exit when isInstallingUpdate is true ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    const failure = new Error('Cleanup failed during concurrent quit');
+    let reportedFailure = false;
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { throw failure; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => true,
+      reportFailure: () => { reportedFailure = true; },
+    });
+
+    // Concurrent quit triggers will-quit before cleanup completes
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    assert.equal(willQuit.prevented, true, 'concurrent quit waits for in-flight cleanup');
+
+    // Let cleanup reject
+    await assert.rejects(entrypoints.runCleanup(), (err: unknown) => err === failure);
+    await delay(0);
+
+    assert.equal(reportedFailure, true, 'failure is reported');
+    assert.deepEqual(app.exitCodes, [], 'app.exit was NOT called on concurrent quit rejection during update');
+  }
+
+  // --- Concurrent quit during failing cleanup forces app.exit(1) when isInstallingUpdate is false ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    const failure = new Error('Cleanup failed during non-update concurrent quit');
+    let reportedFailure = false;
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { throw failure; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => false,
+      reportFailure: () => { reportedFailure = true; },
+    });
+
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    assert.equal(willQuit.prevented, true, 'concurrent quit waits for in-flight cleanup');
+
+    await assert.rejects(entrypoints.runCleanup(), (err: unknown) => err === failure);
+    await delay(0);
+
+    assert.equal(reportedFailure, true, 'failure is reported');
+    assert.deepEqual(app.exitCodes, [1], 'app.exit(1) was called on concurrent quit rejection when not updating');
+  }
+
+  // --- Failed quitAndInstall resets updater shutdown state ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let isInstallingUpdate = false;
+    let isQuitting = false;
+    const updateState: UpdateShutdownState = {
+      setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+      setQuitting: (value) => { isQuitting = value; },
+    };
+    const installError = new Error('Squirrel failed to spawn installer');
+    let installSawActiveState = false;
+    const handler = createRestartAndInstallHandler({
+      isInstallReady: () => true,
+      authorize: () => ({ ok: true }),
+      runCleanup: async () => {},
+      quitAndInstall: () => {
+        installSawActiveState = isInstallingUpdate && isQuitting;
+        throw installError;
+      },
+      updateState,
+      warn: () => {},
+      error: () => {},
+    });
+
+    const result = await handler({}, '1234');
+    assert.deepEqual(result, { success: false, error: installError.message });
+    assert.equal(installSawActiveState, true, 'quitAndInstall runs while updater shutdown state is active');
+    assert.equal(isInstallingUpdate, false, 'quitAndInstall failure resets installing state');
+    assert.equal(isQuitting, false, 'quitAndInstall failure resets quitting state');
+
+    let reportedFailure = false;
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { throw new Error('Cleanup failure after updater failed'); },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => isInstallingUpdate,
+      reportFailure: () => { reportedFailure = true; },
+    });
+
+    // 1. Simulate restart-and-install handler flow where quitAndInstall throws
+    isInstallingUpdate = true;
+    try {
+      throw new Error('Squirrel failed to spawn installer');
+    } catch {
+      isInstallingUpdate = false;
+    }
+
+    // 2. Later, user triggers normal quit, which encounters failing cleanup
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    assert.equal(willQuit.prevented, true, 'quit waits for in-flight cleanup');
+
+    await assert.rejects(entrypoints.runCleanup());
+    await delay(0);
+
+    assert.equal(reportedFailure, true, 'cleanup failure is reported');
+    assert.deepEqual(app.exitCodes, [1], 'subsequent shutdown exits after install failure reset');
+  }
+
+  // --- AutoUpdater background errors do not clear in-flight install state ---
+  {
+    let isInstallingUpdate = true;
+    let isQuitting = true;
+    let updaterPhase: 'check' | 'download' = 'download';
+    let reportedStatus: unknown;
+    const handleError = createAutoUpdaterErrorHandler({
+      getPhase: () => updaterPhase,
+      setPhase: (phase) => { updaterPhase = phase; },
+      isInstallReady: () => false,
+      setUpdateStatus: (status) => {
+        reportedStatus = status;
+        assert.equal(isInstallingUpdate, true, 'updater error preserves active install state during delivery');
+        assert.equal(isQuitting, true, 'updater error preserves quitting state during delivery');
+      },
+      logInfo: () => {},
+    });
+    const updaterError = new Error('Updater failed during background operation');
+
+    handleError(updaterError);
+
+    assert.deepEqual(reportedStatus, {
+      status: 'check-failed',
+      reason: 'download-failed',
+      error: updaterError.message,
+    }, 'updater error callback updates status');
+    assert.equal(updaterPhase, 'check', 'updater error callback resets its phase');
+    assert.equal(isInstallingUpdate, true, 'updater error preserves active install state');
+    assert.equal(isQuitting, true, 'updater error preserves quitting state');
+  }
+}
+
 (async () => {
   console.log('phase coordinator');
   await testCoordinatorOrderingAndIdempotency();
@@ -885,6 +1267,8 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   await testDatabaseImportShutdownCancellation();
   console.log('phase owned servers');
   await testOwnedServerStopEntrypoints();
+  console.log('phase update install ordering');
+  await testQuitAndInstallCleanupOrdering();
   console.log('Shutdown lifecycle tests passed.');
 })().catch((error) => {
   console.error(error);

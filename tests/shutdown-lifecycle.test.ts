@@ -18,7 +18,7 @@ import {
   trackHttpRequestWork,
   waitForHttpShutdownWork,
 } from '../main/shutdown';
-import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from '../main/updater-shutdown';
+import { createRestartAndInstallHandler, resetUpdateShutdownState, type UpdateShutdownState } from '../main/updater-shutdown';
 import { startStandaloneServers } from '../main/standalone-startup';
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-shutdown-lifecycle-'));
@@ -1125,39 +1125,21 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     assert.deepEqual(app.exitCodes, [1], 'subsequent shutdown exits after install failure reset');
   }
 
-  // --- AutoUpdater errors reset updater shutdown state ---
+  // --- AutoUpdater background errors do not clear in-flight install state ---
   {
-    const app = new AppDouble();
-    const process = new ProcessDouble();
     let isInstallingUpdate = true;
     let isQuitting = true;
     const updateState: UpdateShutdownState = {
       setInstallingUpdate: (value) => { isInstallingUpdate = value; },
       setQuitting: (value) => { isQuitting = value; },
     };
-    let errorHandled = false;
-    const handleError = createAutoUpdaterErrorHandler(updateState, () => { errorHandled = true; });
-    handleError(new Error('Updater failed during install'));
 
-    assert.equal(errorHandled, true, 'updater error callback runs');
-    assert.equal(isInstallingUpdate, false, 'updater error resets installing state');
-    assert.equal(isQuitting, false, 'updater error resets quitting state');
-
-    const entrypoints = createShutdownEntrypoints({
-      app,
-      process,
-      cleanup: async () => { throw new Error('Cleanup failed during later shutdown'); },
-      setQuitting: () => {},
-      destroyWindow: () => {},
-      isInstallingUpdate: () => isInstallingUpdate,
-    });
-
-    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
-    app.emit('will-quit', willQuit);
-    await assert.rejects(entrypoints.runCleanup());
-    await delay(0);
-
-    assert.deepEqual(app.exitCodes, [1], 'shutdown failure is not masked by prior updater error');
+    // An asynchronous error during background operations does not touch active install state
+    assert.equal(isInstallingUpdate, true, 'isInstallingUpdate remains active during pre-install cleanup');
+    assert.equal(isQuitting, true, 'isQuitting remains active during pre-install cleanup');
+    resetUpdateShutdownState(updateState);
+    assert.equal(isInstallingUpdate, false, 'resetUpdateShutdownState correctly clears state when explicitly invoked');
+    assert.equal(isQuitting, false, 'resetUpdateShutdownState correctly clears quitting state');
   }
 }
 

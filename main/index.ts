@@ -984,12 +984,7 @@ async function initialize(): Promise<void> {
       isInstallingUpdate = true;
       isQuitting = true;
       try {
-        await Promise.race([
-          runCleanup(),
-          new Promise<void>((_, reject) => {
-            setTimeout(() => reject(new Error(`Pre-install cleanup timed out after ${SHUTDOWN_TIMEOUT_MS}ms`)), SHUTDOWN_TIMEOUT_MS);
-          }),
-        ]);
+        await runCleanup();
       } catch (error) {
         // Cleanup failure or timeout is logged but does not block the installer - the
         // new version launching is more important than a clean drain.
@@ -1162,6 +1157,7 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   destroyWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
   },
+  isInstallingUpdate: () => isInstallingUpdate,
   reportFailure: (context, error) => {
     console.error(`[Flo] Cleanup failed before ${context}:`, error);
   },

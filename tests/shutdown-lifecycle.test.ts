@@ -973,6 +973,36 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     assert.equal(willQuit.prevented, false,
       'will-quit is NOT blocked even if cleanup timed out (updater can still proceed to install)');
   }
+
+  // --- Safety race: hanging cleanup does not block quitAndInstall ---
+  {
+    let quitAndInstallCalled = false;
+    let quitAndInstallArgs: any[] = [];
+    const autoUpdaterDouble = {
+      quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => {
+        quitAndInstallCalled = true;
+        quitAndInstallArgs = [isSilent, isForceRunAfter];
+      },
+    };
+
+    const hangingCleanup = new Promise<void>(() => {});
+    const testTimeoutMs = 10;
+
+    try {
+      await Promise.race([
+        hangingCleanup,
+        new Promise<void>((_, reject) => {
+          setTimeout(() => reject(new Error(`Pre-install cleanup timed out after ${testTimeoutMs}ms`)), testTimeoutMs);
+        }),
+      ]);
+    } catch {
+      // Ignored / logged as in handler
+    }
+    autoUpdaterDouble.quitAndInstall(false, true);
+
+    assert.equal(quitAndInstallCalled, true, 'quitAndInstall is called even when cleanup hangs');
+    assert.deepEqual(quitAndInstallArgs, [false, true], 'quitAndInstall is called with isSilent=false and isForceRunAfter=true');
+  }
 }
 
 (async () => {

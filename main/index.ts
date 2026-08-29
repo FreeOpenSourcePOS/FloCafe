@@ -970,7 +970,7 @@ async function initialize(): Promise<void> {
     // to relaunch the new version. Without this ordering, the coordinator
     // calls event.preventDefault() on the first will-quit (blocking the
     // installer's relaunch), then calls app.quit() a second time as a plain
-    // quit with no relaunch — the new version is never launched.
+    // quit with no relaunch - the new version is never launched.
     ipcMain.handle('restart-and-install', async (_event, pin?: unknown) => {
       if (!isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
         log.warn('[Update] Ignoring install request before an update is downloaded');
@@ -991,7 +991,7 @@ async function initialize(): Promise<void> {
           }),
         ]);
       } catch (error) {
-        // Cleanup failure or timeout is logged but does not block the installer — the
+        // Cleanup failure or timeout is logged but does not block the installer - the
         // new version launching is more important than a clean drain.
         log.error('[Update] Pre-install cleanup failed (proceeding with install):', error);
       }

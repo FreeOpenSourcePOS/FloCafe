@@ -990,6 +990,8 @@ async function initialize(): Promise<void> {
         // Cleanup failure or timeout is logged but does not block the installer - the
         // new version launching is more important than a clean drain.
         log.error('[Update] Pre-install cleanup failed (proceeding with install):', error);
+      } finally {
+        isInstallingUpdate = false;
       }
       // isSilent=false shows the installer UI; isForceRunAfter=true ensures
       // the new version relaunches on Windows (NSIS) and Linux (AppImage).
@@ -998,7 +1000,6 @@ async function initialize(): Promise<void> {
         return { success: true };
       } catch (installError) {
         log.error('[Update] quitAndInstall failed:', installError);
-        isInstallingUpdate = false;
         return { success: false, error: installError instanceof Error ? installError.message : String(installError) };
       }
     });

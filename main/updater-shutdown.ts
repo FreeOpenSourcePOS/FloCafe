@@ -26,6 +26,14 @@ export function resetUpdateShutdownState(updateState: UpdateShutdownState): void
   updateState.setQuitting(false);
 }
 
+export function createAutoUpdaterErrorHandler(
+  handleError: (error: unknown) => void,
+): (error: unknown) => void {
+  return (error) => {
+    handleError(error);
+  };
+}
+
 export function createRestartAndInstallHandler({
   isInstallReady,
   authorize,

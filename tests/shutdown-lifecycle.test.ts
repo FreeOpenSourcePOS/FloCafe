@@ -18,7 +18,7 @@ import {
   trackHttpRequestWork,
   waitForHttpShutdownWork,
 } from '../main/shutdown';
-import { createRestartAndInstallHandler, resetUpdateShutdownState, type UpdateShutdownState } from '../main/updater-shutdown';
+import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from '../main/updater-shutdown';
 import { startStandaloneServers } from '../main/standalone-startup';
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-shutdown-lifecycle-'));
@@ -1129,17 +1129,19 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
   {
     let isInstallingUpdate = true;
     let isQuitting = true;
-    const updateState: UpdateShutdownState = {
-      setInstallingUpdate: (value) => { isInstallingUpdate = value; },
-      setQuitting: (value) => { isQuitting = value; },
-    };
+    let handledError: unknown;
+    const handleError = createAutoUpdaterErrorHandler((error) => {
+      handledError = error;
+      assert.equal(isInstallingUpdate, true, 'updater error preserves active install state during delivery');
+      assert.equal(isQuitting, true, 'updater error preserves quitting state during delivery');
+    });
+    const updaterError = new Error('Updater failed during background operation');
 
-    // An asynchronous error during background operations does not touch active install state
-    assert.equal(isInstallingUpdate, true, 'isInstallingUpdate remains active during pre-install cleanup');
-    assert.equal(isQuitting, true, 'isQuitting remains active during pre-install cleanup');
-    resetUpdateShutdownState(updateState);
-    assert.equal(isInstallingUpdate, false, 'resetUpdateShutdownState correctly clears state when explicitly invoked');
-    assert.equal(isQuitting, false, 'resetUpdateShutdownState correctly clears quitting state');
+    handleError(updaterError);
+
+    assert.equal(handledError, updaterError, 'updater error callback runs');
+    assert.equal(isInstallingUpdate, true, 'updater error preserves active install state');
+    assert.equal(isQuitting, true, 'updater error preserves quitting state');
   }
 }
 

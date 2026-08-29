@@ -32,7 +32,7 @@ import {
   type StoredUpdateStatus,
   type UpdateErrorPhase,
 } from './update-state';
-import { createRestartAndInstallHandler, type UpdateShutdownState } from './updater-shutdown';
+import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from './updater-shutdown';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
 import {
@@ -222,7 +222,7 @@ function setupAutoUpdater(): void {
     });
   });
 
-  autoUpdater.on('error', (err) => {
+  autoUpdater.on('error', createAutoUpdaterErrorHandler((err) => {
     // #467: classify by error code/phase — never emit up-to-date from an
     // error path. The historical substring mask (404 / Cannot find latest /
     // ENOENT => "up to date") hid real check failures from users.
@@ -242,7 +242,7 @@ function setupAutoUpdater(): void {
       reason: classified.reason,
       error: classified.detail
     });
-  });
+  }));
 }
 
 function checkForUpdates(): void {

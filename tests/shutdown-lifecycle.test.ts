@@ -18,6 +18,7 @@ import {
   trackHttpRequestWork,
   waitForHttpShutdownWork,
 } from '../main/shutdown';
+import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from '../main/updater-shutdown';
 import { startStandaloneServers } from '../main/standalone-startup';
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-shutdown-lifecycle-'));
@@ -929,6 +930,36 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     await delay(0);
   }
 
+  // --- A concurrent normal quit does not preempt the updater handoff ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let releaseCleanup: (() => void) | null = null;
+    const cleanupHeld = new Promise<void>((resolve) => { releaseCleanup = resolve; });
+    let isInstallingUpdate = true;
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { await cleanupHeld; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => isInstallingUpdate,
+    });
+
+    const cleanupPromise = entrypoints.runCleanup();
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    assert.equal(willQuit.prevented, true, 'concurrent quit waits for in-flight cleanup');
+
+    releaseCleanup?.();
+    await cleanupPromise;
+    await delay(0);
+
+    assert.equal(app.quitCount, 0, 'normal quit does not preempt quitAndInstall after cleanup');
+    isInstallingUpdate = false;
+  }
+
   // --- Timeout during pre-install cleanup: rejection settles and allows updater quit ---
   {
     const app = new AppDouble();
@@ -1032,13 +1063,38 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     assert.deepEqual(app.exitCodes, [1], 'app.exit(1) was called on concurrent quit rejection when not updating');
   }
 
-  // --- Failed quitAndInstall resets isInstallingUpdate to avoid poisoning future shutdown ---
+  // --- Failed quitAndInstall resets updater shutdown state ---
   {
     const app = new AppDouble();
     const process = new ProcessDouble();
     let isInstallingUpdate = false;
-    let reportedFailure = false;
+    let isQuitting = false;
+    const updateState: UpdateShutdownState = {
+      setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+      setQuitting: (value) => { isQuitting = value; },
+    };
+    const installError = new Error('Squirrel failed to spawn installer');
+    let installSawActiveState = false;
+    const handler = createRestartAndInstallHandler({
+      isInstallReady: () => true,
+      authorize: () => ({ ok: true }),
+      runCleanup: async () => {},
+      quitAndInstall: () => {
+        installSawActiveState = isInstallingUpdate && isQuitting;
+        throw installError;
+      },
+      updateState,
+      warn: () => {},
+      error: () => {},
+    });
 
+    const result = await handler({}, '1234');
+    assert.deepEqual(result, { success: false, error: installError.message });
+    assert.equal(installSawActiveState, true, 'quitAndInstall runs while updater shutdown state is active');
+    assert.equal(isInstallingUpdate, false, 'quitAndInstall failure resets installing state');
+    assert.equal(isQuitting, false, 'quitAndInstall failure resets quitting state');
+
+    let reportedFailure = false;
     const entrypoints = createShutdownEntrypoints({
       app,
       process,
@@ -1066,15 +1122,26 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     await delay(0);
 
     assert.equal(reportedFailure, true, 'cleanup failure is reported');
-    // Because isInstallingUpdate was properly reset to false, fatal app.exit(1) is invoked as expected
-    assert.deepEqual(app.exitCodes, [1], 'subsequent shutdown correctly exits with 1 instead of being poisoned');
+    assert.deepEqual(app.exitCodes, [1], 'subsequent shutdown exits after install failure reset');
   }
 
-  // --- AutoUpdater error event resets isInstallingUpdate so subsequent shutdown is not poisoned ---
+  // --- AutoUpdater errors reset updater shutdown state ---
   {
     const app = new AppDouble();
     const process = new ProcessDouble();
-    let isInstallingUpdate = false;
+    let isInstallingUpdate = true;
+    let isQuitting = true;
+    const updateState: UpdateShutdownState = {
+      setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+      setQuitting: (value) => { isQuitting = value; },
+    };
+    let errorHandled = false;
+    const handleError = createAutoUpdaterErrorHandler(updateState, () => { errorHandled = true; });
+    handleError(new Error('Updater failed during install'));
+
+    assert.equal(errorHandled, true, 'updater error callback runs');
+    assert.equal(isInstallingUpdate, false, 'updater error resets installing state');
+    assert.equal(isQuitting, false, 'updater error resets quitting state');
 
     const entrypoints = createShutdownEntrypoints({
       app,
@@ -1084,11 +1151,6 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
       destroyWindow: () => {},
       isInstallingUpdate: () => isInstallingUpdate,
     });
-
-    // Simulate update in-flight then autoUpdater error
-    isInstallingUpdate = true;
-    // autoUpdater.on('error') triggers reset
-    isInstallingUpdate = false;
 
     const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
     app.emit('will-quit', willQuit);

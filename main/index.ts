@@ -32,6 +32,7 @@ import {
   type StoredUpdateStatus,
   type UpdateErrorPhase,
 } from './update-state';
+import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from './updater-shutdown';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
 import {
@@ -221,9 +222,7 @@ function setupAutoUpdater(): void {
     });
   });
 
-  autoUpdater.on('error', (err) => {
-    isInstallingUpdate = false;
-    isQuitting = false;
+  autoUpdater.on('error', createAutoUpdaterErrorHandler(updateShutdownState, (err) => {
     // #467: classify by error code/phase — never emit up-to-date from an
     // error path. The historical substring mask (404 / Cannot find latest /
     // ENOENT => "up to date") hid real check failures from users.
@@ -243,7 +242,7 @@ function setupAutoUpdater(): void {
       reason: classified.reason,
       error: classified.detail
     });
-  });
+  }));
 }
 
 function checkForUpdates(): void {
@@ -376,6 +375,10 @@ let usbDevicePermissionsRegistered = false;
 let resolvedTitleBarMode: TitleBarMode = 'native-overlay';
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
+const updateShutdownState: UpdateShutdownState = {
+  setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+  setQuitting: (value) => { isQuitting = value; },
+};
 
 function showMainWindow(): boolean {
   if (
@@ -973,37 +976,15 @@ async function initialize(): Promise<void> {
     // calls event.preventDefault() on the first will-quit (blocking the
     // installer's relaunch), then calls app.quit() a second time as a plain
     // quit with no relaunch - the new version is never launched.
-    ipcMain.handle('restart-and-install', async (_event, pin?: unknown) => {
-      if (!isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
-        log.warn('[Update] Ignoring install request before an update is downloaded');
-        return { success: false, error: 'No downloaded update is ready to install.' };
-      }
-      const auth = authorizeMasterPin(typeof pin === 'string' ? pin : undefined, 'ipc:restart-and-install');
-      if (!auth.ok) {
-        log.warn(`[Update] Restart-to-install denied by Master PIN gate: ${auth.error}`);
-        return { success: false, error: auth.error };
-      }
-      isInstallingUpdate = true;
-      isQuitting = true;
-      try {
-        await runCleanup();
-      } catch (error) {
-        // Cleanup failure or timeout is logged but does not block the installer - the
-        // new version launching is more important than a clean drain.
-        log.error('[Update] Pre-install cleanup failed (proceeding with install):', error);
-      }
-      // isSilent=false shows the installer UI; isForceRunAfter=true ensures
-      // the new version relaunches on Windows (NSIS) and Linux (AppImage).
-      try {
-        autoUpdater.quitAndInstall(false, true);
-        return { success: true };
-      } catch (installError) {
-        isQuitting = false;
-        isInstallingUpdate = false;
-        log.error('[Update] quitAndInstall failed:', installError);
-        return { success: false, error: installError instanceof Error ? installError.message : String(installError) };
-      }
-    });
+    ipcMain.handle('restart-and-install', createRestartAndInstallHandler({
+      isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+      authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
+      runCleanup,
+      quitAndInstall: (isSilent, isForceRunAfter) => autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
+      updateState: updateShutdownState,
+      warn: (message) => log.warn(message),
+      error: (message, error) => log.error(message, error),
+    }));
 
     ipcMain.handle('get-status', () => {
       const mem = process.memoryUsage();

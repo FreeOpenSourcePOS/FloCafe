@@ -454,6 +454,7 @@ export function createShutdownEntrypoints({
       () => {
         const exitCode = getQuitExitCode();
         destroyWindow();
+        if (isInstallingUpdate()) return;
         if (exitCode === 0) app.quit();
         else app.exit(exitCode);
       },

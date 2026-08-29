@@ -1003,6 +1003,34 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     assert.equal(reportedFailure, true, 'failure is reported');
     assert.deepEqual(app.exitCodes, [], 'app.exit was NOT called on concurrent quit rejection during update');
   }
+
+  // --- Concurrent quit during failing cleanup forces app.exit(1) when isInstallingUpdate is false ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    const failure = new Error('Cleanup failed during non-update concurrent quit');
+    let reportedFailure = false;
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { throw failure; },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => false,
+      reportFailure: () => { reportedFailure = true; },
+    });
+
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    assert.equal(willQuit.prevented, true, 'concurrent quit waits for in-flight cleanup');
+
+    await assert.rejects(entrypoints.runCleanup(), (err: unknown) => err === failure);
+    await delay(0);
+
+    assert.equal(reportedFailure, true, 'failure is reported');
+    assert.deepEqual(app.exitCodes, [1], 'app.exit(1) was called on concurrent quit rejection when not updating');
+  }
 }
 
 (async () => {

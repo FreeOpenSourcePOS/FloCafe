@@ -974,34 +974,40 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
       'will-quit is NOT blocked even if cleanup timed out (updater can still proceed to install)');
   }
 
-  // --- Safety race: hanging cleanup does not block quitAndInstall ---
+  // --- Updater quit is never blocked when isInstallingUpdate returns true ---
   {
-    let quitAndInstallCalled = false;
-    let quitAndInstallArgs: any[] = [];
-    const autoUpdaterDouble = {
-      quitAndInstall: (isSilent?: boolean, isForceRunAfter?: boolean) => {
-        quitAndInstallCalled = true;
-        quitAndInstallArgs = [isSilent, isForceRunAfter];
-      },
-    };
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let cleanupCalls = 0;
+    let windowDestroyed = false;
+    let releaseCleanup: (() => void) | null = null;
+    const cleanupHeld = new Promise<void>((resolve) => { releaseCleanup = resolve; });
 
-    const hangingCleanup = new Promise<void>(() => {});
-    const testTimeoutMs = 10;
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { cleanupCalls++; await cleanupHeld; },
+      setQuitting: () => {},
+      destroyWindow: () => { windowDestroyed = true; },
+      isInstallingUpdate: () => true,
+    });
 
-    try {
-      await Promise.race([
-        hangingCleanup,
-        new Promise<void>((_, reject) => {
-          setTimeout(() => reject(new Error(`Pre-install cleanup timed out after ${testTimeoutMs}ms`)), testTimeoutMs);
-        }),
-      ]);
-    } catch {
-      // Ignored / logged as in handler
-    }
-    autoUpdaterDouble.quitAndInstall(false, true);
+    // Cleanup starts (e.g. running in background or interrupted by quitAndInstall)
+    const cleanupPromise = entrypoints.runCleanup();
 
-    assert.equal(quitAndInstallCalled, true, 'quitAndInstall is called even when cleanup hangs');
-    assert.deepEqual(quitAndInstallArgs, [false, true], 'quitAndInstall is called with isSilent=false and isForceRunAfter=true');
+    // When isInstallingUpdate is true, will-quit is NOT blocked even if cleanup is still pending
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    await delay(0);
+
+    assert.equal(willQuit.prevented, false,
+      'will-quit is NOT blocked when isInstallingUpdate is true even if cleanup has not settled');
+    assert.equal(windowDestroyed, true, 'destroyWindow is called on unblocked updater will-quit');
+
+    // Clean up pending promise
+    releaseCleanup?.();
+    await cleanupPromise;
+    await delay(0);
   }
 }
 

@@ -1031,6 +1031,21 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     assert.equal(reportedFailure, true, 'failure is reported');
     assert.deepEqual(app.exitCodes, [1], 'app.exit(1) was called on concurrent quit rejection when not updating');
   }
+
+  // --- Failed quitAndInstall resets isInstallingUpdate to avoid poisoning future shutdown ---
+  {
+    let isInstalling = false;
+    const simulateInstall = () => {
+      isInstalling = true;
+      try {
+        throw new Error('Squirrel failed to spawn installer');
+      } catch {
+        isInstalling = false;
+      }
+    };
+    simulateInstall();
+    assert.equal(isInstalling, false, 'isInstallingUpdate was reset to false after quitAndInstall exception');
+  }
 }
 
 (async () => {

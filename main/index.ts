@@ -222,6 +222,7 @@ function setupAutoUpdater(): void {
   });
 
   autoUpdater.on('error', (err) => {
+    isInstallingUpdate = false;
     // #467: classify by error code/phase — never emit up-to-date from an
     // error path. The historical substring mask (404 / Cannot find latest /
     // ENOENT => "up to date") hid real check failures from users.
@@ -992,8 +993,14 @@ async function initialize(): Promise<void> {
       }
       // isSilent=false shows the installer UI; isForceRunAfter=true ensures
       // the new version relaunches on Windows (NSIS) and Linux (AppImage).
-      autoUpdater.quitAndInstall(false, true);
-      return { success: true };
+      try {
+        autoUpdater.quitAndInstall(false, true);
+        return { success: true };
+      } catch (installError) {
+        log.error('[Update] quitAndInstall failed:', installError);
+        isInstallingUpdate = false;
+        return { success: false, error: installError instanceof Error ? installError.message : String(installError) };
+      }
     });
 
     ipcMain.handle('get-status', () => {

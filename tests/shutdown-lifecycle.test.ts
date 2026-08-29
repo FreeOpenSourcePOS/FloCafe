@@ -1034,17 +1034,68 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
 
   // --- Failed quitAndInstall resets isInstallingUpdate to avoid poisoning future shutdown ---
   {
-    let isInstalling = false;
-    const simulateInstall = () => {
-      isInstalling = true;
-      try {
-        throw new Error('Squirrel failed to spawn installer');
-      } catch {
-        isInstalling = false;
-      }
-    };
-    simulateInstall();
-    assert.equal(isInstalling, false, 'isInstallingUpdate was reset to false after quitAndInstall exception');
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let isInstallingUpdate = false;
+    let reportedFailure = false;
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { throw new Error('Cleanup failure after updater failed'); },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => isInstallingUpdate,
+      reportFailure: () => { reportedFailure = true; },
+    });
+
+    // 1. Simulate restart-and-install handler flow where quitAndInstall throws
+    isInstallingUpdate = true;
+    try {
+      throw new Error('Squirrel failed to spawn installer');
+    } catch {
+      isInstallingUpdate = false;
+    }
+
+    // 2. Later, user triggers normal quit, which encounters failing cleanup
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    assert.equal(willQuit.prevented, true, 'quit waits for in-flight cleanup');
+
+    await assert.rejects(entrypoints.runCleanup());
+    await delay(0);
+
+    assert.equal(reportedFailure, true, 'cleanup failure is reported');
+    // Because isInstallingUpdate was properly reset to false, fatal app.exit(1) is invoked as expected
+    assert.deepEqual(app.exitCodes, [1], 'subsequent shutdown correctly exits with 1 instead of being poisoned');
+  }
+
+  // --- AutoUpdater error event resets isInstallingUpdate so subsequent shutdown is not poisoned ---
+  {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let isInstallingUpdate = false;
+
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => { throw new Error('Cleanup failed during later shutdown'); },
+      setQuitting: () => {},
+      destroyWindow: () => {},
+      isInstallingUpdate: () => isInstallingUpdate,
+    });
+
+    // Simulate update in-flight then autoUpdater error
+    isInstallingUpdate = true;
+    // autoUpdater.on('error') triggers reset
+    isInstallingUpdate = false;
+
+    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
+    app.emit('will-quit', willQuit);
+    await assert.rejects(entrypoints.runCleanup());
+    await delay(0);
+
+    assert.deepEqual(app.exitCodes, [1], 'shutdown failure is not masked by prior updater error');
   }
 }
 

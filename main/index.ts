@@ -1157,7 +1157,6 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   destroyWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
   },
-  isInstallingUpdate: () => isInstallingUpdate,
   reportFailure: (context, error) => {
     console.error(`[Flo] Cleanup failed before ${context}:`, error);
   },

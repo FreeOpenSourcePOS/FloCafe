@@ -9,7 +9,7 @@
  *      `frontend/src/lib/i18n/languages.ts` has a message JSON file and vice
  *      versa; locale tags are valid BCP-47 and directions are ltr/rtl.
  *   2. Exact nested leaf key parity with `en.json` as the canonical schema:
- *      every leaf key path in en.json must exist in es/pt/fa (zero missing)
+ *      every leaf key path in en.json must exist in es/fr/pt/fa (zero missing)
  *      and no locale may carry orphan extra keys.
  *   3. String leaf validity: every leaf must be a non-empty string (reject
  *      null, boolean, numeric, object, array), with no corrupted leaf
@@ -28,6 +28,8 @@
  *      carry an exhaustively typed key cast (`as 'a' | 'b'`); the
  *      `use-intl` AppConfig augmentation in `messages.d.ts` is present.
  *   8. Persian safeguards: fa.json values never silently fall back to the
+ *      English value (documented intentional identical list excepted).
+ *   9. French safeguards: fr.json values never silently fall back to the
  *      English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
@@ -411,6 +413,112 @@ function faFallbackErrors(faFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** fr.json keys whose value is intentionally identical to en.json. These are
+ * brand names, technical identifiers, pure format strings, and French words
+ * that are spelled the same as English. Other identical values are treated as
+ * untranslated so the French UI cannot silently regress to English.
+ */
+const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
+  'auth.emailPlaceholder', // example email
+  'businessType.restaurant', // same word in French
+  'common.appTitle', // brand
+  'common.brandName', // brand
+  'common.logoAlt', // brand
+  'common.tableFallback', // same word in French
+  'common.total', // same word in French
+  'customer.ptsSuffix', // standard abbreviation
+  'customers.columnActions', // same word in French
+  'customers.columnDate', // same word in French
+  'customers.columnDescription', // same word in French
+  'customers.columnPoints', // same word in French
+  'kds.emptyColumn', // em dash
+  'kds.tableLabel', // same word in French
+  'kds.viewKanban', // product term
+  'nav.kds', // technical acronym
+  'nav.portLabel', // same word in French
+  'nav.pos', // technical acronym
+  'nav.tables', // same word in French
+  'nav.whatsapp', // product name
+  'orders.tableAt', // same word in French
+  'pos.addonPrice', // pure format: +{currency}{price}
+  'pos.loadingEllipsis', // ellipsis
+  'pos.loyaltyPointsShort', // standard abbreviation
+  'pos.pointsApproxValue', // pure format with standard abbreviation
+  'pos.tagCount', // pure format: {tag} ×{count}
+  'pos.taxLine', // pure format: {title} @{rate}%
+  'pos.total', // same word in French
+  'printTest.escpos', // technical acronym
+  'printTest.paperWidth58', // measurement
+  'printTest.paperWidth80', // measurement
+  'print.note', // same word in French
+  'print.grandTotal', // receipt convention
+  'print.kot.type', // same word in French
+  'print.hsn', // technical acronym
+  'products.addonSelectionRange', // pure format: {min} – {max}
+  'products.cashbackGlobalBadge', // same word in French
+  'products.categoryDescription', // same word in French
+  'products.colorCyan', // same color name
+  'products.colorFuchsia', // same color name
+  'products.colorIndigo', // same color name
+  'products.colorOrange', // same color name
+  'products.colorViolet', // same color name
+  'products.columnActions', // same word in French
+  'products.columnStock', // same word in French
+  'products.fieldSku', // technical acronym
+  'receipt.date', // same word in French
+  'receipt.table', // same word in French
+  'serverApp.emailPlaceholder', // example email
+  'serverApp.tableLabel', // same word in French
+  'serverApp.tables', // same word in French
+  'settings.apiKeyInputPlaceholder', // example API key
+  'settings.connectionUsb', // technical acronym
+  'settings.instagramPlaceholder', // example handle
+  'settings.ipAddressPlaceholder', // example IP
+  'settings.iranCurrencyDisplayRial', // currency name and native script
+  'settings.iranCurrencyDisplayToman', // currency name and native script
+  'settings.kds', // technical acronym
+  'settings.paperSize58', // measurement
+  'settings.paperSize80', // measurement
+  'settings.paperWidth58', // measurement
+  'settings.paperWidth80', // measurement
+  'settings.paperWidth80Safe', // measurement
+  'settings.port', // same word in French
+  'settings.portPlaceholder', // example port
+  'settings.registrationEmailPlaceholder', // example email
+  'settings.registrationLastError', // pure placeholder: {error}
+  'settings.revflo', // brand
+  'settings.tabOrderflow', // brand
+  'settings.tabWhatsapp', // product name
+  'settings.unicode', // technical term
+  'settings.version', // same word in French
+  'settings.whatsapp', // product name
+  'setup.expressLabel', // setup mode name
+  'setup.ownerEmailPlaceholder', // example email
+  'setup.pinLabel', // technical acronym
+  'staff.roleChef', // same loanword in French UI
+  'permissionMatrix.areas.menu', // same word in French
+  'support.restaurant', // same word in French
+  'support.version', // same word in French
+  'tables.title', // same word in French
+  'tax.actions', // same word in French
+  'tax.auditCreateOverride', // pure format with identifiers
+  'tax.type', // same word in French
+  'update.downloadingBadge', // symbol + placeholder
+  'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX
+]);
+
+function frFallbackErrors(frFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const frVal = frFlat[k];
+    if (frVal === undefined) continue; // reported by key parity
+    if (frVal === enFlat[k] && !FR_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`fr.json ${k} — identical to English value (renders as English for French users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -725,6 +833,17 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated fa.json values (${FA_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 9. fr.json values must not silently fall back to the English value.
+  const frMessages = loadedStrings.get('fr');
+  if (!frMessages) throw new Error('languages registry must include the maintained fr locale');
+  const frErrors = frFallbackErrors(frMessages, loadedStrings.get('en')!);
+  if (frErrors.length) {
+    console.error(`\nfr.json values identical to English (${frErrors.length}) — these render as English for French users:`);
+    for (const e of frErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'fr.json contains untranslated (English-identical) values');
+  }
+  console.log(`  ✓ no untranslated fr.json values (${FR_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -834,6 +953,10 @@ function runNegativeTests(): void {
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'fr: English-identical value',
+    frFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
   );
 
   // 8. TypeScript key safety.

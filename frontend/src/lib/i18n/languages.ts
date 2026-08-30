@@ -37,6 +37,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/es.json'),
   },
+  fr: {
+    locale: 'fr-FR',
+    nativeName: 'Français',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/fr.json'),
+  },
   pt: {
     locale: 'pt-BR',
     nativeName: 'Português',

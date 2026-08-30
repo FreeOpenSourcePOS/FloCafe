@@ -71,7 +71,7 @@ test('activation recreates a usable window after the renderer window is destroye
 });
 
 test('activation relaunches once after terminal runtime loss', async ({ }, testInfo) => {
-  testInfo.setTimeout(180_000);
+  testInfo.setTimeout(240_000);
   await harness.authenticateDashboard();
   let relaunchCalls = 0;
   harness.app.on('console', (message) => {

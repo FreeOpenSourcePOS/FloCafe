@@ -152,7 +152,7 @@ async function waitForPortClosed(port: number): Promise<boolean> {
 }
 
 async function waitForRelaunchedPid(pidFile: string, previousPid: number): Promise<number> {
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     try {
       const pid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);

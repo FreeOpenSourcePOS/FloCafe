@@ -321,7 +321,7 @@ const MAX_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
 const passwordChangeAttempts = new Map<string, { count: number; lockedUntil: number }>();
 const PASSWORD_CHANGE_MAX_ATTEMPTS = 5;
-const PASSWORD_CHANGE_LOCKOUT_MINUTES = 15;
+const PASSWORD_CHANGE_LOCKOUT_MINUTES = 5;
 
 function checkRateLimit(ip: string): { allowed: boolean; waitMinutes?: number } {
   const nowMs = Date.now();

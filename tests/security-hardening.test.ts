@@ -242,6 +242,10 @@ async function main() {
     String(lockedPasswordChangeRes.body.error || '').includes('password change attempts'),
     'password-change lockout returns the expected error',
   );
+  assert(
+    String(lockedPasswordChangeRes.body.error || '').includes('5 minutes'),
+    'password-change lockout reports the five-minute duration',
+  );
 
   // ── Rate Limit on Staff Mutations ─────────────────────────────────────────
   let rateLimitHit = false;

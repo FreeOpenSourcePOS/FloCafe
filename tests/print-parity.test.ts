@@ -533,12 +533,12 @@ function run(): void {
   }
 
   // ------------------------------------------------------------------
-  // 5. Receipt/KOT language routing (#443): fa/es tenants get localized
+  // 5. Receipt/KOT language routing (#443): fa/es/fr tenants get localized
   //    labels end-to-end through the resolved policy; the KOT kitchen
   //    policy resolves independently of the receipt language.
   // ------------------------------------------------------------------
   section('Localized receipt labels end-to-end');
-  for (const language of ['fa', 'es'] as const) {
+  for (const language of ['fa', 'es', 'fr'] as const) {
     for (const template of ['classic', 'compact'] as const) {
       const label = `${template}/${language}`;
       const warnings: Warnings = [];

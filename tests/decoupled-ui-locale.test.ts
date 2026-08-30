@@ -7,7 +7,7 @@
  * 2. Tenant timezone (e.g. America/Argentina/Buenos_Aires), calendar system, and digit
  *    preferences remain backend-authoritative and respected regardless of UI locale.
  * 3. Browser thermal receipts (web-print.ts / generateBillHtml) format receipt dates
- *    in the active UI language (en, es, pt, fa) for an Argentina tenant.
+ *    in the active UI language (en, es, fr, pt, fa) for an Argentina tenant.
  * 4. WhatsApp share messages (whatsapp-share.ts) respect the active UI locale for date/amounts.
  * 5. React useFormatDate hook correctly provides localized formatting based on useLocale().
  * 6. Reviewer-visible visual evidence artifacts (HTML & PNG screenshots) are generated
@@ -122,6 +122,18 @@ async function runTests() {
   console.log(`  [AR store + es-AR UI]: ${arEsDate}`);
   assert.ok(arEsDate.includes('ago'), `Expected Spanish month in es-AR output, got: ${arEsDate}`);
 
+  // Argentina store + French UI
+  const arFrDate = formatDateForTenant(
+    testDateUtc,
+    'AR',
+    argentinaTimezone,
+    {},
+    { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' },
+    'fr-FR',
+  );
+  console.log(`  [AR store + fr-FR UI]: ${arFrDate}`);
+  assert.ok(arFrDate.includes('août'), `Expected French month in fr-FR output, got: ${arFrDate}`);
+
   // Argentina store + Portuguese UI
   const arPtDate = formatDateForTenant(
     testDateUtc,
@@ -223,9 +235,10 @@ async function runTests() {
     },
   };
 
-  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'pt' | 'fa'; label: string; filePrefix: string }> = [
+  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'fa'; label: string; filePrefix: string }> = [
     { lang: 'en', label: 'English UI', filePrefix: 'receipt-argentina-english-ui' },
     { lang: 'es', label: 'Spanish UI', filePrefix: 'receipt-argentina-spanish-ui' },
+    { lang: 'fr', label: 'French UI', filePrefix: 'receipt-argentina-french-ui' },
     { lang: 'pt', label: 'Portuguese UI', filePrefix: 'receipt-argentina-portuguese-ui' },
     { lang: 'fa', label: 'Persian UI', filePrefix: 'receipt-argentina-persian-ui' },
   ];

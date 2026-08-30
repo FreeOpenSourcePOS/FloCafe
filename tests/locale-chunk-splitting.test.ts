@@ -5,9 +5,9 @@
  * Asserts:
  *  - packaged English messages are present in the eager bundle (the
  *    cold-boot fallback),
- *  - es/pt/fa markers each appear in exactly one code-split chunk (their own
+ *  - every non-English locale marker appears in exactly one code-split chunk (its own
  *    bundle — not inlined into the main module graph),
- *  - no page (`index.html`) eagerly references the es/pt/fa chunks (they are
+ *  - no page (`index.html`) eagerly references the non-English chunks (they are
  *    fetched only when the locale activates), and
  *  - the locale chunks contain no external network references (offline
  *    invariant: chunks are packaged local assets served by the embedded

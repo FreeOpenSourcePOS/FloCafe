@@ -219,7 +219,7 @@ function run(): void {
     'DirectionalToaster must render static markup for Persian'
   );
 
-  for (const ltrLang of ['en', 'es', 'pt'] as const) {
+  for (const ltrLang of ['en', 'es', 'fr', 'pt'] as const) {
     usePosSettingsStore.getState().setLanguage(ltrLang);
     const renderedLtr = renderDirectionalToaster(getLanguageLocale(ltrLang));
     assert(
@@ -290,7 +290,7 @@ function run(): void {
   // 6. Shared language-direction metadata (single source of truth).
   const { getLanguageDirection } = require('../frontend/src/lib/i18n');
   assert(getLanguageDirection('fa') === 'rtl', 'Persian (fa) must resolve to rtl');
-  for (const ltrLang of ['en', 'es', 'pt'] as const) {
+  for (const ltrLang of ['en', 'es', 'fr', 'pt'] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
   }
   console.log('  ✓ getLanguageDirection resolves direction from shared language metadata');

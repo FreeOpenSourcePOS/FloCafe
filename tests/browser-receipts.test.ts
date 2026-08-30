@@ -1,7 +1,7 @@
 /**
  * Browser Receipts Testing and Visual Evidence Generator
  * Tests Persian (fa) RTL, Iran tenant preferences (Rial, Toman, Toman Short, digits, calendar),
- * LTR isolation islands, translations, and non-Persian regressions (EN, ES, PT).
+ * LTR isolation islands, translations, and non-Persian regressions (EN, ES, FR, PT).
  */
 
 import fs from 'node:fs';
@@ -72,7 +72,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'pt', 'fa'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -286,7 +286,7 @@ async function run() {
     );
   }
 
-  console.log('\nTest Suite 5: Non-Persian UI Regressions (EN, ES, PT)');
+  console.log('\nTest Suite 5: Non-Persian UI Regressions (EN, ES, FR, PT)');
   {
     const sampleEnBill: Bill = {
       ...testIranBill,
@@ -328,6 +328,22 @@ async function run() {
       esHtml.includes('Comprobante #') &&
       esHtml.includes('Total general') &&
       esHtml.includes('¡Gracias por su visita!')
+    );
+
+    // French
+    const frTenant = {
+      business_name: 'Café Flo Paris',
+      currency: 'EUR',
+      country: 'FR',
+      timezone: 'Europe/Paris',
+    };
+    const frHtml = generateBillHtml(sampleEnBill, frTenant, { language: 'fr', isReprint: true });
+    assert('FR receipt has lang="fr-FR" and dir="ltr"', frHtml.includes('<html lang="fr-FR" dir="ltr">'));
+    assert('FR labels are French',
+      frHtml.includes('RÉIMPRESSION') &&
+      frHtml.includes('N° de facture') &&
+      frHtml.includes('Total général') &&
+      frHtml.includes('Merci de votre visite !')
     );
 
     // Portuguese

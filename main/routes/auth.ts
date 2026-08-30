@@ -319,6 +319,9 @@ function requireLocalSetup(req: Request, res: Response): boolean {
 const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 15;
+const passwordChangeAttempts = new Map<string, { count: number; lockedUntil: number }>();
+const PASSWORD_CHANGE_MAX_ATTEMPTS = 5;
+const PASSWORD_CHANGE_LOCKOUT_MINUTES = 15;
 
 function checkRateLimit(ip: string): { allowed: boolean; waitMinutes?: number } {
   const nowMs = Date.now();
@@ -350,6 +353,32 @@ function incrementFailedLogin(ip: string): number {
 
 function resetSuccessfulLogin(ip: string) {
   loginAttempts.delete(ip);
+}
+
+function checkPasswordChangeRateLimit(userId: string): { allowed: boolean; waitMinutes?: number } {
+  const nowMs = Date.now();
+  const record = passwordChangeAttempts.get(userId);
+  if (record?.lockedUntil && record.lockedUntil > nowMs) {
+    return { allowed: false, waitMinutes: Math.ceil((record.lockedUntil - nowMs) / 60000) };
+  }
+  if (record?.lockedUntil && record.lockedUntil <= nowMs) {
+    passwordChangeAttempts.delete(userId);
+  }
+  return { allowed: true };
+}
+
+function incrementFailedPasswordChange(userId: string): number {
+  const record = passwordChangeAttempts.get(userId) || { count: 0, lockedUntil: 0 };
+  record.count += 1;
+  if (record.count >= PASSWORD_CHANGE_MAX_ATTEMPTS) {
+    record.lockedUntil = Date.now() + PASSWORD_CHANGE_LOCKOUT_MINUTES * 60000;
+  }
+  passwordChangeAttempts.set(userId, record);
+  return Math.max(0, PASSWORD_CHANGE_MAX_ATTEMPTS - record.count);
+}
+
+function resetPasswordChangeRateLimit(userId: string): void {
+  passwordChangeAttempts.delete(userId);
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -557,7 +586,7 @@ router.get('/me', (req: Request, res: Response) => {
 
 // ── POST /api/auth/password/change ────────────────────────────────────────────
 
-router.post('/password/change', (req: Request, res: Response) => {
+router.post('/password/change', authRateLimit(), (req: Request, res: Response) => {
   try {
     const { current_password, password } = req.body || {};
     const authHeader = req.headers.authorization;
@@ -579,6 +608,13 @@ router.post('/password/change', (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
+    const passwordChangeRateLimit = checkPasswordChangeRateLimit(user.id);
+    if (!passwordChangeRateLimit.allowed) {
+      return res.status(429).json({
+        error: `Too many password change attempts. Try again in ${passwordChangeRateLimit.waitMinutes} minutes.`,
+      });
+    }
+
     if (typeof current_password !== 'string' || !current_password) {
       return res.status(400).json({ error: 'Current password is required' });
     }
@@ -586,8 +622,14 @@ router.post('/password/change', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Password is required' });
     }
     if (!bcrypt.compareSync(current_password, user.password)) {
-      return res.status(400).json({ error: 'Current password is incorrect' });
+      const attemptsRemaining = incrementFailedPasswordChange(user.id);
+      return res.status(400).json({
+        error: 'Current password is incorrect',
+        attempts_remaining: attemptsRemaining,
+        lockout_minutes: attemptsRemaining === 0 ? PASSWORD_CHANGE_LOCKOUT_MINUTES : undefined,
+      });
     }
+    resetPasswordChangeRateLimit(user.id);
     if (!validatePassword(password)) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }

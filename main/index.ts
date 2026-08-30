@@ -2,6 +2,17 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, po
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+
+for (const arg of process.argv) {
+  if (arg.startsWith('--env:')) {
+    const eqIdx = arg.indexOf('=');
+    if (eqIdx !== -1) {
+      const key = arg.slice(6, eqIdx);
+      const val = arg.slice(eqIdx + 1);
+      process.env[key] = val;
+    }
+  }
+}
 import { Bonjour } from 'bonjour-service';
 import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError, now, withDatabaseRequest } from './db';
 import { BETA_CHANNEL_SETTING_KEY, parseStoredBetaChannelEnabled, resolveUpdateChannel } from './update-channel';
@@ -443,6 +454,25 @@ function recoverFailedWindow(failedWindow: BrowserWindow): void {
   }
 }
 
+function performAppRelaunch(): void {
+  if (process.defaultApp || !app.isPackaged) {
+    const relaunchArgs = process.argv.slice(1).map((arg) => (arg === '.' ? process.cwd() : arg));
+    const envVarsToForward = [
+      'NODE_ENV', 'PORT', 'KDS_PORT', 'SERVER_APP_PORT', 'JWT_SECRET',
+      'FLO_E2E_USER_DATA_DIR', 'FLO_E2E_DB_PATH', 'FLO_E2E_PID_FILE',
+      'FLO_E2E_SKIP_OPTIONAL_NETWORK', 'FLO_MATRIX_OFFLINE',
+    ];
+    for (const key of envVarsToForward) {
+      if (process.env[key] !== undefined && !relaunchArgs.some((arg) => arg.startsWith(`--env:${key}=`))) {
+        relaunchArgs.push(`--env:${key}=${process.env[key]}`);
+      }
+    }
+    app.relaunch({ args: relaunchArgs });
+  } else {
+    app.relaunch();
+  }
+}
+
 function requestRuntimeRelaunch(reason: string): void {
   runtimeState = 'stopping';
   isQuitting = true;
@@ -453,7 +483,7 @@ function requestRuntimeRelaunch(reason: string): void {
     () => {
       try {
         log.info('[Lifecycle] Runtime cleanup finished; relaunching Flo');
-        app.relaunch();
+        performAppRelaunch();
         app.exit(0);
       } catch (error) {
         log.error('[Lifecycle] Runtime relaunch failed after cleanup:', error);
@@ -463,7 +493,7 @@ function requestRuntimeRelaunch(reason: string): void {
     (error) => {
       log.error('[Lifecycle] Runtime recovery cleanup failed; relaunching anyway:', error);
       try {
-        app.relaunch();
+        performAppRelaunch();
         app.exit(0);
       } catch (relaunchError) {
         log.error('[Lifecycle] Runtime relaunch failed after cleanup error:', relaunchError);

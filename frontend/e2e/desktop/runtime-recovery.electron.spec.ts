@@ -26,7 +26,10 @@ test('activation recreates a usable window after the renderer window is destroye
 
   await harness.app.evaluate(({ BrowserWindow }) => {
     new BrowserWindow({ show: false });
-    BrowserWindow.getAllWindows()[0]?.destroy();
+    const pos = BrowserWindow.getAllWindows().find((win) => {
+      try { return win.webContents.getURL().startsWith('http://localhost:'); } catch { return false; }
+    });
+    pos?.destroy();
   });
   await expect.poll(countPosWindows).toBe(0);
 
@@ -39,8 +42,20 @@ test('activation recreates a usable window after the renderer window is destroye
   await recoveredPage.waitForURL((url) => url.port === String(harness.ports.main), { timeout: 30_000 });
   await expect(recoveredPage.getByTestId('desktop-drag-surface')).toBeVisible();
   harness.setActivePage(recoveredPage);
+  await harness.app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()
+      .filter((win) => !win.webContents.getURL().startsWith('http://localhost:'))
+      .forEach((win) => win.destroy());
+  });
   await expect.poll(countPosWindows).toBe(1);
   expect(harness.app.process().pid).toBe(originalPid);
+
+  const evidenceDir = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M1AC5JTRTHW6GJT21WHX933N';
+  try {
+    await recoveredPage.screenshot({ path: `${evidenceDir}/recovered-window-after-renderer-destroyed.png` });
+  } catch (err) {
+    console.warn('[Evidence] Could not capture screenshot 1:', err);
+  }
 
   const runtime = await recoveredPage.evaluate(async () => window.electronAPI?.getStatus());
   expect(runtime).toMatchObject({
@@ -63,9 +78,9 @@ test('activation relaunches once after terminal runtime loss', async () => {
   });
   await harness.app.evaluate(({ app }) => {
     const originalRelaunch = app.relaunch.bind(app);
-    app.relaunch = () => {
+    app.relaunch = (options?: Parameters<typeof originalRelaunch>[0]) => {
       console.log('[Native E2E] app.relaunch invoked');
-      originalRelaunch();
+      originalRelaunch(options);
     };
   });
 
@@ -80,6 +95,14 @@ test('activation relaunches once after terminal runtime loss', async () => {
   await recoveredPage.waitForURL((url) => url.port === String(harness.ports.main), { timeout: 30_000 });
   await expect(recoveredPage.getByTestId('desktop-drag-surface')).toBeVisible();
   await expect(recoveredPage.locator('[data-slot="sidebar-container"]')).toBeVisible();
+
+  const evidenceDir = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M1AC5JTRTHW6GJT21WHX933N';
+  try {
+    await recoveredPage.screenshot({ path: `${evidenceDir}/recovered-window-after-terminal-runtime-loss.png` });
+  } catch (err) {
+    console.warn('[Evidence] Could not capture screenshot 2:', err);
+  }
+
   await expect.poll(async () => recoveredPage.evaluate(async () => window.electronAPI?.getStatus())).toMatchObject({
     server: 'running',
     kdsServer: 'running',

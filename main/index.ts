@@ -386,7 +386,7 @@ const updateShutdownState: UpdateShutdownState = {
   },
 };
 
-function showMainWindow(): boolean {
+function showMainWindow(expectedWindow?: BrowserWindow): boolean {
   if (isQuitting || isShutdownRequested()) return false;
   if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
     handleMainWindowActivation();
@@ -396,6 +396,7 @@ function showMainWindow(): boolean {
     (!isWindowRendererReady() && !isRendererReadinessFailSafeShown())
     || !mainWindow
     || mainWindow.isDestroyed()
+    || (expectedWindow && mainWindow !== expectedWindow)
   ) return false;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -501,7 +502,7 @@ function createWindow(): void {
   // document epoch before anything loads. Every subsequent full-document
   // navigation re-begins via the did-start-navigation hook below.
   initWindowReadiness(() => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+    showMainWindow();
   });
   beginRendererDocument();
 
@@ -614,6 +615,11 @@ function createWindow(): void {
           handleMainWindowActivation();
         } finally {
           windowRecoveryInProgress = false;
+        }
+      }).catch((error) => {
+        log.error('[Window] Renderer crash recovery failed:', error);
+        if (!isQuitting && !isShutdownRequested()) {
+          requestRuntimeRelaunchOnce('renderer-crash-recovery-failed');
         }
       });
     }
@@ -1041,7 +1047,7 @@ async function initialize(): Promise<void> {
     if (isShutdownRequested()) return;
 
     console.log('[Flo] Registering IPC handlers...');
-    registerIpcHandlers(shutdownSignal, () => mainWindow);
+    registerIpcHandlers(shutdownSignal, () => mainWindow, showMainWindow);
 
     // The app currently presents its light palette regardless of OS theme.
     // Keep the native overlay pinned to that palette until the renderer ships

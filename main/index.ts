@@ -465,6 +465,15 @@ function recoverFailedWindow(failedWindow: BrowserWindow): void {
 function performAppRelaunch(): void {
   if (process.defaultApp || !app.isPackaged) {
     const relaunchArgs = process.argv.slice(1).map((arg) => (arg === '.' ? process.cwd() : arg));
+    if (process.argv.includes('--no-sandbox') && !relaunchArgs.includes('--no-sandbox')) {
+      relaunchArgs.push('--no-sandbox');
+    }
+    if (process.argv.includes('--disable-gpu') && !relaunchArgs.includes('--disable-gpu')) {
+      relaunchArgs.push('--disable-gpu');
+    }
+    if (process.argv.includes('--disable-dev-shm-usage') && !relaunchArgs.includes('--disable-dev-shm-usage')) {
+      relaunchArgs.push('--disable-dev-shm-usage');
+    }
     const envVarsToForward = [
       'NODE_ENV', 'PORT', 'KDS_PORT', 'SERVER_APP_PORT', 'JWT_SECRET',
       'FLO_E2E_USER_DATA_DIR', 'FLO_E2E_DB_PATH', 'FLO_E2E_PID_FILE',

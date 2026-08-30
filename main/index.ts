@@ -469,6 +469,7 @@ if (gotSingleInstanceLock) {
 }
 
 function createWindow(): void {
+  if (isQuitting || isShutdownRequested()) return;
   if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
     log.error('[Lifecycle] Refusing to create a POS window without a healthy runtime');
     requestRuntimeRelaunchOnce('create-window-without-healthy-runtime');
@@ -595,6 +596,7 @@ function createWindow(): void {
     log,
     onRetryExhausted: ({ errorCode, errorDescription, validatedURL, retries }) => {
       log.error('[Window] Load retry exhaustion:', errorCode, errorDescription, validatedURL, `retries=${retries}`);
+      if (isQuitting || isShutdownRequested() || runtimeState === 'stopping') return;
       if (isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
         dialog.showErrorBox(
           'Unable to load Flo',
@@ -622,7 +624,7 @@ function handleMainWindowActivation(): void {
     state: runtimeState,
     hasWindow,
     services,
-    shutdownRequested: isShutdownRequested(),
+    shutdownRequested: isQuitting || isShutdownRequested(),
   });
   log.info(
     `[Lifecycle] Activation action=${action} state=${runtimeState}`
@@ -651,6 +653,7 @@ function handleMainWindowActivation(): void {
     );
     return;
   }
+  if (action === 'ignore') return;
 
   requestRuntimeRelaunchOnce(`activation-runtime-unavailable-${runtimeState}`);
 }
@@ -1185,6 +1188,14 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   handleMainWindowActivation();
 });
+
+if (process.env.NODE_ENV === 'test' && process.env.FLO_E2E_PID_FILE) {
+  try {
+    fs.writeFileSync(process.env.FLO_E2E_PID_FILE, String(process.pid));
+  } catch (error) {
+    log.error('[Native E2E] Could not write Electron PID:', error);
+  }
+}
 
 // --- Cleanup function (idempotent — safe to call from every entrypoint) ---
 const cleanupCoordinator = createShutdownCoordinator(() => [

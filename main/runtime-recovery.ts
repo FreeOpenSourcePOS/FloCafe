@@ -6,7 +6,7 @@ export type RuntimeServices = {
   serverApp: boolean;
 };
 
-export type RuntimeActivationAction = 'show' | 'create' | 'wait' | 'relaunch';
+export type RuntimeActivationAction = 'show' | 'create' | 'wait' | 'relaunch' | 'ignore';
 
 export function isRuntimeHealthy(
   state: RuntimeState,
@@ -26,9 +26,8 @@ export function decideRuntimeActivationAction(input: {
   services: RuntimeServices;
   shutdownRequested: boolean;
 }): RuntimeActivationAction {
-  if (input.shutdownRequested || input.state === 'stopping' || input.state === 'failed') {
-    return 'relaunch';
-  }
+  if (input.shutdownRequested || input.state === 'stopping') return 'ignore';
+  if (input.state === 'failed') return 'relaunch';
   if (input.state === 'starting') return 'wait';
   if (!isRuntimeHealthy(input.state, input.services, input.shutdownRequested)) return 'relaunch';
   return input.hasWindow ? 'show' : 'create';

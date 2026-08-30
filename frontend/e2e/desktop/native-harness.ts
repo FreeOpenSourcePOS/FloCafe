@@ -2,10 +2,10 @@ import { createRequire } from 'node:module';
 import { randomBytes } from 'node:crypto';
 import { createConnection, createServer } from 'node:net';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
+import { _electron as electron, chromium, type Browser, type ElectronApplication, type Page } from 'playwright';
 
 const require = createRequire(__filename);
 const electronPath = require('electron') as string;
@@ -19,6 +19,7 @@ export interface NativeServicePorts {
   main: number;
   kds: number;
   serverApp: number;
+  devTools: number;
 }
 
 export interface NativeElectronHarness {
@@ -27,6 +28,8 @@ export interface NativeElectronHarness {
   ports: NativeServicePorts;
   profileDir: string;
   authenticateDashboard: () => Promise<void>;
+  simulateTerminalRuntimeLoss: () => Promise<void>;
+  relaunchAndWaitForPage: () => Promise<Page>;
   close: () => Promise<void>;
 }
 
@@ -53,7 +56,7 @@ async function findServicePorts(): Promise<NativeServicePorts> {
   const firstCandidate = 31_000 + ((process.pid + workerIndex * 101) % 900) * 3;
   for (let attempt = 0; attempt < 200; attempt += 1) {
     const main = firstCandidate + attempt * 3;
-    const candidate = { main, kds: main + 1, serverApp: main + 2 };
+    const candidate = { main, kds: main + 1, serverApp: main + 2, devTools: main + 3 };
     if ((await Promise.all(Object.values(candidate).map(isPortAvailable))).every(Boolean)) return candidate;
   }
   throw new Error(`Unable to reserve a native E2E service port set near ${firstCandidate}`);
@@ -147,6 +150,43 @@ async function waitForPortClosed(port: number): Promise<boolean> {
   return false;
 }
 
+async function waitForRelaunchedPid(pidFile: string, previousPid: number): Promise<number> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      const pid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
+      if (Number.isInteger(pid) && pid > 0 && pid !== previousPid) return pid;
+    } catch {
+    }
+    await delay(100);
+  }
+  throw new Error(`Relaunched Electron process PID was not written to ${pidFile}`);
+}
+
+async function connectToRelaunchedPage(devToolsPort: number, mainPort: number): Promise<{ browser: Browser; page: Page }> {
+  const endpoint = `http://127.0.0.1:${devToolsPort}`;
+  const deadline = Date.now() + 30_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    let browser: Browser | undefined;
+    try {
+      browser = await chromium.connectOverCDP(endpoint);
+      const page = browser.contexts()
+        .flatMap((context) => context.pages())
+        .find((candidate) => {
+          try { return new URL(candidate.url()).port === String(mainPort); } catch { return false; }
+      });
+      if (page) return { browser, page };
+      await browser.close();
+    } catch (error) {
+      lastError = error;
+      if (browser) await browser.close().catch(() => {});
+    }
+    await delay(100);
+  }
+  throw new Error(`Relaunched Electron page did not become available: ${String(lastError || 'unexpected CDP state')}`);
+}
+
 function forceTerminate(pid: number): boolean {
   try {
     process.kill(pid, 'SIGTERM');
@@ -213,9 +253,44 @@ async function boundedGracefulClose(
   }
 }
 
+async function boundedRelaunchClose(
+  app: ElectronApplication,
+  browser: Browser | null,
+  pid: number,
+  ports: NativeServicePorts,
+  profileDir: string,
+): Promise<void> {
+  if (browser) await browser.close().catch(() => {});
+  try { await app.close(); } catch {}
+
+  let exited = await waitForProcessExit(pid);
+  let forcedCleanup = false;
+  if (!exited) {
+    forcedCleanup = forceTerminate(pid);
+    exited = await waitForProcessExit(pid);
+  }
+
+  const portsClosed = (await Promise.all(Object.values(ports).map(waitForPortClosed))).every(Boolean);
+  let profileCleanupError: unknown;
+  if (exited) {
+    try { rmSync(profileDir, { recursive: true, force: true }); } catch (error) { profileCleanupError = error; }
+  }
+
+  if (forcedCleanup || !exited || !portsClosed || profileCleanupError) {
+    throw new Error([
+      'Native Electron relaunch teardown failed',
+      forcedCleanup ? 'forced_cleanup=true' : '',
+      `pid_exited=${exited}`,
+      `ports_closed=${portsClosed}`,
+      profileCleanupError ? `profile=${String(profileCleanupError)}` : '',
+    ].filter(Boolean).join('; '));
+  }
+}
+
 export async function createNativeElectronHarness(): Promise<NativeElectronHarness> {
   const profileDir = mkdtempSync(path.join(tmpdir(), 'flo-native-e2e-'));
   const ports = await findServicePorts();
+  const pidFile = path.join(profileDir, 'electron.pid');
   const inheritedEnv = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   );
@@ -229,15 +304,18 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
     FLO_MATRIX_OFFLINE: '1',
     FLO_E2E_USER_DATA_DIR: profileDir,
     FLO_E2E_DB_PATH: path.join(profileDir, 'flo.db'),
+    FLO_E2E_PID_FILE: pidFile,
     PORT: String(ports.main),
     KDS_PORT: String(ports.kds),
     SERVER_APP_PORT: String(ports.serverApp),
   };
 
   let app: ElectronApplication | undefined;
+  let relaunchedBrowser: Browser | null = null;
+  let relaunchedPid: number | null = null;
   try {
     await runSeed(env);
-    app = await electron.launch({ cwd: repoRoot, args: ['.'], env });
+    app = await electron.launch({ cwd: repoRoot, args: ['.', `--remote-debugging-port=${ports.devTools}`], env });
     app.on('console', (message) => console.log(`[Native Electron] ${message.text()}`));
     const page = await app.firstWindow();
     await page.waitForURL((url) => url.port === String(ports.main), { timeout: 30_000 });
@@ -280,7 +358,35 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
         await page.waitForFunction(() => document.hasFocus() && document.documentElement.dataset.floWindowFocused === 'true');
         await page.waitForFunction(() => document.documentElement.dataset.floDesktopTitlebar === 'true');
       },
-      close: async () => boundedGracefulClose(app!, ports, profileDir),
+      simulateTerminalRuntimeLoss: async () => {
+        await app!.evaluate(async () => {
+          type MainModule = { require: (request: string) => unknown };
+          const mainModule = (process as NodeJS.Process & { mainModule?: MainModule }).mainModule;
+          if (!mainModule) throw new Error('Native E2E could not access the Electron main module');
+          const mainServer = mainModule.require('./server') as { stopServer: () => Promise<void> };
+          const kdsServer = mainModule.require('./kds-server') as { stopKdsServer: () => Promise<void> };
+          const serverApp = mainModule.require('./server-app') as { stopServerApp: () => Promise<void> };
+          await Promise.all([mainServer.stopServer(), kdsServer.stopKdsServer(), serverApp.stopServerApp()]);
+        });
+      },
+      relaunchAndWaitForPage: async () => {
+        const previousPid = app!.process().pid;
+        if (!previousPid) throw new Error('Native Electron process did not expose a PID');
+        if (!await waitForProcessExit(previousPid)) {
+          throw new Error(`Original Electron process ${previousPid} did not exit after relaunch`);
+        }
+        relaunchedPid = await waitForRelaunchedPid(pidFile, previousPid);
+        const connection = await connectToRelaunchedPage(ports.devTools, ports.main);
+        relaunchedBrowser = connection.browser;
+        return connection.page;
+      },
+      close: async () => {
+        if (relaunchedPid) {
+          await boundedRelaunchClose(app!, relaunchedBrowser, relaunchedPid, ports, profileDir);
+          return;
+        }
+        await boundedGracefulClose(app!, ports, profileDir);
+      },
     };
   } catch (error) {
     if (app) {

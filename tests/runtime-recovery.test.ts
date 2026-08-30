@@ -56,6 +56,24 @@ assert.equal(
     services: stoppedServices,
     shutdownRequested: true,
   }),
+  'ignore',
+);
+assert.equal(
+  decideRuntimeActivationAction({
+    state: 'stopping',
+    hasWindow: false,
+    services: stoppedServices,
+    shutdownRequested: false,
+  }),
+  'ignore',
+);
+assert.equal(
+  decideRuntimeActivationAction({
+    state: 'failed',
+    hasWindow: false,
+    services: stoppedServices,
+    shutdownRequested: false,
+  }),
   'relaunch',
 );
 

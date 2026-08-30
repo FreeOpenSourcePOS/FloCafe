@@ -52,3 +52,35 @@ test('activation recreates a usable window after the renderer window is destroye
   });
   await expect.poll(countPosWindows).toBe(1);
 });
+
+test('activation relaunches once after terminal runtime loss', async () => {
+  await harness.authenticateDashboard();
+  let relaunchCalls = 0;
+  harness.app.on('console', (message) => {
+    if (message.text() === '[Native E2E] app.relaunch invoked') relaunchCalls += 1;
+  });
+  await harness.app.evaluate(({ app }) => {
+    const originalRelaunch = app.relaunch.bind(app);
+    app.relaunch = () => {
+      console.log('[Native E2E] app.relaunch invoked');
+      originalRelaunch();
+    };
+  });
+
+  await harness.simulateTerminalRuntimeLoss();
+  await harness.app.evaluate(({ app }) => {
+    app.emit('activate');
+    app.emit('activate');
+  });
+  await expect.poll(() => relaunchCalls, { timeout: 30_000 }).toBe(1);
+
+  const recoveredPage = await harness.relaunchAndWaitForPage();
+  await recoveredPage.waitForURL((url) => url.port === String(harness.ports.main), { timeout: 30_000 });
+  await expect(recoveredPage.getByTestId('desktop-drag-surface')).toBeVisible();
+  await expect(recoveredPage.locator('[data-slot="sidebar-container"]')).toBeVisible();
+  await expect.poll(async () => recoveredPage.evaluate(async () => window.electronAPI?.getStatus())).toMatchObject({
+    server: 'running',
+    kdsServer: 'running',
+    serverApp: 'running',
+  });
+});

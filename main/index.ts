@@ -374,6 +374,7 @@ let initializationPromise: Promise<void> | null = null;
 let activationPending = false;
 let windowLoadRecoveryAttempted = false;
 let windowRecoveryInProgress = false;
+let runtimeRelaunchRequested = false;
 const updateShutdownState: UpdateShutdownState = {
   setInstallingUpdate: (value) => { isInstallingUpdate = value; },
   setQuitting: (value) => {
@@ -386,6 +387,11 @@ const updateShutdownState: UpdateShutdownState = {
 };
 
 function showMainWindow(): boolean {
+  if (isQuitting || isShutdownRequested()) return false;
+  if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
+    handleMainWindowActivation();
+    return false;
+  }
   if (
     (!isWindowRendererReady() && !isRendererReadinessFailSafeShown())
     || !mainWindow
@@ -407,6 +413,7 @@ function getRuntimeServices() {
 function requestRuntimeRelaunch(reason: string): void {
   runtimeState = 'stopping';
   isQuitting = true;
+  runtimeRelaunchRequested = true;
   log.error(`[Lifecycle] Runtime recovery relaunch requested: ${reason}`);
 
   void runCleanup().then(
@@ -421,8 +428,14 @@ function requestRuntimeRelaunch(reason: string): void {
       }
     },
     (error) => {
-      log.error('[Lifecycle] Runtime recovery cleanup failed; exiting without relaunch:', error);
-      app.exit(1);
+      log.error('[Lifecycle] Runtime recovery cleanup failed; relaunching anyway:', error);
+      try {
+        app.relaunch();
+        app.exit(0);
+      } catch (relaunchError) {
+        log.error('[Lifecycle] Runtime relaunch failed after cleanup error:', relaunchError);
+        app.exit(1);
+      }
     },
   );
 }
@@ -1266,7 +1279,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
     // When shutting down to install an update, do not force-kill the process
     // via app.exit(1) on a timeout; let runCleanup() reject and hand off to
     // autoUpdater.quitAndInstall() so the update can still proceed.
-    if (!isInstallingUpdate) {
+    if (!isInstallingUpdate && !runtimeRelaunchRequested) {
       app.exit(1);
     }
   },

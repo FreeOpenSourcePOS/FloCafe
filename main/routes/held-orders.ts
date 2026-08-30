@@ -48,7 +48,7 @@ function validateHeldOrderItem(item: unknown, db: any): void {
   }
   if (!Number.isInteger(item.quantity)) {
     const product = db.prepare(
-      'SELECT name, allow_fractional_quantity, weight_precision FROM products WHERE id = ? AND deleted_at IS NULL'
+      'SELECT name, sale_unit, allow_fractional_quantity, weight_precision FROM products WHERE id = ? AND deleted_at IS NULL'
     ).get(item.product.id) as any;
     if (!product) throw new Error('Fractional held-order items must reference a catalog product');
     validateProductQuantity(product, item.quantity);

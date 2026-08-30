@@ -2,7 +2,6 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, po
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import * as child_process from 'child_process';
 
 for (const arg of process.argv) {
   if (arg.startsWith('--env:')) {
@@ -464,6 +463,11 @@ function recoverFailedWindow(failedWindow: BrowserWindow): void {
 }
 
 function performAppRelaunch(): void {
+  // Release the single-instance lock so the relaunched process can acquire it
+  // immediately (especially important on Linux where lock release may lag exit).
+  if (gotSingleInstanceLock) {
+    try { app.releaseSingleInstanceLock(); } catch { /* non-fatal */ }
+  }
   if (process.defaultApp || !app.isPackaged) {
     const relaunchArgs = process.argv.slice(1).map((arg) => (arg === '.' ? process.cwd() : arg));
     if (process.argv.includes('--no-sandbox') && !relaunchArgs.includes('--no-sandbox')) {
@@ -486,16 +490,6 @@ function performAppRelaunch(): void {
       }
     }
     app.relaunch({ args: relaunchArgs });
-    try {
-      const child = child_process.spawn(process.execPath, relaunchArgs, {
-        detached: true,
-        stdio: 'ignore',
-        env: process.env,
-      });
-      child.unref();
-    } catch {
-      // app.relaunch already invoked above
-    }
   } else {
     app.relaunch();
   }

@@ -492,7 +492,7 @@ function requestRuntimeRelaunch(reason: string): void {
       try {
         log.info('[Lifecycle] Runtime cleanup finished; relaunching Flo');
         performAppRelaunch();
-        app.exit(0);
+        app.quit();
       } catch (error) {
         log.error('[Lifecycle] Runtime relaunch failed after cleanup:', error);
         app.exit(1);
@@ -502,7 +502,7 @@ function requestRuntimeRelaunch(reason: string): void {
       log.error('[Lifecycle] Runtime recovery cleanup failed; relaunching anyway:', error);
       try {
         performAppRelaunch();
-        app.exit(0);
+        app.quit();
       } catch (relaunchError) {
         log.error('[Lifecycle] Runtime relaunch failed after cleanup error:', relaunchError);
         app.exit(1);

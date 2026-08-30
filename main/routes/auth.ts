@@ -300,9 +300,9 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     insertCustomer(db, 'cust-demo-2', 'María González', '1145678902', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '1145678903', dialCode, demoCountry);
   } else if (lang === 'fr') {
-    insertCustomer(db, 'cust-demo-1', 'Camille Martin', '0145678901', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Julien Bernard', '0145678902', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Sophie Dubois', '0145678903', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Camille Martin', '+33145678901', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Julien Bernard', '+33145678902', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Sophie Dubois', '+33145678903', dialCode, demoCountry);
   } else if (lang === 'pt') {
     insertCustomer(db, 'cust-demo-1', 'João Silva', '1198765432', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Maria Santos', '1198765433', dialCode, demoCountry);

@@ -72,7 +72,7 @@ export default function CreateCustomerModal({ initialSearch = '', onClose, onCre
       <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-xl">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold text-gray-900">{t('addCustomer')}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} disabled={saving} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
         </div>
@@ -102,7 +102,7 @@ export default function CreateCustomerModal({ initialSearch = '', onClose, onCre
           </div>
         </div>
         <div className="flex gap-2 mt-5">
-          <Button variant="outline" onClick={onClose} className="flex-1">{tCommon('cancel')}</Button>
+          <Button variant="outline" onClick={onClose} disabled={saving} className="flex-1">{tCommon('cancel')}</Button>
           <Button onClick={handleSave} disabled={saving} className="flex-1">
             {saving ? t('loadingEllipsis') : tCommon('save')}
           </Button>

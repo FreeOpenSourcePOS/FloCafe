@@ -44,7 +44,7 @@ test('Orders page creates a customer and links it to an active order', async ({ 
   const modal = page.locator('div.fixed.inset-0').filter({ has: page.getByRole('heading', { name: 'Add Customer' }) });
   await expect(modal).toBeVisible();
   await modal.locator('input[type="text"]').fill(customerName);
-  await modal.locator('input[type="tel"]').fill('+66 81 234 5678');
+  await modal.locator('input[type="tel"]').fill('+66 82 234 5678');
 
   if (EVIDENCE_DIR) {
     fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
@@ -64,7 +64,7 @@ test('Orders page creates a customer and links it to an active order', async ({ 
   const createdPayload = await (await createdResponse).json();
   const linkedPayload = await (await linkResponse).json();
   expect(createdPayload.customer.name).toBe(customerName);
-  expect(createdPayload.customer.phone).toBe('+66812345678');
+  expect(createdPayload.customer.phone).toBe('+66822345678');
   expect(linkedPayload.order.customer_id).toBe(createdPayload.customer.id);
 
   await expect(orderCard).toContainText(customerName, { timeout: 10000 });

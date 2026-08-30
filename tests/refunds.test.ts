@@ -207,10 +207,10 @@ async function main() {
     const paymentDay = await api(baseUrl, '/api/reports/summary?date=2025-01-10', { headers: ownerAuth });
     const lateRefundDay = await api(baseUrl, '/api/reports/summary?date=2025-01-11', { headers: ownerAuth });
     const expectedNetCollection = Number(partialBill.bill.paid_amount) - Number(partialAmount);
-    assertEqual(paymentDay.data.summary.bills.collected, expectedNetCollection, 'refund is attributed to the original payment collection day');
-    assertEqual(paymentDay.data.summary.paymentMethods[0].total, expectedNetCollection, 'payment-day method total uses the same refund attribution');
-    assertEqual(lateRefundDay.data.summary.bills.collected, 0, 'refund does not create revenue movement on its action date');
-    assertEqual(lateRefundDay.data.summary.paymentMethods.length, 0, 'refund action date has no separate payment-method movement');
+    assertEqual(paymentDay.data.summary.bills.collected, partialBill.bill.paid_amount, 'payment-day revenue keeps the original payment when a refund is posted later');
+    assertEqual(paymentDay.data.summary.paymentMethods[0].total, partialBill.bill.paid_amount, 'payment-day method total matches payment-day revenue');
+    assertEqual(lateRefundDay.data.summary.bills.collected, -Number(partialAmount), 'late refund reduces revenue on the refund day, not the payment day');
+    assertEqual(lateRefundDay.data.summary.paymentMethods[0].total, -Number(partialAmount), 'refund-day method total matches refund-day revenue');
 
     const monthly = await api(baseUrl, '/api/reports/financial-summary?start_date=2025-01-01&end_date=2025-01-31', { headers: ownerAuth });
     assertEqual(monthly.status, 200, 'owner can load the monthly financial summary');

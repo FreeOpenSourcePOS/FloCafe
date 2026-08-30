@@ -51,6 +51,7 @@ function paymentMethodBreakdown(
   startDate: string,
   endDate = startDate,
   paidOnly = false,
+  attributeRefundsToBillDate = false,
 ) {
   const start = utcDayBounds(startDate)[0];
   const end = utcDayBounds(endDate)[1];
@@ -82,7 +83,8 @@ function paymentMethodBreakdown(
         ) AS payment_time
       FROM payment_lines
       UNION ALL
-      SELECT r.method, NULL, -(r.amount_cents / 100.0), datetime(b.paid_at)
+      SELECT r.method, NULL, -(r.amount_cents / 100.0),
+        datetime(CASE WHEN ? = 1 THEN b.paid_at ELSE r.created_at END)
       FROM refunds r
       JOIN bills b ON b.id = r.bill_id
     )
@@ -92,7 +94,7 @@ function paymentMethodBreakdown(
     WHERE payment_time >= datetime(?) AND payment_time < datetime(?)
     GROUP BY COALESCE(pm.name, normalized.method)
     ORDER BY total DESC
-  `).all(end, start, paidOnly ? 1 : 0, start, end);
+  `).all(end, start, paidOnly ? 1 : 0, attributeRefundsToBillDate ? 1 : 0, start, end);
 }
 
 /** argmax/argmin over counts, restricted to indices where include(count) is true. Returns null if nothing qualifies. */
@@ -113,11 +115,10 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     const today = utcTodayDate();
     const [start, end] = utcDayBounds(today);
     const salesToday = db.prepare(`
-      SELECT COALESCE(SUM(paid_amount - COALESCE((
-        SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-      ), 0)), 0) AS sales
-      FROM bills WHERE paid_at >= ? AND paid_at < ?
-    `).get(start, end) as { sales: number };
+      SELECT
+        COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
+        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) AS sales
+    `).get(start, end, start, end) as { sales: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, today) as { total: number }[];
 
     const runningOrders = db.prepare(`
@@ -160,11 +161,10 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
 
     const billsToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total,
-        COALESCE(SUM(paid_amount - COALESCE((
-          SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-        ), 0)), 0) as collected
-      FROM bills WHERE paid_at >= ? AND paid_at < ?
-    `).get(start, end) as { count: number; total: number; collected: number };
+        COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
+        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
+      FROM bills WHERE created_at >= ? AND created_at < ?
+    `).get(start, end, start, end, start, end) as { count: number; total: number; collected: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, date);
 
     const customersToday = db.prepare(`
@@ -241,7 +241,7 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
         billCount: Number(collections.bill_count || 0),
         refundCount: Number(refundTotals.refund_count || 0),
         averageOrderValue: collections.bill_count ? (grossCollected - refunded) / collections.bill_count : 0,
-        paymentMethods: paymentMethodBreakdown(db, startDate, endDate, true),
+        paymentMethods: paymentMethodBreakdown(db, startDate, endDate, true, true),
         refunds,
       },
     });
@@ -511,11 +511,12 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
     // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
     const revenue = db.prepare(`
-      SELECT COUNT(*) as billCount, COALESCE(SUM(paid_amount - COALESCE((
-        SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
-      ), 0)), 0) as total
-      FROM bills WHERE paid_at >= ?
-    `).get(windowStart) as { billCount: number; total: number };
+      SELECT COUNT(*) as billCount,
+        COALESCE(SUM(paid_amount), 0)
+        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ?), 0) as total
+      FROM bills
+      WHERE paid_at >= ?
+    `).get(windowStart, windowStart) as { billCount: number; total: number };
     const aov = revenue.billCount > 0 ? revenue.total / revenue.billCount : 0;
 
     // Kitchen velocity — substitutes for "best cook", which isn't derivable:

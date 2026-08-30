@@ -760,6 +760,32 @@ Fetch kitchen orders (REST fallback for cloud/web).
 
 ## Customers
 
+### GET `/api/customers-search`
+Search active customers for POS order linking. Requires an authenticated owner,
+manager, cashier, or server.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query params:**
+- `?q=John` - Search by name or email.
+- Phone-like queries may include formatting characters; the digits are matched
+  against stored phone numbers. Queries must contain at least 2 characters and
+  return at most 20 customers as a flat array.
+
+**Response (200):**
+```json
+[
+  {
+    "id": "cust-1",
+    "name": "John Doe",
+    "phone": "+919876543210",
+    "email": "john@email.com"
+  }
+]
+```
+
+---
+
 ### GET `/api/customers`
 List customers.
 

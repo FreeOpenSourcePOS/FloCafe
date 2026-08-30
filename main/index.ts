@@ -372,6 +372,7 @@ let isQuitting = false;
 let runtimeState: RuntimeState = 'starting';
 let initializationPromise: Promise<void> | null = null;
 let activationPending = false;
+let windowLoadRecoveryAttempted = false;
 const updateShutdownState: UpdateShutdownState = {
   setInstallingUpdate: (value) => { isInstallingUpdate = value; },
   setQuitting: (value) => {
@@ -504,13 +505,14 @@ function createWindow(): void {
   // the native titleBarOverlay always uses the light palette (#ffffff bg,
   // #0a0a0a symbols) regardless of the OS light/dark setting, keeping the
   // controls visually consistent with the always-light app content.
-  mainWindow = createMainWindow(
+  const createdWindow = createMainWindow(
     BrowserWindow,
     path.join(__dirname, 'preload.js'),
     process.platform,
     false, // isDark: always light until the app implements a dark theme
     resolvedTitleBarMode,
   );
+  mainWindow = createdWindow;
 
   mainWindow.once('ready-to-show', () => {
     if (isDev) {
@@ -571,7 +573,11 @@ function createWindow(): void {
   });
 
   mainWindow.on('closed', () => {
-    mainWindow = null;
+    if (mainWindow === createdWindow) mainWindow = null;
+  });
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    windowLoadRecoveryAttempted = false;
   });
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
@@ -593,16 +599,26 @@ function createWindow(): void {
     }
   });
 
-  setupWindowLoadRetry(mainWindow, () => `http://localhost:${getServerPort()}`, {
+  setupWindowLoadRetry(createdWindow, () => `http://localhost:${getServerPort()}`, {
     log,
     onRetryExhausted: ({ errorCode, errorDescription, validatedURL, retries }) => {
       log.error('[Window] Load retry exhaustion:', errorCode, errorDescription, validatedURL, `retries=${retries}`);
       if (isQuitting || isShutdownRequested() || runtimeState === 'stopping') return;
+      if (mainWindow !== createdWindow) return;
       if (isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
-        dialog.showErrorBox(
-          'Unable to load Flo',
-          'The local POS window could not be loaded. Please restart Flo Cafe.',
-        );
+        if (windowLoadRecoveryAttempted) {
+          requestRuntimeRelaunchOnce('window-load-recovery-failed');
+          return;
+        }
+        windowLoadRecoveryAttempted = true;
+        const failedWindow = createdWindow;
+        try {
+          createWindow();
+          if (failedWindow && !failedWindow.isDestroyed()) failedWindow.destroy();
+        } catch (error) {
+          log.error('[Window] Window recreation failed:', error);
+          requestRuntimeRelaunchOnce('window-load-recovery-create-failed');
+        }
       } else {
         requestRuntimeRelaunchOnce('window-load-retry-exhausted');
       }
@@ -1078,6 +1094,7 @@ async function initialize(): Promise<void> {
       runCleanup,
       quitAndInstall: (isSilent, isForceRunAfter) => autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
       updateState: updateShutdownState,
+      onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
       warn: (message) => log.warn(message),
       error: (message, error) => log.error(message, error),
     }));

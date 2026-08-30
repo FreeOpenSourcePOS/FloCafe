@@ -23,14 +23,10 @@ type RestartAndInstallOptions = {
   runCleanup: () => Promise<void>;
   quitAndInstall: (isSilent: boolean, isForceRunAfter: boolean) => void;
   updateState: UpdateShutdownState;
+  onInstallFailure: (error: unknown) => void;
   warn: (message: string) => void;
   error: (message: string, error: unknown) => void;
 };
-
-export function resetUpdateShutdownState(updateState: UpdateShutdownState): void {
-  updateState.setInstallingUpdate(false);
-  updateState.setQuitting(false);
-}
 
 type AutoUpdaterErrorHandlerOptions = {
   getPhase: () => UpdateErrorPhase;
@@ -75,6 +71,7 @@ export function createRestartAndInstallHandler({
   runCleanup,
   quitAndInstall,
   updateState,
+  onInstallFailure,
   warn,
   error,
 }: RestartAndInstallOptions): (event: unknown, pin?: unknown) => Promise<RestartAndInstallResult> {
@@ -99,8 +96,8 @@ export function createRestartAndInstallHandler({
       quitAndInstall(false, true);
       return { success: true };
     } catch (installError) {
-      resetUpdateShutdownState(updateState);
       error('[Update] quitAndInstall failed:', installError);
+      onInstallFailure(installError);
       return { success: false, error: installError instanceof Error ? installError.message : String(installError) };
     }
   };

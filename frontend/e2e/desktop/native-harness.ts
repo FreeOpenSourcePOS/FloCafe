@@ -367,10 +367,13 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
           await activePage.locator('button[type="submit"]').click();
           await activePage.waitForURL((url) => url.pathname.replace(/\/+$/, '') === '/pos', { timeout: 30_000 });
         }
-        await app!.evaluate(({ app: electronApp, BrowserWindow }) => {
+        const activeOrigin = new URL(activePage.url()).origin;
+        await app!.evaluate(({ app: electronApp, BrowserWindow }, origin) => {
           electronApp.focus({ steal: true });
-          BrowserWindow.getAllWindows()[0]?.focus();
-        });
+          BrowserWindow.getAllWindows().find((window) => {
+            try { return new URL(window.webContents.getURL()).origin === origin; } catch { return false; }
+          })?.focus();
+        }, activeOrigin);
         await activePage.waitForFunction(() => document.hasFocus() && document.documentElement.dataset.floWindowFocused === 'true');
         await activePage.waitForFunction(() => document.documentElement.dataset.floDesktopTitlebar === 'true');
       },

@@ -485,6 +485,7 @@ function performAppRelaunch(): void {
         relaunchArgs.push(`--env:${key}=${process.env[key]}`);
       }
     }
+    app.relaunch({ args: relaunchArgs });
     try {
       const child = child_process.spawn(process.execPath, relaunchArgs, {
         detached: true,
@@ -493,7 +494,7 @@ function performAppRelaunch(): void {
       });
       child.unref();
     } catch {
-      app.relaunch({ args: relaunchArgs });
+      // app.relaunch already invoked above
     }
   } else {
     app.relaunch();

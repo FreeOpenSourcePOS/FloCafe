@@ -72,6 +72,11 @@ async function main() {
     assertEqual(ids.length, 1, `intl digits match e164 (got ${ids.length})`);
     assert(ids.includes('ci-e164'),      'e164 row returned for intl query');
 
+    res = await api(apiBase, `/customers-search?q=${encodeURIComponent('+1 (555) 123-4567')}`, { headers: authHeader });
+    ids = (res.data || []).map((c: any) => c.id);
+    assertEqual(ids.length, 1, 'formatted phone query matches the existing customer');
+    assertEqual(ids[0], 'ci-us', 'formatted phone query returns the US customer');
+
     res = await api(apiBase, '/customers-search?q=1111111111', { headers: authHeader });
     assertEqual(res.status, 200, 'search returns 200 for inactive digits');
     assertEqual((res.data || []).length, 0, 'inactive e164 row excluded by is_active = 1');

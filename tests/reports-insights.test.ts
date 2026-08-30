@@ -294,6 +294,14 @@ async function main() {
       const numbers = (dated.body.recentOrders ?? []).map((o: any) => o.order_number).sort();
       assertEqual(JSON.stringify(numbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3']), 'only the 3 orders created on 2026-06-01 are returned');
 
+      const ranged = await request(app).get('/api/reports/recentOrders?start_date=2026-06-01&end_date=2026-06-03&limit=10').set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(ranged.status, 200, `owner can request a month-style date range (got ${ranged.status})`);
+      const rangedNumbers = (ranged.body.recentOrders ?? []).map((o: any) => o.order_number).sort();
+      assertEqual(JSON.stringify(rangedNumbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3', 'ORD-INS-4']), 'date range includes orders from both boundary dates');
+
+      const mixedRange = await request(app).get('/api/reports/recentOrders?date=2026-06-01&start_date=2026-06-01').set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(mixedRange.status, 400, 'single-date and range filters cannot be combined');
+
       const undated = await request(app).get('/api/reports/recentOrders?limit=1').set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(undated.status, 200, `omitting date still works — most-recent-overall behavior preserved (got ${undated.status})`);
       assert(Array.isArray(undated.body.recentOrders) && undated.body.recentOrders.length === 1, 'no date param still returns most-recent-overall, unaffected by the new filter');

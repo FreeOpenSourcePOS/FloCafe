@@ -51,6 +51,9 @@ async function main() {
   const forbiddenAuth = {
     Authorization: `Bearer ${jwt.sign({ userId: 'chef-refund', email: 'chef@test.local', role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}`,
   };
+  const cashierAuth = {
+    Authorization: `Bearer ${jwt.sign({ userId: 'cashier-refund', email: 'cashier@test.local', role: 'cashier' }, getJWTSecret(), { expiresIn: '1h' })}`,
+  };
 
   const app = createApp({
     '/api/orders': orderRoutes,
@@ -101,7 +104,11 @@ async function main() {
     const gated = await api(baseUrl, '/api/refunds', {
       method: 'POST', body: { bill_id: gatedBill.id, amount: 100, method: 'cash', override_pin: '1234' }, headers: forbiddenAuth,
     });
-    assertEqual(gated.status, 403, 'a chef (non owner/manager/cashier) cannot create a refund');
+    assertEqual(gated.status, 403, 'a chef cannot create a refund');
+    const cashierGated = await api(baseUrl, '/api/refunds', {
+      method: 'POST', body: { bill_id: gatedBill.id, amount: 100, method: 'cash', override_pin: '1234' }, headers: cashierAuth,
+    });
+    assertEqual(cashierGated.status, 403, 'a cashier cannot initiate a refund even with an owner or manager PIN');
 
     // ── PIN approval: missing (no budget cost) ─────────────────────────────
     const noPinBill = await newPaidBill('prod-refund');
@@ -157,15 +164,15 @@ async function main() {
     });
     assertEqual(noBalanceLeft.status, 400, 'a further refund on a fully refunded bill is rejected before touching the PIN budget');
 
-    // ── Two-hour eligibility window (rejected before PIN budget) ─────────
+    // ── One-hour eligibility window (rejected before PIN budget) ─────────
     const expiredBill = await newPaidBill('prod-refund');
-    db.prepare("UPDATE orders SET created_at = datetime('now', '-121 minutes') WHERE id = ?").run(expiredBill.order.id);
+    db.prepare("UPDATE orders SET created_at = datetime('now', '-61 minutes') WHERE id = ?").run(expiredBill.order.id);
     const expiredRefund = await api(baseUrl, '/api/refunds', {
       method: 'POST',
       body: { bill_id: expiredBill.bill.id, amount: expiredBill.bill.paid_amount, method: 'cash', override_pin: '1234', manager_id: managerId },
       headers: ownerAuth,
     });
-    assertEqual(expiredRefund.status, 409, 'a refund more than two hours after order creation is rejected');
+    assertEqual(expiredRefund.status, 409, 'a refund more than one hour after order creation is rejected');
     assertEqual(
       (db.prepare('SELECT COUNT(*) AS count FROM refunds WHERE bill_id = ?').get(expiredBill.bill.id) as any).count,
       0,
@@ -199,10 +206,21 @@ async function main() {
     db.prepare('UPDATE refunds SET created_at = ? WHERE bill_id = ?').run(refundDate, partialBill.bill.id);
     const paymentDay = await api(baseUrl, '/api/reports/summary?date=2025-01-10', { headers: ownerAuth });
     const lateRefundDay = await api(baseUrl, '/api/reports/summary?date=2025-01-11', { headers: ownerAuth });
-    assertEqual(paymentDay.data.summary.bills.collected, partialBill.bill.paid_amount, 'payment-day revenue keeps the original payment when a refund is posted later');
-    assertEqual(paymentDay.data.summary.paymentMethods[0].total, partialBill.bill.paid_amount, 'payment-day method total matches payment-day revenue');
-    assertEqual(lateRefundDay.data.summary.bills.collected, -Number(partialAmount), 'late refund reduces revenue on the refund day');
-    assertEqual(lateRefundDay.data.summary.paymentMethods[0].total, -Number(partialAmount), 'refund-day method total matches refund-day revenue');
+    const expectedNetCollection = Number(partialBill.bill.paid_amount) - Number(partialAmount);
+    assertEqual(paymentDay.data.summary.bills.collected, expectedNetCollection, 'refund is attributed to the original payment collection day');
+    assertEqual(paymentDay.data.summary.paymentMethods[0].total, expectedNetCollection, 'payment-day method total uses the same refund attribution');
+    assertEqual(lateRefundDay.data.summary.bills.collected, 0, 'refund does not create revenue movement on its action date');
+    assertEqual(lateRefundDay.data.summary.paymentMethods.length, 0, 'refund action date has no separate payment-method movement');
+
+    const monthly = await api(baseUrl, '/api/reports/financial-summary?start_date=2025-01-01&end_date=2025-01-31', { headers: ownerAuth });
+    assertEqual(monthly.status, 200, 'owner can load the monthly financial summary');
+    assertEqual(monthly.data.financialSummary.grossCollected, partialBill.bill.paid_amount, 'monthly summary shows gross collections');
+    assertEqual(monthly.data.financialSummary.refunded, Number(partialAmount), 'monthly summary surfaces refund totals');
+    assertEqual(monthly.data.financialSummary.netCollected, expectedNetCollection, 'monthly summary reconciles net collections');
+    assertEqual(monthly.data.financialSummary.refundCount, 1, 'monthly summary surfaces refund count');
+    assertEqual(monthly.data.financialSummary.refunds[0].bill_number, partialBill.bill.bill_number, 'monthly refund audit identifies the affected bill');
+    const managerMonthly = await api(baseUrl, '/api/reports/financial-summary?start_date=2025-01-01&end_date=2025-01-31', { headers: managerAuth });
+    assertEqual(managerMonthly.status, 403, 'monthly refund audit remains owner-only');
     const overRemainder = await api(baseUrl, '/api/refunds', {
       method: 'POST', body: { bill_id: partialBill.bill.id, amount: partialBill.bill.paid_amount, method: 'cash', override_pin: '1234', manager_id: managerId }, headers: ownerAuth,
     });

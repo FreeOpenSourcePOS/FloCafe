@@ -807,6 +807,17 @@ Daily/monthly sales report.
 
 ---
 
+### GET `/api/reports/financial-summary`
+Owner-only collection summary and refund audit for a date range. Refunds are attributed to the original bill payment date so gross, refund, net, and payment-method totals reconcile for the selected period.
+
+**Headers:** `Authorization: Bearer <owner-token>`
+
+**Query params:** `?start_date=2025-03-01&end_date=2025-03-31`
+
+The response includes gross and net collections, refund totals and count, bill count, average order value, payment-method totals, and up to 50 most recent refunds affecting bills collected in the range.
+
+---
+
 ### GET `/api/reports/x-report`
 X Report (current shift).
 

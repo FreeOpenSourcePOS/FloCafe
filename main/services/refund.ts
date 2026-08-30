@@ -16,7 +16,7 @@ type Database = ReturnType<typeof getDatabase>;
 
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 const REFUND_ITEM_ELIGIBLE_STATUSES = ['preparing', 'ready'];
-const REFUND_WINDOW_MS = 2 * 60 * 60 * 1000;
+const REFUND_WINDOW_MS = 60 * 60 * 1000;
 // Kept in sync with the ['cancelled', 'voided', 'void_adjustment'] exclusion
 // list used throughout main/routes/bills.ts, main/routes/index.ts, and
 // main/routes/orders.ts — 'refunded' is the new terminal item status this
@@ -103,7 +103,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   if (!order) throw httpError('Order not found', 404);
   const orderCreatedAt = parseDbTimestamp(order.created_at).getTime();
   if (!Number.isFinite(orderCreatedAt) || Date.now() - orderCreatedAt > REFUND_WINDOW_MS) {
-    throw httpError('Refund window has expired. Refunds are allowed within 2 hours of order creation.', 409);
+    throw httpError('Refund window has expired. Refunds are allowed within 1 hour of order creation.', 409);
   }
 
   let amountCents = req.amountCents;

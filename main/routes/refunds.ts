@@ -46,7 +46,7 @@ function refundAmountCents(value: unknown): number {
   return cents;
 }
 
-router.post('/', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const billId = body.bill_id;

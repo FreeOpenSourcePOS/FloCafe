@@ -82,8 +82,9 @@ function paymentMethodBreakdown(
         ) AS payment_time
       FROM payment_lines
       UNION ALL
-      SELECT method, NULL, -(amount_cents / 100.0), datetime(created_at)
-      FROM refunds
+      SELECT r.method, NULL, -(r.amount_cents / 100.0), datetime(b.paid_at)
+      FROM refunds r
+      JOIN bills b ON b.id = r.bill_id
     )
     SELECT COALESCE(pm.name, normalized.method) AS method, COUNT(*) AS count,
       COALESCE(SUM(CASE WHEN typeof(amount) IN ('integer', 'real') THEN amount ELSE 0 END), 0) AS total
@@ -112,10 +113,11 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     const today = utcTodayDate();
     const [start, end] = utcDayBounds(today);
     const salesToday = db.prepare(`
-      SELECT
-        COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
-        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) AS sales
-    `).get(start, end, start, end) as { sales: number };
+      SELECT COALESCE(SUM(paid_amount - COALESCE((
+        SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
+      ), 0)), 0) AS sales
+      FROM bills WHERE paid_at >= ? AND paid_at < ?
+    `).get(start, end) as { sales: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, today) as { total: number }[];
 
     const runningOrders = db.prepare(`
@@ -158,10 +160,11 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
 
     const billsToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total,
-        COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
-        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
-      FROM bills WHERE created_at >= ? AND created_at < ?
-    `).get(start, end, start, end, start, end) as { count: number; total: number; collected: number };
+        COALESCE(SUM(paid_amount - COALESCE((
+          SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
+        ), 0)), 0) as collected
+      FROM bills WHERE paid_at >= ? AND paid_at < ?
+    `).get(start, end) as { count: number; total: number; collected: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, date);
 
     const customersToday = db.prepare(`
@@ -185,6 +188,66 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+  try {
+    const today = utcTodayDate();
+    const startDate = reportDate(req.query.start_date, today);
+    const endDate = reportDate(req.query.end_date, startDate);
+    if ((req.query.start_date !== undefined && reportDate(req.query.start_date, '') === '')
+      || (req.query.end_date !== undefined && reportDate(req.query.end_date, '') === '')) {
+      return res.status(400).json({ error: 'start_date and end_date must use YYYY-MM-DD format' });
+    }
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'start_date must be on or before end_date' });
+    }
+    const [start] = utcDayBounds(startDate);
+    const [, end] = utcDayBounds(endDate);
+    const db = getDatabase();
+    const collections = db.prepare(`
+      SELECT COUNT(*) AS bill_count, COALESCE(SUM(paid_amount), 0) AS gross_collected
+      FROM bills WHERE paid_at >= ? AND paid_at < ?
+    `).get(start, end) as { bill_count: number; gross_collected: number };
+    const refundTotals = db.prepare(`
+      SELECT COUNT(*) AS refund_count, COALESCE(SUM(r.amount_cents) / 100.0, 0) AS refunded
+      FROM refunds r JOIN bills b ON b.id = r.bill_id
+      WHERE b.paid_at >= ? AND b.paid_at < ?
+    `).get(start, end) as { refund_count: number; refunded: number };
+    const refunds = db.prepare(`
+      SELECT r.id, r.amount_cents / 100.0 AS amount, r.method, r.reason,
+        r.created_at, b.bill_number, b.paid_at, o.order_number,
+        COALESCE(approver.name, creator.name, 'Unknown') AS approved_by_name
+      FROM refunds r
+      JOIN bills b ON b.id = r.bill_id
+      JOIN orders o ON o.id = b.order_id
+      LEFT JOIN users approver ON approver.id = r.approved_by
+      LEFT JOIN users creator ON creator.id = r.created_by
+      WHERE b.paid_at >= ? AND b.paid_at < ?
+      ORDER BY r.created_at DESC, r.id DESC
+      LIMIT 50
+    `).all(start, end);
+    const grossCollected = Number(collections.gross_collected || 0);
+    const refunded = Number(refundTotals.refunded || 0);
+
+    res.json({
+      financialSummary: {
+        startDate,
+        endDate,
+        grossCollected,
+        refunded,
+        netCollected: grossCollected - refunded,
+        billCount: Number(collections.bill_count || 0),
+        refundCount: Number(refundTotals.refund_count || 0),
+        averageOrderValue: collections.bill_count ? (grossCollected - refunded) / collections.bill_count : 0,
+        paymentMethods: paymentMethodBreakdown(db, startDate, endDate, true),
+        refunds,
+      },
+    });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -327,8 +390,19 @@ router.get('/recentOrders', requireRole(...ROLE_ACCESS.ownerManager), (req: Requ
     const requestedLimit = Number(req.query.limit);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 20;
     const date = req.query.date === undefined ? undefined : reportDate(req.query.date, '');
+    const startDate = req.query.start_date === undefined ? undefined : reportDate(req.query.start_date, '');
+    const endDate = req.query.end_date === undefined ? undefined : reportDate(req.query.end_date, '');
     if (req.query.date !== undefined && !date) {
       return res.status(400).json({ error: 'date must use YYYY-MM-DD format' });
+    }
+    if ((req.query.start_date !== undefined && !startDate) || (req.query.end_date !== undefined && !endDate)) {
+      return res.status(400).json({ error: 'start_date and end_date must use YYYY-MM-DD format' });
+    }
+    if (date && (startDate || endDate)) {
+      return res.status(400).json({ error: 'date cannot be combined with start_date or end_date' });
+    }
+    if (startDate && endDate && startDate > endDate) {
+      return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
 
     // Without a date, "most recent overall" (dashboard live view). With one,
@@ -339,6 +413,13 @@ router.get('/recentOrders', requireRole(...ROLE_ACCESS.ownerManager), (req: Requ
     let where = '';
     if (date) {
       const [s, e] = utcDayBounds(date);
+      where = 'WHERE o.created_at >= ? AND o.created_at < ?';
+      params.push(s, e);
+    } else if (startDate || endDate) {
+      const effectiveStart = startDate || endDate!;
+      const effectiveEnd = endDate || startDate!;
+      const [s] = utcDayBounds(effectiveStart);
+      const [, e] = utcDayBounds(effectiveEnd);
       where = 'WHERE o.created_at >= ? AND o.created_at < ?';
       params.push(s, e);
     }
@@ -430,12 +511,11 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
     // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
     const revenue = db.prepare(`
-      SELECT COUNT(*) as billCount,
-        COALESCE(SUM(paid_amount), 0)
-        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ?), 0) as total
-      FROM bills
-      WHERE paid_at >= ?
-    `).get(windowStart, windowStart) as { billCount: number; total: number };
+      SELECT COUNT(*) as billCount, COALESCE(SUM(paid_amount - COALESCE((
+        SELECT SUM(r.amount_cents) / 100.0 FROM refunds r WHERE r.bill_id = bills.id
+      ), 0)), 0) as total
+      FROM bills WHERE paid_at >= ?
+    `).get(windowStart) as { billCount: number; total: number };
     const aov = revenue.billCount > 0 ? revenue.total / revenue.billCount : 0;
 
     // Kitchen velocity — substitutes for "best cook", which isn't derivable:

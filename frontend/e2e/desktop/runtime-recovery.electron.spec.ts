@@ -9,7 +9,7 @@ let harness: NativeElectronHarness;
 
 async function countPosWindows(): Promise<number> {
   return harness.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
-    .filter((window) => !window.webContents.getURL().startsWith('devtools://')).length);
+    .filter((window) => window.webContents.getURL().startsWith('http://localhost:')).length);
 }
 
 test.beforeAll(async () => {
@@ -25,6 +25,7 @@ test('activation recreates a usable window after the renderer window is destroye
   const originalPid = harness.app.process().pid;
 
   await harness.app.evaluate(({ BrowserWindow }) => {
+    new BrowserWindow({ show: false });
     BrowserWindow.getAllWindows()[0]?.destroy();
   });
   await expect.poll(countPosWindows).toBe(0);

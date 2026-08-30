@@ -166,7 +166,7 @@ async function run(): Promise<void> {
   assert.equal(maxController.getRetries(), 10, 'Retries are strictly capped at 10');
   log('  ✓ Retry ceiling prevents infinite loops during permanent server outage.');
 
-  const exhaustionEvents: Array<{ errorCode: number; retries: number; validatedURL?: string }> = [];
+  const exhaustionEvents: Array<{ errorCode: number; errorDescription: string; retries: number; validatedURL?: string }> = [];
   const exhaustedWin = new MockBrowserWindow();
   const exhaustedController = setupWindowLoadRetry(exhaustedWin, () => targetUrl, {
     maxRetries: 2,

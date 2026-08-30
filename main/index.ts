@@ -373,6 +373,7 @@ let runtimeState: RuntimeState = 'starting';
 let initializationPromise: Promise<void> | null = null;
 let activationPending = false;
 let windowLoadRecoveryAttempted = false;
+let windowRecoveryInProgress = false;
 const updateShutdownState: UpdateShutdownState = {
   setInstallingUpdate: (value) => { isInstallingUpdate = value; },
   setQuitting: (value) => {
@@ -584,7 +585,7 @@ function createWindow(): void {
     log.error('[Window] Renderer process gone:', details.reason);
     console.error('[Window] Renderer process gone:', details.reason);
     
-    if (details.reason !== 'clean-exit') {
+    if (details.reason !== 'clean-exit' && mainWindow === createdWindow) {
       dialog.showMessageBox({
         type: 'error',
         title: 'App Crashed',
@@ -592,9 +593,15 @@ function createWindow(): void {
         detail: `Reason: ${details.reason}`,
         buttons: ['OK'],
       }).then(() => {
-        mainWindow?.destroy();
-        mainWindow = null;
-        handleMainWindowActivation();
+        if (mainWindow !== createdWindow) return;
+        windowRecoveryInProgress = true;
+        try {
+          createdWindow.destroy();
+          if (mainWindow === createdWindow) mainWindow = null;
+          handleMainWindowActivation();
+        } finally {
+          windowRecoveryInProgress = false;
+        }
       });
     }
   });
@@ -1211,7 +1218,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && !windowRecoveryInProgress) {
     app.quit();
   }
 });

@@ -47,6 +47,12 @@ import {
 import { setupWindowLoadRetry } from './window-load-retry';
 import { registerUsbDevicePermissions } from './usb-device-permissions';
 import {
+  createRelaunchGate,
+  decideRuntimeActivationAction,
+  isRuntimeHealthy,
+  type RuntimeState,
+} from './runtime-recovery';
+import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
   SHUTDOWN_TIMEOUT_MS,
@@ -349,11 +355,13 @@ async function checkTaxPackUpdatesOnStartup(): Promise<void> {
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-// createWindow() can run more than once per app lifetime (renderer crash
-// recovery, macOS 'activate') but every window shares the same default
-// session (no partition/session is set in webPreferences) — registering
-// again on each call would stack duplicate 'select-usb-device' listeners
-// on that shared session, firing multiple confirmation dialogs per request.
+// createWindow() can run more than once per app lifetime after a renderer
+// crash or window destruction. Activation and recovery are gated below so a
+// new window is never created against a stopped runtime. Every window shares
+// the same default session (no partition/session is set in webPreferences) —
+// registering again on each call would stack duplicate 'select-usb-device'
+// listeners on that shared session, firing multiple confirmation dialogs per
+// request.
 let usbDevicePermissionsRegistered = false;
 
 // Title-bar capability reported to the renderer via get-status; updated each
@@ -361,9 +369,17 @@ let usbDevicePermissionsRegistered = false;
 let resolvedTitleBarMode: TitleBarMode = 'native-overlay';
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
+let runtimeState: RuntimeState = 'starting';
+let initializationPromise: Promise<void> | null = null;
 const updateShutdownState: UpdateShutdownState = {
   setInstallingUpdate: (value) => { isInstallingUpdate = value; },
-  setQuitting: (value) => { isQuitting = value; },
+  setQuitting: (value) => {
+    isQuitting = value;
+    if (value) {
+      runtimeState = 'stopping';
+      log.info('[Lifecycle] Runtime is stopping');
+    }
+  },
 };
 
 function showMainWindow(): boolean {
@@ -376,6 +392,39 @@ function showMainWindow(): boolean {
   mainWindow.show();
   return true;
 }
+
+function getRuntimeServices() {
+  return {
+    main: isServerRunning(),
+    kds: isKdsServerRunning(),
+    serverApp: isServerAppRunning(),
+  };
+}
+
+function requestRuntimeRelaunch(reason: string): void {
+  runtimeState = 'stopping';
+  isQuitting = true;
+  log.error(`[Lifecycle] Runtime recovery relaunch requested: ${reason}`);
+
+  void runCleanup().then(
+    () => {
+      try {
+        log.info('[Lifecycle] Runtime cleanup finished; relaunching Flo');
+        app.relaunch();
+        app.exit(0);
+      } catch (error) {
+        log.error('[Lifecycle] Runtime relaunch failed after cleanup:', error);
+        app.exit(1);
+      }
+    },
+    (error) => {
+      log.error('[Lifecycle] Runtime recovery cleanup failed; exiting without relaunch:', error);
+      app.exit(1);
+    },
+  );
+}
+
+const requestRuntimeRelaunchOnce = createRelaunchGate(requestRuntimeRelaunch);
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -407,26 +456,28 @@ if (!gotSingleInstanceLock) {
 if (gotSingleInstanceLock) {
   // Focus the existing window if a second launch is attempted.
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (showMainWindow()) {
-        mainWindow.focus();
-        if (process.platform === 'linux') {
-          mainWindow.setAlwaysOnTop(true);
-          mainWindow.setAlwaysOnTop(false);
-          app.focus();
-        }
+    handleMainWindowActivation();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.focus();
+      if (process.platform === 'linux') {
+        mainWindow.setAlwaysOnTop(true);
+        mainWindow.setAlwaysOnTop(false);
+        app.focus();
       }
     }
   });
 }
 
 function createWindow(): void {
-  // Runs on every call, not just the initial one — the crash-recovery path
-  // below (render-process-gone) and the macOS 'activate' handler both call
-  // createWindow() again without going through initialize(). If a stale
-  // cache directory failed to clear on the previous attempt (e.g. a
-  // transient lock), retrying here means the app can still self-heal within
-  // the same run instead of only on the next full relaunch.
+  if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
+    log.error('[Lifecycle] Refusing to create a POS window without a healthy runtime');
+    requestRuntimeRelaunchOnce('create-window-without-healthy-runtime');
+    return;
+  }
+
+  // Runs on every call, not just the initial one. Window recreation is routed
+  // through handleMainWindowActivation(), which verifies the runtime before
+  // allowing this function to create a new renderer.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
   // Readiness lifecycle: register the fail-safe show path and begin the first
@@ -535,12 +586,25 @@ function createWindow(): void {
       }).then(() => {
         mainWindow?.destroy();
         mainWindow = null;
-        createWindow();
+        handleMainWindowActivation();
       });
     }
   });
 
-  setupWindowLoadRetry(mainWindow, () => `http://localhost:${getServerPort()}`, { log });
+  setupWindowLoadRetry(mainWindow, () => `http://localhost:${getServerPort()}`, {
+    log,
+    onRetryExhausted: ({ errorCode, errorDescription, validatedURL, retries }) => {
+      log.error('[Window] Load retry exhaustion:', errorCode, errorDescription, validatedURL, `retries=${retries}`);
+      if (isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
+        dialog.showErrorBox(
+          'Unable to load Flo',
+          'The local POS window could not be loaded. Please restart Flo Cafe.',
+        );
+      } else {
+        requestRuntimeRelaunchOnce('window-load-retry-exhausted');
+      }
+    },
+  });
 
   mainWindow.webContents.on('unresponsive', () => {
     console.warn('[Window] Window became unresponsive');
@@ -549,6 +613,46 @@ function createWindow(): void {
   mainWindow.webContents.on('responsive', () => {
     console.log('[Window] Window became responsive again');
   });
+}
+
+function handleMainWindowActivation(): void {
+  const services = getRuntimeServices();
+  const hasWindow = Boolean(mainWindow && !mainWindow.isDestroyed());
+  const action = decideRuntimeActivationAction({
+    state: runtimeState,
+    hasWindow,
+    services,
+    shutdownRequested: isShutdownRequested(),
+  });
+  log.info(
+    `[Lifecycle] Activation action=${action} state=${runtimeState}`
+      + ` services=${services.main ? 'main' : 'no-main'},${services.kds ? 'kds' : 'no-kds'},${services.serverApp ? 'server-app' : 'no-server-app'}`,
+  );
+
+  if (action === 'show') {
+    showMainWindow();
+    return;
+  }
+  if (action === 'create') {
+    createWindow();
+    return;
+  }
+  if (action === 'wait') {
+    if (!initializationPromise) {
+      requestRuntimeRelaunchOnce('activation-before-initialization');
+      return;
+    }
+    void initializationPromise.then(
+      () => handleMainWindowActivation(),
+      (error) => {
+        log.error('[Lifecycle] Startup failed while activation was waiting:', error);
+        requestRuntimeRelaunchOnce('activation-startup-failed');
+      },
+    );
+    return;
+  }
+
+  requestRuntimeRelaunchOnce(`activation-runtime-unavailable-${runtimeState}`);
 }
 
 // ── Sleep/wake repaint recovery ─────────────────────────────────────────────
@@ -856,6 +960,8 @@ function showAbout(): void {
 }
 
 async function initialize(): Promise<void> {
+  runtimeState = 'starting';
+  log.info('[Lifecycle] Runtime is starting');
   try {
     if (isShutdownRequested()) return;
     console.log('[Flo] Initializing...');
@@ -991,6 +1097,8 @@ async function initialize(): Promise<void> {
       };
     });
 
+    runtimeState = 'ready';
+    log.info('[Lifecycle] Runtime is ready');
     console.log('[Flo] Creating window...');
     createWindow();
     registerPowerMonitorRecovery();
@@ -1016,6 +1124,8 @@ async function initialize(): Promise<void> {
 
     console.log('[Flo] Ready!');
   } catch (error) {
+    runtimeState = 'failed';
+    log.error('[Lifecycle] Runtime initialization failed:', error);
     console.error('[Flo] Initialization error:', error);
     const errorDetails = error as { code?: unknown; name?: unknown } | null;
     const expectedShutdownCancellation = errorDetails?.code === 'ERR_SHUTDOWN_ABORTED'
@@ -1057,10 +1167,14 @@ async function initialize(): Promise<void> {
     }
     // Cleanup has settled (or reported its bounded failure) before exiting.
     app.exit(1);
+  } finally {
+    if (isShutdownRequested() && runtimeState === 'starting') runtimeState = 'stopping';
   }
 }
 
-app.whenReady().then(initialize);
+app.whenReady().then(() => {
+  initializationPromise = initialize();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
@@ -1069,11 +1183,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
-  } else {
-    showMainWindow();
-  }
+  handleMainWindowActivation();
 });
 
 // --- Cleanup function (idempotent — safe to call from every entrypoint) ---
@@ -1117,17 +1227,21 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   app: app as unknown as ShutdownEntrypointApp,
   process: process as unknown as ShutdownEntrypointProcess,
   cleanup: async () => {
+    log.info('[Lifecycle] Cleanup started');
     console.log('[Flo] Running cleanup...');
     try {
       await cleanupCoordinator();
+      log.info('[Lifecycle] Cleanup completed');
       console.log('[Flo] Goodbye!');
     } catch (error) {
+      log.error('[Lifecycle] Cleanup failed:', error);
       console.error('[Flo] Cleanup failed:', error);
       throw error;
     }
   },
   setQuitting: () => {
     isQuitting = true;
+    runtimeState = 'stopping';
   },
   onShutdownRequested: requestWhatsAppShutdown,
   destroyWindow: () => {

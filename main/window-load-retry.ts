@@ -29,6 +29,14 @@ export interface WindowLoadRetryOptions {
   transientErrors?: readonly number[];
   getRetryDelay?: (attempt: number) => number;
   log?: WindowLoadRetryLogger;
+  onRetryExhausted?: (details: WindowLoadRetryExhaustedDetails) => void;
+}
+
+export interface WindowLoadRetryExhaustedDetails {
+  errorCode: number;
+  errorDescription: string;
+  validatedURL?: string;
+  retries: number;
 }
 
 import type { BrowserWindow } from 'electron';
@@ -53,10 +61,11 @@ export interface WindowLoadRetryController {
 }
 
 /**
- * Attaches auto-retry listeners to a window's webContents to recover from transient
- * connection errors (e.g. ERR_CONNECTION_REFUSED (-102), ERR_NAME_NOT_RESOLVED (-105),
- * ERR_INTERNET_DISCONNECTED (-106), ERR_CONNECTION_TIMED_OUT (-118)) during fast restarts
- * or updater relaunches before the embedded server finishes socket binding.
+ * Attaches main-frame auto-retry listeners to a window's webContents to recover from
+ * transient connection errors (e.g. ERR_CONNECTION_REFUSED (-102), ERR_NAME_NOT_RESOLVED
+ * (-105), ERR_INTERNET_DISCONNECTED (-106), ERR_CONNECTION_TIMED_OUT (-118)) during fast
+ * restarts or updater relaunches before the embedded server finishes socket binding.
+ * Once the bounded retry budget is exhausted, the caller receives a terminal callback.
  */
 export function setupWindowLoadRetry(
   window: RetryableWindow,
@@ -65,6 +74,7 @@ export function setupWindowLoadRetry(
 ): WindowLoadRetryController {
   let loadRetries = 0;
   let loadRetryTimer: NodeJS.Timeout | null = null;
+  let exhaustionReported = false;
 
   const maxRetries = options?.maxRetries ?? MAX_LOAD_RETRIES;
   const transientErrors = options?.transientErrors ?? TRANSIENT_LOAD_ERRORS;
@@ -73,6 +83,7 @@ export function setupWindowLoadRetry(
 
   const handleFinishLoad = () => {
     loadRetries = 0;
+    exhaustionReported = false;
     if (loadRetryTimer) {
       clearTimeout(loadRetryTimer);
       loadRetryTimer = null;
@@ -84,7 +95,9 @@ export function setupWindowLoadRetry(
     errorCode: number,
     errorDescription: string,
     validatedURL?: string,
+    isMainFrame = true,
   ) => {
+    if (!isMainFrame) return;
     logger.error('[Window] Failed to load:', errorCode, errorDescription, validatedURL);
     console.error('[Window] Failed to load:', errorCode, errorDescription, validatedURL);
 
@@ -100,6 +113,15 @@ export function setupWindowLoadRetry(
           window.loadURL(getTargetUrl());
         }
       }, delay);
+    } else if (transientErrors.includes(errorCode) && !exhaustionReported) {
+      exhaustionReported = true;
+      logger.error(`[Window] Exhausted loadURL retries (${maxRetries}) for ${validatedURL || getTargetUrl()}`);
+      options?.onRetryExhausted?.({
+        errorCode,
+        errorDescription,
+        validatedURL,
+        retries: loadRetries,
+      });
     }
   };
 
@@ -107,12 +129,13 @@ export function setupWindowLoadRetry(
     on: (event: string, listener: (...args: unknown[]) => void) => void;
   };
   webContents.on('did-finish-load', handleFinishLoad);
-  webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+  webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     handleFailLoad(
       event,
       typeof errorCode === 'number' ? errorCode : 0,
       String(errorDescription),
       typeof validatedURL === 'string' ? validatedURL : undefined,
+      typeof isMainFrame === 'boolean' ? isMainFrame : true,
     );
   });
 
@@ -127,6 +150,7 @@ export function setupWindowLoadRetry(
     },
     reset: () => {
       loadRetries = 0;
+      exhaustionReported = false;
       if (loadRetryTimer) {
         clearTimeout(loadRetryTimer);
         loadRetryTimer = null;

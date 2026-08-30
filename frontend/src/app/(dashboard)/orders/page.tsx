@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
+import CreateCustomerModal from '@/components/pos/CreateCustomerModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
 import type { OrderItem, Table, Product, Customer } from '@/lib/types';
@@ -124,6 +125,7 @@ export default function OrdersPage() {
   const cartStore = useCartStore();
   const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
+  const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
   const tWhatsappSend = useTranslations('whatsapp.send');
@@ -221,6 +223,8 @@ export default function OrdersPage() {
   const [linkCustomerSearch, setLinkCustomerSearch] = useState('');
   const [linkCustomerResults, setLinkCustomerResults] = useState<Customer[]>([]);
   const [linkingCustomer, setLinkingCustomer] = useState(false);
+  const [createCustomerOrderId, setCreateCustomerOrderId] = useState<number | null>(null);
+  const [createCustomerSearch, setCreateCustomerSearch] = useState('');
   const linkSearchRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
@@ -1164,7 +1168,7 @@ export default function OrdersPage() {
                         {tOrders('linkCustomer')}
                       </button>
                     )}
-                    {linkCustomerOrderId === order.id && linkCustomerResults.length > 0 && (
+                    {linkCustomerOrderId === order.id && (
                       <div className="mt-2 space-y-1">
                         {linkCustomerResults.map((customer) => (
                           <button
@@ -1182,6 +1186,19 @@ export default function OrdersPage() {
                             {linkingCustomer && <span className="text-xs text-gray-400">{tOrders('linking')}</span>}
                           </button>
                         ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCreateCustomerSearch(linkCustomerSearch);
+                            setCreateCustomerOrderId(order.id);
+                          }}
+                          className="w-full flex items-center gap-1.5 px-3 py-2 text-sm text-blue-600 bg-white hover:bg-blue-50 rounded-lg border border-dashed border-blue-300 transition-colors font-medium text-start"
+                        >
+                          <Plus size={15} />
+                          {linkCustomerSearch.trim()
+                            ? `${tPos('addCustomer')} "${linkCustomerSearch.trim()}"`
+                            : tPos('addCustomer')}
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1812,6 +1829,21 @@ placeholder={tOrders('managerPin')}
             </div>
           </div>
         </div>
+      )}
+      {createCustomerOrderId !== null && (
+        <CreateCustomerModal
+          initialSearch={createCustomerSearch}
+          onClose={() => {
+            setCreateCustomerOrderId(null);
+            setCreateCustomerSearch('');
+          }}
+          onCreated={async (newCustomer) => {
+            const orderId = createCustomerOrderId;
+            setCreateCustomerOrderId(null);
+            setCreateCustomerSearch('');
+            await handleLinkCustomer(orderId, String(newCustomer.id));
+          }}
+        />
       )}
       {ConfirmDialog}
     </div>

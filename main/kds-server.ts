@@ -580,85 +580,96 @@ export function startKdsServer(): Promise<void> {
       res.status(500).json({ error: 'Internal server error' });
     });
 
-    let currentKdsPort = KDS_PORT;
+    const baseKdsPort = parseInt(process.env.KDS_PORT || '3002', 10);
+    let currentKdsPort = baseKdsPort;
     let attempts = 0;
 
-    let listeningServer: http.Server;
-    const onListening = () => {
-      if (stopping) {
-        try { listeningServer.close(); } catch { return; }
-        return;
-      }
-      startReject = null;
-      const address = listeningServer.address();
-      activeKdsPort = address && typeof address !== 'string' ? address.port : currentKdsPort;
-      console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
-
-      if (listeningServer) {
-        // noServer + a manual 'upgrade' handler so a disabled KDS can 404 the
-        // upgrade instead of completing it — see main/server.ts for the same
-        // pattern on the primary API server (issue #133).
-        const wss = new WebSocketServer({ noServer: true });
-        kdsWss = wss;
-        setupKdsWebSocket(wss);
-
-        listeningServer.on('upgrade', (request, socket, head) => {
-          const pathname = (request.url || '').split('?')[0];
-          if (pathname !== '/kds') {
-            socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
-            socket.destroy();
-            return;
-          }
-
-          if (isDatabaseMaintenanceActive()) {
-            socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
-            socket.destroy();
-            return;
-          }
-
-          if (!isKdsEnabled()) {
-            socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-            socket.destroy();
-            return;
-          }
-
-          try {
-            wss.handleUpgrade(request, socket, head, (ws) => {
-              wss.emit('connection', ws, request);
-            });
-          } catch (error) {
-            console.error('[KDS Server] WebSocket upgrade failed:', error);
-            socket.destroy();
-          }
-        });
-
-        console.log(`[KDS Server] WebSocket running on ws://localhost:${activeKdsPort}/kds`);
-      }
-
-      resolve();
-    };
-
-    listeningServer = app.listen(currentKdsPort, '0.0.0.0', onListening);
+    const listeningServer = http.createServer(app);
     kdsServer = listeningServer;
     installHttpShutdownTracking(listeningServer);
 
-    listeningServer.on('error', (err: NodeJS.ErrnoException) => {
-      if (stopping) return;
-      if (err.code === 'EADDRINUSE') {
-        attempts++;
-        if (attempts >= 10) {
-          const errorMsg = `[KDS Server] Failed to bind to any port after 10 attempts starting from ${KDS_PORT}`;
-          console.error(errorMsg);
-          reject(new Error(errorMsg));
+    const tryListen = () => {
+      const attemptedPort = currentKdsPort;
+      const onListening = () => {
+        if (stopping) {
+          try { listeningServer.close(); } catch { return; }
           return;
         }
-        currentKdsPort++;
-        console.log(`[KDS Server] Port ${currentKdsPort - 1} in use, trying ${currentKdsPort}`);
-        listeningServer.listen(currentKdsPort, '0.0.0.0', onListening);
-      } else {
+        startReject = null;
+        listeningServer.off('error', onError);
+        const address = listeningServer.address();
+        activeKdsPort = address && typeof address !== 'string' ? address.port : attemptedPort;
+        console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
+
+        if (listeningServer) {
+          // noServer + a manual 'upgrade' handler so a disabled KDS can 404 the
+          // upgrade instead of completing it — see main/server.ts for the same
+          // pattern on the primary API server (issue #133).
+          const wss = new WebSocketServer({ noServer: true });
+          kdsWss = wss;
+          setupKdsWebSocket(wss);
+
+          listeningServer.on('upgrade', (request, socket, head) => {
+            const pathname = (request.url || '').split('?')[0];
+            if (pathname !== '/kds') {
+              socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+              socket.destroy();
+              return;
+            }
+
+            if (isDatabaseMaintenanceActive()) {
+              socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+              socket.destroy();
+              return;
+            }
+
+            if (!isKdsEnabled()) {
+              socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+              socket.destroy();
+              return;
+            }
+
+            try {
+              wss.handleUpgrade(request, socket, head, (ws) => {
+                wss.emit('connection', ws, request);
+              });
+            } catch (error) {
+              console.error('[KDS Server] WebSocket upgrade failed:', error);
+              socket.destroy();
+            }
+          });
+
+          console.log(`[KDS Server] WebSocket running on ws://localhost:${activeKdsPort}/kds`);
+        }
+
+        resolve();
+      };
+
+      const onError = (err: NodeJS.ErrnoException) => {
+        if (stopping) return;
+        listeningServer.off('listening', onListening);
+        if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+          attempts++;
+          if (attempts >= 10) {
+            const errorMsg = `[KDS Server] Failed to bind to any port after 10 attempts starting from ${baseKdsPort}`;
+            console.error(errorMsg);
+            reject(new Error(errorMsg));
+            return;
+          }
+          currentKdsPort++;
+          console.log(`[KDS Server] Port ${attemptedPort} in use (${err.code}), trying ${currentKdsPort}`);
+          tryListen();
+          return;
+        }
         reject(err);
-      }
-    });
+      };
+
+      listeningServer.once('listening', onListening);
+      listeningServer.once('error', onError);
+      listeningServer.listen(attemptedPort, '0.0.0.0');
+    };
+
+    tryListen();
   });
 }
 

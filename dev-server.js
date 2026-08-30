@@ -143,7 +143,7 @@ process.on('unhandledRejection', (err) => {
     console.log(`[DevServer] ✅ KDS Server running on http://localhost:${getKdsPort()}`);
     console.log(`[DevServer] ✅ Server App running on http://localhost:${getServerAppPort()}`);
     console.log('[DevServer]    Frontend dev server: http://localhost:3000');
-    console.log('[DevServer]    API health: http://localhost:3001/api/health');
+    console.log(`[DevServer]    API health: http://localhost:${getServerPort()}/api/health`);
   } catch (err) {
     console.error('[DevServer] Failed to start:', err);
     const code = err && (err.code === 'ERR_SHUTDOWN_ABORTED' || err.code === 'ABORT_ERR' || err.name === 'AbortError') ? 0 : 1;

@@ -173,9 +173,10 @@ router.get('/', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: 
       const digitsSearch = stripPhoneDigits(rawSearch);
       const isPhoneLikeSearch = digitsSearch.length > 0 && !/\p{L}/u.test(rawSearch);
       const search = `%${rawSearch}%`;
+      const phoneDigitsSearch = `REPLACE(c.phone_digits, '/', '')`;
 
       if (isPhoneLikeSearch) {
-        query += ' AND (c.name LIKE ? OR c.phone_digits LIKE ? OR c.email LIKE ?)';
+        query += ` AND (c.name LIKE ? OR ${phoneDigitsSearch} LIKE ? OR c.email LIKE ?)`;
         params.push(search, `%${digitsSearch}%`, search);
       } else {
         query += ' AND (c.name LIKE ? OR c.email LIKE ?)';

@@ -46,7 +46,7 @@ async function main() {
 
   insertCustomer(db, 'ci-e164',      'Anita E164',   '+919876543210',    '+91', 1);
   insertCustomer(db, 'ci-local',     'Anita Local',  '9876543211',       '+91', 1);
-  insertCustomer(db, 'ci-formatted', 'Anita Pretty', '+91 987-654-3212', '+91', 1);
+  insertCustomer(db, 'ci-formatted', 'Anita Pretty', '+91/987-654-3212', '+91', 1);
   insertCustomer(db, 'ci-us',        'Bob US',       '+1 (555) 123-4567', '+1',  1);
   insertCustomer(db, 'ci-ar',        'Carlos AR',    '+541143210000',    '+54', 1);
   insertCustomer(db, 'ci-inactive',  'Inactive',     '+911111111111',    '+91', 0);
@@ -71,6 +71,16 @@ async function main() {
     ids = (res.data || []).map((c: any) => c.id).sort();
     assertEqual(ids.length, 1, `intl digits match e164 (got ${ids.length})`);
     assert(ids.includes('ci-e164'),      'e164 row returned for intl query');
+
+    res = await api(apiBase, `/customers-search?q=${encodeURIComponent('+91 98765 43212')}`, { headers: authHeader });
+    ids = (res.data || []).map((c: any) => c.id);
+    assertEqual(ids.length, 1, 'digit-equivalent formatted query matches legacy separators');
+    assertEqual(ids[0], 'ci-formatted', 'digit-equivalent formatted query returns the legacy row');
+
+    res = await api(apiBase, `/customers-search?q=${encodeURIComponent('+1 (555) 123-4567')}`, { headers: authHeader });
+    ids = (res.data || []).map((c: any) => c.id);
+    assertEqual(ids.length, 1, 'formatted phone query matches the existing customer');
+    assertEqual(ids[0], 'ci-us', 'formatted phone query returns the US customer');
 
     res = await api(apiBase, '/customers-search?q=1111111111', { headers: authHeader });
     assertEqual(res.status, 200, 'search returns 200 for inactive digits');
@@ -120,6 +130,11 @@ async function main() {
     list = (res.data?.data || []);
     assertEqual(list.length, 1, 'list filter formatted India query matches ci-e164 only');
     assertEqual(list[0]?.id, 'ci-e164', 'list filter matches India row for formatted query');
+
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('+91 98765 43212')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'list filter matches legacy separators with digit-equivalent query');
+    assertEqual(list[0]?.id, 'ci-formatted', 'list filter returns the legacy row for formatted query');
 
     res = await api(apiBase, '/customers?search=5551234567&per_page=10', { headers: authHeader });
     list = (res.data?.data || []);

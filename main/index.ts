@@ -32,6 +32,7 @@ import {
   type StoredUpdateStatus,
   type UpdateErrorPhase,
 } from './update-state';
+import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from './updater-shutdown';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
 import {
@@ -100,6 +101,7 @@ let storedUpdateStatus: StoredUpdateStatus = initialUpdateState();
 let updaterPhase: UpdateErrorPhase = 'check';
 let stagedUpdateReady = false;
 let startupFailure = false;
+let isInstallingUpdate = false;
 let betaChannelTransitionTail: Promise<void> = Promise.resolve();
 
 // Beta-channel opt-in persistence (#463, decision #503). The preference lives
@@ -220,27 +222,13 @@ function setupAutoUpdater(): void {
     });
   });
 
-  autoUpdater.on('error', (err) => {
-    // #467: classify by error code/phase — never emit up-to-date from an
-    // error path. The historical substring mask (404 / Cannot find latest /
-    // ENOENT => "up to date") hid real check failures from users.
-    const errorPhase = updaterPhase;
-    const classified = classifyUpdateError(err, errorPhase);
-    updaterPhase = 'check';
-    log.info(
-      `[Update] Updater error classified as ${classified.state}` +
-      `/${classified.reason}:`, classified.detail
-    );
-    if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
-      log.info('[Update] Preserving ready-to-install status while staged update awaits installation');
-      return;
-    }
-    setUpdateStatus({
-      status: classified.state,
-      reason: classified.reason,
-      error: classified.detail
-    });
-  });
+  autoUpdater.on('error', createAutoUpdaterErrorHandler({
+    getPhase: () => updaterPhase,
+    setPhase: (phase) => { updaterPhase = phase; },
+    isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+    setUpdateStatus,
+    logInfo: (message, detail) => log.info(message, detail),
+  }));
 }
 
 function checkForUpdates(): void {
@@ -373,6 +361,10 @@ let usbDevicePermissionsRegistered = false;
 let resolvedTitleBarMode: TitleBarMode = 'native-overlay';
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
+const updateShutdownState: UpdateShutdownState = {
+  setInstallingUpdate: (value) => { isInstallingUpdate = value; },
+  setQuitting: (value) => { isQuitting = value; },
+};
 
 function showMainWindow(): boolean {
   if (
@@ -962,20 +954,23 @@ async function initialize(): Promise<void> {
     // owner PIN approval. The PIN check runs here in the main process — the
     // same authorizeMasterPin used by every other master-PIN-gated IPC
     // handler — so no renderer path can bypass the guard.
-    ipcMain.handle('restart-and-install', (_event, pin?: unknown) => {
-      if (!isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
-        log.warn('[Update] Ignoring install request before an update is downloaded');
-        return { success: false, error: 'No downloaded update is ready to install.' };
-      }
-      const auth = authorizeMasterPin(typeof pin === 'string' ? pin : undefined, 'ipc:restart-and-install');
-      if (!auth.ok) {
-        log.warn(`[Update] Restart-to-install denied by Master PIN gate: ${auth.error}`);
-        return { success: false, error: auth.error };
-      }
-      isQuitting = true;
-      autoUpdater.quitAndInstall();
-      return { success: true };
-    });
+    //
+    // Cleanup runs *before* quitAndInstall so the shutdown coordinator's
+    // will-quit handler sees cleanupFinished=true and exits immediately,
+    // allowing the platform installer hook (Squirrel.Mac / NSIS / AppImage)
+    // to relaunch the new version. Without this ordering, the coordinator
+    // calls event.preventDefault() on the first will-quit (blocking the
+    // installer's relaunch), then calls app.quit() a second time as a plain
+    // quit with no relaunch - the new version is never launched.
+    ipcMain.handle('restart-and-install', createRestartAndInstallHandler({
+      isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+      authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
+      runCleanup,
+      quitAndInstall: (isSilent, isForceRunAfter) => autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
+      updateState: updateShutdownState,
+      warn: (message) => log.warn(message),
+      error: (message, error) => log.error(message, error),
+    }));
 
     ipcMain.handle('get-status', () => {
       const mem = process.memoryUsage();
@@ -1107,7 +1102,16 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   // Database closure is deliberately last: all HTTP and WebSocket work must
   // have settled before handlers can lose access to SQLite.
   { name: 'database', run: () => closeDatabase(), databaseClose: true },
-], { onFatalTimeout: () => app.exit(1) });
+], {
+  onFatalTimeout: () => {
+    // When shutting down to install an update, do not force-kill the process
+    // via app.exit(1) on a timeout; let runCleanup() reject and hand off to
+    // autoUpdater.quitAndInstall() so the update can still proceed.
+    if (!isInstallingUpdate) {
+      app.exit(1);
+    }
+  },
+});
 
 const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntrypoints({
   app: app as unknown as ShutdownEntrypointApp,
@@ -1129,6 +1133,7 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   destroyWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
   },
+  isInstallingUpdate: () => isInstallingUpdate,
   reportFailure: (context, error) => {
     console.error(`[Flo] Cleanup failed before ${context}:`, error);
   },

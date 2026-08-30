@@ -4,8 +4,7 @@
   <p>
     <a href="https://flopos.com">Website</a> ·
     <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases">Download</a> ·
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/issues">Report a bug</a> ·
-    <a href="https://www.reddit.com/r/FloPOS/">Community</a>
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/issues">Report a bug</a>
   </p>
   <p>
     <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases"><img src="https://img.shields.io/github/v/release/FreeOpenSourcePOS/FloCafe?label=latest%20release" alt="Latest release"></a>
@@ -276,6 +275,7 @@ npm run dev
 Electron main process
 ├── Express API and WebSocket server       :3001
 ├── Standalone kitchen-display server      :3002
+├── Server / waiter app server             :3003
 └── SQLite database, migrations, and printing
                  ↕ HTTP and WebSocket
 Next.js renderer
@@ -300,7 +300,6 @@ If FloCafe is useful to you, consider starring the repository.
 - **Linux setup & support:** [docs/linux.md](docs/linux.md)
 - **Internationalization & translations:** [docs/i18n.md](docs/i18n.md)
 - **Google Drive backup setup:** [docs/google-drive-setup.md](docs/google-drive-setup.md)
-- **Community discussion:** [Reddit r/FloPOS](https://www.reddit.com/r/FloPOS/)
 - **Bug reports & feature proposals:** [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - **General questions & ideas:** [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)
 

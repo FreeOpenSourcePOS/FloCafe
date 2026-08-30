@@ -4,7 +4,7 @@ import { getDatabase, now, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { randomUUID } from 'crypto';
-import { validateItemNotes, validateOrderNotes } from './orders-validation';
+import { validateItemNotes, validateOrderNotes, validateProductQuantity } from './orders-validation';
 
 const router = Router();
 const heldOrderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -43,8 +43,15 @@ function validateHeldOrderItem(item: unknown, db: any): void {
   if (!isRecord(item.product) || !isValidIdentifier(item.product.id)) {
     throw new Error('Each held-order item must have a valid product');
   }
-  if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
-    throw new Error('Each held-order item must have a positive integer quantity');
+  if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) {
+    throw new Error('Each held-order item must have a positive quantity');
+  }
+  if (!Number.isInteger(item.quantity)) {
+    const product = db.prepare(
+      'SELECT name, sale_unit, allow_fractional_quantity, weight_precision FROM products WHERE id = ? AND deleted_at IS NULL'
+    ).get(item.product.id) as any;
+    if (!product) throw new Error('Fractional held-order items must reference a catalog product');
+    validateProductQuantity(product, item.quantity);
   }
   if (!Array.isArray(item.addons) || item.addons.some((addon: unknown) => !isRecord(addon) || !isValidIdentifier(addon.id))) {
     throw new Error('Held-order item addons must be an array of valid addons');

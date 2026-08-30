@@ -91,7 +91,7 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
       if (item.status === 'void_adjustment') {
         throw new Error('IMMUTABLE_KDS_ITEM');
       }
-      if (item.status === 'completed' || item.status === 'cancelled') {
+      if (item.status === 'completed' || item.status === 'cancelled' || item.status === 'refunded') {
         throw new Error('TERMINAL_KDS_ITEM');
       }
 
@@ -114,7 +114,7 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
       }
 
       const updateResult = expectedStatus === undefined
-        ? db.prepare("UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled')").run(status, now(), itemId)
+        ? db.prepare("UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled', 'refunded')").run(status, now(), itemId)
         : db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?').run(status, now(), itemId, expectedStatus);
       if (updateResult.changes !== 1) throw new Error('STATUS_CONFLICT');
 
@@ -127,7 +127,7 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
         WHERE oi.order_id = ?
       `).all(item.order_id) as any[];
       const visibleItems = rawItems
-        .filter((row) => !['completed', 'cancelled', 'void_adjustment'].includes(row.status))
+        .filter((row) => !['completed', 'cancelled', 'void_adjustment', 'refunded'].includes(row.status))
         .filter((row) => row.status !== 'voided' || isVoidedItemKdsVisible(row.voided_at))
         .filter((row) => categoryIds.length === 0 || (row.category_id && categoryIds.includes(String(row.category_id))))
         .filter((row) => stationIds.length === 0 || isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, orderStationId, row.category_id, orderStationId ? stationScope.categoryIdsByStation[String(orderStationId)] : undefined, stationScope.hasUnrestrictedStation));

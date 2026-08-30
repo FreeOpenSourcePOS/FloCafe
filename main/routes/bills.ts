@@ -158,7 +158,7 @@ function getPersistedChildTaxBreakdowns(
   for (const breakdown of parsed) {
     while (itemIndex < sourceItems.length) {
       const item = sourceItems[itemIndex++];
-      if (['cancelled', 'voided', 'void_adjustment'].includes(item.status)) continue;
+      if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status)) continue;
       const itemBreakdown = parseTaxSnapshot(item.tax_breakdown);
       if (!Array.isArray(itemBreakdown) || itemBreakdown.length === 0) continue;
       result.set(Number(item.id), breakdown);
@@ -1049,7 +1049,7 @@ function collectLegacyTaxContribution(
     ? new Map<number, any>()
     : getPersistedChildTaxBreakdowns(sourceBreakdownRaw, items);
   for (const item of items) {
-    if (['cancelled', 'voided', 'void_adjustment'].includes(item.status) || hasSnapshotLines(item.tax_snapshot)) continue;
+    if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status) || hasSnapshotLines(item.tax_snapshot)) continue;
     const sourceCents = persistedBreakdowns.has(Number(item.id))
       ? taxBreakdownMinorTotal(persistedBreakdowns.get(Number(item.id)))
       : Number(item.tax_amount || 0) * taxRatio * 100;
@@ -1176,7 +1176,7 @@ function getSplitBillAllocationWeights(
   const weights = bills.map((bill) => {
     const byItem = quantities.get(Number(bill.id)) || new Map<number, number>();
     return items
-      .filter((item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status))
+      .filter((item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status))
       .reduce((sum, item) => {
         const quantity = byItem.get(Number(item.id)) || 0;
         if (quantity <= 0 || Number(item.quantity) <= 0) return sum;
@@ -1185,7 +1185,7 @@ function getSplitBillAllocationWeights(
   });
 
   const snapshotItems = items
-    .filter((item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status) && hasSnapshotLines(item.tax_snapshot))
+    .filter((item) => !['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status) && hasSnapshotLines(item.tax_snapshot))
   const snapshotWeights = snapshotItems.map((item) => {
     if (['voided', 'void_adjustment'].includes(item.status)) return null;
     const itemWeights = bills.map((bill) => (
@@ -1267,7 +1267,7 @@ function getTaxBreakdownWeights(
   if (!Array.isArray(parsed[0])) {
     const ownerWeightsByKey = new Map<string, number[]>();
     for (const item of items) {
-      if (['cancelled', 'voided', 'void_adjustment'].includes(item.status) || hasSnapshotLines(item.tax_snapshot)) continue;
+      if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status) || hasSnapshotLines(item.tax_snapshot)) continue;
       const itemBreakdown = parseTaxSnapshot(item.tax_breakdown);
       if (!Array.isArray(itemBreakdown)) continue;
       const itemComponents = itemBreakdown.flatMap((entry: any) => Array.isArray(entry) ? entry : [entry]);
@@ -1289,7 +1289,7 @@ function getTaxBreakdownWeights(
   return parsed.map(() => {
     while (itemIndex < items.length) {
       const item = items[itemIndex++];
-      if (['cancelled', 'voided', 'void_adjustment'].includes(item.status)) continue;
+      if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status)) continue;
       const breakdown = parseTaxSnapshot(item.tax_breakdown);
       if (Array.isArray(breakdown) && breakdown.length > 0) {
         return itemWeights(item);
@@ -1430,7 +1430,7 @@ router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier),
       if (txnSource.split_group_id || Number((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(txnSource.order_id) as any).n) > 1) {
         throw Object.assign(new Error('This check has already been split'), { statusCode: 409 });
       }
-      const txnActiveItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment') ORDER BY id").all(txnSource.order_id) as any[];
+      const txnActiveItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded') ORDER BY id").all(txnSource.order_id) as any[];
       const txnItemById = new Map(txnActiveItems.map((item) => [Number(item.id), item]));
       const txnAssigned = new Map<number, number>();
 

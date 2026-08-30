@@ -11,7 +11,7 @@ import {
 import { applyPayableRounding } from '../services/tax-engine';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
-import { validateOrderNotes, validateItemNotes } from './orders-validation';
+import { validateOrderNotes, validateItemNotes, validateProductQuantity } from './orders-validation';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import expressRateLimit from 'express-rate-limit';
@@ -506,9 +506,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         const itemDiscount = 0;
 
         // Validate quantity and price
-        if (!quantity || quantity <= 0 || !Number.isFinite(quantity)) {
-          throw new Error(`Invalid quantity for ${product.name}: must be a positive number`);
-        }
+        validateProductQuantity(product, quantity);
         if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
           throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
         }
@@ -728,9 +726,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         const itemDiscount = 0;
 
         // Validate quantity and price
-        if (!quantity || quantity <= 0 || !Number.isFinite(quantity)) {
-          throw new Error(`Invalid quantity for ${product.name}: must be a positive number`);
-        }
+        validateProductQuantity(product, quantity);
         if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
           throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
         }
@@ -1005,7 +1001,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
           // Select only items eligible for restocking (exclude already cancelled, voided, or accounting adjustments)
           const eligibleItems = db.prepare(`
             SELECT * FROM order_items
-            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')
+            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
           `).all(req.params.id) as any[];
 
           for (const item of eligibleItems) {
@@ -1018,7 +1014,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
 
           db.prepare(`
             UPDATE order_items SET status = 'cancelled', updated_at = ?
-            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')
+            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')
           `).run(nowStr, req.params.id);
 
           db.prepare('UPDATE orders SET status = ?, cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?')

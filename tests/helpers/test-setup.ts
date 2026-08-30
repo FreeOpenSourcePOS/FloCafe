@@ -228,6 +228,9 @@ function seedProduct(db: any, id: string, categoryId: string, name: string, pric
   cb_percent?: number | null;
   track_inventory?: boolean;
   stock_quantity?: number;
+  sale_unit?: 'each' | 'kg' | 'g' | 'lb';
+  allow_fractional_quantity?: boolean;
+  weight_precision?: number;
 }) {
   // Most integration fixtures represent taxable menu products. Assign the
   // Fresh stores use the generic no-tax pack, so test products are
@@ -238,8 +241,9 @@ function seedProduct(db: any, id: string, categoryId: string, name: string, pric
   db.prepare(
     `INSERT OR IGNORE INTO products (
        id, category_id, name, price, tax_type, tax_category_id, tax_behavior,
-       cb_percent, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       cb_percent, track_inventory, stock_quantity, sale_unit, allow_fractional_quantity,
+       weight_precision, is_active, sort_order, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, categoryId, name, price,
     options?.tax_type || 'none',
@@ -248,6 +252,9 @@ function seedProduct(db: any, id: string, categoryId: string, name: string, pric
     options && Object.prototype.hasOwnProperty.call(options, 'cb_percent') ? options.cb_percent : 0,
     options?.track_inventory ? 1 : 0,
     options?.stock_quantity ?? 999,
+    options?.sale_unit || 'each',
+    options?.allow_fractional_quantity ? 1 : 0,
+    options?.weight_precision ?? 3,
     1, 1, now(), now()
   );
 }

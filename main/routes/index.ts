@@ -8,6 +8,7 @@ import { addonGroupRoutes } from './addon-groups';
 import { orderRoutes } from './orders';
 import { orderItemRoutes } from './order-items';
 import { billRoutes, syncUnpaidBillsForOrder } from './bills';
+import { refundRoutes } from './refunds';
 import { tableRoutes } from './tables';
 import { kitchenStationRoutes } from './kitchen-stations';
 import { kitchenRoutes } from './kitchen';
@@ -84,6 +85,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/order-items', orderItemRoutes);
   app.use('/api/kitchen', kitchenRoutes);
   app.use('/api/bills', billRoutes);
+  app.use('/api/refunds', refundRoutes);
   app.use('/api/tables', tableRoutes);
   app.use('/api/kitchen-stations', kitchenStationRoutes);
   app.use('/api/customers', customerRoutes);
@@ -316,7 +318,7 @@ export function registerRoutes(app: Express): void {
         // A repeated request against an already terminal item is an
         // intentional idempotent no-op. Check it before the parent terminal
         // policy so a retry cannot turn a harmless repeat into a new error.
-        if (['cancelled', 'voided', 'void_adjustment'].includes(currentItem.status)) {
+        if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {
           if (!hasRole(userRole, ROLE_ACCESS.ownerManager)) {
             throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
           }
@@ -435,7 +437,7 @@ export function registerRoutes(app: Express): void {
         }
 
         // Recalculate order totals excluding cancelled, voided, and void_adjustment items
-        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')")
+        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')")
           .all(orderId) as any[];
         let subtotal = 0;
         let totalTax = 0;
@@ -621,7 +623,7 @@ export function registerRoutes(app: Express): void {
           .run(now(), itemId);
 
         // Recalculate order totals
-        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')")
+        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')")
           .all(orderId) as any[];
         let subtotal = 0;
         let totalTax = 0;

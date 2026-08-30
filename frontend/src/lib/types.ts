@@ -62,6 +62,9 @@ export interface Product {
   name: string;
   sku: string | null;
   barcode: string | null;
+  sale_unit: 'each' | 'kg' | 'g' | 'lb';
+  allow_fractional_quantity: boolean;
+  weight_precision: number;
   description: string | null;
   price: number;
   cost_price: number | null;

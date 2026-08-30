@@ -98,7 +98,7 @@ router.get('/orders', (req: Request, res: Response) => {
     // Resolve addons for every visible item in one batched call.
     const allVisibleItems = rawItems.filter(
       (i) => i.status !== 'void_adjustment'
-        && !['completed', 'cancelled'].includes(i.status)
+        && !['completed', 'cancelled', 'refunded'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
         && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
         && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, ordersById.get(i.order_id)?.kitchen_station_id, i.category_id, ordersById.get(i.order_id)?.kitchen_station_id ? stationScope.categoryIdsByStation[String(ordersById.get(i.order_id)?.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation)
@@ -110,7 +110,7 @@ router.get('/orders', (req: Request, res: Response) => {
       const orderRawItems = itemsByOrder[order.id] || [];
       const visibleItems = orderRawItems
         .filter((i) => i.status !== 'void_adjustment'
-          && !['completed', 'cancelled'].includes(i.status)
+          && !['completed', 'cancelled', 'refunded'].includes(i.status)
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
           && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope.categoryIdsByStation[String(order.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation))

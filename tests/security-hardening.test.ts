@@ -225,6 +225,28 @@ async function main() {
   });
   assertEqual(strongChangeRes.status, 200, 'user can change to strong password');
 
+  // Password changes must throttle LAN requests and lock out repeated guesses
+  // for the targeted account.
+  const passwordChangeLockoutAuth = seedUser(db, 'password-change-lockout', 'cashier', 'password-change-lockout@test.local');
+  for (let i = 0; i < 5; i++) {
+    const wrongCurrentRes = await request(app).post('/api/auth/password/change')
+      .set(passwordChangeLockoutAuth)
+      .send({ current_password: 'wrong-current-password', password: 'StrongPass4' });
+    assertEqual(wrongCurrentRes.status, 400, `wrong current password attempt ${i + 1} is rejected`);
+  }
+  const lockedPasswordChangeRes = await request(app).post('/api/auth/password/change')
+    .set(passwordChangeLockoutAuth)
+    .send({ current_password: 'wrong-current-password', password: 'StrongPass4' });
+  assertEqual(lockedPasswordChangeRes.status, 429, 'password changes lock after repeated current-password failures');
+  assert(
+    String(lockedPasswordChangeRes.body.error || '').includes('password change attempts'),
+    'password-change lockout returns the expected error',
+  );
+  assert(
+    String(lockedPasswordChangeRes.body.error || '').includes('5 minutes'),
+    'password-change lockout reports the five-minute duration',
+  );
+
   // ── Rate Limit on Staff Mutations ─────────────────────────────────────────
   let rateLimitHit = false;
   for (let i = 0; i < 12; i++) {

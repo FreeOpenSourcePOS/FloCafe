@@ -41,6 +41,29 @@ Authenticate user and receive JWT token.
   "error": "Invalid credentials"
 }
 ```
+
+### POST `/api/auth/password/change`
+Change the authenticated user's password.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request:**
+```json
+{
+  "current_password": "chef123",
+  "password": "NewChef123"
+}
+```
+
+**Response (200):**
+```json
+{
+  "message": "Password changed successfully"
+}
+```
+
+Incorrect current-password attempts return `400` with `attempts_remaining`. After five incorrect attempts for the same user, password-change attempts for that user are locked for five minutes; the fifth response reports `attempts_remaining: 0` and `lockout_minutes: 5`. Further attempts during the lockout return `429`. A valid current password or an expired lockout resets the per-user failed-attempt counter. This endpoint also uses the LAN-aware authentication rate limiter.
+
 ---
 
 ## User Management

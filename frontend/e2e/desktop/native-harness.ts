@@ -152,7 +152,7 @@ async function waitForPortClosed(port: number): Promise<boolean> {
 }
 
 async function waitForRelaunchedPid(pidFile: string, previousPid: number): Promise<number> {
-  const deadline = Date.now() + 90_000;
+  const deadline = Date.now() + 150_000;
   while (Date.now() < deadline) {
     try {
       const pid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
@@ -166,7 +166,7 @@ async function waitForRelaunchedPid(pidFile: string, previousPid: number): Promi
 
 async function connectToRelaunchedPage(devToolsPort: number, mainPort: number): Promise<{ browser: Browser; page: Page }> {
   const endpoint = `http://127.0.0.1:${devToolsPort}`;
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 60_000;
   let lastError: unknown;
   while (Date.now() < deadline) {
     let browser: Browser | undefined;

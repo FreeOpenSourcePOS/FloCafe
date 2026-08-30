@@ -216,8 +216,16 @@ async function boundedGracefulClose(
   ports: NativeServicePorts,
   profileDir: string,
 ): Promise<void> {
-  const pid = app.process().pid;
-  if (!pid) throw new Error('Native Electron process did not expose a PID');
+  let pid: number | undefined;
+  try {
+    pid = app.process?.()?.pid;
+  } catch {
+    // Process might have already exited or disconnected
+  }
+  if (!pid) {
+    if (existsSync(profileDir)) rmSync(profileDir, { recursive: true, force: true });
+    return;
+  }
 
   let gracefulError: unknown;
   try {
@@ -337,6 +345,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
   try {
     await runSeed(env);
     app = await electron.launch({ cwd: repoRoot, args: ['.', `--remote-debugging-port=${ports.devTools}`], env });
+    const initialPid = app.process().pid;
     app.on('console', (message) => console.log(`[Native Electron] ${message.text()}`));
     let activePage = await app.firstWindow();
     await activePage.waitForURL((url) => url.port === String(ports.main), { timeout: 30_000 });
@@ -404,7 +413,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
         });
       },
       relaunchAndWaitForPage: async () => {
-        const previousPid = app!.process().pid;
+        const previousPid = initialPid;
         if (!previousPid) throw new Error('Native Electron process did not expose a PID');
         if (!await waitForProcessExit(previousPid)) {
           throw new Error(`Original Electron process ${previousPid} did not exit after relaunch`);

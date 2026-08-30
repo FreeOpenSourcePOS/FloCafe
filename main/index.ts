@@ -371,6 +371,7 @@ let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
 let runtimeState: RuntimeState = 'starting';
 let initializationPromise: Promise<void> | null = null;
+let activationPending = false;
 const updateShutdownState: UpdateShutdownState = {
   setInstallingUpdate: (value) => { isInstallingUpdate = value; },
   setQuitting: (value) => {
@@ -641,7 +642,7 @@ function handleMainWindowActivation(): void {
   }
   if (action === 'wait') {
     if (!initializationPromise) {
-      requestRuntimeRelaunchOnce('activation-before-initialization');
+      activationPending = true;
       return;
     }
     void initializationPromise.then(
@@ -1177,6 +1178,19 @@ async function initialize(): Promise<void> {
 
 app.whenReady().then(() => {
   initializationPromise = initialize();
+  void initializationPromise.then(
+    () => {
+      if (!activationPending) return;
+      activationPending = false;
+      handleMainWindowActivation();
+    },
+    (error) => {
+      if (!activationPending) return;
+      activationPending = false;
+      log.error('[Lifecycle] Startup failed while activation was pending:', error);
+      if (!isQuitting && !isShutdownRequested()) requestRuntimeRelaunchOnce('activation-startup-failed');
+    },
+  );
 });
 
 app.on('window-all-closed', () => {

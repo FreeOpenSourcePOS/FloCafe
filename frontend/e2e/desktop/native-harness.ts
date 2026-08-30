@@ -27,6 +27,7 @@ export interface NativeElectronHarness {
   page: Page;
   ports: NativeServicePorts;
   profileDir: string;
+  setActivePage: (page: Page) => void;
   authenticateDashboard: () => Promise<void>;
   simulateTerminalRuntimeLoss: () => Promise<void>;
   relaunchAndWaitForPage: () => Promise<Page>;
@@ -189,6 +190,16 @@ async function connectToRelaunchedPage(devToolsPort: number, mainPort: number): 
 
 function forceTerminate(pid: number): boolean {
   try {
+    process.kill(pid, process.platform === 'win32' ? 'SIGTERM' : 'SIGKILL');
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
+function requestProcessExit(pid: number): boolean {
+  try {
     process.kill(pid, 'SIGTERM');
     return true;
   } catch (error) {
@@ -266,6 +277,10 @@ async function boundedRelaunchClose(
   let exited = await waitForProcessExit(pid);
   let forcedCleanup = false;
   if (!exited) {
+    requestProcessExit(pid);
+    exited = await waitForProcessExit(pid);
+  }
+  if (!exited) {
     forcedCleanup = forceTerminate(pid);
     exited = await waitForProcessExit(pid);
   }
@@ -317,12 +332,12 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
     await runSeed(env);
     app = await electron.launch({ cwd: repoRoot, args: ['.', `--remote-debugging-port=${ports.devTools}`], env });
     app.on('console', (message) => console.log(`[Native Electron] ${message.text()}`));
-    const page = await app.firstWindow();
-    await page.waitForURL((url) => url.port === String(ports.main), { timeout: 30_000 });
+    let activePage = await app.firstWindow();
+    await activePage.waitForURL((url) => url.port === String(ports.main), { timeout: 30_000 });
     await waitForHealth(ports);
-    await waitForRendererServices(page);
+    await waitForRendererServices(activePage);
 
-    const actualPorts = await page.evaluate(async () => {
+    const actualPorts = await activePage.evaluate(async () => {
       const status = await window.electronAPI?.getStatus();
       const kds = await window.electronAPI?.getKdsInfo();
       return { main: status?.port, kds: kds && 'port' in kds ? kds.port : undefined };
@@ -333,30 +348,31 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
 
     // The app's root export is a redirect boundary, so drive the renderer to a
     // concrete public route before any test asserts route-owned UI state.
-    await page.goto(`http://localhost:${ports.main}/auth/login`, { waitUntil: 'domcontentloaded' });
+    await activePage.goto(`http://localhost:${ports.main}/auth/login`, { waitUntil: 'domcontentloaded' });
 
     return {
       app,
-      page,
+      get page() { return activePage; },
       ports,
       profileDir,
+      setActivePage: (page) => { activePage = page; },
       authenticateDashboard: async () => {
-        const currentPath = new URL(page.url()).pathname.replace(/\/+$/, '') || '/';
+        const currentPath = new URL(activePage.url()).pathname.replace(/\/+$/, '') || '/';
         if (currentPath !== '/auth/login' && currentPath !== '/pos') {
-          throw new Error(`Native E2E expected a stable auth route, got ${page.url()}`);
+          throw new Error(`Native E2E expected a stable auth route, got ${activePage.url()}`);
         }
         if (currentPath !== '/pos') {
-          await page.locator('#email').fill(env.FLO_E2E_OWNER_EMAIL);
-          await page.locator('#password').fill(env.FLO_E2E_OWNER_PASSWORD);
-          await page.locator('button[type="submit"]').click();
-          await page.waitForURL((url) => url.pathname.replace(/\/+$/, '') === '/pos', { timeout: 30_000 });
+          await activePage.locator('#email').fill(env.FLO_E2E_OWNER_EMAIL);
+          await activePage.locator('#password').fill(env.FLO_E2E_OWNER_PASSWORD);
+          await activePage.locator('button[type="submit"]').click();
+          await activePage.waitForURL((url) => url.pathname.replace(/\/+$/, '') === '/pos', { timeout: 30_000 });
         }
         await app!.evaluate(({ app: electronApp, BrowserWindow }) => {
           electronApp.focus({ steal: true });
           BrowserWindow.getAllWindows()[0]?.focus();
         });
-        await page.waitForFunction(() => document.hasFocus() && document.documentElement.dataset.floWindowFocused === 'true');
-        await page.waitForFunction(() => document.documentElement.dataset.floDesktopTitlebar === 'true');
+        await activePage.waitForFunction(() => document.hasFocus() && document.documentElement.dataset.floWindowFocused === 'true');
+        await activePage.waitForFunction(() => document.documentElement.dataset.floDesktopTitlebar === 'true');
       },
       simulateTerminalRuntimeLoss: async () => {
         await app!.evaluate(async () => {
@@ -378,6 +394,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
         relaunchedPid = await waitForRelaunchedPid(pidFile, previousPid);
         const connection = await connectToRelaunchedPage(ports.devTools, ports.main);
         relaunchedBrowser = connection.browser;
+        activePage = connection.page;
         return connection.page;
       },
       close: async () => {

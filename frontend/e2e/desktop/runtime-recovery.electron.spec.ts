@@ -37,6 +37,7 @@ test('activation recreates a usable window after the renderer window is destroye
 
   await recoveredPage.waitForURL((url) => url.port === String(harness.ports.main), { timeout: 30_000 });
   await expect(recoveredPage.getByTestId('desktop-drag-surface')).toBeVisible();
+  harness.setActivePage(recoveredPage);
   await expect.poll(countPosWindows).toBe(1);
   expect(harness.app.process().pid).toBe(originalPid);
 

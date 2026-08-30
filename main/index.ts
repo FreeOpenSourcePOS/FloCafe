@@ -13,6 +13,14 @@ for (const arg of process.argv) {
     }
   }
 }
+
+if (process.env.FLO_E2E_PID_FILE) {
+  try {
+    fs.writeFileSync(process.env.FLO_E2E_PID_FILE, String(process.pid));
+  } catch {
+    // Non-fatal if PID file cannot be written immediately
+  }
+}
 import { Bonjour } from 'bonjour-service';
 import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError, now, withDatabaseRequest } from './db';
 import { BETA_CHANNEL_SETTING_KEY, parseStoredBetaChannelEnabled, resolveUpdateChannel } from './update-channel';

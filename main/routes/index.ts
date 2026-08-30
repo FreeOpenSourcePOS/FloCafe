@@ -205,18 +205,32 @@ export function registerRoutes(app: Express): void {
   app.get('/api/customers-search', inlineCustomerLookupRateLimit, requireRole(...ROLE_ACCESS.sales), (req, res) => {
     try {
       const { q } = req.query;
-      if (!q || String(q).length < 2) {
+      const rawSearch = String(q || '').trim();
+      if (rawSearch.length < 2) {
         return res.json([]);
       }
 
       const db = getDatabase();
-      const searchTerm = `%${q}%`;
-
-      const customers = db.prepare(`
+      const digitsSearch = stripPhoneDigits(rawSearch);
+      const isPhoneLikeSearch = digitsSearch.length > 0 && !/\p{L}/u.test(rawSearch);
+      const searchTerm = `%${rawSearch}%`;
+      const phoneDigitsSearch = `REPLACE(phone_digits, '/', '')`;
+      const query = isPhoneLikeSearch
+        ? `
         SELECT * FROM customers
-        WHERE is_active = 1 AND (phone_digits LIKE ? OR name LIKE ? OR email LIKE ?)
+        WHERE is_active = 1 AND (${phoneDigitsSearch} LIKE ? OR name LIKE ? OR email LIKE ?)
         ORDER BY name LIMIT 20
-      `).all(searchTerm, searchTerm, searchTerm) as any[];
+      `
+        : `
+        SELECT * FROM customers
+        WHERE is_active = 1 AND (name LIKE ? OR email LIKE ?)
+        ORDER BY name LIMIT 20
+      `;
+      const params = isPhoneLikeSearch
+        ? [`%${digitsSearch}%`, searchTerm, searchTerm]
+        : [searchTerm, searchTerm];
+
+      const customers = db.prepare(query).all(...params) as any[];
 
       const results = customers.map((c) => ({
         ...parseCustomer(c),

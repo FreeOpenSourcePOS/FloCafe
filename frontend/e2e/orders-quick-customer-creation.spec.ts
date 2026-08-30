@@ -2,12 +2,13 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
+import { E2E_PASSWORD } from './helpers/test-auth';
 
 const EVIDENCE_DIR = process.env.EVIDENCE_DIR;
 
 test('Orders page creates a customer and links it to an active order', async ({ page }) => {
   const loginResponse = await page.request.post(`${BASE}/api/auth/login`, {
-    data: { email: 'manager@flo.local', password: 'E2ePass123!' },
+    data: { email: 'manager@flo.local', password: E2E_PASSWORD },
   });
   expect(loginResponse.ok()).toBeTruthy();
   const { access_token: token } = await loginResponse.json();
@@ -24,7 +25,7 @@ test('Orders page creates a customer and links it to an active order', async ({ 
 
   await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('manager@flo.local');
-  await page.locator('#password').fill('E2ePass123!');
+  await page.locator('#password').fill(E2E_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/pos/**', { timeout: 20000 });
 
@@ -33,7 +34,9 @@ test('Orders page creates a customer and links it to an active order', async ({ 
   await expect(orderCard).toBeVisible();
 
   await orderCard.getByRole('button', { name: 'Link Customer' }).click();
-  const customerName = `Quick Customer ${Date.now()}`;
+  const attemptId = Date.now();
+  const customerName = `Quick Customer ${attemptId}`;
+  const customerPhone = `+66 82 234 ${String(attemptId).slice(-4)}`;
   const searchInput = orderCard.getByPlaceholder('Search by phone or name…');
   await searchInput.fill(customerName);
 
@@ -44,7 +47,7 @@ test('Orders page creates a customer and links it to an active order', async ({ 
   const modal = page.locator('div.fixed.inset-0').filter({ has: page.getByRole('heading', { name: 'Add Customer' }) });
   await expect(modal).toBeVisible();
   await modal.locator('input[type="text"]').fill(customerName);
-  await modal.locator('input[type="tel"]').fill('+66 82 234 5678');
+  await modal.locator('input[type="tel"]').fill(customerPhone);
 
   if (EVIDENCE_DIR) {
     fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
@@ -64,7 +67,7 @@ test('Orders page creates a customer and links it to an active order', async ({ 
   const createdPayload = await (await createdResponse).json();
   const linkedPayload = await (await linkResponse).json();
   expect(createdPayload.customer.name).toBe(customerName);
-  expect(createdPayload.customer.phone).toBe('+66822345678');
+  expect(createdPayload.customer.phone).toBe(`+6682234${String(attemptId).slice(-4)}`);
   expect(linkedPayload.order.customer_id).toBe(createdPayload.customer.id);
 
   await expect(orderCard).toContainText(customerName, { timeout: 10000 });

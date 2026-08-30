@@ -1192,7 +1192,8 @@ export default function OrdersPage() {
                             setCreateCustomerSearch(linkCustomerSearch);
                             setCreateCustomerOrderId(order.id);
                           }}
-                          className="w-full flex items-center gap-1.5 px-3 py-2 text-sm text-blue-600 bg-white hover:bg-blue-50 rounded-lg border border-dashed border-blue-300 transition-colors font-medium text-start"
+                          disabled={linkingCustomer}
+                          className="w-full flex items-center gap-1.5 px-3 py-2 text-sm text-blue-600 bg-white hover:bg-blue-50 rounded-lg border border-dashed border-blue-300 transition-colors font-medium text-start disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Plus size={15} />
                           {linkCustomerSearch.trim()

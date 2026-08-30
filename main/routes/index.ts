@@ -214,10 +214,11 @@ export function registerRoutes(app: Express): void {
       const digitsSearch = stripPhoneDigits(rawSearch);
       const isPhoneLikeSearch = digitsSearch.length > 0 && !/\p{L}/u.test(rawSearch);
       const searchTerm = `%${rawSearch}%`;
+      const phoneDigitsSearch = `REPLACE(phone_digits, '/', '')`;
       const query = isPhoneLikeSearch
         ? `
         SELECT * FROM customers
-        WHERE is_active = 1 AND (phone_digits LIKE ? OR name LIKE ? OR email LIKE ?)
+        WHERE is_active = 1 AND (${phoneDigitsSearch} LIKE ? OR name LIKE ? OR email LIKE ?)
         ORDER BY name LIMIT 20
       `
         : `

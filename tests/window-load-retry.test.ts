@@ -184,6 +184,7 @@ async function run(): Promise<void> {
     validatedURL: targetUrl,
     retries: 2,
   }], 'Retry exhaustion is reported once with the terminal load details');
+  assert.equal(exhaustedController.getPendingTimer(), null, 'Retry exhaustion clears the pending retry timer');
   exhaustedController.cancel();
   log('  ✓ Retry exhaustion escalates once after the bounded retry budget.');
 

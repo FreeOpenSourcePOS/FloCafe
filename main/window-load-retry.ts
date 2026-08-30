@@ -109,12 +109,17 @@ export function setupWindowLoadRetry(
       logger.info(`[Window] Retrying loadURL in ${delay}ms (attempt ${loadRetries}/${maxRetries})...`);
       if (loadRetryTimer) clearTimeout(loadRetryTimer);
       loadRetryTimer = setTimeout(() => {
+        loadRetryTimer = null;
         if (window && !window.isDestroyed()) {
           window.loadURL(getTargetUrl());
         }
       }, delay);
     } else if (transientErrors.includes(errorCode) && !exhaustionReported) {
       exhaustionReported = true;
+      if (loadRetryTimer) {
+        clearTimeout(loadRetryTimer);
+        loadRetryTimer = null;
+      }
       logger.error(`[Window] Exhausted loadURL retries (${maxRetries}) for ${validatedURL || getTargetUrl()}`);
       options?.onRetryExhausted?.({
         errorCode,

@@ -388,15 +388,18 @@ const updateShutdownState: UpdateShutdownState = {
 
 function showMainWindow(expectedWindow?: BrowserWindow): boolean {
   if (isQuitting || isShutdownRequested()) return false;
+  if (expectedWindow && mainWindow !== expectedWindow) return false;
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
     handleMainWindowActivation();
     return false;
   }
+  if (isFailedWindowDocument(mainWindow)) {
+    recoverFailedWindow(mainWindow);
+    return false;
+  }
   if (
     (!isWindowRendererReady() && !isRendererReadinessFailSafeShown())
-    || !mainWindow
-    || mainWindow.isDestroyed()
-    || (expectedWindow && mainWindow !== expectedWindow)
   ) return false;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
@@ -409,6 +412,35 @@ function getRuntimeServices() {
     kds: isKdsServerRunning(),
     serverApp: isServerAppRunning(),
   };
+}
+
+function isFailedWindowDocument(window: BrowserWindow): boolean {
+  try {
+    return window.webContents.getURL().startsWith('chrome-error://');
+  } catch {
+    return true;
+  }
+}
+
+function recoverFailedWindow(failedWindow: BrowserWindow): void {
+  if (isQuitting || isShutdownRequested() || runtimeState === 'stopping') return;
+  if (mainWindow !== failedWindow) return;
+  if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
+    requestRuntimeRelaunchOnce('window-load-retry-exhausted');
+    return;
+  }
+  if (windowLoadRecoveryAttempted) {
+    requestRuntimeRelaunchOnce('window-load-recovery-failed');
+    return;
+  }
+  windowLoadRecoveryAttempted = true;
+  try {
+    createWindow();
+    if (!failedWindow.isDestroyed()) failedWindow.destroy();
+  } catch (error) {
+    log.error('[Window] Window recreation failed:', error);
+    requestRuntimeRelaunchOnce('window-load-recovery-create-failed');
+  }
 }
 
 function requestRuntimeRelaunch(reason: string): void {
@@ -629,25 +661,7 @@ function createWindow(): void {
     log,
     onRetryExhausted: ({ errorCode, errorDescription, validatedURL, retries }) => {
       log.error('[Window] Load retry exhaustion:', errorCode, errorDescription, validatedURL, `retries=${retries}`);
-      if (isQuitting || isShutdownRequested() || runtimeState === 'stopping') return;
-      if (mainWindow !== createdWindow) return;
-      if (isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
-        if (windowLoadRecoveryAttempted) {
-          requestRuntimeRelaunchOnce('window-load-recovery-failed');
-          return;
-        }
-        windowLoadRecoveryAttempted = true;
-        const failedWindow = createdWindow;
-        try {
-          createWindow();
-          if (failedWindow && !failedWindow.isDestroyed()) failedWindow.destroy();
-        } catch (error) {
-          log.error('[Window] Window recreation failed:', error);
-          requestRuntimeRelaunchOnce('window-load-recovery-create-failed');
-        }
-      } else {
-        requestRuntimeRelaunchOnce('window-load-retry-exhausted');
-      }
+      recoverFailedWindow(createdWindow);
     },
   });
 

@@ -50,11 +50,9 @@ test('activation recreates a usable window after the renderer window is destroye
   await expect.poll(countPosWindows).toBe(1);
   expect(harness.app.process().pid).toBe(originalPid);
 
-  const evidenceDir = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M1AC5JTRTHW6GJT21WHX933N';
-  try {
+  const evidenceDir = process.env.FLO_E2E_EVIDENCE_DIR;
+  if (evidenceDir) {
     await recoveredPage.screenshot({ path: `${evidenceDir}/recovered-window-after-renderer-destroyed.png` });
-  } catch (err) {
-    console.warn('[Evidence] Could not capture screenshot 1:', err);
   }
 
   const runtime = await recoveredPage.evaluate(async () => window.electronAPI?.getStatus());
@@ -70,8 +68,7 @@ test('activation recreates a usable window after the renderer window is destroye
   await expect.poll(countPosWindows).toBe(1);
 });
 
-test('activation relaunches once after terminal runtime loss', async ({ }, testInfo) => {
-  testInfo.setTimeout(480_000);
+test('activation relaunches once after terminal runtime loss', async () => {
   await harness.authenticateDashboard();
   let relaunchCalls = 0;
   harness.app.on('console', (message) => {
@@ -97,11 +94,9 @@ test('activation relaunches once after terminal runtime loss', async ({ }, testI
   await expect(recoveredPage.getByTestId('desktop-drag-surface')).toBeVisible();
   await expect(recoveredPage.locator('[data-slot="sidebar-container"]')).toBeVisible();
 
-  const evidenceDir = '/Users/gurkiratkhaira/.no-mistakes/evidence/01M1AC5JTRTHW6GJT21WHX933N';
-  try {
+  const evidenceDir = process.env.FLO_E2E_EVIDENCE_DIR;
+  if (evidenceDir) {
     await recoveredPage.screenshot({ path: `${evidenceDir}/recovered-window-after-terminal-runtime-loss.png` });
-  } catch (err) {
-    console.warn('[Evidence] Could not capture screenshot 2:', err);
   }
 
   await expect.poll(async () => recoveredPage.evaluate(async () => window.electronAPI?.getStatus())).toMatchObject({

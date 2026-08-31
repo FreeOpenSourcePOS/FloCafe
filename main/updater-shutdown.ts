@@ -32,7 +32,9 @@ type AutoUpdaterErrorHandlerOptions = {
   getPhase: () => UpdateErrorPhase;
   setPhase: (phase: UpdateErrorPhase) => void;
   isInstallReady: () => boolean;
+  isInstallingUpdate: () => boolean;
   setUpdateStatus: (next: StoredUpdateStatus) => void;
+  onInstallFailure: (error: unknown) => void;
   logInfo: (message: string, detail?: unknown) => void;
 };
 
@@ -41,7 +43,9 @@ export function createAutoUpdaterErrorHandler(
     getPhase,
     setPhase,
     isInstallReady,
+    isInstallingUpdate,
     setUpdateStatus,
+    onInstallFailure,
     logInfo,
   }: AutoUpdaterErrorHandlerOptions,
 ): (error: unknown) => void {
@@ -53,6 +57,11 @@ export function createAutoUpdaterErrorHandler(
       `[Update] Updater error classified as ${classified.state}` +
       `/${classified.reason}:`, classified.detail
     );
+    if (isInstallingUpdate()) {
+      logInfo('[Update] Installation failed after shutdown; relaunching the current version');
+      onInstallFailure(error);
+      return;
+    }
     if (isInstallReady()) {
       logInfo('[Update] Preserving ready-to-install status while staged update awaits installation');
       return;

@@ -152,41 +152,41 @@ async function waitForPortClosed(port: number): Promise<boolean> {
 }
 
 async function waitForRelaunchedPid(pidFile: string, previousPid: number): Promise<number> {
-  const deadline = Date.now() + 300_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     try {
       const pid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
       if (Number.isInteger(pid) && pid > 0 && pid !== previousPid) return pid;
     } catch {
     }
-    await delay(500);
+    await delay(100);
   }
   throw new Error(`Relaunched Electron process PID was not written to ${pidFile}`);
 }
 
 async function connectToRelaunchedPage(devToolsPort: number, mainPort: number): Promise<{ browser: Browser; page: Page }> {
   const endpoint = `http://127.0.0.1:${devToolsPort}`;
-  const deadline = Date.now() + 120_000;
+  const deadline = Date.now() + 30_000;
   let lastError: unknown;
   while (Date.now() < deadline) {
     let browser: Browser | undefined;
     try {
       browser = await chromium.connectOverCDP(endpoint);
-      const pageDeadline = Math.min(deadline, Date.now() + 15_000);
+      const pageDeadline = Math.min(deadline, Date.now() + 10_000);
       while (Date.now() < pageDeadline) {
         const pages = browser.contexts().flatMap((context) => context.pages());
         const page = pages.find((candidate) => {
           try { return new URL(candidate.url()).port === String(mainPort); } catch { return false; }
         });
         if (page) return { browser, page };
-        await delay(500);
+        await delay(200);
       }
       await browser.close().catch(() => {});
     } catch (error) {
       lastError = error;
       if (browser) await browser.close().catch(() => {});
     }
-    await delay(500);
+    await delay(200);
   }
   throw new Error(`Relaunched Electron page did not become available: ${String(lastError || 'unexpected CDP state')}`);
 }
@@ -344,7 +344,12 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
   let relaunchedPid: number | null = null;
   try {
     await runSeed(env);
-    app = await electron.launch({ cwd: repoRoot, args: ['.', `--remote-debugging-port=${ports.devTools}`], env });
+    app = await electron.launch({
+      executablePath: electronPath,
+      cwd: repoRoot,
+      args: ['.', `--remote-debugging-port=${ports.devTools}`],
+      env,
+    });
     const initialPid = app.process().pid;
     app.on('console', (message) => console.log(`[Native Electron] ${message.text()}`));
     let activePage = await app.firstWindow();

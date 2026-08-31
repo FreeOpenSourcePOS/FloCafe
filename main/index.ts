@@ -3,24 +3,6 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 
-for (const arg of process.argv) {
-  if (arg.startsWith('--env:')) {
-    const eqIdx = arg.indexOf('=');
-    if (eqIdx !== -1) {
-      const key = arg.slice(6, eqIdx);
-      const val = arg.slice(eqIdx + 1);
-      process.env[key] = val;
-    }
-  }
-}
-
-if (process.env.FLO_E2E_PID_FILE) {
-  try {
-    fs.writeFileSync(process.env.FLO_E2E_PID_FILE, String(process.pid));
-  } catch {
-    // Non-fatal if PID file cannot be written immediately
-  }
-}
 import { Bonjour } from 'bonjour-service';
 import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError, now, withDatabaseRequest } from './db';
 import { BETA_CHANNEL_SETTING_KEY, parseStoredBetaChannelEnabled, resolveUpdateChannel } from './update-channel';
@@ -251,7 +233,9 @@ function setupAutoUpdater(): void {
     getPhase: () => updaterPhase,
     setPhase: (phase) => { updaterPhase = phase; },
     isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+    isInstallingUpdate: () => isInstallingUpdate,
     setUpdateStatus,
+    onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
     logInfo: (message, detail) => log.info(message, detail),
   }));
 }
@@ -463,46 +447,22 @@ function recoverFailedWindow(failedWindow: BrowserWindow): void {
 }
 
 function performAppRelaunch(): void {
-  // Release the single-instance lock so the relaunched process can acquire it
-  // immediately (especially important on Linux where lock release may lag exit).
-  if (gotSingleInstanceLock) {
-    try { app.releaseSingleInstanceLock(); } catch { /* non-fatal */ }
-  }
   if (process.defaultApp || !app.isPackaged) {
     const relaunchArgs = process.argv.slice(1).map((arg) => (arg === '.' ? process.cwd() : arg));
-    if (process.argv.includes('--no-sandbox') && !relaunchArgs.includes('--no-sandbox')) {
+    // Playwright applies Chromium switches through app.commandLine, and its
+    // Electron loader removes those injected switches from process.argv. Read
+    // the effective command line so a Linux relaunch retains the sandbox flags
+    // it needs to start under CI.
+    if (app.commandLine.hasSwitch('no-sandbox') && !relaunchArgs.includes('--no-sandbox')) {
       relaunchArgs.push('--no-sandbox');
     }
-    if (process.argv.includes('--disable-gpu') && !relaunchArgs.includes('--disable-gpu')) {
+    if (app.commandLine.hasSwitch('disable-gpu') && !relaunchArgs.includes('--disable-gpu')) {
       relaunchArgs.push('--disable-gpu');
     }
-    if (process.argv.includes('--disable-dev-shm-usage') && !relaunchArgs.includes('--disable-dev-shm-usage')) {
+    if (app.commandLine.hasSwitch('disable-dev-shm-usage') && !relaunchArgs.includes('--disable-dev-shm-usage')) {
       relaunchArgs.push('--disable-dev-shm-usage');
     }
-    const envVarsToForward = [
-      'NODE_ENV', 'PORT', 'KDS_PORT', 'SERVER_APP_PORT', 'JWT_SECRET',
-      'FLO_E2E_USER_DATA_DIR', 'FLO_E2E_DB_PATH', 'FLO_E2E_PID_FILE',
-      'FLO_E2E_SKIP_OPTIONAL_NETWORK', 'FLO_MATRIX_OFFLINE',
-    ];
-    for (const key of envVarsToForward) {
-      if (process.env[key] !== undefined && !relaunchArgs.some((arg) => arg.startsWith(`--env:${key}=`))) {
-        relaunchArgs.push(`--env:${key}=${process.env[key]}`);
-      }
-    }
-    if (process.env.FLO_E2E_PID_FILE) {
-      const env = { ...process.env };
-      const childArgs = process.defaultApp
-        ? [process.argv[1], ...relaunchArgs.filter((arg) => arg !== process.argv[1])]
-        : relaunchArgs;
-      const child = require('node:child_process').spawn(process.execPath, childArgs, {
-        detached: true,
-        stdio: 'ignore',
-        env,
-      });
-      child.unref();
-    } else {
-      app.relaunch({ args: relaunchArgs });
-    }
+    app.relaunch({ execPath: process.execPath, args: relaunchArgs });
   } else {
     app.relaunch();
   }
@@ -520,11 +480,7 @@ function requestRuntimeRelaunch(reason: string): void {
       try {
         log.info('[Lifecycle] Runtime cleanup finished; relaunching Flo');
         performAppRelaunch();
-        if (process.env.FLO_E2E_PID_FILE) {
-          process.exit(0);
-        } else {
-          app.exit(0);
-        }
+        app.exit(0);
       } catch (error) {
         log.error('[Lifecycle] Runtime relaunch failed after cleanup:', error);
         app.exit(1);
@@ -534,11 +490,7 @@ function requestRuntimeRelaunch(reason: string): void {
       log.error('[Lifecycle] Runtime recovery cleanup failed; relaunching anyway:', error);
       try {
         performAppRelaunch();
-        if (process.env.FLO_E2E_PID_FILE) {
-          process.exit(0);
-        } else {
-          app.exit(0);
-        }
+        app.exit(0);
       } catch (relaunchError) {
         log.error('[Lifecycle] Runtime relaunch failed after cleanup error:', relaunchError);
         app.exit(1);

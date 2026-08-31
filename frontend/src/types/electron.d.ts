@@ -22,6 +22,9 @@ export interface ElectronAPI {
   // Settings
   getSettings: () => Promise<Record<string, string | null> | ElectronIpcError>;
   setSetting: (key: string, value: string) => Promise<ElectronActionResult | ElectronIpcError>;
+  // Effective-theme push (gh-513): renderer resolves the user's theme_mode
+  // and tells main so the native titleBarOverlay can follow.
+  setThemeEffective: (isDark: boolean) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // KDS
   getKdsInfo: () => Promise<KdsInfo | ElectronIpcError>;
@@ -103,6 +106,9 @@ export interface ElectronStatus {
   titleBarEpoch?: number;
   /** Opaque document-scoped readiness nonce, paired with titleBarEpoch. */
   titleBarDocumentNonce?: string;
+  /** Effective palette main last applied to the overlay; optional for
+   * older-main compatibility (gh-513). */
+  effectiveTheme?: 'light' | 'dark';
 }
 
 export type TitleBarMode = 'native-overlay' | 'html-fallback';

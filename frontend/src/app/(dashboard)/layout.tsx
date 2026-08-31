@@ -27,7 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <SidebarInset className="h-full min-h-0 overflow-hidden flex flex-col">
             {/* Mobile-only app bar: below md the sidebar renders as a Sheet with
                 no opener, so expose the trigger here (Refs #241). */}
-            <div className="md:hidden flex items-center px-2 py-1.5 border-b border-gray-200 bg-white shrink-0">
+            <div className="md:hidden flex items-center px-2 py-1.5 border-b border-border bg-card shrink-0">
               <SidebarTrigger className="size-8" aria-label="Open navigation" />
             </div>
             {!isPos && <GlobalNotifications />}

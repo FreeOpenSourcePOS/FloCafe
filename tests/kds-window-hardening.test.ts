@@ -269,7 +269,15 @@ async function run(): Promise<void> {
   assert.equal(kdsWindow.webPreferences.preload, undefined, 'KDS window webPreferences.preload is undefined (bridge removed)');
   assert.equal(kdsWindow.webPreferences.contextIsolation, true, 'context isolation remains enabled');
   assert.equal(kdsWindow.webPreferences.nodeIntegration, false, 'node integration remains disabled');
-  assert.equal(kdsWindow.loadedUrl, 'http://192.168.1.50:3002/kds', 'KDS window loads http://192.168.1.50:3002/kds');
+  // gh-513: open-kds-window appends the current palette via appendThemeQueryParam so
+  // the KDS window's pre-paint script learns the theme without preload access.
+  // Assert both the origin/path invariance and that the theme param is one of the
+  // two resolved palettes (robust to the currentEffectiveIsDark default flipping
+  // between releases).
+  assert.ok(
+    /^http:\/\/192\.168\.1\.50:3002\/kds\?theme=(?:light|dark)$/.test(kdsWindow.loadedUrl),
+    `KDS window loads a themed URL (got ${kdsWindow.loadedUrl})`,
+  );
   log('  ✓ BrowserWindow webPreferences: preload=undefined, contextIsolation=true, nodeIntegration=false');
 
   // 4. Navigation confinement to KDS origin and window-open denial

@@ -1688,7 +1688,12 @@
     "whatsapp": "WhatsApp",
     "whatsappSharing": "WhatsApp Sharing",
     "yes": "Yes",
-    "zeroNoLimit": "(0 = no limit)"
+    "zeroNoLimit": "(0 = no limit)",
+    "tabAppearance": "Appearance",
+    "themeTitle": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

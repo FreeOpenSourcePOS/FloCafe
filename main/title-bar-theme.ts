@@ -93,3 +93,34 @@ export function attachTitleBarThemeSync(
     (nativeTheme as ThemeLike & { off?(event: 'updated', listener: () => void): unknown }).off?.('updated', onUpdated);
   };
 }
+
+export type ThemeMode = 'light' | 'dark' | 'system';
+
+export function isThemeMode(value: unknown): value is ThemeMode {
+  return value === 'light' || value === 'dark' || value === 'system';
+}
+
+/** Absent, null, or unrecognized values resolve to 'system'. */
+export function resolveThemeMode(value: string | null | undefined): ThemeMode {
+  return isThemeMode(value) ? value : 'system';
+}
+
+/** Initial window darkness: explicit modes win; 'system' defers to the OS signal. */
+export function resolveInitialIsDark(mode: ThemeMode, systemPrefersDark: boolean): boolean {
+  return mode === 'dark' || (mode === 'system' && systemPrefersDark);
+}
+
+/**
+ * Adds the current palette to standalone-window URLs (KDS/popup windows have
+ * no preload and a different origin, so their pre-paint script learns the
+ * theme from this param — gh-513 §8).
+ */
+export function appendThemeQueryParam(url: string, isDark: boolean): string {
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set('theme', isDark ? 'dark' : 'light');
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}

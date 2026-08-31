@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   setSetting: (key: string, value: string) => ipcRenderer.invoke('set-setting', key, value),
 
+  // Effective-theme push (gh-513): renderer resolves the user's theme_mode
+  // and tells main so the native titleBarOverlay can follow. Narrow verb,
+  // boolean-only, fire-and-forget on the renderer side.
+  setThemeEffective: (isDark: boolean) => ipcRenderer.invoke('set-theme-effective', isDark),
+
   getKdsInfo: () => ipcRenderer.invoke('get-kds-info'),
   openKdsWindow: () => ipcRenderer.invoke('open-kds-window'),
 

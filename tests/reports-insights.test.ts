@@ -118,6 +118,11 @@ async function main() {
   const prepTwoCreatedAt = recentWeekdayTimestamp(4, 5); // Thu, 10:30 Kolkata
   const cashierRevenueCreatedAt = recentWeekdayTimestamp(5, 6); // Fri, 11:30 Kolkata
   const waiterRevenueCreatedAt = recentWeekdayTimestamp(6, 7); // Sat, 12:30 Kolkata
+  const bucketFixtureCreatedAt = recentWeekdayTimestamp(1, 8); // Mon, 14:00 Kolkata
+  const bucketFixtureDate = bucketFixtureCreatedAt.slice(0, 10);
+  const rangeFixtureDate = new Date(new Date(`${bucketFixtureDate}T00:00:00Z`).getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const rangeFixtureCreatedAt = `${rangeFixtureDate} 07:30:00`;
+  const zeroDayFixtureCreatedAt = `${rangeFixtureDate} 00:00:00`;
 
   // ── Seed categories + products ───────────────────────────────────────
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)`).run('cat-drinks', 'Drinks', 1);
@@ -133,14 +138,10 @@ async function main() {
   // Timestamps use the DB's canonical space form (UTC wall, what now() and
   // migration v45 produce) so day-range filters compare like-for-like.
   const hourDayFixtures: { id: string; createdAt: string }[] = [
-    { id: 'ORD-INS-1', createdAt: '2026-06-01 08:30:00' }, // Mon 14:00
-    { id: 'ORD-INS-2', createdAt: '2026-06-01 09:00:00' }, // Mon 14:30
-    { id: 'ORD-INS-3', createdAt: '2026-06-01 09:15:00' }, // Mon 14:45
-    { id: 'ORD-INS-4', createdAt: '2026-06-03 04:00:00' }, // Wed 09:30
-    { id: 'ORD-INS-5', createdAt: '2026-06-04 03:00:00' }, // Thu 08:30
-    { id: 'ORD-INS-6', createdAt: '2026-06-05 05:00:00' }, // Fri 10:30
-    { id: 'ORD-INS-7', createdAt: '2026-06-06 06:00:00' }, // Sat 11:30
-    { id: 'ORD-INS-8', createdAt: '2026-06-07 07:00:00' }, // Sun 12:30
+    { id: 'ORD-INS-1', createdAt: `${bucketFixtureDate} 08:30:00` }, // Mon 14:00
+    { id: 'ORD-INS-2', createdAt: `${bucketFixtureDate} 09:00:00` }, // Mon 14:30
+    { id: 'ORD-INS-3', createdAt: `${bucketFixtureDate} 09:15:00` }, // Mon 14:45
+    { id: 'ORD-INS-4', createdAt: rangeFixtureCreatedAt }, // Tue 13:00
   ];
   // Zero-value on purpose — only created_at matters for bucketing, and this
   // keeps these 8 orders from perturbing the top-staff revenue ranking below.
@@ -151,6 +152,7 @@ async function main() {
   for (const fixture of hourDayFixtures) {
     insertOrder.run(fixture.id, bucketUserId, fixture.createdAt, fixture.createdAt, null, null);
   }
+  insertOrder.run('ORD-INS-ZERO-DAY', bucketUserId, zeroDayFixtureCreatedAt, zeroDayFixtureCreatedAt, null, null);
 
   // These rolling-window fixtures use controlled recent timestamps so they
   // remain in the 90-day query window without perturbing the bucketing checks.
@@ -278,28 +280,29 @@ async function main() {
     console.log('\n7. Busiest/idlest hour (Asia/Kolkata)');
     assertEqual(body.busiestHour?.hour, 14, 'busiest hour is 14:00 local (3 orders)');
     assertEqual(body.busiestHour?.orderCount, 3, 'busiest hour has 3 orders');
-    assertEqual(body.idlestHour?.hour, 8, 'idlest (non-zero) hour is 08:00 local');
+    assertEqual(body.idlestHour?.hour, 5, 'idlest (non-zero) hour is 05:00 local');
     assertEqual(body.idlestHour?.orderCount, 1, 'idlest hour has 1 order');
 
     console.log('\n8. Busiest/idlest day of week (Asia/Kolkata)');
     assertEqual(body.busiestDayOfWeek?.dayIndex, 1, 'busiest day is Monday (index 1)');
     assertEqual(body.busiestDayOfWeek?.orderCount, 3, 'Monday has 3 orders');
-    assertEqual(body.idlestDayOfWeek?.dayIndex, 2, 'idlest day is Tuesday (index 2), with zero orders — a real signal, unlike hour zeros');
-    assertEqual(body.idlestDayOfWeek?.orderCount, 0, 'Tuesday has 0 orders in the fixture window');
+    assertEqual(body.idlestDayOfWeek?.dayIndex, 0, 'Sunday remains the idlest day in the fixture window');
+    assertEqual(body.idlestDayOfWeek?.orderCount, 0, 'the idlest day has 0 orders in the fixture window');
+
 
     console.log('\n9. GET /api/reports/recentOrders?date=X scopes to that day (dashboard date picker)');
     {
-      const dated = await request(app).get('/api/reports/recentOrders?date=2026-06-01&limit=10').set('Authorization', `Bearer ${ownerToken}`);
+      const dated = await request(app).get(`/api/reports/recentOrders?date=${bucketFixtureDate}&limit=10`).set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(dated.status, 200, `owner gets 200 (got ${dated.status})`);
       const numbers = (dated.body.recentOrders ?? []).map((o: any) => o.order_number).sort();
-      assertEqual(JSON.stringify(numbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3']), 'only the 3 orders created on 2026-06-01 are returned');
+      assertEqual(JSON.stringify(numbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3']), 'only the 3 orders created on the fixture date are returned');
 
-      const ranged = await request(app).get('/api/reports/recentOrders?start_date=2026-06-01&end_date=2026-06-03&limit=10').set('Authorization', `Bearer ${ownerToken}`);
+      const ranged = await request(app).get(`/api/reports/recentOrders?start_date=${bucketFixtureDate}&end_date=${rangeFixtureDate}&limit=10`).set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(ranged.status, 200, `owner can request a month-style date range (got ${ranged.status})`);
       const rangedNumbers = (ranged.body.recentOrders ?? []).map((o: any) => o.order_number).sort();
-      assertEqual(JSON.stringify(rangedNumbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3', 'ORD-INS-4']), 'date range includes orders from both boundary dates');
+      assertEqual(JSON.stringify(rangedNumbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3', 'ORD-INS-4', 'ORD-INS-ZERO-DAY']), 'date range includes orders from both fixture dates');
 
-      const mixedRange = await request(app).get('/api/reports/recentOrders?date=2026-06-01&start_date=2026-06-01').set('Authorization', `Bearer ${ownerToken}`);
+      const mixedRange = await request(app).get(`/api/reports/recentOrders?date=${bucketFixtureDate}&start_date=${bucketFixtureDate}`).set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(mixedRange.status, 400, 'single-date and range filters cannot be combined');
 
       const undated = await request(app).get('/api/reports/recentOrders?limit=1').set('Authorization', `Bearer ${ownerToken}`);

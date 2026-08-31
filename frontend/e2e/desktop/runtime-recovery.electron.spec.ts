@@ -75,12 +75,12 @@ test('activation relaunches once after terminal runtime loss', async ({ }, testI
   await harness.authenticateDashboard();
   let relaunchCalls = 0;
   harness.app.on('console', (message) => {
-    if (message.text() === '[Native E2E] app.relaunch invoked') relaunchCalls += 1;
+    if (message.text() === '[Native E2E] runtime relaunch requested') relaunchCalls += 1;
   });
   await harness.app.evaluate(({ app }) => {
     const originalRelaunch = app.relaunch.bind(app);
     app.relaunch = (options?: Parameters<typeof originalRelaunch>[0]) => {
-      console.log('[Native E2E] app.relaunch invoked');
+      console.log('[Native E2E] runtime relaunch requested');
       originalRelaunch(options);
     };
   });

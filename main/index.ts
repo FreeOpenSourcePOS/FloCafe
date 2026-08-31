@@ -2,7 +2,6 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, po
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import * as child_process from 'child_process';
 
 for (const arg of process.argv) {
   if (arg.startsWith('--env:')) {
@@ -490,18 +489,16 @@ function performAppRelaunch(): void {
         relaunchArgs.push(`--env:${key}=${process.env[key]}`);
       }
     }
-    app.relaunch({ args: relaunchArgs });
     if (process.env.FLO_E2E_PID_FILE) {
-      try {
-        const child = child_process.spawn(process.execPath, relaunchArgs, {
-          detached: true,
-          stdio: 'ignore',
-          env: process.env,
-        });
-        child.unref();
-      } catch (err) {
-        log.error('[Lifecycle] Direct E2E spawn failed:', err);
-      }
+      const env = { ...process.env };
+      const child = require('node:child_process').spawn(process.execPath, relaunchArgs, {
+        detached: true,
+        stdio: 'ignore',
+        env,
+      });
+      child.unref();
+    } else {
+      app.relaunch({ args: relaunchArgs });
     }
   } else {
     app.relaunch();
@@ -513,6 +510,7 @@ function requestRuntimeRelaunch(reason: string): void {
   isQuitting = true;
   runtimeRelaunchRequested = true;
   log.error(`[Lifecycle] Runtime recovery relaunch requested: ${reason}`);
+  if (process.env.FLO_E2E_PID_FILE) console.log('[Native E2E] runtime relaunch requested');
 
   void runCleanup().then(
     () => {

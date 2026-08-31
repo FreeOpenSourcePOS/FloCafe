@@ -26,13 +26,13 @@ export function KdsColumn({ status, count, children }: KdsColumnProps) {
       <div className={`flex items-center gap-2 px-3 py-2 ${config.bg} rounded-t-lg border-2 ${config.border} border-b-0`}>
         <div className={`w-2 h-2 rounded-full ${config.color}`} />
         <span className={`text-base font-semibold ${config.text}`}>{statusLabel}</span>
-        <span className="ms-auto text-xs px-1.5 py-0.5 rounded-full bg-white/70 text-gray-700 font-medium tabular-nums">
+        <span className="ms-auto text-xs px-1.5 py-0.5 rounded-full bg-card/70 text-foreground font-medium tabular-nums">
           {count}
         </span>
       </div>
       <div
         ref={ref}
-        className={`flex-1 border-2 ${config.border} border-t-0 rounded-b-lg p-2 space-y-2 overflow-y-auto bg-gray-50/40 transition-colors ${
+        className={`flex-1 border-2 ${config.border} border-t-0 rounded-b-lg p-2 space-y-2 overflow-y-auto bg-muted/40 transition-colors ${
           isDropTarget ? 'bg-blue-50 ring-2 ring-blue-300 ring-inset' : ''
         }`}
         style={{ minHeight: '60vh', maxHeight: 'calc(100vh - 220px)' }}

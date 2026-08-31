@@ -205,6 +205,7 @@ test('browser Electron fixture exposes the complete renderer API and explicit in
     'savePrinter',
     'setBetaChannel',
     'setSetting',
+    'setThemeEffective',
     'windowAction',
     'windowReady',
   ]);

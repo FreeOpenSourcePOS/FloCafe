@@ -37,7 +37,7 @@ const PRESET_TAGS: { key: string; labelKey: PosKey }[] = [
 ];
 
 const CATEGORY_COLORS: { key: string; labelKey: ProductsKey; bg: string; text: string }[] = [
-  { key: '', labelKey: 'colorNone', bg: 'bg-gray-100', text: 'text-gray-600' },
+  { key: '', labelKey: 'colorNone', bg: 'bg-muted', text: 'text-muted-foreground' },
   { key: 'red', labelKey: 'colorRed', bg: 'bg-red-100', text: 'text-red-700' },
   { key: 'orange', labelKey: 'colorOrange', bg: 'bg-orange-100', text: 'text-orange-700' },
   { key: 'amber', labelKey: 'colorAmber', bg: 'bg-amber-100', text: 'text-amber-700' },
@@ -480,18 +480,18 @@ export default function ProductsPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
       </div>
 
       <div className="flex gap-1 mb-6 border-b">
-        <button onClick={() => setActiveTab('products')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'products' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+        <button onClick={() => setActiveTab('products')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'products' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
           <Package size={16} /> {t('tabProducts')}
         </button>
-        <button onClick={() => setActiveTab('categories')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'categories' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+        <button onClick={() => setActiveTab('categories')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'categories' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
           <Folder size={16} /> {t('tabCategories')}
         </button>
         {isRestaurant && (
-          <button onClick={() => setActiveTab('addons')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'addons' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          <button onClick={() => setActiveTab('addons')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'addons' ? 'border-brand text-brand' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
             <Puzzle size={16} /> {t('tabAddonGroups')}
           </button>
         )}
@@ -514,22 +514,22 @@ export default function ProductsPage() {
           </div>
 
       {/* Product Table */}
-      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-50">
+          <thead className="bg-muted">
             <tr>
-              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('columnProduct')}</th>
-              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('columnCategory')}</th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('columnAddons')}</th>
-              <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase">{t('columnPrice')}</th>
-              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('columnTax')}</th>
-              {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('columnCashback')}</th>}
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('columnStock')}</th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('columnStatus')}</th>
-              <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase">{t('columnActions')}</th>
+              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnProduct')}</th>
+              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCategory')}</th>
+              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnAddons')}</th>
+              <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnPrice')}</th>
+              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnTax')}</th>
+              {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnCashback')}</th>}
+              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStock')}</th>
+              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStatus')}</th>
+              <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border">
             {products.map((product) => {
               const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
               const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
@@ -538,7 +538,7 @@ export default function ProductsPage() {
                 ? (matchedTaxCategory ? taxCategoryOptionLabel(matchedTaxCategory) : product.tax_category_id)
                 : '—';
               return (
-              <tr key={product.id} className="hover:bg-gray-50">
+              <tr key={product.id} className="hover:bg-muted">
                 <td className="p-4 max-w-[220px]">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 relative flex items-center justify-center">
@@ -560,7 +560,7 @@ export default function ProductsPage() {
                       )}
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900">{product.name}</p>
+                      <p className="font-medium text-foreground">{product.name}</p>
                       {product.sku && <p className="text-xs text-gray-400 mt-0.5">{t('skuLabel', { sku: product.sku })}</p>}
                       {product.barcode && <p className="text-xs text-gray-400 mt-0.5 font-mono">{t('barcodeLabel', { barcode: product.barcode })}</p>}
                       {product.tags && product.tags.length > 0 && (
@@ -571,7 +571,7 @@ export default function ProductsPage() {
                     </div>
                   </div>
                 </td>
-                <td className="p-4 text-sm text-gray-600">
+                <td className="p-4 text-sm text-muted-foreground">
                   <div className="flex flex-col gap-0.5">
                     <span>{product.category?.name || '—'}</span>
                     {isCategoryInactive && (
@@ -594,7 +594,7 @@ export default function ProductsPage() {
                   <p className="font-medium">{fmt(Number(product.price))}</p>
                   {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">{t('costLabel', { value: fmt(Number(product.cost_price)) })}</p>}
                 </td>
-                <td className="p-4 text-sm text-gray-600">
+                <td className="p-4 text-sm text-muted-foreground">
                   <div className="flex flex-col gap-0.5">
                     <span>{taxLabel}</span>
                     {!product.tax_category_id && taxCategories.length > 0 && (
@@ -605,7 +605,7 @@ export default function ProductsPage() {
                   </div>
                 </td>
                 {loyaltyEnabled && (
-                  <td className="p-4 text-sm text-gray-600">
+                  <td className="p-4 text-sm text-muted-foreground">
                     {product.cb_percent === null || product.cb_percent === undefined ? (
                       <span>{globalCashbackPercent}% <span className="text-gray-400 text-xs">({t('cashbackGlobalBadge')})</span></span>
                     ) : product.cb_percent === 0 ? (
@@ -617,7 +617,7 @@ export default function ProductsPage() {
                 )}
                 <td className="p-4 text-center">
                   {product.track_inventory ? (
-                    <span className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-gray-900'}`}>
+                    <span className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-foreground'}`}>
                       {product.stock_quantity <= 0 ? tPos('outOfStock') : product.stock_quantity}
                     </span>
                   ) : (
@@ -626,7 +626,7 @@ export default function ProductsPage() {
                 </td>
                 <td className="p-4 text-center">
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    product.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
+                    product.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'
                   }`}>
                     {product.is_active ? tCommon('active') : tCommon('inactive')}
                   </span>
@@ -654,32 +654,32 @@ export default function ProductsPage() {
           </tbody>
         </table>
         {products.length === 0 && (
-          <p className="text-center text-gray-500 py-12">{t('empty')}</p>
+          <p className="text-center text-muted-foreground py-12">{t('empty')}</p>
         )}
       </div>
 
       {/* Product Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
-            <div className="flex justify-between items-center p-6 border-b border-gray-100 shrink-0">
+          <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
               <h2 className="text-lg font-bold">{editingProduct ? t('editProductTitle') : t('addProductTitle')}</h2>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+              <button onClick={resetForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
             </div>
             <div className="p-6 overflow-y-auto flex-1">
               <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
+                <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
               </div>
               <div>
-                <label htmlFor="product-description" className="block text-sm font-medium text-gray-700 mb-1">{t('categoryDescription')}</label>
+                <label htmlFor="product-description" className="block text-sm font-medium text-foreground mb-1">{t('categoryDescription')}</label>
                 <textarea id="product-description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" rows={2} />
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" rows={2} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldImage')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{t('fieldImage')}</label>
                 <ImageUploader
                   value={form.image_url}
                   onChange={(val) => {
@@ -691,29 +691,29 @@ export default function ProductsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldCategory')}<span className="text-red-500 ms-1">*</span></label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldCategory')}<span className="text-red-500 ms-1">*</span></label>
                   <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required>
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required>
                     <option value="">{t('selectPlaceholder')}</option>
                     {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldSku')}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldSku')}</label>
                   <input type="text" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldBarcode')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{t('fieldBarcode')}</label>
                 <input type="text" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })}
                   placeholder={t('fieldBarcodePlaceholder')}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none font-mono" />
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none font-mono" />
                 <p className="text-xs text-gray-400 mt-1">{t('fieldBarcodeHint')}</p>
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldSaleUnit')}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldSaleUnit')}</label>
                   <select
                     value={form.sale_unit}
                     onChange={(e) => {
@@ -724,7 +724,7 @@ export default function ProductsPage() {
                         allow_fractional_quantity: saleUnit === 'each' ? false : true,
                       });
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
                   >
                     <option value="each">{t('saleUnitEach')}</option>
                     <option value="kg">{t('saleUnitKg')}</option>
@@ -733,14 +733,14 @@ export default function ProductsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldWeightPrecision')}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldWeightPrecision')}</label>
                   <input
                     type="number"
                     min="0"
                     max="4"
                     value={form.weight_precision}
                     onChange={(e) => setForm({ ...form, weight_precision: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
                   />
                 </div>
                 <label className="flex items-center gap-2 pt-7">
@@ -748,36 +748,36 @@ export default function ProductsPage() {
                     type="checkbox"
                     checked={form.allow_fractional_quantity}
                     onChange={(e) => setForm({ ...form, allow_fractional_quantity: e.target.checked })}
-                    className="rounded border-gray-300 text-brand focus:ring-brand"
+                    className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                   />
-                  <span className="text-sm text-gray-700">{t('fieldAllowFractionalQuantity')}</span>
+                  <span className="text-sm text-foreground">{t('fieldAllowFractionalQuantity')}</span>
                 </label>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('priceLabel', { currency })}<span className="text-red-500 ms-1">*</span></label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{t('priceLabel', { currency })}<span className="text-red-500 ms-1">*</span></label>
                   <input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
                     onWheel={(e) => e.currentTarget.blur()}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldCostPrice')}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldCostPrice')}</label>
                   <input type="number" step="0.01" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
                     onWheel={(e) => e.currentTarget.blur()}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
               </div>
               {loyaltyEnabled && (
-                <div className="bg-gray-50 p-4 rounded-xl space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">{t('cashbackLabel')}</label>
+                <div className="bg-muted p-4 rounded-xl space-y-2">
+                  <label className="block text-sm font-medium text-foreground">{t('cashbackLabel')}</label>
                   <div className="flex items-center gap-2">
                     <input type="number" step="0.1" min="0" max="100" value={form.cb_percent}
                       onChange={(e) => setForm({ ...form, cb_percent: e.target.value })}
                       placeholder={String(globalCashbackPercent)}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                    <span className="text-gray-500 font-medium">%</span>
+                      className="w-24 px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                    <span className="text-muted-foreground font-medium">%</span>
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     {form.cb_percent === ''
                       ? t('cashbackUsingGlobal', { rate: globalCashbackPercent })
                       : t('cashbackOverrideHint')}
@@ -785,9 +785,9 @@ export default function ProductsPage() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('taxRateGroupLabel')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{t('taxRateGroupLabel')}</label>
                 <select value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none">
                   <option value="">{t('taxNoTax')}</option>
                   {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{taxCategoryOptionLabel(tc)}</option>)}
                 </select>
@@ -800,9 +800,9 @@ export default function ProductsPage() {
               </div>
               {form.tax_category_id ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('taxBehaviorLabel')}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{t('taxBehaviorLabel')}</label>
                   <select value={form.tax_behavior} onChange={(e) => setForm({ ...form, tax_behavior: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none">
                     <option value="country_default">{t('taxCountryDefault')}</option>
                     <option value="inclusive">{t('taxInclusive')}</option>
                     <option value="exclusive">{t('taxExclusive')}</option>
@@ -816,7 +816,7 @@ export default function ProductsPage() {
                 </p>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">{t('fieldTags')}</label>
+                <label className="block text-sm font-medium text-foreground mb-2">{t('fieldTags')}</label>
                 {/* Selected tags */}
                 {form.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mb-2">
@@ -837,7 +837,7 @@ export default function ProductsPage() {
                       key={pt.key}
                       type="button"
                       onClick={() => setForm((prev) => ({ ...prev, tags: [...prev.tags, pt.key] }))}
-                      className="px-2 py-1 text-xs border border-gray-200 rounded-lg text-gray-600 hover:border-brand hover:text-brand transition-colors"
+                      className="px-2 py-1 text-xs border border-border rounded-lg text-muted-foreground hover:border-brand hover:text-brand transition-colors"
                     >
                       + {tPos(pt.labelKey)}
                     </button>
@@ -859,7 +859,7 @@ export default function ProductsPage() {
                       }
                     }}
                     placeholder={t('tagPlaceholder')}
-                    className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
                   />
                   <button
                     type="button"
@@ -869,7 +869,7 @@ export default function ProductsPage() {
                         setForm((prev) => ({ ...prev, tags: [...prev.tags, val], customTag: '' }));
                       }
                     }}
-                    className="px-3 py-1.5 text-sm bg-gray-100 rounded-lg hover:bg-gray-200 text-gray-600"
+                    className="px-3 py-1.5 text-sm bg-muted rounded-lg hover:bg-muted text-muted-foreground"
                   >
                     {tCommon('add')}
                   </button>
@@ -877,8 +877,8 @@ export default function ProductsPage() {
               </div>
               {isRestaurant && addonGroups.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">{t('fieldAddonGroups')}</label>
-                  <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3">
+                  <label className="block text-sm font-medium text-foreground mb-2">{t('fieldAddonGroups')}</label>
+                  <div className="space-y-2 max-h-40 overflow-y-auto border border-border rounded-lg p-3">
                     {addonGroups.map((group) => {
                       const isChecked = form.addon_group_ids.includes(group.id);
                       return (
@@ -896,11 +896,11 @@ export default function ProductsPage() {
                                   : prev.addon_group_ids.filter((id) => id !== group.id),
                               }));
                             }}
-                            className="rounded border-gray-300 text-brand focus:ring-brand"
+                            className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                           />
                           <label htmlFor={`addon-group-${group.id}`} className="flex items-center gap-2 cursor-pointer select-none">
-                            <span className="text-sm text-gray-700">{group.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
+                            <span className="text-sm text-foreground">{group.name}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>
                               {group.is_required ? t('required') : t('optional')}
                             </span>
                           </label>
@@ -913,26 +913,26 @@ export default function ProductsPage() {
               <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={form.track_inventory} onChange={(e) => setForm({ ...form, track_inventory: e.target.checked })}
-                    className="rounded border-gray-300 text-brand focus:ring-brand" />
-                  <span className="text-sm text-gray-700">{t('fieldTrackInventory')}</span>
+                    className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                  <span className="text-sm text-foreground">{t('fieldTrackInventory')}</span>
                 </label>
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                    className="rounded border-gray-300 text-brand focus:ring-brand" />
-                  <span className="text-sm text-gray-700">{t('fieldActive')}</span>
+                    className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                  <span className="text-sm text-foreground">{t('fieldActive')}</span>
                 </label>
               </div>
               {!!form.track_inventory && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldStock')}<span className="text-red-500 ms-1">*</span></label>
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldStock')}<span className="text-red-500 ms-1">*</span></label>
                     <input type="number" min="0" value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldLowStockThreshold')}</label>
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldLowStockThreshold')}</label>
                     <input type="number" min="0" value={form.low_stock_threshold} onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                   </div>
                 </div>
               )}
@@ -957,29 +957,29 @@ export default function ProductsPage() {
               <Plus size={16} className="me-1" /> {t('addCategory')}
             </Button>
           </div>
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="bg-card rounded-xl border border-border overflow-hidden">
             <table className="w-full">
-              <thead className="bg-gray-50">
+              <thead className="bg-muted">
                 <tr>
-                  <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('categoryName')}</th>
-                  <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('categoryColor')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('columnStatus')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase">{t('columnActions')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('categoryName')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('categoryColor')}</th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnStatus')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {categories.map((cat) => {
                   const colorObj = CATEGORY_COLORS.find((c) => c.key === cat.color);
                   return (
-                    <tr key={cat.id} className="hover:bg-gray-50">
-                      <td className="p-4 font-medium text-gray-900">{cat.name}</td>
+                    <tr key={cat.id} className="hover:bg-muted">
+                      <td className="p-4 font-medium text-foreground">{cat.name}</td>
                       <td className="p-4">
                         {colorObj ? (
                           <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-medium ${colorObj.bg} ${colorObj.text}`}>{t(colorObj.labelKey)}</span>
                         ) : <span className="text-gray-400 text-sm">—</span>}
                       </td>
                       <td className="p-4 text-center">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${cat.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${cat.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}>
                           {cat.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
@@ -998,27 +998,27 @@ export default function ProductsPage() {
                 })}
               </tbody>
             </table>
-            {categories.length === 0 && <p className="text-center text-gray-500 py-12">{t('categoryEmpty')}</p>}
+            {categories.length === 0 && <p className="text-center text-muted-foreground py-12">{t('categoryEmpty')}</p>}
           </div>
 
           {showForm && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+              <div className="bg-card rounded-2xl p-6 w-full max-w-md">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg font-bold">{editingCategory ? t('editCategoryTitle') : t('addCategoryTitle')}</h2>
-                  <button onClick={resetCategoryForm} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+                  <button onClick={resetCategoryForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
                 </div>
                 <form onSubmit={handleCategorySubmit} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
-                    <input type="text" value={categoryForm.name} onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
+                    <input type="text" value={categoryForm.name} onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('categoryDescription')}</label>
-                    <textarea value={categoryForm.description} onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" rows={2} />
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('categoryDescription')}</label>
+                    <textarea value={categoryForm.description} onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" rows={2} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('colorLabel')}</label>
+                    <label className="block text-sm font-medium text-foreground mb-2">{t('colorLabel')}</label>
                     <div className="flex flex-wrap gap-2">
                       {CATEGORY_COLORS.map((c) => (
                         <button type="button" key={c.key} onClick={() => setCategoryForm({ ...categoryForm, color: c.key })} className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 ${c.key === categoryForm.color ? 'border-brand' : 'border-transparent'} ${c.bg} ${c.text}`}>{t(c.labelKey)}</button>
@@ -1026,8 +1026,8 @@ export default function ProductsPage() {
                     </div>
                   </div>
                   <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={categoryForm.is_active} onChange={(e) => setCategoryForm({ ...categoryForm, is_active: e.target.checked })} className="rounded border-gray-300 text-brand focus:ring-brand" />
-                    <span className="text-sm text-gray-700">{t('fieldActive')}</span>
+                    <input type="checkbox" checked={categoryForm.is_active} onChange={(e) => setCategoryForm({ ...categoryForm, is_active: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                    <span className="text-sm text-foreground">{t('fieldActive')}</span>
                   </label>
                   <Button type="submit" className="w-full">{editingCategory ? tCommon('update') : tCommon('create')}</Button>
                 </form>
@@ -1047,26 +1047,26 @@ export default function ProductsPage() {
               <Plus size={16} className="me-1" /> {t('addAddonGroup')}
             </Button>
           </div>
-          <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <div className="bg-card rounded-xl border border-border overflow-hidden">
             <table className="w-full">
-              <thead className="bg-gray-50">
+              <thead className="bg-muted">
                 <tr>
-                  <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('categoryName')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('columnRequired')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('columnSelection')}</th>
-                  <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('columnAddons')}</th>
-                  <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase">{t('columnActions')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase">{t('categoryName')}</th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnRequired')}</th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnSelection')}</th>
+                  <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnAddons')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase">{t('columnActions')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {addonGroups.map((group) => (
-                  <tr key={group.id} className="hover:bg-gray-50">
-                    <td className="p-4 font-medium text-gray-900">{group.name}</td>
+                  <tr key={group.id} className="hover:bg-muted">
+                    <td className="p-4 font-medium text-foreground">{group.name}</td>
                     <td className="p-4 text-center">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{group.is_required ? tCommon('yes') : tCommon('no')}</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>{group.is_required ? tCommon('yes') : tCommon('no')}</span>
                     </td>
-                    <td className="p-4 text-center text-sm text-gray-600">{t('addonSelectionRange', { min: group.min_selection, max: group.max_selection })}</td>
-                    <td className="p-4 text-center text-sm text-gray-600">{group.addons?.length || 0}</td>
+                    <td className="p-4 text-center text-sm text-muted-foreground">{t('addonSelectionRange', { min: group.min_selection, max: group.max_selection })}</td>
+                    <td className="p-4 text-center text-sm text-muted-foreground">{group.addons?.length || 0}</td>
                     <td className="p-4 text-end">
                       <div className="flex gap-2 justify-end">
                         {isOwnerOrManager && (
@@ -1081,59 +1081,59 @@ export default function ProductsPage() {
                 ))}
               </tbody>
             </table>
-            {addonGroups.length === 0 && <p className="text-center text-gray-500 py-12">{t('addonEmpty')}</p>}
+            {addonGroups.length === 0 && <p className="text-center text-muted-foreground py-12">{t('addonEmpty')}</p>}
           </div>
 
           {showAddonModal && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
-                <div className="flex justify-between items-center p-6 border-b border-gray-100 shrink-0">
+              <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+                <div className="flex justify-between items-center p-6 border-b border-border shrink-0">
                   <h2 className="text-lg font-bold">{editingAddonGroup ? t('editAddonGroupTitle') : t('addAddonGroupTitle')}</h2>
-                  <button onClick={resetAddonForm} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+                  <button onClick={resetAddonForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
                 </div>
                 <div className="p-6 overflow-y-auto flex-1">
                   <form onSubmit={handleAddonGroupSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
-                    <input type="text" value={addonForm.name} onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldName')}<span className="text-red-500 ms-1">*</span></label>
+                    <input type="text" value={addonForm.name} onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('categoryDescription')}</label>
-                    <input type="text" value={addonForm.description} onChange={(e) => setAddonForm({ ...addonForm, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('categoryDescription')}</label>
+                    <input type="text" value={addonForm.description} onChange={(e) => setAddonForm({ ...addonForm, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('addonMin')}</label>
-                      <input type="number" min="0" value={addonForm.min_selection} onChange={(e) => setAddonForm({ ...addonForm, min_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                      <label className="block text-sm font-medium text-foreground mb-1">{t('addonMin')}</label>
+                      <input type="number" min="0" value={addonForm.min_selection} onChange={(e) => setAddonForm({ ...addonForm, min_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('addonMax')}</label>
-                      <input type="number" min="0" value={addonForm.max_selection} onChange={(e) => setAddonForm({ ...addonForm, max_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                      <label className="block text-sm font-medium text-foreground mb-1">{t('addonMax')}</label>
+                      <input type="number" min="0" value={addonForm.max_selection} onChange={(e) => setAddonForm({ ...addonForm, max_selection: Number(e.target.value) })} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                     </div>
                   </div>
                   <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={addonForm.is_required} onChange={(e) => setAddonForm({ ...addonForm, is_required: e.target.checked })} className="rounded border-gray-300 text-brand focus:ring-brand" />
-                    <span className="text-sm text-gray-700">{t('addonRequired')}</span>
+                    <input type="checkbox" checked={addonForm.is_required} onChange={(e) => setAddonForm({ ...addonForm, is_required: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                    <span className="text-sm text-foreground">{t('addonRequired')}</span>
                   </label>
                   <label className="flex items-center gap-2">
-                    <input type="checkbox" checked={addonForm.allow_multiple_quantities} onChange={(e) => setAddonForm({ ...addonForm, allow_multiple_quantities: e.target.checked })} className="rounded border-gray-300 text-brand focus:ring-brand" />
-                    <span className="text-sm text-gray-700">{t('addonAllowMultipleQuantities')}</span>
+                    <input type="checkbox" checked={addonForm.allow_multiple_quantities} onChange={(e) => setAddonForm({ ...addonForm, allow_multiple_quantities: e.target.checked })} className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                    <span className="text-sm text-foreground">{t('addonAllowMultipleQuantities')}</span>
                   </label>
                   <div>
                     <div className="flex justify-between items-center mb-2">
-                      <label className="block text-sm font-medium text-gray-700">{t('addonAddons')}</label>
+                      <label className="block text-sm font-medium text-foreground">{t('addonAddons')}</label>
                       <button type="button" onClick={addAddonItem} className="text-xs text-brand hover:underline">{t('addAddonInline')}</button>
                     </div>
                     <div className="space-y-2">
-                      <div className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">
+                      <div className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 px-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                         <span>{t('nameLabel')}</span>
                         <span>{t('columnPrice')}</span>
                         <span aria-hidden="true" />
                       </div>
                       {addonList.map((addon, idx) => (
                         <div key={idx} className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center">
-                          <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder={tCommon('namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                          <input type="number" step="0.01" value={addon.price} onChange={(e) => updateAddonItem(idx, 'price', Number(e.target.value))} onWheel={(e) => e.currentTarget.blur()} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                          <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder={tCommon('namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                          <input type="number" step="0.01" value={addon.price} onChange={(e) => updateAddonItem(idx, 'price', Number(e.target.value))} onWheel={(e) => e.currentTarget.blur()} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                           <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
                         </div>
                       ))}
@@ -1150,21 +1150,21 @@ export default function ProductsPage() {
 
       {showBulkTaxModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('assignTaxCategory')}</h2>
-              <button onClick={() => setShowBulkTaxModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+              <button onClick={() => setShowBulkTaxModal(false)} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
             </div>
             {legacyProducts.length === 0 ? (
-              <p className="text-sm text-gray-500">{t('taxAllAssigned')}</p>
+              <p className="text-sm text-muted-foreground">{t('taxAllAssigned')}</p>
             ) : (
               <>
-                <p className="text-sm text-gray-600 mb-4">
+                <p className="text-sm text-muted-foreground mb-4">
                   {t('taxBulkBody', { count: legacyProducts.length })}
                 </p>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('taxRateGroupLabel')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{t('taxRateGroupLabel')}</label>
                 <select value={bulkTaxCategoryId} onChange={(e) => setBulkTaxCategoryId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none mb-5">
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none mb-5">
                   <option value="">{t('selectPlaceholder')}</option>
                   {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{taxCategoryOptionLabel(tc)}</option>)}
                 </select>
@@ -1182,51 +1182,51 @@ export default function ProductsPage() {
 
       {showCsvModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-lg">
             <div className="flex justify-between items-center mb-5">
               <h2 className="text-lg font-bold">
                 {t('csvModalTitle', { type: csvType === 'categories' ? t('tabCategories') : csvType === 'products' ? t('tabProducts') : t('tabAddonGroups') })}
               </h2>
-              <button onClick={() => setShowCsvModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowCsvModal(false)} className="text-gray-400 hover:text-muted-foreground">
                 <X size={20} />
               </button>
             </div>
 
             <div className="space-y-5">
               {/* Download section */}
-              <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-                <p className="text-sm font-medium text-gray-700">{t('download')}</p>
+              <div className="bg-muted rounded-xl p-4 space-y-3">
+                <p className="text-sm font-medium text-foreground">{t('download')}</p>
                 <div className="flex gap-3">
                   <button
                     onClick={() => downloadCsv(`/menu-csv/template/${csvType}`, `${csvType}-template.csv`)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg bg-white hover:bg-gray-50 font-medium"
+                    className="flex items-center gap-2 px-4 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted font-medium"
                   >
                     <Download size={14} /> {t('csvBlankTemplate')}
                   </button>
                   <button
                     onClick={() => downloadCsv(`/menu-csv/export/${csvType}`, `${csvType}-export.csv`)}
-                    className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg bg-white hover:bg-gray-50 font-medium"
+                    className="flex items-center gap-2 px-4 py-2 text-sm border border-border rounded-lg bg-card hover:bg-muted font-medium"
                   >
                     <Download size={14} /> {t('csvCurrentData')}
                   </button>
                 </div>
                 {csvType === 'products' && (
-                  <p className="text-xs text-gray-500">{t('csvProductsHelp')}</p>
+                  <p className="text-xs text-muted-foreground">{t('csvProductsHelp')}</p>
                 )}
                 {csvType === 'categories' && (
-                  <p className="text-xs text-gray-500">{t('csvCategoriesHelp')}</p>
+                  <p className="text-xs text-muted-foreground">{t('csvCategoriesHelp')}</p>
                 )}
                 {csvType === 'addons' && (
-                  <p className="text-xs text-gray-500">{t('csvAddonsHelp')}</p>
+                  <p className="text-xs text-muted-foreground">{t('csvAddonsHelp')}</p>
                 )}
               </div>
 
               {/* Upload section */}
               <div className="space-y-3">
-                <p className="text-sm font-medium text-gray-700">{t('uploadCsv')}</p>
-                <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
+                <p className="text-sm font-medium text-foreground">{t('uploadCsv')}</p>
+                <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-border rounded-xl cursor-pointer hover:bg-muted transition-colors">
                   <Upload size={20} className="text-gray-400 mb-1" />
-                  <span className="text-sm text-gray-500">
+                  <span className="text-sm text-muted-foreground">
                     {csvFile ? csvFile.name : t('csvChooseFile')}
                   </span>
                   <input
@@ -1245,12 +1245,12 @@ export default function ProductsPage() {
 
               {/* Result */}
               {csvResult && (
-                <div className="rounded-xl border border-gray-100 overflow-hidden">
-                  <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border-b border-gray-100">
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-3 bg-green-50 border-b border-border">
                     <CheckCircle size={15} className="text-green-600" />
                     <span className="text-sm font-medium text-green-800">{t('importComplete')}</span>
                   </div>
-                  <div className="px-4 py-3 text-sm text-gray-700 space-y-1">
+                  <div className="px-4 py-3 text-sm text-foreground space-y-1">
                     {csvType === 'addons' ? (
                       <>
                         <p>{t('csvGroupsCreated')} <span className="font-medium">{String(csvResult.groups_created ?? 0)}</span></p>
@@ -1262,7 +1262,7 @@ export default function ProductsPage() {
                     <p>{tCommon('skipped')} <span className="font-medium">{String(csvResult.skipped ?? 0)}</span></p>
                   </div>
                   {Array.isArray(csvResult.warnings) && (csvResult.warnings as string[]).length > 0 && (
-                    <div className="px-4 py-3 border-t border-gray-100 bg-amber-50">
+                    <div className="px-4 py-3 border-t border-border bg-amber-50">
                       <div className="flex items-center gap-2 mb-2">
                         <AlertCircle size={14} className="text-amber-500" />
                         <span className="text-xs font-medium text-amber-700">{t('csvMissingFields')}</span>
@@ -1275,14 +1275,14 @@ export default function ProductsPage() {
                     </div>
                   )}
                   {Array.isArray(csvResult.errors) && (csvResult.errors as string[]).length > 0 && (
-                    <div className="px-4 py-3 border-t border-gray-100">
+                    <div className="px-4 py-3 border-t border-border">
                       <div className="flex items-center gap-2 mb-2">
                         <AlertCircle size={14} className="text-red-500" />
                         <span className="text-xs font-medium text-red-700">{t('csvSkippedErrors')}</span>
                       </div>
                       <ul className="space-y-1">
                         {(csvResult.errors as string[]).map((e, i) => (
-                          <li key={i} className="text-xs text-gray-600">{e}</li>
+                          <li key={i} className="text-xs text-muted-foreground">{e}</li>
                         ))}
                       </ul>
                     </div>
@@ -1295,21 +1295,21 @@ export default function ProductsPage() {
       )}
       {catDeleteModal.open && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-900">{t('deleteCategoryTitle')}</h2>
-              <button onClick={() => setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 })} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+              <h2 className="text-lg font-bold text-foreground">{t('deleteCategoryTitle')}</h2>
+              <button onClick={() => setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 })} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
             </div>
-            <p className="text-sm text-gray-700 mb-5">
+            <p className="text-sm text-foreground mb-5">
               {t('deleteCategoryBody', { name: catDeleteModal.name, count: catDeleteModal.productCount })}
             </p>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('moveProductsTo')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{t('moveProductsTo')}</label>
                 <select
                   value={catReassignTo}
                   onChange={(e) => setCatReassignTo(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
                 >
                   <option value="">{t('selectCategoryPlaceholder')}</option>
                   {categories
@@ -1324,9 +1324,9 @@ export default function ProductsPage() {
                 {t('moveAndDelete')}
               </Button>
               <div className="relative flex items-center">
-                <div className="flex-grow border-t border-gray-200" />
+                <div className="flex-grow border-t border-border" />
                 <span className="mx-3 text-xs text-gray-400">{tCommon('or')}</span>
-                <div className="flex-grow border-t border-gray-200" />
+                <div className="flex-grow border-t border-border" />
               </div>
               <button
                 onClick={handleCategoryForceDelete}

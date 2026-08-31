@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, po
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as child_process from 'child_process';
 
 for (const arg of process.argv) {
   if (arg.startsWith('--env:')) {
@@ -490,6 +491,18 @@ function performAppRelaunch(): void {
       }
     }
     app.relaunch({ args: relaunchArgs });
+    if (process.env.FLO_E2E_PID_FILE) {
+      try {
+        const child = child_process.spawn(process.execPath, relaunchArgs, {
+          detached: true,
+          stdio: 'ignore',
+          env: process.env,
+        });
+        child.unref();
+      } catch (err) {
+        log.error('[Lifecycle] Direct E2E spawn failed:', err);
+      }
+    }
   } else {
     app.relaunch();
   }
@@ -506,7 +519,11 @@ function requestRuntimeRelaunch(reason: string): void {
       try {
         log.info('[Lifecycle] Runtime cleanup finished; relaunching Flo');
         performAppRelaunch();
-        app.exit(0);
+        if (process.env.FLO_E2E_PID_FILE) {
+          process.exit(0);
+        } else {
+          app.exit(0);
+        }
       } catch (error) {
         log.error('[Lifecycle] Runtime relaunch failed after cleanup:', error);
         app.exit(1);
@@ -516,7 +533,11 @@ function requestRuntimeRelaunch(reason: string): void {
       log.error('[Lifecycle] Runtime recovery cleanup failed; relaunching anyway:', error);
       try {
         performAppRelaunch();
-        app.exit(0);
+        if (process.env.FLO_E2E_PID_FILE) {
+          process.exit(0);
+        } else {
+          app.exit(0);
+        }
       } catch (relaunchError) {
         log.error('[Lifecycle] Runtime relaunch failed after cleanup error:', relaunchError);
         app.exit(1);

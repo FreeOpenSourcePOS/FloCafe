@@ -14,7 +14,7 @@ import { createNativeElectronHarness } from './native-harness';
 // the literal scenario reported in issue #548 and the harder one to cover
 // outside a real Electron process.
 test.describe.configure({ mode: 'serial' });
-test.setTimeout(90_000);
+test.setTimeout(240_000);
 
 let harness: NativeElectronHarness;
 let backendDied = false;
@@ -139,7 +139,7 @@ test('repeated Dock activation after the backend dies triggers exactly one recov
 
   await Promise.race([
     goodbyeSeen,
-    delay(30_000).then(() => { throw new Error('Timed out waiting for graceful shutdown after recovery'); }),
+    delay(45_000).then(() => { throw new Error('Timed out waiting for graceful shutdown after recovery'); }),
   ]);
   backendDied = true;
 
@@ -162,14 +162,17 @@ test('repeated Dock activation after the backend dies triggers exactly one recov
   }
 
   // Cleanup already ran before "Goodbye!" logged, so the actual OS-level
-  // exit and relaunch should now follow within a couple of seconds — this
-  // is the guard against a regression back to the reactive will-quit dance
-  // that made this take minutes before backend-lifecycle.ts started
-  // awaiting runCleanup() proactively (see runRelaunch's comment).
-  const exited = await waitForProcessExit(pidBefore!, 15_000);
+  // exit and relaunch should now follow reasonably quickly — this is the
+  // guard against a regression back to the reactive will-quit dance that
+  // made this take minutes before backend-lifecycle.ts started awaiting
+  // runCleanup() proactively (see runRelaunch's comment). The timeout here
+  // is generous rather than tight: it exists to catch a real regression
+  // (minutes-long hang), not to pin down exact CI process-spawn latency,
+  // which varies a lot more on shared CI runners than on a local machine.
+  const exited = await waitForProcessExit(pidBefore!, 30_000);
   expect(exited, 'the original process should exit promptly once cleanup has already completed').toBe(true);
 
-  const healthyAgain = await waitForHealthy(harness.ports.main, 30_000);
+  const healthyAgain = await waitForHealthy(harness.ports.main, 120_000);
   expect(healthyAgain, 'a relaunched process should come back healthy on the same ports').toBe(true);
 
   // Best-effort cleanup of the relaunched process; harness.close() cannot

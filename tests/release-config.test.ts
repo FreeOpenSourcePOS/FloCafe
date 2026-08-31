@@ -262,6 +262,7 @@ function run() {
   assertShellStep(linuxJob, 'Prepend AppStream release entry');
   const snapPublish = findStep(linuxJob, 'Publish snap to the matching Snap Store channel');
   assertShellStep(linuxJob, 'Publish snap to the matching Snap Store channel');
+  assert.equal(snapPublish.env.GH_TOKEN, '${{ github.token }}', 'Snap evidence upload must have GitHub API credentials');
   assert.deepEqual(linuxJob.strategy.matrix.include.map((entry: any) => entry.runner), ['ubuntu-24.04', 'ubuntu-24.04-arm']);
   assert.equal(snapPublish.if, undefined, 'Snap publication must run for both architectures');
 
@@ -274,13 +275,9 @@ function run() {
   assertShellStep(winJob, 'Build Windows');
   assertShellStep(winJob, 'Verify Windows release assets');
   assertShellStep(winJob, 'Upload Windows assets to GitHub release');
-  const storeSetup = findStep(winJob, 'Setup Microsoft Store Developer CLI');
-  const storePublish = findStep(winJob, 'Publish Windows AppX packages to Microsoft Store');
-  assertShellStep(winJob, 'Publish Windows AppX packages to Microsoft Store');
-  assert.equal(storeSetup.uses, 'microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0');
-  assert.equal(storeSetup.if, "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.channel == 'stable'");
-  assert.equal(storePublish.if, storeSetup.if);
-  assert.equal(storePublish.env.RELEASE_CHANNEL, undefined);
+  const windowsStepNames = new Set((winJob.steps || []).map((step: any) => step.name));
+  assert.equal(windowsStepNames.has('Setup Microsoft Store Developer CLI'), false, 'Microsoft Store setup must remain manual');
+  assert.equal(windowsStepNames.has('Publish Windows AppX packages to Microsoft Store'), false, 'Microsoft Store submission must not run automatically');
 
   const verifyJob = jobs['verify-release'];
   const verifierDependencies = findStep(verifyJob, 'Install verifier dependencies');

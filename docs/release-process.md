@@ -2,8 +2,11 @@
 
 FloCafe desktop releases use one electron-builder pipeline and GitHub Releases for
 NSIS/Windows, macOS DMG+ZIP, and Linux AppImage/deb/rpm/Snap artifacts. Microsoft
-Store (AppX) and Mac App Store (MAS) packages are submitted to their stores and
-are not consumed by `electron-updater`. Snap Store uploads map the release
+Store (AppX) and Mac App Store (MAS) packages are submitted through
+explicit/manual workflows and are not consumed by `electron-updater`. The tag
+release uploads AppX packages as GitHub release assets but does not submit to
+Microsoft Store, and MAS uses its separate manual workflow. Snap Store uploads
+map the release
 channel to a channel the configured macaroon permits (#468): stable releases
 publish to the `stable` channel and beta releases publish to the `edge`
 (opt-in) channel; an upload denied with `invalid-channel-permission` is
@@ -89,10 +92,10 @@ or newer stable release without database rollbacks.
 3. Each self-updating platform job asserts that its local updater manifest
    and representative installer exist before upload. Platform jobs upload
    installers, update manifests, blockmaps, and required store packages to the
-   draft release. Microsoft Store AppX submission runs only for stable tag
-   pushes. Beta AppX packages remain outside the Store submission
-   path because their four-part MSIX versions would otherwise collide with
-   stable and with later prereleases.
+   draft release. Microsoft Store and Mac App Store submission are not part of
+   the automatic tag release. Beta AppX packages remain outside the Store
+   submission path because their four-part MSIX versions would otherwise
+   collide with stable and with later prereleases.
 4. `scripts/verify-release-assets.cjs` fetches the draft release metadata, then
    downloads manifests and every referenced asset back through the GitHub API.
    It parses each manifest as YAML, requires every referenced asset to resolve

@@ -269,7 +269,34 @@ router.get('/:id/wallet', customerReadRateLimit, requireRole(...ROLE_ACCESS.sale
       SELECT * FROM loyalty_ledger WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100
     `).all(customerId);
 
-    res.json({ balance, transactions });
+    const bills = db.prepare(`
+      SELECT
+        b.id, b.bill_number, b.total, b.payment_status, b.paid_at, b.created_at,
+        COALESCE((SELECT SUM(amount) FROM loyalty_ledger WHERE bill_id = b.id AND type = 'credit'), 0) as points_earned,
+        COALESCE((SELECT SUM(amount) FROM loyalty_ledger WHERE bill_id = b.id AND type = 'debit'), 0) as points_redeemed
+      FROM bills b
+      WHERE b.customer_id = ? AND b.payment_status = 'paid'
+      ORDER BY COALESCE(b.paid_at, b.created_at) DESC
+      LIMIT 100
+    `).all(customerId);
+
+    const totals = db.prepare(`
+      SELECT
+        COALESCE((SELECT SUM(total) FROM bills WHERE customer_id = ? AND payment_status = 'paid'), 0) as total_spent,
+        COALESCE((SELECT SUM(amount) FROM loyalty_ledger WHERE customer_id = ? AND type = 'credit'), 0) as total_points_earned,
+        COALESCE((SELECT SUM(amount) FROM loyalty_ledger WHERE customer_id = ? AND type = 'debit'), 0) as total_points_redeemed
+    `).get(customerId, customerId, customerId) as { total_spent: number; total_points_earned: number; total_points_redeemed: number };
+
+    res.json({
+      balance,
+      transactions,
+      bills,
+      summary: {
+        totalSpent: totals.total_spent,
+        totalPointsEarned: totals.total_points_earned,
+        totalPointsRedeemed: totals.total_points_redeemed,
+      },
+    });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

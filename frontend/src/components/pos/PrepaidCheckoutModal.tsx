@@ -44,9 +44,8 @@ interface Props {
   onConfirm: (payments: PrepaidPayment[], walletAmount: number, discount: PrepaidDiscount | null) => void;
 }
 
-// Fixed conversion rate for redeeming loyalty wallet points as payment (points per 1 currency unit).
-// Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
-const LOYALTY_REDEMPTION_RATE = 100;
+// Loyalty points are 1:1 with currency units. Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
+const LOYALTY_REDEMPTION_RATE = 1;
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 

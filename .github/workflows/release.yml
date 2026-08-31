@@ -399,8 +399,8 @@ jobs:
       - name: Publish snap to the matching Snap Store channel
         # Both matrix entries publish their snap, each tagged with its arch.
         # Snap Store keeps multiple per-arch revisions under one snap name.
-        # Stable/beta map to stable/beta respectively; this keeps a
-        # prerelease out of the stable package-manager channel.
+        # Release channel → store channel: stable→stable, beta→edge (#468);
+        # this keeps a prerelease out of the stable package-manager channel.
         # The credentials check is at runtime, not in `if:` — GitHub Actions
         # rejects `secrets` in `if:` expressions (unrecognized named-value).
         # A missing credential is a release failure, not a skipped channel:
@@ -415,19 +415,24 @@ jobs:
           SNAP_NAME="flocafe"
           SNAP=$(find release -maxdepth 1 -type f -name '*.snap' -print -quit)
           [ -n "$SNAP" ] || { echo "::error::No .snap produced by electron-builder for ${{ matrix.arch }}"; exit 1; }
-          SNAP_CHANNEL="${{ needs.create-release.outputs.channel }}"
+          # #468: the SNAPCRAFT_STORE_CREDENTIALS macaroon is restricted to
+          # the stable and edge channels, so a beta release publishes to
+          # `edge` (opt-in channel) instead of the beta channel; the evidence
+          # marker records the real store channel.
+          case "${{ needs.create-release.outputs.channel }}" in
+            stable) SNAP_CHANNEL="stable" ;;
+            beta) SNAP_CHANNEL="edge" ;;
+            *) echo "::error::Unexpected release channel '${{ needs.create-release.outputs.channel }}'"; exit 1 ;;
+          esac
           snapcraft register "$SNAP_NAME" || echo "::warning::register skipped/failed; continuing"
-          # #468: the current SNAPCRAFT_STORE_CREDENTIALS macaroon was exported
-          # with channel restrictions (stable, edge) and cannot release to
-          # beta (`invalid-channel-permission`). The GitHub release still gets
-          # the full .snap artifact set; failing the whole release build for a
-          # Store-side credential scope would block every other platform's
-          # updater feed. Degrade exactly this error to a loud warning until
-          # the credentials are re-exported with beta enabled.
+          # Degrade exactly a credential-scope denial to a loud warning (#468):
+          # the GitHub release still gets the full .snap artifact set; failing
+          # the whole release build for a Store-side credential scope would
+          # block every other platform's updater feed.
           if ! UPLOAD_OUT=$(snapcraft upload "$SNAP" --release="$SNAP_CHANNEL" 2>&1); then
             printf '%s\n' "$UPLOAD_OUT"
-            if [ "$SNAP_CHANNEL" = "beta" ] && printf '%s' "$UPLOAD_OUT" | grep -q "invalid-channel-permission"; then
-              echo "::warning::Snap Store credentials do not permit the '$SNAP_CHANNEL' channel (macaroon restriction). The .snap remains attached to this GitHub release; re-export SNAPCRAFT_STORE_CREDENTIALS with the beta channel enabled to restore Store publishing (#468)."
+            if printf '%s' "$UPLOAD_OUT" | grep -q "invalid-channel-permission"; then
+              echo "::warning::Snap Store credentials do not permit the '$SNAP_CHANNEL' channel (macaroon restriction). The .snap remains attached to this GitHub release; re-export SNAPCRAFT_STORE_CREDENTIALS with that channel enabled to restore Store publishing (#468)."
               exit 0
             fi
             echo "::error::snapcraft upload failed"

@@ -491,7 +491,8 @@ function performAppRelaunch(): void {
     }
     if (process.env.FLO_E2E_PID_FILE) {
       const env = { ...process.env };
-      const child = require('node:child_process').spawn(process.execPath, relaunchArgs, {
+      const childArgs = process.defaultApp ? [process.argv[1], ...relaunchArgs] : relaunchArgs;
+      const child = require('node:child_process').spawn(process.execPath, childArgs, {
         detached: true,
         stdio: 'ignore',
         env,

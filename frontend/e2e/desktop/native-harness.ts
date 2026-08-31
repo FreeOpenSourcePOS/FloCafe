@@ -415,6 +415,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
       relaunchAndWaitForPage: async () => {
         const previousPid = initialPid;
         if (!previousPid) throw new Error('Native Electron process did not expose a PID');
+        try { await app!.close(); } catch {}
         if (!await waitForProcessExit(previousPid)) {
           throw new Error(`Original Electron process ${previousPid} did not exit after relaunch`);
         }

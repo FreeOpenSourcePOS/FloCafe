@@ -46,7 +46,7 @@ A operação principal do PDV e os dados locais funcionam offline. A criação d
 
 ## Idiomas e suporte regional
 
-O FloCafe inclui traduções da interface em inglês, espanhol, português brasileiro e persa (farsi), incluindo suporte RTL. O idioma da interface é independente do país e das configurações regionais da loja. As regras de cálculo de impostos são uma área separada.
+O FloCafe inclui traduções da interface em inglês, espanhol, português brasileiro, francês, persa (farsi), turco, filipino e alemão, incluindo suporte RTL para persa. O idioma da interface é independente do país e das configurações regionais da loja. As regras de cálculo de impostos são uma área separada.
 
 O FloCafe inclui perfis para 131 países e 109 moedas. Cada perfil define moeda, localidade e fuso horário padrão; o proprietário pode alterar o fuso durante a configuração ou depois em Configurações.
 

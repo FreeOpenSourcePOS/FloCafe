@@ -46,7 +46,7 @@ Las funciones principales del TPV y los datos locales funcionan sin conexión. L
 
 ## Idiomas y soporte regional
 
-FloCafe incluye traducciones de la interfaz en inglés, español, portugués brasileño y persa (farsi), con soporte RTL. El idioma de la interfaz es independiente del país de la tienda y de la configuración regional. Las reglas de cálculo de impuestos son un aspecto separado.
+FloCafe incluye traducciones de la interfaz en inglés, español, portugués brasileño, francés, persa (farsi), turco, filipino y alemán, con soporte RTL para persa. El idioma de la interfaz es independiente del país de la tienda y de la configuración regional. Las reglas de cálculo de impuestos son un aspecto separado.
 
 FloCafe incluye perfiles para 131 países y 109 monedas. Cada perfil establece una moneda, configuración regional y zona horaria predeterminadas; el propietario puede cambiar la zona horaria durante la configuración o más adelante en Ajustes.
 

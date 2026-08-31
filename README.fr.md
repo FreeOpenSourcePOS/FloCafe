@@ -2,7 +2,7 @@
 
 **Point de vente gratuit, open source et conçu pour fonctionner hors ligne pour les cafés, restaurants et petites cuisines.**
 
-[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | **Français**
+[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | **Français** | [Türkçe](README.tr.md) | [Filipino](README.fil.md) | [Deutsch](README.de.md)
 
 FloCafe fonctionne directement sur l’ordinateur de l’établissement. Les commandes, les clients, les reçus et les sauvegardes sont stockés dans une base de données SQLite locale. Le service au comptoir et les écrans de cuisine peuvent donc continuer à fonctionner sans connexion Internet. Aucun compte hébergé ou cloud n’est nécessaire pour l’utilisation principale du point de vente. Des intégrations optionnelles, comme les sauvegardes Google Drive, l’envoi de factures par WhatsApp et les rapports connectés au cloud, peuvent être activées si nécessaire.
 

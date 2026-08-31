@@ -42,7 +42,7 @@ Gumagana offline ang pangunahing POS operation at lokal na data. Hindi nakadepen
 
 ## Mga wika at regional support
 
-May UI translation ang FloCafe para sa English, Spanish, Brazilian Portuguese, Persian (Farsi), Filipino, Turkish, at German. Filipino ay left-to-right at hindi nangangailangan ng RTL layout. Hiwalay ang UI language sa country at regional setting ng store, at hiwalay din ang tax calculation rules.
+May UI translation ang FloCafe para sa English, Spanish, Brazilian Portuguese, French, Persian (Farsi), Filipino, Turkish, at German. Filipino ay left-to-right at hindi nangangailangan ng RTL layout. Hiwalay ang UI language sa country at regional setting ng store, at hiwalay din ang tax calculation rules.
 
 May profile ang FloCafe para sa 131 bansa at 109 currency. Tinutukoy ng bawat profile ang default currency, locale, at timezone; maaaring baguhin ng may-ari ang timezone sa setup o sa Settings.
 

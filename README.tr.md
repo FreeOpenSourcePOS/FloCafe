@@ -46,7 +46,7 @@ Temel satış noktası işlemleri ve yerel veriler çevrimdışı çalışır. S
 
 ## Diller ve bölgesel destek
 
-FloCafe arayüzü İngilizce, İspanyolca, Brezilya Portekizcesi, Farsça, Türkçe, Filipince ve Almanca dillerinde kullanılabilir. Farsça RTL desteği içerir; Türkçe, Filipince ve Almanca soldan sağa yazılır. Arayüz dili, mağazanın ülke ve bölgesel ayarlarından bağımsızdır. Vergi hesaplama kuralları ayrı bir konudur.
+FloCafe arayüzü İngilizce, İspanyolca, Brezilya Portekizcesi, Fransızca, Farsça, Türkçe, Filipince ve Almanca dillerinde kullanılabilir. Farsça RTL desteği içerir; Türkçe, Filipince ve Almanca soldan sağa yazılır. Arayüz dili, mağazanın ülke ve bölgesel ayarlarından bağımsızdır. Vergi hesaplama kuralları ayrı bir konudur.
 
 FloCafe 131 ülke ve 109 para birimi için profiller içerir. Her profil varsayılan para birimi, yerel ayar ve saat dilini belirler; işletme sahibi saat dilini kurulum sırasında veya daha sonra Ayarlar bölümünden değiştirebilir.
 

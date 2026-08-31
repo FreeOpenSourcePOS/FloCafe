@@ -26,8 +26,17 @@ export interface NativeElectronHarness {
   page: Page;
   ports: NativeServicePorts;
   profileDir: string;
+
   authenticateDashboard: () => Promise<void>;
   close: () => Promise<void>;
+  /** Gracefully quit the current app (preserving profileDir) and launch a
+   *  new Electron instance with the same env. The DB and localStorage from
+   *  the prior session survive, so a test can persist a setting, relaunch,
+   *  and assert the renderer honors it on the next boot. The original
+   *  harness's `app`/`page`/`close` still point at the closed instance;
+   *  the caller should swap its reference to the returned harness.
+   *  Only the initial harness exposes this; relaunched instances do not. */
+  relaunch?: () => Promise<NativeElectronHarness>;
 }
 
 function delay(ms: number): Promise<void> {
@@ -161,6 +170,7 @@ async function boundedGracefulClose(
   app: ElectronApplication,
   ports: NativeServicePorts,
   profileDir: string,
+  options: { keepProfile?: boolean } = {},
 ): Promise<void> {
   const pid = app.process().pid;
   if (!pid) throw new Error('Native Electron process did not expose a PID');
@@ -197,7 +207,7 @@ async function boundedGracefulClose(
 
   const portsClosed = (await Promise.all(Object.values(ports).map(waitForPortClosed))).every(Boolean);
   let profileCleanupError: unknown;
-  if (exited) {
+  if (exited && !options.keepProfile) {
     try { rmSync(profileDir, { recursive: true, force: true }); } catch (error) { profileCleanupError = error; }
   }
 
@@ -239,8 +249,9 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
   try {
     await runSeed(env);
     app = await electron.launch({ cwd: repoRoot, args: ['.'], env });
-    app.on('console', (message) => console.log(`[Native Electron] ${message.text()}`));
-    const page = await app.firstWindow();
+    const launchedApp = app;
+    launchedApp.on('console', (message) => console.log(`[Native Electron] ${message.text()}`));
+    const page = await launchedApp.firstWindow();
     await page.waitForURL((url) => url.port === String(ports.main), { timeout: 30_000 });
     await waitForHealth(ports);
     await waitForRendererServices(page);
@@ -258,30 +269,53 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
     // concrete public route before any test asserts route-owned UI state.
     await page.goto(`http://localhost:${ports.main}/auth/login`, { waitUntil: 'domcontentloaded' });
 
+    const buildAuthenticate = (nextPage: Page, nextApp: ElectronApplication) => async (): Promise<void> => {
+      const currentPath = new URL(nextPage.url()).pathname.replace(/\/+$/, '') || '/';
+      if (currentPath !== '/auth/login' && currentPath !== '/pos') {
+        throw new Error(`Native E2E expected a stable auth route, got ${nextPage.url()}`);
+      }
+      if (currentPath !== '/pos') {
+        await nextPage.locator('#email').fill(env.FLO_E2E_OWNER_EMAIL);
+        await nextPage.locator('#password').fill(env.FLO_E2E_OWNER_PASSWORD);
+        await nextPage.locator('button[type="submit"]').click();
+        await nextPage.waitForURL((url) => url.pathname.replace(/\/+$/, '') === '/pos', { timeout: 30_000 });
+      }
+      await nextApp.evaluate(({ app: electronApp, BrowserWindow }) => {
+        electronApp.focus({ steal: true });
+        BrowserWindow.getAllWindows()[0]?.focus();
+      });
+      await nextPage.waitForFunction(() => document.hasFocus() && document.documentElement.dataset.floWindowFocused === 'true');
+      await nextPage.waitForFunction(() => document.documentElement.dataset.floDesktopTitlebar === 'true');
+    };
+
     return {
-      app,
+      app: launchedApp,
       page,
       ports,
       profileDir,
-      authenticateDashboard: async () => {
-        const currentPath = new URL(page.url()).pathname.replace(/\/+$/, '') || '/';
-        if (currentPath !== '/auth/login' && currentPath !== '/pos') {
-          throw new Error(`Native E2E expected a stable auth route, got ${page.url()}`);
-        }
-        if (currentPath !== '/pos') {
-          await page.locator('#email').fill(env.FLO_E2E_OWNER_EMAIL);
-          await page.locator('#password').fill(env.FLO_E2E_OWNER_PASSWORD);
-          await page.locator('button[type="submit"]').click();
-          await page.waitForURL((url) => url.pathname.replace(/\/+$/, '') === '/pos', { timeout: 30_000 });
-        }
-        await app!.evaluate(({ app: electronApp, BrowserWindow }) => {
-          electronApp.focus({ steal: true });
-          BrowserWindow.getAllWindows()[0]?.focus();
-        });
-        await page.waitForFunction(() => document.hasFocus() && document.documentElement.dataset.floWindowFocused === 'true');
-        await page.waitForFunction(() => document.documentElement.dataset.floDesktopTitlebar === 'true');
+      authenticateDashboard: buildAuthenticate(page, launchedApp),
+      close: async () => boundedGracefulClose(launchedApp, ports, profileDir),
+      relaunch: async () => {
+        await boundedGracefulClose(launchedApp, ports, profileDir, { keepProfile: true });
+        // Re-launch against the existing DB without re-seeding: the owner
+        // row is already there and re-running the seed would conflict on
+        // primary key 'native-e2e-owner'.
+        const newApp = await electron.launch({ cwd: repoRoot, args: ['.'], env });
+        newApp.on('console', (message) => console.log(`[Native Electron] ${message.text()}`));
+        const newPage = await newApp.firstWindow();
+        await newPage.waitForURL((url) => url.port === String(ports.main), { timeout: 30_000 });
+        await waitForHealth(ports);
+        await waitForRendererServices(newPage);
+        await newPage.goto(`http://localhost:${ports.main}/auth/login`, { waitUntil: 'domcontentloaded' });
+        return {
+          app: newApp,
+          page: newPage,
+          ports,
+          profileDir,
+          authenticateDashboard: buildAuthenticate(newPage, newApp),
+          close: async () => boundedGracefulClose(newApp, ports, profileDir),
+        };
       },
-      close: async () => boundedGracefulClose(app!, ports, profileDir),
     };
   } catch (error) {
     if (app) {

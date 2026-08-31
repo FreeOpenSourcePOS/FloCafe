@@ -28,7 +28,7 @@ const TAG_COLORS: Record<string, string> = {
 };
 
 function tagColor(tag: string) {
-  return TAG_COLORS[tag.toLowerCase()] ?? 'bg-gray-100 text-gray-600';
+  return TAG_COLORS[tag.toLowerCase()] ?? 'bg-muted text-muted-foreground';
 }
 
 function digitsOnly(value: string | null | undefined): string {
@@ -203,7 +203,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const handleClear = () => cart.setCustomer(null);
 
   // ── Shared input classes ───────────────────────────────────────────────────
-  const baseInput = 'px-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none text-sm';
+  const baseInput = 'px-3 border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none text-sm';
 
   // ── Customer already selected ──────────────────────────────────────────────
   if (customer) {
@@ -222,7 +222,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               <span className="text-brand/70 text-xs shrink-0"><Ltr>{customer.phone}</Ltr></span>
               <Pencil size={11} className="text-brand/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
               {!!loyaltyPoints && loyaltyPoints > 0 && (
-                <span className="flex items-center gap-0.5 text-xs font-medium text-brand bg-white/70 rounded-full px-1.5 py-0.5 shrink-0">
+                <span className="flex items-center gap-0.5 text-xs font-medium text-brand bg-card/70 rounded-full px-1.5 py-0.5 shrink-0">
                   <Gift size={11} />
                   {t('loyaltyPointsShort', { count: loyaltyPoints })}
                 </span>
@@ -249,7 +249,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         <div className="flex items-center justify-between px-3 py-2 bg-brand-light rounded-lg text-sm">
           <button onClick={() => setEditingCustomer(true)} className="flex-1 min-w-0 flex items-center gap-2 text-start group">
             <span className="font-medium text-brand truncate group-hover:underline">{customer.name}</span>
-            {customer.phone && <span className="text-xs text-gray-500"><Ltr>{customer.phone}</Ltr></span>}
+            {customer.phone && <span className="text-xs text-muted-foreground"><Ltr>{customer.phone}</Ltr></span>}
             <Pencil size={11} className="text-brand/50 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           </button>
           <button onClick={handleClear} className="text-brand hover:text-brand-hover ms-2 shrink-0">
@@ -304,7 +304,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             placeholder={searched ? (matched ? '' : t('enterName')) : t('nameAutoFills')}
             className={`h-10 w-48 shrink-0 px-3 text-sm border rounded-lg focus:ring-2 outline-none transition-colors duration-150 ${
               matched
-                ? 'border-gray-200 bg-gray-50 cursor-pointer focus:ring-brand/20 focus:border-brand'
+                ? 'border-border bg-muted cursor-pointer focus:ring-brand/20 focus:border-brand'
                 : 'border-indigo-200 bg-indigo-50 placeholder:text-indigo-400/80 focus:ring-indigo-200 focus:border-indigo-400'
             }`}
             onClick={matched ? handleSelectMatched : undefined}
@@ -329,7 +329,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         </div>
 
         {searched && (
-          <div className="absolute start-0 top-full mt-1 z-20 rounded-md border border-gray-100 bg-white px-2 py-1 shadow-sm">
+          <div className="absolute start-0 top-full mt-1 z-20 rounded-md border border-border bg-card px-2 py-1 shadow-sm">
             {matched ? (
               <span className="text-xs text-green-600 font-medium">{t('customerFound')}</span>
             ) : (
@@ -370,7 +370,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           }}
           readOnly={!!matched}
           placeholder={searched ? (matched ? '' : t('enterName')) : t('nameAutoFills')}
-          className={`${baseInput} w-full py-2 ${matched ? 'bg-gray-50 cursor-pointer' : ''}`}
+          className={`${baseInput} w-full py-2 ${matched ? 'bg-muted cursor-pointer' : ''}`}
           onClick={matched ? handleSelectMatched : undefined}
         />
       </div>

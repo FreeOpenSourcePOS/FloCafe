@@ -87,3 +87,17 @@ The hosted native job uses Linux Xvfb without a window manager. Native minimize/
 4. **WM-dependent Linux actions are environment-limited.** Xvfb was intentionally run without a window manager to avoid touching the captain's GNOME desktop session; minimize/maximize state transitions are consequently recorded as SKIP in the probe while IPC verb validation remains PASS.
 
 No product behavior was changed in response to these findings; the matrix deliberately downgrades unobserved visual/IPC cells to NOT-RUN and keeps the contract evidence separate.
+
+## Dark mode (gh-513)
+
+Light/Dark/System user preference (persisted `theme_mode`, default `'system'`) flows renderer -> main via the `set-theme-effective` IPC; main calls `applyTitleBarOverlayTheme` and writes `setBackgroundColor` with the matching overlay token. The renderer owns resolution: `ThemeSync` toggles `.dark` on `<html>`, mirrors the resolved palette to `localStorage['flo-theme-resolved']`, and a blocking pre-paint script reads the same mirror (or the `?theme=` URL param for KDS/popup windows) to avoid a flash of the wrong theme. Native overlay support is the platform contract; renderer chrome re-themes via CSS on every platform.
+
+| Platform | Initial overlay | Live toggle | Notes |
+| --- | --- | --- | --- |
+| Windows | Correct (persisted `theme_mode` resolved in `createWindow`) | Live (`applyTitleBarOverlayTheme`) | |
+| macOS | Correct (persisted) | Live | `hiddenInset` traffic lights unaffected |
+| Linux | Correct (persisted) | Next launch only | `supportsTitleBarOverlay` no-ops runtime updates on Linux (see `main/title-bar-theme.ts:39–52`); renderer chrome re-themes instantly via CSS |
+| Browser/LAN clients | N/A | Renderer CSS only | No `electronAPI`; no overlay; capability-based, not UA-based |
+| KDS / popup windows | `?theme=` URL param on open (KDS) or `localStorage` mirror (same-origin popups) | On next open | No live push to standalone windows; pre-paint script reads the same source |
+
+Contract coverage lives in `tests/titlebar-window-options.test.ts` (initial-isDark resolution from `theme_mode`, including absent and invalid values), `tests/electron-api-contract.test.ts` (`setThemeEffective` preload surface), `tests/theme-mode-settings.test.ts` (write-path rejection of invalid `theme_mode` via both IPC and HTTP wildcard PUT), `tests/theme-fouc-script.test.ts` (pre-paint script precedence: URL param > mirror > `matchMedia`), and `frontend/e2e/desktop/theme.electron.spec.ts` (native Electron toggle, system-mode live update via `nativeTheme.themeSource` override, persistence across relaunch).

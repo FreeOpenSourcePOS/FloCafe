@@ -2,7 +2,11 @@ import * as assert from 'node:assert/strict';
 import { isAllowedLocalWindowUrl } from '../main/security/url-allowlist';
 import {
   applyTitleBarOverlayTheme,
+  appendThemeQueryParam,
   attachTitleBarThemeSync,
+  isThemeMode,
+  resolveInitialIsDark,
+  resolveThemeMode,
   resolveTitleBarOverlayColors,
   supportsTitleBarOverlay,
   TITLE_BAR_HEIGHT,
@@ -279,3 +283,32 @@ missingWindowTheme.emitUpdated(); // must not throw while the window is absent
 
 console.log('Title-bar dynamic theme overlay resolution and platform guards pass.');
 console.log('Title-bar main-window options, fallback gating, and popup/KDS exclusions are preserved.');
+
+// gh-513: theme-mode helpers
+assert.equal(resolveThemeMode(undefined), 'system');
+assert.equal(resolveThemeMode(null), 'system');
+assert.equal(resolveThemeMode('bogus'), 'system');
+assert.equal(resolveThemeMode('light'), 'light');
+assert.equal(resolveThemeMode('dark'), 'dark');
+assert.equal(resolveThemeMode('system'), 'system');
+assert.equal(isThemeMode('light'), true);
+assert.equal(isThemeMode('DARK'), false);
+assert.equal(isThemeMode(42), false);
+assert.equal(resolveInitialIsDark('dark', false), true);
+assert.equal(resolveInitialIsDark('system', true), true);
+assert.equal(resolveInitialIsDark('system', false), false);
+assert.equal(resolveInitialIsDark('light', true), false);
+assert.equal(
+  appendThemeQueryParam('http://192.168.1.5:3002/kds', true),
+  'http://192.168.1.5:3002/kds?theme=dark',
+);
+assert.equal(
+  appendThemeQueryParam('http://192.168.1.5:3002/kds?table=3', false),
+  'http://192.168.1.5:3002/kds?table=3&theme=light',
+);
+assert.equal(
+  appendThemeQueryParam('http://192.168.1.5:3002/kds?theme=dark', false),
+  'http://192.168.1.5:3002/kds?theme=light',
+);
+assert.equal(appendThemeQueryParam('not a url', true), 'not a url');
+console.log('Theme-mode helpers (gh-513) resolve, validate, and rewrite URLs.');

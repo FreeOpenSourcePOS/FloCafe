@@ -23,7 +23,7 @@ export default function PosTopbar({ tables, onShowTablePicker }: Props) {
   const showTableBtn = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
 
   return (
-    <div className="flex items-center gap-3 border-b bg-white shrink-0 px-4 py-2.5">
+    <div className="flex items-center gap-3 border-b bg-card shrink-0 px-4 py-2.5">
       <div className="flex-1 min-w-0">
         <CustomerSearch variant="topbar" />
       </div>

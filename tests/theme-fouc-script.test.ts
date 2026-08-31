@@ -33,6 +33,8 @@ const ROOT = path.join(__dirname, '..');
 const LAYOUT_PATH = path.join(ROOT, 'frontend/src/app/layout.tsx');
 const THEME_SYNC_PATH = path.join(ROOT, 'frontend/src/components/layout/ThemeSync.tsx');
 
+const readSource = (filePath: string): string => fs.readFileSync(filePath, 'utf8').replace(/\r\n?/g, '\n');
+
 // ---------------------------------------------------------------------------
 // Script extraction — tolerant, loud-fail-on-shape-change.
 // ---------------------------------------------------------------------------
@@ -188,7 +190,7 @@ function runScript(script: string, g: HarnessGlobals): RunResult {
 // Matrix tests.
 // ---------------------------------------------------------------------------
 
-const layoutSrc = fs.readFileSync(LAYOUT_PATH, 'utf8');
+const layoutSrc = readSource(LAYOUT_PATH);
 const script = extractFoucScript(layoutSrc);
 
 const cases: Array<{
@@ -289,7 +291,7 @@ console.log(`ok   FOUC script body is try/catch wrapped (${script.length} chars)
 // The behavioral path is exercised by Wave 3 e2e; these are coarse tripwires.
 // ---------------------------------------------------------------------------
 
-const themeSyncSrc = fs.readFileSync(THEME_SYNC_PATH, 'utf8');
+const themeSyncSrc = readSource(THEME_SYNC_PATH);
 assert.ok(
   /useState\s*\(\s*false\s*\)/.test(themeSyncSrc),
   'ThemeSync must guard apply behind a hydrated flag (F1 fix)',
@@ -350,7 +352,7 @@ console.log(`\nFOUC matrix: ${passed} passed, ${failed} failed`);
 // ---------------------------------------------------------------------------
 
 const STORE_PATH = path.join(ROOT, 'frontend/src/store/theme.ts');
-const storeSrc = fs.readFileSync(STORE_PATH, 'utf8');
+const storeSrc = readSource(STORE_PATH);
 assert.ok(
   /userSelected/.test(storeSrc),
   'theme store must declare userSelected state (PR review P1-1)',
@@ -387,10 +389,7 @@ console.log('ok   ThemeSync gates every boot setMode on userHasChosen() (PR revi
 
 // Settings saveThemeMode must call markUserSelected BEFORE the optimistic
 // setThemeMode — a one-line placement that's the whole point of the guard.
-const settingsSrc = fs.readFileSync(
-  path.join(ROOT, 'frontend/src/app/(dashboard)/settings/page.tsx'),
-  'utf8',
-);
+const settingsSrc = readSource(path.join(ROOT, 'frontend/src/app/(dashboard)/settings/page.tsx'));
 const saveBody = (settingsSrc.match(/saveThemeMode = async[\s\S]*?\n\s{2}\};/) ?? [''])[0];
 assert.ok(
   saveBody.includes('markUserSelectedTheme()') || saveBody.includes('markUserSelected()'),
@@ -662,10 +661,7 @@ assert.ok(
 
 // --- auth-changed dispatch + listener ---
 
-const authSrc = fs.readFileSync(
-  path.join(ROOT, 'frontend/src/store/auth.ts'),
-  'utf8',
-);
+const authSrc = readSource(path.join(ROOT, 'frontend/src/store/auth.ts'));
 // 2a. The persistSession helper must dispatch the event after the
 // token is persisted.
 assert.ok(

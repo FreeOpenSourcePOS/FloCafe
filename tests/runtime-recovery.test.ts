@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import {
+  createRelaunchAttemptGuard,
   createRelaunchGate,
   decideRuntimeActivationAction,
   hasRelaunchAttemptFlag,
@@ -102,5 +103,34 @@ assert.equal(
   false,
   'an empty argv is treated as a first launch',
 );
+
+// createRelaunchAttemptGuard: a successful recovery must not permanently
+// disable a later, independent relaunch attempt (issue #568 #1) — the marker
+// carried in process.argv should only count against the process until this
+// process's own runtime first recovers.
+{
+  // A first launch (no marker) never counts as an exhausted attempt.
+  const freshLaunch = createRelaunchAttemptGuard(false);
+  assert.equal(freshLaunch.hasExhaustedAttempt(), false);
+  freshLaunch.markRuntimeRecovered();
+  assert.equal(freshLaunch.hasExhaustedAttempt(), false);
+}
+{
+  // A relaunched process that fails again before ever recovering is exhausted.
+  const failedRelaunch = createRelaunchAttemptGuard(true);
+  assert.equal(failedRelaunch.hasExhaustedAttempt(), true, 'a relaunched process is exhausted until it recovers');
+}
+{
+  // A relaunched process that recovers, then later hits an unrelated failure,
+  // gets a fresh attempt instead of being treated as already exhausted.
+  const recoveredRelaunch = createRelaunchAttemptGuard(true);
+  assert.equal(recoveredRelaunch.hasExhaustedAttempt(), true);
+  recoveredRelaunch.markRuntimeRecovered();
+  assert.equal(
+    recoveredRelaunch.hasExhaustedAttempt(),
+    false,
+    'a later, independent failure is not blocked by a marker from a relaunch that already succeeded',
+  );
+}
 
 console.log('Runtime recovery tests passed');

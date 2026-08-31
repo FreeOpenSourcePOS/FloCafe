@@ -50,6 +50,7 @@ import { setupWindowLoadRetry } from './window-load-retry';
 import { registerUsbDevicePermissions } from './usb-device-permissions';
 import { probeBackendHealth } from './backend-health';
 import {
+  createRelaunchAttemptGuard,
   createRelaunchGate,
   decideRuntimeActivationAction,
   hasRelaunchAttemptFlag,
@@ -465,6 +466,11 @@ function hasAlreadyAttemptedRuntimeRelaunch(): boolean {
   return hasRelaunchAttemptFlag(process.argv, RUNTIME_RELAUNCH_ATTEMPT_FLAG);
 }
 
+// Gates repeat relaunches across process restarts (see hasAlreadyAttemptedRuntimeRelaunch
+// above), but only until this process's runtime first recovers — see
+// createRelaunchAttemptGuard for why an outright process-lifetime check is wrong.
+const relaunchAttemptGuard = createRelaunchAttemptGuard(hasAlreadyAttemptedRuntimeRelaunch());
+
 function performAppRelaunch(): void {
   if (process.defaultApp || !app.isPackaged) {
     const relaunchArgs = process.argv.slice(1).map((arg) => (arg === '.' ? process.cwd() : arg));
@@ -497,7 +503,7 @@ function requestRuntimeRelaunch(reason: string): void {
   log.error(`[Lifecycle] Runtime recovery relaunch requested: ${reason}`);
   if (process.env.FLO_E2E_PID_FILE) console.log('[Native E2E] runtime relaunch requested');
 
-  const alreadyAttempted = hasAlreadyAttemptedRuntimeRelaunch();
+  const alreadyAttempted = relaunchAttemptGuard.hasExhaustedAttempt();
 
   const finishRelaunch = (): void => {
     try {
@@ -761,6 +767,9 @@ async function handleMainWindowActivation(): Promise<void> {
       kds: getKdsPort(),
       serverApp: getServerAppPort(),
     });
+    // Shutdown or update installation may have started while the probe was
+    // in flight — a stale failure must not request a relaunch mid-shutdown.
+    if (isQuitting || isShutdownRequested()) return;
     if (!reallyHealthy) {
       requestRuntimeRelaunchOnce('activation-health-probe-failed');
       return;
@@ -1232,6 +1241,7 @@ async function initialize(): Promise<void> {
     });
 
     runtimeState = 'ready';
+    relaunchAttemptGuard.markRuntimeRecovered();
     log.info('[Lifecycle] Runtime is ready');
     ipcMain.handle('set-theme-effective', (event, isDark: unknown) => {
       // gh-513 F8: validate the sender — the ipc.ts handle() wrapper applies

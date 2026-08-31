@@ -1679,7 +1679,12 @@
     "whatsapp": "WhatsApp",
     "whatsappSharing": "Compartir por WhatsApp",
     "yes": "Sí",
-    "zeroNoLimit": "(0 = sin límite)"
+    "zeroNoLimit": "(0 = sin límite)",
+    "tabAppearance": "Apariencia",
+    "themeTitle": "Tema",
+    "themeLight": "Claro",
+    "themeDark": "Oscuro",
+    "themeSystem": "Sistema"
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",

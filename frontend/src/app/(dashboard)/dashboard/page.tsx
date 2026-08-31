@@ -150,7 +150,7 @@ const orderStatusColor: Record<string, string> = {
   preparing: 'text-blue-600',
   ready: 'text-green-600',
   served: 'text-purple-600',
-  completed: 'text-gray-500',
+  completed: 'text-muted-foreground',
   cancelled: 'text-red-500',
 };
 
@@ -374,15 +374,15 @@ export default function DashboardPage() {
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
-        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         <div className="flex items-center gap-2">
-          <div className="flex h-9 rounded-lg border border-gray-200 bg-white p-1" role="group" aria-label={t('periodView')}>
+          <div className="flex h-9 rounded-lg border border-border bg-card p-1" role="group" aria-label={t('periodView')}>
             {(['day', 'month'] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
                 onClick={() => setPeriodMode(mode)}
-                className={`min-w-16 rounded-md px-3 text-sm font-medium transition-colors ${periodMode === mode ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                className={`min-w-16 rounded-md px-3 text-sm font-medium transition-colors ${periodMode === mode ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted'}`}
                 aria-pressed={periodMode === mode}
               >
                 {t(mode)}
@@ -395,7 +395,7 @@ export default function DashboardPage() {
               value={selectedDate}
               max={todayLocal}
               onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-              className="h-9 px-3 text-sm border border-gray-200 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand/30"
+              className="h-9 px-3 text-sm border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30"
               aria-label={t('selectDate')}
             />
           ) : (
@@ -404,7 +404,7 @@ export default function DashboardPage() {
               value={selectedMonth}
               max={todayLocal.slice(0, 7)}
               onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
-              className="h-9 px-3 text-sm border border-gray-200 rounded-lg text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand/30"
+              className="h-9 px-3 text-sm border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30"
               aria-label={t('selectMonth')}
             />
           )}
@@ -425,7 +425,7 @@ export default function DashboardPage() {
                 className={`rounded-xl border p-5 ${tile.color} transition-transform hover:-translate-y-0.5 hover:shadow-sm`}
               >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-gray-600">{tile.label}</span>
+                  <span className="text-sm font-medium text-muted-foreground">{tile.label}</span>
                   <tile.icon size={20} className={tile.iconColor} />
                 </div>
                 <p className="text-3xl font-bold text-gray-900">
@@ -437,9 +437,9 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Recent Orders */}
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+            <div className="bg-card rounded-xl border border-border dark:border-border overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border">
+                <h2 className="flex items-center gap-2 font-semibold text-foreground">
                   <ClipboardList size={16} className="text-gray-400" />
                   {isToday ? t('recentOrders') : periodMode === 'month' ? t('monthOrders') : t('orders')}
                 </h2>
@@ -455,12 +455,12 @@ export default function DashboardPage() {
                     <Link
                       key={order.id}
                       href="/orders"
-                      className="flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 transition-colors"
+                      className="flex items-center justify-between px-4 py-2.5 hover:bg-muted transition-colors"
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">#<Ltr>{order.order_number}</Ltr></span>
-                          <span className={`text-xs font-medium ${orderStatusColor[order.status] || 'text-gray-500'}`}>
+                          <span className="text-sm font-medium text-foreground">#<Ltr>{order.order_number}</Ltr></span>
+                          <span className={`text-xs font-medium ${orderStatusColor[order.status] || 'text-muted-foreground'}`}>
                             {(() => { const k = (ORDER_STATUS_LABEL_KEYS as Record<string, OrdersKey | undefined>)[order.status]; return k ? tOrders(k) : order.status; })()}
                           </span>
                         </div>
@@ -468,7 +468,7 @@ export default function DashboardPage() {
                           {order.customer_name || order.table_name || t('walkIn')}
                         </p>
                       </div>
-                      <span className="text-sm font-semibold text-gray-900 shrink-0">
+                      <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(order.total))}
                       </span>
                     </Link>
@@ -478,9 +478,9 @@ export default function DashboardPage() {
             </div>
 
             {/* Top Products Today */}
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+            <div className="bg-card rounded-xl border border-border dark:border-border overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border">
+                <h2 className="flex items-center gap-2 font-semibold text-foreground">
                   <TrendingUp size={16} className="text-gray-400" />
                   {periodMode === 'month' ? t('topProductsMonth') : isToday ? t('topProductsToday') : t('topProducts')}
                 </h2>
@@ -495,10 +495,10 @@ export default function DashboardPage() {
                   {topProducts.map((product) => (
                     <div key={product.product_id} className="flex items-center justify-between px-4 py-2.5">
                       <div className="min-w-0">
-                        <span className="text-sm font-medium text-gray-900">{product.product_name}</span>
+                        <span className="text-sm font-medium text-foreground">{product.product_name}</span>
                         <p className="text-xs text-gray-400">{t('productSoldOrders', { quantity: product.total_quantity, orders: product.order_count })}</p>
                       </div>
-                      <span className="text-sm font-semibold text-gray-900 shrink-0">
+                      <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(product.total_revenue))}
                       </span>
                     </div>
@@ -510,9 +510,9 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
             {/* Top Staff */}
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+            <div className="bg-card rounded-xl border border-border dark:border-border overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border">
+                <h2 className="flex items-center gap-2 font-semibold text-foreground">
                   <Trophy size={16} className="text-gray-400" />
                   {t('topStaff')}
                 </h2>
@@ -527,10 +527,10 @@ export default function DashboardPage() {
                   {insights!.topStaff.map((staff) => (
                     <div key={staff.user_id} className="flex items-center justify-between px-4 py-2.5">
                       <div className="min-w-0">
-                        <span className="text-sm font-medium text-gray-900">{staff.name}</span>
+                        <span className="text-sm font-medium text-foreground">{staff.name}</span>
                         <p className="text-xs text-gray-400">{t('staffOrderCount', { orders: staff.orderCount })}</p>
                       </div>
-                      <span className="text-sm font-semibold text-gray-900 shrink-0">
+                      <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(staff.revenue))}
                       </span>
                     </div>
@@ -540,9 +540,9 @@ export default function DashboardPage() {
             </div>
 
             {/* Top Categories */}
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+            <div className="bg-card rounded-xl border border-border dark:border-border overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border">
+                <h2 className="flex items-center gap-2 font-semibold text-foreground">
                   <Tags size={16} className="text-gray-400" />
                   {t('topCategories')}
                 </h2>
@@ -554,10 +554,10 @@ export default function DashboardPage() {
                   {insights!.topCategories.map((category) => (
                     <div key={category.category_id ?? category.name} className="flex items-center justify-between px-4 py-2.5">
                       <div className="min-w-0">
-                        <span className="text-sm font-medium text-gray-900">{category.name}</span>
+                        <span className="text-sm font-medium text-foreground">{category.name}</span>
                         <p className="text-xs text-gray-400">{t('categoryQuantitySold', { quantity: category.quantity })}</p>
                       </div>
-                      <span className="text-sm font-semibold text-gray-900 shrink-0">
+                      <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(category.revenue))}
                       </span>
                     </div>
@@ -568,14 +568,14 @@ export default function DashboardPage() {
           </div>
 
           {periodMode === 'month' && (
-            <section className="bg-white rounded-lg border border-gray-200 mt-4 overflow-hidden">
-              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100">
+            <section className="bg-card rounded-lg border border-border mt-4 overflow-hidden">
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border">
                 <div>
-                  <h2 className="flex items-center gap-2 font-semibold text-gray-900">
+                  <h2 className="flex items-center gap-2 font-semibold text-foreground">
                     <RotateCcw size={16} className="text-red-500" />
                     {t('refundActivity')}
                   </h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('refundActivityHint')}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t('refundActivityHint')}</p>
                 </div>
                 <span className="text-sm font-semibold text-red-600">{fmt(financialSummary?.refunded ?? 0)}</span>
               </div>
@@ -587,19 +587,19 @@ export default function DashboardPage() {
                     <div key={refund.id} className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          <span className="text-sm font-semibold text-gray-900">
+                          <span className="text-sm font-semibold text-foreground">
                             {t('refundReference', { bill: refund.bill_number, order: refund.order_number })}
                           </span>
-                          <span className="text-xs text-gray-500">{refund.method}</span>
+                          <span className="text-xs text-muted-foreground">{refund.method}</span>
                         </div>
-                        <p className="mt-1 text-xs text-gray-500">
+                        <p className="mt-1 text-xs text-muted-foreground">
                           {t('refundApproved', { name: refund.approved_by_name })}
                           {' · '}
                           {t('refundedAt', { date: formatDateTime(refund.created_at) })}
                           {' · '}
                           {t('collectedAt', { date: formatDateTime(refund.paid_at) })}
                         </p>
-                        {refund.reason && <p className="mt-1 text-xs text-gray-600 truncate">{refund.reason}</p>}
+                        {refund.reason && <p className="mt-1 text-xs text-muted-foreground truncate">{refund.reason}</p>}
                       </div>
                       <span className="text-base font-bold text-red-600 sm:text-end">{fmt(-Number(refund.amount))}</span>
                     </div>
@@ -610,10 +610,10 @@ export default function DashboardPage() {
           )}
 
           {/* Payment Methods */}
-          <div className="bg-white rounded-xl border border-gray-100 p-4 mt-4">
+          <div className="bg-card rounded-xl border border-border dark:border-border p-4 mt-4">
             <div className="flex items-center gap-2 mb-4">
               <Wallet size={16} className="text-gray-400" />
-              <h2 className="font-semibold text-gray-900">{t('paymentMethods')}</h2>
+              <h2 className="font-semibold text-foreground">{t('paymentMethods')}</h2>
             </div>
             {paymentMethods.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-6">{t('noPaymentsYet')}</p>
@@ -631,12 +631,12 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
                           <Icon size={14} className="text-gray-400" />
-                          <span className="text-sm font-medium text-gray-900">{label}</span>
+                          <span className="text-sm font-medium text-foreground">{label}</span>
                         </div>
-                        <span className="text-sm font-semibold text-gray-900">{fmt(Number(pm.total))}</span>
+                        <span className="text-sm font-semibold text-foreground">{fmt(Number(pm.total))}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                           <div className="h-full bg-brand rounded-full" style={{ width: `${percent}%` }} />
                         </div>
                         <span className="text-xs text-gray-400 shrink-0">
@@ -651,18 +651,18 @@ export default function DashboardPage() {
           </div>
 
           {/* Business Patterns */}
-          <div className="bg-white rounded-xl border border-gray-100 p-4 mt-4">
+          <div className="bg-card rounded-xl border border-border dark:border-border p-4 mt-4">
             <div className="flex items-center gap-2 mb-1">
               <BarChart3 size={16} className="text-gray-400" />
-              <h2 className="font-semibold text-gray-900">{t('businessPatterns')}</h2>
+              <h2 className="font-semibold text-foreground">{t('businessPatterns')}</h2>
             </div>
             <p className="text-xs text-gray-400 mb-4">
               {t('businessPatternsHint', { days: insights?.windowDays ?? 30 })}
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
-                <p className="text-xs text-gray-500 mb-1">{t('busiestHour')}</p>
-                <p className="text-lg font-bold text-gray-900">
+                <p className="text-xs text-muted-foreground mb-1">{t('busiestHour')}</p>
+                <p className="text-lg font-bold text-foreground">
                   {insights?.busiestHour ? formatHourLabel(insights.busiestHour.hour, locale) : t('notEnoughData')}
                 </p>
                 {insights?.busiestHour && (
@@ -670,8 +670,8 @@ export default function DashboardPage() {
                 )}
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-1">{t('idlestHour')}</p>
-                <p className="text-lg font-bold text-gray-900">
+                <p className="text-xs text-muted-foreground mb-1">{t('idlestHour')}</p>
+                <p className="text-lg font-bold text-foreground">
                   {insights?.idlestHour ? formatHourLabel(insights.idlestHour.hour, locale) : t('notEnoughData')}
                 </p>
                 {insights?.idlestHour && (
@@ -679,8 +679,8 @@ export default function DashboardPage() {
                 )}
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-1">{t('busiestDay')}</p>
-                <p className="text-lg font-bold text-gray-900">
+                <p className="text-xs text-muted-foreground mb-1">{t('busiestDay')}</p>
+                <p className="text-lg font-bold text-foreground">
                   {insights?.busiestDayOfWeek ? formatWeekdayLabel(insights.busiestDayOfWeek.dayIndex, locale) : t('notEnoughData')}
                 </p>
                 {insights?.busiestDayOfWeek && (
@@ -688,8 +688,8 @@ export default function DashboardPage() {
                 )}
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-1">{t('idlestDay')}</p>
-                <p className="text-lg font-bold text-gray-900">
+                <p className="text-xs text-muted-foreground mb-1">{t('idlestDay')}</p>
+                <p className="text-lg font-bold text-foreground">
                   {insights?.idlestDayOfWeek ? formatWeekdayLabel(insights.idlestDayOfWeek.dayIndex, locale) : t('notEnoughData')}
                 </p>
                 {insights?.idlestDayOfWeek && (

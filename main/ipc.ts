@@ -16,6 +16,7 @@ import {
   markWindowRendererReady,
   registerRendererDocument,
 } from './window-readiness';
+import { isThemeMode, appendThemeQueryParam } from './title-bar-theme';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -30,6 +31,7 @@ const ALLOWED_IPC_KEYS = new Set([
   'loyalty_enabled',
   'printer_method', 'paper_size', 'bill_template', 'bill_footer_message',
   'telemetry_enabled',
+  'theme_mode',
 ]);
 
 const SENSITIVE_SETTING_KEYS = new Set([
@@ -56,7 +58,7 @@ function getErrorMessage(error: unknown): string {
  * LAN-served HTTP content and must not reach these handlers, so non-PIN-gated
  * handlers verify the sender's origin before doing anything.
  */
-function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender'>): boolean {
+export function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender'>): boolean {
   try {
     const url = event.sender?.getURL?.() ?? '';
     return url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
@@ -114,6 +116,7 @@ function handle<Args extends unknown[]>(channel: string, listener: IpcHandler<Ar
 export function registerIpcHandlers(
   shutdownSignal?: AbortSignal,
   getMainWindow?: MainWindowGetter,
+  getCurrentEffectiveIsDark?: () => boolean,
 ): void {
   ipcMain.on('window-document', (event, documentNonce: unknown) => {
     let currentFrame: Electron.WebFrameMain | null = null;
@@ -365,6 +368,9 @@ export function registerIpcHandlers(
       if (!ALLOWED_IPC_KEYS.has(key)) {
         return { success: false, error: 'Setting not allowed via IPC' };
       }
+      if (key === 'theme_mode' && !isThemeMode(value)) {
+        return { success: false, error: 'Invalid theme_mode value' };
+      }
       const db = getDatabase();
       db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
         .run(key, value, now());
@@ -430,7 +436,14 @@ export function registerIpcHandlers(
       if (!allowed) event.preventDefault();
     });
 
-    activeKdsWindow.loadURL(`${kdsOrigin}/kds`);
+    // gh-513: KDS window has no preload and a LAN-IP origin — it learns the
+    // current palette from the URL param (read by the root-layout FOUC
+    // script), since it can't share the main window's localStorage mirror.
+    const kdsUrl = appendThemeQueryParam(
+      `${kdsOrigin}/kds`,
+      getCurrentEffectiveIsDark ? getCurrentEffectiveIsDark() : false,
+    );
+    activeKdsWindow.loadURL(kdsUrl);
   });
 
   handle('get-app-info', async () => {

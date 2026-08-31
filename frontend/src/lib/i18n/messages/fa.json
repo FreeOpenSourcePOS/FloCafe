@@ -1679,7 +1679,12 @@
     "whatsapp": "واتساپ",
     "whatsappSharing": "اشتراک‌گذاری واتساپ",
     "yes": "آری",
-    "zeroNoLimit": "(۰ = بدون محدودیت)"
+    "zeroNoLimit": "(۰ = بدون محدودیت)",
+    "tabAppearance": "ظاهر",
+    "themeTitle": "پوسته",
+    "themeLight": "روشن",
+    "themeDark": "تاریک",
+    "themeSystem": "سیستم"
   },
   "setup": {
     "alreadyCompleted": "راه‌اندازی در این نصب پیش‌تر انجام شده است. در حال بازگشت به ورود…",

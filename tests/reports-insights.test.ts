@@ -114,6 +114,16 @@ async function main() {
     date.setUTCHours(utcHour, 0, 0, 0);
     return date.toISOString();
   };
+  // Variant that also accepts UTC minutes — the hour/day bucketing fixtures
+  // need minute-level times-of-day (08:30, 09:00, 09:15, ...). Returns the
+  // DB's canonical space form so day-range filters compare like-for-like.
+  const recentWeekdayTimestampAt = (weekday: number, utcHour: number, utcMinute = 0) => {
+    const date = new Date();
+    const daysSinceWeekday = (date.getUTCDay() - weekday + 7) % 7;
+    date.setUTCDate(date.getUTCDate() - daysSinceWeekday - 7);
+    date.setUTCHours(utcHour, utcMinute, 0, 0);
+    return date.toISOString().slice(0, 19).replace('T', ' ');
+  };
   const prepOneCreatedAt = recentWeekdayTimestamp(3, 4); // Wed, 09:30 Kolkata
   const prepTwoCreatedAt = recentWeekdayTimestamp(4, 5); // Thu, 10:30 Kolkata
   const cashierRevenueCreatedAt = recentWeekdayTimestamp(5, 6); // Fri, 11:30 Kolkata
@@ -130,17 +140,43 @@ async function main() {
   // ── Seed orders for hour/day-of-week bucketing ───────────────────────
   // Expected (precomputed): busiest hour=14 (3 orders), idlest hour=8 (1),
   // busiest day=Monday (3), idlest day=Tuesday (0 — no fixture lands there).
+  //
+  // The crafted fixtures land on the same weekdays (Mon / Wed / Thu / Fri /
+  // Sat / Sun) at the same UTC minutes regardless of when this test runs —
+  // bucketing in Asia/Kolkata (UTC+5:30, no DST) is minute-of-day-invariant,
+  // so the hour and day-of-week expectations hold for any run date. This
+  // places each fixture at the most-recent occurrence of its weekday at
+  // least 7 days back, keeping it inside the insights `?days=90` window
   // Timestamps use the DB's canonical space form (UTC wall, what now() and
   // migration v45 produce) so day-range filters compare like-for-like.
+  // All hour/day fixtures land on the SAME week — anchored on the most
+  // recent Monday ≥7 days back, with each fixture offset to its weekday by
+  // day count (Mon=0…Sun=6). Same-week alignment is required so that the
+  // bucketing invariants (busiest hour 14, Monday busiest, Tuesday idlest)
+  // hold cleanly AND the date-range assertions in scenario 9 below can
+  // span Monday→Wednesday without skipping a week.
+  const fixtureWeekMonday = (() => {
+    const [yy, mm, dd] = recentWeekdayTimestampAt(1, 0, 0).slice(0, 10).split('-').map(Number);
+    return Date.UTC(yy, mm - 1, dd);
+  })();
+  const fixtureDayAt = (dayOffset: number, utcHour: number, utcMinute = 0): string => {
+    const d = new Date(fixtureWeekMonday + dayOffset * 86400_000);
+    const yyyy = d.getUTCFullYear();
+    const mon = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const hh = String(utcHour).padStart(2, '0');
+    const mi = String(utcMinute).padStart(2, '0');
+    return `${yyyy}-${mon}-${day} ${hh}:${mi}:00`;
+  };
   const hourDayFixtures: { id: string; createdAt: string }[] = [
-    { id: 'ORD-INS-1', createdAt: '2026-06-01 08:30:00' }, // Mon 14:00
-    { id: 'ORD-INS-2', createdAt: '2026-06-01 09:00:00' }, // Mon 14:30
-    { id: 'ORD-INS-3', createdAt: '2026-06-01 09:15:00' }, // Mon 14:45
-    { id: 'ORD-INS-4', createdAt: '2026-06-03 04:00:00' }, // Wed 09:30
-    { id: 'ORD-INS-5', createdAt: '2026-06-04 03:00:00' }, // Thu 08:30
-    { id: 'ORD-INS-6', createdAt: '2026-06-05 05:00:00' }, // Fri 10:30
-    { id: 'ORD-INS-7', createdAt: '2026-06-06 06:00:00' }, // Sat 11:30
-    { id: 'ORD-INS-8', createdAt: '2026-06-07 07:00:00' }, // Sun 12:30
+    { id: 'ORD-INS-1', createdAt: fixtureDayAt(0, 8, 30) },  // Mon 14:00
+    { id: 'ORD-INS-2', createdAt: fixtureDayAt(0, 9, 0) },   // Mon 14:30
+    { id: 'ORD-INS-3', createdAt: fixtureDayAt(0, 9, 15) },  // Mon 14:45
+    { id: 'ORD-INS-4', createdAt: fixtureDayAt(2, 4, 0) },   // Wed 09:30
+    { id: 'ORD-INS-5', createdAt: fixtureDayAt(3, 3, 0) },   // Thu 08:30
+    { id: 'ORD-INS-6', createdAt: fixtureDayAt(4, 5, 0) },   // Fri 10:30
+    { id: 'ORD-INS-7', createdAt: fixtureDayAt(5, 6, 0) },   // Sat 11:30
+    { id: 'ORD-INS-8', createdAt: fixtureDayAt(6, 7, 0) },   // Sun 12:30
   ];
   // Zero-value on purpose — only created_at matters for bucketing, and this
   // keeps these 8 orders from perturbing the top-staff revenue ranking below.
@@ -289,17 +325,25 @@ async function main() {
 
     console.log('\n9. GET /api/reports/recentOrders?date=X scopes to that day (dashboard date picker)');
     {
-      const dated = await request(app).get('/api/reports/recentOrders?date=2026-06-01&limit=10').set('Authorization', `Bearer ${ownerToken}`);
+      // Derive all query dates from the same-week Monday anchor so the range
+      // query always satisfies the endpoint's `start_date <= end_date` check
+      // regardless of today's weekday (otherwise "most recent Monday" and
+      // "most recent Wednesday" can land in different weeks when today is a
+      // weekday between them).
+      const mondayDate = recentWeekdayTimestampAt(1, 0, 0).slice(0, 10);
+      const [yy, mm, dd] = mondayDate.split('-').map(Number);
+      const wednesdayDate = new Date(Date.UTC(yy, mm - 1, dd + 2)).toISOString().slice(0, 10);
+      const dated = await request(app).get(`/api/reports/recentOrders?date=${mondayDate}&limit=10`).set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(dated.status, 200, `owner gets 200 (got ${dated.status})`);
       const numbers = (dated.body.recentOrders ?? []).map((o: any) => o.order_number).sort();
-      assertEqual(JSON.stringify(numbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3']), 'only the 3 orders created on 2026-06-01 are returned');
+      assertEqual(JSON.stringify(numbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3']), 'only the 3 Monday orders are returned');
 
-      const ranged = await request(app).get('/api/reports/recentOrders?start_date=2026-06-01&end_date=2026-06-03&limit=10').set('Authorization', `Bearer ${ownerToken}`);
+      const ranged = await request(app).get(`/api/reports/recentOrders?start_date=${mondayDate}&end_date=${wednesdayDate}&limit=10`).set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(ranged.status, 200, `owner can request a month-style date range (got ${ranged.status})`);
       const rangedNumbers = (ranged.body.recentOrders ?? []).map((o: any) => o.order_number).sort();
       assertEqual(JSON.stringify(rangedNumbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3', 'ORD-INS-4']), 'date range includes orders from both boundary dates');
 
-      const mixedRange = await request(app).get('/api/reports/recentOrders?date=2026-06-01&start_date=2026-06-01').set('Authorization', `Bearer ${ownerToken}`);
+      const mixedRange = await request(app).get(`/api/reports/recentOrders?date=${mondayDate}&start_date=${mondayDate}`).set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(mixedRange.status, 400, 'single-date and range filters cannot be combined');
 
       const undated = await request(app).get('/api/reports/recentOrders?limit=1').set('Authorization', `Bearer ${ownerToken}`);

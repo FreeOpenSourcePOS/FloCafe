@@ -196,7 +196,7 @@ export default function AddonGroupsPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         <Button onClick={() => { resetForm(); setShowForm(true); }}>
           <Plus size={16} className="me-1" /> {t('addGroup')}
         </Button>
@@ -206,7 +206,7 @@ export default function AddonGroupsPage() {
         {groups.map((group) => {
           const isExpanded = expandedGroup === group.id;
           return (
-            <div key={group.id} className="bg-white rounded-xl border border-gray-100">
+            <div key={group.id} className="bg-card rounded-xl border border-border">
               {/* Group Header */}
               <div className="flex items-center justify-between p-4">
                 <button
@@ -216,8 +216,8 @@ export default function AddonGroupsPage() {
                   {isExpanded ? <ChevronDown size={18} className="text-gray-400" /> : <ChevronRight size={18} className="text-gray-400" />}
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900">{group.name}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
+                      <span className="font-medium text-foreground">{group.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>
                         {group.is_required ? tProducts('requiredTag') : tProducts('optionalTag')}
                       </span>
                       <span className="text-xs text-gray-400">
@@ -225,7 +225,7 @@ export default function AddonGroupsPage() {
                       </span>
                     </div>
                     {group.description && (
-                      <p className="text-xs text-gray-500 mt-0.5">{group.description}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{group.description}</p>
                     )}
                     <p className="text-xs text-gray-400 mt-0.5">
                       {t('selectRange', { min: group.min_selection, max: group.max_selection })}
@@ -244,30 +244,30 @@ export default function AddonGroupsPage() {
 
               {/* Expanded: Addons */}
               {isExpanded && (
-                <div className="border-t border-gray-100 p-4 pt-3">
+                <div className="border-t border-border p-4 pt-3">
                   <div className="space-y-2">
                     {group.addons?.map((addon) => (
-                      <div key={addon.id} className="flex items-center justify-between py-1.5 px-3 bg-gray-50 rounded-lg">
+                      <div key={addon.id} className="flex items-center justify-between py-1.5 px-3 bg-muted rounded-lg">
                         {editingAddon?.addon.id === addon.id ? (
                           <div className="flex items-end gap-2 flex-1">
                             <label className="flex-1">
-                              <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{tProducts('nameLabel')}</span>
+                              <span className="block text-[11px] font-medium text-muted-foreground mb-0.5">{tProducts('nameLabel')}</span>
                               <input type="text" value={addonForm.name} onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-brand" />
+                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-border rounded outline-none focus:ring-1 focus:ring-brand" />
                             </label>
                             <label className="w-24">
-                              <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{tProducts('columnPrice')}</span>
+                              <span className="block text-[11px] font-medium text-muted-foreground mb-0.5">{tProducts('columnPrice')}</span>
                               <input type="number" step="0.01" value={addonForm.price} onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })} onWheel={(e) => e.currentTarget.blur()}
-                                className="w-full px-2 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-brand" />
+                                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-border rounded outline-none focus:ring-1 focus:ring-brand" />
                             </label>
                             <button onClick={handleUpdateAddon} disabled={mutating} className="text-xs text-brand font-medium hover:underline disabled:opacity-50">{tCommon('save')}</button>
                             <button onClick={() => { setEditingAddon(null); setAddonForm({ name: '', price: '0' }); }} className="text-xs text-gray-400 hover:underline">{tTables('cancel')}</button>
                           </div>
                         ) : (
                           <>
-                            <span className="text-sm text-gray-700">{addon.name}</span>
+                            <span className="text-sm text-foreground">{addon.name}</span>
                             <div className="flex items-center gap-3">
-                              <span className="text-sm font-medium text-gray-900">
+                              <span className="text-sm font-medium text-foreground">
                                 {Number(addon.price) === 0 ? tPos('free') : fmt(Number(addon.price))}
                               </span>
                               <button onClick={() => { setEditingAddon({ groupId: group.id, addon }); setAddonForm({ name: addon.name, price: String(addon.price) }); }}
@@ -285,22 +285,22 @@ export default function AddonGroupsPage() {
                   {addingAddonTo === group.id ? (
                     <div className="flex items-end gap-2 mt-3">
                       <label className="flex-1">
-                        <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{tProducts('nameLabel')}</span>
+                        <span className="block text-[11px] font-medium text-muted-foreground mb-0.5">{tProducts('nameLabel')}</span>
                         <input type="text" placeholder={tProducts('addonNamePlaceholder')} value={addonForm.name}
                           onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })}
-                          className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                          className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       </label>
                       <label className="w-24">
-                        <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{tProducts('columnPrice')}</span>
+                        <span className="block text-[11px] font-medium text-muted-foreground mb-0.5">{tProducts('columnPrice')}</span>
                         <input type="number" step="0.01" placeholder={tProducts('addonPricePlaceholder')} value={addonForm.price}
                           onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })}
                           onWheel={(e) => e.currentTarget.blur()}
-                          className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                          className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       </label>
                       <button onClick={() => handleAddAddon(group.id)} disabled={mutating}
                         className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-hover disabled:opacity-50">{tProducts('addButton')}</button>
                       <button onClick={() => { setAddingAddonTo(null); setAddonForm({ name: '', price: '0' }); }}
-                        className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
+                        className="text-gray-400 hover:text-muted-foreground"><X size={16} /></button>
                     </div>
                   ) : (
                     <button
@@ -316,49 +316,49 @@ export default function AddonGroupsPage() {
           );
         })}
         {groups.length === 0 && (
-          <p className="text-center text-gray-500 py-12">{t('noAddonGroups')}</p>
+          <p className="text-center text-muted-foreground py-12">{t('noAddonGroups')}</p>
         )}
       </div>
 
       {/* Group Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{editingGroup ? t('editGroup') : tProducts('addAddonGroupForm')}</h2>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+              <button onClick={resetForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{tProducts('nameLabel')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{tProducts('nameLabel')}</label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{tProducts('categoryDescription')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{tProducts('categoryDescription')}</label>
                 <input type="text" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={form.is_required} onChange={(e) => setForm({ ...form, is_required: e.target.checked })}
-                  className="rounded border-gray-300 text-brand focus:ring-brand" />
-                <span className="text-sm text-gray-700">{tProducts('requiredSelection')}</span>
+                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                <span className="text-sm text-foreground">{tProducts('requiredSelection')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="allow_multiple_quantities" checked={form.allow_multiple_quantities} onChange={(e) => setForm({ ...form, allow_multiple_quantities: e.target.checked })}
-                  className="rounded border-gray-300 text-brand focus:ring-brand" />
-                <label htmlFor="allow_multiple_quantities" className="text-sm text-gray-700">Allow multiple quantities per add-on</label>
+                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                <label htmlFor="allow_multiple_quantities" className="text-sm text-foreground">Allow multiple quantities per add-on</label>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{tProducts('minSelection')}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{tProducts('minSelection')}</label>
                   <input type="number" min="0" value={form.min_selection} onChange={(e) => setForm({ ...form, min_selection: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{tProducts('maxSelection')}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{tProducts('maxSelection')}</label>
                   <input type="number" min="1" value={form.max_selection} onChange={(e) => setForm({ ...form, max_selection: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
               </div>
               <Button type="submit" disabled={mutating} className="w-full">

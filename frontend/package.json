@@ -57,5 +57,8 @@
     "sharp": "$sharp",
     "@hono/node-server": "^2.0.12",
     "hono": "^4.12.34"
+  },
+  "allowScripts": {
+    "unrs-resolver@1.12.2": true
   }
 }

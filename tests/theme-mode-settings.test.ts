@@ -169,8 +169,16 @@ async function main() {
       });
     });
 
+    // ── HTTP wildcard GET — default before any row exists ───────────────
+    console.log('0. GET /api/settings/theme_mode with no row yet → HTTP 200 "system" (not 404)');
+    {
+      const res = await httpRequest(baseUrl, '/api/settings/theme_mode');
+      assert.equal(res.status, 200, 'returns 200 even with no persisted row');
+      assert.equal(res.data?.setting?.value, 'system', 'defaults to "system"');
+    }
+
     // ── HTTP wildcard PUT — negative path ──────────────────────────────
-    console.log('1. PUT /api/settings/theme_mode with bogus value → HTTP 400');
+    console.log('\n1. PUT /api/settings/theme_mode with bogus value → HTTP 400');
     {
       const res = await httpRequest(baseUrl, '/api/settings/theme_mode', {
         method: 'PUT',

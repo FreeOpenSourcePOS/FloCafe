@@ -18,6 +18,9 @@ import {
   MessageCircle,
   LifeBuoy,
   ChevronUp,
+  Sun,
+  Moon,
+  Monitor,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -26,6 +29,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
 import { useConfirm } from '@/hooks/use-confirm';
+import { useThemeModeToggle } from '@/hooks/useThemeModeToggle';
 import { ROLE_ACCESS, hasRole, type Role } from '@shared/role-permissions';
 import {
   DropdownMenu,
@@ -83,6 +87,15 @@ export default function AppSidebar() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [emailNeedsAttention, setEmailNeedsAttention] = useState(false);
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
+  const tSettings = useTranslations('settings');
+  const { mode: themeMode, cycle: cycleThemeMode } = useThemeModeToggle();
+  const themeModeIcon = themeMode === 'light' ? Sun : themeMode === 'dark' ? Moon : Monitor;
+  const themeModeLabel = themeMode === 'light'
+    ? tSettings('themeLight')
+    : themeMode === 'dark'
+      ? tSettings('themeDark')
+      : tSettings('themeSystem');
+  const ThemeModeIcon = themeModeIcon;
 
   const role = currentTenant?.role || 'cashier';
   const businessType = currentTenant?.business_type || 'restaurant';
@@ -192,6 +205,18 @@ export default function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={cycleThemeMode}
+              tooltip={`${tSettings('themeTitle')}: ${themeModeLabel}`}
+            >
+              <ThemeModeIcon className="size-4 shrink-0" />
+              <span>{tSettings('themeTitle')}</span>
+              <span className="ms-auto text-xs text-muted-foreground group-data-[collapsible=icon]:hidden">
+                {themeModeLabel}
+              </span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

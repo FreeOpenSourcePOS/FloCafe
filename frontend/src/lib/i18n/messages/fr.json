@@ -177,20 +177,29 @@
   },
   "customers": {
     "actionRequired": "Action requise",
+    "billingHistory": "Historique de facturation",
     "columnActions": "Actions",
+    "columnAmount": "Montant",
+    "columnBill": "Facture",
     "columnCustomer": "Client",
     "columnDate": "Date",
     "columnDescription": "Description",
+    "columnEarned": "Gagnés",
     "columnExpires": "Expiration",
     "columnLastVisit": "Dernière visite",
     "columnLedger": "Relevé",
     "columnPoints": "Points",
+    "columnRedeemed": "Utilisés",
     "empty": "Aucun client trouvé",
     "first200": "Affichage des 200 premiers clients - affinez votre recherche pour en voir davantage.",
     "invalidPhoneCount": "{count, plural, one {# client possède un numéro de téléphone non valide ou dans un ancien format.} other {# clients possèdent un numéro de téléphone non valide ou dans un ancien format.}}",
     "loyaltyLedger": "Relevé de fidélité",
+    "noBills": "Aucune facture pour le moment",
     "noTransactions": "Aucune transaction pour le moment",
-    "totalBalance": "Solde total"
+    "pointsHistory": "Historique des points",
+    "totalBalance": "Solde total",
+    "totalPointsEarned": "Points gagnés",
+    "totalPointsRedeemed": "Points utilisés"
   },
   "dashboard": {
     "aov": "Panier moyen",
@@ -1679,7 +1688,12 @@
     "whatsapp": "WhatsApp",
     "whatsappSharing": "Partage WhatsApp",
     "yes": "Oui",
-    "zeroNoLimit": "(0 = aucune limite)"
+    "zeroNoLimit": "(0 = aucune limite)",
+    "tabAppearance": "Apparence",
+    "themeTitle": "Thème",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "themeSystem": "Système"
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

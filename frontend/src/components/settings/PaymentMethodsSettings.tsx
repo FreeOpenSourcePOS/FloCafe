@@ -100,23 +100,23 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div className="pb-6 max-w-3xl space-y-6">
-      <div className="bg-white rounded-xl border border-gray-100 p-6">
-        <div className="flex items-center gap-2 mb-2"><CreditCard size={20} className="text-gray-500" /><h2 className="font-semibold text-gray-900">{t('paymentMethods')}</h2></div>
-        <p className="text-sm text-gray-500 mb-5">{t('paymentMethodsHint')}</p>
-        <div className="rounded-lg border border-gray-100 divide-y">
+      <div className="bg-card rounded-xl border border-border p-6">
+        <div className="flex items-center gap-2 mb-2"><CreditCard size={20} className="text-muted-foreground" /><h2 className="font-semibold text-foreground">{t('paymentMethods')}</h2></div>
+        <p className="text-sm text-muted-foreground mb-5">{t('paymentMethodsHint')}</p>
+        <div className="rounded-lg border border-border divide-y">
           {builtInMethods.map((method) => <div key={method.key} className="px-3 py-2 flex justify-between text-sm"><span>{tPos(method.labelKey)}</span><span className="text-xs text-gray-400">{t('builtIn')}</span></div>)}
         </div>
         <div className="mt-5 space-y-3">
           {methods.map((method) => (
-            <div key={method.id} className="rounded-lg border border-gray-200 p-3 space-y-2">
+            <div key={method.id} className="rounded-lg border border-border p-3 space-y-2">
               <div className="flex gap-2 items-center">
                 <input disabled={!isAdmin} value={names[method.id] ?? method.name} onChange={(e) => setNames((old) => ({ ...old, [method.id]: e.target.value }))} className="flex-1 px-3 py-2 text-sm border rounded-lg" />
                 <Button variant="outline" size="sm" disabled={!isAdmin || names[method.id] === method.name} onClick={() => update(method, { name: names[method.id] })}><Save size={14} /></Button>
-                <label className="flex items-center gap-1.5 text-xs text-gray-500"><input type="checkbox" disabled={!isAdmin} checked={method.is_active} onChange={(e) => update(method, { is_active: e.target.checked })} /> {t('active')}</label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" disabled={!isAdmin} checked={method.is_active} onChange={(e) => update(method, { is_active: e.target.checked })} /> {t('active')}</label>
                 <Button variant="outline" size="sm" disabled={!isAdmin || Boolean(method.usage_count)} onClick={() => remove(method)}><Trash2 size={14} /></Button>
               </div>
               {Boolean(method.usage_count) && isAdmin && <div className="flex gap-2 items-center">
-                <select value={mergeTargets[method.id] || ''} onChange={(e) => setMergeTargets((old) => ({ ...old, [method.id]: e.target.value }))} className="flex-1 px-2 py-1.5 text-xs border rounded-md bg-white">
+                <select value={mergeTargets[method.id] || ''} onChange={(e) => setMergeTargets((old) => ({ ...old, [method.id]: e.target.value }))} className="flex-1 px-2 py-1.5 text-xs border rounded-md bg-card">
                   <option value="">{t('mergeInto')}…</option><option value="card">{tPos('methodCard')}</option>
                   {methods.filter((target) => target.id !== method.id).map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
                 </select>
@@ -128,12 +128,12 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4">
-        <div><h2 className="font-semibold text-gray-900">{t('splitChecks')}</h2><p className="text-sm text-gray-500 mt-1">{t('splitChecksHint')}</p></div>
+      <div className="bg-card rounded-xl border border-border p-6 flex items-center justify-between gap-4">
+        <div><h2 className="font-semibold text-foreground">{t('splitChecks')}</h2><p className="text-sm text-muted-foreground mt-1">{t('splitChecksHint')}</p></div>
         <input type="checkbox" className="size-5" disabled={!isAdmin} checked={splitChecksEnabled} onChange={async (e) => { const value = e.target.checked; setSplitChecksEnabled(value); try { await api.put('/settings/split_checks_enabled', { value: String(value) }); } catch { setSplitChecksEnabled(!value); toast.error(t('saveFailed')); } }} />
       </div>
 
-      {merges.length > 0 && <div className="bg-white rounded-xl border border-gray-100 p-6"><h2 className="font-semibold text-gray-900 mb-3">{t('mergeHistory')}</h2><div className="space-y-2 text-sm text-gray-600">{merges.map((entry) => <p key={entry.id}>{entry.source_name} → {entry.target_name} · {entry.affected_payments} · {formatDate(entry.merged_at)}</p>)}</div></div>}
+      {merges.length > 0 && <div className="bg-card rounded-xl border border-border p-6"><h2 className="font-semibold text-foreground mb-3">{t('mergeHistory')}</h2><div className="space-y-2 text-sm text-muted-foreground">{merges.map((entry) => <p key={entry.id}>{entry.source_name} → {entry.target_name} · {entry.affected_payments} · {formatDate(entry.merged_at)}</p>)}</div></div>}
     </div>
   );
 }

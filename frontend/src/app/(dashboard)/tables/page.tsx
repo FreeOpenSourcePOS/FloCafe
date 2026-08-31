@@ -108,10 +108,10 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+      <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold">{tNav('tables')} · {table.name}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+          <button onClick={onClose} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
         </div>
 
         {selected ? (
@@ -126,7 +126,7 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
           </div>
         ) : (
           <div className="mb-4">
-            <p className="text-sm text-gray-500 mb-2">{tTables('linkCustomer')}</p>
+            <p className="text-sm text-muted-foreground mb-2">{tTables('linkCustomer')}</p>
             <div className="relative mb-2">
               <Search size={14} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
@@ -134,14 +134,14 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); searchCustomers(e.target.value); }}
                 placeholder={tTables('searchCustomerPlaceholder')}
-                className="w-full ps-8 pe-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                className="w-full ps-8 pe-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
               />
             </div>
             {results.length > 0 && (
-              <div className="border border-gray-200 rounded-lg overflow-hidden mb-2 max-h-36 overflow-y-auto">
+              <div className="border border-border rounded-lg overflow-hidden mb-2 max-h-36 overflow-y-auto">
                 {results.map((c) => (
                   <button key={c.id} onClick={() => { setSelected(c); setQuery(''); setResults([]); }}
-                    className="w-full text-start px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0">
+                    className="w-full text-start px-3 py-2 hover:bg-muted text-sm border-b border-border last:border-0">
                     <span className="font-medium">{c.name}</span>
                     <span className="text-gray-400 ms-2 text-xs"><Ltr>{c.phone}</Ltr></span>
                   </button>
@@ -154,17 +154,17 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
                 <UserPlus size={14} /> {tTables('newCustomer')}
               </button>
             ) : (
-              <div className="space-y-2 border border-gray-200 rounded-xl p-3">
+              <div className="space-y-2 border border-border rounded-xl p-3">
                 <input type="text" placeholder={tProducts('nameLabel')} value={newName} onChange={(e) => setNewName(e.target.value)}
-                  className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                 <div className="flex items-stretch gap-2">
 
                   <input type="tel" inputMode="numeric" placeholder={`${dialCode} ${tSettings('phone')}`} value={newPhone}
                     onChange={(e) => setNewPhone(e.target.value)}
-                    className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                    className="flex-1 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setShowCreate(false)} className="flex-1 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">{tTables('cancel')}</button>
+                  <button onClick={() => setShowCreate(false)} className="flex-1 py-1.5 text-sm border border-border rounded-lg hover:bg-muted">{tTables('cancel')}</button>
                   <button onClick={handleCreateCustomer} disabled={creating || !newName.trim() || !newPhone.trim()}
                     className="flex-1 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50">
                     {creating ? tTables('creating') : tTables('create')}
@@ -320,14 +320,14 @@ export default function TablesPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{tTables('title')}</h1>
+        <h1 className="text-2xl font-bold text-foreground">{tTables('title')}</h1>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
             <input
               type="checkbox"
               checked={showDetails}
               onChange={toggleDetails}
-              className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
+              className="w-4 h-4 rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
             />
             {tTables('showOrderDetails')}
           </label>
@@ -345,14 +345,14 @@ export default function TablesPage() {
 
             return (
               <div key={table.id}
-                className={`bg-white rounded-xl border border-gray-100 hover:shadow-md transition-shadow ${
+                className={`bg-card rounded-xl border border-border hover:shadow-md transition-shadow ${
                   hasOrders ? 'border-s-4 border-s-brand' : ''
                 } ${!table.is_active ? 'opacity-60' : ''}`}>
                 {/* Table header */}
-                <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className={`w-3 h-3 rounded-full ${statusColors[table.status]}`} />
-                    <h3 className="font-bold text-gray-900">{table.name}</h3>
+                    <h3 className="font-bold text-foreground">{table.name}</h3>
                     <span className="text-xs text-gray-400">· {tTables('capacitySeats', { count: table.capacity })}</span>
                   </div>
                   <span className="text-xs text-gray-400">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</span>
@@ -362,21 +362,21 @@ export default function TablesPage() {
                 {hasOrders ? (
                   <div className="px-4 py-3 space-y-3">
                     {tableOrders.map((order) => (
-                      <div key={order.id} className="bg-gray-50 rounded-lg p-3">
+                      <div key={order.id} className="bg-muted rounded-lg p-3">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-semibold text-gray-800">#<Ltr>{order.order_number}</Ltr></span>
+                          <span className="text-sm font-semibold text-foreground">#<Ltr>{order.order_number}</Ltr></span>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
                             order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                             order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
                             order.status === 'ready' ? 'bg-green-100 text-green-700' :
                             order.status === 'served' ? 'bg-purple-100 text-purple-700' :
-                            'bg-gray-100 text-gray-600'
+                            'bg-muted text-muted-foreground'
                           }`}>
                             {tOrders(ORDER_STATUS_LABEL_KEYS[order.status])}
                           </span>
                         </div>
                         {order.customer?.name && (
-                          <p className="text-xs text-gray-500 mb-1.5">{order.customer.name}</p>
+                          <p className="text-xs text-muted-foreground mb-1.5">{order.customer.name}</p>
                         )}
                         <div className="space-y-1">
                           {order.items?.filter(i => i.status !== 'cancelled').map((item) => {
@@ -384,8 +384,8 @@ export default function TablesPage() {
                             return (
                               <div key={item.id} className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${sc.bg}`}>
                                 <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} flex-shrink-0`} />
-                                <span className="flex-1 truncate text-gray-700">{item.product_name}</span>
-                                <span className="text-gray-500">×{item.quantity}</span>
+                                <span className="flex-1 truncate text-foreground">{item.product_name}</span>
+                                <span className="text-muted-foreground">×{item.quantity}</span>
                                 <span className={`font-medium capitalize ${sc.text}`}>{tOrders(itemStatusLabelKey(item.status))}</span>
                               </div>
                             );
@@ -401,7 +401,7 @@ export default function TablesPage() {
                 )}
 
                 {/* Actions */}
-                <div className="px-4 py-2 border-t border-gray-50 flex justify-end gap-2">
+                <div className="px-4 py-2 border-t border-border flex justify-end gap-2">
                   {(table.status === 'occupied' || table.status === 'reserved') && (
                     <button onClick={() => updateStatus(table.id, 'available')}
                       className="text-xs text-brand hover:text-brand-hover font-medium">
@@ -427,10 +427,10 @@ export default function TablesPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {tables.map((table) => (
             <div key={table.id}
-              className={`bg-white rounded-xl p-5 border border-gray-100 text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}>
+              className={`bg-card rounded-xl p-5 border border-border text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}>
               <div className={`w-3 h-3 rounded-full ${statusColors[table.status]} mx-auto mb-3`} />
-              <h3 className="font-bold text-lg text-gray-900">{table.name}</h3>
-              <p className="text-sm text-gray-500">{tTables('capacitySeats', { count: table.capacity })}</p>
+              <h3 className="font-bold text-lg text-foreground">{table.name}</h3>
+              <p className="text-sm text-muted-foreground">{tTables('capacitySeats', { count: table.capacity })}</p>
               <p className="text-xs text-gray-400 mt-1">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</p>
               {table.floor && <p className="text-xs text-gray-400">{table.floor}</p>}
               {table.status === 'reserved' && table.reservation_customer_name && (
@@ -462,7 +462,7 @@ export default function TablesPage() {
       )}
 
       {tables.length === 0 && (
-        <p className="text-center text-gray-500 py-12">{tTables('noTablesYet')}</p>
+        <p className="text-center text-muted-foreground py-12">{tTables('noTablesYet')}</p>
       )}
 
       {/* Reserve Modal */}
@@ -477,27 +477,27 @@ export default function TablesPage() {
       {/* Add Table Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{tTables('add')}</h2>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
             </div>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('tableName')}</label>
+                <label className="block text-sm font-medium text-foreground mb-1">{tTables('tableName')}</label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder={tTables('tableNamePlaceholder')} className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                  placeholder={tTables('tableNamePlaceholder')} className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('capacity')}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{tTables('capacity')}</label>
                   <input type="number" min="1" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('floor')}</label>
+                  <label className="block text-sm font-medium text-foreground mb-1">{tTables('floor')}</label>
                   <input type="text" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                 </div>
               </div>
               <Button type="submit" className="w-full">{tTables('createTable')}</Button>

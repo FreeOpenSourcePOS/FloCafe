@@ -4,6 +4,7 @@ import "./globals.css";
 import MenuActionHandler from "@/components/layout/MenuActionHandler";
 import AuthGuard from "@/components/layout/AuthGuard";
 import { HtmlLangSync } from "@/components/layout/HtmlLangSync";
+import { ThemeSync } from "@/components/layout/ThemeSync";
 import { DirectionalToaster } from "@/components/layout/DirectionalToaster";
 import DesktopDragSurface from "@/components/layout/DesktopDragSurface";
 import { I18nProvider } from "@/components/providers/I18nProvider";
@@ -55,7 +56,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* gh-513 FOUC guard: apply the last-resolved palette before first
+            paint. Priority: ?theme= URL param (standalone windows opened by
+            main with the current palette) → localStorage mirror → system
+            matchMedia. try/catch: worst case is one light flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var p=new URLSearchParams(location.search).get('theme');" +
+              "var t=(p==='dark'||p==='light')?p:localStorage.getItem('flo-theme-resolved');" +
+              "if(t==='dark'||(t!=='light'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)){" +
+              'document.documentElement.classList.add(\'dark\');}}catch(e){}})();',
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
@@ -63,6 +79,7 @@ export default function RootLayout({
           <DesktopDragSurface />
           <MenuActionHandler />
           <HtmlLangSync />
+          <ThemeSync />
           <AuthGuard>{children}</AuthGuard>
           <DirectionalToaster />
         </I18nProvider>

@@ -90,14 +90,14 @@ export function tagLabel(tag: string): string {
 
 // First tag's bg colour for card background tinting
 export function firstTagBg(tags: string[] | null | undefined): string {
-  if (!tags?.length) return 'bg-gray-100';
-  return TAG_CONFIG[normalizeTag(tags[0])]?.bg ?? 'bg-gray-100';
+  if (!tags?.length) return 'bg-muted';
+  return TAG_CONFIG[normalizeTag(tags[0])]?.bg ?? 'bg-muted';
 }
 
 export default function TagBadge({ tag }: { tag: string }) {
   const t = useTranslations('pos');
   const canonical = normalizeTag(tag);
-  const cfg = TAG_CONFIG[canonical] ?? { color: 'text-gray-600', bg: 'bg-gray-100', dot: 'bg-gray-400' };
+  const cfg = TAG_CONFIG[canonical] ?? { color: 'text-muted-foreground', bg: 'bg-muted', dot: 'bg-gray-400' };
   // Known tags translate through the typed map; custom tags render their
   // formatted name directly without an unchecked runtime translation key.
   const key = (DIETARY_TAG_KEYS as Record<string, PosKey | undefined>)[canonical];

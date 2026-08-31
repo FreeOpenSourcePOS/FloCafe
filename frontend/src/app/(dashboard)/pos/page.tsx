@@ -893,17 +893,17 @@ export default function POSPage() {
   return (
     <>
       {supportError && (
-        <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-white p-4 shadow-xl">
+        <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-card p-4 shadow-xl">
           {sentTicketId ? (
             <>
               <p className="font-semibold text-red-800">{tSupport('requestQueued')}</p>
               {delivery.status === 'delivered' && delivery.supportCode ? (
                 <>
-                  <p className="mt-1 text-sm font-semibold text-gray-800">{tSupport('supportCode')}: <Ltr as="span" className="font-mono">{delivery.supportCode}</Ltr></p>
-                  <p className="mt-0.5 text-xs text-gray-500">{tSupport('supportCodeHint')}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{tSupport('supportCode')}: <Ltr as="span" className="font-mono">{delivery.supportCode}</Ltr></p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{tSupport('supportCodeHint')}</p>
                 </>
               ) : (
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   {delivery.status === 'failed' ? tSupport('stillQueuedLocally') : tSupport('confirmingDelivery')}
                 </p>
               )}
@@ -914,13 +914,13 @@ export default function POSPage() {
           ) : (
             <>
               <p className="font-semibold text-red-800">{t('printingFailed')}</p>
-              <p className="mt-1 text-sm text-gray-600">{supportError.message}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{supportError.message}</p>
               {typeof supportError.payload.diagnostics === 'object' && supportError.payload.diagnostics && 'message' in (supportError.payload.diagnostics as Record<string, unknown>) ? (
-                <p className="mt-1 text-xs text-gray-500">{String((supportError.payload.diagnostics as Record<string, unknown>).message)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{String((supportError.payload.diagnostics as Record<string, unknown>).message)}</p>
               ) : null}
-              <details className="mt-2 text-xs text-gray-500">
+              <details className="mt-2 text-xs text-muted-foreground">
                 <summary className="cursor-pointer">{tSupport('showPayload')}</summary>
-                <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2">{JSON.stringify(
+                <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-muted p-2">{JSON.stringify(
                   diagnosticsPreview
                     ? { ...supportError.payload, diagnostics: { ...(supportError.payload.diagnostics as Record<string, unknown> | undefined), ...diagnosticsPreview } }
                     : supportError.payload,
@@ -1056,14 +1056,14 @@ export default function POSPage() {
 
       {showCustomerPrompt && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm">
+          <div className="bg-card rounded-2xl p-5 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">{t('selectCustomer')}</h3>
-              <button onClick={() => setShowCustomerPrompt(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowCustomerPrompt(false)} className="text-gray-400 hover:text-muted-foreground">
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-500 mb-4">{t('customerRequiredBeforeOrder')}</p>
+            <p className="text-sm text-muted-foreground mb-4">{t('customerRequiredBeforeOrder')}</p>
             <CustomerSearch onSelected={() => setShowCustomerPrompt(false)} />
           </div>
         </div>

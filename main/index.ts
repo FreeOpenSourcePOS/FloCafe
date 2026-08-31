@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, powerMonitor } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, powerMonitor, nativeTheme } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -14,7 +14,7 @@ import { googleDrive } from './services/google-drive';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter } from './printers/thermal';
-import { registerIpcHandlers } from './ipc';
+import { registerIpcHandlers, isTrustedSender } from './ipc';
 import { authorizeMasterPin } from './services/master-pin';
 import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';
@@ -36,6 +36,7 @@ import {
 import { createAutoUpdaterErrorHandler, createRestartAndInstallHandler, type UpdateShutdownState } from './updater-shutdown';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
+import { applyTitleBarOverlayTheme, resolveTitleBarOverlayColors, resolveInitialIsDark, resolveThemeMode, type ThemeMode } from './title-bar-theme';
 import {
   beginRendererDocument,
   getRendererDocumentNonce,
@@ -370,6 +371,8 @@ let usbDevicePermissionsRegistered = false;
 // Title-bar capability reported to the renderer via get-status; updated each
 // time the main window is created.
 let resolvedTitleBarMode: TitleBarMode = 'native-overlay';
+// Injected as a getter into ipc.ts — it cannot import ./index (load-time cycle).
+let currentEffectiveIsDark = false;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
 let runtimeState: RuntimeState = 'starting';
@@ -573,16 +576,24 @@ function createWindow(): void {
     electronVersion: process.versions.electron,
     overlayApiPresent: typeof BrowserWindow.prototype?.setTitleBarOverlay === 'function',
   });
-  // The app currently has no dark mode (the .dark CSS class is never applied
-  // and only light-theme CSS variables are defined). Pass false for isDark so
-  // the native titleBarOverlay always uses the light palette (#ffffff bg,
-  // #0a0a0a symbols) regardless of the OS light/dark setting, keeping the
-  // controls visually consistent with the always-light app content.
+  // Direct read: createWindow() runs before IPC handlers exist; re-read on
+  // crash-recovery re-entry. Absent/invalid rows resolve to 'system'.
+  let themeMode: ThemeMode = 'system';
+  try {
+    const row = getDatabase()
+      .prepare("SELECT value FROM settings WHERE key = 'theme_mode'")
+      .get() as { value?: string } | undefined;
+    themeMode = resolveThemeMode(row?.value);
+  } catch {
+    // No DB yet (first boot edge) → 'system'.
+  }
+  const initialIsDark = resolveInitialIsDark(themeMode, nativeTheme.shouldUseDarkColors);
+  currentEffectiveIsDark = initialIsDark;
   const createdWindow = createMainWindow(
     BrowserWindow,
     path.join(__dirname, 'preload.js'),
     process.platform,
-    false, // isDark: always light until the app implements a dark theme
+    initialIsDark,
     resolvedTitleBarMode,
   );
   mainWindow = createdWindow;
@@ -1087,11 +1098,7 @@ async function initialize(): Promise<void> {
     if (isShutdownRequested()) return;
 
     console.log('[Flo] Registering IPC handlers...');
-    registerIpcHandlers(shutdownSignal, () => mainWindow, showMainWindow);
-
-    // The app currently presents its light palette regardless of OS theme.
-    // Keep the native overlay pinned to that palette until the renderer ships
-    // the separate dark-theme behavior tracked in issue #513.
+    registerIpcHandlers(shutdownSignal, () => mainWindow, showMainWindow, () => currentEffectiveIsDark);
 
     ipcMain.handle('get-update-status', () =>
       // #467: return the real persisted state (including not-checked-yet and
@@ -1181,11 +1188,32 @@ async function initialize(): Promise<void> {
         titleBarMode: resolvedTitleBarMode,
         titleBarEpoch: getRendererReadinessEpoch(),
         titleBarDocumentNonce: getRendererDocumentNonce() ?? undefined,
+        effectiveTheme: currentEffectiveIsDark ? 'dark' : 'light',
       };
     });
 
     runtimeState = 'ready';
     log.info('[Lifecycle] Runtime is ready');
+    ipcMain.handle('set-theme-effective', (event, isDark: unknown) => {
+      // gh-513 F8: validate the sender — the ipc.ts handle() wrapper applies
+      // this guard to its registered handlers; this raw ipcMain.handle sits
+      // outside that wrapper and would otherwise accept any LAN-rendered
+      // sender. Same guard semantics (main/ipc.ts isTrustedSender).
+      if (!isTrustedSender(event)) {
+        return { success: false, error: 'Untrusted sender' };
+      }
+      if (typeof isDark !== 'boolean') {
+        return { success: false, error: 'isDark must be boolean' };
+      }
+      currentEffectiveIsDark = isDark;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        applyTitleBarOverlayTheme(mainWindow, isDark, process.platform);
+        // Background base matches the overlay tokens so resize/gap edges
+        // never flash the wrong palette.
+        mainWindow.setBackgroundColor(resolveTitleBarOverlayColors(isDark).color);
+      }
+      return { success: true };
+    });
     console.log('[Flo] Creating window...');
     createWindow();
     registerPowerMonitorRecovery();

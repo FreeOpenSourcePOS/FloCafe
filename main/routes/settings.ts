@@ -22,6 +22,7 @@ import {
   defaultLanguagePolicySettingJson,
   validateLanguagePolicySetting,
 } from '../lib/print-language-settings';
+import { isThemeMode } from '../title-bar-theme';
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -872,6 +873,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'split_checks_enabled',
   BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY,
   'currency_display', 'number_digits', 'calendar',
+  'theme_mode',
 ]);
 
 function isAllowedWildcardKey(key: string): boolean {
@@ -968,6 +970,9 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
     // their next save (#447).
     if (req.params.key === 'bill_template' && !isAvailableBillTemplate(value)) {
       return res.status(400).json({ error: 'Unsupported bill template' });
+    }
+    if (req.params.key === 'theme_mode' && !isThemeMode(value)) {
+      return res.status(400).json({ error: 'Invalid theme_mode value' });
     }
     let valueToPersist: unknown = value;
     if (req.params.key === 'bill_template') {

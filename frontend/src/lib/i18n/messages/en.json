@@ -177,20 +177,29 @@
   },
   "customers": {
     "actionRequired": "Action Required",
+    "billingHistory": "Billing History",
     "columnActions": "Actions",
+    "columnAmount": "Amount",
+    "columnBill": "Bill",
     "columnCustomer": "Customer",
     "columnDate": "Date",
     "columnDescription": "Description",
+    "columnEarned": "Earned",
     "columnExpires": "Expires",
     "columnLastVisit": "Last Visit",
     "columnLedger": "Ledger",
     "columnPoints": "Points",
+    "columnRedeemed": "Redeemed",
     "empty": "No customers found",
     "first200": "Showing the first 200 customers — refine your search to see more.",
     "invalidPhoneCount": "{count, plural, one {# customer has an invalid or legacy phone number format.} other {# customers have an invalid or legacy phone number format.}}",
     "loyaltyLedger": "Loyalty Ledger",
+    "noBills": "No bills yet",
     "noTransactions": "No transactions yet",
-    "totalBalance": "Total Balance"
+    "pointsHistory": "Points History",
+    "totalBalance": "Total Balance",
+    "totalPointsEarned": "Points Earned",
+    "totalPointsRedeemed": "Points Redeemed"
   },
   "dashboard": {
     "aov": "Avg Order Value",
@@ -1679,7 +1688,12 @@
     "whatsapp": "WhatsApp",
     "whatsappSharing": "WhatsApp Sharing",
     "yes": "Yes",
-    "zeroNoLimit": "(0 = no limit)"
+    "zeroNoLimit": "(0 = no limit)",
+    "tabAppearance": "Appearance",
+    "themeTitle": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System"
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

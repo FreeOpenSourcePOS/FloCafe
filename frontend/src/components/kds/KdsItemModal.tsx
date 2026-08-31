@@ -39,7 +39,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
       aria-labelledby="kds-item-modal-title"
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-5"
+        className="bg-card rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3">
@@ -47,7 +47,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
             <p className="text-xs text-gray-400 font-medium mb-1">
               {t('modalOrderNumber', { orderNumber })}
             </p>
-            <h2 id="kds-item-modal-title" className={`text-2xl font-bold leading-tight ${isVoided ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{item.product_name}</h2>
+            <h2 id="kds-item-modal-title" className={`text-2xl font-bold leading-tight ${isVoided ? 'text-gray-400 line-through' : 'text-foreground'}`}>{item.product_name}</h2>
             <div className="flex items-center gap-2 mt-1.5">
               <span className={`text-sm font-bold ${STATUS_CONFIG[currentStatus].text}`}>
                 {item.quantity}×
@@ -60,7 +60,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
           </div>
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 shrink-0"
+            className="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:bg-gray-200 shrink-0"
             aria-label={tCommon('close')}
           >
             <X size={18} />
@@ -76,7 +76,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
               {item.addons.map((addon, i) => (
                 <span
                   key={`${addon.id ?? addon.name}-${i}`}
-                  className="text-sm bg-white text-blue-700 px-2.5 py-1 rounded-lg border border-blue-200 font-medium"
+                  className="text-sm bg-card text-blue-700 px-2.5 py-1 rounded-lg border border-blue-200 font-medium"
                 >
                   + {addon.name}{(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
                 </span>
@@ -106,8 +106,8 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
                       isCurrent
                         ? `${STATUS_CONFIG[s].bg} ${STATUS_CONFIG[s].text} ring-2 ring-current`
                         : isPast
-                          ? 'bg-gray-100 text-gray-400 line-through'
-                          : 'bg-gray-100 text-gray-400'
+                          ? 'bg-muted text-gray-400 line-through'
+                          : 'bg-muted text-gray-400'
                     }`}
                   >
                     {statusLabel(s)}
@@ -139,7 +139,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
                 <button
                   onClick={() => onUpdateStatus(item.id, prev)}
                   disabled={updating}
-                  className="w-full py-4 rounded-2xl text-gray-600 text-base font-semibold border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="w-full py-4 rounded-2xl text-muted-foreground text-base font-semibold border-2 border-border bg-muted hover:bg-muted transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <ChevronLeft size={18} className="rtl-flip" />
                   {t('backTo', { status: statusLabel(prev) })}

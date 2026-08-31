@@ -52,12 +52,12 @@ export default function BetaChannelToggle() {
   if (typeof window === 'undefined') return null;
 
   return (
-    <div className="bg-white rounded-xl border border-gray-100 p-6" data-testid="beta-channel-toggle">
+    <div className="bg-card rounded-xl border border-border p-6" data-testid="beta-channel-toggle">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="font-semibold text-gray-900">{t('betaTitle')}</h3>
-          <p className="text-sm text-gray-500 mt-1">{t('betaDescription')}</p>
-          <p className="text-xs text-gray-500 mt-2">{t('betaGraduationNote')}</p>
+          <h3 className="font-semibold text-foreground">{t('betaTitle')}</h3>
+          <p className="text-sm text-muted-foreground mt-1">{t('betaDescription')}</p>
+          <p className="text-xs text-muted-foreground mt-2">{t('betaGraduationNote')}</p>
           {supported === false && (
             <p className="text-xs text-amber-600 mt-2">{t('betaUnavailable')}</p>
           )}
@@ -75,11 +75,11 @@ export default function BetaChannelToggle() {
           <span className={`relative w-9 h-5 rounded-full transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-brand ${
             enabled ? 'bg-brand' : 'bg-gray-300'
           } ${supported === true ? '' : 'opacity-40 cursor-not-allowed'}`}>
-            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-card rounded-full shadow transition-transform ${
               enabled ? 'translate-x-4' : ''
             }`} />
           </span>
-          <span className="ml-2 text-sm font-medium text-gray-700">
+          <span className="ml-2 text-sm font-medium text-foreground">
             {enabled ? t('betaOn') : t('betaOff')}
           </span>
         </label>

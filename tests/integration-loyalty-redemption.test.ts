@@ -45,7 +45,7 @@ async function main() {
   const db = initTestDb();
 
   // Enable loyalty. Earning comes solely from each product's cb_percent;
-  // redemption uses the fixed in-code rate (100 points = 1 currency unit).
+  // redemption uses the fixed in-code rate (1 point = 1 currency unit).
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('loyalty_enabled', 'true', ?)").run(now());
 
   const { authHeader } = seedOwnerUser(db);
@@ -70,7 +70,7 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario 1: Redemption rate applied correctly ───');
 
-    // Give customer 500 points (worth ₹5 at 100:1 rate)
+    // Give customer 500 points (worth ₹500 at 1:1 rate)
     seedWalletCredit(db, 'cust-redeem', 500);
 
     // Verify wallet balance
@@ -98,7 +98,7 @@ async function main() {
     assertEqual(bill1.status, 201, 'bill 1 created');
     const bill1Total = Number(bill1.data.bill.total);
 
-    // Pay ₹5 with wallet (should debit 500 points = 5 × 100 redemption rate)
+    // Pay ₹5 with wallet (should debit 5 points at the 1:1 redemption rate)
     const pay1 = await api(baseUrl, `/api/bills/${bill1.data.bill.id}/payment`, {
       method: 'POST',
       body: { method: 'wallet', amount: 5, customer_id: 'cust-redeem' },
@@ -107,24 +107,24 @@ async function main() {
     assertEqual(pay1.status, 200, 'wallet payment accepted');
     assertEqual(pay1.data.bill.payment_status, 'partial', 'bill is partially paid');
 
-    // Verify wallet balance is now 0 (500 - 500 = 0)
+    // Verify wallet balance is now 495 (500 - 5 = 495)
     const wallet1After = await api(baseUrl, '/api/customers/cust-redeem/wallet', { headers: authHeader });
-    assertEqual(wallet1After.data.balance, 0, 'wallet balance = 0 after ₹5 redemption');
+    assertEqual(wallet1After.data.balance, 495, 'wallet balance = 495 after ₹5 redemption');
 
     // Verify debit entry in ledger
     const debitEntry1 = db.prepare(
       "SELECT * FROM loyalty_ledger WHERE customer_id = 'cust-redeem' AND type = 'debit' AND bill_id = ?"
     ).get(bill1.data.bill.id) as any;
     assert(debitEntry1 !== undefined, 'debit entry exists');
-    assertEqual(debitEntry1.amount, 500, 'debit = 500 points (₹5 × 100 rate)');
+    assertEqual(debitEntry1.amount, 5, 'debit = 5 points (₹5 × 1:1 rate)');
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario 2: Insufficient wallet balance rejected
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario 2: Insufficient wallet balance rejected ───');
 
-    // Give customer only 100 points (worth ₹1)
-    seedWalletCredit(db, 'cust-redeem-2', 100);
+    // Give customer only 1 point (worth ₹1 — nowhere near enough for a real bill)
+    seedWalletCredit(db, 'cust-redeem-2', 1);
 
     const order2 = await api(baseUrl, '/api/orders', {
       method: 'POST',
@@ -144,8 +144,7 @@ async function main() {
     });
     const bill2Total = Number(bill2.data.bill.total);
 
-    // Try to pay full bill with wallet (need bill2Total × 100 points, only have 100)
-    // 100 points can only cover ₹1, so trying to pay full bill should fail
+    // Try to pay full bill with wallet (need bill2Total points, only have 1)
     const pay2 = await api(baseUrl, `/api/bills/${bill2.data.bill.id}/payment`, {
       method: 'POST',
       body: { method: 'wallet', amount: bill2Total, customer_id: 'cust-redeem-2' },
@@ -159,7 +158,7 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario 3: Cashback only on non-wallet portion ───');
 
-    // Give customer 50000 points (worth ₹500 at 100:1 rate — plenty for half of ₹210 bill)
+    // Give customer 50000 points (worth ₹50000 at 1:1 rate — plenty for half of ₹210 bill)
     seedWalletCredit(db, 'cust-redeem', 50000);
 
     // Create order for ₹200 (Sandwich with 5% cashback = 10 points)
@@ -181,7 +180,7 @@ async function main() {
     });
     const bill3Total = Number(bill3.data.bill.total);
 
-    // Pay half with wallet — requires half × 100 points
+    // Pay half with wallet — requires half as many points (1:1 rate)
     const walletPay3 = Math.floor(bill3Total / 2);
     const pay3Wallet = await api(baseUrl, `/api/bills/${bill3.data.bill.id}/payment`, {
       method: 'POST',
@@ -201,10 +200,9 @@ async function main() {
     assertEqual(pay3Cash.data.bill.payment_status, 'paid', 'bill is fully paid');
 
     // Cashback should be proportional to cash-paid portion
-    // Full cashback: 5% of ₹200 (subtotal) = 10 currency units = 1000 points
+    // Full cashback: 5% of ₹200 (subtotal) = 10 points (1 point = 1 currency unit)
     // Cash-paid proportion: cashPay3 / bill3Total
-    // Actual cashback: floor(10 * (cashPay3 / bill3Total)) * 100
-    const expectedCashback3 = Math.floor(10 * (cashPay3 / bill3Total)) * 100;
+    const expectedCashback3 = Math.floor(10 * (cashPay3 / bill3Total));
     const creditEntry3 = db.prepare(
       "SELECT amount FROM loyalty_ledger WHERE customer_id = 'cust-redeem' AND type = 'credit' AND bill_id = ?"
     ).get(bill3.data.bill.id) as any;
@@ -216,7 +214,7 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario 4: Full wallet payment — no cashback ───');
 
-    // Give customer 50000 points (worth ₹500 at 100:1 rate — enough for any bill)
+    // Give customer 50000 points (worth ₹50000 at 1:1 rate — enough for any bill)
     seedWalletCredit(db, 'cust-redeem', 50000);
 
     // Create order for ₹100 (Coffee, cb_percent=0 — would earn nothing anyway)
@@ -237,7 +235,7 @@ async function main() {
     });
     const bill4Total = Number(bill4.data.bill.total);
 
-    // Pay full amount with wallet — requires bill4Total × 100 points
+    // Pay full amount with wallet — requires bill4Total points (1:1 rate)
     const pay4 = await api(baseUrl, `/api/bills/${bill4.data.bill.id}/payment`, {
       method: 'POST',
       body: { method: 'wallet', amount: bill4Total, customer_id: 'cust-redeem' },
@@ -257,7 +255,7 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario 5: Mixed payment — partial wallet + partial cash ───');
 
-    // Give customer 50000 points (worth ₹500 at 100:1 rate)
+    // Give customer 50000 points (worth ₹50000 at 1:1 rate)
     seedWalletCredit(db, 'cust-redeem-3', 50000);
 
     // Create order for ₹200 (Sandwich, 5% cashback)
@@ -297,17 +295,17 @@ async function main() {
     assertEqual(pay5Cash.status, 200, 'cash payment accepted');
 
     // Cashback: proportional to cash-paid portion
-    // Full cashback: 5% of ₹200 (subtotal) = 10 currency units = 1000 points
+    // Full cashback: 5% of ₹200 (subtotal) = 10 points (1 point = 1 currency unit)
     // Cash-paid proportion: cashPay5 / bill5Total
-    const expectedCashback5 = Math.floor(10 * (cashPay5 / bill5Total)) * 100;
+    const expectedCashback5 = Math.floor(10 * (cashPay5 / bill5Total));
     const creditEntry5 = db.prepare(
       "SELECT amount FROM loyalty_ledger WHERE customer_id = 'cust-redeem-3' AND type = 'credit' AND bill_id = ?"
     ).get(bill5.data.bill.id) as any;
     assert(creditEntry5 !== undefined, 'credit entry exists');
     assertEqual(creditEntry5.amount, expectedCashback5, `cashback = ${expectedCashback5} points (${Math.round(cashPay5/bill5Total*100)}% paid with cash)`);
 
-    // Final wallet balance: 50000 (seeded) - walletPay5*100 (debit) + expectedCashback5 (cashback)
-    const expectedBalance5 = 50000 - (walletPay5 * 100) + expectedCashback5;
+    // Final wallet balance: 50000 (seeded) - walletPay5 (debit, 1:1 rate) + expectedCashback5 (cashback)
+    const expectedBalance5 = 50000 - walletPay5 + expectedCashback5;
     const wallet5After = await api(baseUrl, '/api/customers/cust-redeem-3/wallet', { headers: authHeader });
     assertEqual(wallet5After.data.balance, expectedBalance5, `final wallet balance = ${expectedBalance5} points`);
 
@@ -347,7 +345,7 @@ async function main() {
     db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('loyalty_enabled', 'false', ?)").run(now());
 
     seedCustomer(db, 'cust-redeem-5', 'Disabled Loyalty Customer', '5555555555');
-    seedWalletCredit(db, 'cust-redeem-5', 50000); // 50000 points = ₹500 (enough for bill with tax)
+    seedWalletCredit(db, 'cust-redeem-5', 50000); // 50000 points = ₹50000 (enough for bill with tax)
 
     const order7 = await api(baseUrl, '/api/orders', {
       method: 'POST',

@@ -409,6 +409,8 @@ function showMainWindow(expectedWindow?: BrowserWindow): boolean {
   ) return false;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.focus();
   return true;
 }
 

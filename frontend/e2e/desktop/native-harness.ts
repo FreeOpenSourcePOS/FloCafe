@@ -408,6 +408,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
         if (!target || target.isDestroyed()) return;
         target.show();
         target.focus();
+        target.webContents.focus();
         // Xvfb runs without a window manager in CI, so briefly toggling
         // always-on-top is the reliable way to deliver native focus there.
         if (process.platform === 'linux') {

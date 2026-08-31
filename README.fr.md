@@ -46,7 +46,7 @@ Les fonctions principales du point de vente et les données locales fonctionnent
 
 ## Langues et support régional
 
-FloCafe propose des traductions de l’interface en anglais, espagnol, portugais brésilien, français, persan (farsi), turc, filipino et allemand, avec prise en charge RTL pour le persan. La langue de l’interface est indépendante du pays et des paramètres régionaux du magasin. Les règles de calcul des taxes constituent un domaine séparé.
+FloCafe propose des traductions de l’interface en anglais, espagnol, portugais brésilien et persan (farsi), avec prise en charge RTL. La langue de l’interface est indépendante du pays et des paramètres régionaux du magasin. Les règles de calcul des taxes constituent un domaine séparé.
 
 FloCafe inclut des profils pour 131 pays et 109 devises. Chaque profil définit une devise, une région et un fuseau horaire par défaut ; le propriétaire peut modifier le fuseau horaire lors de la configuration ou plus tard dans les paramètres.
 

@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell, po
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+
 import { Bonjour } from 'bonjour-service';
 import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError, now, withDatabaseRequest } from './db';
 import { BETA_CHANNEL_SETTING_KEY, parseStoredBetaChannelEnabled, resolveUpdateChannel } from './update-channel';
@@ -47,6 +48,12 @@ import {
 } from './window-readiness';
 import { setupWindowLoadRetry } from './window-load-retry';
 import { registerUsbDevicePermissions } from './usb-device-permissions';
+import {
+  createRelaunchGate,
+  decideRuntimeActivationAction,
+  isRuntimeHealthy,
+  type RuntimeState,
+} from './runtime-recovery';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -227,7 +234,9 @@ function setupAutoUpdater(): void {
     getPhase: () => updaterPhase,
     setPhase: (phase) => { updaterPhase = phase; },
     isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
+    isInstallingUpdate: () => isInstallingUpdate,
     setUpdateStatus,
+    onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
     logInfo: (message, detail) => log.info(message, detail),
   }));
 }
@@ -350,11 +359,13 @@ async function checkTaxPackUpdatesOnStartup(): Promise<void> {
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-// createWindow() can run more than once per app lifetime (renderer crash
-// recovery, macOS 'activate') but every window shares the same default
-// session (no partition/session is set in webPreferences) — registering
-// again on each call would stack duplicate 'select-usb-device' listeners
-// on that shared session, firing multiple confirmation dialogs per request.
+// createWindow() can run more than once per app lifetime after a renderer
+// crash or window destruction. Activation and recovery are gated below so a
+// new window is never created against a stopped runtime. Every window shares
+// the same default session (no partition/session is set in webPreferences) —
+// registering again on each call would stack duplicate 'select-usb-device'
+// listeners on that shared session, firing multiple confirmation dialogs per
+// request.
 let usbDevicePermissionsRegistered = false;
 
 // Title-bar capability reported to the renderer via get-status; updated each
@@ -364,21 +375,136 @@ let resolvedTitleBarMode: TitleBarMode = 'native-overlay';
 let currentEffectiveIsDark = false;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
+let runtimeState: RuntimeState = 'starting';
+let initializationPromise: Promise<void> | null = null;
+let activationPending = false;
+let windowLoadRecoveryAttempted = false;
+let windowRecoveryInProgress = false;
+let runtimeRelaunchRequested = false;
 const updateShutdownState: UpdateShutdownState = {
   setInstallingUpdate: (value) => { isInstallingUpdate = value; },
-  setQuitting: (value) => { isQuitting = value; },
+  setQuitting: (value) => {
+    isQuitting = value;
+    if (value) {
+      runtimeState = 'stopping';
+      log.info('[Lifecycle] Runtime is stopping');
+    }
+  },
 };
 
-function showMainWindow(): boolean {
+function showMainWindow(expectedWindow?: BrowserWindow): boolean {
+  if (isQuitting || isShutdownRequested()) return false;
+  if (expectedWindow && mainWindow !== expectedWindow) return false;
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
+    handleMainWindowActivation();
+    return false;
+  }
+  if (isFailedWindowDocument(mainWindow)) {
+    recoverFailedWindow(mainWindow);
+    return false;
+  }
   if (
     (!isWindowRendererReady() && !isRendererReadinessFailSafeShown())
-    || !mainWindow
-    || mainWindow.isDestroyed()
   ) return false;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.focus();
   return true;
 }
+
+function getRuntimeServices() {
+  return {
+    main: isServerRunning(),
+    kds: isKdsServerRunning(),
+    serverApp: isServerAppRunning(),
+  };
+}
+
+function isFailedWindowDocument(window: BrowserWindow): boolean {
+  try {
+    return window.webContents.getURL().startsWith('chrome-error://');
+  } catch {
+    return true;
+  }
+}
+
+function recoverFailedWindow(failedWindow: BrowserWindow): void {
+  if (isQuitting || isShutdownRequested() || runtimeState === 'stopping') return;
+  if (mainWindow !== failedWindow) return;
+  if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
+    requestRuntimeRelaunchOnce('window-load-retry-exhausted');
+    return;
+  }
+  if (windowLoadRecoveryAttempted) {
+    requestRuntimeRelaunchOnce('window-load-recovery-failed');
+    return;
+  }
+  windowLoadRecoveryAttempted = true;
+  try {
+    createWindow();
+    if (!failedWindow.isDestroyed()) failedWindow.destroy();
+  } catch (error) {
+    log.error('[Window] Window recreation failed:', error);
+    requestRuntimeRelaunchOnce('window-load-recovery-create-failed');
+  }
+}
+
+function performAppRelaunch(): void {
+  if (process.defaultApp || !app.isPackaged) {
+    const relaunchArgs = process.argv.slice(1).map((arg) => (arg === '.' ? process.cwd() : arg));
+    // Playwright applies Chromium switches through app.commandLine, and its
+    // Electron loader removes those injected switches from process.argv. Read
+    // the effective command line so a Linux relaunch retains the sandbox flags
+    // it needs to start under CI.
+    if (app.commandLine.hasSwitch('no-sandbox') && !relaunchArgs.includes('--no-sandbox')) {
+      relaunchArgs.push('--no-sandbox');
+    }
+    if (app.commandLine.hasSwitch('disable-gpu') && !relaunchArgs.includes('--disable-gpu')) {
+      relaunchArgs.push('--disable-gpu');
+    }
+    if (app.commandLine.hasSwitch('disable-dev-shm-usage') && !relaunchArgs.includes('--disable-dev-shm-usage')) {
+      relaunchArgs.push('--disable-dev-shm-usage');
+    }
+    app.relaunch({ execPath: process.execPath, args: relaunchArgs });
+  } else {
+    app.relaunch();
+  }
+}
+
+function requestRuntimeRelaunch(reason: string): void {
+  runtimeState = 'stopping';
+  isQuitting = true;
+  runtimeRelaunchRequested = true;
+  log.error(`[Lifecycle] Runtime recovery relaunch requested: ${reason}`);
+  if (process.env.FLO_E2E_PID_FILE) console.log('[Native E2E] runtime relaunch requested');
+
+  void runCleanup().then(
+    () => {
+      try {
+        log.info('[Lifecycle] Runtime cleanup finished; relaunching Flo');
+        performAppRelaunch();
+        app.exit(0);
+      } catch (error) {
+        log.error('[Lifecycle] Runtime relaunch failed after cleanup:', error);
+        app.exit(1);
+      }
+    },
+    (error) => {
+      log.error('[Lifecycle] Runtime recovery cleanup failed; relaunching anyway:', error);
+      try {
+        performAppRelaunch();
+        app.exit(0);
+      } catch (relaunchError) {
+        log.error('[Lifecycle] Runtime relaunch failed after cleanup error:', relaunchError);
+        app.exit(1);
+      }
+    },
+  );
+}
+
+const requestRuntimeRelaunchOnce = createRelaunchGate(requestRuntimeRelaunch);
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -410,33 +536,36 @@ if (!gotSingleInstanceLock) {
 if (gotSingleInstanceLock) {
   // Focus the existing window if a second launch is attempted.
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (showMainWindow()) {
-        mainWindow.focus();
-        if (process.platform === 'linux') {
-          mainWindow.setAlwaysOnTop(true);
-          mainWindow.setAlwaysOnTop(false);
-          app.focus();
-        }
+    handleMainWindowActivation();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.focus();
+      if (process.platform === 'linux') {
+        mainWindow.setAlwaysOnTop(true);
+        mainWindow.setAlwaysOnTop(false);
+        app.focus();
       }
     }
   });
 }
 
 function createWindow(): void {
-  // Runs on every call, not just the initial one — the crash-recovery path
-  // below (render-process-gone) and the macOS 'activate' handler both call
-  // createWindow() again without going through initialize(). If a stale
-  // cache directory failed to clear on the previous attempt (e.g. a
-  // transient lock), retrying here means the app can still self-heal within
-  // the same run instead of only on the next full relaunch.
+  if (isQuitting || isShutdownRequested()) return;
+  if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
+    log.error('[Lifecycle] Refusing to create a POS window without a healthy runtime');
+    requestRuntimeRelaunchOnce('create-window-without-healthy-runtime');
+    return;
+  }
+
+  // Runs on every call, not just the initial one. Window recreation is routed
+  // through handleMainWindowActivation(), which verifies the runtime before
+  // allowing this function to create a new renderer.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
   // Readiness lifecycle: register the fail-safe show path and begin the first
   // document epoch before anything loads. Every subsequent full-document
   // navigation re-begins via the did-start-navigation hook below.
   initWindowReadiness(() => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+    showMainWindow();
   });
   beginRendererDocument();
 
@@ -462,13 +591,14 @@ function createWindow(): void {
   }
   const initialIsDark = resolveInitialIsDark(themeMode, nativeTheme.shouldUseDarkColors);
   currentEffectiveIsDark = initialIsDark;
-  mainWindow = createMainWindow(
+  const createdWindow = createMainWindow(
     BrowserWindow,
     path.join(__dirname, 'preload.js'),
     process.platform,
     initialIsDark,
     resolvedTitleBarMode,
   );
+  mainWindow = createdWindow;
 
   mainWindow.once('ready-to-show', () => {
     if (isDev) {
@@ -529,14 +659,18 @@ function createWindow(): void {
   });
 
   mainWindow.on('closed', () => {
-    mainWindow = null;
+    if (mainWindow === createdWindow) mainWindow = null;
+  });
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    windowLoadRecoveryAttempted = false;
   });
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     log.error('[Window] Renderer process gone:', details.reason);
     console.error('[Window] Renderer process gone:', details.reason);
     
-    if (details.reason !== 'clean-exit') {
+    if (details.reason !== 'clean-exit' && mainWindow === createdWindow) {
       dialog.showMessageBox({
         type: 'error',
         title: 'App Crashed',
@@ -544,14 +678,31 @@ function createWindow(): void {
         detail: `Reason: ${details.reason}`,
         buttons: ['OK'],
       }).then(() => {
-        mainWindow?.destroy();
-        mainWindow = null;
-        createWindow();
+        if (mainWindow !== createdWindow) return;
+        windowRecoveryInProgress = true;
+        try {
+          createdWindow.destroy();
+          if (mainWindow === createdWindow) mainWindow = null;
+          handleMainWindowActivation();
+        } finally {
+          windowRecoveryInProgress = false;
+        }
+      }).catch((error) => {
+        log.error('[Window] Renderer crash recovery failed:', error);
+        if (!isQuitting && !isShutdownRequested()) {
+          requestRuntimeRelaunchOnce('renderer-crash-recovery-failed');
+        }
       });
     }
   });
 
-  setupWindowLoadRetry(mainWindow, () => `http://localhost:${getServerPort()}`, { log });
+  setupWindowLoadRetry(createdWindow, () => `http://localhost:${getServerPort()}`, {
+    log,
+    onRetryExhausted: ({ errorCode, errorDescription, validatedURL, retries }) => {
+      log.error('[Window] Load retry exhaustion:', errorCode, errorDescription, validatedURL, `retries=${retries}`);
+      recoverFailedWindow(createdWindow);
+    },
+  });
 
   mainWindow.webContents.on('unresponsive', () => {
     console.warn('[Window] Window became unresponsive');
@@ -560,6 +711,47 @@ function createWindow(): void {
   mainWindow.webContents.on('responsive', () => {
     console.log('[Window] Window became responsive again');
   });
+}
+
+function handleMainWindowActivation(): void {
+  const services = getRuntimeServices();
+  const hasWindow = Boolean(mainWindow && !mainWindow.isDestroyed());
+  const action = decideRuntimeActivationAction({
+    state: runtimeState,
+    hasWindow,
+    services,
+    shutdownRequested: isQuitting || isShutdownRequested(),
+  });
+  log.info(
+    `[Lifecycle] Activation action=${action} state=${runtimeState}`
+      + ` services=${services.main ? 'main' : 'no-main'},${services.kds ? 'kds' : 'no-kds'},${services.serverApp ? 'server-app' : 'no-server-app'}`,
+  );
+
+  if (action === 'show') {
+    showMainWindow();
+    return;
+  }
+  if (action === 'create') {
+    createWindow();
+    return;
+  }
+  if (action === 'wait') {
+    if (!initializationPromise) {
+      activationPending = true;
+      return;
+    }
+    void initializationPromise.then(
+      () => handleMainWindowActivation(),
+      (error) => {
+        log.error('[Lifecycle] Startup failed while activation was waiting:', error);
+        requestRuntimeRelaunchOnce('activation-startup-failed');
+      },
+    );
+    return;
+  }
+  if (action === 'ignore') return;
+
+  requestRuntimeRelaunchOnce(`activation-runtime-unavailable-${runtimeState}`);
 }
 
 // ── Sleep/wake repaint recovery ─────────────────────────────────────────────
@@ -867,6 +1059,8 @@ function showAbout(): void {
 }
 
 async function initialize(): Promise<void> {
+  runtimeState = 'starting';
+  log.info('[Lifecycle] Runtime is starting');
   try {
     if (isShutdownRequested()) return;
     console.log('[Flo] Initializing...');
@@ -906,7 +1100,7 @@ async function initialize(): Promise<void> {
     if (isShutdownRequested()) return;
 
     console.log('[Flo] Registering IPC handlers...');
-    registerIpcHandlers(shutdownSignal, () => mainWindow, () => currentEffectiveIsDark);
+    registerIpcHandlers(shutdownSignal, () => mainWindow, showMainWindow, () => currentEffectiveIsDark);
 
     ipcMain.handle('get-update-status', () =>
       // #467: return the real persisted state (including not-checked-yet and
@@ -975,6 +1169,7 @@ async function initialize(): Promise<void> {
       runCleanup,
       quitAndInstall: (isSilent, isForceRunAfter) => autoUpdater.quitAndInstall(isSilent, isForceRunAfter),
       updateState: updateShutdownState,
+      onInstallFailure: () => requestRuntimeRelaunchOnce('update-install-failed'),
       warn: (message) => log.warn(message),
       error: (message, error) => log.error(message, error),
     }));
@@ -999,6 +1194,8 @@ async function initialize(): Promise<void> {
       };
     });
 
+    runtimeState = 'ready';
+    log.info('[Lifecycle] Runtime is ready');
     ipcMain.handle('set-theme-effective', (event, isDark: unknown) => {
       // gh-513 F8: validate the sender — the ipc.ts handle() wrapper applies
       // this guard to its registered handlers; this raw ipcMain.handle sits
@@ -1019,7 +1216,6 @@ async function initialize(): Promise<void> {
       }
       return { success: true };
     });
-
     console.log('[Flo] Creating window...');
     createWindow();
     registerPowerMonitorRecovery();
@@ -1045,6 +1241,8 @@ async function initialize(): Promise<void> {
 
     console.log('[Flo] Ready!');
   } catch (error) {
+    runtimeState = 'failed';
+    log.error('[Lifecycle] Runtime initialization failed:', error);
     console.error('[Flo] Initialization error:', error);
     const errorDetails = error as { code?: unknown; name?: unknown } | null;
     const expectedShutdownCancellation = errorDetails?.code === 'ERR_SHUTDOWN_ABORTED'
@@ -1086,24 +1284,45 @@ async function initialize(): Promise<void> {
     }
     // Cleanup has settled (or reported its bounded failure) before exiting.
     app.exit(1);
+  } finally {
+    if (isShutdownRequested() && runtimeState === 'starting') runtimeState = 'stopping';
   }
 }
 
-app.whenReady().then(initialize);
+app.whenReady().then(() => {
+  initializationPromise = initialize();
+  void initializationPromise.then(
+    () => {
+      if (!activationPending) return;
+      activationPending = false;
+      handleMainWindowActivation();
+    },
+    (error) => {
+      if (!activationPending) return;
+      activationPending = false;
+      log.error('[Lifecycle] Startup failed while activation was pending:', error);
+      if (!isQuitting && !isShutdownRequested()) requestRuntimeRelaunchOnce('activation-startup-failed');
+    },
+  );
+});
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && !windowRecoveryInProgress) {
     app.quit();
   }
 });
 
 app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
-  } else {
-    showMainWindow();
-  }
+  handleMainWindowActivation();
 });
+
+if (process.env.NODE_ENV === 'test' && process.env.FLO_E2E_PID_FILE) {
+  try {
+    fs.writeFileSync(process.env.FLO_E2E_PID_FILE, String(process.pid));
+  } catch (error) {
+    log.error('[Native E2E] Could not write Electron PID:', error);
+  }
+}
 
 // --- Cleanup function (idempotent — safe to call from every entrypoint) ---
 const cleanupCoordinator = createShutdownCoordinator(() => [
@@ -1136,7 +1355,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
     // When shutting down to install an update, do not force-kill the process
     // via app.exit(1) on a timeout; let runCleanup() reject and hand off to
     // autoUpdater.quitAndInstall() so the update can still proceed.
-    if (!isInstallingUpdate) {
+    if (!isInstallingUpdate && !runtimeRelaunchRequested) {
       app.exit(1);
     }
   },
@@ -1146,17 +1365,21 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   app: app as unknown as ShutdownEntrypointApp,
   process: process as unknown as ShutdownEntrypointProcess,
   cleanup: async () => {
+    log.info('[Lifecycle] Cleanup started');
     console.log('[Flo] Running cleanup...');
     try {
       await cleanupCoordinator();
+      log.info('[Lifecycle] Cleanup completed');
       console.log('[Flo] Goodbye!');
     } catch (error) {
+      log.error('[Lifecycle] Cleanup failed:', error);
       console.error('[Flo] Cleanup failed:', error);
       throw error;
     }
   },
   setQuitting: () => {
     isQuitting = true;
+    runtimeState = 'stopping';
   },
   onShutdownRequested: requestWhatsAppShutdown,
   destroyWindow: () => {

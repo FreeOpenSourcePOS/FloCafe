@@ -141,6 +141,16 @@ async function run(): Promise<void> {
   assert.equal(win.loadedUrls.length, 1, 'loadURL was not invoked for non-transient error');
   log('  ✓ Non-transient errors properly filtered out.');
 
+  const subframeWin = new MockBrowserWindow();
+  const subframeController = setupWindowLoadRetry(subframeWin, () => targetUrl, {
+    getRetryDelay: () => 5,
+    log: testLogger,
+  });
+  subframeWin.webContents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', targetUrl, false);
+  assert.equal(subframeController.getRetries(), 0, 'Subframe failures do not trigger main document retries');
+  assert.equal(subframeController.getPendingTimer(), null, 'Subframe failures do not set a retry timer');
+  log('  ✓ Subframe failures are ignored.');
+
   // ── 4. Max Retries Capping (Bounded at 10) ──────────────────────────
   log('\n[Step 4] Verifying retry attempts are capped at MAX_LOAD_RETRIES (10)...');
   const winMax = new MockBrowserWindow();
@@ -155,6 +165,28 @@ async function run(): Promise<void> {
 
   assert.equal(maxController.getRetries(), 10, 'Retries are strictly capped at 10');
   log('  ✓ Retry ceiling prevents infinite loops during permanent server outage.');
+
+  const exhaustionEvents: Array<{ errorCode: number; errorDescription: string; retries: number; validatedURL?: string }> = [];
+  const exhaustedWin = new MockBrowserWindow();
+  const exhaustedController = setupWindowLoadRetry(exhaustedWin, () => targetUrl, {
+    maxRetries: 2,
+    getRetryDelay: () => 5,
+    log: testLogger,
+    onRetryExhausted: (details) => exhaustionEvents.push(details),
+  });
+  exhaustedWin.webContents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', targetUrl);
+  exhaustedWin.webContents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', targetUrl);
+  exhaustedWin.webContents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', targetUrl);
+  exhaustedWin.webContents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', targetUrl);
+  assert.deepEqual(exhaustionEvents, [{
+    errorCode: -102,
+    errorDescription: 'ERR_CONNECTION_REFUSED',
+    validatedURL: targetUrl,
+    retries: 2,
+  }], 'Retry exhaustion is reported once with the terminal load details');
+  assert.equal(exhaustedController.getPendingTimer(), null, 'Retry exhaustion clears the pending retry timer');
+  exhaustedController.cancel();
+  log('  ✓ Retry exhaustion escalates once after the bounded retry budget.');
 
   // ── 5. Destroyed Window Safety ─────────────────────────────────────
   log('\n[Step 5] Verifying destroyed window safety prevents calling loadURL on dead windows...');

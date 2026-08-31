@@ -116,6 +116,7 @@ function handle<Args extends unknown[]>(channel: string, listener: IpcHandler<Ar
 export function registerIpcHandlers(
   shutdownSignal?: AbortSignal,
   getMainWindow?: MainWindowGetter,
+  showMainWindow: (window: BrowserWindow) => boolean = () => false,
   getCurrentEffectiveIsDark?: () => boolean,
 ): void {
   ipcMain.on('window-document', (event, documentNonce: unknown) => {
@@ -338,7 +339,7 @@ export function registerIpcHandlers(
     if (!markWindowRendererReady(reported?.epoch, reported?.documentNonce)) {
       return { success: false, error: 'Stale or invalid readiness report' };
     }
-    win.show();
+    showMainWindow(win);
     return { success: true };
   });
 

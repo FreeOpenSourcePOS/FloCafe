@@ -54,3 +54,23 @@ export function createRelaunchGate(onRelaunch: (reason: string) => void): (reaso
 export function hasRelaunchAttemptFlag(argv: readonly string[], attemptFlag: string): boolean {
   return argv.includes(attemptFlag);
 }
+
+/**
+ * Bounds hasRelaunchAttemptFlag() to the window between process start and the
+ * runtime's first successful recovery, rather than the whole process
+ * lifetime. Without this, a process that carries the attempt marker (because
+ * it is itself the result of a relaunch) would treat every later relaunch
+ * request as a second failed attempt forever — even hours after that relaunch
+ * succeeded and the runtime ran healthy — and show the manual-restart dialog
+ * instead of trying to recover from a new, unrelated failure.
+ */
+export function createRelaunchAttemptGuard(processCarriesAttemptFlag: boolean): {
+  hasExhaustedAttempt: () => boolean;
+  markRuntimeRecovered: () => void;
+} {
+  let recovered = false;
+  return {
+    hasExhaustedAttempt: () => processCarriesAttemptFlag && !recovered,
+    markRuntimeRecovered: () => { recovered = true; },
+  };
+}

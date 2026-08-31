@@ -33,6 +33,25 @@ function startHealthyServer(): Promise<{ port: number; close: () => Promise<void
   });
 }
 
+// Returns a port the OS just handed out and then released, instead of
+// guessing one via arithmetic offsets from a live port (which is not
+// guaranteed to be closed and can collide with something else listening).
+// Nothing else can claim it between the close() below and the probe running
+// immediately after, which is deterministic enough for a test.
+function getDeterministicallyClosedPort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = http.createServer();
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      probe.close((err) => {
+        if (err) reject(err);
+        else resolve(port);
+      });
+    });
+  });
+}
+
 async function run(): Promise<void> {
   console.log('[Step 1] All three services healthy...');
   const main = await startHealthyServer();
@@ -46,23 +65,49 @@ async function run(): Promise<void> {
     await Promise.all([main.close(), kds.close(), serverApp.close()]);
   }
 
-  console.log('\n[Step 2] One service silently dead (port closed, connection refused)...');
-  const main2 = await startHealthyServer();
-  const kds2 = await startHealthyServer();
-  // Simulates the exact reported bug: a server that has died but whose
-  // isServerRunning()-style reference would still be non-null. Using a
-  // closed port here reproduces the same "nobody answers" behavior a dead
-  // listener produces, without needing a real process crash.
-  const deadPort = kds2.port + 10_000 > 65535 ? kds2.port - 100 : kds2.port + 10_000;
-  try {
-    const healthy = await probeBackendHealth({ server: main2.port, kds: deadPort, serverApp: main2.port }, 500);
-    assert.equal(healthy, false, 'probeBackendHealth reports unhealthy when any one endpoint is unreachable');
-    console.log('  ✓ Reports unhealthy when one of the three services does not answer.');
-  } finally {
-    await Promise.all([main2.close(), kds2.close()]);
+  console.log('\n[Step 2] KDS silently dead (port closed, connection refused)...');
+  {
+    const main2 = await startHealthyServer();
+    const serverApp2 = await startHealthyServer();
+    // Simulates the exact reported bug: a server that has died but whose
+    // isServerRunning()-style reference would still be non-null. A port the
+    // OS just freed reproduces the same "nobody answers" behavior a dead
+    // listener produces, without needing a real process crash.
+    const deadKdsPort = await getDeterministicallyClosedPort();
+    try {
+      const healthy = await probeBackendHealth(
+        { server: main2.port, kds: deadKdsPort, serverApp: serverApp2.port },
+        500,
+      );
+      assert.equal(healthy, false, 'probeBackendHealth reports unhealthy when the KDS endpoint is unreachable');
+      console.log('  ✓ Reports unhealthy when the KDS endpoint does not answer.');
+    } finally {
+      await Promise.all([main2.close(), serverApp2.close()]);
+    }
   }
 
-  console.log('\n[Step 3] Non-ok HTTP response counts as unhealthy...');
+  console.log('\n[Step 3] Server App silently dead (port closed, connection refused)...');
+  {
+    const main3 = await startHealthyServer();
+    const kds3 = await startHealthyServer();
+    // Independently exercises the third endpoint — Step 2 only ever proved
+    // the KDS check works; a bug that always treated serverApp as healthy
+    // would previously slip through since serverApp reused an already-healthy
+    // port in this test rather than one known to be dead.
+    const deadServerAppPort = await getDeterministicallyClosedPort();
+    try {
+      const healthy = await probeBackendHealth(
+        { server: main3.port, kds: kds3.port, serverApp: deadServerAppPort },
+        500,
+      );
+      assert.equal(healthy, false, 'probeBackendHealth reports unhealthy when the Server App endpoint is unreachable');
+      console.log('  ✓ Reports unhealthy when the Server App endpoint does not answer.');
+    } finally {
+      await Promise.all([main3.close(), kds3.close()]);
+    }
+  }
+
+  console.log('\n[Step 4] Non-ok HTTP response counts as unhealthy...');
   const server3 = http.createServer((_req, res) => { res.writeHead(503); res.end(); });
   await new Promise<void>((resolve) => server3.listen(0, '127.0.0.1', () => resolve()));
   const address3 = server3.address();
@@ -75,7 +120,7 @@ async function run(): Promise<void> {
     await new Promise<void>((resolve) => server3.close(() => resolve()));
   }
 
-  console.log('\n✅ ALL BACKEND HEALTH PROBE CHECKS PASSED (3/3)');
+  console.log('\n✅ ALL BACKEND HEALTH PROBE CHECKS PASSED (4/4)');
 }
 
 run().catch((err) => {

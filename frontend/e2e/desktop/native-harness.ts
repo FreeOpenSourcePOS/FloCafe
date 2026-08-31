@@ -377,7 +377,11 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
       profileDir,
       setActivePage: (page) => { activePage = page; },
       authenticateDashboard: async () => {
-        const currentPath = new URL(activePage.url()).pathname.replace(/\/+$/, '') || '/';
+        let currentPath = new URL(activePage.url()).pathname.replace(/\/+$/, '') || '/';
+        if (currentPath === '/') {
+          await activePage.goto(`http://localhost:${ports.main}/auth/login`, { waitUntil: 'domcontentloaded' });
+          currentPath = new URL(activePage.url()).pathname.replace(/\/+$/, '') || '/';
+        }
         if (currentPath !== '/auth/login' && currentPath !== '/pos' && currentPath !== '/dashboard') {
           throw new Error(`Native E2E expected a stable auth route, got ${activePage.url()}`);
         }

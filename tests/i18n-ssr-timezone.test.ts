@@ -6,7 +6,7 @@
  *  2. I18nProvider suppresses ENVIRONMENT_FALLBACK errors via onError so development SSR does not fail.
  *  3. Non-ENVIRONMENT_FALLBACK errors (e.g., MISSING_MESSAGE) are still logged via console.error.
  *  4. Child components utilizing useTranslations and useFormatter render and format dates/times
- *     without error in SSR (ReactDOMServer) across all supported locales (en, es, pt, fa).
+ *     without error in SSR (ReactDOMServer) across all supported locales (en, es, fr, pt, fa).
  *  5. End-to-end visual HTML pages and screenshot artifacts are generated in the evidence directory.
  */
 

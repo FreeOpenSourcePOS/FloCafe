@@ -5,7 +5,7 @@
  * the generated derived view (`main/print/print-labels.generated.ts`) backed
  * by canonical locale messages. This suite asserts:
  *
- *   1. printLabel selects en/fa/es/pt tables and falls back to English for
+ *   1. printLabel selects en/fa/es/fr/pt tables and falls back to English for
  *      unknown languages (never raw keys).
  *   2. formatReceipt / formatKOT / buildTestPage honor the optional
  *      `language` parameter with English as the default.
@@ -27,6 +27,7 @@ import {
 import {
   printLabel,
 } from '../main/print/print-labels.generated';
+import { renderCompactReceiptViaDocument } from '../main/printers/document-compact';
 
 let passed = 0;
 let failed = 0;
@@ -104,8 +105,9 @@ function run(): void {
   assert('en resolves grand total to TOTAL', printLabel('en', 'print.grandTotal') === 'TOTAL');
   assert('fa resolves grand total to Persian', printLabel('fa', 'print.grandTotal') === 'جمع کل');
   assert('es resolves grand total', typeof printLabel('es', 'print.grandTotal') === 'string' && printLabel('es', 'print.grandTotal').length > 0);
+  assert('fr resolves grand total to French', printLabel('fr', 'print.grandTotal') === 'TOTAL');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
-  assert('unknown language falls back to English', printLabel('fr', 'print.grandTotal') === 'TOTAL');
+  assert('unknown language falls back to English', printLabel('de', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');
   assert('borrowed key resolves from its own namespace', printLabel('en', 'pos.subtotal') === 'Subtotal');
 
@@ -131,6 +133,17 @@ function run(): void {
     const esText = escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'compact', 48, false, false, undefined, [], false, 'es'));
     assert('es compact localizes bill number label', esText.includes('Comprobante #'));
     assert('es compact localizes date label', esText.includes('Fecha:'));
+    const frResult = renderCompactReceiptViaDocument(buildOrder(), buildBill(), buildBusiness(), {
+      columns: 48,
+      language: 'fr',
+      isReprint: false,
+      useUnicode: false,
+      arabicShaping: false,
+      cutMode: 'full',
+    });
+    const frLines = frResult.lines.join('\n');
+    assert('fr compact localizes bill number label', frLines.includes('N° de facture:'));
+    assert('fr compact localizes item label', frLines.includes('Article'));
   }
 
   console.log('\n✅ Test 4: KOT honors language');

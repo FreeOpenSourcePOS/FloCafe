@@ -1,5 +1,5 @@
 /**
- * Verification test for Issue #241: Localized error and message surfaces across en, es, pt, fa.
+ * Verification test for Issue #241: Localized error and message surfaces across en, es, fr, pt, fa.
  *
  * Validates that:
  *  1. POS printer support-error card renders localized headers, messages, and action buttons
@@ -11,7 +11,7 @@
  *     instead of the raw backend response message.
  *  4. Support ticket submission handler displays the localized support.queued toast
  *     instead of the raw backend message.
- *  5. Captures end-to-end visual HTML and screenshot PNG artifacts for all 4 languages in the evidence directory.
+ *  5. Captures end-to-end visual HTML and screenshot PNG artifacts for all supported languages in the evidence directory.
  */
 
 import * as fs from 'fs';
@@ -94,7 +94,7 @@ function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-const LANGUAGES = ['en', 'es', 'pt', 'fa'] as const;
+const LANGUAGES = ['en', 'es', 'fr', 'pt', 'fa'] as const;
 type Lang = (typeof LANGUAGES)[number];
 
 const t = (key: string, lang: Lang, params?: Record<string, string | number>): string => {
@@ -219,7 +219,7 @@ async function run(): Promise<void> {
   const generatedArtifacts: Array<{ kind: string; label: string; path: string }> = [];
 
   // =========================================================================
-  // 1. Check all required translation keys across en, es, pt, fa
+  // 1. Check all required translation keys across en, es, fr, pt, fa
   // =========================================================================
   const REQUIRED_KEYS = [
     'pos.printingFailed',
@@ -250,7 +250,7 @@ async function run(): Promise<void> {
         assert(translated !== enVal, `Persian translation for ${key} falls back to English: "${translated}"`);
       }
     }
-    console.log(`  ✓ ${key}: en="${t(key, 'en')}" | es="${t(key, 'es')}" | pt="${t(key, 'pt')}" | fa="${t(key, 'fa')}"`);
+    console.log(`  ✓ ${key}: en="${t(key, 'en')}" | es="${t(key, 'es')}" | fr="${t(key, 'fr')}" | pt="${t(key, 'pt')}" | fa="${t(key, 'fa')}"`);
   }
 
   // =========================================================================

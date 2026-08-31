@@ -85,6 +85,10 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   currency_display: 'rial',
   number_digits: 'locale',
   calendar: 'locale',
+  // No row until the user first changes it; 'system' is the renderer's own
+  // default (frontend/src/store/theme.ts), so a GET before that point should
+  // return it rather than 404.
+  theme_mode: 'system',
 };
 
 function maskSetting(key: string, value: string): string {

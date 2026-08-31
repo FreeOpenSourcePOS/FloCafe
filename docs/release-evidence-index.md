@@ -18,8 +18,9 @@ logs.
 - Stable Snap publication: one sanitized marker per architecture, required by
   draft verification in `scripts/verify-release-assets.cjs` and rechecked by
   `scripts/release-gate/verify-stable-promotion.cjs` before promotion.
-- Beta Snap Store permission denial: explicitly degraded/NOT-RUN; beta draft
-  verification does not treat missing permission-denied markers as a pass.
+- Beta Snap publication: one sanitized marker per architecture recording the
+  real store channel (`edge`, #468); beta draft verification does not require
+  these markers and a permission denial is degraded to a warning, not a pass.
 
 ## Explicit external/manual boundaries
 

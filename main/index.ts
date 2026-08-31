@@ -48,9 +48,11 @@ import {
 } from './window-readiness';
 import { setupWindowLoadRetry } from './window-load-retry';
 import { registerUsbDevicePermissions } from './usb-device-permissions';
+import { probeBackendHealth } from './backend-health';
 import {
   createRelaunchGate,
   decideRuntimeActivationAction,
+  hasRelaunchAttemptFlag,
   isRuntimeHealthy,
   type RuntimeState,
 } from './runtime-recovery';
@@ -397,7 +399,7 @@ function showMainWindow(expectedWindow?: BrowserWindow): boolean {
   if (expectedWindow && mainWindow !== expectedWindow) return false;
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   if (!isRuntimeHealthy(runtimeState, getRuntimeServices(), isShutdownRequested())) {
-    handleMainWindowActivation();
+    void handleMainWindowActivation();
     return false;
   }
   if (isFailedWindowDocument(mainWindow)) {
@@ -451,6 +453,18 @@ function recoverFailedWindow(failedWindow: BrowserWindow): void {
   }
 }
 
+// createRelaunchGate() only bounds relaunches within a single process's
+// lifetime — a relaunched process gets a fresh gate. Bound repeat relaunches
+// across process restarts too (e.g. a permanently occupied port would
+// otherwise make every new instance immediately detect the same failure and
+// relaunch again): the relaunched process's own argv carries this flag, so a
+// second failure shows a native dialog instead of looping.
+const RUNTIME_RELAUNCH_ATTEMPT_FLAG = '--flo-runtime-relaunch-attempt';
+
+function hasAlreadyAttemptedRuntimeRelaunch(): boolean {
+  return hasRelaunchAttemptFlag(process.argv, RUNTIME_RELAUNCH_ATTEMPT_FLAG);
+}
+
 function performAppRelaunch(): void {
   if (process.defaultApp || !app.isPackaged) {
     const relaunchArgs = process.argv.slice(1).map((arg) => (arg === '.' ? process.cwd() : arg));
@@ -467,9 +481,12 @@ function performAppRelaunch(): void {
     if (app.commandLine.hasSwitch('disable-dev-shm-usage') && !relaunchArgs.includes('--disable-dev-shm-usage')) {
       relaunchArgs.push('--disable-dev-shm-usage');
     }
+    if (!relaunchArgs.includes(RUNTIME_RELAUNCH_ATTEMPT_FLAG)) relaunchArgs.push(RUNTIME_RELAUNCH_ATTEMPT_FLAG);
     app.relaunch({ execPath: process.execPath, args: relaunchArgs });
   } else {
-    app.relaunch();
+    const relaunchArgs = process.argv.slice(1);
+    if (!relaunchArgs.includes(RUNTIME_RELAUNCH_ATTEMPT_FLAG)) relaunchArgs.push(RUNTIME_RELAUNCH_ATTEMPT_FLAG);
+    app.relaunch({ args: relaunchArgs });
   }
 }
 
@@ -480,26 +497,32 @@ function requestRuntimeRelaunch(reason: string): void {
   log.error(`[Lifecycle] Runtime recovery relaunch requested: ${reason}`);
   if (process.env.FLO_E2E_PID_FILE) console.log('[Native E2E] runtime relaunch requested');
 
-  void runCleanup().then(
-    () => {
-      try {
+  const alreadyAttempted = hasAlreadyAttemptedRuntimeRelaunch();
+
+  const finishRelaunch = (): void => {
+    try {
+      if (alreadyAttempted) {
+        log.error(`[Lifecycle] Runtime already relaunched once and failed again (${reason}); not relaunching again.`);
+        dialog.showErrorBox(
+          'Flo needs to restart',
+          'Flo could not recover automatically. Please quit and reopen the app.',
+        );
+      } else {
         log.info('[Lifecycle] Runtime cleanup finished; relaunching Flo');
         performAppRelaunch();
-        app.exit(0);
-      } catch (error) {
-        log.error('[Lifecycle] Runtime relaunch failed after cleanup:', error);
-        app.exit(1);
       }
-    },
+      app.exit(0);
+    } catch (error) {
+      log.error('[Lifecycle] Runtime relaunch failed after cleanup:', error);
+      app.exit(1);
+    }
+  };
+
+  void runCleanup().then(
+    finishRelaunch,
     (error) => {
-      log.error('[Lifecycle] Runtime recovery cleanup failed; relaunching anyway:', error);
-      try {
-        performAppRelaunch();
-        app.exit(0);
-      } catch (relaunchError) {
-        log.error('[Lifecycle] Runtime relaunch failed after cleanup error:', relaunchError);
-        app.exit(1);
-      }
+      log.error('[Lifecycle] Runtime recovery cleanup failed; proceeding anyway:', error);
+      finishRelaunch();
     },
   );
 }
@@ -536,7 +559,7 @@ if (!gotSingleInstanceLock) {
 if (gotSingleInstanceLock) {
   // Focus the existing window if a second launch is attempted.
   app.on('second-instance', () => {
-    handleMainWindowActivation();
+    void handleMainWindowActivation();
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.focus();
       if (process.platform === 'linux') {
@@ -683,7 +706,7 @@ function createWindow(): void {
         try {
           createdWindow.destroy();
           if (mainWindow === createdWindow) mainWindow = null;
-          handleMainWindowActivation();
+          void handleMainWindowActivation();
         } finally {
           windowRecoveryInProgress = false;
         }
@@ -713,7 +736,7 @@ function createWindow(): void {
   });
 }
 
-function handleMainWindowActivation(): void {
+async function handleMainWindowActivation(): Promise<void> {
   const services = getRuntimeServices();
   const hasWindow = Boolean(mainWindow && !mainWindow.isDestroyed());
   const action = decideRuntimeActivationAction({
@@ -728,6 +751,20 @@ function handleMainWindowActivation(): void {
   );
 
   if (action === 'show') {
+    // getRuntimeServices() only checks isServerRunning()-style non-null
+    // references, which stay true even if a server's HTTP listener died
+    // silently (none of the three attach an 'error' listener) — exactly the
+    // scenario issue #548 reported. Confirm the backend is actually
+    // answering before trusting that check to show an existing window.
+    const reallyHealthy = await probeBackendHealth({
+      server: getServerPort(),
+      kds: getKdsPort(),
+      serverApp: getServerAppPort(),
+    });
+    if (!reallyHealthy) {
+      requestRuntimeRelaunchOnce('activation-health-probe-failed');
+      return;
+    }
     showMainWindow();
     return;
   }
@@ -741,7 +778,7 @@ function handleMainWindowActivation(): void {
       return;
     }
     void initializationPromise.then(
-      () => handleMainWindowActivation(),
+      () => { void handleMainWindowActivation(); },
       (error) => {
         log.error('[Lifecycle] Startup failed while activation was waiting:', error);
         requestRuntimeRelaunchOnce('activation-startup-failed');
@@ -1295,7 +1332,7 @@ app.whenReady().then(() => {
     () => {
       if (!activationPending) return;
       activationPending = false;
-      handleMainWindowActivation();
+      void handleMainWindowActivation();
     },
     (error) => {
       if (!activationPending) return;
@@ -1313,7 +1350,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  handleMainWindowActivation();
+  void handleMainWindowActivation();
 });
 
 if (process.env.NODE_ENV === 'test' && process.env.FLO_E2E_PID_FILE) {

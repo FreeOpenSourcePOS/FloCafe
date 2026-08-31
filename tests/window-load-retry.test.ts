@@ -10,6 +10,8 @@
  *   4. Retries are strictly bounded to MAX_LOAD_RETRIES (10 attempts).
  *   5. Destroyed windows do not execute scheduled loadURL calls.
  *   6. Real HTTP server startup delay integration reproduces initial connection failure and auto-recovers.
+ *   7. onRetriesExhausted fires exactly once when retries are capped out (issue #548 escalation hook).
+ *   8. Exhaustion re-arms after did-finish-load resets retry state, instead of latching permanently.
  *
  * Run: ts-node --transpile-only -P tests/tsconfig.json tests/window-load-retry.test.ts
  */
@@ -230,8 +232,43 @@ async function run(): Promise<void> {
 
   await new Promise<void>((resolve) => testServer.close(() => resolve()));
 
+  // ── 7. Retry Exhaustion Escalation (issue #548) ─────────────────────
+  log('\n[Step 7] Verifying onRetriesExhausted fires exactly once when retries cap out...');
+  const winExhaust = new MockBrowserWindow();
+  let exhaustedCount = 0;
+  const exhaustController = setupWindowLoadRetry(winExhaust, () => targetUrl, {
+    getRetryDelay: () => 5,
+    log: testLogger,
+    onRetriesExhausted: () => {
+      exhaustedCount++;
+    },
+  });
+
+  for (let i = 1; i <= 9; i++) {
+    winExhaust.webContents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', targetUrl);
+  }
+  assert.equal(exhaustedCount, 0, 'onRetriesExhausted has not fired before the cap is reached');
+
+  for (let i = 1; i <= 3; i++) {
+    winExhaust.webContents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', targetUrl);
+  }
+  assert.equal(exhaustController.getRetries(), 10, 'Retries remain capped at 10');
+  assert.equal(exhaustedCount, 1, 'onRetriesExhausted fires exactly once after the cap is reached');
+  log('  ✓ onRetriesExhausted escalates exactly once when retries are exhausted.');
+
+  // ── 8. Exhaustion Re-Arms After Recovery ────────────────────────────
+  log('\n[Step 8] Verifying exhaustion re-arms after a successful load resets retry state...');
+  winExhaust.webContents.emit('did-finish-load');
+  assert.equal(exhaustController.getRetries(), 0, 'did-finish-load resets retry count');
+
+  for (let i = 1; i <= 11; i++) {
+    winExhaust.webContents.emit('did-fail-load', {}, -102, 'ERR_CONNECTION_REFUSED', targetUrl);
+  }
+  assert.equal(exhaustedCount, 2, 'onRetriesExhausted fires again after retry state was reset');
+  log('  ✓ Exhaustion callback re-arms after did-finish-load, guarding against a permanent latch.');
+
   log('\n================================================================');
-  log('✅ ALL WINDOW LOAD-RETRY RESILIENCE CHECKS PASSED (6/6)');
+  log('✅ ALL WINDOW LOAD-RETRY RESILIENCE CHECKS PASSED (8/8)');
   log('================================================================');
 
   // Write evidence file

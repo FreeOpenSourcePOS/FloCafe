@@ -226,6 +226,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
     FLO_E2E_OWNER_EMAIL: `native-e2e-owner-${randomBytes(8).toString('hex')}@flo.local`,
     FLO_E2E_OWNER_PASSWORD: `${randomBytes(24).toString('base64url')}Aa1!`,
     FLO_E2E_SKIP_OPTIONAL_NETWORK: '1',
+    FLO_E2E_ALLOW_TEST_HOOKS: '1',
     FLO_MATRIX_OFFLINE: '1',
     FLO_E2E_USER_DATA_DIR: profileDir,
     FLO_E2E_DB_PATH: path.join(profileDir, 'flo.db'),

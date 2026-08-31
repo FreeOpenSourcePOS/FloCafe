@@ -45,6 +45,8 @@ import {
   isWindowRendererReady,
 } from './window-readiness';
 import { setupWindowLoadRetry } from './window-load-retry';
+import { probeBackendHealth } from './backend-health';
+import { initBackendLifecycle, markBackendHealthy, getBackendLifecycleState, beginBackendRecovery } from './backend-lifecycle';
 import { registerUsbDevicePermissions } from './usb-device-permissions';
 import {
   createShutdownCoordinator,
@@ -540,7 +542,13 @@ function createWindow(): void {
     }
   });
 
-  setupWindowLoadRetry(mainWindow, () => `http://localhost:${getServerPort()}`, { log });
+  setupWindowLoadRetry(mainWindow, () => `http://localhost:${getServerPort()}`, {
+    log,
+    onRetriesExhausted: () => {
+      log.error('[Window] Load retries exhausted; escalating to backend recovery.');
+      void beginBackendRecovery('load-retry-exhausted');
+    },
+  });
 
   mainWindow.webContents.on('unresponsive', () => {
     console.warn('[Window] Window became unresponsive');
@@ -879,6 +887,20 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Starting Server App on port 3003...');
     await startServerApp();
     if (isShutdownRequested()) return;
+    markBackendHealthy();
+
+    // Playwright's Electron evaluate() sandbox has no `require`, so the
+    // native e2e suite (frontend/e2e/desktop/backend-recovery.electron.spec.ts)
+    // needs a global hook to simulate the backend dying while this process
+    // stays alive — the exact scenario issue #548 is about. Only installed
+    // when the harness explicitly opts in; never present in a real install.
+    if (process.env.FLO_E2E_ALLOW_TEST_HOOKS === '1') {
+      (globalThis as unknown as { __floTestHooks__?: unknown }).__floTestHooks__ = {
+        stopAllBackendServers: async () => {
+          await Promise.all([stopServer(), stopKdsServer(), stopServerApp()]);
+        },
+      };
+    }
 
     console.log('[Flo] Initializing WhatsApp service...');
     initWhatsAppFromDb();
@@ -978,6 +1000,7 @@ async function initialize(): Promise<void> {
         server: isServerRunning() ? 'running' : 'stopped',
         kdsServer: isKdsServerRunning() ? 'running' : 'stopped',
         serverApp: isServerAppRunning() ? 'running' : 'stopped',
+        recovery: getBackendLifecycleState(),
         memory: {
           heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
           heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
@@ -1068,13 +1091,38 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('activate', () => {
+app.on('activate', () => { void handleActivate(); });
+
+async function handleActivate(): Promise<void> {
+  if (isShutdownRequested()) return;
+  const state = getBackendLifecycleState();
+  if (state === 'terminal' || state === 'recovering') return;
+
   if (mainWindow === null) {
+    // initialize() owns the first createWindow() call; don't race it while
+    // the backend is still starting up.
+    if (state === 'starting') return;
     createWindow();
-  } else {
-    showMainWindow();
+    return;
   }
-});
+
+  // A window already exists — including a blank chrome-error window left
+  // behind by dead servers. showMainWindow()'s renderer-readiness check
+  // alone is not a sufficient health signal: once the readiness fail-safe
+  // timer has fired, that check reports "ready" even for a blank error
+  // page. Confirm the backend is actually answering before deciding
+  // whether to show or recover.
+  const healthy = await probeBackendHealth({
+    server: getServerPort(),
+    kds: getKdsPort(),
+    serverApp: getServerAppPort(),
+  });
+  if (!healthy) {
+    await beginBackendRecovery('activate');
+    return;
+  }
+  showMainWindow();
+}
 
 // --- Cleanup function (idempotent — safe to call from every entrypoint) ---
 const cleanupCoordinator = createShutdownCoordinator(() => [
@@ -1139,6 +1187,17 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   },
   getSignalExitCode: () => startupFailure ? 1 : 0,
   getQuitExitCode: () => startupFailure ? 1 : 0,
+});
+
+// Wired synchronously at module load, after runCleanup/setQuitting exist —
+// but still before app.whenReady() ever resolves — so handleActivate()
+// above always has a valid recovery gate to call into.
+initBackendLifecycle({
+  app,
+  dialog,
+  runCleanup,
+  setQuitting: () => { isQuitting = true; },
+  log,
 });
 
 process.on('uncaughtException', (error) => {

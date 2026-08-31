@@ -29,6 +29,7 @@ export interface WindowLoadRetryOptions {
   transientErrors?: readonly number[];
   getRetryDelay?: (attempt: number) => number;
   log?: WindowLoadRetryLogger;
+  onRetriesExhausted?: () => void;
 }
 
 import type { BrowserWindow } from 'electron';
@@ -65,14 +66,17 @@ export function setupWindowLoadRetry(
 ): WindowLoadRetryController {
   let loadRetries = 0;
   let loadRetryTimer: NodeJS.Timeout | null = null;
+  let exhaustedFired = false;
 
   const maxRetries = options?.maxRetries ?? MAX_LOAD_RETRIES;
   const transientErrors = options?.transientErrors ?? TRANSIENT_LOAD_ERRORS;
   const getDelay = options?.getRetryDelay ?? calculateRetryDelay;
   const logger = options?.log ?? log;
+  const onRetriesExhausted = options?.onRetriesExhausted;
 
   const handleFinishLoad = () => {
     loadRetries = 0;
+    exhaustedFired = false;
     if (loadRetryTimer) {
       clearTimeout(loadRetryTimer);
       loadRetryTimer = null;
@@ -100,6 +104,10 @@ export function setupWindowLoadRetry(
           window.loadURL(getTargetUrl());
         }
       }, delay);
+    } else if (transientErrors.includes(errorCode) && loadRetries >= maxRetries && !exhaustedFired) {
+      exhaustedFired = true;
+      logger.error(`[Window] Retries exhausted after ${maxRetries} attempts.`);
+      onRetriesExhausted?.();
     }
   };
 
@@ -127,6 +135,7 @@ export function setupWindowLoadRetry(
     },
     reset: () => {
       loadRetries = 0;
+      exhaustedFired = false;
       if (loadRetryTimer) {
         clearTimeout(loadRetryTimer);
         loadRetryTimer = null;

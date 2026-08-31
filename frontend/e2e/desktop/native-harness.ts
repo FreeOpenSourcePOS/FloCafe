@@ -390,6 +390,16 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
         throw new Error(`Native E2E expected a stable auth route, got ${nextPage.url()}`);
       }
       if (currentPath === '/auth/login') {
+        const hasPersistedSession = await nextPage.evaluate(() => Boolean(localStorage.getItem('token'))).catch(() => false);
+        if (hasPersistedSession) {
+          await nextPage.waitForFunction(() => {
+            const path = window.location.pathname.replace(/\/+$/, '') || '/';
+            return path === '/pos' || !localStorage.getItem('token');
+          }, { timeout: 30_000 }).catch(() => {});
+          currentPath = new URL(nextPage.url()).pathname.replace(/\/+$/, '') || '/';
+        }
+      }
+      if (currentPath === '/auth/login') {
         await nextPage.locator('#email').fill(env.FLO_E2E_OWNER_EMAIL);
         await nextPage.locator('#password').fill(env.FLO_E2E_OWNER_PASSWORD);
         await nextPage.locator('button[type="submit"]').click();

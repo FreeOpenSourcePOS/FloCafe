@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import {
   createRelaunchGate,
   decideRuntimeActivationAction,
+  hasRelaunchAttemptFlag,
   isRuntimeHealthy,
 } from '../main/runtime-recovery';
 
@@ -82,5 +83,24 @@ const requestRelaunch = createRelaunchGate((reason) => relaunchReasons.push(reas
 assert.equal(requestRelaunch('runtime-lost'), true);
 assert.equal(requestRelaunch('second-activation'), false);
 assert.deepEqual(relaunchReasons, ['runtime-lost']);
+
+// hasRelaunchAttemptFlag: bounds relaunches across process restarts, since
+// createRelaunchGate's own gate resets on every new process (fresh closure).
+const FLAG = '--flo-runtime-relaunch-attempt';
+assert.equal(
+  hasRelaunchAttemptFlag(['/usr/bin/flo', '.'], FLAG),
+  false,
+  'a first-launch argv has no attempt marker',
+);
+assert.equal(
+  hasRelaunchAttemptFlag(['/usr/bin/flo', '.', FLAG], FLAG),
+  true,
+  'a relaunched process carries the marker its own relaunch appended',
+);
+assert.equal(
+  hasRelaunchAttemptFlag([], FLAG),
+  false,
+  'an empty argv is treated as a first launch',
+);
 
 console.log('Runtime recovery tests passed');

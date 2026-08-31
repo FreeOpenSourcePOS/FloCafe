@@ -42,3 +42,15 @@ export function createRelaunchGate(onRelaunch: (reason: string) => void): (reaso
     return true;
   };
 }
+
+/**
+ * createRelaunchGate() only bounds relaunches within a single process's
+ * lifetime — a relaunched process gets a fresh gate on module load. This
+ * checks whether the CURRENT process's own argv already carries the marker
+ * a prior relaunch attempt appended, so a persistent failure (e.g. a
+ * permanently occupied port) degrades to a clear dialog after one relaunch
+ * instead of looping indefinitely across process restarts.
+ */
+export function hasRelaunchAttemptFlag(argv: readonly string[], attemptFlag: string): boolean {
+  return argv.includes(attemptFlag);
+}

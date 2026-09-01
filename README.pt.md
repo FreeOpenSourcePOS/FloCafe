@@ -2,7 +2,7 @@
 
 **Ponto de venda gratuito, de código aberto e desenvolvido para funcionar offline em cafés, restaurantes e pequenas cozinhas.**
 
-[English](README.md) | [Español](README.es.md) | **Português** | [Français](README.fr.md)
+[English](README.md) | [Español](README.es.md) | **Português** | [Français](README.fr.md) | [Türkçe](README.tr.md) | [Filipino](README.fil.md) | [Deutsch](README.de.md)
 
 O FloCafe funciona diretamente no computador do estabelecimento. Pedidos, clientes, recibos e backups são armazenados em um banco de dados SQLite local, permitindo que o atendimento no balcão e as telas da cozinha continuem funcionando sem conexão com a Internet. Nenhuma conta hospedada ou na nuvem é necessária para a operação principal do PDV. Integrações opcionais, como backup no Google Drive, envio de contas pelo WhatsApp e relatórios conectados à nuvem, podem ser ativadas quando necessário.
 
@@ -46,7 +46,7 @@ A operação principal do PDV e os dados locais funcionam offline. A criação d
 
 ## Idiomas e suporte regional
 
-O FloCafe inclui traduções da interface em inglês, espanhol, português brasileiro, francês, persa (farsi), turco, filipino e alemão, incluindo suporte RTL para persa. O idioma da interface é independente do país e das configurações regionais da loja. As regras de cálculo de impostos são uma área separada.
+O FloCafe inclui traduções da interface em inglês, espanhol, português brasileiro e persa (farsi), incluindo suporte RTL. O idioma da interface é independente do país e das configurações regionais da loja. As regras de cálculo de impostos são uma área separada.
 
 O FloCafe inclui perfis para 131 países e 109 moedas. Cada perfil define moeda, localidade e fuso horário padrão; o proprietário pode alterar o fuso durante a configuração ou depois em Configurações.
 

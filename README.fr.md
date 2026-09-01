@@ -2,7 +2,7 @@
 
 **Point de vente gratuit, open source et conçu pour fonctionner hors ligne pour les cafés, restaurants et petites cuisines.**
 
-[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | **Français**
+[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | **Français** | [Türkçe](README.tr.md) | [Filipino](README.fil.md) | [Deutsch](README.de.md)
 
 FloCafe fonctionne directement sur l’ordinateur de l’établissement. Les commandes, les clients, les reçus et les sauvegardes sont stockés dans une base de données SQLite locale. Le service au comptoir et les écrans de cuisine peuvent donc continuer à fonctionner sans connexion Internet. Aucun compte hébergé ou cloud n’est nécessaire pour l’utilisation principale du point de vente. Des intégrations optionnelles, comme les sauvegardes Google Drive, l’envoi de factures par WhatsApp et les rapports connectés au cloud, peuvent être activées si nécessaire.
 
@@ -46,7 +46,7 @@ Les fonctions principales du point de vente et les données locales fonctionnent
 
 ## Langues et support régional
 
-FloCafe propose des traductions de l’interface en anglais, espagnol, portugais brésilien, français, persan (farsi), turc, filipino et allemand, avec prise en charge RTL pour le persan. La langue de l’interface est indépendante du pays et des paramètres régionaux du magasin. Les règles de calcul des taxes constituent un domaine séparé.
+FloCafe propose des traductions de l’interface en anglais, espagnol, portugais brésilien et persan (farsi), avec prise en charge RTL. La langue de l’interface est indépendante du pays et des paramètres régionaux du magasin. Les règles de calcul des taxes constituent un domaine séparé.
 
 FloCafe inclut des profils pour 131 pays et 109 devises. Chaque profil définit une devise, une région et un fuseau horaire par défaut ; le propriétaire peut modifier le fuseau horaire lors de la configuration ou plus tard dans les paramètres.
 

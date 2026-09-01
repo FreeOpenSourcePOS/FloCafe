@@ -105,12 +105,15 @@ function run(): void {
   console.log('\n✅ Test 1: printLabel language selection and fallback');
   assert('en resolves grand total to TOTAL', printLabel('en', 'print.grandTotal') === 'TOTAL');
   assert('fa resolves grand total to Persian', printLabel('fa', 'print.grandTotal') === 'جمع کل');
+  assert('tr resolves grand total to Turkish', printLabel('tr', 'print.grandTotal') === 'GENEL TOPLAM');
   assert('es resolves grand total', typeof printLabel('es', 'print.grandTotal') === 'string' && printLabel('es', 'print.grandTotal').length > 0);
   assert('fr resolves grand total to French', printLabel('fr', 'print.grandTotal') === 'TOTAL');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
   assert('unknown language falls back to English', printLabel('de', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');
   assert('borrowed key resolves from its own namespace', printLabel('en', 'pos.subtotal') === 'Subtotal');
+  assert('tr resolves borrowed pos.subtotal', printLabel('tr', 'pos.subtotal') === 'Ara Toplam');
+
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {

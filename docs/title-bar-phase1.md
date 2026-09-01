@@ -38,13 +38,17 @@ Phase 2 adds a defensive runtime decision so no platform can end up hidden-with-
 5. Fallback `close` routes through `BrowserWindow.close()`, firing the same `close` event as the native caption button, so close-to-tray behavior in `main/index.ts` is identical in both modes.
 6. Renderer readiness is per-document: main begins a fresh readiness epoch and clears the prior document nonce on window creation and before each full-document `did-start-navigation` (manual reloads included), rejecting stale-epoch or stale-nonce reports and arming a fresh fail-safe per epoch, so a reload that fails to re-mount the root chrome re-evaluates readiness instead of inheriting a stale ready flag while the caption controls are gone.
 
-Contract coverage lives in `tests/titlebar-window-options.test.ts` (mode resolution matrix, fallback window options, window-action verb validation), `tests/window-readiness.test.ts` (epoch and nonce binding, stale-report rejection, reload invalidation, fail-safe firing and cancellation), and `tests/electron-api-contract.test.ts` (preload surface includes `windowAction` and document-bound `windowReady`).
+Contract coverage lives in `tests/titlebar-window-options.test.ts` (mode resolution matrix, fallback window options, window-action verb validation), `tests/window-readiness.test.ts` (epoch and nonce binding, stale-report rejection, reload invalidation, fail-safe firing and cancellation), and `tests/electron-api-contract.test.ts` (preload surface includes `windowAction`, `getWindowState`, `onWindowStateChanged`, and document-bound `windowReady`).
 
 ### Platform matrix follow-up (completed in #462)
 
 Cross-platform verification is recorded in [`docs/title-bar-platform-matrix.md`](title-bar-platform-matrix.md). The Windows assertion workflow runs on a hosted desktop runner; the packaged Linux AppImage is verified under Xvfb on the captain-approved Debian GNOME machine, with assertion/log evidence and a supplementary XWD capture. macOS fullscreen/traffic-light and browser/LAN/sidebar rows are recorded separately in that matrix.
 
-The renderer `ElectronAPI` declaration stays in parity with the preload surface, including settings, KDS, printer, and daily-summary methods plus the narrow `windowAction` control and `windowReady` readiness methods. The `titleBarMode` capability remains part of the `get-status` payload rather than a separate renderer gate. The KDS window, print receipt/local popup windows, native dialogs, and browser/LAN layouts remain on their existing paths. Context isolation and disabled Node integration are unchanged; the preload API is extended only by the two narrow readiness/control methods described above.
+The renderer `ElectronAPI` declaration stays in parity with the preload surface, including settings, KDS, printer, and daily-summary methods plus the narrow `windowAction`, `getWindowState`, `onWindowStateChanged`, and `windowReady` methods. The `titleBarMode` capability remains part of the `get-status` payload rather than a separate renderer gate. The KDS window, print receipt/local popup windows, native dialogs, and browser/LAN layouts remain on their existing paths. Context isolation and disabled Node integration are unchanged; the preload API is extended only by these narrow window-state, readiness, and control methods.
+
+## POS topbar window-state synchronization
+
+In the Electron app, the POS topbar's fullscreen toggle controls the native POS `BrowserWindow`: it maximizes a restored window, restores a maximized window, and exits native fullscreen before restoring the window. The topbar initializes from `getWindowState` and listens to `onWindowStateChanged`, so native maximize/fullscreen changes keep its label and icon synchronized. Browser/LAN clients retain the existing document Fullscreen API path.
 
 ## Explicit exclusions
 

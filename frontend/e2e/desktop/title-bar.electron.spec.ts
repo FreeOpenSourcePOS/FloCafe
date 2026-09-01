@@ -69,6 +69,75 @@ test('real preload, renderer, and main boundaries reach an authenticated dashboa
   expect(runtime.readiness).toEqual({ success: true });
 });
 
+test('POS topbar fullscreen toggle stays synchronized with native window state', async () => {
+  test.skip(process.platform === 'linux', 'Linux CI uses Xvfb without a window manager, so native maximize state is not observable');
+  await harness.authenticateDashboard();
+
+  const readNativeWindowState = async () => harness.app.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows().find((candidate) => {
+      try { return new URL(candidate.webContents.getURL()).pathname.replace(/\/+$/, '') === '/pos'; } catch { return false; }
+    });
+    if (!window) return null;
+    return { isMaximized: window.isMaximized(), isFullScreen: window.isFullScreen() };
+  });
+  const topbarToggle = harness.page.getByRole('button', { name: /full-screen POS/i });
+
+  await harness.app.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows().find((candidate) => {
+      try { return new URL(candidate.webContents.getURL()).pathname.replace(/\/+$/, '') === '/pos'; } catch { return false; }
+    });
+    if (!window) throw new Error('POS BrowserWindow not found');
+    if (window.isFullScreen()) window.setFullScreen(false);
+    if (window.isMaximized()) window.unmaximize();
+  });
+  await expect.poll(readNativeWindowState).toEqual({ isMaximized: false, isFullScreen: false });
+  await expect(topbarToggle).toHaveAttribute('aria-label', 'Enter full-screen POS');
+
+  if (process.env.FLO_E2E_EVIDENCE_DIR) {
+    await harness.page.screenshot({
+      path: `${process.env.FLO_E2E_EVIDENCE_DIR}/06-pos-topbar-restored.png`,
+    });
+  }
+
+  await topbarToggle.click();
+  await expect.poll(readNativeWindowState).toMatchObject({ isMaximized: true, isFullScreen: false });
+  await expect(topbarToggle).toHaveAttribute('aria-label', 'Exit full-screen POS');
+  if (process.env.FLO_E2E_EVIDENCE_DIR) {
+    await harness.page.screenshot({
+      path: `${process.env.FLO_E2E_EVIDENCE_DIR}/07-pos-topbar-maximized.png`,
+    });
+  }
+
+  await harness.app.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows().find((candidate) => {
+      try { return new URL(candidate.webContents.getURL()).pathname.replace(/\/+$/, '') === '/pos'; } catch { return false; }
+    });
+    if (!window) throw new Error('POS BrowserWindow not found');
+    window.unmaximize();
+  });
+  await expect.poll(readNativeWindowState).toMatchObject({ isMaximized: false, isFullScreen: false });
+  await expect(topbarToggle).toHaveAttribute('aria-label', 'Enter full-screen POS');
+
+  await harness.app.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows().find((candidate) => {
+      try { return new URL(candidate.webContents.getURL()).pathname.replace(/\/+$/, '') === '/pos'; } catch { return false; }
+    });
+    if (!window) throw new Error('POS BrowserWindow not found');
+    window.setFullScreen(true);
+  });
+  await expect.poll(readNativeWindowState).toMatchObject({ isMaximized: false, isFullScreen: true });
+  await expect(topbarToggle).toHaveAttribute('aria-label', 'Exit full-screen POS');
+  if (process.env.FLO_E2E_EVIDENCE_DIR) {
+    await harness.page.screenshot({
+      path: `${process.env.FLO_E2E_EVIDENCE_DIR}/08-pos-topbar-native-fullscreen.png`,
+    });
+  }
+
+  await topbarToggle.click();
+  await expect.poll(readNativeWindowState).toMatchObject({ isFullScreen: false });
+  await expect(topbarToggle).toHaveAttribute('aria-label', 'Enter full-screen POS');
+});
+
 test('native window lifecycle is observable through the Electron boundary', async () => {
   test.skip(!['darwin', 'win32', 'linux'].includes(process.platform), 'FloCafe native window lifecycle is unsupported on this platform');
   test.skip(process.platform === 'linux', 'Linux CI uses Xvfb without a window manager, so native minimize/restore is not observable');

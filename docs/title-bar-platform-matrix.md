@@ -14,7 +14,7 @@ This record uses assertion and log evidence first. The Linux XWD capture is supp
 | [`tests/platform-titlebar-runtime-probe.cjs`](../tests/platform-titlebar-runtime-probe.cjs) | Cross-platform Electron mode resolution, window option shape, 40 DIP overlay configuration, fallback gating, and window-action validation. |
 | [`tests/titlebar-window-options.test.ts`](../tests/titlebar-window-options.test.ts) | Main-window option and fallback decision contract. |
 | [`tests/window-readiness.test.ts`](../tests/window-readiness.test.ts) | Epoch/nonce-bound renderer readiness and fail-safe contract. |
-| [`tests/electron-api-contract.test.ts`](../tests/electron-api-contract.test.ts) | Preload `windowAction` and `windowReady` contract. |
+| [`tests/electron-api-contract.test.ts`](../tests/electron-api-contract.test.ts) | Preload `windowAction`, `getWindowState`, `onWindowStateChanged`, and `windowReady` contract. |
 | [`frontend/e2e/title-bar-platform.spec.ts`](../frontend/e2e/title-bar-platform.spec.ts) | Browser/LAN multi-viewport and #504 sidebar regression checks. |
 | [`frontend/e2e/desktop/title-bar.electron.spec.ts`](../frontend/e2e/desktop/title-bar.electron.spec.ts) | Dedicated native Electron readiness, authenticated dashboard, and window-boundary checks. |
 | [`frontend/e2e/layout-integrity.spec.ts`](../frontend/e2e/layout-integrity.spec.ts) | Existing browser/LAN geometry and zero-title-bar checks. |

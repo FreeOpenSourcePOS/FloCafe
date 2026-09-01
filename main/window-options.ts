@@ -93,7 +93,10 @@ export function createMainWindow(
 export type WindowControlTarget = Pick<
   BrowserWindow,
   'isDestroyed' | 'minimize' | 'isMaximized' | 'maximize' | 'unmaximize' | 'close'
->;
+> & {
+  isFullScreen?: () => boolean;
+  setFullScreen?: (flag: boolean) => void;
+};
 
 /**
  * Applies one validated window-control action. 'close' intentionally goes
@@ -112,8 +115,17 @@ export function applyWindowControlAction(
       win.minimize();
       break;
     case 'toggle-maximize':
-      if (win.isMaximized()) win.unmaximize();
-      else win.maximize();
+      if (typeof win.isFullScreen === 'function' && win.isFullScreen()) {
+        if (typeof win.setFullScreen === 'function') {
+          win.setFullScreen(false);
+        } else {
+          win.unmaximize();
+        }
+      } else if (win.isMaximized()) {
+        win.unmaximize();
+      } else {
+        win.maximize();
+      }
       break;
     case 'close':
       win.close();

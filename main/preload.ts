@@ -30,8 +30,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowReady: (payload: { epoch: number }) => ipcRenderer.invoke('window-ready', { ...payload, documentNonce }),
 
   // Narrow window-control surface for the renderer title bar's HTML fallback
-  // controls. Only ever called when main reports titleBarMode 'html-fallback'.
+  // controls and the POS topbar's native window-state toggle.
   windowAction: (action: string) => ipcRenderer.invoke('window-action', action),
+
+  getWindowState: () => ipcRenderer.invoke('get-window-state'),
+  onWindowStateChanged: (callback: (state: { isMaximized: boolean; isFullScreen: boolean }) => void) => {
+    const handler = (_event: unknown, state: { isMaximized: boolean; isFullScreen: boolean }) => callback(state);
+    ipcRenderer.on('window-state-changed', handler);
+    return () => { ipcRenderer.removeListener('window-state-changed', handler); };
+  },
 
   getPrinters: () => ipcRenderer.invoke('get-printers'),
   savePrinter: (printer: unknown) => ipcRenderer.invoke('save-printer', printer),

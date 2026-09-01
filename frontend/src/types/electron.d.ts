@@ -7,9 +7,10 @@ export interface ElectronAPI {
   // Menu
   onMenuAction: (callback: (action: string) => void) => (() => void);
 
-  // Window controls (HTML title-bar fallback; only invoked when getStatus()
-  // reports titleBarMode 'html-fallback')
+  // Window controls
   windowAction: (action: WindowControlAction) => Promise<ElectronActionResult | ElectronIpcError>;
+  getWindowState?: () => Promise<{ isMaximized: boolean; isFullScreen: boolean }>;
+  onWindowStateChanged?: (callback: (state: { isMaximized: boolean; isFullScreen: boolean }) => void) => () => void;
 
   // Database
   backupDatabase: (pin?: string) => Promise<{ success: boolean; path?: string; error?: string }>;

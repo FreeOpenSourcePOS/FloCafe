@@ -275,6 +275,26 @@ export default function POSPage() {
   };
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (window.electronAPI?.getWindowState) {
+      window.electronAPI
+        .getWindowState()
+        .then((state) => {
+          if (state && typeof state === 'object' && 'isMaximized' in state) {
+            setFullscreen(Boolean(state.isMaximized || state.isFullScreen));
+          }
+        })
+        .catch(() => {});
+
+      if (window.electronAPI.onWindowStateChanged) {
+        return window.electronAPI.onWindowStateChanged((state) => {
+          setFullscreen(Boolean(state?.isMaximized || state?.isFullScreen));
+        });
+      }
+      return;
+    }
+
     const syncFullscreen = () => setFullscreen(document.fullscreenElement != null);
     syncFullscreen();
     document.addEventListener('fullscreenchange', syncFullscreen);
@@ -282,6 +302,17 @@ export default function POSPage() {
   }, []);
 
   const toggleFullscreen = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+
+    if (window.electronAPI?.windowAction) {
+      try {
+        await window.electronAPI.windowAction('toggle-maximize');
+      } catch {
+        toast.error(t('fullscreenUnavailable'));
+      }
+      return;
+    }
+
     if (typeof document === 'undefined') return;
     try {
       if (document.fullscreenElement) {

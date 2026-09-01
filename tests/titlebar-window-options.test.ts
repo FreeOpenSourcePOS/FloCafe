@@ -132,11 +132,14 @@ assert.equal(linuxFallbackMainWindow.options.webPreferences.contextIsolation, tr
 class FakeWindow {
   calls: string[] = [];
   maximized = false;
+  fullscreen = false;
   isDestroyed() { return false; }
   minimize() { this.calls.push('minimize'); }
   isMaximized() { return this.maximized; }
   maximize() { this.maximized = true; this.calls.push('maximize'); }
   unmaximize() { this.maximized = false; this.calls.push('unmaximize'); }
+  isFullScreen() { return this.fullscreen; }
+  setFullScreen(val: boolean) { this.fullscreen = val; this.calls.push(`fullscreen:${val}`); }
   close() { this.calls.push('close'); }
 }
 
@@ -146,8 +149,11 @@ assert.deepEqual(applyWindowControlAction(win as any, 'toggle-maximize'), { succ
 assert.equal(win.maximized, true, 'toggle-maximize maximizes a restored window');
 assert.deepEqual(applyWindowControlAction(win as any, 'toggle-maximize'), { success: true });
 assert.equal(win.maximized, false, 'toggle-maximize restores a maximized window');
+win.fullscreen = true;
+assert.deepEqual(applyWindowControlAction(win as any, 'toggle-maximize'), { success: true });
+assert.equal(win.fullscreen, false, 'toggle-maximize exits fullscreen if window is fullscreen');
 assert.deepEqual(applyWindowControlAction(win as any, 'close'), { success: true });
-assert.deepEqual(win.calls, ['minimize', 'maximize', 'unmaximize', 'close']);
+assert.deepEqual(win.calls, ['minimize', 'maximize', 'unmaximize', 'fullscreen:false', 'close']);
 
 for (const bad of ['destroy', '', 'minimize ', 'MAXIMIZE', undefined, null, 42]) {
   assert.deepEqual(
@@ -156,7 +162,7 @@ for (const bad of ['destroy', '', 'minimize ', 'MAXIMIZE', undefined, null, 42])
     `action ${String(bad)} must be rejected`,
   );
 }
-assert.deepEqual(win.calls, ['minimize', 'maximize', 'unmaximize', 'close'], 'rejected actions must not touch the window');
+assert.deepEqual(win.calls, ['minimize', 'maximize', 'unmaximize', 'fullscreen:false', 'close'], 'rejected actions must not touch the window');
 const printPopup = localWindowOpenHandler({ url: 'about:blank' });
 assert.equal(printPopup?.action, 'allow');
 assert.deepEqual(printPopup?.overrideBrowserWindowOptions, {

@@ -51,6 +51,15 @@ body {
   font-family: var(--font-sans);
 }
 
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+}
+
 /* Desktop title bar: native-overlay mode supplies the caption buttons through
  * Electron; html-fallback mode mounts equivalent controls in the renderer.
  * The safe-area env values exclude native buttons and update on geometrychange;

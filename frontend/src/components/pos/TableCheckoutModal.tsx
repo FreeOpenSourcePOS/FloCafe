@@ -155,7 +155,7 @@ export default function TableCheckoutModal({
             </div>
             <p className="text-sm text-muted-foreground">{t('orderNumber', { number: order.order_number })}</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-muted-foreground">
+          <button onClick={onClose} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />
           </button>
         </div>

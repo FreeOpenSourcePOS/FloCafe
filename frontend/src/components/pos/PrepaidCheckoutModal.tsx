@@ -13,6 +13,7 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import TouchNumberPad from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -71,6 +72,8 @@ interface Payment {
   amount: string;
 }
 
+type AmountTarget = { kind: 'payment'; index: number } | { kind: 'wallet' } | { kind: 'discount' } | null;
+
 export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const cart = useCartStore();
   const customer = cart.customer;
@@ -95,6 +98,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
+  const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
 
   const previewDiscount = useMemo(() => {
     const rawValue = Number.parseFloat(discountValue);
@@ -213,7 +217,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
 
   const updatePaymentAmount = (idx: number, value: string) => {
     setPaymentsTouched(true);
-    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
+    setPayments((current) => current.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
   };
 
   const allocateRemainingTo = (idx: number) => {
@@ -228,6 +232,55 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const change = hasCash && totalPayment > remaining + 0.009
     ? parseFloat((totalPayment - remaining).toFixed(2))
     : 0;
+
+  const activeAmountValue = amountTarget?.kind === 'payment'
+    ? payments[amountTarget.index]?.amount || ''
+    : amountTarget?.kind === 'wallet'
+      ? walletAmount
+      : amountTarget?.kind === 'discount'
+        ? discountValue
+        : '';
+
+  const updateActiveAmount = (value: string) => {
+    if (!amountTarget) return;
+    if (amountTarget.kind === 'payment') {
+      updatePaymentAmount(amountTarget.index, value);
+      return;
+    }
+    if (amountTarget.kind === 'wallet') {
+      const maxWalletCurrencyStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
+      const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
+      const clamped = parseFloat(value) > maxDisplay ? String(maxDisplay) : value;
+      setWalletAmount(clamped);
+      setPaymentsTouched(true);
+      return;
+    }
+    setDiscountValue(value);
+    setPaymentsTouched(false);
+  };
+
+  const activeAmountMax = amountTarget?.kind === 'discount'
+    ? discountType === 'percentage' ? 100 : preview ? toDisplayUnit(preview.subtotal) : undefined
+    : amountTarget?.kind === 'wallet'
+      ? toDisplayUnit(Math.min(Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE), remaining))
+      : undefined;
+
+  const activeAmountQuickValues = (() => {
+    if (amountTarget?.kind === 'payment') {
+      const allocatedElsewhere = payments.reduce((sum, payment, index) => (
+        index === amountTarget.index ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0)
+      ), walletAmt);
+      const dueDisplay = toDisplayUnit(Math.max(0, remaining - allocatedElsewhere));
+      return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
+    }
+    if (amountTarget?.kind === 'wallet') {
+      const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
+      const maxWalletStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
+      const dueDisplay = toDisplayUnit(Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere)));
+      return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
+    }
+    return [];
+  })();
 
   const handleConfirm = () => {
     if (!preview) return;
@@ -306,7 +359,8 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-muted hover:bg-muted text-muted-foreground transition-colors"
+            className="touch-target rounded-full bg-muted hover:bg-muted active:bg-muted text-muted-foreground transition-colors"
+            aria-label={t('close')}
           >
             <X size={16} />
           </button>
@@ -387,7 +441,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
 
           {/* Discount */}
           <div className="rounded-xl border border-border overflow-hidden">
-            <button type="button" onClick={() => setDiscountOpen((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-muted text-start">
+            <button type="button" onClick={() => setDiscountOpen((open) => !open)} className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start">
               <span className="text-sm font-medium text-foreground">
                 {preview?.discountAmount ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}` : t('applyDiscount')}
               </span>
@@ -400,7 +454,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                   {isDiscountTypeAllowed(discountMode, 'percentage') && (
                     <button
                       onClick={() => setDiscountType('percentage')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                      className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
                     >
                       <Percent size={14} />
                       {t('percentage')}
@@ -409,7 +463,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                   {isDiscountTypeAllowed(discountMode, 'amount') && (
                     <button
                       onClick={() => setDiscountType('amount')}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
+                      className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
                     >
                       {t('flatAmount')}
                     </button>
@@ -422,12 +476,14 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                   <input
                     type="number"
                     value={discountValue}
+                    onFocus={() => setAmountTarget({ kind: 'discount' })}
                     onChange={(e) => setDiscountValue(e.target.value)}
                     placeholder={discountType === 'percentage' ? '0' : '0.00'}
                     min="0"
                     max={discountType === 'percentage' ? 100 : (preview ? toDisplayUnit(preview.subtotal) : undefined)}
                     step={discountType === 'percentage' ? 1 : inputCurrencyStep}
-                    className="w-full ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                    inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
+                    className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                   />
                 </div>
                 <input
@@ -435,7 +491,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                   value={discountReason}
                   onChange={(e) => setDiscountReason(e.target.value)}
                   placeholder={t('discountReasonPlaceholder')}
-                  className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                  className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                 />
                 {discountRequiresApproval && parseFloat(discountValue) > 0 && (
                   <input
@@ -444,7 +500,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                     onChange={(e) => setDiscountPin(e.target.value)}
                     placeholder={t('managerPin')}
                     maxLength={6}
-                    className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                    className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                   />
                 )}
                 {discountValue && (
@@ -469,8 +525,8 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
               const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : custom?.name || tCommon('unknown');
               const Icon = builtIn?.icon;
               const active = (parseFloat(payment.amount) || 0) > 0;
-              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex h-11">
-                <button type="button" title={label} onClick={() => allocateRemainingTo(idx)} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
+              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex min-h-12">
+                <button type="button" title={label} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
                   {Icon && <Icon size={15} />}
                   <span className="truncate">{label}</span>
                 </button>
@@ -479,9 +535,11 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                   <input
                     type="number"
                     value={payment.amount}
+                    onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                     onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                     placeholder="0.00"
-                    className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl"
+                    inputMode="decimal"
+                    className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl"
                     step={inputCurrencyStep}
                     min="0"
                   />
@@ -523,14 +581,15 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
           {/* Loyalty Wallet Section */}
           {loyaltySettings?.loyalty_enabled && customer && walletBalance !== null && (
             <div className="space-y-1">
-              <div className="flex h-11">
+              <div className="flex min-h-12">
                 <button type="button" disabled={walletBalance <= 0} onClick={() => {
                   const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
                   const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
                   const dueStored = Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere));
                   const dueDisplay = toDisplayUnit(dueStored);
                   setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
-                }} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-muted disabled:text-gray-400 disabled:border-border'}`}>
+                  setAmountTarget({ kind: 'wallet' });
+                }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-muted disabled:text-gray-400 disabled:border-border'}`}>
                   <Wallet size={15} /><span className="truncate">{t('loyaltyWallet')}</span>
                 </button>
                 <div className="flex flex-1 items-center border border-s-0 border-purple-200 rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-purple-400">
@@ -538,6 +597,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                   <input
                     type="number"
                     value={walletAmount}
+                    onFocus={() => setAmountTarget({ kind: 'wallet' })}
                     onChange={(e) => {
                       const v = e.target.value;
                       const maxWalletCurrencyStored = Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE));
@@ -547,7 +607,8 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                     }}
                     placeholder="0.00"
                     disabled={walletBalance <= 0}
-                    className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl disabled:bg-muted"
+                    inputMode="decimal"
+                    className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl disabled:bg-muted"
                     step={inputCurrencyStep}
                     min="0"
                     max={toDisplayUnit(Math.min(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE)), remaining))}
@@ -556,6 +617,18 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
               </div>
               <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
+          )}
+          {amountTarget && (
+            <TouchNumberPad
+              value={activeAmountValue}
+              onChange={updateActiveAmount}
+              ariaLabel={t('numericKeypad')}
+              clearLabel={t('clearAmount')}
+              backspaceLabel={t('backspaceAmount')}
+              allowDecimal={amountTarget.kind !== 'discount' || discountType === 'amount'}
+              max={activeAmountMax}
+              quickValues={activeAmountQuickValues}
+            />
           )}
         </div>
 

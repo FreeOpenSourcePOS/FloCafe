@@ -142,11 +142,12 @@ export default function ProductGrid({
             
 
             return (
-              <div
+              <button
                 key={product.id}
                 data-testid="pos-product-card"
+                type="button"
                 onClick={() => onProductClick(product)}
-                className="bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 hover:shadow-md transition-all text-start relative group cursor-pointer overflow-hidden"
+                className="min-h-36 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 {!!product.track_inventory && (
                   <>
@@ -209,21 +210,18 @@ export default function ProductGrid({
                       <TagBadge tag={product.tags[0]} />
                     )}
                     {product.addon_groups && product.addon_groups.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onProductClick(product);
-                        }}
-                        className="text-gray-400 hover:text-gray-600 transition-colors"
+                      <span
+                        className="touch-target -me-2 -my-2 rounded-lg text-gray-400"
                         title={t('customisable')}
+                        aria-label={t('customisable')}
                       >
-                        <SlidersHorizontal size={12} />
-                      </button>
+                        <SlidersHorizontal size={16} />
+                      </span>
                     )}
                   </div>
                 </div>
 
-              </div>
+              </button>
             );
           })}
         </div>

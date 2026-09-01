@@ -658,7 +658,14 @@
     "totalDue": "Total a pagar",
     "unpaid": "No pagado",
     "updateDiscount": "Actualizar descuento",
-    "walletMaxAmount": "El saldo de la billetera supera el disponible. Máximo: {max}"
+    "walletMaxAmount": "El saldo de la billetera supera el disponible. Máximo: {max}",
+    "clearAmount": "Borrar importe",
+    "enterFullscreen": "Entrar al POS en pantalla completa",
+    "exactAmount": "Importe exacto",
+    "exitFullscreen": "Salir del POS en pantalla completa",
+    "fullscreenUnavailable": "El modo de pantalla completa no está disponible",
+    "backspaceAmount": "Borrar último dígito",
+    "numericKeypad": "Teclado numérico"
   },
   "printTest": {
     "amt": "Total",

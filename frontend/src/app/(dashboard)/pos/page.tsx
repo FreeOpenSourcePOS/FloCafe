@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
@@ -87,6 +87,7 @@ export default function POSPage() {
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
@@ -272,6 +273,26 @@ export default function POSPage() {
       toast.error(t('kotPrintFailed'));
     }
   };
+
+  useEffect(() => {
+    const syncFullscreen = () => setFullscreen(document.fullscreenElement != null);
+    syncFullscreen();
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (typeof document === 'undefined') return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      toast.error(t('fullscreenUnavailable'));
+    }
+  }, [t]);
 
   const fetchLatestBill = async (billId: number): Promise<Bill> => {
     const { data } = await api.get(`/bills/${billId}`);
@@ -959,7 +980,12 @@ export default function POSPage() {
           )}
         </div>
       )}
-      <PosTopbar tables={tables} onShowTablePicker={() => setShowTablePicker(true)} />
+      <PosTopbar
+        tables={tables}
+        onShowTablePicker={() => setShowTablePicker(true)}
+        fullscreen={fullscreen}
+        onToggleFullscreen={toggleFullscreen}
+      />
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
@@ -987,7 +1013,7 @@ export default function POSPage() {
       {/* Mobile: Floating Cart Button + Bottom Sheet — outside flex container */}
       <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
         <DrawerTrigger asChild>
-          <button className="fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg flex items-center justify-center hover:bg-brand-hover transition-colors md:hidden">
+          <button className="touch-target fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg hover:bg-brand-hover active:bg-brand-hover transition-colors md:hidden" aria-label={t('cart')}>
             <ShoppingCart size={22} />
             {itemCount > 0 && (
               <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
@@ -1066,7 +1092,7 @@ export default function POSPage() {
           <div className="bg-card rounded-2xl p-5 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">{t('selectCustomer')}</h3>
-              <button onClick={() => setShowCustomerPrompt(false)} className="text-gray-400 hover:text-muted-foreground">
+              <button onClick={() => setShowCustomerPrompt(false)} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
                 <X size={20} />
               </button>
             </div>

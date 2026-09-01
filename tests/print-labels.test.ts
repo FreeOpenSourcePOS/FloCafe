@@ -47,6 +47,7 @@ function assert(label: string, cond: boolean, detail?: string) {
 function buildOrder(): any {
   return {
     order_number: 'ORD-LABELS-001',
+    type: 'dine_in',
     created_at: '2026-08-21 18:42:00',
     table: { name: '7' },
     items: [{
@@ -151,9 +152,11 @@ function run(): void {
     const order = { ...buildOrder(), table: { name: '3' } };
     const text = escPosToText(formatKOT(order, order.items, 'Grill', 48));
     assert('default KOT banner stays English', text.includes('KITCHEN ORDER TICKET'));
+    assert('default KOT type label stays English', text.includes('Type: DINE IN'));
     const faText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'en-US', undefined, [], true, 'fa'));
     assert('fa KOT banner translated', faText.includes('برگ سفارش آشپزخانه'));
     assert('fa KOT station label translated', faText.includes('ایستگاه:'));
+    assert('fa KOT type label translated', faText.includes('نوع: DINE IN'));
     assert('fa KOT time label translated', faText.includes('ساعت:'));
   }
 

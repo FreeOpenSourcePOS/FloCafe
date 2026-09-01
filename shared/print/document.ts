@@ -662,11 +662,12 @@ export interface KotItemSnapshot {
   readonly specialInstructions: string;
 }
 
-/** The order behind the ticket (order number, canonical timestamp, table). */
+/** The order behind the ticket (order number, canonical timestamp, table, type). */
 export interface KotOrderSnapshot {
   readonly orderNumber: string;
   readonly createdAt: string;
   readonly tableName: string;
+  readonly orderType: string;
 }
 
 /**
@@ -679,7 +680,7 @@ export interface KotPrintData {
   readonly items: readonly KotItemSnapshot[];
 }
 
-/** Ticket header: banner, station, order number, table, time. */
+/** Ticket header: banner, station, order number, table, type, time. */
 export interface KotHeaderBlock {
   readonly kind: 'kot-header';
   readonly direction: TextDirection;
@@ -694,6 +695,7 @@ export interface KotHeaderBlock {
   readonly orderNumber: DirectionalText;
   /** Table reference with its (uninterpolated) label concept. */
   readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
+  readonly orderType: { readonly label: SemanticLabel; readonly value: DirectionalText } | null;
   readonly timeLabel: SemanticLabel;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
@@ -746,6 +748,12 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
       ? Object.freeze({
         label: resolveSemanticLabel(labels, 'pos.tableLabel'),
         name: directionalText(printData.order.tableName, base),
+      })
+      : null,
+    orderType: typeof printData.order?.orderType === 'string' && printData.order.orderType.length > 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'print.kot.type'),
+        value: directionalText(printData.order.orderType, base),
       })
       : null,
     timeLabel: resolveSemanticLabel(labels, 'print.time'),

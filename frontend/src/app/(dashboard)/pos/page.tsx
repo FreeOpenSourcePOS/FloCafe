@@ -258,7 +258,7 @@ export default function POSPage() {
     if (!autoPrintKot) return;
 
     try {
-      const printWarnings = await printKot(order);
+      const printWarnings = await printKot(order, order.items ? { items: order.items } : undefined);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       console.error('[POS] KOT print failed:', err);
@@ -475,7 +475,10 @@ export default function POSPage() {
           { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } },
         );
         toast.success(t('itemsAddedToOrder', { number: pendingOrder.order_number }));
-        orderForKot = data.order as Order;
+        const updatedOrder = data.order as Order;
+        const existingItemIds = new Set((pendingOrder.items || []).map((item) => Number(item.id)));
+        const appendedItems = (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
+        orderForKot = appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder;
         if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
         addItemsAttemptRef.current = null;
         setPendingOrder(null);
@@ -844,7 +847,7 @@ export default function POSPage() {
         orderNumber: order.order_number,
       });
       addItemsAttemptRef.current = itemAttempt;
-      await api.post(`/orders/${order.id}/items`, {
+      const { data } = await api.post(`/orders/${order.id}/items`, {
         items,
         special_instructions: specialInstructions,
       }, { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } });
@@ -853,6 +856,10 @@ export default function POSPage() {
       if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
       addItemsAttemptRef.current = null;
       toast.success(t('itemsAddedToOrder', { number: order.order_number }));
+      const updatedOrder = data.order as Order;
+      const existingItemIds = new Set((order.items || []).map((item) => Number(item.id)));
+      const appendedItems = (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
+      await printKotIfEnabled(appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder);
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();

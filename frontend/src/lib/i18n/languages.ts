@@ -51,7 +51,6 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/fil.json'),
   },
-
   fr: {
     locale: 'fr-FR',
     nativeName: 'Français',

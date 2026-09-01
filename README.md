@@ -105,6 +105,7 @@ FloCafe includes UI translations for:
 - Spanish
 - French
 - Brazilian Portuguese
+- Filipino
 - Turkish
 - Persian (Farsi), including RTL support
 

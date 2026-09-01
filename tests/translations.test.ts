@@ -33,6 +33,8 @@
  *      English value (documented intentional identical list excepted).
  *  10. Turkish safeguards: tr.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  11. Filipino safeguards: fil.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -809,8 +811,6 @@ function filFallbackErrors(filFlat: Record<string, string>, enFlat: Record<strin
   return errors;
 }
 
-
-
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1161,8 +1161,6 @@ async function run(): Promise<void> {
   console.log('\n✅ All translation integrity checks passed.');
 }
 
-
-
 /* ----------------------------------------------------------------- *
  * Negative tests — feed broken fixtures to each validator and       *
  * assert the failure mode is detected. A validator that stops       *
@@ -1290,8 +1288,6 @@ function runNegativeTests(): void {
     'fil: placeholder prefix value',
     filFallbackErrors({ 'a.b': '[FIL] Placeholder value' }, { 'a.b': 'Different value' }),
   );
-
-
 
   // 8. TypeScript key safety.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'i18n-negative-'));

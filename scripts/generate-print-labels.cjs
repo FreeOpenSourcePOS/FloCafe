@@ -35,7 +35,6 @@ const OUT_FILE = path.join(ROOT, 'main/print/print-labels.generated.ts');
 /** Committed languages, in stable generation order (keep in sync with languages.ts). */
 const LANGUAGES = ['en', 'fa', 'es', 'fr', 'pt', 'tr', 'fil'];
 
-
 /**
  * New `print.*` keys owned by issue #440, in contract order. Dotted leaf
  * paths under the `print.` prefix.

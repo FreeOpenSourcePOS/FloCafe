@@ -116,8 +116,6 @@ function run(): void {
   assert('tr resolves borrowed pos.subtotal', printLabel('tr', 'pos.subtotal') === 'Ara Toplam');
   assert('fil resolves borrowed pos.subtotal', printLabel('fil', 'pos.subtotal') === 'Subtotal');
 
-
-
   console.log('\n✅ Test 2: classic receipt honors language');
   {
     const text = escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'classic', 48));

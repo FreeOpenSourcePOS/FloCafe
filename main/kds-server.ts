@@ -310,9 +310,9 @@ export function startKdsServer(): Promise<void> {
         if (stationIds.length > 0) {
           const stationPlaceholders = stationIds.map(() => '?').join(',');
           const categoryRoute = stationRoutingCategoryIds.length > 0
-            ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
+            ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND t.kitchen_station_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
             : '';
-          query += ` AND (EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationPlaceholders}))${categoryRoute}${stationScope.hasUnrestrictedStation ? ' OR o.table_id IS NULL' : ''})`;
+          query += ` AND (EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationPlaceholders}))${categoryRoute}${stationScope.hasUnrestrictedStation ? ' OR t.kitchen_station_id IS NULL' : ''})`;
           orderParams.push(...stationIds, ...stationRoutingCategoryIds);
         }
         query += ' ORDER BY o.created_at ASC';

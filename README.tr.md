@@ -4,7 +4,6 @@
 
 [English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | [Français](README.fr.md) | **Türkçe** | [Filipino](README.fil.md) | [Deutsch](README.de.md)
 
-
 FloCafe doğrudan işletmenin kendi bilgisayarında çalışır. Siparişler, müşteriler, fişler ve yedekler yerel bir SQLite veritabanında saklanır. Böylece internet bağlantısı olmadan da kasa hizmeti ve mutfak ekranları çalışmaya devam eder. Temel satış noktası işlemleri için barındırılan veya bulut tabanlı bir hesap gerekmez. Google Drive yedekleme, WhatsApp ile fiş gönderme ve bulut bağlantılı raporlama gibi isteğe bağlı entegrasyonlar gerektiğinde etkinleştirilebilir.
 
 ## FloCafe’yi edinin

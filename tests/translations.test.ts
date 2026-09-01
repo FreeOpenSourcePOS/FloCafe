@@ -31,6 +31,8 @@
  *      English value (documented intentional identical list excepted).
  *   9. French safeguards: fr.json values never silently fall back to the
  *      English value (documented intentional identical list excepted).
+ *  10. Turkish safeguards: tr.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves

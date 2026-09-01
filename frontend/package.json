@@ -54,6 +54,7 @@
     "ip-address": "^10.4.0",
     "undici": "^7.29.0",
     "postcss": "8.5.26",
+    "postcss-selector-parser": "^7.1.3",
     "sharp": "$sharp",
     "@hono/node-server": "^2.0.12",
     "hono": "^4.12.34"

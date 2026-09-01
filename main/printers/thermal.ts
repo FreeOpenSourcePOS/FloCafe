@@ -1053,7 +1053,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang }, warnings);
 }
 
 export function appendPoweredByFooter(lines: string[]): void {
@@ -1472,7 +1472,7 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     bar,
     '{CUT}',
   ];
-  return buildEscPos(lines, false, { cutMode });
+  return buildEscPos(lines, false, { cutMode, language: lang });
 }
 
 // Every ASCII fallback is no wider than 3 characters, so currency labels such
@@ -1485,45 +1485,11 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
   'E£': 'EGP',
 };
 
-const THERMAL_LATIN_ASCII_MAP: Record<string, string> = {
+const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
   'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
-  'Æ': 'AE', 'Ø': 'O', 'Ð': 'D', 'Þ': 'Th', 'Ł': 'L', 'Œ': 'OE',
-  'æ': 'ae', 'ø': 'o', 'ð': 'd', 'þ': 'th', 'ł': 'l', 'œ': 'oe',
 };
-const THERMAL_CURRENCY_TOKENS = Object.keys(CURRENCY_ASCII_MAP).sort((a, b) => b.length - a.length);
-
-function normalizeThermalText(text: string): string | null {
-  let normalized = '';
-  for (let index = 0; index < text.length;) {
-    const currencyToken = THERMAL_CURRENCY_TOKENS.find((token) => text.startsWith(token, index));
-    if (currencyToken) {
-      normalized += currencyToken;
-      index += currencyToken.length;
-      continue;
-    }
-    const character = String.fromCodePoint(text.codePointAt(index)!);
-    index += character.length;
-    if (/^[\x00-\x7F]$/.test(character)) {
-      normalized += character;
-      continue;
-    }
-    const mapped = THERMAL_LATIN_ASCII_MAP[character];
-    if (mapped) {
-      normalized += mapped;
-      continue;
-    }
-    if (CURRENCY_ASCII_MAP[character]) {
-      normalized += character;
-      continue;
-    }
-    const decomposed = character.normalize('NFD').replace(/[\u0300-\u036F]/g, '');
-    if (/^[\x00-\x7F]$/.test(decomposed)) {
-      normalized += decomposed;
-      continue;
-    }
-    return null;
-  }
-  return normalized;
+function normalizeGermanThermalText(text: string): string {
+  return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
 }
 
 // Resolves the currency symbol into the exact text that will be printed,
@@ -1571,7 +1537,7 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
   return Buffer.concat([data, Buffer.from([0x1B, 0x70, 0x00, 0x19, 0xFA])]);
 }
 
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number } = {}, warnings?: PrintWarning[]): Buffer {
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
 
   const resetAllStyles = () => {
@@ -1610,12 +1576,12 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const lineDW = line.includes('{DOUBLE_WIDTH}');
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
-    const normalizedLine = normalizeThermalText(line);
-    if (normalizedLine !== null) {
-      line = normalizedLine;
+    if (options.language === 'de') {
+      line = normalizeGermanThermalText(line);
       printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
-    } else {
-      const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
+    }
+    const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
+    if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
       // Allow Arabic/Persian script through only when the printer profile
       // explicitly declares Arabic shaping support AND the line contains no
       // other non-ASCII script. Otherwise skip it — never emit unshaped text.

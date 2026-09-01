@@ -36,45 +36,12 @@ export const CURRENCY_ASCII_MAP: Record<string, string> = {
   '₲': 'Pg',
 };
 
-const THERMAL_LATIN_ASCII_MAP: Record<string, string> = {
+const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
   'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
-  'Æ': 'AE', 'Ø': 'O', 'Ð': 'D', 'Þ': 'Th', 'Ł': 'L', 'Œ': 'OE',
-  'æ': 'ae', 'ø': 'o', 'ð': 'd', 'þ': 'th', 'ł': 'l', 'œ': 'oe',
 };
-const THERMAL_CURRENCY_TOKENS = Object.keys(CURRENCY_ASCII_MAP).sort((a, b) => b.length - a.length);
 
-export function normalizeThermalText(text: string): string | null {
-  let normalized = '';
-  for (let index = 0; index < text.length;) {
-    const currencyToken = THERMAL_CURRENCY_TOKENS.find((token) => text.startsWith(token, index));
-    if (currencyToken) {
-      normalized += currencyToken;
-      index += currencyToken.length;
-      continue;
-    }
-    const character = String.fromCodePoint(text.codePointAt(index)!);
-    index += character.length;
-    if (/^[\x00-\x7F]$/.test(character)) {
-      normalized += character;
-      continue;
-    }
-    const mapped = THERMAL_LATIN_ASCII_MAP[character];
-    if (mapped) {
-      normalized += mapped;
-      continue;
-    }
-    if (CURRENCY_ASCII_MAP[character]) {
-      normalized += character;
-      continue;
-    }
-    const decomposed = character.normalize('NFD').replace(/[\u0300-\u036F]/g, '');
-    if (/^[\x00-\x7F]$/.test(decomposed)) {
-      normalized += decomposed;
-      continue;
-    }
-    return null;
-  }
-  return normalized;
+export function normalizeGermanThermalText(text: string): string {
+  return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
 }
 
 export function normalizeCurrencyToAscii(text: string): string {

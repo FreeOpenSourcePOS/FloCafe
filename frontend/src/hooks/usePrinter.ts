@@ -270,7 +270,13 @@ export const usePrinterStore = create<PrinterState>()(
             return [];
           }
 
-          const warnings: PrintWarning[] = [];
+          const languages = opts?.language ? [opts.language] as const : resolveBillPrintLanguages();
+          const failedLanguages = await ensurePrintLanguagesLoaded(languages);
+          const warnings: PrintWarning[] = failedLanguages.map((language) => ({
+            field: 'receipt language',
+            text: language,
+            message: `Receipt language "${language}" could not be loaded, so English labels were used.`,
+          }));
           const bytes = buildTaxBillBytes(bill, tenant, {
             ...opts,
             paperWidth: opts?.paperWidth ?? configuredPaperWidth,
@@ -288,6 +294,7 @@ export const usePrinterStore = create<PrinterState>()(
             arabicShaping: printerArabicShaping,
             trimDecimals: printerTrimDecimals,
             rawEscPos: true,
+            language: languages[0],
           }, warnings);
           set({ lastPrintedBytes: bytes });
           await printerService.print(bytes);
@@ -322,6 +329,10 @@ export const usePrinterStore = create<PrinterState>()(
             }
           }
 
+          const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+          const kotLanguage = resolveKotTicketLanguage();
+          const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
+
           // A startup silent-reconnect attempt may still be in flight (e.g.
           // KOT auto-print firing on the first order right after launch) —
           // wait for it to settle before trusting isConnected.
@@ -331,12 +342,19 @@ export const usePrinterStore = create<PrinterState>()(
             const warnings: PrintWarning[] = [];
             const bytes = buildKotBytes(
               opts?.items ? { ...order, items: opts.items } : order,
-              { ...opts, paperWidth, arabicShaping: printerArabicShaping },
+              { ...opts, paperWidth, arabicShaping: printerArabicShaping, language: kotLanguage },
               warnings,
             );
             set({ lastPrintedBytes: bytes });
             await printerService.print(bytes);
-            return warnings;
+            return [
+              ...failedLanguages.map((language) => ({
+                field: 'kot language',
+                text: language,
+                message: `KOT language "${language}" could not be loaded, so English labels were used.`,
+              })),
+              ...warnings,
+            ] as PrintWarning[];
           }
 
           // Browser fallback: no backend hardware printer and no WebUSB
@@ -348,10 +366,8 @@ export const usePrinterStore = create<PrinterState>()(
           // in the loader cache yet - load it before generating so labels
           // don't silently fall back to English.
           const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
-          const { generateKotHtml, resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
-          const kotLanguage = resolveKotTicketLanguage();
-          const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
-          const html = generateKotHtml(order, { paperWidth });
+          const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
+          const html = generateKotHtml(order, { paperWidth, language: kotLanguage });
           await printerService.printViaBrowser(html, paperWidth);
           // A failed locale load degrades to English labels; surface it
           // through the established warning path instead of staying silent

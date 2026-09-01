@@ -21,6 +21,7 @@ import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { safePrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
+import { printLabelResolver } from './print-document';
 
 export interface TaxBillOptions {
   /** 58 mm (2.5", 42 chars) or 80 mm (3.5", 48 chars). Default: 58 */
@@ -57,6 +58,8 @@ export interface TaxBillOptions {
    * Default: false.
    */
   arabicShaping?: boolean;
+  /** Print language resolved from the receipt language policy. */
+  language?: string;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
@@ -131,7 +134,9 @@ export function buildTaxBillBytes(
     trimDecimals = false,
     rawEscPos = true,
     arabicShaping = false,
+    language = 'en',
   } = opts;
+  const labelFor = (key: string): string => printLabelResolver(key, language);
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode, rawEscPos);
@@ -158,7 +163,7 @@ export function buildTaxBillBytes(
     safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping, cols).newline();
   }
   if (phone) {
-    safePrinterText(enc, `Ph: ${phone}`, warnings, false, arabicShaping, cols).newline();
+    safePrinterText(enc, `${labelFor('receipt.phone')}: ${phone}`, warnings, false, arabicShaping, cols).newline();
   }
   if (taxRegistrationNumber) {
     safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping, cols).newline();
@@ -168,23 +173,23 @@ export function buildTaxBillBytes(
 
   // ── Bill Details ─────────────────────────────────────────────────────────
   enc.align('left');
-  enc.text(`Bill #: ${bill.bill_number}`).newline();
-  enc.text(`Date: ${formatDate(bill.order?.created_at, locale)}`).newline();
+  safePrinterText(enc, `${labelFor('receipt.billNumber')}: ${bill.bill_number}`, warnings, false, arabicShaping, undefined, cols).newline();
+  safePrinterText(enc, `${labelFor('receipt.date')}: ${formatDate(bill.order?.created_at, locale)}`, warnings, false, arabicShaping, undefined, cols).newline();
 
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping, undefined, cols).newline();
+    safePrinterText(enc, labelFor('pos.tableLabel').replace('{name}', String(order.table.name)), warnings, false, arabicShaping, undefined, cols).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols).newline();
+    safePrinterText(enc, `${labelFor('pos.customer')}: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
-    enc.text(`Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`).newline();
+    safePrinterText(enc, `${labelFor('print.numberShort')}: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
 
   enc.rule({ style: 'single' });
 
   // ── Line Items with HSN ─────────────────────────────────────────────────
-  enc.text(padRow('Item', 'Qty Rate Amount', cols)).newline();
+  enc.text(padRow(labelFor('receipt.item'), `${labelFor('receipt.qty')} ${labelFor('receipt.rate')} ${labelFor('receipt.amount')}`, cols)).newline();
   enc.rule({ style: 'single' });
 
   const items = order?.items ?? [];
@@ -196,7 +201,8 @@ export function buildTaxBillBytes(
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;
     if (hsnCode) {
-      enc.size('small').text(`    HSN: ${hsnCode}`).size('normal').newline();
+      enc.size('small');
+      safePrinterText(enc, `    ${labelFor('print.hsn')}: ${hsnCode}`, warnings, false, arabicShaping).size('normal').newline();
     }
 
     // Addons
@@ -216,10 +222,14 @@ export function buildTaxBillBytes(
 
   // ── Tax Breakdown ───────────────────────────────────────────────────────
   if (showTaxBreakdown && taxComponents.length > 0) {
-    enc.text('Tax Details:').newline();
+    safePrinterText(enc, `${labelFor('receipt.taxDetails')}:`, warnings, false, arabicShaping).newline();
     for (const component of taxComponents) {
-      enc.text(
+      safePrinterText(
+        enc,
         padRow(formatTaxComponentLabel(component), formatAmount(component.amount, currency, amountLocale, trimDecimals, rawEscPos), cols),
+        warnings,
+        false,
+        arabicShaping,
       ).newline();
     }
   }
@@ -228,49 +238,50 @@ export function buildTaxBillBytes(
   enc.rule({ style: 'single' });
 
   const totals: [string, string][] = [
-    ['Subtotal', formatAmount(bill.subtotal, currency, amountLocale, trimDecimals, rawEscPos)],
+    [labelFor('pos.subtotal'), formatAmount(bill.subtotal, currency, amountLocale, trimDecimals, rawEscPos)],
   ];
 
   if (Number(bill.discount_amount) > 0) {
-    totals.push(['Discount', `-${formatAmount(bill.discount_amount, currency, amountLocale, trimDecimals, rawEscPos)}`]);
+    totals.push([labelFor('pos.discount'), `-${formatAmount(bill.discount_amount, currency, amountLocale, trimDecimals, rawEscPos)}`]);
   }
 
   if (Number(bill.tax_amount) > 0) {
-    totals.push(['Total Tax', formatAmount(bill.tax_amount, currency, amountLocale, trimDecimals, rawEscPos)]);
+    totals.push([labelFor('receipt.totalTax'), formatAmount(bill.tax_amount, currency, amountLocale, trimDecimals, rawEscPos)]);
   }
 
   if (Number(bill.service_charge) > 0) {
-    totals.push(['Service Chg', formatAmount(bill.service_charge, currency, amountLocale, trimDecimals, rawEscPos)]);
+    totals.push([labelFor('receipt.serviceCharge'), formatAmount(bill.service_charge, currency, amountLocale, trimDecimals, rawEscPos)]);
   }
 
   if (Number(bill.delivery_charge) > 0) {
-    totals.push(['Delivery', formatAmount(bill.delivery_charge, currency, amountLocale, trimDecimals, rawEscPos)]);
+    totals.push([labelFor('receipt.deliveryCharge'), formatAmount(bill.delivery_charge, currency, amountLocale, trimDecimals, rawEscPos)]);
   }
 
   for (const [label, value] of totals) {
-    enc.text(padRow(label, value, cols)).newline();
+    safePrinterText(enc, padRow(label, value, cols), warnings, false, arabicShaping).newline();
   }
 
   enc.rule({ style: 'double' });
-  enc.bold(true).width(2).text(padRow('TOTAL', formatAmount(bill.total, currency, amountLocale, trimDecimals, rawEscPos), cols)).width(1);
+  enc.bold(true).width(2);
+  safePrinterText(enc, padRow(labelFor('print.grandTotal'), formatAmount(bill.total, currency, amountLocale, trimDecimals, rawEscPos), cols), warnings, false, arabicShaping).width(1);
   enc.bold(false).newline();
 
   // ── Payment Details ───────────────────────────────────────────────────────
   if (bill.payment_details && bill.payment_details.length > 0) {
     enc.newline();
-    enc.text('Payments:').newline();
+    safePrinterText(enc, `${labelFor('receipt.payments')}:`, warnings, false, arabicShaping).newline();
     for (const p of bill.payment_details) {
-      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, amountLocale, trimDecimals, rawEscPos), cols)).newline();
+      safePrinterText(enc, padRow(resolvePaymentLabel(p.method, labelFor), formatAmount(p.amount, currency, amountLocale, trimDecimals, rawEscPos), cols), warnings, false, arabicShaping).newline();
     }
   }
 
   // ── Footer ───────────────────────────────────────────────────────────────
   if (showFooter) {
     enc.newline().align('center');
-    enc.text('Thank you for your visit!').newline();
-    enc.text('Please come again').newline();
+    safePrinterText(enc, labelFor('print.thankYouVisitAgain'), warnings, false, arabicShaping).newline();
+    safePrinterText(enc, labelFor('print.pleaseComeAgain'), warnings, false, arabicShaping).newline();
     if (hasTax) {
-      enc.text('Tax included where applicable').newline();
+      safePrinterText(enc, labelFor('receipt.taxIncluded'), warnings, false, arabicShaping).newline();
     }
   }
   printPoweredByFooter(enc);
@@ -308,4 +319,14 @@ function formatAmount(value: number | string, currency: string, locale: string, 
 
 function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function resolvePaymentLabel(method: string, label: (key: string) => string): string {
+  const keys: Record<string, string> = {
+    cash: 'pos.methodCash',
+    card: 'pos.methodCard',
+    wallet: 'pos.methodWallet',
+  };
+  const key = keys[String(method || '').toLowerCase()];
+  return key ? label(key) : capitalize(String(method || ''));
 }

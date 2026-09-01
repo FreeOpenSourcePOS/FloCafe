@@ -10,7 +10,7 @@
  * why.
  */
 
-import { CURRENCY_ASCII_MAP, normalizeThermalText } from './unicode';
+import { CURRENCY_ASCII_MAP, normalizeGermanThermalText } from './unicode';
 
 export interface PrintWarning {
   field: string;
@@ -22,7 +22,7 @@ export interface PrintWarning {
 const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(`[${Object.keys(CURRENCY_ASCII_MAP).join('')}]`, 'g');
 
 export function hasUnsupportedPrinterChars(text: string): boolean {
-  return normalizeThermalText(text) === null;
+  return /[^\x00-\x7F]/.test(text.replace(SUPPORTED_CURRENCY_SYMBOLS, ''));
 }
 
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
@@ -131,14 +131,14 @@ export function safePrinterText<T extends { text(value: string): T }>(
   isStoreName = false,
   arabicShaping = false,
   centerCols?: number,
-  maxCols?: number
+  maxCols?: number,
 ): T {
   if (!value) return enc;
-  const normalized = normalizeThermalText(value);
-  if (normalized !== null) return enc.text(normalized);
-  if (hasUnsupportedPrinterChars(value)) {
-    if (arabicShaping && isArabicShapingSafeLine(value)) {
-      const sanitized = value.replace(ESCPOS_TEXT_CONTROL_RE, '');
+  const normalized = normalizeGermanThermalText(value);
+  const printableValue = normalized;
+  if (hasUnsupportedPrinterChars(printableValue)) {
+    if (arabicShaping && isArabicShapingSafeLine(printableValue)) {
+      const sanitized = printableValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
       if (!sanitized) {
         warnings?.push(makePrintWarning(value, isStoreName));
         return enc;
@@ -163,5 +163,5 @@ export function safePrinterText<T extends { text(value: string): T }>(
     warnings?.push(makePrintWarning(value, isStoreName));
     return enc;
   }
-  return enc.text(value);
+  return enc.text(printableValue);
 }

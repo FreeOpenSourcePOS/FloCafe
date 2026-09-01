@@ -109,16 +109,16 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     if (userStationIds.length > 0) {
       const stationPlaceholders = userStationIds.map(() => '?').join(',');
       const categoryRoute = stationRoutingCategoryIds.length > 0
-        ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
+        ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND t.kitchen_station_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
         : '';
-      query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute}${requestedScope.hasUnrestrictedStation ? ' OR o.table_id IS NULL' : ''})`;
+      query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute}${requestedScope.hasUnrestrictedStation ? ' OR t.kitchen_station_id IS NULL' : ''})`;
       params.push(...userStationIds, ...stationRoutingCategoryIds);
     }
     if (stationId) {
       const categoryRoute = requestedRoutingCategoryIds.length > 0
-        ? ` OR EXISTS (SELECT 1 FROM order_items requested_oi JOIN products requested_p ON requested_p.id = requested_oi.product_id WHERE requested_oi.order_id = o.id AND o.table_id IS NULL AND requested_p.category_id IN (${requestedRoutingCategoryIds.map(() => '?').join(',')}))`
+        ? ` OR EXISTS (SELECT 1 FROM order_items requested_oi JOIN products requested_p ON requested_p.id = requested_oi.product_id WHERE requested_oi.order_id = o.id AND t.kitchen_station_id IS NULL AND requested_p.category_id IN (${requestedRoutingCategoryIds.map(() => '?').join(',')}))`
         : '';
-      query += ` AND (t.kitchen_station_id = ?${categoryRoute}${requestedScope.hasUnrestrictedStation ? ' OR o.table_id IS NULL' : ''})`;
+      query += ` AND (t.kitchen_station_id = ?${categoryRoute}${requestedScope.hasUnrestrictedStation ? ' OR t.kitchen_station_id IS NULL' : ''})`;
       params.push(stationId, ...requestedRoutingCategoryIds);
     }
 
@@ -318,9 +318,9 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
 
     const params: any[] = [voidedCutoff];
     const categoryRoute = stationItemCategoryIds === null
-      ? ' OR o.table_id IS NULL'
+      ? ' OR t.kitchen_station_id IS NULL'
       : stationItemCategoryIds.length > 0
-        ? ` OR EXISTS (SELECT 1 FROM products routed_p WHERE o.table_id IS NULL AND routed_p.id = oi.product_id AND routed_p.category_id IN (${stationItemCategoryIds.map(() => '?').join(',')}))`
+        ? ` OR EXISTS (SELECT 1 FROM products routed_p WHERE t.kitchen_station_id IS NULL AND routed_p.id = oi.product_id AND routed_p.category_id IN (${stationItemCategoryIds.map(() => '?').join(',')}))`
         : '';
     itemsQuery += ` AND (t.kitchen_station_id = ?${categoryRoute})`;
     params.push(stationId, ...(stationItemCategoryIds || []));

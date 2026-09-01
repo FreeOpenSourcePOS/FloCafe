@@ -256,7 +256,6 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       return;
     }
     setDiscountValue(value);
-    setPaymentsTouched(false);
   };
 
   const activeAmountMax = amountTarget?.kind === 'discount'

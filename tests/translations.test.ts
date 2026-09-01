@@ -896,6 +896,7 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'setup.demoLabel',
   'setup.expressLabel',
   'setup.pinLabel',
+  'staff.roleManager',
   'support.version',
   'tax.auditCreateOverride',
   'tax.auditSystem',

@@ -33,6 +33,8 @@
  *      English value (documented intentional identical list excepted).
  *  10. Turkish safeguards: tr.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  11. Filipino safeguards: fil.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -568,6 +570,246 @@ function trFallbackErrors(trFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.countryIndia',
+  'auth.countryThailand',
+  'auth.email',
+  'auth.password',
+  'auth.recoverPinLabel',
+  'common.appTitle',
+  'common.brandName',
+  'common.discount',
+  'common.logoAlt',
+  'common.subtotal',
+  'customer.email',
+  'customer.loyalty',
+  'customer.ptsSuffix',
+  'customers.columnBill',
+  'customers.columnCustomer',
+  'customers.columnLedger',
+  'customers.loyaltyLedger',
+  'dashboard.minutesValue',
+  'dashboard.title',
+  'dashboard.walkIn',
+  'kds.connectionLive',
+  'kds.modalOrderNumber',
+  'kds.viewKanban',
+  'kds.viewTabs',
+  'nav.dashboard',
+  'nav.kds',
+  'nav.portLabel',
+  'nav.pos',
+  'nav.staff',
+  'nav.whatsapp',
+  'orders.delivery',
+  'orders.dineIn',
+  'orders.managerPinLabel',
+  'orders.online',
+  'orders.overridePinLabel',
+  'orders.takeaway',
+  'pos.addonPrice',
+  'pos.billNumber',
+  'pos.cart',
+  'pos.customer',
+  'pos.delivery',
+  'pos.discount',
+  'pos.loadingEllipsis',
+  'pos.loyalty',
+  'pos.loyaltyPointsShort',
+  'pos.loyaltyWallet',
+  'pos.managerPin',
+  'pos.managerPinRequired',
+  'pos.methodCard',
+  'pos.methodCash',
+  'pos.methodWallet',
+  'pos.orderNumber',
+  'pos.orderTypeDelivery',
+  'pos.orderTypeOnline',
+  'pos.orderTypeSuffix_delivery',
+  'pos.orderTypeSuffix_dine_in',
+  'pos.orderTypeSuffix_online',
+  'pos.orderTypeSuffix_takeaway',
+  'pos.orderTypeTakeaway',
+  'pos.packaging',
+  'pos.pointsApproxValue',
+  'pos.subtotal',
+  'pos.tagBestseller',
+  'pos.tagCount',
+  'pos.tagOrganic',
+  'pos.tagVegan',
+  'pos.taxLine',
+  'pos.numericKeypad',
+  'printTest.escpos',
+  'printTest.item',
+  'printTest.paperWidth58',
+  'printTest.paperWidth80',
+  'print.taxInvoiceTitle',
+  'print.customerShort',
+  'print.address',
+  'print.kot.banner',
+  'print.test.title',
+  'products.addonSelectionRange',
+  'products.barcodeLabel',
+  'products.cashbackGlobalBadge',
+  'products.cashbackLabel',
+  'products.colorAmber',
+  'products.colorCyan',
+  'products.colorEmerald',
+  'products.colorFuchsia',
+  'products.colorIndigo',
+  'products.colorLime',
+  'products.colorTeal',
+  'products.columnCashback',
+  'products.columnStock',
+  'products.defaultCategoryTag',
+  'products.fieldBarcode',
+  'products.fieldSku',
+  'products.imageCamera',
+  'products.saleUnitG',
+  'products.saleUnitKg',
+  'products.saleUnitLb',
+  'products.skuLabel',
+  'products.tagBestseller',
+  'products.tagOrganic',
+  'products.tagVegan',
+  'products.taxExclusive',
+  'products.taxExclusiveShort',
+  'products.taxExempt',
+  'products.taxInclusive',
+  'products.taxInclusiveShort',
+  'receipt.billNumber',
+  'receipt.economicCode',
+  'receipt.item',
+  'receipt.onlineOrder',
+  'receipt.reprint',
+  'receipt.serviceCharge',
+  'serverApp.emailPlaceholder',
+  'serverApp.title',
+  'settings.aboutGithub',
+  'settings.account',
+  'settings.address',
+  'settings.apiKey',
+  'settings.apiKeyInputPlaceholder',
+  'settings.appQrAlt',
+  'settings.backupKindAuto',
+  'settings.backupSchemaVersion',
+  'settings.billTemplateCompactName',
+  'settings.browserWebusb',
+  'settings.connectionNetwork',
+  'settings.connectionUsb',
+  'settings.cashDrawerPulseEnabledShort',
+  'settings.currency',
+  'settings.default',
+  'settings.defaultPrinter',
+  'settings.defaultPrinterTipTitle',
+  'settings.email',
+  'settings.googleDriveAccount',
+  'settings.instagramHandle',
+  'settings.invoiceNumberPrefix',
+  'settings.invoiceNumberPreview',
+  'settings.ipAddress',
+  'settings.ipAddressPlaceholder',
+  'settings.iranCalendarGregorian',
+  'settings.iranCalendarLocale',
+  'settings.iranCalendarPersian',
+  'settings.iranCurrencyDisplayRial',
+  'settings.iranCurrencyDisplayToman',
+  'settings.iranNumberDigitsLatin',
+  'settings.iranNumberDigitsLocale',
+  'settings.kds',
+  'settings.kdsQrAlt',
+  'settings.languageFa',
+  'settings.loyalty',
+  'settings.loyaltyProgram',
+  'settings.masterPin',
+  'settings.mdnsAlwaysStable',
+  'settings.mobileApp',
+  'settings.navGroupAccount',
+  'settings.orderNumberPrefix',
+  'settings.orderNumberPreview',
+  'settings.paperSize58',
+  'settings.paperSize80',
+  'settings.paperWidth58',
+  'settings.paperWidth80',
+  'settings.paperWidth80Safe',
+  'settings.percentMaximum',
+  'settings.plan',
+  'settings.port',
+  'settings.portPlaceholder',
+  'settings.posQrAlt',
+  'settings.printMethodEscpos',
+  'settings.printerOffline',
+  'settings.printerOnline',
+  'settings.privacy',
+  'settings.registrationLastError',
+  'settings.revflo',
+  'settings.serverApp',
+  'settings.stationPrinter',
+  'settings.storeId',
+  'settings.tabData',
+  'settings.tabMobileAccess',
+  'settings.tabOrderflow',
+  'settings.tabWhatsapp',
+  'settings.taxIdLabel',
+  'settings.timezone',
+  'settings.unicode',
+  'settings.updateStatusAvailable',
+  'settings.updateStatusOffline',
+  'settings.vpnMeshNetwork',
+  'settings.whatsapp',
+  'settings.themeSystem',
+  'setup.cloudUrlLabel',
+  'setup.demoLabel',
+  'setup.expressLabel',
+  'setup.finedineLabel',
+  'setup.languagePersian',
+  'setup.languagePortuguese',
+  'setup.password',
+  'setup.pinLabel',
+  'setup.qsrDesc',
+  'setup.qsrLabel',
+  'setup.timezoneLabel',
+  'staff.passwordPlaceholder',
+  'staff.roleManager',
+  'staff.roleServer',
+  'permissionMatrix.managerDescription',
+  'permissionMatrix.areas.staff',
+  'permissionMatrix.areas.system',
+  'support.email',
+  'support.platform',
+  'support.requestId',
+  'support.restaurant',
+  'tax.auditCreateOverride',
+  'tax.auditSystem',
+  'tax.auditUpdateOverride',
+  'tax.entityServiceCharge',
+  'tax.fixed',
+  'tax.readOnly',
+  'tax.target',
+  'update.downloadingBadge',
+  'update.betaOn',
+  'update.betaOff',
+  'whatsapp.blocklist.title',
+  'whatsapp.connect.pairingMethodTitle',
+  'whatsapp.connect.pairingPhonePlaceholder',
+  'whatsapp.connect.qrMethodTitle',
+  'whatsapp.sent.timeline',
+  'whatsapp.tabs.inbox',
+]);
+
+function filFallbackErrors(filFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const filVal = filFlat[k];
+    if (filVal === undefined) continue; // reported by key parity
+    if (filVal.startsWith('[FIL]') || filVal.startsWith('[TODO]')) {
+      errors.push(`fil.json ${k} — placeholder prefix found: "${filVal}"`);
+    } else if (filVal === enFlat[k] && !FIL_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`fil.json ${k} — identical to English value (renders as English for Filipino users)`);
+    }
+  }
+  return errors;
+}
 
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
@@ -905,9 +1147,19 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated tr.json values (${TR_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 11. fil.json values must not contain placeholders or fall back to English.
+  const filMessages = loadedStrings.get('fil');
+  if (!filMessages) throw new Error('languages registry must include the maintained fil locale');
+  const filErrors = filFallbackErrors(filMessages, loadedStrings.get('en')!);
+  if (filErrors.length) {
+    console.error(`\nfil.json values with errors (${filErrors.length}):`);
+    for (const e of filErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'fil.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated fil.json values (${FIL_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
-
 
 /* ----------------------------------------------------------------- *
  * Negative tests — feed broken fixtures to each validator and       *
@@ -1011,7 +1263,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr).
+  // 7. Language safeguards (fa, fr, tr, fil).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -1028,7 +1280,14 @@ function runNegativeTests(): void {
     'tr: placeholder prefix value',
     trFallbackErrors({ 'a.b': '[TR] Placeholder value' }, { 'a.b': 'Different value' }),
   );
-
+  expectDetected(
+    'fil: English-identical value',
+    filFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'fil: placeholder prefix value',
+    filFallbackErrors({ 'a.b': '[FIL] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
 
   // 8. TypeScript key safety.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'i18n-negative-'));

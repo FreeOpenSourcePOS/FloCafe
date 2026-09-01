@@ -56,7 +56,7 @@ async function run(): Promise<void> {
     'backupDatabase', 'checkForUpdates', 'dbApplySafeFixes', 'dbHealthCheck',
     'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
-    'onMenuAction', 'onUpdateStatus', 'openKdsWindow', 'platform', 'restartAndInstall',
+    'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openKdsWindow', 'platform', 'restartAndInstall',
     'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'setThemeEffective',
     'windowAction', 'windowReady',
   ].sort());
@@ -76,6 +76,7 @@ async function run(): Promise<void> {
   await call('setBetaChannel', true);
   await call('windowReady', { epoch: 1 });
   await call('windowAction', 'minimize');
+  await call('getWindowState');
 
   const receivedStatuses: unknown[] = [];
   const unsubscribe = (exposedApi!['onUpdateStatus'] as (callback: (status: unknown) => void) => () => void)(
@@ -90,6 +91,16 @@ async function run(): Promise<void> {
   unsubscribe();
   assert.equal(eventHandlers.has('update-status'), false);
 
+  const receivedWindowStates: unknown[] = [];
+  const unsubscribeWindowState = (exposedApi!['onWindowStateChanged'] as (callback: (state: unknown) => void) => () => void)(
+    (state) => receivedWindowStates.push(state),
+  );
+  const windowStatePayload = { isMaximized: true, isFullScreen: false };
+  eventHandlers.get('window-state-changed')?.({}, windowStatePayload);
+  assert.deepEqual(receivedWindowStates, [windowStatePayload]);
+  unsubscribeWindowState();
+  assert.equal(eventHandlers.has('window-state-changed'), false);
+
   assert.deepEqual(calls, [
     { channel: 'get-settings', args: [] },
     { channel: 'set-setting', args: ['business_name', 'Flo Cafe'] },
@@ -102,6 +113,7 @@ async function run(): Promise<void> {
     { channel: 'updates:set-beta-channel', args: [true] },
     { channel: 'window-ready', args: [{ epoch: 1, documentNonce }] },
     { channel: 'window-action', args: ['minimize'] },
+    { channel: 'get-window-state', args: [] },
   ]);
 
   console.log('Electron preload methods expose the expected narrow IPC channels.');

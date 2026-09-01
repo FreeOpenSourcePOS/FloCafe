@@ -2,7 +2,7 @@
 
 **Punto de venta gratuito, de código abierto y diseñado para funcionar sin conexión para cafeterías, restaurantes y pequeñas cocinas.**
 
-[English](README.md) | **Español** | [Português](README.pt.md) | [Français](README.fr.md)
+[English](README.md) | **Español** | [Português](README.pt.md) | [Français](README.fr.md) | [Türkçe](README.tr.md) | [Filipino](README.fil.md) | [Deutsch](README.de.md)
 
 FloCafe funciona directamente en el ordenador del negocio. Los pedidos, clientes, recibos y copias de seguridad se guardan en una base de datos SQLite local, por lo que el servicio de mostrador y las pantallas de cocina pueden seguir funcionando sin conexión a Internet. No se necesita una cuenta alojada ni en la nube para las funciones principales del TPV. Las integraciones opcionales, como las copias de seguridad en Google Drive, el envío de facturas por WhatsApp y los informes conectados a la nube, pueden activarse cuando sea necesario.
 
@@ -46,7 +46,7 @@ Las funciones principales del TPV y los datos locales funcionan sin conexión. L
 
 ## Idiomas y soporte regional
 
-FloCafe incluye traducciones de la interfaz en inglés, español, portugués brasileño, francés, persa (farsi), turco, filipino y alemán, con soporte RTL para persa. El idioma de la interfaz es independiente del país de la tienda y de la configuración regional. Las reglas de cálculo de impuestos son un aspecto separado.
+FloCafe incluye traducciones de la interfaz en inglés, español, portugués brasileño y persa (farsi), con soporte RTL. El idioma de la interfaz es independiente del país de la tienda y de la configuración regional. Las reglas de cálculo de impuestos son un aspecto separado.
 
 FloCafe incluye perfiles para 131 países y 109 monedas. Cada perfil establece una moneda, configuración regional y zona horaria predeterminadas; el propietario puede cambiar la zona horaria durante la configuración o más adelante en Ajustes.
 

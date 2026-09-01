@@ -43,11 +43,7 @@ Der grundlegende Kassenbetrieb und lokale Daten funktionieren offline. Auftragse
 
 ## Sprachen und regionale Unterstützung
 
-<<<<<<< HEAD
-FloCafe bietet Benutzeroberflächen auf Englisch, Spanisch, brasilianischem Portugiesisch, Persisch (Farsi), Türkisch, Filipino und Deutsch. Persisch unterstützt RTL; Türkisch, Filipino und Deutsch werden von links nach rechts geschrieben. Die UI-Sprache ist unabhängig von Land und regionalen Einstellungen des Geschäfts. Steuerberechnungsregeln sind ein getrenntes Thema.
-=======
 FloCafe bietet Benutzeroberflächen auf Englisch, Spanisch, brasilianischem Portugiesisch, Französisch, Persisch (Farsi), Türkisch, Filipino und Deutsch. Persisch unterstützt RTL; Türkisch, Filipino und Deutsch werden von links nach rechts geschrieben. Die UI-Sprache ist unabhängig von Land und regionalen Einstellungen des Geschäfts. Steuerberechnungsregeln sind ein getrenntes Thema.
->>>>>>> origin/main
 
 FloCafe enthält Profile für 131 Länder und 109 Währungen. Jedes Profil legt Währung, Region und Standardzeitzone fest; der Betriebsinhaber kann die Zeitzone während der Einrichtung oder später in den Einstellungen ändern.
 

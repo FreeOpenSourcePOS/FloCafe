@@ -15,6 +15,14 @@ import { getLanguageDirection, getLanguageFromLocale } from '@/lib/i18n';
  * check — and only flips after the locale's bundle has actually loaded
  * (#375/#376). Toast content direction itself is inherited from
  * `<html dir>` via HtmlLangSync.
+ *
+ * The `key` below forces a full unmount/remount when direction flips
+ * instead of updating `position` on a live Toaster instance:
+ * react-hot-toast repositions its toast-group DOM in place on a
+ * `position` prop change, and toast removal runs on timers outside
+ * React's render cycle, so a toast that's showing/exiting during the
+ * flip can crash with a DOM `insertBefore` `NotFoundError`. Remounting
+ * avoids that race.
  */
 export function DirectionalToaster() {
   const locale = useLocale();
@@ -23,6 +31,7 @@ export function DirectionalToaster() {
 
   return (
     <Toaster
+      key={rtl ? 'rtl' : 'ltr'}
       position={rtl ? 'top-left' : 'top-right'}
       containerStyle={{
         top: 'calc(var(--flo-sidebar-block-start, 0px) + 16px)',

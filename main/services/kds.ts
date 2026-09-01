@@ -498,9 +498,9 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   if (stationIds.length > 0) {
     const stationPlaceholders = stationIds.map(() => '?').join(',');
     const categoryRoute = stationRoutingCategoryIds.length > 0
-      ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
+      ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND t.kitchen_station_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
       : '';
-    query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute}${stationScope.hasUnrestrictedStation ? ' OR o.table_id IS NULL' : ''})`;
+    query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute}${stationScope.hasUnrestrictedStation ? ' OR t.kitchen_station_id IS NULL' : ''})`;
     orderParams.push(...stationIds, ...stationRoutingCategoryIds);
   }
   query += ' ORDER BY o.created_at ASC';
@@ -590,10 +590,10 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
       }
     }
     if (stationRoutingCategoryIds.length > 0) {
-      stationRoutes.push(`(o.table_id IS NULL AND p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`);
+      stationRoutes.push(`(t.kitchen_station_id IS NULL AND p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`);
       countParams.push(...stationRoutingCategoryIds);
     }
-    if (stationScope.hasUnrestrictedStation) stationRoutes.push('o.table_id IS NULL');
+    if (stationScope.hasUnrestrictedStation) stationRoutes.push('t.kitchen_station_id IS NULL');
     countsQuery += ` AND (${stationRoutes.length > 0 ? stationRoutes.join(' OR ') : '0'})`;
   }
   if (categoryIds.length > 0) {

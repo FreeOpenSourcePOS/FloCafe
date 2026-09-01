@@ -960,6 +960,7 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
         installWillQuitPrevented = willQuit.prevented;
       },
       updateState,
+      onInstallFailure: () => {},
       warn: () => {},
       error: () => {},
     });
@@ -1001,6 +1002,7 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
       runCleanup: entrypoints.runCleanup,
       quitAndInstall: () => { installCalls++; },
       updateState,
+      onInstallFailure: () => {},
       warn: () => {},
       error: () => {},
     });
@@ -1151,10 +1153,8 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     assert.deepEqual(app.exitCodes, [1], 'app.exit(1) was called on concurrent quit rejection when not updating');
   }
 
-  // --- Failed quitAndInstall resets updater shutdown state ---
+  // --- Failed quitAndInstall hands off to relaunch ---
   {
-    const app = new AppDouble();
-    const process = new ProcessDouble();
     let isInstallingUpdate = false;
     let isQuitting = false;
     const updateState: UpdateShutdownState = {
@@ -1163,15 +1163,20 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     };
     const installError = new Error('Squirrel failed to spawn installer');
     let installSawActiveState = false;
+    let cleanupFinished = false;
+    let installFailureHandled = false;
     const handler = createRestartAndInstallHandler({
       isInstallReady: () => true,
       authorize: () => ({ ok: true }),
-      runCleanup: async () => {},
+      runCleanup: async () => { cleanupFinished = true; },
       quitAndInstall: () => {
         installSawActiveState = isInstallingUpdate && isQuitting;
         throw installError;
       },
       updateState,
+      onInstallFailure: (error) => {
+        installFailureHandled = error === installError && cleanupFinished;
+      },
       warn: () => {},
       error: () => {},
     });
@@ -1179,69 +1184,49 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     const result = await handler({}, '1234');
     assert.deepEqual(result, { success: false, error: installError.message });
     assert.equal(installSawActiveState, true, 'quitAndInstall runs while updater shutdown state is active');
-    assert.equal(isInstallingUpdate, false, 'quitAndInstall failure resets installing state');
-    assert.equal(isQuitting, false, 'quitAndInstall failure resets quitting state');
-
-    let reportedFailure = false;
-    const entrypoints = createShutdownEntrypoints({
-      app,
-      process,
-      cleanup: async () => { throw new Error('Cleanup failure after updater failed'); },
-      setQuitting: () => {},
-      destroyWindow: () => {},
-      isInstallingUpdate: () => isInstallingUpdate,
-      reportFailure: () => { reportedFailure = true; },
-    });
-
-    // 1. Simulate restart-and-install handler flow where quitAndInstall throws
-    isInstallingUpdate = true;
-    try {
-      throw new Error('Squirrel failed to spawn installer');
-    } catch {
-      isInstallingUpdate = false;
-    }
-
-    // 2. Later, user triggers normal quit, which encounters failing cleanup
-    const willQuit = { prevented: false, preventDefault: () => { willQuit.prevented = true; } };
-    app.emit('will-quit', willQuit);
-    assert.equal(willQuit.prevented, true, 'quit waits for in-flight cleanup');
-
-    await assert.rejects(entrypoints.runCleanup());
-    await delay(0);
-
-    assert.equal(reportedFailure, true, 'cleanup failure is reported');
-    assert.deepEqual(app.exitCodes, [1], 'subsequent shutdown exits after install failure reset');
+    assert.equal(installFailureHandled, true, 'install failure is handed off after cleanup');
+    assert.equal(isInstallingUpdate, true, 'failed installation keeps the relaunch handoff active');
+    assert.equal(isQuitting, true, 'failed installation keeps shutdown active during relaunch');
   }
 
-  // --- AutoUpdater background errors do not clear in-flight install state ---
+  // --- AutoUpdater error events during install hand off to relaunch ---
   {
     let isInstallingUpdate = true;
     let isQuitting = true;
     let updaterPhase: 'check' | 'download' = 'download';
     let reportedStatus: unknown;
+    let installFailure: unknown;
     const handleError = createAutoUpdaterErrorHandler({
       getPhase: () => updaterPhase,
       setPhase: (phase) => { updaterPhase = phase; },
       isInstallReady: () => false,
-      setUpdateStatus: (status) => {
-        reportedStatus = status;
-        assert.equal(isInstallingUpdate, true, 'updater error preserves active install state during delivery');
-        assert.equal(isQuitting, true, 'updater error preserves quitting state during delivery');
-      },
+      isInstallingUpdate: () => isInstallingUpdate,
+      setUpdateStatus: (status) => { reportedStatus = status; },
+      onInstallFailure: (error) => { installFailure = error; },
       logInfo: () => {},
     });
     const updaterError = new Error('Updater failed during background operation');
 
     handleError(updaterError);
 
+    assert.equal(reportedStatus, undefined, 'install error does not replace the staged update status during shutdown');
+    assert.equal(installFailure, updaterError, 'install error event hands off to relaunch recovery');
+    assert.equal(updaterPhase, 'check', 'updater error callback resets its phase');
+    assert.equal(isInstallingUpdate, true, 'updater error preserves active install state');
+    assert.equal(isQuitting, true, 'updater error preserves quitting state');
+
+    isInstallingUpdate = false;
+    isQuitting = false;
+    updaterPhase = 'download';
+    reportedStatus = undefined;
+    installFailure = undefined;
+    handleError(updaterError);
     assert.deepEqual(reportedStatus, {
       status: 'check-failed',
       reason: 'download-failed',
       error: updaterError.message,
-    }, 'updater error callback updates status');
-    assert.equal(updaterPhase, 'check', 'updater error callback resets its phase');
-    assert.equal(isInstallingUpdate, true, 'updater error preserves active install state');
-    assert.equal(isQuitting, true, 'updater error preserves quitting state');
+    }, 'background updater error still updates status outside installation');
+    assert.equal(installFailure, undefined, 'background updater error does not request a relaunch');
   }
 }
 

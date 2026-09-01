@@ -13,7 +13,7 @@ export default function KdsStandaloneLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen h-full flex flex-col p-4 bg-gray-100">
+    <div className="min-h-screen h-full flex flex-col p-4 bg-muted">
       <KdsHtmlLang />
       {children}
     </div>

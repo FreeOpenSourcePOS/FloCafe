@@ -183,22 +183,22 @@ export default function StaffPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('addButton')}</Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {staff.map((s) => (
-          <div key={s.id} className={`bg-white rounded-xl p-5 border ${s.is_active ? 'border-gray-100' : 'border-gray-200 opacity-60'}`}>
+          <div key={s.id} className={`bg-card rounded-xl p-5 border ${s.is_active ? 'border-border' : 'border-border opacity-60'}`}>
             <div className="flex justify-between items-start mb-3">
               <div>
-                <p className="font-bold text-gray-900">{s.name}</p>
-                <p className="text-xs text-gray-500">{s.email || '—'}</p>
+                <p className="font-bold text-foreground">{s.name}</p>
+                <p className="text-xs text-muted-foreground">{s.email || '—'}</p>
                 {Boolean(s.has_pin) && (
                   <p className="text-xs text-green-600 mt-1">{t('pinSet')}</p>
                 )}
               </div>
-              <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${roleColors[s.role] || 'bg-gray-100 text-gray-800'}`}>
+              <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${roleColors[s.role] || 'bg-muted text-foreground'}`}>
                 {roleLabel(s.role, t)}
               </span>
             </div>
@@ -222,13 +222,13 @@ export default function StaffPage() {
         ))}
       </div>
 
-      {staff.length === 0 && <p className="text-center text-gray-500 py-12">{t('empty')}</p>}
+      {staff.length === 0 && <p className="text-center text-muted-foreground py-12">{t('empty')}</p>}
 
       {canViewPermissionMatrix && <PermissionMatrix />}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{editingStaff ? t('modalTitleEdit') : t('modalTitleAdd')}</h2>
               <button type="button" onClick={closeForm}><X size={20} className="text-gray-400" /></button>
@@ -255,7 +255,7 @@ export default function StaffPage() {
                   className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                   required={!editingStaff}
                 />
-                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
@@ -289,11 +289,11 @@ export default function StaffPage() {
                       pattern="[0-9]*"
                       inputMode="numeric"
                     />
-                    <button type="button" aria-label="Toggle PIN visibility" title="Toggle PIN visibility" onClick={() => setShowPin(!showPin)} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                    <button type="button" aria-label="Toggle PIN visibility" title="Toggle PIN visibility" onClick={() => setShowPin(!showPin)} className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                       {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">{t('pinHint')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('pinHint')}</p>
                 </div>
               )}
               <Button type="submit" className="w-full">{editingStaff ? t('updateButton') : t('addButton')}</Button>
@@ -304,12 +304,12 @@ export default function StaffPage() {
 
       {showResetPw && resetPwStaff && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('resetPasswordTitle')}</h2>
               <button type="button" onClick={closeResetPassword}><X size={20} className="text-gray-400" /></button>
             </div>
-            <p className="text-sm text-gray-600 mb-4">{t('resetPasswordBody', { name: resetPwStaff.name })}</p>
+            <p className="text-sm text-muted-foreground mb-4">{t('resetPasswordBody', { name: resetPwStaff.name })}</p>
             <div className="space-y-4">
               <div className="relative">
                 <input
@@ -317,7 +317,7 @@ export default function StaffPage() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                 />
-                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowResetPassword(!showResetPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowResetPassword(!showResetPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                   {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>

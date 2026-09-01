@@ -162,8 +162,9 @@ test('sidebar renders profile dropup trigger and supports drag rail resizing', a
   await page.locator('button[type="submit"]').click();
   await page.waitForURL(/\/pos/, { timeout: 20000 });
 
-  // Sidebar footer profile button renders
-  const profileButton = page.locator('[data-sidebar="footer"] button[data-sidebar="menu-button"]');
+  // Sidebar footer profile dropup trigger renders (the footer also has a
+  // quick theme-toggle button, so scope to the dropdown trigger specifically).
+  const profileButton = page.locator('[data-sidebar="footer"] button[data-sidebar="menu-button"][data-slot="dropdown-menu-trigger"]');
   await expect(profileButton).toBeVisible();
 
   // Rail has cursor-col-resize
@@ -205,6 +206,7 @@ test('browser Electron fixture exposes the complete renderer API and explicit in
     'savePrinter',
     'setBetaChannel',
     'setSetting',
+    'setThemeEffective',
     'windowAction',
     'windowReady',
   ]);

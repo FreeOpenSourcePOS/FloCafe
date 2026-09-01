@@ -84,7 +84,7 @@ async function main() {
           { product_id: 'prod-null', quantity: 2 },   // 2×100 = 200 @ 5% global = 10
           { product_id: 'prod-zero', quantity: 1 },   // 1×50 = 50 @ 0% = 0
           { product_id: 'prod-custom', quantity: 1 }, // 1×200 = 200 @ 15% custom = 30
-        ], // Total cashback = 40 points = 4000 int
+        ], // Total cashback = 40 points (1 point = 1 currency unit)
       },
       headers: authHeader,
     });
@@ -102,7 +102,7 @@ async function main() {
       headers: authHeader,
     });
     assertEqual(pay1.status, 200, 'payment accepted');
-    assertEqual(pay1.data.loyaltyPointsEarned, 4000, 'earned 40 points (4000 int)');
+    assertEqual(pay1.data.loyaltyPointsEarned, 40, 'earned 40 points');
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario 2: Change global rate to 10%
@@ -124,7 +124,7 @@ async function main() {
         customer_id: 'cust-2',
         items: [
           { product_id: 'prod-null', quantity: 2 },   // 2×100 = 200 @ 2.5% global = 5
-        ], // Total cashback = 5 points = 500 int
+        ], // Total cashback = 5 points (1 point = 1 currency unit)
       },
       headers: authHeader,
     });
@@ -141,7 +141,7 @@ async function main() {
       headers: authHeader,
     });
     assertEqual(pay2.status, 200, 'payment accepted');
-    assertEqual(pay2.data.loyaltyPointsEarned, 500, 'earned 5 points (500 int) after fractional global rate update (2.5%)');
+    assertEqual(pay2.data.loyaltyPointsEarned, 5, 'earned 5 points after fractional global rate update (2.5%)');
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario 3: Negative validation tests

@@ -2,7 +2,8 @@
 
 **Kafeler, restoranlar ve küçük mutfaklar için ücretsiz, açık kaynaklı ve çevrimdışı çalışmaya öncelik veren satış noktası uygulaması.**
 
-[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | [Français](README.fr.md) | **Türkçe**
+[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | [Français](README.fr.md) | **Türkçe** | [Filipino](README.fil.md) | [Deutsch](README.de.md)
+
 
 FloCafe doğrudan işletmenin kendi bilgisayarında çalışır. Siparişler, müşteriler, fişler ve yedekler yerel bir SQLite veritabanında saklanır. Böylece internet bağlantısı olmadan da kasa hizmeti ve mutfak ekranları çalışmaya devam eder. Temel satış noktası işlemleri için barındırılan veya bulut tabanlı bir hesap gerekmez. Google Drive yedekleme, WhatsApp ile fiş gönderme ve bulut bağlantılı raporlama gibi isteğe bağlı entegrasyonlar gerektiğinde etkinleştirilebilir.
 
@@ -46,7 +47,7 @@ Temel satış noktası işlemleri ve yerel veriler çevrimdışı çalışır. S
 
 ## Diller ve bölgesel destek
 
-FloCafe arayüzü İngilizce, İspanyolca, Brezilya Portekizcesi, Farsça, Türkçe, Filipince ve Almanca dillerinde kullanılabilir. Farsça RTL desteği içerir; Türkçe, Filipince ve Almanca soldan sağa yazılır. Arayüz dili, mağazanın ülke ve bölgesel ayarlarından bağımsızdır. Vergi hesaplama kuralları ayrı bir konudur.
+FloCafe arayüzü İngilizce, İspanyolca, Brezilya Portekizcesi, Fransızca, Farsça, Türkçe, Filipince ve Almanca dillerinde kullanılabilir. Farsça RTL desteği içerir; Türkçe, Filipince ve Almanca soldan sağa yazılır. Arayüz dili, mağazanın ülke ve bölgesel ayarlarından bağımsızdır. Vergi hesaplama kuralları ayrı bir konudur.
 
 FloCafe 131 ülke ve 109 para birimi için profiller içerir. Her profil varsayılan para birimi, yerel ayar ve saat dilini belirler; işletme sahibi saat dilini kurulum sırasında veya daha sonra Ayarlar bölümünden değiştirebilir.
 

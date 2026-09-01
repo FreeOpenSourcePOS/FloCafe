@@ -57,8 +57,11 @@ async function run(): Promise<void> {
     'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
     'onMenuAction', 'onUpdateStatus', 'openKdsWindow', 'platform', 'restartAndInstall',
-    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'windowAction', 'windowReady',
+    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'setThemeEffective',
+    'windowAction', 'windowReady',
   ].sort());
+
+  assert.equal(typeof exposedApi!.setThemeEffective, 'function');
 
   const call = (name: string, ...args: unknown[]) =>
     (exposedApi![name] as (...callArgs: unknown[]) => Promise<unknown>)(...args);

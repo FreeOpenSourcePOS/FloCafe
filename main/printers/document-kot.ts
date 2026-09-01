@@ -50,6 +50,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       orderNumber: String(order?.order_number ?? ''),
       createdAt: String(order?.created_at ?? ''),
       tableName: String(order?.table?.name ?? ''),
+      orderType: formatKotOrderType(order?.type),
     },
     items: ticketItems.map((item: any) => ({
       productName: String(item?.product_name ?? ''),
@@ -113,6 +114,10 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
   return labelOf(label).replace('{name}', tableName);
 }
 
+function formatKotOrderType(type: unknown): string {
+  return String(type ?? '').replace(/_/g, ' ').trim().toUpperCase();
+}
+
 function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
   const cols = options.columns;
   const lines: string[] = [];
@@ -127,6 +132,9 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   lines.push(truncateShapedLine('Order: ' + header.orderNumber.text, cols, options.arabicShaping));
   if (header.table) {
     lines.push(truncateShapedLine(formatTableLabel(header.table.label, header.table.name.text), cols, options.arabicShaping));
+  }
+  if (header.orderType) {
+    lines.push(truncateShapedLine(labelOf(header.orderType.label) + ': ' + header.orderType.value.text, cols, options.arabicShaping));
   }
   lines.push(labelOf(header.timeLabel) + ': ' + parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions));
   return lines;

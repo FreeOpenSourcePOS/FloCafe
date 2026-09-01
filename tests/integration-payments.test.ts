@@ -119,10 +119,10 @@ async function main() {
     // this test verifies wallet balance depletion, not loyalty earn
     db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('loyalty_enabled', 'false', ?)").run(now());
 
-    // Redemption rate is fixed at 100 points = ₹1 (see LOYALTY_REDEMPTION_RATE in bills.ts).
-    // Give customer ₹600 wallet balance (60000 points) — enough for first order (₹500 + tax ≈ ₹525)
+    // Redemption rate is fixed at 1 point = ₹1 (see LOYALTY_REDEMPTION_RATE in bills.ts).
+    // Give customer ₹600 wallet balance (600 points) — enough for first order (₹500 + tax ≈ ₹525)
     // but NOT enough for second order (₹200 + tax ≈ ₹210)
-    seedWalletCredit(db, 'cust-wallet', 60000);
+    seedWalletCredit(db, 'cust-wallet', 600);
 
     // Create first order (₹500)
     const orderB1 = await api(baseUrl, '/api/orders', {
@@ -295,12 +295,12 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario G: Wallet Balance After Split ───');
 
-    // Keep loyalty disabled (redemption rate is fixed at 100 points = ₹1)
+    // Keep loyalty disabled (redemption rate is fixed at 1 point = ₹1)
     db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('loyalty_enabled', 'false', ?)").run(now());
 
     seedCustomer(db, 'cust-split', 'Split Payment Customer', '9999999999');
-    // Give 100000 points (₹1000 at 100:1 — plenty for half of ₹525 bill)
-    seedWalletCredit(db, 'cust-split', 100000);
+    // Give 1000 points (₹1000 at 1:1 — plenty for half of ₹525 bill)
+    seedWalletCredit(db, 'cust-split', 1000);
 
     // Create order for ₹500 + tax
     const orderG = await api(baseUrl, '/api/orders', {
@@ -329,9 +329,9 @@ async function main() {
     assertEqual(payG1.status, 200, 'wallet payment accepted');
     assertEqual(payG1.data.bill.payment_status, 'partial', 'bill is partially paid');
 
-    // Verify wallet balance decreased by walletPayG × 100 points
+    // Verify wallet balance decreased by walletPayG points (1:1 rate)
     const walletAfterG1 = await api(baseUrl, '/api/customers/cust-split/wallet', { headers: authHeader });
-    const expectedBalanceG1 = 100000 - (walletPayG * 100);
+    const expectedBalanceG1 = 1000 - walletPayG;
     assertEqual(walletAfterG1.data.balance, expectedBalanceG1, `wallet balance = ${expectedBalanceG1} after first wallet payment`);
 
     // Pay remaining with cash

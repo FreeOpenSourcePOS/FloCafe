@@ -58,6 +58,7 @@ export type PrintConceptId =
   | 'receipt.thankYou'
   | 'receipt.taxIncluded'
   | 'receipt.reprint'
+  | 'receipt.onlineOrder'
   | 'pos.methodCash'
   | 'pos.methodCard'
   | 'pos.methodWallet'
@@ -132,6 +133,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'receipt.thankYou': "Thank you for your visit!",
     'receipt.taxIncluded': "Tax included where applicable",
     'receipt.reprint': "REPRINT",
+    'receipt.onlineOrder': "ONLINE ORDER",
     'pos.methodCash': "Cash",
     'pos.methodCard': "Card",
     'pos.methodWallet': "Wallet",
@@ -191,6 +193,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'receipt.thankYou': "از بازدید شما سپاسگزاریم!",
     'receipt.taxIncluded': "مالیات در صورت اعمال، شامل شده است",
     'receipt.reprint': "چاپ مجدد",
+    'receipt.onlineOrder': "سفارش آنلاین",
     'pos.methodCash': "نقدی",
     'pos.methodCard': "کارت",
     'pos.methodWallet': "کیف",
@@ -250,6 +253,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'receipt.thankYou': "¡Gracias por su visita!",
     'receipt.taxIncluded': "Impuestos incluidos cuando corresponda",
     'receipt.reprint': "REIMPRESIÓN",
+    'receipt.onlineOrder': "PEDIDO EN LÍNEA",
     'pos.methodCash': "Efectivo",
     'pos.methodCard': "Tarjeta",
     'pos.methodWallet': "Billetera",
@@ -309,6 +313,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'receipt.thankYou': "Merci de votre visite !",
     'receipt.taxIncluded': "Taxes incluses le cas échéant",
     'receipt.reprint': "RÉIMPRESSION",
+    'receipt.onlineOrder': "COMMANDE EN LIGNE",
     'pos.methodCash': "Espèces",
     'pos.methodCard': "Carte",
     'pos.methodWallet': "Portefeuille",
@@ -368,6 +373,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'receipt.thankYou': "Obrigado pela sua visita!",
     'receipt.taxIncluded': "Impostos incluídos quando aplicável",
     'receipt.reprint': "REIMPRESSÃO",
+    'receipt.onlineOrder': "PEDIDO ONLINE",
     'pos.methodCash': "Dinheiro",
     'pos.methodCard': "Cartão",
     'pos.methodWallet': "Carteira",

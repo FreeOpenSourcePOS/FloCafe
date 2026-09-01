@@ -18,6 +18,9 @@ import { E2E_BASE_URL as BASE } from './helpers/urls';
  *  - Directional arrows (dashboard "view all") mirror via `.rtl-flip`.
  *  - The screens do not overflow horizontally in RTL.
  *  - Screenshots are captured and written to the evidence directory.
+ *  - A live (in-page, no reload) direction flip with a toast on screen does
+ *    not crash with a DOM insertBefore/NotFoundError (DirectionalToaster
+ *    regression — see the settings-page segment at the end of the test).
  *
  * These screens sit behind auth, and login syncs the tenant language from the
  * server, so the language is set server-side (PUT /api/settings/language)
@@ -91,6 +94,21 @@ async function assertSidebarSide(page: Page, expected: 'left' | 'right'): Promis
 }
 
 test('Dashboard, POS, and orders screens render LTR in English and RTL in Persian with LTR phone input, mirrored arrows, and no overflow', async ({ page }) => {
+  // This single test walks ~15 screens plus the DirectionalToaster crash
+  // regression below (which needs a real ~4.5s wait for react-hot-toast's
+  // removal timer), well past Playwright's 30s default.
+  test.setTimeout(90_000);
+
+  // Captured for the DirectionalToaster live-direction-flip regression at the
+  // end of this test (insertBefore/NotFoundError crash guard).
+  const crashErrors: string[] = [];
+  page.on('pageerror', (err) => crashErrors.push(err.message));
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' && /insertBefore|NotFoundError/i.test(msg.text())) {
+      crashErrors.push(msg.text());
+    }
+  });
+
   // Owner account: the dashboard page redirects non-owner roles to /pos, and
   // one login keeps the suite within the shared server's login rate limit.
   await login(page, 'owner@flo.local');
@@ -235,6 +253,84 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
 
     // Restore desktop viewport
     await page.setViewportSize({ width: 1280, height: 720 });
+
+    // ── DirectionalToaster live direction-flip crash regression ────────────
+    // frontend/src/components/layout/DirectionalToaster.tsx flips the
+    // Toaster's `position` prop when the active direction changes. Doing
+    // that on a live (already-mounted) Toaster used to crash with
+    // `Uncaught (in promise) NotFoundError: Failed to execute 'insertBefore'
+    // on 'Node': The node before which the new node is to be inserted is not
+    // a child of this node` if a toast was showing at the moment the flip
+    // happened — react-hot-toast repositions its DOM in place while its own
+    // removal timers run outside React's render cycle. The fix keys the
+    // Toaster by direction so React remounts it instead of updating props in
+    // place. Reproducing needs a LIVE, in-page direction change (not a page
+    // reload, which always boots with the correct position already) with a
+    // toast visible at the same moment — the settings language switch is the
+    // only in-app control that flips direction without navigating away.
+    //
+    // Reset to an English baseline first (hard reload) so the locators below
+    // can rely on English button text — the rest of this test left the UI in
+    // Persian, and reloading also matches the "correct-on-boot" case that
+    // isn't affected by this bug (only a LIVE flip is).
+    await setLanguage(page, 'en');
+    await page.goto(`${BASE}/settings`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+
+    // Fire a toast that is purely client-side (no network round trip): the
+    // "add printer" form validates the name field synchronously.
+    await page.getByRole('button', { name: 'Printers', exact: true }).click();
+    await page.getByRole('button', { name: 'Add Manually' }).click();
+    await page.getByRole('button', { name: 'Add Printer', exact: true }).click();
+    const toast = page.locator('.flo-toast-card').first();
+    await expect(toast).toBeVisible();
+
+    // Switch back to the tab with the language selector — the Toaster lives
+    // at the root layout, outside the tabs, so the toast stays visible.
+    await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+    await expect(toast).toBeVisible();
+
+    // Handle to the actual toast DOM node before the flip — used below to
+    // prove the fix's mechanism (full remount) actually ran in the browser.
+    // A live crash from the old bug needs a precise, near-unreproducible
+    // timing window (the toast's own removal timer firing in the same tick
+    // as react-hot-toast's internal reposition), so asserting "no crash"
+    // alone would pass even against the unfixed code. Asserting the DOM
+    // identity change instead pins down the actual mechanism, deterministically.
+    const preFlipToastHandle = await page.evaluateHandle(
+      () => document.querySelector('.flo-toast-card')
+    );
+
+    // Flip direction live, with the toast still on screen and its removal
+    // timer running.
+    await page
+      .getByText('Languages', { exact: true })
+      .locator('xpath=following-sibling::select')
+      .selectOption('fa');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+
+    // The fix keys <Toaster> by direction, so a live flip fully unmounts and
+    // remounts it instead of updating `position` on the same instance — the
+    // pre-flip toast's DOM node must be torn down as part of that (a fresh
+    // node for the same logical toast appears immediately after, since
+    // react-hot-toast's toast queue lives in a store outside the component).
+    const preFlipNodeDetached = await preFlipToastHandle.evaluate(
+      (el) => !!el && !document.contains(el)
+    );
+    expect(
+      preFlipNodeDetached,
+      'DirectionalToaster must fully remount (not update position in place) on a live direction flip, or a showing toast can crash with a DOM insertBefore/NotFoundError — see frontend/src/components/layout/DirectionalToaster.tsx'
+    ).toBe(true);
+
+    // Let react-hot-toast's timers (up to its 4s default duration) run past
+    // the flip, then confirm the app is still alive and interactive.
+    await page.waitForTimeout(4500);
+    await expect(page.locator('h1')).toBeVisible();
+
+    expect(
+      crashErrors,
+      `DirectionalToaster must not crash with a DOM insertBefore/NotFoundError when a toast survives a live direction flip, got: ${JSON.stringify(crashErrors)}`
+    ).toEqual([]);
   } finally {
     // Restore English so the shared server does not leak Persian into other specs.
     await setLanguage(page, 'en');

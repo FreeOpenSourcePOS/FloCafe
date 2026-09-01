@@ -406,6 +406,7 @@ jobs:
         # A missing credential is a release failure, not a skipped channel:
         # if this job runs, Snap publishing was requested.
         env:
+          GH_TOKEN: ${{ github.token }}
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: |
           if [ -z "$SNAPCRAFT_STORE_CREDENTIALS" ]; then
@@ -779,66 +780,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:
           GH_TOKEN: ${{ github.token }}
-
-      - name: Setup Microsoft Store Developer CLI
-        # Tag-only: workflow_dispatch can run this job against arbitrary
-        # branch code, so it must never be allowed to reach Partner Center.
-        # Pinned to v1.4 by commit SHA rather than the mutable v1.1 tag
-        # (matches this repo's pinning convention for third-party actions).
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.channel == 'stable'
-        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
-
-      - name: Publish Windows AppX packages to Microsoft Store
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.channel == 'stable'
-        shell: pwsh
-        env:
-          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
-          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
-          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
-          SELLER_ID: ${{ secrets.SELLER_ID }}
-          MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
-          # Optional: set MSSTORE_NO_COMMIT=true (repo/environment variable)
-          # to leave a submission as a draft, or MSSTORE_FLIGHT_ID to submit
-          # to a Partner Center flight instead of production, for a
-          # dry-run validation. Remove both once validated.
-          MSSTORE_FLIGHT_ID: ${{ vars.MSSTORE_FLIGHT_ID }}
-          MSSTORE_NO_COMMIT: ${{ vars.MSSTORE_NO_COMMIT }}
-        run: |
-          # msstore is a native CLI, not a PowerShell cmdlet — a failing call
-          # doesn't throw a terminating error or fail the step on its own, so
-          # without an explicit $LASTEXITCODE check this step reports success
-          # even when the Store submission itself failed.
-          $ErrorActionPreference = 'Stop'
-
-          $missing = @()
-          foreach ($name in @("AZURE_AD_TENANT_ID", "AZURE_AD_APPLICATION_CLIENT_ID", "AZURE_AD_APPLICATION_SECRET", "SELLER_ID", "MICROSOFT_STORE_PRODUCT_ID")) {
-            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              $missing += $name
-            }
-          }
-          if ($missing.Count -gt 0) {
-            Write-Error "Missing Microsoft Store configuration: $($missing -join ', ')"
-            exit 1
-          }
-          msstore reconfigure `
-            --tenantId "$env:AZURE_AD_TENANT_ID" `
-            --sellerId "$env:SELLER_ID" `
-            --clientId "$env:AZURE_AD_APPLICATION_CLIENT_ID" `
-            --clientSecret "$env:AZURE_AD_APPLICATION_SECRET"
-          if ($LASTEXITCODE -ne 0) { throw "msstore reconfigure failed with exit code $LASTEXITCODE." }
-
-          # The Store CLI accepts the app/project path and discovers the package
-          # candidates from the release directory for Electron projects; appId
-          # keeps CI non-interactive.
-          $publishArgs = @("${{ github.workspace }}\release", '--appId', "$env:MICROSOFT_STORE_PRODUCT_ID")
-          if (-not [string]::IsNullOrWhiteSpace($env:MSSTORE_FLIGHT_ID)) {
-            $publishArgs += @('--flightId', $env:MSSTORE_FLIGHT_ID)
-          }
-          if ($env:MSSTORE_NO_COMMIT -eq 'true') {
-            $publishArgs += '--noCommit'
-          }
-          msstore publish @publishArgs
-          if ($LASTEXITCODE -ne 0) { throw "Microsoft Store publish failed with exit code $LASTEXITCODE." }
 
   verify-release:
     name: Verify uploaded draft release

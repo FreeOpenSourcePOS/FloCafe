@@ -168,6 +168,10 @@ function run(): void {
     assert('fa KOT station label translated', faText.includes('ایستگاه:'));
     assert('fa KOT type label translated', faText.includes('نوع: DINE IN'));
     assert('fa KOT time label translated', faText.includes('ساعت:'));
+    const deWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const deText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'de-DE', undefined, deWarnings, false, 'de'));
+    assert('de KOT banner survives generic thermal output', deText.includes('KUECHENBESTELLSCHEIN'));
+    assert('de KOT umlaut fallback emits no warning', deWarnings.length === 0);
   }
 
   console.log('\n✅ Test 5: test page honors language');

@@ -152,6 +152,19 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     assert.equal(customer.country_code, '+33');
   });
 
+  test('seedDemoRestaurant in German profile seeds localized demo data', () => {
+    const db = getDatabase();
+    seedSetupProfile(db, 'demo', 'finedine', 'de', 'DE');
+
+    assert.equal(db.prepare("SELECT name FROM categories WHERE id = 'cat-demo-beverages'").get().name, 'Getränke');
+    assert.equal(db.prepare("SELECT name FROM products WHERE id = 'prod-demo-burger'").get().name, 'Klassischer Burger');
+    assert.equal(db.prepare("SELECT name FROM users WHERE id = 'user-demo-manager'").get().name, 'Demo-Manager');
+
+    const customer = db.prepare("SELECT phone, country_code FROM customers WHERE id = 'cust-demo-1'").get();
+    assert.equal(customer.phone, '+4915123456789');
+    assert.equal(customer.country_code, '+49');
+  });
+
   test('PUT /api/settings/business validates and normalizes business_phone', async () => {
     // Valid phone normalization
     const resValid = await api(baseUrl, '/api/settings/business', {

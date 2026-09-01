@@ -1485,6 +1485,47 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
   'E£': 'EGP',
 };
 
+const THERMAL_LATIN_ASCII_MAP: Record<string, string> = {
+  'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+  'Æ': 'AE', 'Ø': 'O', 'Ð': 'D', 'Þ': 'Th', 'Ł': 'L', 'Œ': 'OE',
+  'æ': 'ae', 'ø': 'o', 'ð': 'd', 'þ': 'th', 'ł': 'l', 'œ': 'oe',
+};
+const THERMAL_CURRENCY_TOKENS = Object.keys(CURRENCY_ASCII_MAP).sort((a, b) => b.length - a.length);
+
+function normalizeThermalText(text: string): string | null {
+  let normalized = '';
+  for (let index = 0; index < text.length;) {
+    const currencyToken = THERMAL_CURRENCY_TOKENS.find((token) => text.startsWith(token, index));
+    if (currencyToken) {
+      normalized += currencyToken;
+      index += currencyToken.length;
+      continue;
+    }
+    const character = String.fromCodePoint(text.codePointAt(index)!);
+    index += character.length;
+    if (/^[\x00-\x7F]$/.test(character)) {
+      normalized += character;
+      continue;
+    }
+    const mapped = THERMAL_LATIN_ASCII_MAP[character];
+    if (mapped) {
+      normalized += mapped;
+      continue;
+    }
+    if (CURRENCY_ASCII_MAP[character]) {
+      normalized += character;
+      continue;
+    }
+    const decomposed = character.normalize('NFD').replace(/[\u0300-\u036F]/g, '');
+    if (/^[\x00-\x7F]$/.test(decomposed)) {
+      normalized += decomposed;
+      continue;
+    }
+    return null;
+  }
+  return normalized;
+}
+
 // Resolves the currency symbol into the exact text that will be printed,
 // padded to a fixed 3-column slot (leading spaces for shorter symbols/codes).
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
@@ -1569,12 +1610,12 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const lineDW = line.includes('{DOUBLE_WIDTH}');
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
-    // Currency symbols are an existing, explicit printer option. Do not treat
-    // them as a conflicting line; unsupported scripts (Arabic, CJK, emoji,
-    // etc.) are different because generic ESC/POS printers cannot shape or
-    // render them reliably.
-    const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
-    if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
+    const normalizedLine = normalizeThermalText(line);
+    if (normalizedLine !== null) {
+      line = normalizedLine;
+      printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
+    } else {
+      const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
       // Allow Arabic/Persian script through only when the printer profile
       // explicitly declares Arabic shaping support AND the line contains no
       // other non-ASCII script. Otherwise skip it — never emit unshaped text.

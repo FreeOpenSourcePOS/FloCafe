@@ -203,12 +203,14 @@ function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel:
 }
 
 function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: string, language?: string, country?: string): void {
-  const lang: 'en' | 'es' | 'fr' | 'pt' = language === 'es'
+  const lang: 'en' | 'es' | 'fr' | 'pt' | 'de' = language === 'es'
     ? 'es'
     : language === 'fr'
     ? 'fr'
     : language === 'pt'
     ? 'pt'
+    : language === 'de'
+    ? 'de'
     : 'en';
   const dialCode = dialCodeFor(country);
 
@@ -232,6 +234,13 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['cat-demo-burger', 'Hambúrgueres', '#4ECDC4', '🍔', 2],
         ['cat-demo-beverages', 'Bebidas', '#45B7D1', '🥤', 3],
         ['cat-demo-desserts', 'Sobremesas', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'de'
+    ? [
+        ['cat-demo-starters', 'Vorspeisen', '#FF6B6B', '🍟', 1],
+        ['cat-demo-burger', 'Burger', '#4ECDC4', '🍔', 2],
+        ['cat-demo-beverages', 'Getränke', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'Desserts', '#96CEB4', '🍰', 4],
       ] as const
     : [
         ['cat-demo-starters', 'Starters', '#FF6B6B', '🍔', 1],
@@ -274,6 +283,17 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['prod-demo-agua', 'cat-demo-beverages', 'Água Mineral', 200, 2],
         ['prod-demo-pudim', 'cat-demo-desserts', 'Pudim de Leite', 400, 1],
       ] as const
+    : lang === 'de'
+    ? [
+        ['prod-demo-currywurst', 'cat-demo-starters', 'Currywurst', 280, 1],
+        ['prod-demo-kartoffelecken', 'cat-demo-starters', 'Kartoffelecken', 250, 2],
+        ['prod-demo-schnitzel', 'cat-demo-burger', 'Schnitzel', 800, 1],
+        ['prod-demo-bratwurst', 'cat-demo-burger', 'Bratwurst', 1100, 2],
+        ['prod-demo-burger', 'cat-demo-burger', 'Klassischer Burger', 1200, 3],
+        ['prod-demo-apfelschorle', 'cat-demo-beverages', 'Apfelschorle', 350, 1],
+        ['prod-demo-mineralwasser', 'cat-demo-beverages', 'Mineralwasser', 200, 2],
+        ['prod-demo-apfelstrudel', 'cat-demo-desserts', 'Apfelstrudel', 400, 1],
+      ] as const
     : [
         ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Paneer Tikka', 250, 1],
         ['prod-demo-chicken-wings', 'cat-demo-starters', 'Chicken Wings', 280, 2],
@@ -294,7 +314,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     insertTable(db, 'tbl-demo-4', `${tableLabel}4`, 2);
   }
 
-  const demoCountry = country || (lang === 'es' ? 'AR' : lang === 'fr' ? 'FR' : lang === 'pt' ? 'BR' : 'IN');
+  const demoCountry = country || (lang === 'es' ? 'AR' : lang === 'fr' ? 'FR' : lang === 'pt' ? 'BR' : lang === 'de' ? 'DE' : 'IN');
   if (lang === 'es') {
     insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'María González', '1145678902', dialCode, demoCountry);
@@ -307,15 +327,19 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     insertCustomer(db, 'cust-demo-1', 'João Silva', '1198765432', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Maria Santos', '1198765433', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '1198765434', dialCode, demoCountry);
+  } else if (lang === 'de') {
+    insertCustomer(db, 'cust-demo-1', 'Anna Müller', '15123456789', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Lukas Schneider', '15123456790', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Sophie Weber', '15123456791', dialCode, demoCountry);
   } else {
     insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '9876543210', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '9876543211', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '9876543212', dialCode, demoCountry);
   }
 
-  const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'fr' ? 'Gérant Démo' : lang === 'pt' ? 'Gerente Demo' : 'Demo Manager';
-  const cashierName = lang === 'es' ? 'Cajero Demo' : lang === 'fr' ? 'Caissier Démo' : lang === 'pt' ? 'Caixa Demo' : 'Demo Cashier';
-  const chefName = lang === 'es' ? 'Cocinero Demo' : lang === 'fr' ? 'Chef Démo' : lang === 'pt' ? 'Cozinheiro Demo' : 'Demo Chef';
+  const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'fr' ? 'Gérant Démo' : lang === 'pt' ? 'Gerente Demo' : lang === 'de' ? 'Demo-Manager' : 'Demo Manager';
+  const cashierName = lang === 'es' ? 'Cajero Demo' : lang === 'fr' ? 'Caissier Démo' : lang === 'pt' ? 'Caixa Demo' : lang === 'de' ? 'Demo-Kassierer' : 'Demo Cashier';
+  const chefName = lang === 'es' ? 'Cocinero Demo' : lang === 'fr' ? 'Chef Démo' : lang === 'pt' ? 'Cozinheiro Demo' : lang === 'de' ? 'Demo-Koch' : 'Demo Chef';
   // Demo staff remains useful as localized sample rows, but must never ship with
   // a reusable public credential. The inactive rows can be explicitly replaced
   // by an owner during setup if staff access is wanted.

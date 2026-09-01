@@ -60,7 +60,7 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
       <div className="bg-card rounded-2xl w-full max-w-sm p-5">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold text-foreground">{t('editCustomer')}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-muted-foreground">
+          <button onClick={onClose} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />
           </button>
         </div>
@@ -71,7 +71,7 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              className="w-full min-h-11 px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
               autoFocus
             />
           </div>
@@ -83,7 +83,7 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder={dialCode}
-              className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              className="w-full min-h-11 px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
               dir="ltr"
             />
           </div>

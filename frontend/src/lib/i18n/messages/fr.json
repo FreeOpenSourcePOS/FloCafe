@@ -658,7 +658,14 @@
     "totalDue": "Total dû",
     "unpaid": "Impayé",
     "updateDiscount": "Mettre à jour la remise",
-    "walletMaxAmount": "Le montant du portefeuille dépasse le solde disponible. Maximum : {max}"
+    "walletMaxAmount": "Le montant du portefeuille dépasse le solde disponible. Maximum : {max}",
+    "clearAmount": "Effacer le montant",
+    "enterFullscreen": "Passer le POS en plein écran",
+    "exactAmount": "Montant exact",
+    "exitFullscreen": "Quitter le POS en plein écran",
+    "fullscreenUnavailable": "Le mode plein écran n'est pas disponible",
+    "backspaceAmount": "Effacer le dernier chiffre",
+    "numericKeypad": "Pavé numérique"
   },
   "printTest": {
     "amt": "Montant",

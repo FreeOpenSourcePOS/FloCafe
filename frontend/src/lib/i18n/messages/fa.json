@@ -658,7 +658,14 @@
     "totalDue": "کل قابل پرداخت",
     "unpaid": "پرداخت‌نشده",
     "updateDiscount": "به‌روزرسانی تخفیف",
-    "walletMaxAmount": "مبلغ کیف از مانده در دسترس بیشتر است. بیشینه: {max}"
+    "walletMaxAmount": "مبلغ کیف از مانده در دسترس بیشتر است. بیشینه: {max}",
+    "clearAmount": "پاک کردن مبلغ",
+    "enterFullscreen": "ورود به صندوق تمام‌صفحه",
+    "exactAmount": "مبلغ دقیق",
+    "exitFullscreen": "خروج از صندوق تمام‌صفحه",
+    "fullscreenUnavailable": "حالت تمام‌صفحه در دسترس نیست",
+    "backspaceAmount": "حذف رقم آخر",
+    "numericKeypad": "صفحه‌کلید عددی"
   },
   "printTest": {
     "amt": "مبلغ",

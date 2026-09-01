@@ -658,7 +658,14 @@
     "totalDue": "Total Due",
     "unpaid": "Unpaid",
     "updateDiscount": "Update Discount",
-    "walletMaxAmount": "Wallet amount exceeds available balance. Max: {max}"
+    "walletMaxAmount": "Wallet amount exceeds available balance. Max: {max}",
+    "clearAmount": "Clear amount",
+    "enterFullscreen": "Enter full-screen POS",
+    "exactAmount": "Exact due",
+    "exitFullscreen": "Exit full-screen POS",
+    "fullscreenUnavailable": "Full-screen mode is unavailable",
+    "backspaceAmount": "Backspace amount",
+    "numericKeypad": "Numeric keypad"
   },
   "printTest": {
     "amt": "Amt",

@@ -658,7 +658,14 @@
     "totalDue": "Total a Pagar",
     "unpaid": "Não Pago",
     "updateDiscount": "Atualizar Desconto",
-    "walletMaxAmount": "O valor da carteira excede o saldo disponível. Máx.: {max}"
+    "walletMaxAmount": "O valor da carteira excede o saldo disponível. Máx.: {max}",
+    "clearAmount": "Limpar valor",
+    "enterFullscreen": "Abrir PDV em tela cheia",
+    "exactAmount": "Valor exato",
+    "exitFullscreen": "Sair do PDV em tela cheia",
+    "fullscreenUnavailable": "O modo de tela cheia não está disponível",
+    "backspaceAmount": "Apagar último dígito",
+    "numericKeypad": "Teclado numérico"
   },
   "printTest": {
     "amt": "Total",

@@ -115,6 +115,8 @@ export function buildBillPrintData(order: any, bill: any, business: any, isRepri
       orderNumber: String(order?.order_number ?? ''),
       createdAt: String(order?.created_at ?? ''),
       tableName: String(order?.table?.name ?? ''),
+      onlinePlatform: String(order?.online_platform ?? ''),
+      externalOrderId: String(order?.external_order_id ?? ''),
       items: items.map((item: any) => ({
         productName: String(item?.product_name ?? ''),
         quantity: Number(item?.quantity) || 0,
@@ -431,6 +433,12 @@ export function renderBillDocumentToClassicLines(
         const segment = segmentOf('message');
         if (block.reprintBanner) {
           segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(block.reprintBanner) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+        }
+        if (block.onlineOrderBanner) {
+          const banner = block.onlineOrderBanner;
+          segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(banner.label) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+          if (banner.platform.text) segment.pre.push('{CENTER}' + banner.platform.text + '{/CENTER}');
+          if (banner.externalOrderId.text) segment.pre.push('{CENTER}#' + banner.externalOrderId.text + '{/CENTER}');
         }
         if (block.thankYou && labelOf(block.thankYou) !== printLabel(options.language, 'print.thankYouShort')) {
           segment.main.push('{CENTER}' + labelOf(block.thankYou) + '{/CENTER}');

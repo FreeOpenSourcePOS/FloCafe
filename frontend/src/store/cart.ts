@@ -6,13 +6,15 @@ export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
 interface CartState {
   items: CartItem[];
-  orderType: 'dine_in' | 'takeaway' | 'delivery';
+  orderType: 'dine_in' | 'takeaway' | 'delivery' | 'online';
   tableId: string | null;
   heldOrderId: string | null;
   customerId: number | string | null;
   customer: Customer | null;
   guestCount: number;
   deliveryAddress: string;
+  onlinePlatform: string;
+  externalOrderId: string;
   orderNotes: string;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
@@ -27,6 +29,8 @@ interface CartState {
   setCustomer: (customer: Customer | null) => void;
   setGuestCount: (count: number) => void;
   setDeliveryAddress: (address: string) => void;
+  setOnlinePlatform: (platform: string) => void;
+  setExternalOrderId: (id: string) => void;
   setOrderNotes: (notes: string) => void;
 
   subtotal: () => number;
@@ -42,6 +46,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   customer: null,
   guestCount: 1,
   deliveryAddress: '',
+  onlinePlatform: '',
+  externalOrderId: '',
   orderNotes: '',
 
   addItem: (product, quantity = 1, addons = [], specialInstructions = '') => {
@@ -111,19 +117,26 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   clearCart: () => {
-    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', orderNotes: '' });
+    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', onlinePlatform: '', externalOrderId: '', orderNotes: '' });
   },
 
   loadItems: (items, tableId, customerId, guestCount, orderNotes, heldOrderId) => {
     set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, guestCount, orderNotes: orderNotes || '' });
   },
 
-  setOrderType: (type) => set((state) => ({ orderType: type, deliveryAddress: type !== 'delivery' ? '' : state.deliveryAddress })),
+  setOrderType: (type) => set((state) => ({
+    orderType: type,
+    deliveryAddress: type !== 'delivery' ? '' : state.deliveryAddress,
+    onlinePlatform: type !== 'online' ? '' : state.onlinePlatform,
+    externalOrderId: type !== 'online' ? '' : state.externalOrderId,
+  })),
   setTableId: (id) => set({ tableId: id, heldOrderId: null }),
   setCustomerId: (id) => set({ customerId: id }),
   setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null }),
   setGuestCount: (count) => set({ guestCount: count }),
   setDeliveryAddress: (address) => set({ deliveryAddress: address }),
+  setOnlinePlatform: (platform) => set({ onlinePlatform: platform }),
+  setExternalOrderId: (id) => set({ externalOrderId: id }),
   setOrderNotes: (notes) => set({ orderNotes: notes }),
 
   subtotal: () => {

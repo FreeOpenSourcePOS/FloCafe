@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ShoppingCart, UtensilsCrossed, Package, Truck,
+  ShoppingCart, UtensilsCrossed, Package, Truck, Globe,
   Plus, Minus, Trash2, Pause, MapPin, SquarePen,
   Users,
 } from 'lucide-react';
@@ -30,6 +30,7 @@ const orderTypeIcons = {
   dine_in: UtensilsCrossed,
   takeaway: Package,
   delivery: Truck,
+  online: Globe,
 };
 
 export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
@@ -73,11 +74,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       {/* Order Type */}
       <div className="p-4 border-b border-border dark:border-border space-y-2">
         <div className="flex gap-1 bg-muted rounded-lg p-1">
-          {(['dine_in', 'takeaway', 'delivery'] as const)
+          {(['dine_in', 'takeaway', 'delivery', 'online'] as const)
             .filter((type) => isRestaurant || type !== 'dine_in')
             .map((type) => {
               const Icon = orderTypeIcons[type];
-              const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : t('orderTypeDelivery');
+              const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : type === 'delivery' ? t('orderTypeDelivery') : t('orderTypeOnline');
               return (
                 <button
                   key={type}
@@ -115,6 +116,29 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               value={cart.deliveryAddress}
               onChange={(e) => cart.setDeliveryAddress(e.target.value)}
               placeholder={t('deliveryAddress')}
+              className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+            />
+          </div>
+        )}
+
+        {/* Online platform + external order id — shown inline when online is selected */}
+        {cart.orderType === 'online' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <Globe size={14} className="text-gray-400 shrink-0" />
+              <input
+                type="text"
+                value={cart.onlinePlatform}
+                onChange={(e) => cart.setOnlinePlatform(e.target.value)}
+                placeholder={t('onlinePlatformPlaceholder')}
+                className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              />
+            </div>
+            <input
+              type="text"
+              value={cart.externalOrderId}
+              onChange={(e) => cart.setExternalOrderId(e.target.value)}
+              placeholder={t('externalOrderIdPlaceholder')}
               className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
             />
           </div>

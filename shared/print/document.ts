@@ -117,6 +117,10 @@ export interface OrderSnapshot {
   /** Canonical stored timestamp; renderers localize for presentation. */
   readonly createdAt: string;
   readonly tableName: string;
+  /** Aggregator/web-order platform name (#284), e.g. "Swiggy". Empty when not an online order. */
+  readonly onlinePlatform: string;
+  /** The platform's own order id (#284), printed alongside the online-order banner. */
+  readonly externalOrderId: string;
   readonly items: readonly OrderItemSnapshot[];
 }
 
@@ -366,6 +370,12 @@ export interface MessageBlock {
   readonly kind: 'message';
   readonly direction: TextDirection;
   readonly reprintBanner: SemanticLabel | null;
+  /** Online-order banner (#284): present whenever the order carries a platform/external id. */
+  readonly onlineOrderBanner: {
+    readonly label: SemanticLabel;
+    readonly platform: DirectionalText;
+    readonly externalOrderId: DirectionalText;
+  } | null;
   readonly footerNote: DirectionalText | null;
   readonly thankYou: SemanticLabel | null;
 }
@@ -621,10 +631,18 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       }))),
   });
 
+  const hasOnlineOrderInfo = order.onlinePlatform.length > 0 || order.externalOrderId.length > 0;
   const messages: MessageBlock = Object.freeze({
     kind: 'message',
     direction: base,
     reprintBanner: printData.isReprint ? resolveSemanticLabel(labels, 'receipt.reprint') : null,
+    onlineOrderBanner: hasOnlineOrderInfo
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'receipt.onlineOrder'),
+        platform: directionalText(order.onlinePlatform, base),
+        externalOrderId: directionalText(order.externalOrderId, base),
+      })
+      : null,
     footerNote: business.footerNote.length > 0 ? directionalText(business.footerNote, base) : null,
     thankYou: resolveSemanticLabel(labels, 'print.thankYouShort'),
   });

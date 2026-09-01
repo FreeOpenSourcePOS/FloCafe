@@ -31,6 +31,8 @@
  *      English value (documented intentional identical list excepted).
  *   9. French safeguards: fr.json values never silently fall back to the
  *      English value (documented intentional identical list excepted).
+ *  10. Turkish safeguards: tr.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -519,6 +521,54 @@ function frFallbackErrors(frFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+const TR_INTENTIONAL_IDENTICAL = new Set<string>([
+  'common.appTitle', // brand name "Flo"
+  'common.brandName', // brand name "Flo Cafe"
+  'common.logoAlt', // brand name "Flo Cafe"
+  'nav.portLabel', // technical term "Port"
+  'nav.whatsapp', // product name "WhatsApp"
+  'pos.addonPrice', // pure format "+{currency}{price}"
+  'pos.loadingEllipsis', // pure symbol "…"
+  'pos.tagCount', // pure format "{tag} ×{count}"
+  'pos.tagVegan', // universal dietary term "Vegan"
+  'printTest.escpos', // technical hardware standard "ESCPOS (USB)"
+  'products.addonSelectionRange', // pure format "{min} – {max}"
+  'products.columnCashback', // financial loanword "Cashback"
+  'products.fieldSku', // technical acronym "SKU"
+  'products.saleUnitG', // unit "g"
+  'products.saleUnitKg', // unit "kg"
+  'products.saleUnitLb', // unit "lb"
+  'products.skuLabel', // pure format "SKU: {sku}"
+  'products.tagVegan', // universal dietary term "Vegan"
+  'settings.ipAddressPlaceholder', // example IP "192.168.1.100"
+  'settings.iranNumberDigitsLatin', // script name "Latin (0-9)"
+  'settings.plan', // loanword / term "Plan"
+  'settings.port', // technical term "Port"
+  'settings.revflo', // brand name "RevFlo"
+  'settings.tabWhatsapp', // product name "WhatsApp"
+  'settings.unicode', // technical term "Unicode"
+  'settings.whatsapp', // product name "WhatsApp"
+  'support.platform', // loanword / term "Platform"
+  'tax.auditCreateOverride', // pure format with identifiers
+  'tax.auditUpdateOverride', // pure format with identifiers
+  'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX
+]);
+
+function trFallbackErrors(trFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const trVal = trFlat[k];
+    if (trVal === undefined) continue; // reported by key parity
+    if (trVal.startsWith('[TR]') || trVal.startsWith('[TODO]')) {
+      errors.push(`tr.json ${k} — placeholder prefix found: "${trVal}"`);
+    } else if (trVal === enFlat[k] && !TR_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`tr.json ${k} — identical to English value (renders as English for Turkish users)`);
+    }
+  }
+  return errors;
+}
+
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -844,8 +894,20 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated fr.json values (${FR_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 10. tr.json values must not contain placeholders or fall back to English.
+  const trMessages = loadedStrings.get('tr');
+  if (!trMessages) throw new Error('languages registry must include the maintained tr locale');
+  const trErrors = trFallbackErrors(trMessages, loadedStrings.get('en')!);
+  if (trErrors.length) {
+    console.error(`\ntr.json values with errors (${trErrors.length}):`);
+    for (const e of trErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'tr.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated tr.json values (${TR_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
+
 
 /* ----------------------------------------------------------------- *
  * Negative tests — feed broken fixtures to each validator and       *
@@ -949,7 +1011,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. fa safeguards.
+  // 7. Language safeguards (fa, fr, tr).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -958,6 +1020,15 @@ function runNegativeTests(): void {
     'fr: English-identical value',
     frFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
   );
+  expectDetected(
+    'tr: English-identical value',
+    trFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'tr: placeholder prefix value',
+    trFallbackErrors({ 'a.b': '[TR] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+
 
   // 8. TypeScript key safety.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'i18n-negative-'));

@@ -4147,6 +4147,22 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 78,
+    name: 'add_online_order_reference',
+    up: () => {
+      // #284: 'online' orders (third-party aggregators / web ordering) carry
+      // the platform name + the platform's own order id so the KOT/receipt
+      // can cross-reference it back to the source system.
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('online_platform')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN online_platform TEXT DEFAULT NULL`);
+      }
+      if (!orderColumns.includes('external_order_id')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN external_order_id TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'flo-v18';
+const CACHE_NAME = 'flo-v19';
 const PRECACHE_URLS = [
   '/dashboard',
   '/pos',
@@ -28,16 +28,44 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Cache keys are precached without a trailing slash (see PRECACHE_URLS), but
+// requests for the same route can arrive with one — e.g. Next.js's <Link>
+// prefetch of "/dashboard/" when trailingSlash is enabled for the desktop
+// build. Normalizing avoids a spurious cache miss on an otherwise-cached page.
+function normalizedUrlString(url) {
+  const parsed = new URL(url);
+  if (parsed.pathname.length > 1 && parsed.pathname.endsWith('/')) {
+    parsed.pathname = parsed.pathname.slice(0, -1);
+  }
+  return parsed.toString();
+}
+
 function matchCached(request) {
-  return caches.match(request).catch(() => null);
+  return caches.match(request)
+    .then((match) => match || caches.match(normalizedUrlString(
+      typeof request === 'string' ? request : request.url
+    )))
+    .catch(() => null);
+}
+
+// A route prefetch (e.g. <Link> hovering/entering the viewport) fetches a
+// page path the same way a real subresource would, but with request.mode
+// other than "navigate". Treat it like a navigation for fallback purposes —
+// it targets one of our own pages, not a script/image/font — so it gets a
+// real HTTP response instead of a network-error Response.
+function isPageRequest(request) {
+  if (request.mode === 'navigate') return true;
+  const lastSegment = new URL(request.url).pathname.split('/').pop() || '';
+  return !lastSegment.includes('.');
 }
 
 function offlineResponse(request) {
-  // Navigation needs a real HTTP response so Electron shows a useful offline
-  // state instead of a service-worker promise-conversion error. Subresources
-  // use a network-error Response, which preserves normal failed-resource
+  // Navigation (and page prefetches) need a real HTTP response so Electron
+  // shows a useful offline state instead of a service-worker
+  // promise-conversion error. True subresources (scripts, images, fonts) use
+  // a network-error Response, which preserves normal failed-resource
   // semantics without inventing a body or caching a failure.
-  if (request.mode === 'navigate') {
+  if (isPageRequest(request)) {
     return new Response('Offline', { status: 503, statusText: 'Offline' });
   }
   return typeof Response.error === 'function'
@@ -84,7 +112,7 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => matchCached(event.request)
         .then((cached) => cached || (
-          event.request.mode === 'navigate' ? matchCached('/dashboard') : null
+          isPageRequest(event.request) ? matchCached('/dashboard') : null
         ))
         .then((cached) => cached || offlineResponse(event.request))
       )

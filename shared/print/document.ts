@@ -117,6 +117,10 @@ export interface OrderSnapshot {
   /** Canonical stored timestamp; renderers localize for presentation. */
   readonly createdAt: string;
   readonly tableName: string;
+  /** Aggregator/web-order platform name (#284), e.g. "Swiggy". Empty when not an online order. */
+  readonly onlinePlatform: string;
+  /** The platform's own order id (#284), printed alongside the online-order banner. */
+  readonly externalOrderId: string;
   readonly items: readonly OrderItemSnapshot[];
 }
 
@@ -366,6 +370,12 @@ export interface MessageBlock {
   readonly kind: 'message';
   readonly direction: TextDirection;
   readonly reprintBanner: SemanticLabel | null;
+  /** Online-order banner (#284): present whenever the order carries a platform/external id. */
+  readonly onlineOrderBanner: {
+    readonly label: SemanticLabel;
+    readonly platform: DirectionalText;
+    readonly externalOrderId: DirectionalText;
+  } | null;
   readonly footerNote: DirectionalText | null;
   readonly thankYou: SemanticLabel | null;
 }
@@ -621,10 +631,18 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       }))),
   });
 
+  const hasOnlineOrderInfo = order.onlinePlatform.length > 0 || order.externalOrderId.length > 0;
   const messages: MessageBlock = Object.freeze({
     kind: 'message',
     direction: base,
     reprintBanner: printData.isReprint ? resolveSemanticLabel(labels, 'receipt.reprint') : null,
+    onlineOrderBanner: hasOnlineOrderInfo
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'receipt.onlineOrder'),
+        platform: directionalText(order.onlinePlatform, base),
+        externalOrderId: directionalText(order.externalOrderId, base),
+      })
+      : null,
     footerNote: business.footerNote.length > 0 ? directionalText(business.footerNote, base) : null,
     thankYou: resolveSemanticLabel(labels, 'print.thankYouShort'),
   });
@@ -662,11 +680,12 @@ export interface KotItemSnapshot {
   readonly specialInstructions: string;
 }
 
-/** The order behind the ticket (order number, canonical timestamp, table). */
+/** The order behind the ticket (order number, canonical timestamp, table, type). */
 export interface KotOrderSnapshot {
   readonly orderNumber: string;
   readonly createdAt: string;
   readonly tableName: string;
+  readonly orderType: string;
 }
 
 /**
@@ -679,7 +698,7 @@ export interface KotPrintData {
   readonly items: readonly KotItemSnapshot[];
 }
 
-/** Ticket header: banner, station, order number, table, time. */
+/** Ticket header: banner, station, order number, table, type, time. */
 export interface KotHeaderBlock {
   readonly kind: 'kot-header';
   readonly direction: TextDirection;
@@ -694,6 +713,7 @@ export interface KotHeaderBlock {
   readonly orderNumber: DirectionalText;
   /** Table reference with its (uninterpolated) label concept. */
   readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
+  readonly orderType: { readonly label: SemanticLabel; readonly value: DirectionalText } | null;
   readonly timeLabel: SemanticLabel;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
@@ -746,6 +766,12 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
       ? Object.freeze({
         label: resolveSemanticLabel(labels, 'pos.tableLabel'),
         name: directionalText(printData.order.tableName, base),
+      })
+      : null,
+    orderType: typeof printData.order?.orderType === 'string' && printData.order.orderType.length > 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'print.kot.type'),
+        value: directionalText(printData.order.orderType, base),
       })
       : null,
     timeLabel: resolveSemanticLabel(labels, 'print.time'),

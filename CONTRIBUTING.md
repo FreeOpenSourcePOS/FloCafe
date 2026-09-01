@@ -155,7 +155,7 @@ FloCafe runs on real business data that must survive software upgrades.
 
 ## Translations and i18n
 
-FloCafe currently provides translations for English (`en`), Spanish (`es`), French (`fr`), Brazilian Portuguese (`pt`), and Persian (`fa`, including RTL support).
+FloCafe currently provides translations for English (`en`), Spanish (`es`), French (`fr`), Brazilian Portuguese (`pt`), Filipino (`fil`), Turkish (`tr`), and Persian (`fa`, including RTL support).
 
 - **Existing languages:** Narrowly scoped fixes and improvements to existing translation strings are always welcome. Verify changes with `npm run i18n:check`.
 - **New languages:** Adding an entirely new language requires maintainer coordination through an issue first while the broader internationalization architecture (#372) is being modernized.

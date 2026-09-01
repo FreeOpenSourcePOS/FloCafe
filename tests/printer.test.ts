@@ -206,6 +206,7 @@ function visibleRawPrinterLines(data: Uint8Array): string[] {
 
 const fixtureOrder = {
   order_number: 'ORD-20260421-0001',
+  type: 'dine_in',
   created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
   table: { name: 'T3' },
   items: [
@@ -759,6 +760,7 @@ console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
   assert('renders station name', text.includes('Main Kitchen'));
   assert('renders order number', text.includes('ORD-20260421-0001'));
   assert('renders table number', text.includes('T3'));
+  assert('renders order type', text.includes('Type: DINE IN'));
   assert('renders each item with qty prefix', text.includes('2x  Cheeseburger'));
   assert('renders addon "Extra Cheese"', text.includes('+ Extra Cheese'));
   assert('renders addon "Bacon"', text.includes('+ Bacon'));

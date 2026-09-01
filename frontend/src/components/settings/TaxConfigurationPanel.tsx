@@ -214,7 +214,7 @@ function apiMessage(error: unknown, fallback: string): string {
 
 function taxModeSegmentClass(active: boolean): string {
   return `px-3 py-1.5 text-sm font-medium rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-    active ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+    active ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
   }`;
 }
 
@@ -908,15 +908,15 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   }
 
   if (loading && !detail) {
-    return <div className="py-16 text-center text-sm text-gray-500">{t('loading')}</div>;
+    return <div className="py-16 text-center text-sm text-muted-foreground">{t('loading')}</div>;
   }
 
   return (
     <div className="pb-6 max-w-5xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">{t('title')}</h2>
-          <p className="mt-1 text-sm text-gray-500">{t('subtitle')}</p>
+          <h2 className="text-xl font-semibold text-foreground">{t('title')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t('subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -939,9 +939,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         </div>
       )}
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
-        <h3 className="font-semibold text-gray-900">{t('mode')}</h3>
-        <div className="mt-3 inline-flex flex-wrap rounded-lg border border-gray-200 bg-gray-50 p-1">
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h3 className="font-semibold text-foreground">{t('mode')}</h3>
+        <div className="mt-3 inline-flex flex-wrap rounded-lg border border-border bg-muted p-1">
           <button
             type="button"
             disabled={!isOwner || saving}
@@ -974,7 +974,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             {t('modeManual')}
           </button>
         </div>
-        <p className="mt-3 text-sm text-gray-600">
+        <p className="mt-3 text-sm text-muted-foreground">
           {taxMode === 'off' && t('modeOffHint')}
           {taxMode === 'official' && t('modeOfficialHint', { country: storeCountry })}
           {taxMode === 'manual' && t('modeManualHint', { country: storeCountry })}
@@ -987,7 +987,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           </p>
         )}
         {taxMode === 'official' && detail?.active_version && detail.pack.publisher !== 'local' && (
-          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-muted px-3 py-2 text-sm text-foreground">
             <span>
               {t('pluginVersion')} <span className="font-mono font-medium">v{detail.active_version.version}</span>
               <span className="ms-1 text-gray-400">({detail.pack.trust_status})</span>
@@ -1010,7 +1010,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                   onClick={() => void reinstallPlugin()}
                   disabled={reinstallingPlugin}
                   title={t('reinstallHint')}
-                  className="flex items-center gap-1 font-medium text-gray-600 hover:text-gray-800 disabled:opacity-50"
+                  className="flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground disabled:opacity-50"
                 >
                   <Wrench size={13} className={reinstallingPlugin ? 'animate-spin' : ''} />
                   {reinstallingPlugin ? t('reinstalling') : t('reinstallPlugin')}
@@ -1033,44 +1033,44 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             <span className="flex items-center gap-1.5">
               <Download size={14} className="text-brand" />
               {t('updateAvailableLabel')} <span className="font-mono font-medium">v{activePluginUpdate.latestVersion}</span>
-              <span className="text-gray-500">{t('currentVersion', { current: activePluginUpdate.currentVersion })}</span>
+              <span className="text-muted-foreground">{t('currentVersion', { current: activePluginUpdate.currentVersion })}</span>
             </span>
             {isOwner ? (
               <Button size="sm" disabled={installingUpdate} onClick={() => void installPluginUpdate()}>
                 {installingUpdate ? t('installing') : t('installAndActivate')}
               </Button>
             ) : (
-              <span className="text-xs text-gray-500">{t('askOwnerToInstall')}</span>
+              <span className="text-xs text-muted-foreground">{t('askOwnerToInstall')}</span>
             )}
           </div>
         )}
       </section>
 
       {manualBuilderVisible && (
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Wrench size={20} className="text-brand" />
-            <h3 className="font-semibold text-gray-900">{t('manualBuilder')}</h3>
+            <h3 className="font-semibold text-foreground">{t('manualBuilder')}</h3>
           </div>
           {!taxesEnabled && (
-            <button type="button" onClick={() => setManualBuilderOpen(false)} className="text-sm text-gray-400 hover:text-gray-600">{t('hide')}</button>
+            <button type="button" onClick={() => setManualBuilderOpen(false)} className="text-sm text-gray-400 hover:text-muted-foreground">{t('hide')}</button>
           )}
         </div>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           {t('manualBuilderHint', { country: storeCountry || t('yourStore') })}
         </p>
 
         <div className="mt-4 space-y-3">
           {manualCategories.map((category) => (
-            <div key={category.tempId} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+            <div key={category.tempId} className="rounded-lg border border-border bg-muted p-3">
               <div className="flex items-center gap-2">
                 <input
                   value={category.label}
                   onChange={(event) => updateManualCategoryLabel(category.tempId, event.target.value)}
                   disabled={!isOwner}
                   placeholder={t('categoryNamePlaceholder')}
-                  className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium disabled:bg-gray-100"
+                  className="flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm font-medium disabled:bg-muted"
                 />
                 {isOwner && manualCategories.length > 1 && (
                   <button type="button" onClick={() => removeManualCategory(category.tempId)} className="p-2 text-gray-400 hover:text-red-600" title={t('removeCategory')}>
@@ -1086,13 +1086,13 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                       onChange={(event) => updateManualComponent(category.tempId, component.key, { label: event.target.value })}
                       disabled={!isOwner}
                       placeholder={t('componentPlaceholder')}
-                      className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm disabled:bg-gray-100"
+                      className="flex-1 rounded-md border border-border bg-card px-3 py-1.5 text-sm disabled:bg-muted"
                     />
                     <select
                       value={component.type}
                       onChange={(event) => updateManualComponent(category.tempId, component.key, { type: event.target.value as 'percent' | 'fixed' })}
                       disabled={!isOwner}
-                      className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-100"
+                      className="rounded-md border border-border bg-card px-2 py-1.5 text-sm disabled:bg-muted"
                     >
                       <option value="percent">%</option>
                       <option value="fixed">{t('fixed')}</option>
@@ -1104,7 +1104,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                       value={component.value}
                       onChange={(event) => updateManualComponent(category.tempId, component.key, { value: event.target.value })}
                       disabled={!isOwner}
-                      className="w-24 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-end disabled:bg-gray-100"
+                      className="w-24 rounded-md border border-border bg-card px-2 py-1.5 text-sm text-end disabled:bg-muted"
                     />
                     {isOwner && category.components.length > 1 && (
                       <button type="button" onClick={() => removeManualComponent(category.tempId, component.key)} className="p-1.5 text-gray-400 hover:text-red-600" title={t('removeComponent')}>
@@ -1128,8 +1128,8 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           )}
         </div>
 
-        <div className="mt-5 border-t border-gray-100 pt-4">
-          <p className="text-sm font-medium text-gray-800">{t('menuPrices')}</p>
+        <div className="mt-5 border-t border-border pt-4">
+          <p className="text-sm font-medium text-foreground">{t('menuPrices')}</p>
           <div className="mt-2 flex gap-4 text-sm">
             <label className="flex items-center gap-2">
               <input type="radio" checked={!manualInclusive} onChange={() => setManualInclusive(false)} disabled={!isOwner} />
@@ -1142,9 +1142,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           </div>
         </div>
 
-        <div className="mt-5 border-t border-gray-100 pt-4">
-          <p className="text-sm font-medium text-gray-800">{t('defaultCategory')}</p>
-          <p className="text-xs text-gray-500 mb-2">{t('defaultCategoryHint')}</p>
+        <div className="mt-5 border-t border-border pt-4">
+          <p className="text-sm font-medium text-foreground">{t('defaultCategory')}</p>
+          <p className="text-xs text-muted-foreground mb-2">{t('defaultCategoryHint')}</p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {([
               ['product', t('defaultNewProducts')],
@@ -1153,12 +1153,12 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
               ['service_charge', t('defaultServiceCharge')],
             ] as Array<[keyof ManualDefaults, string]>).map(([key, label]) => (
               <label key={key} className="block">
-                <span className="text-xs text-gray-500">{label}</span>
+                <span className="text-xs text-muted-foreground">{label}</span>
                 <select
                   value={manualDefaults[key]}
                   onChange={(event) => setManualDefaults((current) => ({ ...current, [key]: event.target.value }))}
                   disabled={!isOwner}
-                  className="mt-1 w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-100"
+                  className="mt-1 w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm disabled:bg-muted"
                 >
                   {manualCategories.map((category) => (
                     <option key={category.tempId} value={category.tempId}>{category.label || t('untitledCategory')}</option>
@@ -1190,24 +1190,24 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       <button
         type="button"
         onClick={() => setShowAdvancedTools((value) => !value)}
-        className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white p-5 text-start"
+        className="flex w-full items-center justify-between rounded-xl border border-border bg-card p-5 text-start"
       >
         <div>
-          <h3 className="font-semibold text-gray-900">{t('advancedTools')}</h3>
-          <p className="mt-1 text-sm text-gray-500">{t('advancedToolsHint')}</p>
+          <h3 className="font-semibold text-foreground">{t('advancedTools')}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{t('advancedToolsHint')}</p>
         </div>
-        <ChevronDown size={18} className={`shrink-0 text-gray-500 ${showAdvancedTools ? 'rotate-180' : ''}`} />
+        <ChevronDown size={18} className={`shrink-0 text-muted-foreground ${showAdvancedTools ? 'rotate-180' : ''}`} />
       </button>
 
       {showAdvancedTools && (
         <>
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <ShieldCheck size={20} className="text-brand" />
-            <h3 className="font-semibold text-gray-900">{t('installedPacks')}</h3>
+            <h3 className="font-semibold text-foreground">{t('installedPacks')}</h3>
           </div>
-          <span className="text-xs text-gray-500">{t('installedPacksHint', { country: storeCountry })}</span>
+          <span className="text-xs text-muted-foreground">{t('installedPacksHint', { country: storeCountry })}</span>
         </div>
 
         {selectedPack && detail ? (
@@ -1220,7 +1220,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                   <Info label={t('activeVersion')} value={detail.active_version.version} />
                   <Info label={t('trustStatus')} value={detail.pack.trust_status} />
                 </div>
-                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
+                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-muted p-3 text-xs text-muted-foreground">
                   <span>{t('effectiveFrom', { date: detail.active_version.effective_from })}</span>
                   <span>{t('publishedAt', { date: detail.active_version.published_at })}</span>
                   <span><Ltr>{detail.active_version.definition.currency}</Ltr></span>
@@ -1237,9 +1237,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                   </button>
                 </div>
                 {expandedChecklist && (
-                  <ol className="mt-3 grid gap-1 rounded-lg border border-gray-100 p-3 text-xs sm:grid-cols-2">
+                  <ol className="mt-3 grid gap-1 rounded-lg border border-border p-3 text-xs sm:grid-cols-2">
                     {detail.active_version.validation.checks.map((check) => (
-                      <li key={check.id} className={check.passed ? 'text-gray-600' : 'text-red-700'}>
+                      <li key={check.id} className={check.passed ? 'text-muted-foreground' : 'text-red-700'}>
                         {check.passed ? '✓' : '✕'} {check.id}. {check.message}
                       </li>
                     ))}
@@ -1247,19 +1247,19 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                 )}
               </>
             ) : (
-              <p className="mt-4 text-sm text-gray-500">
+              <p className="mt-4 text-sm text-muted-foreground">
                 {t('noActiveVersion')}
               </p>
             )}
-            <div className="mt-5 border-t border-gray-100 pt-4">
+            <div className="mt-5 border-t border-border pt-4">
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-800">{t('installedVersions')}</p>
+                <p className="text-sm font-medium text-foreground">{t('installedVersions')}</p>
               </div>
               <div className="space-y-2">
                 {detail.versions.map((version) => {
                   const active = version.id === detail.pack.active_version_id;
                   return (
-                    <div key={version.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm">
+                    <div key={version.id} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
                       <span>
                         v{version.version}
                         <span className="ms-2 text-xs text-gray-400">{version.status}</span>
@@ -1272,21 +1272,21 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             </div>
           </>
         ) : (
-          <p className="mt-4 text-sm text-gray-500">{t('noActivePack')}</p>
+          <p className="mt-4 text-sm text-muted-foreground">{t('noActivePack')}</p>
         )}
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2">
           <Calculator size={20} className="text-brand" />
-          <h3 className="font-semibold text-gray-900">{t('testCalculation')}</h3>
+          <h3 className="font-semibold text-foreground">{t('testCalculation')}</h3>
         </div>
-        <p className="mt-1 text-sm text-gray-500">{t('testCalculationHint')}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{t('testCalculationHint')}</p>
         {!selectedPack?.active_for_store && (
           <p className="mt-2 text-xs text-amber-700">{t('packNotActive')}</p>
         )}
         <div className="mt-4 grid gap-3 sm:grid-cols-4">
-          <select disabled={!selectedPack?.active_for_store} value={testCategoryId} onChange={(event) => setTestCategoryId(event.target.value)} className="rounded-md border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-100">
+          <select disabled={!selectedPack?.active_for_store} value={testCategoryId} onChange={(event) => setTestCategoryId(event.target.value)} className="rounded-md border border-border px-3 py-2 text-sm disabled:bg-muted">
             {detail?.categories.map((category) => <option key={category.category_id} value={category.category_id}>{category.label}</option>)}
           </select>
           <input
@@ -1295,9 +1295,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             inputMode="decimal"
             placeholder={t('amount')}
             disabled={!selectedPack?.active_for_store}
-            className="rounded-md border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-100"
+            className="rounded-md border border-border px-3 py-2 text-sm disabled:bg-muted"
           />
-          <select disabled={!selectedPack?.active_for_store} value={testBehavior} onChange={(event) => setTestBehavior(event.target.value)} className="rounded-md border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-100">
+          <select disabled={!selectedPack?.active_for_store} value={testBehavior} onChange={(event) => setTestBehavior(event.target.value)} className="rounded-md border border-border px-3 py-2 text-sm disabled:bg-muted">
             <option value="country_default">{t('behaviorCountryDefault')}</option>
             <option value="exclusive">{t('behaviorExclusive')}</option>
             <option value="inclusive">{t('behaviorInclusive')}</option>
@@ -1306,14 +1306,14 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           <Button disabled={!selectedPack?.active_for_store} onClick={() => void calculate()}>{t('calculate')}</Button>
         </div>
         {calculation && (
-          <div className="mt-4 rounded-lg bg-gray-50 p-4">
+          <div className="mt-4 rounded-lg bg-muted p-4">
             <div className="grid gap-3 sm:grid-cols-3">
               <Info label={t('taxableBase')} value={calculation.taxableBase} />
               <Info label={t('tax')} value={calculation.taxAmount} />
               <Info label={t('payableTotal')} value={calculation.payableTotal} />
             </div>
             {calculation.lines[0]?.components.length > 0 && (
-              <div className="mt-3 border-t border-gray-200 pt-3 text-xs text-gray-600">
+              <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
                 {calculation.lines[0].components.map((component) => (
                   <div key={component.ruleId} className="flex justify-between py-0.5">
                     <span>{component.label}{component.rate ? ` · ${component.rate}%` : ''}</span>
@@ -1326,12 +1326,12 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         )}
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2">
           <SlidersHorizontal size={20} className="text-brand" />
-          <h3 className="font-semibold text-gray-900">{t('chargeCategories')}</h3>
+          <h3 className="font-semibold text-foreground">{t('chargeCategories')}</h3>
         </div>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           {t('chargeCategoriesHint')}
         </p>
         {!selectedPack?.active_for_store && (
@@ -1344,12 +1344,12 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             );
             return (
               <label key={chargeType} className="block">
-                <span className="text-sm font-medium text-gray-800">{t(ENTITY_LABELS[chargeType])}</span>
+                <span className="text-sm font-medium text-foreground">{t(ENTITY_LABELS[chargeType])}</span>
                 <select
                   value={configured ? categoryIdOf(configured) : ''}
                   onChange={(event) => void setChargeCategory(chargeType, event.target.value)}
                   disabled={!isOwner || saving || !selectedPack?.active_for_store}
-                  className="mt-2 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm disabled:bg-gray-100"
+                  className="mt-2 w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:bg-muted"
                 >
                   <option value="">{t('chargeNotConfigured')}</option>
                   {detail?.categories.map((category) => (
@@ -1362,38 +1362,38 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         </div>
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2">
           <SlidersHorizontal size={20} className="text-brand" />
-          <h3 className="font-semibold text-gray-900">{t('merchantOverrides')}</h3>
+          <h3 className="font-semibold text-foreground">{t('merchantOverrides')}</h3>
         </div>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           {t('merchantOverridesHint')}
         </p>
 
         {isOwner && (
-          <div className="mt-4 grid gap-3 rounded-lg border border-gray-100 bg-gray-50 p-4 sm:grid-cols-3">
+          <div className="mt-4 grid gap-3 rounded-lg border border-border bg-muted p-4 sm:grid-cols-3">
             <select
               value={entityType}
               onChange={(event) => {
                 setEntityType(event.target.value as OverrideEntityType);
                 setEntityId('');
               }}
-              className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm"
+              className="rounded-md border border-border bg-card px-3 py-2 text-sm"
             >
               {(['product', 'addon'] as OverrideEntityType[]).map((value) => (
                 <option key={value} value={value}>{t(ENTITY_LABELS[value])}</option>
               ))}
             </select>
             {needsEntity ? (
-              <select value={entityId} onChange={(event) => setEntityId(event.target.value)} className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+              <select value={entityId} onChange={(event) => setEntityId(event.target.value)} className="rounded-md border border-border bg-card px-3 py-2 text-sm">
                 <option value="">{t('chooseEntity', { entity: t(ENTITY_LABELS[entityType]) })}</option>
                 {targetOptions.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
               </select>
             ) : (
-              <div className="rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-500">{t('storeWideCharge')}</div>
+              <div className="rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">{t('storeWideCharge')}</div>
             )}
-            <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+            <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="rounded-md border border-border bg-card px-3 py-2 text-sm">
               {detail?.categories.map((category) => <option key={category.category_id} value={category.category_id}>{category.label}</option>)}
             </select>
             <div className="flex gap-2 sm:col-span-3 sm:justify-end">
@@ -1407,7 +1407,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
 
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[620px] text-start text-sm">
-            <thead className="border-b border-gray-100 text-xs uppercase text-gray-400">
+            <thead className="border-b border-border text-xs uppercase text-gray-400">
               <tr><th className="py-2 pe-3">{t('target')}</th><th className="py-2 pe-3">{t('category')}</th><th className="py-2 pe-3">{t('updated')}</th><th className="py-2 text-end">{t('actions')}</th></tr>
             </thead>
             <tbody>
@@ -1415,7 +1415,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                 <tr key={override.id} className="border-b border-gray-50">
                   <td className="py-3 pe-3"><span className="text-xs text-gray-400">{t(ENTITY_LABELS[override.entity_type])}</span><br />{override.entity_name || t('storeWide')}</td>
                   <td className="py-3 pe-3">{categoriesById.get(categoryIdOf(override)) || categoryIdOf(override)}</td>
-                  <td className="py-3 pe-3 text-xs text-gray-500">{formatDateTime(override.updated_at)}{override.created_by_name ? ` · ${override.created_by_name}` : ''}</td>
+                  <td className="py-3 pe-3 text-xs text-muted-foreground">{formatDateTime(override.updated_at)}{override.created_by_name ? ` · ${override.created_by_name}` : ''}</td>
                   <td className="py-3 text-end">
                     {isOwner ? (
                       <div className="flex justify-end gap-2">
@@ -1434,12 +1434,12 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         </div>
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
-        <h3 className="font-semibold text-gray-900">{t('packReference')}</h3>
-        <p className="mt-1 text-sm text-gray-500">{t('packReferenceHint')}</p>
+      <section className="rounded-xl border border-border bg-card p-5">
+        <h3 className="font-semibold text-foreground">{t('packReference')}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">{t('packReferenceHint')}</p>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[680px] text-start text-sm">
-            <thead className="border-b border-gray-100 text-xs uppercase text-gray-400">
+            <thead className="border-b border-border text-xs uppercase text-gray-400">
               <tr><th className="py-2 pe-3">{t('category')}</th><th className="py-2 pe-3">{t('defaultBehavior')}</th><th className="py-2">{t('rules')}</th></tr>
             </thead>
             <tbody>
@@ -1447,7 +1447,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                 <tr key={category.category_id} className="border-b border-gray-50">
                   <td className="py-3 pe-3"><span className="font-medium">{category.label}</span><br /><Ltr as="code" className="text-xs text-gray-400">{category.category_id}</Ltr></td>
                   <td className="py-3 pe-3">{category.default_behavior || t('packDefault')}</td>
-                  <td className="py-3 text-xs text-gray-600">{category.definition.ruleIds?.join(', ') || t('none')}</td>
+                  <td className="py-3 text-xs text-muted-foreground">{category.definition.ruleIds?.join(', ') || t('none')}</td>
                 </tr>
               ))}
             </tbody>
@@ -1455,7 +1455,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         </div>
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[760px] text-start text-sm">
-            <thead className="border-b border-gray-100 text-xs uppercase text-gray-400">
+            <thead className="border-b border-border text-xs uppercase text-gray-400">
               <tr><th className="py-2 pe-3">{t('rule')}</th><th className="py-2 pe-3">{t('type')}</th><th className="py-2 pe-3">{t('value')}</th><th className="py-2 pe-3">{t('scope')}</th><th className="py-2">{t('dependsOn')}</th></tr>
             </thead>
             <tbody>
@@ -1465,7 +1465,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                   <td className="py-3 pe-3">{rule.calculation_type}</td>
                   <td className="py-3 pe-3">{rule.rate !== null ? `${rule.rate}%` : rule.amount}</td>
                   <td className="py-3 pe-3">{rule.applies_per}</td>
-                  <td className="py-3 text-xs text-gray-600">{rule.base_rule_ids.join(', ') || t('none')}</td>
+                  <td className="py-3 text-xs text-muted-foreground">{rule.base_rule_ids.join(', ') || t('none')}</td>
                 </tr>
               ))}
             </tbody>
@@ -1473,19 +1473,19 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         </div>
       </section>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <section className="rounded-xl border border-border bg-card p-5">
         <div className="flex items-center gap-2">
           <History size={20} className="text-brand" />
-          <h3 className="font-semibold text-gray-900">{t('auditHistory')}</h3>
+          <h3 className="font-semibold text-foreground">{t('auditHistory')}</h3>
         </div>
         <div className="mt-4 space-y-2">
           {audit.map((row) => (
-            <div key={row.id} className="flex items-start gap-3 rounded-lg border border-gray-100 px-3 py-3">
+            <div key={row.id} className="flex items-start gap-3 rounded-lg border border-border px-3 py-3">
               <Clock3 size={15} className="mt-0.5 shrink-0 text-gray-400" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-800">{actionLabel(t, row.action)}</p>
-                {auditDescription(row, t) && <p className="truncate text-xs text-gray-600">{auditDescription(row, t)}</p>}
-                <p className="text-xs text-gray-500">{row.actor_name || (row.actor_user_id ? t('auditUnknownUser') : t('auditSystem'))} · {formatDateTime(row.created_at)}</p>
+                <p className="text-sm font-medium text-foreground">{actionLabel(t, row.action)}</p>
+                {auditDescription(row, t) && <p className="truncate text-xs text-muted-foreground">{auditDescription(row, t)}</p>}
+                <p className="text-xs text-muted-foreground">{row.actor_name || (row.actor_user_id ? t('auditUnknownUser') : t('auditSystem'))} · {formatDateTime(row.created_at)}</p>
               </div>
             </div>
           ))}
@@ -1502,7 +1502,7 @@ function Info({ label, value }: { label: string; value: string | number }) {
   return (
     <div>
       <p className="text-xs uppercase tracking-wide text-gray-400">{label}</p>
-      <p className="mt-1 text-sm font-medium text-gray-800">{value}</p>
+      <p className="mt-1 text-sm font-medium text-foreground">{value}</p>
     </div>
   );
 }

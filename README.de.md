@@ -2,7 +2,8 @@
 
 **Kostenloses, quelloffenes und offline-orientiertes Kassensystem für Cafés, Restaurants und kleine Küchen.**
 
-[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | [Français](README.fr.md) | **Deutsch**
+[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | [Français](README.fr.md) | [Türkçe](README.tr.md) | [Filipino](README.fil.md) | **Deutsch**
+
 
 FloCafe läuft direkt auf dem Computer des Betriebs. Bestellungen, Kunden, Belege und Sicherungen werden in einer lokalen SQLite-Datenbank gespeichert. Dadurch können Kassenbetrieb und Küchenanzeigen auch ohne Internetverbindung weiterarbeiten. Für den grundlegenden Kassenbetrieb ist kein gehostetes oder cloudbasiertes Konto erforderlich. Optionale Integrationen wie Google-Drive-Sicherungen, der Versand von Belegen über WhatsApp und cloudbasierte Berichte können bei Bedarf aktiviert werden.
 
@@ -42,7 +43,11 @@ Der grundlegende Kassenbetrieb und lokale Daten funktionieren offline. Auftragse
 
 ## Sprachen und regionale Unterstützung
 
+<<<<<<< HEAD
 FloCafe bietet Benutzeroberflächen auf Englisch, Spanisch, brasilianischem Portugiesisch, Persisch (Farsi), Türkisch, Filipino und Deutsch. Persisch unterstützt RTL; Türkisch, Filipino und Deutsch werden von links nach rechts geschrieben. Die UI-Sprache ist unabhängig von Land und regionalen Einstellungen des Geschäfts. Steuerberechnungsregeln sind ein getrenntes Thema.
+=======
+FloCafe bietet Benutzeroberflächen auf Englisch, Spanisch, brasilianischem Portugiesisch, Französisch, Persisch (Farsi), Türkisch, Filipino und Deutsch. Persisch unterstützt RTL; Türkisch, Filipino und Deutsch werden von links nach rechts geschrieben. Die UI-Sprache ist unabhängig von Land und regionalen Einstellungen des Geschäfts. Steuerberechnungsregeln sind ein getrenntes Thema.
+>>>>>>> origin/main
 
 FloCafe enthält Profile für 131 Länder und 109 Währungen. Jedes Profil legt Währung, Region und Standardzeitzone fest; der Betriebsinhaber kann die Zeitzone während der Einrichtung oder später in den Einstellungen ändern.
 

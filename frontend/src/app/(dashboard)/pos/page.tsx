@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
@@ -87,6 +87,7 @@ export default function POSPage() {
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
@@ -258,7 +259,7 @@ export default function POSPage() {
     if (!autoPrintKot) return;
 
     try {
-      const printWarnings = await printKot(order);
+      const printWarnings = await printKot(order, order.items ? { items: order.items } : undefined);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       console.error('[POS] KOT print failed:', err);
@@ -272,6 +273,26 @@ export default function POSPage() {
       toast.error(t('kotPrintFailed'));
     }
   };
+
+  useEffect(() => {
+    const syncFullscreen = () => setFullscreen(document.fullscreenElement != null);
+    syncFullscreen();
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (typeof document === 'undefined') return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      toast.error(t('fullscreenUnavailable'));
+    }
+  }, [t]);
 
   const fetchLatestBill = async (billId: number): Promise<Bill> => {
     const { data } = await api.get(`/bills/${billId}`);
@@ -475,7 +496,10 @@ export default function POSPage() {
           { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } },
         );
         toast.success(t('itemsAddedToOrder', { number: pendingOrder.order_number }));
-        orderForKot = data.order as Order;
+        const updatedOrder = data.order as Order;
+        const existingItemIds = new Set((pendingOrder.items || []).map((item) => Number(item.id)));
+        const appendedItems = (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
+        orderForKot = appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder;
         if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
         addItemsAttemptRef.current = null;
         setPendingOrder(null);
@@ -486,6 +510,8 @@ export default function POSPage() {
           type: cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
+          online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
+          external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           items: cart.items.map((item) => ({
             product_id: item.product.id,
             quantity: item.quantity,
@@ -560,6 +586,8 @@ export default function POSPage() {
       type: cart.orderType,
       guest_count: cart.guestCount,
       special_instructions: cart.orderNotes,
+      online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
+      external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
       items: orderItems,
     });
     const storedAttempt = readPrepaidAttempt();
@@ -640,6 +668,8 @@ export default function POSPage() {
           type: cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
+          online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
+          external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           items: orderItems,
         }, { headers: { 'Idempotency-Key': attempt.orderIdempotencyKey } });
         orderData = data;
@@ -844,7 +874,7 @@ export default function POSPage() {
         orderNumber: order.order_number,
       });
       addItemsAttemptRef.current = itemAttempt;
-      await api.post(`/orders/${order.id}/items`, {
+      const { data } = await api.post(`/orders/${order.id}/items`, {
         items,
         special_instructions: specialInstructions,
       }, { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } });
@@ -853,6 +883,10 @@ export default function POSPage() {
       if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
       addItemsAttemptRef.current = null;
       toast.success(t('itemsAddedToOrder', { number: order.order_number }));
+      const updatedOrder = data.order as Order;
+      const existingItemIds = new Set((order.items || []).map((item) => Number(item.id)));
+      const appendedItems = (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
+      await printKotIfEnabled(appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder);
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();
@@ -893,17 +927,17 @@ export default function POSPage() {
   return (
     <>
       {supportError && (
-        <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-white p-4 shadow-xl">
+        <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-card p-4 shadow-xl">
           {sentTicketId ? (
             <>
               <p className="font-semibold text-red-800">{tSupport('requestQueued')}</p>
               {delivery.status === 'delivered' && delivery.supportCode ? (
                 <>
-                  <p className="mt-1 text-sm font-semibold text-gray-800">{tSupport('supportCode')}: <Ltr as="span" className="font-mono">{delivery.supportCode}</Ltr></p>
-                  <p className="mt-0.5 text-xs text-gray-500">{tSupport('supportCodeHint')}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{tSupport('supportCode')}: <Ltr as="span" className="font-mono">{delivery.supportCode}</Ltr></p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{tSupport('supportCodeHint')}</p>
                 </>
               ) : (
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   {delivery.status === 'failed' ? tSupport('stillQueuedLocally') : tSupport('confirmingDelivery')}
                 </p>
               )}
@@ -914,13 +948,13 @@ export default function POSPage() {
           ) : (
             <>
               <p className="font-semibold text-red-800">{t('printingFailed')}</p>
-              <p className="mt-1 text-sm text-gray-600">{supportError.message}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{supportError.message}</p>
               {typeof supportError.payload.diagnostics === 'object' && supportError.payload.diagnostics && 'message' in (supportError.payload.diagnostics as Record<string, unknown>) ? (
-                <p className="mt-1 text-xs text-gray-500">{String((supportError.payload.diagnostics as Record<string, unknown>).message)}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{String((supportError.payload.diagnostics as Record<string, unknown>).message)}</p>
               ) : null}
-              <details className="mt-2 text-xs text-gray-500">
+              <details className="mt-2 text-xs text-muted-foreground">
                 <summary className="cursor-pointer">{tSupport('showPayload')}</summary>
-                <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2">{JSON.stringify(
+                <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-muted p-2">{JSON.stringify(
                   diagnosticsPreview
                     ? { ...supportError.payload, diagnostics: { ...(supportError.payload.diagnostics as Record<string, unknown> | undefined), ...diagnosticsPreview } }
                     : supportError.payload,
@@ -952,7 +986,12 @@ export default function POSPage() {
           )}
         </div>
       )}
-      <PosTopbar tables={tables} onShowTablePicker={() => setShowTablePicker(true)} />
+      <PosTopbar
+        tables={tables}
+        onShowTablePicker={() => setShowTablePicker(true)}
+        fullscreen={fullscreen}
+        onToggleFullscreen={toggleFullscreen}
+      />
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
@@ -980,7 +1019,7 @@ export default function POSPage() {
       {/* Mobile: Floating Cart Button + Bottom Sheet — outside flex container */}
       <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
         <DrawerTrigger asChild>
-          <button className="fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg flex items-center justify-center hover:bg-brand-hover transition-colors md:hidden">
+          <button className="touch-target fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg hover:bg-brand-hover active:bg-brand-hover transition-colors md:hidden" aria-label={t('cart')}>
             <ShoppingCart size={22} />
             {itemCount > 0 && (
               <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
@@ -1056,14 +1095,14 @@ export default function POSPage() {
 
       {showCustomerPrompt && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm">
+          <div className="bg-card rounded-2xl p-5 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">{t('selectCustomer')}</h3>
-              <button onClick={() => setShowCustomerPrompt(false)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setShowCustomerPrompt(false)} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-500 mb-4">{t('customerRequiredBeforeOrder')}</p>
+            <p className="text-sm text-muted-foreground mb-4">{t('customerRequiredBeforeOrder')}</p>
             <CustomerSearch onSelected={() => setShowCustomerPrompt(false)} />
           </div>
         </div>

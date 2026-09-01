@@ -95,14 +95,14 @@ export default function ProductGrid({
               }
             }}
             placeholder={t('searchProducts')}
-            className="w-full ps-9 pe-4 py-2 bg-white border border-gray-200 rounded-xl focus:border-brand outline-none transition-colors text-sm"
+            className="w-full ps-9 pe-4 py-2 bg-card border border-border rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />
         </div>
         <div className="flex flex-wrap gap-2 pb-1">
           <button
             onClick={() => setSelectedCategory(null)}
             className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-              !selectedCategory ? 'bg-brand text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+              !selectedCategory ? 'bg-brand text-white' : 'bg-card text-foreground border border-border hover:bg-muted'
             }`}
           >
             {t('allCategories')}
@@ -121,7 +121,7 @@ export default function ProductGrid({
                       : 'bg-brand text-white'
                     : colorClasses
                       ? `${colorClasses.bg} ${colorClasses.text} border ${colorClasses.border} hover:opacity-80`
-                      : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                      : 'bg-card text-foreground border border-border hover:bg-muted'
                 }`}
               >
                 {cat.name}
@@ -142,11 +142,12 @@ export default function ProductGrid({
             
 
             return (
-              <div
+              <button
                 key={product.id}
                 data-testid="pos-product-card"
+                type="button"
                 onClick={() => onProductClick(product)}
-                className="bg-white rounded-xl p-2.5 border border-gray-100 hover:border-brand/40 hover:shadow-md transition-all text-start relative group cursor-pointer overflow-hidden"
+                className="min-h-36 bg-card rounded-xl p-2.5 border border-border hover:border-brand/40 active:border-brand active:bg-muted/40 hover:shadow-md transition-all text-start relative cursor-pointer overflow-hidden touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
                 {!!product.track_inventory && (
                   <>
@@ -199,7 +200,7 @@ export default function ProductGrid({
                   </div>
                 )}
 
-                <h3 className="font-medium text-gray-900 text-sm line-clamp-2 leading-snug">{product.name}</h3>
+                <h3 className="font-medium text-foreground text-sm line-clamp-2 leading-snug">{product.name}</h3>
                 <div className="flex items-center justify-between mt-1">
                   <p className="text-brand font-bold">
                     {fmt(Number(product.price))}
@@ -209,21 +210,18 @@ export default function ProductGrid({
                       <TagBadge tag={product.tags[0]} />
                     )}
                     {product.addon_groups && product.addon_groups.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onProductClick(product);
-                        }}
-                        className="text-gray-400 hover:text-gray-600 transition-colors"
+                      <span
+                        className="touch-target -me-2 -my-2 rounded-lg text-gray-400"
                         title={t('customisable')}
+                        aria-label={t('customisable')}
                       >
-                        <SlidersHorizontal size={12} />
-                      </button>
+                        <SlidersHorizontal size={16} />
+                      </span>
                     )}
                   </div>
                 </div>
 
-              </div>
+              </button>
             );
           })}
         </div>

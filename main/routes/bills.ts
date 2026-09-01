@@ -299,8 +299,9 @@ export function getOrdersWithItemsForBills(
   return result;
 }
 
-// Fixed conversion rate for redeeming loyalty wallet points as payment (points per 1 currency unit).
-const LOYALTY_REDEMPTION_RATE = 100;
+// Loyalty points are 1:1 with currency units — earning and redemption both
+// use this rate so a customer's point balance always equals its currency value.
+const LOYALTY_REDEMPTION_RATE = 1;
 
 // Rate limiting for PIN validation (simple in-memory)
 const pinAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -1798,8 +1799,8 @@ function preparePaymentBatch(
     const credits = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'credit' AND (expires_at IS NULL OR expires_at > datetime('now'))`).get(effectiveCustomerId) as { total: number };
     const debits = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'debit'`).get(effectiveCustomerId) as { total: number };
     const walletPoints = Math.max(0, Number(credits.total) - Number(debits.total));
-    const pointsRequired = prepared.filter((line) => line.payment.method === 'wallet').reduce((sum, line) => sum + line.amountCents, 0);
-    if (walletPoints < pointsRequired) throw Object.assign(new Error(`Insufficient wallet balance. Available: ${Math.floor(walletPoints / LOYALTY_REDEMPTION_RATE)} (${walletPoints} points), Required: ${pointsRequired / 100}`), { statusCode: 400 });
+    const pointsRequired = prepared.filter((line) => line.payment.method === 'wallet').reduce((sum, line) => sum + line.amountCents, 0) / 100 * LOYALTY_REDEMPTION_RATE;
+    if (walletPoints < pointsRequired) throw Object.assign(new Error(`Insufficient wallet balance. Available: ${walletPoints} points, Required: ${pointsRequired}`), { statusCode: 400 });
   }
   return { bill, prepared, existingPayments, effectiveCustomerId };
 }
@@ -1877,7 +1878,8 @@ function applyPaymentBatch(
   let walletDebited = false;
   for (const line of prepared) {
     if (line.payment.method !== 'wallet' || line.amountCents <= 0) continue;
-    db.prepare(`INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at) VALUES (?, ?, 'debit', ?, ?, ?, ?)`).run(effectiveCustomerId, bill.id, line.amountCents, `Payment for bill ${bill.bill_number}`, now(), now());
+    const pointsSpent = line.amountCents / 100 * LOYALTY_REDEMPTION_RATE;
+    db.prepare(`INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at) VALUES (?, ?, 'debit', ?, ?, ?, ?)`).run(effectiveCustomerId, bill.id, pointsSpent, `Payment for bill ${bill.bill_number}`, now(), now());
     walletDebited = true;
   }
   const allPayments = existingPayments.concat(newPayments);

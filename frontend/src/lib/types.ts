@@ -163,6 +163,8 @@ export interface Order {
   total: number;
   guest_count: number | null;
   special_instructions: string | null;
+  online_platform?: string | null;
+  external_order_id?: string | null;
   created_by: number;
   created_at: string;
   items?: OrderItem[];

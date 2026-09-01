@@ -158,15 +158,15 @@ export default function PrintTestPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen bg-muted p-8">
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center gap-3 mb-6">
           <Printer size={28} className="text-brand" />
-          <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+          <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
-          <h2 className="font-semibold text-gray-900 mb-4">{t('selectTestType')}</h2>
+        <div className="bg-card rounded-xl border border-border p-6 mb-6">
+          <h2 className="font-semibold text-foreground mb-4">{t('selectTestType')}</h2>
           <div className="grid grid-cols-2 gap-2">
             {testOptions.map((opt) => {
               const Icon = opt.icon;
@@ -177,7 +177,7 @@ export default function PrintTestPage() {
                   className={`flex items-center gap-2 p-3 rounded-lg border transition-colors ${
                     effectiveTestMode === opt.value
                       ? 'border-brand bg-brand/5 text-brand'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-border hover:border-gray-300 dark:border-border'
                   }`}
                 >
                   <Icon size={16} />
@@ -188,12 +188,12 @@ export default function PrintTestPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
-          <h2 className="font-semibold text-gray-900 mb-4">{t('printerSettings')}</h2>
+        <div className="bg-card rounded-xl border border-border p-6 mb-6">
+          <h2 className="font-semibold text-foreground mb-4">{t('printerSettings')}</h2>
           
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 {t('paperWidthLabel')}
               </label>
               <div className="flex gap-2">
@@ -202,7 +202,7 @@ export default function PrintTestPage() {
                   className={`px-4 py-2 rounded-lg border transition-colors ${
                     paperWidth === 58
                       ? 'border-brand bg-brand/5 text-brand'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-border hover:border-gray-300 dark:border-border'
                   }`}
                 >
                   {t('paperWidth58')}
@@ -212,7 +212,7 @@ export default function PrintTestPage() {
                   className={`px-4 py-2 rounded-lg border transition-colors ${
                     paperWidth === 80
                       ? 'border-brand bg-brand/5 text-brand'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-border hover:border-gray-300 dark:border-border'
                   }`}
                 >
                   {t('paperWidth80')}
@@ -221,7 +221,7 @@ export default function PrintTestPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
                 {t('printMethodLabel')}
               </label>
               <div className="flex gap-2">
@@ -230,7 +230,7 @@ export default function PrintTestPage() {
                   className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
                     printMethod === 'escpos'
                       ? 'border-brand bg-brand/5 text-brand'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-border hover:border-gray-300 dark:border-border'
                   }`}
                 >
                   <Usb size={16} />
@@ -241,14 +241,14 @@ export default function PrintTestPage() {
                   className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
                     printMethod === 'browser'
                       ? 'border-brand bg-brand/5 text-brand'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-border hover:border-gray-300 dark:border-border'
                   }`}
                 >
                   <Globe size={16} />
                   {t('browserPrint')}
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-muted-foreground mt-2">
                 {printMethod === 'escpos' 
                   ? t('escposHint', { status })
                   : t('browserHint')}
@@ -256,13 +256,13 @@ export default function PrintTestPage() {
             </div>
 
             {printMethod === 'escpos' && lastPrintedBytes && (
-              <div className="p-3 bg-gray-50 rounded-lg">
-                <p className="text-sm text-gray-600">
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">
                   {t('lastPrintedBytes', { bytes: lastPrintedBytes.length })}
                 </p>
                 <button
                   onClick={downloadLastReceipt}
-                  className="mt-2 text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                  className="mt-2 text-sm text-muted-foreground hover:text-foreground flex items-center gap-1"
                 >
                   <Download size={14} /> {t('downloadBin')}
                 </button>
@@ -303,9 +303,9 @@ export default function PrintTestPage() {
           )}
         </div>
 
-        <div className="mt-6 p-4 bg-gray-100 rounded-lg">
-          <h3 className="font-medium text-gray-700 mb-2">{t('dataPreview')}</h3>
-          <pre className="text-xs text-gray-600 overflow-x-auto">
+        <div className="mt-6 p-4 bg-muted rounded-lg">
+          <h3 className="font-medium text-foreground mb-2">{t('dataPreview')}</h3>
+          <pre className="text-xs text-muted-foreground overflow-x-auto">
             {JSON.stringify({
               bill: testBill.bill_number,
               total: testBill.total,

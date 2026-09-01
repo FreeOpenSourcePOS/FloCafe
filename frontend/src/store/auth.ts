@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import api from '@/lib/api';
 import type { User, Tenant } from '@/lib/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import { THEME_REHYDRATION_EVENT } from './theme';
 // Keep this registry import relative: auth tests load the store without the
 // frontend alias resolver, and language validation does not need the legacy
 // i18n module or its React/store dependencies.
@@ -53,6 +54,13 @@ function persistSession(token: string, tenant: Tenant | null): void {
     if (tenant) localStorage.setItem('tenant', JSON.stringify(tenant));
   } catch {
     throw new StorageUnavailableError();
+  }
+  // gh-513: ThemeSync boots pre-auth; re-hydrate once a token exists.
+  // Guarded — non-browser envs have no window/event and login must not break.
+  try {
+    window.dispatchEvent(new Event(THEME_REHYDRATION_EVENT));
+  } catch {
+    // No window/event available — theme re-hydration is skipped.
   }
 }
 

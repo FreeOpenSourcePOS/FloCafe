@@ -35,6 +35,7 @@ const app = {
   whenReady: () => Promise.resolve(),
   on: register,
   quit: () => { events.push('app.quit'); },
+  relaunch: () => { events.push('app.relaunch'); },
   exit: (code = 0) => { exitCodes.push(code); },
   focus() {},
 };
@@ -46,6 +47,7 @@ const log = {
     console: { level: 'debug' },
   },
   debug() {},
+  info() {},
   error() {},
   warn() {},
 };

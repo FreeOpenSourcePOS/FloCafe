@@ -31,6 +31,12 @@
  *      English value (documented intentional identical list excepted).
  *   9. French safeguards: fr.json values never silently fall back to the
  *      English value (documented intentional identical list excepted).
+ *  10. Turkish safeguards: tr.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
+ *  11. Filipino safeguards: fil.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
+ *  12. German safeguards: de.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -519,6 +525,400 @@ function frFallbackErrors(frFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+const TR_INTENTIONAL_IDENTICAL = new Set<string>([
+  'common.appTitle', // brand name "Flo"
+  'common.brandName', // brand name "Flo Cafe"
+  'common.logoAlt', // brand name "Flo Cafe"
+  'nav.portLabel', // technical term "Port"
+  'nav.whatsapp', // product name "WhatsApp"
+  'pos.addonPrice', // pure format "+{currency}{price}"
+  'pos.loadingEllipsis', // pure symbol "…"
+  'pos.tagCount', // pure format "{tag} ×{count}"
+  'pos.tagVegan', // universal dietary term "Vegan"
+  'printTest.escpos', // technical hardware standard "ESCPOS (USB)"
+  'products.addonSelectionRange', // pure format "{min} – {max}"
+  'products.columnCashback', // financial loanword "Cashback"
+  'products.fieldSku', // technical acronym "SKU"
+  'products.saleUnitG', // unit "g"
+  'products.saleUnitKg', // unit "kg"
+  'products.saleUnitLb', // unit "lb"
+  'products.skuLabel', // pure format "SKU: {sku}"
+  'products.tagVegan', // universal dietary term "Vegan"
+  'settings.ipAddressPlaceholder', // example IP "192.168.1.100"
+  'settings.iranNumberDigitsLatin', // script name "Latin (0-9)"
+  'settings.plan', // loanword / term "Plan"
+  'settings.port', // technical term "Port"
+  'settings.revflo', // brand name "RevFlo"
+  'settings.tabWhatsapp', // product name "WhatsApp"
+  'settings.unicode', // technical term "Unicode"
+  'settings.whatsapp', // product name "WhatsApp"
+  'support.platform', // loanword / term "Platform"
+  'tax.auditCreateOverride', // pure format with identifiers
+  'tax.auditUpdateOverride', // pure format with identifiers
+  'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX
+]);
+
+function trFallbackErrors(trFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const trVal = trFlat[k];
+    if (trVal === undefined) continue; // reported by key parity
+    if (trVal.startsWith('[TR]') || trVal.startsWith('[TODO]')) {
+      errors.push(`tr.json ${k} — placeholder prefix found: "${trVal}"`);
+    } else if (trVal === enFlat[k] && !TR_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`tr.json ${k} — identical to English value (renders as English for Turkish users)`);
+    }
+  }
+  return errors;
+}
+
+const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.countryIndia',
+  'auth.countryThailand',
+  'auth.email',
+  'auth.password',
+  'auth.recoverPinLabel',
+  'common.appTitle',
+  'common.brandName',
+  'common.discount',
+  'common.logoAlt',
+  'common.subtotal',
+  'customer.email',
+  'customer.loyalty',
+  'customer.ptsSuffix',
+  'customers.columnBill',
+  'customers.columnCustomer',
+  'customers.columnLedger',
+  'customers.loyaltyLedger',
+  'dashboard.minutesValue',
+  'dashboard.title',
+  'dashboard.walkIn',
+  'kds.connectionLive',
+  'kds.modalOrderNumber',
+  'kds.viewKanban',
+  'kds.viewTabs',
+  'nav.dashboard',
+  'nav.kds',
+  'nav.portLabel',
+  'nav.pos',
+  'nav.staff',
+  'nav.whatsapp',
+  'orders.delivery',
+  'orders.dineIn',
+  'orders.managerPinLabel',
+  'orders.online',
+  'orders.overridePinLabel',
+  'orders.takeaway',
+  'pos.addonPrice',
+  'pos.billNumber',
+  'pos.cart',
+  'pos.customer',
+  'pos.delivery',
+  'pos.discount',
+  'pos.loadingEllipsis',
+  'pos.loyalty',
+  'pos.loyaltyPointsShort',
+  'pos.loyaltyWallet',
+  'pos.managerPin',
+  'pos.managerPinRequired',
+  'pos.methodCard',
+  'pos.methodCash',
+  'pos.methodWallet',
+  'pos.orderNumber',
+  'pos.orderTypeDelivery',
+  'pos.orderTypeOnline',
+  'pos.orderTypeSuffix_delivery',
+  'pos.orderTypeSuffix_dine_in',
+  'pos.orderTypeSuffix_online',
+  'pos.orderTypeSuffix_takeaway',
+  'pos.orderTypeTakeaway',
+  'pos.packaging',
+  'pos.pointsApproxValue',
+  'pos.subtotal',
+  'pos.tagBestseller',
+  'pos.tagCount',
+  'pos.tagOrganic',
+  'pos.tagVegan',
+  'pos.taxLine',
+  'pos.numericKeypad',
+  'printTest.escpos',
+  'printTest.item',
+  'printTest.paperWidth58',
+  'printTest.paperWidth80',
+  'print.taxInvoiceTitle',
+  'print.customerShort',
+  'print.address',
+  'print.kot.banner',
+  'print.test.title',
+  'products.addonSelectionRange',
+  'products.barcodeLabel',
+  'products.cashbackGlobalBadge',
+  'products.cashbackLabel',
+  'products.colorAmber',
+  'products.colorCyan',
+  'products.colorEmerald',
+  'products.colorFuchsia',
+  'products.colorIndigo',
+  'products.colorLime',
+  'products.colorTeal',
+  'products.columnCashback',
+  'products.columnStock',
+  'products.defaultCategoryTag',
+  'products.fieldBarcode',
+  'products.fieldSku',
+  'products.imageCamera',
+  'products.saleUnitG',
+  'products.saleUnitKg',
+  'products.saleUnitLb',
+  'products.skuLabel',
+  'products.tagBestseller',
+  'products.tagOrganic',
+  'products.tagVegan',
+  'products.taxExclusive',
+  'products.taxExclusiveShort',
+  'products.taxExempt',
+  'products.taxInclusive',
+  'products.taxInclusiveShort',
+  'receipt.billNumber',
+  'receipt.economicCode',
+  'receipt.item',
+  'receipt.onlineOrder',
+  'receipt.reprint',
+  'receipt.serviceCharge',
+  'serverApp.emailPlaceholder',
+  'serverApp.title',
+  'settings.aboutGithub',
+  'settings.account',
+  'settings.address',
+  'settings.apiKey',
+  'settings.apiKeyInputPlaceholder',
+  'settings.appQrAlt',
+  'settings.backupKindAuto',
+  'settings.backupSchemaVersion',
+  'settings.billTemplateCompactName',
+  'settings.browserWebusb',
+  'settings.connectionNetwork',
+  'settings.connectionUsb',
+  'settings.cashDrawerPulseEnabledShort',
+  'settings.currency',
+  'settings.default',
+  'settings.defaultPrinter',
+  'settings.defaultPrinterTipTitle',
+  'settings.email',
+  'settings.googleDriveAccount',
+  'settings.instagramHandle',
+  'settings.invoiceNumberPrefix',
+  'settings.invoiceNumberPreview',
+  'settings.ipAddress',
+  'settings.ipAddressPlaceholder',
+  'settings.iranCalendarGregorian',
+  'settings.iranCalendarLocale',
+  'settings.iranCalendarPersian',
+  'settings.iranCurrencyDisplayRial',
+  'settings.iranCurrencyDisplayToman',
+  'settings.iranNumberDigitsLatin',
+  'settings.iranNumberDigitsLocale',
+  'settings.kds',
+  'settings.kdsQrAlt',
+  'settings.languageFa',
+  'settings.loyalty',
+  'settings.loyaltyProgram',
+  'settings.masterPin',
+  'settings.mdnsAlwaysStable',
+  'settings.mobileApp',
+  'settings.navGroupAccount',
+  'settings.orderNumberPrefix',
+  'settings.orderNumberPreview',
+  'settings.paperSize58',
+  'settings.paperSize80',
+  'settings.paperWidth58',
+  'settings.paperWidth80',
+  'settings.paperWidth80Safe',
+  'settings.percentMaximum',
+  'settings.plan',
+  'settings.port',
+  'settings.portPlaceholder',
+  'settings.posQrAlt',
+  'settings.printMethodEscpos',
+  'settings.printerOffline',
+  'settings.printerOnline',
+  'settings.privacy',
+  'settings.registrationLastError',
+  'settings.revflo',
+  'settings.serverApp',
+  'settings.stationPrinter',
+  'settings.storeId',
+  'settings.tabData',
+  'settings.tabMobileAccess',
+  'settings.tabOrderflow',
+  'settings.tabWhatsapp',
+  'settings.taxIdLabel',
+  'settings.timezone',
+  'settings.unicode',
+  'settings.updateStatusAvailable',
+  'settings.updateStatusOffline',
+  'settings.vpnMeshNetwork',
+  'settings.whatsapp',
+  'settings.themeSystem',
+  'setup.cloudUrlLabel',
+  'setup.demoLabel',
+  'setup.expressLabel',
+  'setup.finedineLabel',
+  'setup.languagePersian',
+  'setup.languagePortuguese',
+  'setup.password',
+  'setup.pinLabel',
+  'setup.qsrDesc',
+  'setup.qsrLabel',
+  'setup.timezoneLabel',
+  'staff.passwordPlaceholder',
+  'staff.roleManager',
+  'staff.roleServer',
+  'permissionMatrix.managerDescription',
+  'permissionMatrix.areas.staff',
+  'permissionMatrix.areas.system',
+  'support.email',
+  'support.platform',
+  'support.requestId',
+  'support.restaurant',
+  'tax.auditCreateOverride',
+  'tax.auditSystem',
+  'tax.auditUpdateOverride',
+  'tax.entityServiceCharge',
+  'tax.fixed',
+  'tax.readOnly',
+  'tax.target',
+  'update.downloadingBadge',
+  'update.betaOn',
+  'update.betaOff',
+  'whatsapp.blocklist.title',
+  'whatsapp.connect.pairingMethodTitle',
+  'whatsapp.connect.pairingPhonePlaceholder',
+  'whatsapp.connect.qrMethodTitle',
+  'whatsapp.sent.timeline',
+  'whatsapp.tabs.inbox',
+]);
+
+function filFallbackErrors(filFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const filVal = filFlat[k];
+    if (filVal === undefined) continue; // reported by key parity
+    if (filVal.startsWith('[FIL]') || filVal.startsWith('[TODO]')) {
+      errors.push(`fil.json ${k} — placeholder prefix found: "${filVal}"`);
+    } else if (filVal === enFlat[k] && !FIL_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`fil.json ${k} — identical to English value (renders as English for Filipino users)`);
+    }
+  }
+  return errors;
+}
+
+/**
+ * German translation safeguards (PR #560).
+ *
+ * Like French and Turkish, de.json values must be fully translated with no leftover
+ * [DE] scaffolds or English fallbacks, except for legitimate international shared technical
+ * tokens or identical words.
+ */
+const DE_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.countryThailand',
+  'businessType.restaurant',
+  'common.appTitle',
+  'common.brandName',
+  'common.logoAlt',
+  'common.namePlaceholder',
+  'dashboard.title',
+  'kds.connectionLive',
+  'kds.emptyColumn',
+  'kds.viewKanban',
+  'nav.dashboard',
+  'nav.kds',
+  'nav.portLabel',
+  'nav.support',
+  'nav.whatsapp',
+  'orders.online',
+  'permissionMatrix.areas.support',
+  'permissionMatrix.areas.system',
+  'pos.addonPrice',
+  'pos.loadingEllipsis',
+  'pos.orderTypeOnline',
+  'pos.tagBestseller',
+  'pos.tagCount',
+  'pos.tagVegan',
+  'pos.taxLine',
+  'print.hsn',
+  'print.kot.station',
+  'printTest.escpos',
+  'products.addonSelectionRange',
+  'products.barcodeLabel',
+  'products.cashbackGlobalBadge',
+  'products.colorCyan',
+  'products.colorFuchsia',
+  'products.colorIndigo',
+  'products.colorOrange',
+  'products.colorRose',
+  'products.columnCashback',
+  'products.columnStatus',
+  'products.fieldBarcode',
+  'products.nameLabel',
+  'products.optional',
+  'products.optionalTag',
+  'products.saleUnitG',
+  'products.saleUnitKg',
+  'products.saleUnitLb',
+  'products.skuLabel',
+  'products.tagBestseller',
+  'products.tagVegan',
+  'serverApp.emailPlaceholder',
+  'settings.apiKeyInputPlaceholder',
+  'settings.connectionUsb',
+  'settings.errorDetails',
+  'settings.ipAddressPlaceholder',
+  'settings.iranCurrencyDisplayRial',
+  'settings.iranCurrencyDisplayToman',
+  'settings.kds',
+  'settings.name',
+  'settings.port',
+  'settings.portPlaceholder',
+  'settings.printerOffline',
+  'settings.printerOnline',
+  'settings.registrationLastError',
+  'settings.revflo',
+  'settings.status',
+  'settings.tabWhatsapp',
+  'settings.test',
+  'settings.themeSystem',
+  'settings.unicode',
+  'settings.updateStatusOffline',
+  'settings.updates',
+  'settings.version',
+  'settings.whatsapp',
+  'setup.demoLabel',
+  'setup.expressLabel',
+  'setup.pinLabel',
+  'support.version',
+  'tax.auditCreateOverride',
+  'tax.auditSystem',
+  'tax.auditUpdateOverride',
+  'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+  'whatsapp.sent.colStatus',
+]);
+
+function deFallbackErrors(deFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const deVal = deFlat[k];
+    if (deVal === undefined) continue; // reported by key parity
+    if (deVal.startsWith('[DE]') || deVal.startsWith('[TODO]')) {
+      errors.push(`de.json ${k} — placeholder prefix found: "${deVal}"`);
+    } else if (deVal === enFlat[k] && !DE_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`de.json ${k} — identical to English value (renders as English for German users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -844,6 +1244,39 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated fr.json values (${FR_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 10. tr.json values must not contain placeholders or fall back to English.
+  const trMessages = loadedStrings.get('tr');
+  if (!trMessages) throw new Error('languages registry must include the maintained tr locale');
+  const trErrors = trFallbackErrors(trMessages, loadedStrings.get('en')!);
+  if (trErrors.length) {
+    console.error(`\ntr.json values with errors (${trErrors.length}):`);
+    for (const e of trErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'tr.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated tr.json values (${TR_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
+  // 11. fil.json values must not contain placeholders or fall back to English.
+  const filMessages = loadedStrings.get('fil');
+  if (!filMessages) throw new Error('languages registry must include the maintained fil locale');
+  const filErrors = filFallbackErrors(filMessages, loadedStrings.get('en')!);
+  if (filErrors.length) {
+    console.error(`\nfil.json values with errors (${filErrors.length}):`);
+    for (const e of filErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'fil.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated fil.json values (${FIL_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
+  // 12. de.json values must not contain placeholders or fall back to English.
+  const deMessages = loadedStrings.get('de');
+  if (!deMessages) throw new Error('languages registry must include the maintained de locale');
+  const deErrors = deFallbackErrors(deMessages, loadedStrings.get('en')!);
+  if (deErrors.length) {
+    console.error(`\nde.json values with errors (${deErrors.length}):`);
+    for (const e of deErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'de.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated de.json values (${DE_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -949,7 +1382,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. fa safeguards.
+  // 7. Language safeguards (fa, fr, tr, fil, de).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -957,6 +1390,30 @@ function runNegativeTests(): void {
   expectDetected(
     'fr: English-identical value',
     frFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'tr: English-identical value',
+    trFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'tr: placeholder prefix value',
+    trFallbackErrors({ 'a.b': '[TR] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'fil: English-identical value',
+    filFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'fil: placeholder prefix value',
+    filFallbackErrors({ 'a.b': '[FIL] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'de: English-identical value',
+    deFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'de: placeholder prefix value',
+    deFallbackErrors({ 'a.b': '[DE] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

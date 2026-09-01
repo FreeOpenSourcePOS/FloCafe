@@ -240,7 +240,7 @@ async function main() {
     });
     assertEqual(unboundWalletResult.status, 400, 'unbound wallet payment is rejected');
     const walletRollback = await newBill('cust-214');
-    seedWalletCredit(db, 'cust-214', 500);
+    seedWalletCredit(db, 'cust-214', 5);
     const walletBefore = db.prepare("SELECT COUNT(*) AS count FROM loyalty_ledger WHERE bill_id = ? AND type = 'debit'").get(walletRollback.id) as any;
     const walletBatch = await api(baseUrl, `/api/bills/${walletRollback.id}/payments`, {
       method: 'POST', body: { payments: [{ method: 'cash', amount: 10 }, { method: 'wallet', amount: 10 }], customer_id: 'cust-214' }, headers: authHeader,
@@ -304,7 +304,7 @@ async function main() {
     });
     const debit = db.prepare("SELECT amount FROM loyalty_ledger WHERE bill_id = ? AND type = 'debit'").get(walletBill.id) as any;
     assertEqual(walletPay.status, 200, 'wallet accepts exact one-cent amount');
-    assertEqual(debit.amount, 1, 'one-cent wallet payment debits exactly one point');
+    assertEqual(debit.amount, 0.01, 'one-cent wallet payment debits exactly 0.01 points (1 point = 1 currency unit)');
 
     // Split timestamps, legacy object fallback, and invalid JSON are all safe.
     const reportBill = await newBill();

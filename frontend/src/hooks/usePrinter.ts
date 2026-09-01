@@ -19,7 +19,7 @@ import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
 import { makeBillTemplateFallbackWarning, type PrintWarning } from '@/lib/printer/warnings';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import type { Bill, Tenant, Order } from '@/lib/types';
+import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
 
@@ -56,7 +56,7 @@ interface PrinterState {
   disconnect: () => Promise<void>;
   printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
   printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
-  printKot: (order: Order, opts?: KotOptions) => Promise<PrintWarning[]>;
+  printKot: (order: Order, opts?: KotOptions & { items?: OrderItem[] }) => Promise<PrintWarning[]>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;
   setPrintMethod: (method: PrintMode) => void;
@@ -314,7 +314,7 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping });
+              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, items: opts?.items, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping });
               return response.data.warnings || [];
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string } }; message?: string };
@@ -329,7 +329,11 @@ export const usePrinterStore = create<PrinterState>()(
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             const { paperWidth } = get();
             const warnings: PrintWarning[] = [];
-            const bytes = buildKotBytes(order, { ...opts, paperWidth, arabicShaping: printerArabicShaping }, warnings);
+            const bytes = buildKotBytes(
+              opts?.items ? { ...order, items: opts.items } : order,
+              { ...opts, paperWidth, arabicShaping: printerArabicShaping },
+              warnings,
+            );
             set({ lastPrintedBytes: bytes });
             await printerService.print(bytes);
             return warnings;

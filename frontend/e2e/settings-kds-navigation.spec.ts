@@ -7,8 +7,7 @@ test('KDS sidebar link selects the KDS tab after switching Settings tabs', async
   await page.getByLabel('Password').fill('E2ePass123!');
   await page.getByRole('button', { name: 'Sign In' }).click();
 
-  await page.getByRole('button', { name: /manager@flo.local|Manager|User/i }).click();
-  await page.getByRole('menuitem', { name: 'Settings' }).click();
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/?$/);
 
   await page.getByRole('link', { name: 'KDS', exact: true }).click();

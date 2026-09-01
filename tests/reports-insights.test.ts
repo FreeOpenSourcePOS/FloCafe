@@ -107,13 +107,22 @@ async function main() {
   // Keep rolling-window fixtures safely within the insights query window,
   // while placing them on Wed–Sat at Kolkata hours that cannot affect the
   // crafted Mon/Tue and 08:00/14:00 bucketing assertions below.
-  const recentWeekdayTimestamp = (weekday: number, utcHour: number) => {
+  //
+  // `weeksAgo` lets two independent fixture sets share this helper while
+  // landing on different calendar weeks — required so the hour/day-of-week
+  // bucketing counts below (computed by weekday-name and hour-of-day only,
+  // not by specific date) don't accidentally double up. Both sets must also
+  // stay within the endpoint's 90-day trailing window, so timestamps are
+  // computed relative to "now" rather than pinned to a fixed calendar date
+  // that would eventually age out of that window.
+  const relativeWeekdayTimestamp = (weekday: number, utcHour: number, utcMinute: number, weeksAgo: number) => {
     const date = new Date();
     const daysSinceWeekday = (date.getUTCDay() - weekday + 7) % 7;
-    date.setUTCDate(date.getUTCDate() - daysSinceWeekday - 7);
-    date.setUTCHours(utcHour, 0, 0, 0);
+    date.setUTCDate(date.getUTCDate() - daysSinceWeekday - weeksAgo * 7);
+    date.setUTCHours(utcHour, utcMinute, 0, 0);
     return date.toISOString();
   };
+  const recentWeekdayTimestamp = (weekday: number, utcHour: number) => relativeWeekdayTimestamp(weekday, utcHour, 0, 1);
   const prepOneCreatedAt = recentWeekdayTimestamp(3, 4); // Wed, 09:30 Kolkata
   const prepTwoCreatedAt = recentWeekdayTimestamp(4, 5); // Thu, 10:30 Kolkata
   const cashierRevenueCreatedAt = recentWeekdayTimestamp(5, 6); // Fri, 11:30 Kolkata
@@ -130,18 +139,54 @@ async function main() {
   // ── Seed orders for hour/day-of-week bucketing ───────────────────────
   // Expected (precomputed): busiest hour=14 (3 orders), idlest hour=8 (1),
   // busiest day=Monday (3), idlest day=Tuesday (0 — no fixture lands there).
-  // Timestamps use the DB's canonical space form (UTC wall, what now() and
-  // migration v45 produce) so day-range filters compare like-for-like.
+  // These used to be pinned to a fixed calendar week (2026-06-01..07), which
+  // silently aged out of the endpoint's 90-day trailing window once "now"
+  // moved far enough past it — the fixed dates were excluded from the
+  // report entirely, leaving only the "recent" fixtures above to determine
+  // busiest hour/day. Anchored to a Monday well back from "now" instead, so
+  // this can never drift out of the 90-day window again. All 8 timestamps
+  // are offset from one shared Monday anchor — computing each weekday
+  // independently via "most recent occurrence on/before today" (like the
+  // `recentWeekdayTimestamp` helper above) would put Monday and Wednesday in
+  // different calendar weeks whenever "today" falls between them, breaking
+  // section 9's Monday→Wednesday date-range assertion below.
+  //
+  // The offset (21 days) must keep every day of this bucket week strictly
+  // earlier than the "recent" fixtures above: `daysSinceWeekday` there
+  // ranges 0-6 before the +7 (weeksAgo=1), so those land 7-13 days back.
+  // Sunday, the closest day of the bucket week to "now", is anchor-6 days
+  // back, ranging 15-21 — comfortably past that 13-day ceiling. A smaller
+  // offset (e.g. 14) can let the two sets land on the same calendar day
+  // depending on what weekday "today" is, and the range assertion in
+  // section 9 would then pick up an extra order.
+  const bucketWeekAnchor = (() => {
+    const date = new Date();
+    const daysSinceMonday = (date.getUTCDay() + 6) % 7; // Mon=0 .. Sun=6
+    date.setUTCDate(date.getUTCDate() - daysSinceMonday - 21);
+    date.setUTCHours(0, 0, 0, 0);
+    return date;
+  })();
+  const bucketTimestamp = (dayOffsetFromMonday: number, utcHour: number, utcMinute: number) => {
+    const d = new Date(bucketWeekAnchor);
+    d.setUTCDate(d.getUTCDate() + dayOffsetFromMonday);
+    d.setUTCHours(utcHour, utcMinute, 0, 0);
+    return d.toISOString();
+  };
   const hourDayFixtures: { id: string; createdAt: string }[] = [
-    { id: 'ORD-INS-1', createdAt: '2026-06-01 08:30:00' }, // Mon 14:00
-    { id: 'ORD-INS-2', createdAt: '2026-06-01 09:00:00' }, // Mon 14:30
-    { id: 'ORD-INS-3', createdAt: '2026-06-01 09:15:00' }, // Mon 14:45
-    { id: 'ORD-INS-4', createdAt: '2026-06-03 04:00:00' }, // Wed 09:30
-    { id: 'ORD-INS-5', createdAt: '2026-06-04 03:00:00' }, // Thu 08:30
-    { id: 'ORD-INS-6', createdAt: '2026-06-05 05:00:00' }, // Fri 10:30
-    { id: 'ORD-INS-7', createdAt: '2026-06-06 06:00:00' }, // Sat 11:30
-    { id: 'ORD-INS-8', createdAt: '2026-06-07 07:00:00' }, // Sun 12:30
+    { id: 'ORD-INS-1', createdAt: bucketTimestamp(0, 8, 30) }, // Mon 14:00 Kolkata
+    { id: 'ORD-INS-2', createdAt: bucketTimestamp(0, 9, 0) },  // Mon 14:30 Kolkata
+    { id: 'ORD-INS-3', createdAt: bucketTimestamp(0, 9, 15) }, // Mon 14:45 Kolkata
+    { id: 'ORD-INS-4', createdAt: bucketTimestamp(2, 4, 0) },  // Wed 09:30 Kolkata
+    { id: 'ORD-INS-5', createdAt: bucketTimestamp(3, 3, 0) },  // Thu 08:30 Kolkata
+    { id: 'ORD-INS-6', createdAt: bucketTimestamp(4, 5, 0) },  // Fri 10:30 Kolkata
+    { id: 'ORD-INS-7', createdAt: bucketTimestamp(5, 6, 0) },  // Sat 11:30 Kolkata
+    { id: 'ORD-INS-8', createdAt: bucketTimestamp(6, 7, 0) },  // Sun 12:30 Kolkata
   ];
+  // UTC calendar dates of the Monday/Wednesday fixtures above, reused by the
+  // recentOrders date-scoping assertions (section 9) instead of hardcoding
+  // the dates a second time.
+  const bucketMondayDate = hourDayFixtures[0].createdAt.slice(0, 10);
+  const bucketWednesdayDate = hourDayFixtures[3].createdAt.slice(0, 10);
   // Zero-value on purpose — only created_at matters for bucketing, and this
   // keeps these 8 orders from perturbing the top-staff revenue ranking below.
   const insertOrder = db.prepare(`
@@ -289,12 +334,12 @@ async function main() {
 
     console.log('\n9. GET /api/reports/recentOrders?date=X scopes to that day (dashboard date picker)');
     {
-      const dated = await request(app).get('/api/reports/recentOrders?date=2026-06-01&limit=10').set('Authorization', `Bearer ${ownerToken}`);
+      const dated = await request(app).get(`/api/reports/recentOrders?date=${bucketMondayDate}&limit=10`).set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(dated.status, 200, `owner gets 200 (got ${dated.status})`);
       const numbers = (dated.body.recentOrders ?? []).map((o: any) => o.order_number).sort();
-      assertEqual(JSON.stringify(numbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3']), 'only the 3 orders created on 2026-06-01 are returned');
+      assertEqual(JSON.stringify(numbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3']), `only the 3 orders created on ${bucketMondayDate} are returned`);
 
-      const ranged = await request(app).get('/api/reports/recentOrders?start_date=2026-06-01&end_date=2026-06-03&limit=10').set('Authorization', `Bearer ${ownerToken}`);
+      const ranged = await request(app).get(`/api/reports/recentOrders?start_date=${bucketMondayDate}&end_date=${bucketWednesdayDate}&limit=10`).set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(ranged.status, 200, `owner can request a month-style date range (got ${ranged.status})`);
       const rangedNumbers = (ranged.body.recentOrders ?? []).map((o: any) => o.order_number).sort();
       assertEqual(JSON.stringify(rangedNumbers), JSON.stringify(['ORD-INS-1', 'ORD-INS-2', 'ORD-INS-3', 'ORD-INS-4']), 'date range includes orders from both boundary dates');

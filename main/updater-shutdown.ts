@@ -23,20 +23,18 @@ type RestartAndInstallOptions = {
   runCleanup: () => Promise<void>;
   quitAndInstall: (isSilent: boolean, isForceRunAfter: boolean) => void;
   updateState: UpdateShutdownState;
+  onInstallFailure: (error: unknown) => void;
   warn: (message: string) => void;
   error: (message: string, error: unknown) => void;
 };
-
-export function resetUpdateShutdownState(updateState: UpdateShutdownState): void {
-  updateState.setInstallingUpdate(false);
-  updateState.setQuitting(false);
-}
 
 type AutoUpdaterErrorHandlerOptions = {
   getPhase: () => UpdateErrorPhase;
   setPhase: (phase: UpdateErrorPhase) => void;
   isInstallReady: () => boolean;
+  isInstallingUpdate: () => boolean;
   setUpdateStatus: (next: StoredUpdateStatus) => void;
+  onInstallFailure: (error: unknown) => void;
   logInfo: (message: string, detail?: unknown) => void;
 };
 
@@ -45,7 +43,9 @@ export function createAutoUpdaterErrorHandler(
     getPhase,
     setPhase,
     isInstallReady,
+    isInstallingUpdate,
     setUpdateStatus,
+    onInstallFailure,
     logInfo,
   }: AutoUpdaterErrorHandlerOptions,
 ): (error: unknown) => void {
@@ -57,6 +57,11 @@ export function createAutoUpdaterErrorHandler(
       `[Update] Updater error classified as ${classified.state}` +
       `/${classified.reason}:`, classified.detail
     );
+    if (isInstallingUpdate()) {
+      logInfo('[Update] Installation failed after shutdown; relaunching the current version');
+      onInstallFailure(error);
+      return;
+    }
     if (isInstallReady()) {
       logInfo('[Update] Preserving ready-to-install status while staged update awaits installation');
       return;
@@ -75,6 +80,7 @@ export function createRestartAndInstallHandler({
   runCleanup,
   quitAndInstall,
   updateState,
+  onInstallFailure,
   warn,
   error,
 }: RestartAndInstallOptions): (event: unknown, pin?: unknown) => Promise<RestartAndInstallResult> {
@@ -99,8 +105,8 @@ export function createRestartAndInstallHandler({
       quitAndInstall(false, true);
       return { success: true };
     } catch (installError) {
-      resetUpdateShutdownState(updateState);
       error('[Update] quitAndInstall failed:', installError);
+      onInstallFailure(installError);
       return { success: false, error: installError instanceof Error ? installError.message : String(installError) };
     }
   };

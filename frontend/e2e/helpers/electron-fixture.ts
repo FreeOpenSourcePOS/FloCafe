@@ -111,6 +111,9 @@ export async function injectElectronFixture(
       getMasterPinStatus: async () => masterPinStatus,
       getSettings: async () => ({}),
       setSetting: async () => result,
+      // gh-513: effective-theme push verb; tracked by the harness to verify
+      // the renderer notifies main when the resolved palette changes.
+      setThemeEffective: async (_isDark: boolean) => result,
       getKdsInfo: async () => kdsInfo,
       openKdsWindow: async () => undefined,
       getAppInfo: async () => appInfo,

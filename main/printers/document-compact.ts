@@ -119,6 +119,14 @@ export function renderBillDocumentToCompactLines(
     lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(messages.reprintBanner) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
   }
 
+  // Online-order banner (#284, MessageBlock).
+  if (messages?.onlineOrderBanner) {
+    const banner = messages.onlineOrderBanner;
+    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(banner.label) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+    if (banner.platform.text) lines.push('{CENTER}' + banner.platform.text + '{/CENTER}');
+    if (banner.externalOrderId.text) lines.push('{CENTER}#' + banner.externalOrderId.text + '{/CENTER}');
+  }
+
   // Business header (store name only — compact keeps contact facts in the footer).
   if (header?.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(header.name.text, cols, options.arabicShaping) + '{/BOLD}{/CENTER}');
   lines.push(bar);

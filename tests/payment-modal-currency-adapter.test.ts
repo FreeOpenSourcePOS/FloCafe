@@ -111,9 +111,9 @@ function runPaymentMathTests() {
   assert.equal(discountStored, 500000, '50,000 Toman discount translates to 500,000 Rial stored');
 
   // Loyalty wallet points redemption:
-  // Customer has 200,000 points balance. Rate: 100 points = 1 Rial.
-  const walletPoints = 200000;
-  const LOYALTY_REDEMPTION_RATE = 100;
+  // Customer has 2,000 points balance. Rate: 1 point = 1 Rial.
+  const walletPoints = 2000;
+  const LOYALTY_REDEMPTION_RATE = 1;
   const maxWalletStored = Math.floor(walletPoints / LOYALTY_REDEMPTION_RATE); // 2000 Rial
   assert.equal(maxWalletStored, 2000, 'Max wallet stored is 2000 Rial');
   const maxWalletDisplay = tomanAdapter.toDisplay(maxWalletStored); // 200 Toman

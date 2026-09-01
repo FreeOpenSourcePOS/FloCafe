@@ -26,6 +26,7 @@ export type ElectronApiContractChecks = [
   Expect<Equal<ElectronAPI['getMasterPinStatus'], () => Promise<ElectronMasterPinStatus | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getSettings'], () => Promise<Record<string, string | null> | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['setSetting'], (key: string, value: string) => Promise<ElectronActionResult | ElectronIpcError>>>,
+  Expect<Equal<ElectronAPI['setThemeEffective'], (isDark: boolean) => Promise<ElectronActionResult | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getKdsInfo'], () => Promise<KdsInfo | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['openKdsWindow'], () => Promise<void | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getAppInfo'], () => Promise<ElectronAppInfo | ElectronIpcError>>>,
@@ -48,6 +49,7 @@ export type ElectronApiMethodPresence = Pick<
   | 'getMasterPinStatus'
   | 'getSettings'
   | 'setSetting'
+  | 'setThemeEffective'
   | 'getKdsInfo'
   | 'openKdsWindow'
   | 'getAppInfo'

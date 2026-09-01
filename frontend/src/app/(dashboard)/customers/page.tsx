@@ -21,7 +21,7 @@ import { useFormatNumber } from '@/hooks/useFormatNumber';
 
 function SortIcon({ field, sortField, sortOrder }: { field: string; sortField: string; sortOrder: 'asc' | 'desc' }) {
   if (sortField !== field) return <span className="text-gray-300 w-3 inline-block ms-1 opacity-0 group-hover:opacity-100 transition-opacity">↕</span>;
-  return sortOrder === 'asc' ? <TrendingUp size={12} className="inline ms-1 text-gray-500" /> : <TrendingDown size={12} className="inline ms-1 text-gray-500" />;
+  return sortOrder === 'asc' ? <TrendingUp size={12} className="inline ms-1 text-muted-foreground" /> : <TrendingDown size={12} className="inline ms-1 text-muted-foreground" />;
 }
 
 export default function CustomersPage() {
@@ -52,7 +52,12 @@ export default function CustomersPage() {
   const [form, setForm] = useState({ name: '', phone: '', email: '', country_code: dialCode });
 
   const [ledgerCustomer, setLedgerCustomer] = useState<Customer | null>(null);
-  const [ledgerData, setLedgerData] = useState<{ balance: number; transactions: { id: number; type: string; amount: number; description: string; created_at: string; expires_at?: string }[] } | null>(null);
+  const [ledgerData, setLedgerData] = useState<{
+    balance: number;
+    transactions: { id: number; type: string; amount: number; description: string; created_at: string; expires_at?: string }[];
+    bills: { id: number; bill_number: string; total: number; paid_at?: string; created_at: string; points_earned: number; points_redeemed: number }[];
+    summary: { totalSpent: number; totalPointsEarned: number; totalPointsRedeemed: number };
+  } | null>(null);
   const [ledgerLoading, setLedgerLoading] = useState(false);
 
   const openLedger = async (c: Customer) => {
@@ -142,7 +147,7 @@ export default function CustomersPage() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-gray-900">{tNav('customers')}</h1>
+          <h1 className="text-2xl font-bold text-foreground">{tNav('customers')}</h1>
           {filter === 'invalid_phones' && (
             <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5">
               <AlertCircle size={14} /> {tCustomers('actionRequired')}
@@ -160,44 +165,44 @@ export default function CustomersPage() {
         <input
           type="text" value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder={tCustomer('search')}
-          className="w-full ps-10 pe-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+          className="w-full ps-10 pe-4 py-2.5 bg-card border border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
         />
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-50">
+          <thead className="bg-muted">
             <tr>
-              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('name')}>
+              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted group transition-colors" onClick={() => onSort('name')}>
                 {tCustomers('columnCustomer')} <SortIcon field="name" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('phone')}>
+              <th className="text-start p-4 text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted group transition-colors" onClick={() => onSort('phone')}>
                 {tCustomer('phone')} <SortIcon field="phone" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('last_visit')}>
+              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted group transition-colors" onClick={() => onSort('last_visit')}>
                 {tCustomers('columnLastVisit')} <SortIcon field="last_visit" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('visits')}>
+              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted group transition-colors" onClick={() => onSort('visits')}>
                 {tCustomer('visits')} <SortIcon field="visits" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('spent')}>
+              <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted group transition-colors" onClick={() => onSort('spent')}>
                 {tCustomer('totalSpent')} <SortIcon field="spent" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('loyalty')}>
+              <th className="text-end p-4 text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted group transition-colors" onClick={() => onSort('loyalty')}>
                 {tCustomer('loyalty')} <SortIcon field="loyalty" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{tCustomers('columnActions')}</th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{tCustomers('columnLedger')}</th>
+              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{tCustomers('columnActions')}</th>
+              <th className="text-center p-4 text-xs font-medium text-muted-foreground uppercase">{tCustomers('columnLedger')}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-border">
             {customers.map((c) => (
-              <tr key={c.id} className="hover:bg-gray-50">
+              <tr key={c.id} className="hover:bg-muted">
                 <td className="p-4">
-                  <p className="font-medium text-gray-900">{c.name}</p>
-                  <p className="text-xs text-gray-500">{c.email || '—'}</p>
+                  <p className="font-medium text-foreground">{c.name}</p>
+                  <p className="text-xs text-muted-foreground">{c.email || '—'}</p>
                 </td>
-                <td className="p-4 text-sm text-gray-600">
+                <td className="p-4 text-sm text-muted-foreground">
                   <div className="flex items-center gap-2">
                     <span>
                       <Ltr>{c.phone ? (c.country_code && !c.phone.startsWith(c.country_code) ? `${c.country_code}${c.phone}` : c.phone) : '—'}</Ltr>
@@ -209,7 +214,7 @@ export default function CustomersPage() {
                     )}
                   </div>
                 </td>
-                <td className="p-4 text-center text-sm text-gray-500 whitespace-nowrap">
+                <td className="p-4 text-center text-sm text-muted-foreground whitespace-nowrap">
                   {c.last_visit_at ? formatDate(c.last_visit_at) : '—'}
                 </td>
                 <td className="p-4 text-center text-sm">{c.visits_count}</td>
@@ -238,21 +243,21 @@ export default function CustomersPage() {
             ))}
           </tbody>
         </table>
-        {customers.length === 0 && <p className="text-center text-gray-500 py-12">{tCustomers('empty')}</p>}
+        {customers.length === 0 && <p className="text-center text-muted-foreground py-12">{tCustomers('empty')}</p>}
         {customers.length >= 200 && <p className="text-center text-xs text-gray-400 py-3">{tCustomers('first200')}</p>}
       </div>
 
       {/* Loyalty Ledger Modal */}
       {ledgerCustomer && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-xl">
-            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100">
+          <div className="bg-card rounded-2xl w-full max-w-2xl max-h-[85vh] flex flex-col shadow-xl">
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">{tCustomers('loyaltyLedger')}</h2>
-                <p className="text-sm text-gray-500">{ledgerCustomer.name}</p>
+                <h2 className="text-lg font-bold text-foreground">{tCustomers('loyaltyLedger')}</h2>
+                <p className="text-sm text-muted-foreground">{ledgerCustomer.name}</p>
               </div>
-              <button onClick={() => setLedgerCustomer(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200">
-                <X size={16} className="text-gray-500" />
+              <button onClick={() => setLedgerCustomer(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-muted hover:bg-muted">
+                <X size={16} className="text-muted-foreground" />
               </button>
             </div>
 
@@ -261,32 +266,82 @@ export default function CustomersPage() {
             ) : ledgerData ? (
               <>
                 {/* Summary row */}
-                <div className="flex items-center gap-6 px-6 py-4 bg-gray-50 border-b border-gray-100">
+                <div className="grid grid-cols-4 gap-4 px-6 py-4 bg-muted border-b border-border">
                   <div>
-                    <p className="text-xs text-gray-500 mb-0.5">{tCustomers('totalBalance')}</p>
-                    <p className="text-2xl font-bold text-gray-900">{ledgerData.balance} <span className="text-sm font-normal text-gray-500">{tCustomer('ptsSuffix')}</span></p>
+                    <p className="text-xs text-muted-foreground mb-0.5">{tCustomer('totalSpent')}</p>
+                    <p className="text-lg font-bold text-foreground">{fmt(ledgerData.summary.totalSpent)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">{tCustomers('totalPointsEarned')}</p>
+                    <p className="text-lg font-bold text-green-600">+{ledgerData.summary.totalPointsEarned}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">{tCustomers('totalPointsRedeemed')}</p>
+                    <p className="text-lg font-bold text-red-500">-{ledgerData.summary.totalPointsRedeemed}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-0.5">{tCustomers('totalBalance')}</p>
+                    <p className="text-lg font-bold text-foreground">{ledgerData.balance} <span className="text-xs font-normal text-muted-foreground">{tCustomer('ptsSuffix')}</span></p>
                   </div>
                 </div>
 
-                {/* Ledger table */}
                 <div className="flex-1 overflow-y-auto">
+                  {/* Billing history */}
+                  <div className="px-6 pt-4">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{tCustomers('billingHistory')}</h3>
+                  </div>
+                  {ledgerData.bills.length === 0 ? (
+                    <p className="text-center text-gray-400 py-6 text-sm">{tCustomers('noBills')}</p>
+                  ) : (
+                    <table className="w-full text-sm mb-2">
+                      <thead className="bg-muted sticky top-0">
+                        <tr>
+                          <th className="text-start px-6 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnDate')}</th>
+                          <th className="text-start px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnBill')}</th>
+                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnAmount')}</th>
+                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnEarned')}</th>
+                          <th className="text-end px-6 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnRedeemed')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {ledgerData.bills.map((b) => (
+                          <tr key={b.id} className="hover:bg-muted">
+                            <td className="px-6 py-3 text-gray-600 whitespace-nowrap">{formatDate(b.paid_at || b.created_at)}</td>
+                            <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{b.bill_number}</td>
+                            <td className="px-4 py-3 text-end text-gray-900 whitespace-nowrap">{fmt(b.total)}</td>
+                            <td className="px-4 py-3 text-end whitespace-nowrap">
+                              {b.points_earned > 0 ? <span className="text-green-600 font-semibold">+{b.points_earned}</span> : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="px-6 py-3 text-end whitespace-nowrap">
+                              {b.points_redeemed > 0 ? <span className="text-red-500 font-semibold">-{b.points_redeemed}</span> : <span className="text-gray-300">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+
+                  {/* Ledger table */}
+                  <div className="px-6 pt-2">
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">{tCustomers('pointsHistory')}</h3>
+                  </div>
                   {ledgerData.transactions.length === 0 ? (
                     <p className="text-center text-gray-400 py-12">{tCustomers('noTransactions')}</p>
                   ) : (
                     <table className="w-full text-sm">
-                      <thead className="bg-gray-50 sticky top-0">
+                      <thead className="bg-muted sticky top-0">
                         <tr>
-                          <th className="text-start px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnDate')}</th>
-                          <th className="text-start px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnDescription')}</th>
-                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnPoints')}</th>
-                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnExpires')}</th>
+                          <th className="text-start px-6 py-2.5 text-xs font-medium text-muted-foreground">{tCustomers('columnDate')}</th>
+                          <th className="text-start px-4 py-2.5 text-xs font-medium text-muted-foreground">{tCustomers('columnDescription')}</th>
+                          <th className="text-end px-4 py-2.5 text-xs font-medium text-muted-foreground">{tCustomers('columnPoints')}</th>
+                          <th className="text-end px-6 py-2.5 text-xs font-medium text-muted-foreground">{tCustomers('columnExpires')}</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-50">
+                      <tbody className="divide-y divide-border">
                         {ledgerData.transactions.map((t: { id: number; type: string; amount: number; description: string; created_at: string; expires_at?: string }) => (
-                          <tr key={t.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(t.created_at)}</td>
-                            <td className="px-4 py-3 text-gray-700">{t.description || '—'}</td>
+                          <tr key={t.id} className="hover:bg-muted">
+                            <td className="px-6 py-3 text-muted-foreground whitespace-nowrap">{formatDate(t.created_at)}</td>
+                            <td className="px-4 py-3 text-foreground">{t.description || '—'}</td>
                             <td className="px-4 py-3 text-end font-semibold whitespace-nowrap">
                               <span className={`inline-flex items-center gap-1 ${
                                 t.type === 'credit' ? 'text-green-600' : 'text-red-500'
@@ -297,7 +352,7 @@ export default function CustomersPage() {
                                 {t.type === 'credit' ? '+' : '-'}{t.amount}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-end text-xs text-gray-400 whitespace-nowrap">
+                            <td className="px-6 py-3 text-end text-xs text-gray-400 whitespace-nowrap">
                               {t.expires_at ? formatDate(t.expires_at) : '—'}
                             </td>
                           </tr>
@@ -314,7 +369,7 @@ export default function CustomersPage() {
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{editingCustomer ? tCustomer('edit') : tCustomer('add')}</h2>
               <button onClick={() => setShowForm(false)}><X size={20} className="text-gray-400" /></button>

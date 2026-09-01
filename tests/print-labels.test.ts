@@ -47,6 +47,7 @@ function assert(label: string, cond: boolean, detail?: string) {
 function buildOrder(): any {
   return {
     order_number: 'ORD-LABELS-001',
+    type: 'dine_in',
     created_at: '2026-08-21 18:42:00',
     table: { name: '7' },
     items: [{
@@ -104,12 +105,18 @@ function run(): void {
   console.log('\n✅ Test 1: printLabel language selection and fallback');
   assert('en resolves grand total to TOTAL', printLabel('en', 'print.grandTotal') === 'TOTAL');
   assert('fa resolves grand total to Persian', printLabel('fa', 'print.grandTotal') === 'جمع کل');
+  assert('tr resolves grand total to Turkish', printLabel('tr', 'print.grandTotal') === 'GENEL TOPLAM');
+  assert('fil resolves grand total to Filipino', printLabel('fil', 'print.grandTotal') === 'KABUUAN');
   assert('es resolves grand total', typeof printLabel('es', 'print.grandTotal') === 'string' && printLabel('es', 'print.grandTotal').length > 0);
   assert('fr resolves grand total to French', printLabel('fr', 'print.grandTotal') === 'TOTAL');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
   assert('unknown language falls back to English', printLabel('de', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');
   assert('borrowed key resolves from its own namespace', printLabel('en', 'pos.subtotal') === 'Subtotal');
+  assert('tr resolves borrowed pos.subtotal', printLabel('tr', 'pos.subtotal') === 'Ara Toplam');
+  assert('fil resolves borrowed pos.subtotal', printLabel('fil', 'pos.subtotal') === 'Subtotal');
+
+
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {
@@ -151,9 +158,11 @@ function run(): void {
     const order = { ...buildOrder(), table: { name: '3' } };
     const text = escPosToText(formatKOT(order, order.items, 'Grill', 48));
     assert('default KOT banner stays English', text.includes('KITCHEN ORDER TICKET'));
+    assert('default KOT type label stays English', text.includes('Type: DINE IN'));
     const faText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'en-US', undefined, [], true, 'fa'));
     assert('fa KOT banner translated', faText.includes('برگ سفارش آشپزخانه'));
     assert('fa KOT station label translated', faText.includes('ایستگاه:'));
+    assert('fa KOT type label translated', faText.includes('نوع: DINE IN'));
     assert('fa KOT time label translated', faText.includes('ساعت:'));
   }
 

@@ -214,13 +214,13 @@ function KanbanOrderCard({
         isDragging ? 'opacity-40' : ''
       } ${busy ? 'pointer-events-none opacity-60' : ''}`}
     >
-      <div className={`rounded-xl border-2 ${config.border} bg-white p-3 flex flex-col shadow-sm`}>
+      <div className={`rounded-xl border-2 ${config.border} bg-card p-3 flex flex-col shadow-sm`}>
         <div className="flex justify-between items-center mb-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <Ltr as="span" className="font-bold text-sm shrink-0">#{order.order_number}</Ltr>
             <Badge
               variant="outline"
-              className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-gray-50 text-gray-700 border-gray-200'}
+              className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-muted text-foreground border-border'}
             >
               {ORDER_TYPE_LABEL_KEYS[order.type as OrderType]
                 ? tOrders(ORDER_TYPE_LABEL_KEYS[order.type as OrderType])
@@ -256,7 +256,7 @@ function KanbanOrderCard({
             >
               <div className="flex items-center gap-2">
                 <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
-                <span className="text-lg text-gray-900 font-medium flex-1 truncate">{item.product_name}</span>
+                <span className="text-lg text-foreground font-medium flex-1 truncate">{item.product_name}</span>
                 {item.addons && item.addons.length > 0 && (
                   <span className="text-[10px] text-blue-600">+{item.addons.length}</span>
                 )}
@@ -294,16 +294,16 @@ function VoidedColumn({
       <div className={`flex items-center gap-2 px-3 py-2 ${config.bg} rounded-t-lg border-2 ${config.border} border-b-0`}>
         <div className={`w-2 h-2 rounded-full ${config.color}`} />
         <span className={`text-base font-semibold ${config.text}`}>{t(config.labelKey)}</span>
-        <span className="ms-auto text-xs px-1.5 py-0.5 rounded-full bg-white/70 text-gray-700 font-medium tabular-nums">
+        <span className="ms-auto text-xs px-1.5 py-0.5 rounded-full bg-card/70 text-foreground font-medium tabular-nums">
           {count}
         </span>
       </div>
       <div
-        className={`flex-1 border-2 ${config.border} border-t-0 rounded-b-lg p-2 space-y-2 overflow-y-auto bg-gray-50/40`}
+        className={`flex-1 border-2 ${config.border} border-t-0 rounded-b-lg p-2 space-y-2 overflow-y-auto bg-muted/40`}
         style={{ minHeight: '60vh', maxHeight: 'calc(100vh - 220px)' }}
       >
         {groups.map(({ order, items }) => (
-          <div key={order.id} className={`rounded-xl border-2 ${config.border} bg-white p-3 flex flex-col shadow-sm opacity-80`}>
+          <div key={order.id} className={`rounded-xl border-2 ${config.border} bg-card p-3 flex flex-col shadow-sm opacity-80`}>
             <div className="flex items-center gap-1.5 min-w-0 flex-wrap mb-2">
               <Ltr as="span" className="font-bold text-sm shrink-0">#{order.order_number}</Ltr>
               {order.table?.name && (

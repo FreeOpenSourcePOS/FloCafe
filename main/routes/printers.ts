@@ -603,13 +603,15 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
       }
     }
 
-    // An explicit stationName/items override (not used by the current frontend,
-    // but kept for any external caller) always prints a single ticket, as before.
-    // Otherwise, auto-route items to their configured kitchen stations.
+    // A stationName override prints one ticket. Item overrides without an
+    // explicit station are still routed, which lets running-order append
+    // tickets contain only the newly added rows while preserving station
+    // routing.
     let success = true;
     const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
     let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
-    if (stationName || items) {
+    const kotSourceItems = Array.isArray(items) ? items : orderItems;
+    if (stationName) {
       const kotItems = items || orderItems;
       const station = stationName || 'Kitchen';
       const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req), arabicShapingOverride, kotLanguage);
@@ -617,7 +619,7 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
       failure = result.ok ? null : result;
       warnings.push(...(result.warnings || []));
     } else {
-      const groups = routeItemsToStations(db, orderItems).filter((g) => g.items.length > 0);
+      const groups = routeItemsToStations(db, kotSourceItems).filter((g) => g.items.length > 0);
       for (const group of groups) {
         const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req), arabicShapingOverride, kotLanguage);
         success = success && result.ok;

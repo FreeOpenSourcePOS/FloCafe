@@ -133,6 +133,45 @@ async function run() {
   );
   assert.equal(uncachedSubresource.type, 'error');
 
+  const shellPrefetchCaches = new TestCaches();
+  await shellPrefetchCaches.cache.put(
+    '/dashboard',
+    new Response('<html>cached shell</html>', { status: 200 }),
+  );
+  const shellPrefetchWorker = loadFetchHandler(
+    shellPrefetchCaches,
+    async () => { throw new TypeError('Failed to fetch'); },
+  );
+  const prefetchResponse = await dispatch(shellPrefetchWorker.fetch, {
+    method: 'GET',
+    url: 'http://localhost:3001/dashboard/',
+    mode: 'cors',
+  });
+  assert.ok(prefetchResponse instanceof Response, 'route prefetch failure resolves a valid Response');
+  assert.notEqual(
+    prefetchResponse.type,
+    'error',
+    'a <Link> prefetch of a page (non-navigate mode) must not resolve a network-error Response',
+  );
+  assert.equal(await prefetchResponse.text(), '<html>cached shell</html>');
+
+  const uncachedPrefetchWorker = loadFetchHandler(
+    new TestCaches(),
+    async () => { throw new TypeError('Failed to fetch'); },
+  );
+  const uncachedPrefetchResponse = await dispatch(uncachedPrefetchWorker.fetch, {
+    method: 'GET',
+    url: 'http://localhost:3001/dashboard/',
+    mode: 'cors',
+  });
+  assert.ok(
+    uncachedPrefetchResponse instanceof Response,
+    'uncached route prefetch failure still resolves a valid Response',
+  );
+  assert.notEqual(uncachedPrefetchResponse.type, 'error');
+  assert.equal(uncachedPrefetchResponse.status, 503);
+  assert.equal(await uncachedPrefetchResponse.text(), 'Offline');
+
   const startupNavigation = await dispatch(failureWorker.fetch, {
     method: 'GET',
     url: 'http://localhost:3001/dashboard/',

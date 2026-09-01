@@ -2,15 +2,17 @@
 
 FloCafe desktop releases use one electron-builder pipeline and GitHub Releases for
 NSIS/Windows, macOS DMG+ZIP, and Linux AppImage/deb/rpm/Snap artifacts. Microsoft
-Store (AppX) and Mac App Store (MAS) packages are submitted to their stores and
-are not consumed by `electron-updater`. Snap Store uploads target the stable or
-beta channel matching the release when the configured macaroon permits that
-channel; a beta upload denied with `invalid-channel-permission` is downgraded
-to a warning and the GitHub release remains publishable until credentials are
-re-exported. Stable draft verification requires both per-architecture Snap
-publication markers; the beta permission-denied path is explicitly degraded as
-NOT-RUN and does not claim a Snap Store pass. Snap installations are updated
-by snapd rather than `electron-updater`.
+Store (AppX) and Mac App Store (MAS) packages are submitted through
+explicit/manual workflows and are not consumed by `electron-updater`. The tag
+release uploads AppX packages as GitHub release assets but does not submit to
+Microsoft Store, and MAS uses its separate manual workflow. Snap Store uploads
+map the release
+channel to a channel the configured macaroon permits (#468): stable releases
+publish to the `stable` channel and beta releases publish to the `edge`
+(opt-in) channel; an upload denied with `invalid-channel-permission` is
+downgraded to a warning and the GitHub release remains publishable. Stable
+draft verification requires both per-architecture Snap publication markers.
+Snap installations are updated by snapd rather than `electron-updater`.
 
 Nightly releases are explicitly rejected (#503): beta is the only prerelease
 distribution channel, and no nightly publish path exists anywhere in the
@@ -90,10 +92,10 @@ or newer stable release without database rollbacks.
 3. Each self-updating platform job asserts that its local updater manifest
    and representative installer exist before upload. Platform jobs upload
    installers, update manifests, blockmaps, and required store packages to the
-   draft release. Microsoft Store AppX submission runs only for stable tag
-   pushes. Beta AppX packages remain outside the Store submission
-   path because their four-part MSIX versions would otherwise collide with
-   stable and with later prereleases.
+   draft release. Microsoft Store and Mac App Store submission are not part of
+   the automatic tag release. Beta AppX packages remain outside the Store
+   submission path because their four-part MSIX versions would otherwise
+   collide with stable and with later prereleases.
 4. `scripts/verify-release-assets.cjs` fetches the draft release metadata, then
    downloads manifests and every referenced asset back through the GitHub API.
    It parses each manifest as YAML, requires every referenced asset to resolve
@@ -152,8 +154,9 @@ directly to GitHub `Latest`.
    candidate manifest and permanent sanitized summary, then publishes it as a
    **prerelease** with `make_latest=false`. A propagation check confirms every
    bound asset is downloadable and Stable Latest is unchanged. Snap Store
-   packages go to the snap `beta` channel when credentials permit it; a
-   channel-permission warning does not block GitHub release publication.
+   packages go to the `stable` or `edge` snap channel (release channel →
+   store channel mapping, #468); a channel-permission warning does not block
+   GitHub release publication.
 5. Run **Actions > Release candidate confidence gate** with the exact published
    beta tag, commit, candidate-manifest asset ID/SHA-256, Stable Latest tag, and
    the exact stable `from_version` installed as N by the runtime matrix.

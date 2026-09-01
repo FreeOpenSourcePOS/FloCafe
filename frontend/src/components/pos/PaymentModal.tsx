@@ -18,6 +18,7 @@ import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
+import TouchNumberPad from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -40,9 +41,10 @@ interface Payment {
   amount: string;
 }
 
-// Fixed conversion rate for redeeming loyalty wallet points as payment (points per 1 currency unit).
-// Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
-const LOYALTY_REDEMPTION_RATE = 100;
+type AmountTarget = { kind: 'payment'; index: number } | { kind: 'wallet' } | { kind: 'discount' } | null;
+
+// Loyalty points are 1:1 with currency units. Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
+const LOYALTY_REDEMPTION_RATE = 1;
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 
@@ -110,6 +112,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const [discountPin, setDiscountPin] = useState('');
   const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
+  const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
 
   // Sync state with active bill discount on load or update. Read directly during render
   // (React's recommended pattern for "adjusting state when a prop changes") instead of an
@@ -191,7 +194,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   const updatePaymentAmount = (idx: number, value: string) => {
     setPaymentsTouched(true);
-    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
+    setPayments((current) => current.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
   };
 
   const allocateRemainingTo = (idx: number) => {
@@ -201,6 +204,54 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     setPaymentsTouched(true);
     setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' } : payment));
   };
+
+  const activeAmountValue = amountTarget?.kind === 'payment'
+    ? payments[amountTarget.index]?.amount || ''
+    : amountTarget?.kind === 'wallet'
+      ? walletAmount
+      : amountTarget?.kind === 'discount'
+        ? discountValue
+        : '';
+
+  const updateActiveAmount = (value: string) => {
+    if (!amountTarget) return;
+    if (amountTarget.kind === 'payment') {
+      updatePaymentAmount(amountTarget.index, value);
+      return;
+    }
+    if (amountTarget.kind === 'wallet') {
+      const maxWalletCurrencyStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
+      const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
+      const clamped = parseFloat(value) > maxDisplay ? String(maxDisplay) : value;
+      setWalletAmount(clamped);
+      setPaymentsTouched(true);
+      return;
+    }
+    setDiscountValue(value);
+  };
+
+  const activeAmountMax = amountTarget?.kind === 'discount'
+    ? discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))
+    : amountTarget?.kind === 'wallet'
+      ? toDisplayUnit(Math.min(Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE), remaining))
+      : undefined;
+
+  const activeAmountQuickValues = (() => {
+    if (amountTarget?.kind === 'payment') {
+      const allocatedElsewhere = payments.reduce((sum, payment, index) => (
+        index === amountTarget.index ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0)
+      ), walletAmt);
+      const dueDisplay = toDisplayUnit(Math.max(0, remaining - allocatedElsewhere));
+      return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
+    }
+    if (amountTarget?.kind === 'wallet') {
+      const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
+      const maxWalletStored = Math.floor((walletBalance || 0) / LOYALTY_REDEMPTION_RATE);
+      const dueDisplay = toDisplayUnit(Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere)));
+      return dueDisplay > 0 ? [{ label: t('exactAmount'), value: String(dueDisplay) }] : [];
+    }
+    return [];
+  })();
 
   const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
 
@@ -381,17 +432,18 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-card w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">{t('payment')}</h2>
+            <h2 className="text-lg font-bold text-foreground">{t('payment')}</h2>
             <p className="text-xs text-gray-400 mt-0.5">{t('billNumber', { number: bill.bill_number })}</p>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors"
+            className="touch-target rounded-full bg-muted hover:bg-muted active:bg-muted text-muted-foreground transition-colors"
+            aria-label={t('close')}
           >
             <X size={16} />
           </button>
@@ -408,7 +460,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
               </div>
               {cartCustomer && (
                 <div className="text-end ms-4 shrink-0">
-                  <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center mb-1 ms-auto">
+                  <div className="w-8 h-8 rounded-full bg-card/10 flex items-center justify-center mb-1 ms-auto">
                     <User size={16} className="text-white/70" />
                   </div>
                   <p className="text-sm font-semibold text-white leading-tight">{cartCustomer.name}</p>
@@ -458,11 +510,11 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
           {/* Loyalty Info Strip (staff reference) */}
           {loyaltySettings?.loyalty_enabled && effectiveCustomerId && (
-            <div className="flex items-center gap-2 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl">
+            <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border border-border rounded-xl">
               <Sparkles size={13} className="text-gray-400 shrink-0" />
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-                <span className="text-gray-700 font-medium">{t('loyalty')}</span>
-                <span className="font-semibold text-gray-700">
+                <span className="text-foreground font-medium">{t('loyalty')}</span>
+                <span className="font-semibold text-foreground">
                   {walletBalance !== null
                     ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
                     : '…'}
@@ -472,9 +524,9 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
           )}
 
           {/* Discount */}
-          {!bill.split_group_id && <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <button type="button" onClick={() => setShowDiscount((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 text-start">
-              <span className="text-sm font-medium text-gray-700">
+          {!bill.split_group_id && <div className="rounded-xl border border-border overflow-hidden">
+            <button type="button" onClick={() => setShowDiscount((open) => !open)} className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start">
+              <span className="text-sm font-medium text-foreground">
                 {Number(bill.discount_amount) > 0
                   ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}`
                   : t('applyDiscount')}
@@ -488,7 +540,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   {isDiscountTypeAllowed(discountMode, 'percentage') && (
                     <button
                       onClick={() => { setDiscountType('percentage'); }}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                      className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
                     >
                       <Percent size={14} />
                       {t('percentage')}
@@ -497,7 +549,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   {isDiscountTypeAllowed(discountMode, 'amount') && (
                     <button
                       onClick={() => { setDiscountType('amount'); }}
-                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                      className={`touch-target flex-1 gap-1.5 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-card text-muted-foreground hover:bg-muted'}`}
                     >
                       {t('flatAmount')}
                     </button>
@@ -510,12 +562,14 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   <input
                     type="number"
                     value={discountValue}
+                    onFocus={() => setAmountTarget({ kind: 'discount' })}
                     onChange={(e) => setDiscountValue(e.target.value)}
                     placeholder={discountType === 'percentage' ? '0' : '0.00'}
                     min="0"
                     max={discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))}
                     step={discountType === 'percentage' ? 1 : inputCurrencyStep}
-                    className="w-full ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+                    inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
+                    className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                   />
                 </div>
                 <input
@@ -523,7 +577,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   value={discountReason}
                   onChange={(e) => setDiscountReason(e.target.value)}
                   placeholder={t('discountReasonPlaceholder')}
-                  className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+                  className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                 />
                 {discountRequiresApproval && parseFloat(discountValue) > 0 && (
                   <input
@@ -532,11 +586,10 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                     onChange={(e) => setDiscountPin(e.target.value)}
                     placeholder={t('managerPin')}
                     maxLength={6}
-                    className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+                    className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                   />
                 )}
                 <Button
-                  size="sm"
                   onClick={() => handleApplyDiscount()}
                   disabled={applyingDiscount || discountValue === '' || isNaN(parseFloat(discountValue))}
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white"
@@ -546,7 +599,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                     : Number(bill.discount_amount) > 0 ? t('updateDiscount') : t('applyDiscount')}
                 </Button>
                 {Number(bill.discount_amount) > 0 && (
-                  <Button variant="outline" size="sm" className="w-full" onClick={async () => {
+                  <Button variant="outline" className="w-full" onClick={async () => {
                     if (await confirm(t('removeDiscountConfirm'), { destructive: true, confirmLabel: t('remove') })) void handleApplyDiscount(0);
                   }}>
                     {t('remove')}
@@ -563,19 +616,21 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
               const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : custom?.name || tCommon('unknown');
               const Icon = builtIn?.icon;
               const active = (parseFloat(payment.amount) || 0) > 0;
-              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex h-11">
-                <button type="button" title={label} onClick={() => allocateRemainingTo(idx)} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-brand hover:text-brand'}`}>
+              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex min-h-12">
+                <button type="button" title={label} onClick={() => { setAmountTarget({ kind: 'payment', index: idx }); allocateRemainingTo(idx); }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-muted text-foreground border-border hover:border-brand hover:text-brand'}`}>
                   {Icon && <Icon size={15} />}
                   <span className="truncate">{label}</span>
                 </button>
-                <div className="flex flex-1 items-center border border-s-0 border-gray-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
+                <div className="flex flex-1 items-center border border-s-0 border-border rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
                   <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
                   <input
                     type="number"
                     value={payment.amount}
+                    onFocus={() => setAmountTarget({ kind: 'payment', index: idx })}
                     onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                     placeholder="0.00"
-                    className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl"
+                    inputMode="decimal"
+                    className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl"
                     step={inputCurrencyStep}
                     min="0"
                   />
@@ -589,7 +644,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             <div className={`rounded-xl px-4 py-3 flex items-center justify-between border-2 transition-all duration-200 ${
               change > 0
                 ? 'bg-emerald-50 border-emerald-200'
-                : 'bg-gray-50 border-gray-200'
+                : 'bg-muted border-border'
             }`}>
               <div className="flex items-center gap-2.5">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
@@ -617,21 +672,23 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
           {/* Loyalty Wallet Section */}
           {loyaltySettings?.loyalty_enabled && effectiveCustomerId && walletBalance !== null && (
             <div className="space-y-1">
-              <div className="flex h-11">
+              <div className="flex min-h-12">
                 <button type="button" disabled={walletBalance <= 0} onClick={() => {
                   const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
                   const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
                   const dueStored = Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere));
                   const dueDisplay = toDisplayUnit(dueStored);
                   setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
-                }} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:border-gray-200'}`}>
+                  setAmountTarget({ kind: 'wallet' });
+                }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-muted disabled:text-gray-400 disabled:border-border'}`}>
                   <Wallet size={15} /><span className="truncate">{t('loyaltyWallet')}</span>
                 </button>
-                <div className="flex flex-1 items-center border border-s-0 border-purple-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-purple-400">
+                <div className="flex flex-1 items-center border border-s-0 border-purple-200 rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-purple-400">
                   <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
                   <input
                     type="number"
                     value={walletAmount}
+                    onFocus={() => setAmountTarget({ kind: 'wallet' })}
                     onChange={(e) => {
                       const v = e.target.value;
                       const maxWalletCurrencyStored = Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE));
@@ -641,7 +698,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                     }}
                     placeholder="0.00"
                     disabled={walletBalance <= 0}
-                    className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl disabled:bg-gray-50"
+                    inputMode="decimal"
+                    className="min-w-0 flex-1 px-2 py-2 text-end text-base font-semibold outline-none rounded-e-xl disabled:bg-muted"
                     step={inputCurrencyStep}
                     min="0"
                     max={toDisplayUnit(Math.min(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE)), remaining))}
@@ -651,9 +709,21 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
               <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
           )}
+          {amountTarget && (
+            <TouchNumberPad
+              value={activeAmountValue}
+              onChange={updateActiveAmount}
+              ariaLabel={t('numericKeypad')}
+              clearLabel={t('clearAmount')}
+              backspaceLabel={t('backspaceAmount')}
+              allowDecimal={amountTarget.kind !== 'discount' || discountType === 'amount'}
+              max={activeAmountMax}
+              quickValues={activeAmountQuickValues}
+            />
+          )}
         </div>
 
-        <div className="px-5 pb-5 border-t border-gray-100 pt-3 space-y-2">
+        <div className="px-5 pb-5 border-t border-border pt-3 space-y-2">
           {justPaid ? (
             <>
               {cartCustomer?.phone && (

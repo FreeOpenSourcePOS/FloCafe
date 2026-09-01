@@ -2,7 +2,8 @@
 
 **Libre, open-source, at offline-first na point of sale para sa mga café, restaurant, at maliliit na kusina.**
 
-[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | [Français](README.fr.md) | **Filipino**
+[English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | [Français](README.fr.md) | [Türkçe](README.tr.md) | **Filipino** | [Deutsch](README.de.md)
+
 
 Direktang tumatakbo ang FloCafe sa computer ng negosyo. Naka-save ang mga order, customer, resibo, at backup sa lokal na SQLite database, kaya patuloy na gagana ang counter service at kitchen display kahit walang koneksyon sa Internet. Hindi kailangan ng hosted o cloud account para sa pangunahing operasyon ng POS. Maaaring paganahin kapag kailangan ang mga opsyonal na integration gaya ng Google Drive backup, pagpapadala ng bill sa WhatsApp, at cloud-connected reporting.
 
@@ -42,7 +43,8 @@ Gumagana offline ang pangunahing POS operation at lokal na data. Hindi nakadepen
 
 ## Mga wika at regional support
 
-May UI translation ang FloCafe para sa English, Spanish, Brazilian Portuguese, Persian (Farsi), Filipino, Turkish, at German. Filipino ay left-to-right at hindi nangangailangan ng RTL layout. Hiwalay ang UI language sa country at regional setting ng store, at hiwalay din ang tax calculation rules.
+May UI translation ang FloCafe para sa English, Spanish, Brazilian Portuguese, French, Persian (Farsi), Filipino, Turkish, at German. Filipino ay left-to-right at hindi nangangailangan ng RTL layout. Hiwalay ang UI language sa country at regional setting ng store, at hiwalay din ang tax calculation rules.
+
 
 May profile ang FloCafe para sa 131 bansa at 109 currency. Tinutukoy ng bawat profile ang default currency, locale, at timezone; maaaring baguhin ng may-ari ang timezone sa setup o sa Settings.
 

@@ -343,6 +343,7 @@ console.log('\n▶ KOT document builder (#443)');
       orderNumber: 'ORD-PARITY-001',
       createdAt: '2026-08-21 18:42:00',
       tableName: '4',
+      orderType: 'DINE IN',
     },
     items: [
       {
@@ -376,8 +377,10 @@ console.log('\n▶ KOT document builder (#443)');
   assert.equal(header.orderNumber.direction, 'ltr', 'order number is an LTR island under rtl base');
   assert.equal(header.table?.label.conceptId, 'pos.tableLabel');
   assert.equal(header.table?.name.text, '4');
+  assert.equal(header.orderType?.label.conceptId, 'print.kot.type');
+  assert.equal(header.orderType?.value.text, 'DINE IN');
   assert.equal(header.timestamp.text, '2026-08-21 18:42:00');
-  ok('KOT header carries banner/station/order/table/time semantics');
+  ok('KOT header carries banner/station/order/table/type/time semantics');
 
   const noTable = buildKotDocument(
     { ...kotData, order: { ...kotData.order, tableName: '' } },

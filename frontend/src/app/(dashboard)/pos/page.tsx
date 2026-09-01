@@ -510,6 +510,8 @@ export default function POSPage() {
           type: cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
+          online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
+          external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           items: cart.items.map((item) => ({
             product_id: item.product.id,
             quantity: item.quantity,
@@ -584,6 +586,8 @@ export default function POSPage() {
       type: cart.orderType,
       guest_count: cart.guestCount,
       special_instructions: cart.orderNotes,
+      online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
+      external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
       items: orderItems,
     });
     const storedAttempt = readPrepaidAttempt();
@@ -664,6 +668,8 @@ export default function POSPage() {
           type: cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
+          online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
+          external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           items: orderItems,
         }, { headers: { 'Idempotency-Key': attempt.orderIdempotencyKey } });
         orderData = data;

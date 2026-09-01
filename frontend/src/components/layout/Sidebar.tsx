@@ -75,6 +75,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, roles: ROLE_ACCESS.ownerManager, businessTypes: ['restaurant'] },
   { href: '/customers', labelKey: 'customers', icon: Users, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
   { href: '/staff', labelKey: 'staff', icon: UserCog, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
+  { href: '/settings', labelKey: 'settings', icon: Settings, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
 ];
 
 export default function AppSidebar() {
@@ -236,22 +237,6 @@ export default function AppSidebar() {
                 align={isMobile ? "end" : "start"}
                 className="w-56 rounded-lg"
               >
-                {hasRole(role, ROLE_ACCESS.ownerManager) && (
-                  <DropdownMenuItem asChild className="cursor-pointer">
-                    <Link href="/settings" onClick={closeMobile} className="flex items-center gap-2">
-                      <span className="relative flex size-4 items-center justify-center">
-                        <Settings className="size-4 shrink-0" />
-                        {emailNeedsAttention && (
-                          <span
-                            aria-label="Email verification required"
-                            className="absolute -end-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-sidebar"
-                          />
-                        )}
-                      </span>
-                      <span>{t('settings')}</span>
-                    </Link>
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuItem asChild className="cursor-pointer">
                   <Link href="/support" onClick={closeMobile} className="flex items-center gap-2">
                     <LifeBuoy className="size-4 shrink-0" />

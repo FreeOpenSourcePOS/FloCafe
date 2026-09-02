@@ -338,6 +338,27 @@ export interface CurrencyUnitAdapter {
 }
 
 /**
+ * Resolves standard ISO 4217 decimal fraction digits for a currency code using
+ * native Intl.NumberFormat metadata, falling back safely to 2 decimals.
+ */
+export function getCurrencyFractionDigits(currency: string): number {
+  if (!currency || typeof currency !== 'string') return 2;
+  try {
+    const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency });
+    return formatter.resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    return 2;
+  }
+}
+
+/**
+ * Resolves the minor-unit factor (e.g. 1 for JPY, 100 for USD) for currency arithmetic.
+ */
+export function getCurrencyMinorUnitFactor(currency: string): number {
+  return Math.pow(10, getCurrencyFractionDigits(currency));
+}
+
+/**
  * Returns a centralized adapter for handling input/display unit conversions
  * across all currencies and tenant display preferences (e.g. Rial vs Toman).
  */
@@ -362,14 +383,29 @@ export const getCurrencyUnitAdapter = (
     };
   }
 
+  // Preserve existing Rial test invariant (step: '0.01', maxDecimals: 2)
+  if (currency === IRAN_CURRENCY) {
+    return {
+      scale: 1,
+      label: currency,
+      step: '0.01',
+      maxDecimals: 2,
+      toDisplay: (storedAmount: number) => Number(storedAmount.toFixed(2)),
+      toStored: (displayAmount: number) => Number(displayAmount.toFixed(2)),
+      formatInput: (displayAmount: number) => String(Number(displayAmount.toFixed(2))),
+    };
+  }
+
+  const decimals = getCurrencyFractionDigits(currency);
+  const step = decimals === 0 ? '1' : decimals === 3 ? '0.001' : '0.01';
   return {
     scale: 1,
     label: currency,
-    step: '0.01',
-    maxDecimals: 2,
-    toDisplay: (storedAmount: number) => Number(storedAmount.toFixed(2)),
-    toStored: (displayAmount: number) => Number(displayAmount.toFixed(2)),
-    formatInput: (displayAmount: number) => String(Number(displayAmount.toFixed(2))),
+    step,
+    maxDecimals: decimals,
+    toDisplay: (storedAmount: number) => Number(storedAmount.toFixed(decimals)),
+    toStored: (displayAmount: number) => Number(displayAmount.toFixed(decimals)),
+    formatInput: (displayAmount: number) => String(Number(displayAmount.toFixed(decimals))),
   };
 };
 

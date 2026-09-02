@@ -26,9 +26,21 @@ import {
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { sendEvent } from '../services/telemetry';
+import {
+  getCountryByCode,
+  getCurrencyFractionDigits,
+  getCurrencyMinorUnitFactor,
+} from '../countries';
 
 const router = Router();
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
+
+function getTenantCurrency(): string {
+  const explicit = getSettingValue('currency');
+  if (explicit && typeof explicit === 'string' && /^[A-Z]{3}$/.test(explicit)) return explicit;
+  const country = getSettingValue('country') || 'IN';
+  return getCountryByCode(country)?.currency || 'INR';
+}
 
 function scaleTaxBreakdown(
   raw: unknown,
@@ -544,7 +556,7 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
   }
 });
 
-function allocateMinorUnits(sourceMinor: number, weights: number[]): number[] {
+export function allocateMinorUnits(sourceMinor: number, weights: number[]): number[] {
   const n = weights.length;
   if (n === 0) return [];
   const totalWeight = weights.reduce((sum, w) => sum + w, 0);
@@ -864,6 +876,8 @@ export function allocateTaxSnapshots(
 function composeSplitTotals(
   allocations: Record<string, number[]>,
   exclusiveTaxMinors: number[],
+  minorFactor: number = 100,
+  decimals: number = 2,
 ): number[] {
   const discountAmount = allocations.discount_amount ?? allocations.discountAmount;
   const deliveryCharge = allocations.delivery_charge ?? allocations.deliveryCharge;
@@ -873,12 +887,12 @@ function composeSplitTotals(
   return allocations.subtotal.map((subtotal, index) => Number((
     subtotal
     - discountAmount[index]
-    + exclusiveTaxMinors[index] / 100
+    + exclusiveTaxMinors[index] / minorFactor
     + deliveryCharge[index]
     + packagingCharge[index]
     + serviceCharge[index]
     + roundOff[index]
-  ).toFixed(2)));
+  ).toFixed(decimals)));
 }
 
 function allocateTaxBreakdown(
@@ -886,6 +900,7 @@ function allocateTaxBreakdown(
   checkTaxMinors: number[],
   weights: number[],
   componentWeights?: Array<number[] | null>,
+  minorFactor: number = 100,
 ): (string | null)[] {
   const numChecks = weights.length;
   const parsed = typeof sourceBreakdownRaw === 'string'
@@ -916,7 +931,7 @@ function allocateTaxBreakdown(
               outerIndex,
               innerIndex,
               component: comp,
-              minorAmount: Math.round(Number(comp.amount || 0) * 100),
+              minorAmount: Math.round(Number(comp.amount || 0) * minorFactor),
             });
           }
         });
@@ -928,7 +943,7 @@ function allocateTaxBreakdown(
         components.push({
           innerIndex,
           component: comp,
-          minorAmount: Math.round(Number(comp.amount || 0) * 100),
+          minorAmount: Math.round(Number(comp.amount || 0) * minorFactor),
         });
       }
     });
@@ -988,10 +1003,10 @@ function allocateTaxBreakdown(
         if (!Array.isArray(outer)) return outer;
         return outer.map((comp: any, innerIdx: number) => {
           const compIdx = components.findIndex((c) => c.outerIndex === outerIdx && c.innerIndex === innerIdx);
-          const minor = compIdx !== -1 ? compAllocations[compIdx][k] : Math.round(Number(comp?.amount || 0) * 100);
+          const minor = compIdx !== -1 ? compAllocations[compIdx][k] : Math.round(Number(comp?.amount || 0) * minorFactor);
           return {
             ...comp,
-            amount: minor / 100,
+            amount: minor / minorFactor,
           };
         });
       });
@@ -999,10 +1014,10 @@ function allocateTaxBreakdown(
     } else {
       const clonedFlat = parsed.map((comp: any, innerIdx: number) => {
         const compIdx = components.findIndex((c) => c.innerIndex === innerIdx);
-        const minor = compIdx !== -1 ? compAllocations[compIdx][k] : Math.round(Number(comp?.amount || 0) * 100);
+        const minor = compIdx !== -1 ? compAllocations[compIdx][k] : Math.round(Number(comp?.amount || 0) * minorFactor);
         return {
           ...comp,
-          amount: minor / 100,
+          amount: minor / minorFactor,
         };
       });
       result.push(JSON.stringify(clonedFlat));
@@ -1352,24 +1367,27 @@ export function syncUnpaidBillsForOrder(
     getTaxDiscountRatio(source.subtotal, source.discountAmount),
     source.taxBreakdown,
   );
+  const tenantCurrency = getTenantCurrency();
+  const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
+  const decimals = getCurrencyFractionDigits(tenantCurrency);
   const fields = {
-    subtotal: Math.round(source.subtotal * 100),
-    taxAmount: Math.round(source.taxAmount * 100),
-    discountAmount: Math.round(source.discountAmount * 100),
-    deliveryCharge: Math.round(source.deliveryCharge * 100),
-    packagingCharge: Math.round(source.packagingCharge * 100),
-    serviceCharge: Math.round(source.serviceCharge * 100),
-    roundOff: Math.round(billRoundOff * 100),
-    total: Math.round(billTotal * 100),
+    subtotal: Math.round(source.subtotal * minorFactor),
+    taxAmount: Math.round(source.taxAmount * minorFactor),
+    discountAmount: Math.round(source.discountAmount * minorFactor),
+    deliveryCharge: Math.round(source.deliveryCharge * minorFactor),
+    packagingCharge: Math.round(source.packagingCharge * minorFactor),
+    serviceCharge: Math.round(source.serviceCharge * minorFactor),
+    roundOff: Math.round(billRoundOff * minorFactor),
+    total: Math.round(billTotal * minorFactor),
   };
   const allocations = Object.fromEntries(Object.entries(fields).map(([field, value]) => [
     field,
     (field === 'roundOff' ? allocateSignedMinorUnits(value, weights) : allocateMinorUnits(value, weights))
-      .map((minor) => minor / 100),
+      .map((minor) => minor / minorFactor),
   ])) as Record<keyof typeof fields, number[]>;
-  const allocatedTaxMinors = allocations.taxAmount.map((amount) => Math.round(amount * 100));
+  const allocatedTaxMinors = allocations.taxAmount.map((amount) => Math.round(amount * minorFactor));
   const snapshotAllocation = allocateTaxSnapshotsWithTax(source.taxSnapshot, weights, snapshotWeights, snapshotExclusions);
-  const sourceTaxMinor = Math.round(Number(source.taxAmount || 0) * 100);
+  const sourceTaxMinor = Math.round(Number(source.taxAmount || 0) * minorFactor);
   const legacyAllocation = allocateLegacyTaxContribution(
     sourceTaxMinor,
     snapshotAllocation,
@@ -1386,8 +1404,8 @@ export function syncUnpaidBillsForOrder(
   );
   const taxMinors = resolvedTax.taxMinors;
   if (resolvedTax.exclusiveTaxMinors) {
-    allocations.taxAmount = taxMinors.map((minor) => minor / 100);
-    allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors);
+    allocations.taxAmount = taxMinors.map((minor) => minor / minorFactor);
+    allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, minorFactor, decimals);
   }
   const sourceItems = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(orderId) as any[];
   const breakdowns = allocateTaxBreakdown(
@@ -1399,6 +1417,7 @@ export function syncUnpaidBillsForOrder(
       sourceItems,
       (item) => getBillItemWeights(db, bills, Number(item.id)),
     ),
+    minorFactor,
   );
   const snapshots = snapshotAllocation.snapshots;
   const update = db.prepare(`
@@ -1471,17 +1490,21 @@ router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier),
         check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)
       );
 
+      const tenantCurrency = getTenantCurrency();
+      const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
+      const decimals = getCurrencyFractionDigits(tenantCurrency);
+
       const fields = ['subtotal', 'tax_amount', 'discount_amount', 'delivery_charge', 'packaging_charge', 'service_charge', 'round_off', 'total'] as const;
       const allocations: Record<string, number[]> = {};
       for (const field of fields) {
-        const totalMinor = Math.round(Number(txnSource[field] || 0) * 100);
+        const totalMinor = Math.round(Number(txnSource[field] || 0) * minorFactor);
         const allocatedMinors = field === 'round_off'
           ? allocateSignedMinorUnits(totalMinor, weights)
           : allocateMinorUnits(totalMinor, weights);
-        allocations[field] = allocatedMinors.map((minor) => minor / 100);
+        allocations[field] = allocatedMinors.map((minor) => minor / minorFactor);
       }
 
-      const checkTaxMinors = allocations.tax_amount.map((amt) => Math.round(amt * 100));
+      const checkTaxMinors = allocations.tax_amount.map((amt) => Math.round(amt * minorFactor));
       const txnSnapshotItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled' ORDER BY id").all(txnSource.order_id) as any[];
       const snapshotItems = txnSnapshotItems.filter((item) => hasSnapshotLines(item.tax_snapshot));
       const snapshotWeights = snapshotItems.map((item) => {
@@ -1492,7 +1515,7 @@ router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier),
       });
       const snapshotExclusions = snapshotItems.map((item) => ['voided', 'void_adjustment'].includes(item.status));
       const snapshotAllocation = allocateTaxSnapshotsWithTax(txnSource.tax_snapshot, weights, snapshotWeights, snapshotExclusions);
-      const sourceTaxMinor = Math.round(Number(txnSource.tax_amount || 0) * 100);
+      const sourceTaxMinor = Math.round(Number(txnSource.tax_amount || 0) * minorFactor);
       const legacyTaxRatio = getTaxDiscountRatio(txnSource.subtotal, txnSource.discount_amount);
       const legacyContribution = collectLegacyTaxContribution(
         txnSnapshotItems,
@@ -1519,8 +1542,8 @@ router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier),
       );
       const resolvedTaxMinors = resolvedTax.taxMinors;
       if (resolvedTax.exclusiveTaxMinors) {
-        allocations.tax_amount = resolvedTaxMinors.map((minor) => minor / 100);
-        allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors);
+        allocations.tax_amount = resolvedTaxMinors.map((minor) => minor / minorFactor);
+        allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors, minorFactor, decimals);
       }
       const resolvedTaxBreakdowns = allocateTaxBreakdown(
         txnSource.tax_breakdown,
@@ -1533,6 +1556,7 @@ router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier),
             check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0
           )),
         ),
+        minorFactor,
       );
       const checkTaxSnapshots = snapshotAllocation.snapshots;
 

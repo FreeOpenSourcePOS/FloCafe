@@ -127,6 +127,7 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
     tax_amount: 53,
     discount_amount: 0,
     delivery_charge: 0,
+    service_charge: 0,
     total: 583,
     guest_count: 3,
     special_instructions: 'Birthday celebration',

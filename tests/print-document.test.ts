@@ -147,6 +147,15 @@ console.log('\n▶ Block construction (fixture bill)');
   assert.equal(payments.lines[0].label.conceptId, 'pos.methodCash');
   ok('totals/payments blocks copy printed truth verbatim');
 
+  const serviceDocument = buildBillDocument(
+    makePrintData({ bill: { serviceCharge: 12, total: 1129 } }),
+    makeContext(),
+  );
+  const serviceTotals = blockOf(serviceDocument, 'totals');
+  assert.equal(serviceTotals.serviceCharge?.amount, 12, 'server-persisted service charge is rendered once');
+  assert.equal(serviceTotals.grandTotal.amount, 1129, 'receipt uses the authoritative total alongside service charge');
+  ok('service charge is present on the shared receipt surface when persisted');
+
   assert.equal(blockOf(document, 'message').reprintBanner, null, 'no reprint banner on first print');
 }
 

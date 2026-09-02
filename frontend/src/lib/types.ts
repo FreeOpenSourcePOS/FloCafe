@@ -157,6 +157,8 @@ export interface Order {
   discount_amount: number;
   delivery_charge: number;
   packaging_charge?: number;
+  /** Server-validated explicit per-order amount; Settings only configures tax treatment. */
+  service_charge: number;
   round_off?: number;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;

@@ -461,6 +461,7 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
         const orderDiscountAmt   = order.discount_amount || 0;
         const orderDelivery      = order.delivery_charge || 0;
         const orderPackaging     = order.packaging_charge|| 0;
+        const orderService       = order.service_charge  || 0;
         const orderTotal         = order.total           || 0;
 
         const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
@@ -470,6 +471,7 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
           existingBill.payment_status !== 'paid' && (
             existingBill.discount_amount !== orderDiscountAmt ||
             existingBill.subtotal        !== orderSubtotal    ||
+            existingBill.service_charge  !== orderService     ||
             existingBill.total           !== roundedOrderTotal
           );
 
@@ -487,6 +489,7 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
                 discount_reason= ?,
                 delivery_charge= ?,
                 packaging_charge= ?,
+                service_charge = ?,
                 round_off      = ?,
                 total          = ?,
                 balance        = ?,
@@ -495,7 +498,7 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
           `).run(
             orderSubtotal, orderTaxAmount, order.tax_breakdown, order.tax_snapshot,
             orderDiscountAmt, order.discount_type, order.discount_value, order.discount_reason,
-            orderDelivery, orderPackaging, orderRoundOff,
+            orderDelivery, orderPackaging, orderService, orderRoundOff,
             roundedOrderTotal, newBalance, now(),
             existingBill.id
           );
@@ -514,18 +517,19 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
       const discountAmount = order.discount_amount || 0;
       const deliveryCharge = order.delivery_charge || 0;
       const packagingCharge = order.packaging_charge || 0;
+      const serviceCharge = order.service_charge || 0;
       const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
       const { total, adjustment: roundOff } = applyPayableRounding(order.total || 0, pack);
 
       const runResult = db.prepare(`
         INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
           discount_amount, discount_type, discount_value, discount_reason,
-          delivery_charge, packaging_charge, round_off, total, paid_amount, balance, payment_status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
+          delivery_charge, packaging_charge, service_charge, round_off, total, paid_amount, balance, payment_status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
       `).run(
         billNumber, order_id, order.customer_id, subtotal, taxAmount, order.tax_breakdown, order.tax_snapshot,
         discountAmount, order.discount_type, order.discount_value, order.discount_reason,
-        deliveryCharge, packagingCharge, roundOff, total, 0, total, now(), now()
+        deliveryCharge, packagingCharge, serviceCharge, roundOff, total, 0, total, now(), now()
       );
 
       const newBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(runResult.lastInsertRowid));
@@ -864,6 +868,7 @@ function composeSplitTotals(
   const discountAmount = allocations.discount_amount ?? allocations.discountAmount;
   const deliveryCharge = allocations.delivery_charge ?? allocations.deliveryCharge;
   const packagingCharge = allocations.packaging_charge ?? allocations.packagingCharge;
+  const serviceCharge = allocations.service_charge ?? allocations.serviceCharge;
   const roundOff = allocations.round_off ?? allocations.roundOff;
   return allocations.subtotal.map((subtotal, index) => Number((
     subtotal
@@ -871,6 +876,7 @@ function composeSplitTotals(
     + exclusiveTaxMinors[index] / 100
     + deliveryCharge[index]
     + packagingCharge[index]
+    + serviceCharge[index]
     + roundOff[index]
   ).toFixed(2)));
 }
@@ -1014,6 +1020,7 @@ interface OrderBillSyncValues {
   discountAmount: number;
   deliveryCharge: number;
   packagingCharge: number;
+  serviceCharge: number;
   total: number;
 }
 
@@ -1320,14 +1327,14 @@ export function syncUnpaidBillsForOrder(
   if (!splitBills) {
     const update = db.prepare(`
       UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
-        discount_amount = ?, delivery_charge = ?, packaging_charge = ?, round_off = ?, updated_at = ?
+        discount_amount = ?, delivery_charge = ?, packaging_charge = ?, service_charge = ?, round_off = ?, updated_at = ?
       WHERE id = ?
     `);
     for (const bill of unpaidBills) {
       update.run(
         source.subtotal, billTotal, Math.max(0, billTotal - Number(bill.paid_amount || 0)), source.taxAmount,
         source.taxBreakdown, source.taxSnapshot, source.discountAmount, source.deliveryCharge,
-        source.packagingCharge, billRoundOff, now(), bill.id,
+        source.packagingCharge, source.serviceCharge, billRoundOff, now(), bill.id,
       );
     }
     return;
@@ -1351,6 +1358,7 @@ export function syncUnpaidBillsForOrder(
     discountAmount: Math.round(source.discountAmount * 100),
     deliveryCharge: Math.round(source.deliveryCharge * 100),
     packagingCharge: Math.round(source.packagingCharge * 100),
+    serviceCharge: Math.round(source.serviceCharge * 100),
     roundOff: Math.round(billRoundOff * 100),
     total: Math.round(billTotal * 100),
   };
@@ -1395,7 +1403,7 @@ export function syncUnpaidBillsForOrder(
   const snapshots = snapshotAllocation.snapshots;
   const update = db.prepare(`
     UPDATE bills SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?,
-      delivery_charge = ?, packaging_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ?
+      delivery_charge = ?, packaging_charge = ?, service_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ?
     WHERE id = ?
   `);
 
@@ -1404,7 +1412,7 @@ export function syncUnpaidBillsForOrder(
     const total = allocations.total[index];
     update.run(
       allocations.subtotal[index], allocations.taxAmount[index], breakdowns[index], snapshots[index],
-      allocations.discountAmount[index], allocations.deliveryCharge[index], allocations.packagingCharge[index],
+      allocations.discountAmount[index], allocations.deliveryCharge[index], allocations.packagingCharge[index], allocations.serviceCharge[index],
       allocations.roundOff[index], total, Math.max(0, total - Number(bill.paid_amount || 0)), now(), bill.id,
     );
   });
@@ -1463,7 +1471,7 @@ router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier),
         check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)
       );
 
-      const fields = ['subtotal', 'tax_amount', 'discount_amount', 'delivery_charge', 'packaging_charge', 'round_off', 'total'] as const;
+      const fields = ['subtotal', 'tax_amount', 'discount_amount', 'delivery_charge', 'packaging_charge', 'service_charge', 'round_off', 'total'] as const;
       const allocations: Record<string, number[]> = {};
       for (const field of fields) {
         const totalMinor = Math.round(Number(txnSource[field] || 0) * 100);
@@ -1534,12 +1542,12 @@ router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier),
         const splitBk = resolvedTaxBreakdowns[index];
         const splitSnapshot = checkTaxSnapshots[index];
         if (index === 0) {
-          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?`)
-            .run(groupId, check.label, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], now(), txnSource.id);
+          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, service_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?`)
+            .run(groupId, check.label, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.service_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], now(), txnSource.id);
           billId = Number(txnSource.id);
         } else {
-          const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, round_off, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)`)
-            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
+          const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, service_charge, round_off, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)`)
+            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.service_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
           billId = Number(inserted.lastInsertRowid);
         }
         billIds.push(billId);

@@ -4163,6 +4163,20 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 79,
+    name: 'add_service_charge_amounts',
+    up: () => {
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('service_charge')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN service_charge REAL DEFAULT 0`);
+      }
+      const billColumns = getColumns(db, 'bills');
+      if (!billColumns.includes('service_charge')) {
+        db.exec(`ALTER TABLE bills ADD COLUMN service_charge REAL DEFAULT 0`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4468,6 +4482,7 @@ function createSchema(): void {
       special_instructions TEXT,
       packaging_charge REAL DEFAULT 0,
       delivery_charge REAL DEFAULT 0,
+      service_charge REAL DEFAULT 0,
       status TEXT DEFAULT 'pending',
       subtotal REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
@@ -4534,6 +4549,7 @@ function createSchema(): void {
       discount_reason TEXT,
       delivery_charge REAL DEFAULT 0,
       packaging_charge REAL DEFAULT 0,
+      service_charge REAL DEFAULT 0,
       round_off REAL DEFAULT 0,
       total REAL DEFAULT 0,
       paid_amount REAL DEFAULT 0,

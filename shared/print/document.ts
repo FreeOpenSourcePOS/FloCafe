@@ -144,7 +144,7 @@ export interface BillSnapshot {
   readonly discountAmount: number;
   readonly taxAmount: number;
   readonly total: number;
-  /** Flat service charge, when the bill carries one (frontend bills). */
+  /** Flat service charge, when the server-persisted bill carries one. */
   readonly serviceCharge?: number;
   /** Flat delivery charge, when the bill carries one (frontend bills). */
   readonly deliveryCharge?: number;
@@ -341,7 +341,7 @@ export interface TotalsBlock {
   readonly discount: { readonly label: SemanticLabel; readonly amount: number } | null;
   /** Flat tax line, present only when no breakdown lines are emitted. */
   readonly tax: { readonly label: SemanticLabel; readonly amount: number } | null;
-  /** Flat service-charge line, present when the snapshot carries a nonzero charge. */
+  /** Flat service-charge line, present when the server snapshot carries a nonzero charge. */
   readonly serviceCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
   /** Flat delivery-charge line, present when the snapshot carries a nonzero charge. */
   readonly deliveryCharge: { readonly label: SemanticLabel; readonly amount: number } | null;

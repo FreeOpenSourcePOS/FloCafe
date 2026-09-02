@@ -86,9 +86,10 @@ function main() {
       'packaging_tax_category_id',
       'delivery_tax_category_id',
       'service_charge_tax_category_id',
+      'service_charge',
     ],
     order_items: ['tax_snapshot'],
-    bills: ['tax_snapshot'],
+    bills: ['tax_snapshot', 'service_charge'],
   };
   for (const [table, expected] of Object.entries(expectedTaxColumns)) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);

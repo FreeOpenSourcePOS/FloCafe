@@ -342,20 +342,31 @@ export function getConfiguredChargeTaxCategories(
   }
 }
 
+export function normalizeChargeAmount(value: unknown, kind: ChargeTaxKind): number {
+  if (value === undefined || value === null || value === '') return 0;
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw Object.assign(new Error(`${kind} charge must be a non-negative finite amount`), { statusCode: 400 });
+  }
+  try {
+    const amount = new Decimal(value as Decimal.Value);
+    if (!amount.isFinite() || amount.isNegative()) {
+      throw new Error(`${kind} charge must be a non-negative finite amount`);
+    }
+    const numericAmount = amount.toNumber();
+    if (!Number.isFinite(numericAmount)) {
+      throw new Error(`${kind} charge must be a non-negative finite amount`);
+    }
+    return numericAmount;
+  } catch (error: any) {
+    throw Object.assign(new Error(error.message || `${kind} charge is invalid`), { statusCode: 400 });
+  }
+}
+
 function chargeAmount(context: ChargeTaxContext, kind: ChargeTaxKind): Decimal {
   const amountKey: keyof ChargeTaxContext = kind === 'service_charge'
     ? 'service_charge'
     : `${kind}_charge`;
-  const raw = context[amountKey] ?? 0;
-  try {
-    const amount = new Decimal(raw as Decimal.Value);
-    if (!amount.isFinite() || amount.isNegative()) {
-      throw new Error(`${kind} charge must be a non-negative finite amount`);
-    }
-    return amount;
-  } catch (error: any) {
-    throw Object.assign(new Error(error.message || `${kind} charge is invalid`), { statusCode: 400 });
-  }
+  return new Decimal(normalizeChargeAmount(context[amountKey], kind));
 }
 
 function chargeCategoryId(context: ChargeTaxContext, kind: ChargeTaxKind): string | null {
@@ -792,13 +803,9 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       }
     }
 
-    const normalizeCharge = (value: unknown): number => {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-    };
-    const packaging = normalizeCharge(packaging_charge);
-    const delivery = normalizeCharge(delivery_charge);
-    const service = normalizeCharge(service_charge);
+    const packaging = normalizeChargeAmount(packaging_charge, 'packaging');
+    const delivery = normalizeChargeAmount(delivery_charge, 'delivery');
+    const service = normalizeChargeAmount(service_charge, 'service_charge');
 
     let discountAmount = new Decimal(0);
     if (discount_type !== undefined || discount_value !== undefined) {
@@ -883,6 +890,6 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     });
   } catch (error: any) {
     console.error('[Tax] Preview error:', error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 }

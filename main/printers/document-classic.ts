@@ -304,8 +304,17 @@ export function renderBillDocumentToClassicLines(
     return segment;
   };
 
-  const renderGrandTotal = (block: TotalsBlock): void => {
-    segmentOf('totals').main.push(...financialRows(labelOf(block.grandTotal.label), formatCurrency(block.grandTotal.amount, prefix, options.locale, trimDecimals), cols, options.language).map((line) => `{BOLD}${line}{/BOLD}`));
+  const renderGrandTotal = (block: TotalsBlock, target = segmentOf('totals')): void => {
+    target.main.push(...financialRows(labelOf(block.grandTotal.label), formatCurrency(block.grandTotal.amount, prefix, options.locale, trimDecimals), cols, options.language).map((line) => `{BOLD}${line}{/BOLD}`));
+  };
+
+  const renderCharges = (block: TotalsBlock, target: BlockSegments): void => {
+    if (block.deliveryCharge) {
+      target.main.push(...financialRows(labelOf(block.deliveryCharge.label), formatCurrency(block.deliveryCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    }
+    if (block.packagingCharge) {
+      target.main.push(...financialRows(labelOf(block.packagingCharge.label), formatCurrency(block.packagingCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    }
   };
 
   for (const block of blocks) {
@@ -396,7 +405,9 @@ export function renderBillDocumentToClassicLines(
           && totalsIndex >= 0
           && breakdownIndex > totalsIndex
         ) {
-          renderGrandTotal(blocks[totalsIndex] as TotalsBlock);
+          const totalsBlock = blocks[totalsIndex] as TotalsBlock;
+          renderCharges(totalsBlock, segment);
+          renderGrandTotal(totalsBlock, segment);
         }
         break;
       }
@@ -417,11 +428,8 @@ export function renderBillDocumentToClassicLines(
         if (!hasBreakdownLines && block.tax) {
           segment.main.push(...financialRows(labelOf(block.tax.label), formatCurrency(block.tax.amount, prefix, options.locale, trimDecimals), cols, options.language));
         }
-        if (block.deliveryCharge) {
-          segment.main.push(...financialRows(labelOf(block.deliveryCharge.label), formatCurrency(block.deliveryCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
-        }
-        if (block.packagingCharge) {
-          segment.main.push(...financialRows(labelOf(block.packagingCharge.label), formatCurrency(block.packagingCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+        if (!hasBreakdownLines || breakdownIndex < totalsIndex) {
+          renderCharges(block, segment);
         }
         if (!hasBreakdownLines) {
           renderGrandTotal(block);

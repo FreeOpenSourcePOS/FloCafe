@@ -436,6 +436,29 @@ function run(): void {
     }
     warn(browserHtml.includes('Extra shot') && browserHtml.includes('×3'), 'browser: addon quantity remains visible');
     warn(browserHtml.includes('Delivery Charge') && browserHtml.includes('Packaging'), 'browser: delivery and packaging charges render');
+
+    let malformedPrintSucceeded = true;
+    for (const addons of [
+      [null, 'legacy-addon', { name: 'Safe extra', price: 4, quantity: 2 }],
+      'legacy-addon',
+      { legacy: true },
+    ]) {
+      const malformedBill = {
+        ...quantityBill,
+        order: {
+          ...quantityOrder,
+          items: [{ ...quantityOrder.items[0], addons }],
+        },
+      };
+      try {
+        fe.receiptEncoder.buildClassicReceiptBytes(malformedBill as any, { ...tenant, business_name: 'Flo Parity Cafe' } as any, { paperWidth: 80 }, []);
+        fe.receiptEncoder.buildCompactReceiptBytes(malformedBill as any, { ...tenant, business_name: 'Flo Parity Cafe' } as any, { paperWidth: 80 }, []);
+        fe.webPrint.generateBillHtml(malformedBill as any, { ...tenant, business_name: 'Flo Parity Cafe' } as any, { paperSize: 'thermal80' });
+      } catch {
+        malformedPrintSucceeded = false;
+      }
+    }
+    warn(malformedPrintSucceeded, 'frontend: malformed add-on containers and entries do not crash printing');
   }
 
   // ------------------------------------------------------------------

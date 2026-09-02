@@ -185,6 +185,40 @@ console.log('\n▶ Show-flag and tax-presence decisions');
   const breakdownBlock = blockOf(breakdown, 'tax-breakdown');
   assert.deepEqual(breakdownBlock.lines.map((line) => line.label.primary), ['GST', 'VAT'], 'zero-amount components filtered');
   assert.equal(blockOf(breakdown, 'totals').tax, null, 'flat tax line suppressed when breakdown shown');
+
+  const chargedBreakdown = buildBillDocument(
+    makePrintData({
+      bill: {
+        taxAmount: 90,
+        taxComponents: [{ title: 'GST', rate: 5, amount: 90 }],
+        deliveryCharge: 8,
+        packagingCharge: 9,
+      },
+      business: { showTaxBreakdown: true },
+    }),
+    makeContext(),
+  );
+  const chargedOptions = {
+    columns: 48,
+    language: 'en',
+    locale: 'en-IN',
+    currencySymbol: '₹',
+    trimDecimals: false,
+    useUnicode: true,
+    arabicShaping: false,
+    cutMode: 'full' as const,
+  };
+  for (const [renderer, lines] of [
+    ['classic', renderBillDocumentToClassicLines(chargedBreakdown, chargedOptions)],
+    ['compact', renderBillDocumentToCompactLines(chargedBreakdown, chargedOptions)],
+  ] as const) {
+    const taxIndex = lines.findIndex((line) => line.includes('GST'));
+    const deliveryIndex = lines.findIndex((line) => line.includes('pos.delivery[en]'));
+    const packagingIndex = lines.findIndex((line) => line.includes('pos.packaging[en]'));
+    const totalIndex = lines.findIndex((line) => line.includes('print.grandTotal[en]'));
+    assert(taxIndex >= 0 && taxIndex < deliveryIndex && deliveryIndex < packagingIndex && packagingIndex < totalIndex,
+      `${renderer} places tax breakdown before charges and grand total`);
+  }
   ok('tax breakdown vs flat tax line decision');
 
   const noBreakdown = buildBillDocument(

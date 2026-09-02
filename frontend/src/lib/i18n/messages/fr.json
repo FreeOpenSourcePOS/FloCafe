@@ -509,6 +509,7 @@
     "deliveryAddress": "Adresse de livraison",
     "discount": "Remise",
     "discountInvalid": "Saisissez une valeur de remise valide",
+    "fixedDiscountMinimum": "Les remises fixes doivent être d’au moins 1 unité",
     "discountReasonPlaceholder": "Motif (facultatif)",
     "discountRemoved": "Remise supprimée",
     "discountUpdated": "Remise mise à jour",

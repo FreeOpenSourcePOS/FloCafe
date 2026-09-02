@@ -2,6 +2,7 @@
 
 import { Delete, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { allowCurrencyDecimalKey, type CurrencyAmountTarget, type CurrencyDiscountType } from '@/lib/currency-input';
 
 interface QuickValue {
   label: string;
@@ -97,5 +98,20 @@ export default function TouchNumberPad({
         </button>
       </div>
     </div>
+  );
+}
+
+interface CurrencyTouchNumberPadProps extends Omit<Props, 'allowDecimal'> {
+  currencyMaxDecimals: number;
+  amountTarget: CurrencyAmountTarget;
+  discountType: CurrencyDiscountType;
+}
+
+export function CurrencyTouchNumberPad({ currencyMaxDecimals, amountTarget, discountType, ...props }: CurrencyTouchNumberPadProps) {
+  return (
+    <TouchNumberPad
+      {...props}
+      allowDecimal={allowCurrencyDecimalKey(currencyMaxDecimals, amountTarget, discountType)}
+    />
   );
 }

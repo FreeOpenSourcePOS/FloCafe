@@ -509,6 +509,7 @@
     "deliveryAddress": "نشانی رسانش",
     "discount": "تخفیف",
     "discountInvalid": "لطفاً یک مقدار تخفیف درست بنویسید",
+    "fixedDiscountMinimum": "تخفیف‌های ثابت باید حداقل ۱ واحد باشند",
     "discountReasonPlaceholder": "دلیل (اختیاری)",
     "discountRemoved": "تخفیف برداشته شد",
     "discountUpdated": "تخفیف به‌روزرسانی شد",

@@ -259,9 +259,9 @@ async function runModalKeypadIntegrationTests() {
     '@/components/ui/button': {
       Button: ({ children, variant: _variant, size: _size, ...props }: any) => React.createElement('button', props, children),
     },
-    '@/components/pos/TaxBreakdown': { default: () => null },
-    '@/lib/api': { default: { get: async () => ({ data: {} }), patch: async () => ({ data: {} }) } },
-    'react-hot-toast': { default: { success: () => undefined, error: () => undefined } },
+    '@/components/pos/TaxBreakdown': { __esModule: true, default: () => null },
+    '@/lib/api': { __esModule: true, default: { get: async () => ({ data: {} }), patch: async () => ({ data: {} }) } },
+    'react-hot-toast': { __esModule: true, default: { success: () => undefined, error: () => undefined } },
     '@/lib/printer/tax-components': { resolveTaxComponents: () => [] },
     '@/store/cart': { useCartStore: (selector?: (state: typeof cart) => unknown) => selector ? selector(cart) : cart },
     '@/hooks/use-confirm': { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) },
@@ -379,9 +379,9 @@ async function runCatalogSaveBoundaryTests() {
     '@/components/ui/button': {
       Button: ({ children, ...props }: any) => React.createElement('button', props, children),
     },
-    '@/components/pos/DietaryBadge': { default: () => null, tagLabel: (tag: string) => tag },
-    '@/components/products/ImageUploader': { default: () => null },
-    '@/lib/api': { default: api },
+    '@/components/pos/DietaryBadge': { __esModule: true, default: () => null, tagLabel: (tag: string) => tag },
+    '@/components/products/ImageUploader': { __esModule: true, default: () => null },
+    '@/lib/api': { __esModule: true, default: api },
     '@/lib/countries': {
       getCurrencySymbol: () => 'JPY',
       getCountryByCode: () => ({ locale: 'ja-JP' }),
@@ -393,7 +393,7 @@ async function runCatalogSaveBoundaryTests() {
     '@/store/auth': { useAuthStore: () => ({ currentTenant }) },
     '@/hooks/use-confirm': { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) },
     '@/hooks/useFormatCurrency': { useFormatCurrency: () => (amount: number) => String(amount) },
-    'react-hot-toast': { default: { success: () => undefined, error: () => undefined } },
+    'react-hot-toast': { __esModule: true, default: { success: () => undefined, error: () => undefined } },
     'use-intl': { useTranslations: (namespace: string) => translate(namespace) },
     '@shared/role-permissions': { ROLE_ACCESS: { ownerManager: ['owner', 'manager'] }, hasRole: () => true },
     'lucide-react': { Plus: Icon, Pencil: Icon, Trash2: Icon, X: Icon, Package: Icon, Folder: Icon, Puzzle: Icon, FileSpreadsheet: Icon, Download: Icon, Upload: Icon, CheckCircle: Icon, AlertCircle: Icon, AlertTriangle: Icon, ChevronDown: Icon, ChevronRight: Icon },
@@ -409,28 +409,37 @@ async function runCatalogSaveBoundaryTests() {
 
   try {
     const ProductsPage = require('../frontend/src/app/(dashboard)/products/page').default;
-    let stateCall = 0;
-    React.useState = ((initial: unknown) => {
-      stateCall += 1;
-      if (stateCall === 7) return [false, () => undefined];
-      if (stateCall === 8) return [true, () => undefined];
-      if (stateCall === 14) return [true, () => undefined];
-      if (stateCall === 15) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
-      if (stateCall === 16) return [{
-        name: 'Coffee', category_id: '', price: '1.5', cost_price: '2.5', cb_percent: '', sku: '', barcode: '',
-        sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3', tax_category_id: '',
-        tax_behavior: 'country_default', description: '', track_inventory: false, stock_quantity: '0',
-        low_stock_threshold: '5', is_active: true, tags: [], customTag: '', addon_group_ids: [], image_url: null,
-      }, () => undefined];
-      return [initial, () => undefined];
-    }) as typeof React.useState;
-    const productTree = ProductsPage();
+    const renderProductsPage = (activeTab: 'products' | 'addons') => {
+      let stateCall = 0;
+      React.useState = ((initial: unknown) => {
+        stateCall += 1;
+        if (stateCall === 1) return [activeTab, () => undefined];
+        if (stateCall === 7) return [false, () => undefined];
+        if (stateCall === 8) return [activeTab === 'products', () => undefined];
+        if (stateCall === 14) return [activeTab === 'addons', () => undefined];
+        if (stateCall === 15) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
+        if (stateCall === 16) return [{
+          name: 'Coffee', category_id: '', price: '1.5', cost_price: '2.5', cb_percent: '', sku: '', barcode: '',
+          sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3', tax_category_id: '',
+          tax_behavior: 'country_default', description: '', track_inventory: false, stock_quantity: '0',
+          low_stock_threshold: '5', is_active: true, tags: [], customTag: '', addon_group_ids: [], image_url: null,
+        }, () => undefined];
+        return [initial, () => undefined];
+      }) as typeof React.useState;
+      return ProductsPage();
+    };
+    const productTree = renderProductsPage('products');
     const submitForms = collectElements(productTree, (element) => typeof element.props?.onSubmit === 'function');
-    assert.equal(submitForms.length, 2, 'ProductsPage exposes product and add-on save forms');
-    for (const form of submitForms) await form.props.onSubmit({ preventDefault: () => undefined });
+    assert.equal(submitForms.length, 1, 'ProductsPage exposes the product save form');
+    await submitForms[0].props.onSubmit({ preventDefault: () => undefined });
     const productSave = calls.find((call) => call.method === 'post' && call.path === '/products');
     assert.equal(productSave?.payload?.price, 2, 'product price is rounded at the save handler');
     assert.equal(productSave?.payload?.cost_price, 3, 'product cost price is rounded at the save handler');
+
+    const addonGroupTree = renderProductsPage('addons');
+    const addonGroupForms = collectElements(addonGroupTree, (element) => typeof element.props?.onSubmit === 'function');
+    assert.equal(addonGroupForms.length, 1, 'ProductsPage exposes the add-on group save form');
+    await addonGroupForms[0].props.onSubmit({ preventDefault: () => undefined });
     const addonGroupSave = calls.find((call) => call.method === 'post' && call.path === '/addon-groups');
     assert.equal(addonGroupSave?.payload?.addons?.[0]?.price, 2, 'inline add-on price is rounded at the save handler');
 

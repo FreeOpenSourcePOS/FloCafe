@@ -396,6 +396,16 @@ async function main() {
       headers: owner.authHeader,
     });
     assertEqual(malformedServiceCharge.status, 400, 'malformed service charge is rejected');
+    const overflowServiceCharge = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        service_charge: '1e1000',
+        items: [{ product_id: 'override-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(overflowServiceCharge.status, 400, 'overflow service charge is rejected');
     const negativeServiceCharge = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {

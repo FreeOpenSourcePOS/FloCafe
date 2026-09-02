@@ -352,7 +352,11 @@ export function normalizeChargeAmount(value: unknown, kind: ChargeTaxKind): numb
     if (!amount.isFinite() || amount.isNegative()) {
       throw new Error(`${kind} charge must be a non-negative finite amount`);
     }
-    return amount.toNumber();
+    const numericAmount = amount.toNumber();
+    if (!Number.isFinite(numericAmount)) {
+      throw new Error(`${kind} charge must be a non-negative finite amount`);
+    }
+    return numericAmount;
   } catch (error: any) {
     throw Object.assign(new Error(error.message || `${kind} charge is invalid`), { statusCode: 400 });
   }

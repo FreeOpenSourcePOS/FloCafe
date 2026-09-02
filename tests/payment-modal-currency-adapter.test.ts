@@ -185,40 +185,46 @@ async function runCurrencyInputBehaviorTests() {
   const { chromium } = frontendRequire('playwright');
   const browser = await chromium.launch({ headless: true });
   try {
-    const renderKeypad = (allowDecimal: boolean) => ReactDOMServer.renderToStaticMarkup(
+    const renderKeypad = (
+      currencyMaxDecimals: number,
+      amountTarget: 'payment' | 'wallet' | 'discount',
+      discountType: 'percentage' | 'amount',
+    ) => ReactDOMServer.renderToStaticMarkup(
       React.createElement(TouchNumberPad, {
         value: '',
         onChange: () => undefined,
         ariaLabel: 'Amount keypad',
         clearLabel: 'Clear',
         backspaceLabel: 'Backspace',
-        allowDecimal,
+        currencyMaxDecimals,
+        amountTarget,
+        discountType,
       }),
     );
 
     const page = await browser.newPage();
-    await page.setContent(renderKeypad(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'payment', 'amount')));
+    await page.setContent(renderKeypad(jpyAdapter.maxDecimals, 'payment', 'amount'));
     assert.equal(
       await page.getByRole('button', { name: '.', exact: true }).count(),
       0,
       'JPY keypad omits the decimal button',
     );
 
-    await page.setContent(renderKeypad(allowCurrencyDecimalKey(usdAdapter.maxDecimals, 'payment', 'amount')));
+    await page.setContent(renderKeypad(usdAdapter.maxDecimals, 'payment', 'amount'));
     assert.equal(
       await page.getByRole('button', { name: '.', exact: true }).count(),
       1,
       'USD keypad renders the decimal button',
     );
 
-    await page.setContent(renderKeypad(allowCurrencyDecimalKey(kwdAdapter.maxDecimals, 'payment', 'amount')));
+    await page.setContent(renderKeypad(kwdAdapter.maxDecimals, 'payment', 'amount'));
     assert.equal(
       await page.getByRole('button', { name: '.', exact: true }).count(),
       1,
       'KWD keypad renders the decimal button',
     );
 
-    await page.setContent(renderKeypad(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'discount', 'percentage')));
+    await page.setContent(renderKeypad(jpyAdapter.maxDecimals, 'discount', 'percentage'));
     assert.equal(
       await page.getByRole('button', { name: '.', exact: true }).count(),
       1,

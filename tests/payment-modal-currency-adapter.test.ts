@@ -219,39 +219,44 @@ async function runCurrencyInputBehaviorTests() {
   try {
     const { chromium } = frontendRequire('playwright');
     browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.setContent(jpyKeypadMarkup);
-    assert.equal(
-      await page.getByRole('button', { name: '.', exact: true }).count(),
-      0,
-      'JPY keypad omits the decimal button',
-    );
-
-    await page.setContent(usdKeypadMarkup);
-    assert.equal(
-      await page.getByRole('button', { name: '.', exact: true }).count(),
-      1,
-      'USD keypad renders the decimal button',
-    );
-
-    await page.setContent(kwdKeypadMarkup);
-    assert.equal(
-      await page.getByRole('button', { name: '.', exact: true }).count(),
-      1,
-      'KWD keypad renders the decimal button',
-    );
-
-    await page.setContent(jpyDiscountMarkup);
-    assert.equal(
-      await page.getByRole('button', { name: '.', exact: true }).count(),
-      1,
-      'Percentage discount keypad renders the decimal button',
-    );
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     console.warn(`  ! Playwright browser not available in this runner; static markup verified: ${err?.message || err}`);
-  } finally {
-    await browser?.close().catch(() => undefined);
+  }
+
+  if (browser) {
+    try {
+      const page = await browser.newPage();
+      await page.setContent(jpyKeypadMarkup);
+      assert.equal(
+        await page.getByRole('button', { name: '.', exact: true }).count(),
+        0,
+        'JPY keypad omits the decimal button',
+      );
+
+      await page.setContent(usdKeypadMarkup);
+      assert.equal(
+        await page.getByRole('button', { name: '.', exact: true }).count(),
+        1,
+        'USD keypad renders the decimal button',
+      );
+
+      await page.setContent(kwdKeypadMarkup);
+      assert.equal(
+        await page.getByRole('button', { name: '.', exact: true }).count(),
+        1,
+        'KWD keypad renders the decimal button',
+      );
+
+      await page.setContent(jpyDiscountMarkup);
+      assert.equal(
+        await page.getByRole('button', { name: '.', exact: true }).count(),
+        1,
+        'Percentage discount keypad renders the decimal button',
+      );
+    } finally {
+      await browser.close();
+    }
   }
   console.log('  ✓ Currency steps and rendered keypad precision behavior verified');
 }
@@ -345,22 +350,27 @@ async function runModalKeypadIntegrationTests() {
     let browser: any;
     try {
       browser = await frontendRequire('playwright').chromium.launch({ headless: true });
-      const page = await browser.newPage();
-      for (const [Modal, props, label] of [
-        [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
-        [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
-      ] as const) {
-        const targetStateIndex = 3;
-        await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));
-        assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 0, `${label} hides JPY payment decimal key`);
-        await page.setContent(renderModal(Modal, props, 'discount', targetStateIndex));
-        assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 1, `${label} keeps decimal key for percentage discount`);
-      }
     } catch (err: any) {
       if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
       console.warn(`  ! Playwright browser not available in this runner; modal static markup verified: ${err?.message || err}`);
-    } finally {
-      await browser?.close().catch(() => undefined);
+    }
+
+    if (browser) {
+      try {
+        const page = await browser.newPage();
+        for (const [Modal, props, label] of [
+          [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
+          [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
+        ] as const) {
+          const targetStateIndex = 3;
+          await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));
+          assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 0, `${label} hides JPY payment decimal key`);
+          await page.setContent(renderModal(Modal, props, 'discount', targetStateIndex));
+          assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 1, `${label} keeps decimal key for percentage discount`);
+        }
+      } finally {
+        await browser.close();
+      }
     }
   } finally {
     React.useState = originalUseState;

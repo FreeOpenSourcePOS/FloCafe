@@ -284,14 +284,6 @@ async function runModalKeypadIntegrationTests() {
 
   try {
     let nullStateCount = 0;
-    const forcedTarget = { kind: 'payment' as const, index: 0 };
-    React.useState = ((initial: unknown) => {
-      if (initial === null) {
-        nullStateCount += 1;
-        if (nullStateCount === 3) return [forcedTarget, () => undefined];
-      }
-      return originalUseState(initial);
-    }) as typeof React.useState;
     const PaymentModal = require('../frontend/src/components/pos/PaymentModal').default;
     const PrepaidCheckoutModal = require('../frontend/src/components/pos/PrepaidCheckoutModal').default;
     const bill = {
@@ -310,13 +302,13 @@ async function runModalKeypadIntegrationTests() {
       total: 100,
       paid_amount: 0,
     };
-    const renderModal = (Modal: any, props: Record<string, unknown>, target: 'payment' | 'discount') => {
+    const renderModal = (Modal: any, props: Record<string, unknown>, target: 'payment' | 'discount', targetStateIndex: number) => {
       nullStateCount = 0;
       const amountTarget = target === 'payment' ? { kind: 'payment' as const, index: 0 } : { kind: 'discount' as const };
       React.useState = ((initial: unknown) => {
         if (initial === null) {
           nullStateCount += 1;
-          if (nullStateCount === 3) return [amountTarget, () => undefined];
+          if (nullStateCount === targetStateIndex) return [amountTarget, () => undefined];
         }
         return originalUseState(initial);
       }) as typeof React.useState;
@@ -329,9 +321,10 @@ async function runModalKeypadIntegrationTests() {
         [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
         [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
       ] as const) {
-        await page.setContent(renderModal(Modal, props, 'payment'));
+        const targetStateIndex = label === 'PaymentModal' ? 2 : 3;
+        await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));
         assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 0, `${label} hides JPY payment decimal key`);
-        await page.setContent(renderModal(Modal, props, 'discount'));
+        await page.setContent(renderModal(Modal, props, 'discount', targetStateIndex));
         assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 1, `${label} keeps decimal key for percentage discount`);
       }
     } finally {
@@ -342,6 +335,140 @@ async function runModalKeypadIntegrationTests() {
     moduleApi._load = originalLoad;
   }
   console.log('  ✓ PaymentModal and PrepaidCheckoutModal keypad wiring verified');
+}
+
+function collectElements(node: unknown, predicate: (element: any) => boolean, result: any[] = []): any[] {
+  if (Array.isArray(node)) {
+    for (const child of node) collectElements(child, predicate, result);
+    return result;
+  }
+  if (!node || typeof node !== 'object') return result;
+  if (predicate(node)) result.push(node);
+  const props = (node as { props?: { children?: unknown } }).props;
+  if (props) collectElements(props.children, predicate, result);
+  return result;
+}
+
+function elementText(element: any): string {
+  const children = element.props?.children;
+  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+  return typeof children === 'string' ? children : '';
+}
+
+async function runCatalogSaveBoundaryTests() {
+  console.log('\n--- 5. Catalog Save Boundary Verification ---');
+
+  const Icon = () => React.createElement('span');
+  const currentTenant = { currency: 'JPY', country: 'JP' };
+  const calls: Array<{ method: string; path: string; payload?: any }> = [];
+  const api = {
+    get: async () => ({ data: { products: [], categories: [], addon_groups: [] } }),
+    post: async (path: string, payload: any) => {
+      calls.push({ method: 'post', path, payload });
+      return { data: {} };
+    },
+    put: async (path: string, payload: any) => {
+      calls.push({ method: 'put', path, payload });
+      return { data: {} };
+    },
+    delete: async () => ({ data: {} }),
+  };
+  const translate = (namespace: string) => (key: string) => `${namespace}.${key}`;
+  const mocks: Record<string, unknown> = {
+    '@/components/ui/button': {
+      Button: ({ children, ...props }: any) => React.createElement('button', props, children),
+    },
+    '@/components/pos/DietaryBadge': { default: () => null, tagLabel: (tag: string) => tag },
+    '@/components/products/ImageUploader': { default: () => null },
+    '@/lib/api': { default: api },
+    '@/lib/countries': {
+      getCurrencySymbol: () => 'JPY',
+      getCountryByCode: () => ({ locale: 'ja-JP' }),
+      getCurrencyUnitAdapter: () => getCurrencyUnitAdapter('JPY', 'JP'),
+    },
+    '@/lib/currency-input': { roundCurrencyValue },
+    '@/lib/image-utils': { nameToColor: () => '#000000' },
+    '@/lib/utils': { cn: (...values: unknown[]) => values.filter(Boolean).join(' '), parseDbTimestamp: (value: string) => value },
+    '@/store/auth': { useAuthStore: () => ({ currentTenant }) },
+    '@/hooks/use-confirm': { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) },
+    '@/hooks/useFormatCurrency': { useFormatCurrency: () => (amount: number) => String(amount) },
+    'react-hot-toast': { default: { success: () => undefined, error: () => undefined } },
+    'use-intl': { useTranslations: (namespace: string) => translate(namespace) },
+    '@shared/role-permissions': { ROLE_ACCESS: { ownerManager: ['owner', 'manager'] }, hasRole: () => true },
+    'lucide-react': { Plus: Icon, Pencil: Icon, Trash2: Icon, X: Icon, Package: Icon, Folder: Icon, Puzzle: Icon, FileSpreadsheet: Icon, Download: Icon, Upload: Icon, CheckCircle: Icon, AlertCircle: Icon, AlertTriangle: Icon, ChevronDown: Icon, ChevronRight: Icon },
+  };
+  const originalLoad = moduleApi._load;
+  const originalUseState = React.useState;
+  const originalUseEffect = React.useEffect;
+  moduleApi._load = function (request: string, parent: any, isMain: boolean) {
+    if (request in mocks) return mocks[request];
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  React.useEffect = (() => undefined) as typeof React.useEffect;
+
+  try {
+    const ProductsPage = require('../frontend/src/app/(dashboard)/products/page').default;
+    let stateCall = 0;
+    React.useState = ((initial: unknown) => {
+      stateCall += 1;
+      if (stateCall === 7) return [false, () => undefined];
+      if (stateCall === 8) return [true, () => undefined];
+      if (stateCall === 14) return [true, () => undefined];
+      if (stateCall === 15) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
+      if (stateCall === 16) return [{
+        name: 'Coffee', category_id: '', price: '1.5', cost_price: '2.5', cb_percent: '', sku: '', barcode: '',
+        sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3', tax_category_id: '',
+        tax_behavior: 'country_default', description: '', track_inventory: false, stock_quantity: '0',
+        low_stock_threshold: '5', is_active: true, tags: [], customTag: '', addon_group_ids: [], image_url: null,
+      }, () => undefined];
+      return [initial, () => undefined];
+    }) as typeof React.useState;
+    const productTree = ProductsPage();
+    const submitForms = collectElements(productTree, (element) => typeof element.props?.onSubmit === 'function');
+    assert.equal(submitForms.length, 2, 'ProductsPage exposes product and add-on save forms');
+    for (const form of submitForms) await form.props.onSubmit({ preventDefault: () => undefined });
+    const productSave = calls.find((call) => call.method === 'post' && call.path === '/products');
+    assert.equal(productSave?.payload?.price, 2, 'product price is rounded at the save handler');
+    assert.equal(productSave?.payload?.cost_price, 3, 'product cost price is rounded at the save handler');
+    const addonGroupSave = calls.find((call) => call.method === 'post' && call.path === '/addon-groups');
+    assert.equal(addonGroupSave?.payload?.addons?.[0]?.price, 2, 'inline add-on price is rounded at the save handler');
+
+    const AddonGroupsPage = require('../frontend/src/app/(dashboard)/addon-groups/page').default;
+    const addon = { id: 'addon-1', name: 'Old Sauce', price: 1, is_active: true };
+    const group = { id: 'group-1', name: 'Extras', description: null, is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 1, is_active: true, addons: [addon] };
+    const renderAddonPage = (editing: boolean) => {
+      let addonStateCall = 0;
+      React.useState = ((initial: unknown) => {
+        addonStateCall += 1;
+        if (addonStateCall === 1) return [[group], () => undefined];
+        if (addonStateCall === 2) return [false, () => undefined];
+        if (addonStateCall === 5) return ['group-1', () => undefined];
+        if (addonStateCall === 8) return [{ name: 'New Sauce', price: '1.5' }, () => undefined];
+        if (addonStateCall === 9) return [editing ? null : 'group-1', () => undefined];
+        if (addonStateCall === 10) return [editing ? { groupId: 'group-1', addon } : null, () => undefined];
+        return [initial, () => undefined];
+      }) as typeof React.useState;
+      return AddonGroupsPage();
+    };
+    const addTree = renderAddonPage(false);
+    const addButton = collectElements(addTree, (element) => elementText(element) === 'products.addButton')[0];
+    assert(addButton, 'AddonGroupsPage exposes the add add-on handler');
+    await addButton.props.onClick();
+    const addSave = calls.find((call) => call.method === 'post' && call.path === '/addon-groups/group-1/addons');
+    assert.equal(addSave?.payload?.price, 2, 'add add-on handler rounds JPY price');
+
+    const updateTree = renderAddonPage(true);
+    const updateButton = collectElements(updateTree, (element) => elementText(element) === 'common.save')[0];
+    assert(updateButton, 'AddonGroupsPage exposes the update add-on handler');
+    await updateButton.props.onClick();
+    const updateSave = calls.find((call) => call.method === 'put' && call.path === '/addon-groups/group-1/addons/addon-1');
+    assert.equal(updateSave?.payload?.price, 2, 'update add-on handler rounds JPY price');
+  } finally {
+    React.useState = originalUseState;
+    React.useEffect = originalUseEffect;
+    moduleApi._load = originalLoad;
+  }
+  console.log('  ✓ Product and add-on save handlers verified');
 }
 
 function generatePaymentModalHtml(config: {
@@ -636,6 +763,7 @@ async function main() {
   runPaymentMathTests();
   await runCurrencyInputBehaviorTests();
   await runModalKeypadIntegrationTests();
+  await runCatalogSaveBoundaryTests();
   await captureEvidenceArtifacts();
   console.log('\n========================================');
   console.log('All tests and visual evidence generation passed!');

@@ -397,7 +397,7 @@ export const getCurrencyUnitAdapter = (
   }
 
   const decimals = getCurrencyFractionDigits(currency);
-  const step = decimals === 0 ? '1' : decimals === 3 ? '0.001' : '0.01';
+  const step = (10 ** -decimals).toString();
   return {
     scale: 1,
     label: currency,

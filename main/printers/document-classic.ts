@@ -122,10 +122,15 @@ export function buildBillPrintData(order: any, bill: any, business: any, isRepri
         quantity: Number(item?.quantity) || 0,
         unitPrice: Number(item?.unit_price ?? item?.price ?? 0) || 0,
         total: Number(item?.total) || 0,
-        addons: (Array.isArray(item?.addons) ? item.addons : []).map((addon: any) => ({
-          name: String(addon?.name ?? ''),
-          price: Number(addon?.price) || 0,
-        })),
+        addons: (Array.isArray(item?.addons) ? item.addons : []).map((addon: any) => {
+          const addonQuantity = (addon !== null && typeof addon === 'object' && 'quantity' in addon
+            && typeof addon.quantity === 'number' && addon.quantity) || 1;
+          return {
+            name: String(addon?.name ?? ''),
+            price: (Number(addon?.price) || 0) * addonQuantity * (Number(item?.quantity) || 0),
+            quantity: addonQuantity,
+          };
+        }),
         specialInstructions: String(item?.special_instructions ?? ''),
       })),
     },
@@ -135,6 +140,11 @@ export function buildBillPrintData(order: any, bill: any, business: any, isRepri
       discountAmount: Number(bill?.discount_amount) || 0,
       taxAmount: Number(bill?.tax_amount) || 0,
       total: Number(bill?.total) || 0,
+      // Backend bills persist delivery and packaging charges. Service charges
+      // are currently an order/tax-engine concept with no persisted bill source,
+      // so keep the normalized backend boundary explicit until one exists.
+      deliveryCharge: Number(bill?.delivery_charge) || 0,
+      packagingCharge: Number(bill?.packaging_charge) || 0,
       taxComponents: resolveTaxComponents({ ...bill, items }),
       payments: parsePaymentDetails(bill?.payment_details),
       pointsEarned: Number(business?.points_earned) || 0,
@@ -294,8 +304,17 @@ export function renderBillDocumentToClassicLines(
     return segment;
   };
 
-  const renderGrandTotal = (block: TotalsBlock): void => {
-    segmentOf('totals').main.push(...financialRows(labelOf(block.grandTotal.label), formatCurrency(block.grandTotal.amount, prefix, options.locale, trimDecimals), cols, options.language).map((line) => `{BOLD}${line}{/BOLD}`));
+  const renderGrandTotal = (block: TotalsBlock, target = segmentOf('totals')): void => {
+    target.main.push(...financialRows(labelOf(block.grandTotal.label), formatCurrency(block.grandTotal.amount, prefix, options.locale, trimDecimals), cols, options.language).map((line) => `{BOLD}${line}{/BOLD}`));
+  };
+
+  const renderCharges = (block: TotalsBlock, target: BlockSegments): void => {
+    if (block.deliveryCharge) {
+      target.main.push(...financialRows(labelOf(block.deliveryCharge.label), formatCurrency(block.deliveryCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    }
+    if (block.packagingCharge) {
+      target.main.push(...financialRows(labelOf(block.packagingCharge.label), formatCurrency(block.packagingCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    }
   };
 
   for (const block of blocks) {
@@ -386,7 +405,9 @@ export function renderBillDocumentToClassicLines(
           && totalsIndex >= 0
           && breakdownIndex > totalsIndex
         ) {
-          renderGrandTotal(blocks[totalsIndex] as TotalsBlock);
+          const totalsBlock = blocks[totalsIndex] as TotalsBlock;
+          renderCharges(totalsBlock, segment);
+          renderGrandTotal(totalsBlock, segment);
         }
         break;
       }
@@ -404,10 +425,13 @@ export function renderBillDocumentToClassicLines(
           (candidate) => candidate.kind === 'tax-breakdown'
             && (candidate as TaxBreakdownBlock).lines.length > 0,
         );
+        if (!hasBreakdownLines && block.tax) {
+          segment.main.push(...financialRows(labelOf(block.tax.label), formatCurrency(block.tax.amount, prefix, options.locale, trimDecimals), cols, options.language));
+        }
+        if (!hasBreakdownLines || breakdownIndex < totalsIndex) {
+          renderCharges(block, segment);
+        }
         if (!hasBreakdownLines) {
-          if (block.tax) {
-            segment.main.push(...financialRows(labelOf(block.tax.label), formatCurrency(block.tax.amount, prefix, options.locale, trimDecimals), cols, options.language));
-          }
           renderGrandTotal(block);
         } else if (breakdownIndex < totalsIndex) {
           renderGrandTotal(block);

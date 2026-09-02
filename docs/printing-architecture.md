@@ -136,8 +136,8 @@ Receipt block vocabulary v1 ([`shared/print/document.ts`](../shared/print/docume
 | `business-header` | name, address, phone (+label), instagram, conditional tax-ID line |
 | `document-meta` | invoice title (tax vs plain), number, canonical timestamp, optional table |
 | `customer` | customer name/phone with their labels |
-| `item-table` | header labels, item rows (quantity, unit price, amount, addons, special instructions) |
-| `totals` | subtotal, discount, flat tax/service/delivery, grand total, loyalty points lines |
+| `item-table` | header labels, item rows (quantity, unit price, amount, add-ons with quantity and extended amount, special instructions) |
+| `totals` | subtotal, discount, flat tax, optional frontend service charge, delivery/packaging charges, grand total, loyalty points lines |
 | `tax-breakdown` | per-component lines when the merchant shows the breakdown |
 | `payments` | captured payment lines (known methods resolve through concept ids, unknown stay literal) |
 | `message` | reprint banner, footer note, thank-you |
@@ -148,9 +148,10 @@ Kitchen tickets use a separate smaller vocabulary, `KotDocument` v1
 Invariants every consumer may rely on:
 
 - **Financial totals are not recomputed.** Builders copy persisted financial
-  amounts verbatim from the `PrintData` snapshots; they apply presence/show
-  decisions and the display-only tax-component reconciliation documented
-  above (`buildBillDocument` doc comment, asserted in
+  amounts verbatim from the `PrintData` snapshots; normalizers materialize
+  add-on display amounts as `price × add-on quantity × item quantity`, while
+  builders apply presence/show decisions and the display-only tax-component
+  reconciliation documented above (`buildBillDocument` doc comment, asserted in
   [`tests/print-document.test.ts`](../tests/print-document.test.ts) and
   byte-compared against the frozen pre-migration oracle in
   [`tests/print-parity.test.ts`](../tests/print-parity.test.ts)).

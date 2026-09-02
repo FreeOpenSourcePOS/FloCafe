@@ -93,7 +93,7 @@ export function directionalText(text: string, base: TextDirection): DirectionalT
 // Snapshots (PrintData) — normalized authoritative values, no live rows
 // ---------------------------------------------------------------------------
 
-/** One addon line under an item row. Price is printed truth (0 = unpriced). */
+/** One add-on line; price is the extended printed amount (0 = unpriced). */
 export interface ItemAddonSnapshot {
   readonly name: string;
   readonly price: number;
@@ -148,6 +148,8 @@ export interface BillSnapshot {
   readonly serviceCharge?: number;
   /** Flat delivery charge, when the bill carries one (frontend bills). */
   readonly deliveryCharge?: number;
+  /** Flat packaging charge, when the bill carries one. */
+  readonly packagingCharge?: number;
   readonly taxComponents: readonly TaxComponentSnapshot[];
   readonly payments: readonly PaymentSnapshot[];
   readonly pointsEarned: number;
@@ -276,7 +278,7 @@ export interface CustomerBlock {
   readonly phoneLabel: SemanticLabel;
 }
 
-/** One addon under an item row. `price === 0` means unpriced extra. */
+/** One add-on under an item row; price is its extended printed amount. */
 export interface ItemAddonValue {
   readonly name: DirectionalText;
   readonly price: number;
@@ -343,6 +345,8 @@ export interface TotalsBlock {
   readonly serviceCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
   /** Flat delivery-charge line, present when the snapshot carries a nonzero charge. */
   readonly deliveryCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
+  /** Flat packaging-charge line, present when the snapshot carries a nonzero charge. */
+  readonly packagingCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
   readonly grandTotal: { readonly label: SemanticLabel; readonly amount: number };
   readonly pointsRedeemed: { readonly label: SemanticLabel; readonly points: number } | null;
   readonly pointsEarned: { readonly label: SemanticLabel; readonly points: number } | null;
@@ -608,6 +612,12 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       ? Object.freeze({
         label: resolveSemanticLabel(labels, 'pos.delivery'),
         amount: toFiniteNumber(bill.deliveryCharge),
+      })
+      : null,
+    packagingCharge: toFiniteNumber(bill.packagingCharge) !== 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'pos.packaging'),
+        amount: toFiniteNumber(bill.packagingCharge),
       })
       : null,
     grandTotal: Object.freeze({

@@ -51,6 +51,7 @@ export type PrintConceptId =
   | 'pos.discount'
   | 'pos.tax'
   | 'pos.delivery'
+  | 'pos.packaging'
   | 'receipt.totalTax'
   | 'receipt.serviceCharge'
   | 'receipt.taxDetails'
@@ -133,6 +134,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.discount': "Discount",
     'pos.tax': "Tax",
     'pos.delivery': "Delivery",
+    'pos.packaging': "Packaging",
     'receipt.totalTax': "Total Tax",
     'receipt.serviceCharge': "Service Charge",
     'receipt.taxDetails': "Tax Details",
@@ -198,6 +200,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.discount': "تخفیف",
     'pos.tax': "مالیات",
     'pos.delivery': "رسانش",
+    'pos.packaging': "بسته‌بندی",
     'receipt.totalTax': "مالیات کل",
     'receipt.serviceCharge': "کارمزد خدمات",
     'receipt.taxDetails': "جزئیات مالیات",
@@ -263,6 +266,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.discount': "Descuento",
     'pos.tax': "IVA",
     'pos.delivery': "Delivery",
+    'pos.packaging': "Envase",
     'receipt.totalTax': "Impuesto total",
     'receipt.serviceCharge': "Cargo por servicio",
     'receipt.taxDetails': "Detalle de impuestos",
@@ -328,6 +332,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.discount': "Remise",
     'pos.tax': "Taxe",
     'pos.delivery': "Livraison",
+    'pos.packaging': "Emballage",
     'receipt.totalTax': "Total des taxes",
     'receipt.serviceCharge': "Frais de service",
     'receipt.taxDetails': "Détails des taxes",
@@ -393,6 +398,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.discount': "Desconto",
     'pos.tax': "Imposto",
     'pos.delivery': "Entrega",
+    'pos.packaging': "Embalagem",
     'receipt.totalTax': "Imposto total",
     'receipt.serviceCharge': "Taxa de serviço",
     'receipt.taxDetails': "Detalhes de impostos",
@@ -458,6 +464,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.discount': "İndirim",
     'pos.tax': "Vergi",
     'pos.delivery': "Teslimat",
+    'pos.packaging': "Paketleme",
     'receipt.totalTax': "Toplam Vergi",
     'receipt.serviceCharge': "Servis Ücreti",
     'receipt.taxDetails': "Vergi Detayları",
@@ -523,6 +530,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.discount': "Discount",
     'pos.tax': "Buwis",
     'pos.delivery': "Delivery",
+    'pos.packaging': "Packaging",
     'receipt.totalTax': "Kabuuang Buwis",
     'receipt.serviceCharge': "Service Charge",
     'receipt.taxDetails': "Mga Detalye ng Buwis",
@@ -588,6 +596,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.discount': "Rabatt",
     'pos.tax': "Steuer",
     'pos.delivery': "Lieferung",
+    'pos.packaging': "Verpackung",
     'receipt.totalTax': "Gesamtsteuer",
     'receipt.serviceCharge': "Servicegebühr",
     'receipt.taxDetails': "Steuerdetails",

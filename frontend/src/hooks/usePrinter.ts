@@ -357,7 +357,7 @@ export const usePrinterStore = create<PrinterState>()(
           const printTargets: { stationName: string; order: Order }[] = opts?.stationName
             ? [{ stationName: opts.stationName, order: orderForPrint }]
             : await api.post<{
-              groups?: { stationName?: string; itemIndexes?: number[]; items?: OrderItem[] }[];
+              groups?: { stationName?: string; items?: OrderItem[] }[];
             }>('/printers/print-kot', {
               orderId: order.id,
               items: opts?.items,
@@ -367,11 +367,7 @@ export const usePrinterStore = create<PrinterState>()(
                 stationName: group.stationName || 'Kitchen',
                 order: {
                   ...orderForPrint,
-                  items: orderForPrint.items
-                    ? (group.itemIndexes || [])
-                      .map((index) => orderForPrint.items?.[index])
-                      .filter((item): item is OrderItem => item !== undefined)
-                    : group.items || [],
+                  items: group.items || [],
                 },
               })))
               .filter((target) => target.order.items && target.order.items.length > 0))

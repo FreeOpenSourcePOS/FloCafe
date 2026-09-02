@@ -514,7 +514,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
 // by any station fall back to the default printer under the generic 'Kitchen'
 // label — this is also what happens for the whole order when no station is
 // configured at all, so stores not using stations see no behavior change.
-export function routeItemsToStations(db: any, orderItems: any[]): { stationName: string; printer: any; items: any[] }[] {
+export function routeItemsToStations(db: any, orderItems: any[], includeWebUsbStations = false): { stationName: string; printer: any; items: any[] }[] {
   const rawStations = db.prepare(
     `SELECT * FROM kitchen_stations WHERE is_active = 1 AND printer_id IS NOT NULL AND category_ids IS NOT NULL AND category_ids != ''`
   ).all() as any[];
@@ -529,11 +529,11 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
       }
       const printer = db.prepare(
         `SELECT * FROM printers
-         WHERE id = ? AND connection_type != 'webusb'`,
+         WHERE id = ?`,
       ).get(s.printer_id);
       return { ...s, categoryIds, printer };
     })
-    .filter((s) => s.categoryIds.length > 0 && s.printer);
+    .filter((s) => s.categoryIds.length > 0 && s.printer && (includeWebUsbStations || s.printer.connection_type !== 'webusb'));
 
   if (stations.length === 0) {
     return [{ stationName: 'Kitchen', printer: null, items: orderItems }];
@@ -610,11 +610,10 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     const kotSourceItems = rawKotSourceItems
       .filter((item: any) => item?.status !== 'served' && item?.status !== 'ready');
     if (req.body?.resolveOnly === true) {
-      const groups = routeItemsToStations(db, kotSourceItems).filter((g) => g.items.length > 0);
+      const groups = routeItemsToStations(db, kotSourceItems, true).filter((g) => g.items.length > 0);
       return res.json({
         groups: groups.map((group) => ({
           stationName: group.stationName,
-          itemIndexes: group.items.map((item) => rawKotSourceItems.indexOf(item)),
           items: group.items,
         })),
       });

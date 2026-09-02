@@ -400,13 +400,10 @@ reorders bidi (evidence in [printing-nonlatin-capabilities.md](printing-nonlatin
 
 Renderers consume capabilities, they never guess them:
 
-- Desktop ESC/POS: lines whose content the target printer cannot render are
-  skipped with an explicit warning unless the profile's shaping flag (or a
-  request-level override) admits strict ASCII+Arabic lines
-  (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)).
+- Desktop ESC/POS: unsupported non-financial lines are skipped with an explicit warning unless the profile's shaping flag (or a request-level override) admits strict ASCII+Arabic lines (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)). Unsupported item or financial rows are also warned, but the backend refuses the receipt before transport so no partial financial receipt is emitted.
 - The migrated WebUSB receipt path uses `safePrinterText` for renderer-managed
   text and its warning behavior ([`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts),
-  [`frontend/src/lib/printer/warnings.ts`](../frontend/src/lib/printer/warnings.ts)). `buildClassicReceiptBytes` still
+  [`frontend/src/lib/printer/warnings.ts`](../frontend/src/lib/printer/warnings.ts)). Unsupported item or financial rows are refused before `PrinterService` sends bytes; other unsupported lines retain the explicit skip warning. `buildClassicReceiptBytes` still
   writes the masked customer phone directly with `enc.text`, so that field is a
   documented warning-contract exception. The raw WebUSB [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) and
   legacy [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) paths are broader exceptions with their
@@ -417,13 +414,15 @@ Renderers consume capabilities, they never guess them:
 
 Warning semantics on the shared document-driven paths are **no silent loss of
 unsupported content**: every skipped line produces a `PrintWarning` naming the
-field, the skipped text, and the reason; unsupported configuration (for example
-a merchant template selected on a print path that cannot honor it) produces a
-path-specific warning and a documented fallback layout. The frontend
+field, the skipped text, and the reason. Warnings marked `financial` cause the
+thermal receipt path to refuse before transport, with an explicit operator
+message; unsupported non-financial lines may still be skipped with their
+warning. Unsupported configuration (for example a merchant template selected
+on a print path that cannot honor it) produces a path-specific warning and a
+documented fallback layout. The frontend
 [`makeBillTemplateFallbackWarning`](../frontend/src/lib/printer/warnings.ts)
-marks that warning `kind: 'configuration'`; desktop
-[`PrintWarning`](../main/printers/thermal.ts) carries `field`, `text`, and
-`message` without a `kind` field. A valid merchant template may intentionally
+marks that warning `kind: 'configuration'`; desktop and frontend financial
+warnings use `kind: 'financial'`. A valid merchant template may intentionally
 reorder, hide, or omit blocks — including `totals` — through explicit block
 selection and `visible` settings; that is merchant configuration, not a silent
 renderer omission. The legacy raw WebUSB encoders described above retain their

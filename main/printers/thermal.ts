@@ -39,7 +39,17 @@ export type PrintWarning = {
   field: string;
   text: string;
   message: string;
+  kind?: 'line' | 'financial' | 'configuration';
 };
+
+export function hasFinancialPrintWarning(warnings: readonly PrintWarning[]): boolean {
+  return warnings.some((warning) => warning.kind === 'financial');
+}
+
+export function makeFinancialPrintRefusalMessage(warnings: readonly PrintWarning[]): string {
+  const row = warnings.find((warning) => warning.kind === 'financial');
+  return `Receipt not printed: a financial row contains unsupported printer text${row?.text ? `: ${row.text}` : '.'} Use a supported printer profile or system/browser printing.`;
+}
 
 /** Low-level dispatch result — carries the actual OS/driver reason, not just ok/fail. */
 export type DispatchResult = {
@@ -595,6 +605,14 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
       return { ok: false, detail: 'No printer configured' };
     }
     const { data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language, additionalLanguage);
+    if (hasFinancialPrintWarning(warnings)) {
+      return {
+        ok: false,
+        detail: makeFinancialPrintRefusalMessage(warnings),
+        failureClass: 'unsupported',
+        warnings,
+      };
+    }
     const receiptData = printer.cash_drawer_pulse_enabled === 1 ? appendCashDrawerPulse(data) : data;
     console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
     console.log('[Printer] Receipt data length:', receiptData.length, 'bytes');
@@ -984,7 +1002,9 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
       lines.push(...pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, lang));
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
-          pushWrapped(lines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals) : ''), cols, lang);
+          const addonLines: string[] = [];
+          pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals) : ''), cols, lang);
+          lines.push(...addonLines.map((line) => addon.price ? '{FINANCIAL}' + line : line));
         }
       }
       if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
@@ -1179,7 +1199,7 @@ function pluginItemRows(item: any, layout: any, cols: number, prefix: string, lo
   const lineCount = Math.max(1, ...wrappedValues.map((value) => value.length));
   const rows: string[] = [];
   for (let index = 0; index < lineCount; index++) {
-    rows.push(composePluginColumns(values.map((column, columnIndex) => ({
+    rows.push('{FINANCIAL}' + composePluginColumns(values.map((column, columnIndex) => ({
       ...column,
       value: wrappedValues[columnIndex][index] || '',
     })), gap, cols));
@@ -1227,7 +1247,7 @@ function pluginSummaryRow(label: string, amount: string, layout: any, cols: numb
     ], Math.max(0, cols - labelWidth - amountWidth), cols);
   }
   const safeLabel = truncate(normalizedLabel, cols - 12, lang);
-  return safeLabel + rightAlign(amount, cols - safeLabel.length);
+  return '{FINANCIAL}' + safeLabel + rightAlign(amount, cols - safeLabel.length);
 }
 
 function composePluginColumns(columns: Array<PluginLineColumn & { value: string }>, gap: number, cols: number): string {
@@ -1296,8 +1316,8 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
   const label = name + qty;
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals);
   const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (amount.length <= inlineWidth) return [label + rightAlign(amount, cols - label.length)];
-  return [label.trimEnd(), ...wrapValue(amount, cols)];
+  if (amount.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(amount, cols - label.length)];
+  return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(amount, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en'): string[] {
@@ -1306,8 +1326,8 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals);
   const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (price.length <= inlineWidth) return [label + rightAlign(price, cols - label.length)];
-  return [label.trimEnd(), ...wrapValue(price, cols)];
+  if (price.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(price, cols - label.length)];
+  return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(price, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
 export function financialRows(label: string, value: string, cols: number, language: string = 'en'): string[] {
@@ -1315,9 +1335,9 @@ export function financialRows(label: string, value: string, cols: number, langua
   const safeLabel = normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
-    return [safeLabel + rightAlign(value, cols - safeLabel.length)];
+    return ['{FINANCIAL}' + safeLabel + rightAlign(value, cols - safeLabel.length)];
   }
-  return [safeLabel, ...wrapValue(value, cols)];
+  return ['{FINANCIAL}' + safeLabel, ...wrapValue(value, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
 function wrapValue(value: string, cols: number): string[] {
@@ -1551,6 +1571,11 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
   return Buffer.concat([data, Buffer.from([0x1B, 0x70, 0x00, 0x19, 0xFA])]);
 }
 
+/**
+ * Build ESC/POS bytes and classify unsupported financial rows for the receipt
+ * transport guard. Receipt renderers mark amount-bearing lines with the
+ * internal {FINANCIAL} token; it is stripped before bytes are emitted.
+ */
 export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
 
@@ -1583,6 +1608,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     }
 
     const isStoreName = line.includes('{STORE_NAME}');
+    const isFinancial = line.includes('{FINANCIAL}');
     line = line.replace(/\{STORE_NAME\}/g, '');
     let printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
     const lineBold = line.includes('{BOLD}');
@@ -1606,9 +1632,10 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         if (warnings) {
           const text = printableLine.trim();
           warnings.push({
-            field: isStoreName ? 'store name' : 'receipt line',
+            field: isFinancial ? 'financial row' : isStoreName ? 'store name' : 'receipt line',
             text,
             message: makeUnsupportedLineWarning(isStoreName, text),
+            kind: isFinancial ? 'financial' : 'line',
           });
         }
         continue;
@@ -1624,6 +1651,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     // ESC/POS mode byte bit 0 selects the character font: 0 = Font A (12x24,
     // the default), 1 = Font B (9x17, condensed). No token means Font A.
 
+    line = line.replace(/\{FINANCIAL\}/g, '');
     line = line.replace(/\{CENTER\}/g, '').replace(/\{\/CENTER\}/g, '');
     line = line.replace(/\{BOLD\}/g, '').replace(/\{\/BOLD\}/g, '');
     line = line.replace(/\{DOUBLE_HEIGHT\}/g, '').replace(/\{\/DOUBLE_HEIGHT\}/g, '');

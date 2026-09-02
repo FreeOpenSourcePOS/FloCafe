@@ -18,6 +18,8 @@ import {
   printViaNetwork,
   classifyPrintFailure,
   appendCashDrawerPulse,
+  hasFinancialPrintWarning,
+  makeFinancialPrintRefusalMessage,
 } from '../main/printers/thermal';
 import { matchSupportedPrinterProfile } from '../main/printers/profiles';
 import { getCountryByCode, getCurrencySymbol } from '../main/countries';
@@ -512,7 +514,74 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('shaped KOT emits no width warnings', narrowKotWarnings.length === 0);
 }
 
-console.log('\n✅ Test 1c: ESC/POS output can be previewed without a printer');
+console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before transport');
+{
+  const unsupportedBusiness = {
+    ...fixtureBusiness,
+    country: 'IR',
+    currency_symbol: 'ریال',
+    show_tax_breakdown: false,
+  };
+  const unsupportedBill = {
+    ...fixtureBill,
+    payment_details: JSON.stringify([{ method: 'cash', amount: 950 }]),
+  };
+
+  for (const template of ['classic', 'compact'] as const) {
+    for (const cols of [32, 42, 48]) {
+      const warnings: any[] = [];
+      const data = formatReceipt(
+        fixtureOrder,
+        unsupportedBill,
+        unsupportedBusiness,
+        template,
+        cols,
+        false,
+        false,
+        'full',
+        warnings,
+        false,
+        'fa',
+      );
+      assert(`${template}/${cols}: unsupported financial rows are identified`, hasFinancialPrintWarning(warnings));
+      assert(`${template}/${cols}: refusal is explicit`, makeFinancialPrintRefusalMessage(warnings).includes('Receipt not printed'));
+      assert(`${template}/${cols}: unsupported financial amount is not emitted`, !escPosToText(data).includes('IRR950.00'));
+    }
+  }
+
+  const accentedWarnings: any[] = [];
+  formatReceipt(
+    { ...fixtureOrder, items: [{ ...fixtureOrder.items[0], product_name: 'Café Crème' }] },
+    fixtureBill,
+    { ...fixtureBusiness, country: 'IN', currency_symbol: '₹', show_tax_breakdown: false },
+    'classic',
+    48,
+    false,
+    false,
+    'full',
+    accentedWarnings,
+    false,
+    'en',
+  );
+  assert('backend accented item labels are treated as financial content', hasFinancialPrintWarning(accentedWarnings));
+
+  const { receiptEncoder, warnings: frontendWarnings } = loadFrontendPrinterModules();
+  const unsupportedTenant = { business_name: 'Cafe', currency: 'XXX', country: 'IN' };
+  for (const template of ['classic', 'compact'] as const) {
+    for (const paperWidth of [58, 80] as const) {
+      const warnings: any[] = [];
+      const builder = template === 'classic'
+        ? receiptEncoder.buildClassicReceiptBytes(unsupportedBill as any, unsupportedTenant as any, { paperWidth, languages: ['fa'] as any }, warnings)
+        : receiptEncoder.buildCompactReceiptBytes(unsupportedBill as any, unsupportedTenant as any, { paperWidth, languages: ['fa'] as any }, warnings);
+      assert(`WebUSB ${template}/${paperWidth}mm: financial warning is identified`, frontendWarnings.hasFinancialPrintWarning(warnings));
+      assert(`WebUSB ${template}/${paperWidth}mm: refusal is explicit`, frontendWarnings.makeFinancialPrintRefusalMessage(warnings).includes('Receipt not printed'));
+      assert(`WebUSB ${template}/${paperWidth}mm: unsupported currency is not silently accepted`, warnings.some((warning: any) => warning.kind === 'financial'));
+      assert(`WebUSB ${template}/${paperWidth}mm: builder remains paperless`, builder.length > 0);
+    }
+  }
+}
+
+console.log('\n✅ Test 1d: ESC/POS output can be previewed without a printer');
 {
   const buf = buildEscPos(['{INIT}', '{CENTER}{BOLD}HEADER{/BOLD}{/CENTER}', 'Item       Rs63.00', '{CUT}']);
   const text = escPosToText(buf);

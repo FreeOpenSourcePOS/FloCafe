@@ -92,7 +92,7 @@ export default function PrintTestPage() {
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));
           } else {
-            const printWarnings = await printKot(testOrder, { paperWidth });
+            const printWarnings = await printKot(testOrder, { paperWidth, stationName: 'Kitchen' });
             toast.success(t('kotPrinted'));
             showPrintWarningsToast(printWarnings);
           }

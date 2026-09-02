@@ -7,9 +7,11 @@ import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AddonGroup, Addon } from '@/lib/types';
+import { useAuthStore } from '@/store/auth';
+import { getCurrencyUnitAdapter } from '@/lib/countries';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
-import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { roundCurrencyValue } from '@/lib/currency-input';
 
 export default function AddonGroupsPage() {
   const t = useTranslations('addonGroups');
@@ -17,7 +19,8 @@ export default function AddonGroupsPage() {
   const tPos = useTranslations('pos');
   const tProducts = useTranslations('products');
   const tTables = useTranslations('tables');
-  const unitAdapter = useCurrencyUnitAdapter();
+  const { currentTenant } = useAuthStore();
+  const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency ?? 'INR', currentTenant?.country);
   const [groups, setGroups] = useState<AddonGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const { confirm, ConfirmDialog } = useConfirm();
@@ -139,7 +142,7 @@ export default function AddonGroupsPage() {
       setMutating(true);
       await api.post(`/addon-groups/${groupId}/addons`, {
         name: addonForm.name,
-        price: unitAdapter.maxDecimals === 0 ? Math.round(Number(addonForm.price)) : Number(addonForm.price),
+        price: roundCurrencyValue(Number(addonForm.price), unitAdapter.maxDecimals),
       });
       toast.success(t('addonAdded'));
       setAddonForm({ name: '', price: '0' });
@@ -159,7 +162,7 @@ export default function AddonGroupsPage() {
       setMutating(true);
       await api.put(`/addon-groups/${editingAddon.groupId}/addons/${editingAddon.addon.id}`, {
         name: addonForm.name,
-        price: unitAdapter.maxDecimals === 0 ? Math.round(Number(addonForm.price)) : Number(addonForm.price),
+        price: roundCurrencyValue(Number(addonForm.price), unitAdapter.maxDecimals),
       });
       toast.success(t('addonUpdated'));
       setAddonForm({ name: '', price: '0' });

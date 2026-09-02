@@ -10,8 +10,7 @@ import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
-import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
-import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { getCurrencySymbol, getCountryByCode, getCurrencyUnitAdapter } from '@/lib/countries';
 import { roundCurrencyValue } from '@/lib/currency-input';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -121,7 +120,7 @@ export default function ProductsPage() {
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
-  const unitAdapter = useCurrencyUnitAdapter();
+  const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency || 'INR', currentTenant?.country);
   const fmt = useFormatCurrency();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);

@@ -114,11 +114,12 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
     };
   }, [discountType, discountValue, toStoredUnit, unitAdapter.maxDecimals]);
   const rawDiscountValue = Number.parseFloat(discountValue);
-  const hasInvalidFixedDiscount = discountType === 'amount'
-    && unitAdapter.maxDecimals === 0
+  const normalizedFixedDiscountValue = discountType === 'amount'
     && Number.isFinite(rawDiscountValue)
     && rawDiscountValue > 0
-    && normalizeFixedDiscountValue(rawDiscountValue, unitAdapter.maxDecimals) <= 0;
+    ? normalizeFixedDiscountValue(rawDiscountValue, unitAdapter.maxDecimals)
+    : null;
+  const hasInvalidFixedDiscount = normalizedFixedDiscountValue === 0;
   const { tax, loading: taxLoading } = useTaxPreview(
     cart.items,
     cart.customerId,
@@ -292,7 +293,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
 
   const handleConfirm = () => {
     if (hasInvalidFixedDiscount) {
-      toast.error(t('fixedDiscountMinimum'));
+      toast.error(unitAdapter.maxDecimals === 0 ? t('fixedDiscountMinimum') : t('discountInvalid'));
       return;
     }
     if (!preview) return;

@@ -90,6 +90,27 @@ async function run(): Promise<void> {
     assert.match(thermalText, /KITCHEN ORDER TICKET|COMANDA DE COCINA|KUECHENBESTELLSCHEIN|BON DE COMMANDE CUISINE|COMANDA DE COZINHA/, `${language}: thermal banner remains visible`);
     assert.match(thermalText, /Pending coffee/, `${language}: thermal pending item`);
     assert.doesNotMatch(thermalText, /Ready coffee|Served coffee/, `${language}: thermal filters served/ready items`);
+    for (const { type, label } of expectedTypes) {
+      const typeOrder = { ...order, type };
+      const localizedTypeLine = `${printLabel(language, 'print.kot.type')}: ${label}`;
+      const thermalTypeLine = /[^\x00-\x7F]/.test(localizedTypeLine)
+        ? `Type: ${type.replace(/_/g, ' ').toUpperCase()}`
+        : localizedTypeLine;
+      const typeThermalText = escPosToText(formatKOT(
+        typeOrder,
+        typeOrder.items,
+        'Main Kitchen',
+        42,
+        false,
+        'full',
+        'en-US',
+        { timeZone: 'UTC' },
+        [],
+        false,
+        language,
+      ));
+      assert.ok(typeThermalText.includes(thermalTypeLine), `${language}: thermal order type ${thermalTypeLine}`);
+    }
 
     const webUsbWarnings: any[] = [];
     const webUsbText = Buffer.from(frontend.kotEncoder.buildKotBytes(order as any, {
@@ -103,6 +124,21 @@ async function run(): Promise<void> {
     assert.match(webUsbText, /Main Kitchen/, `${language}: WebUSB station remains visible`);
     assert.match(webUsbText, /Pending coffee/, `${language}: WebUSB pending item`);
     assert.doesNotMatch(webUsbText, /Ready coffee|Served coffee/, `${language}: WebUSB filters served/ready items`);
+    for (const { type, label } of expectedTypes) {
+      const typeOrder = { ...order, type };
+      const localizedTypeLine = `${printLabel(language, 'print.kot.type')}: ${label}`;
+      const webUsbTypeLine = /[^\x00-\x7F]/.test(localizedTypeLine)
+        ? `Type: ${type.replace(/_/g, ' ').toUpperCase()}`
+        : localizedTypeLine;
+      const typeWebUsbText = Buffer.from(frontend.kotEncoder.buildKotBytes(typeOrder as any, {
+        paperWidth: 58,
+        language,
+        stationName: 'Main Kitchen',
+        locale: 'en-US',
+        timezone: 'UTC',
+      }, [])).toString('utf8');
+      assert.ok(typeWebUsbText.includes(webUsbTypeLine), `${language}: WebUSB order type ${webUsbTypeLine}`);
+    }
   }
 
   const taxWarnings: any[] = [];

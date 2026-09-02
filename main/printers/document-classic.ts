@@ -38,7 +38,6 @@ import {
   normalizePrintLanguage,
   pushCenteredWrapped,
   resolveCurrencyPrefix,
-  rightAlign,
   truncate,
   truncateShapedLine,
 } from './thermal';
@@ -258,6 +257,7 @@ export function renderBillDocumentToClassicLines(
   const trimDecimals = options.trimDecimals === true;
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const dash = '-'.repeat(cols);
+  const normalize = (text: string): string => options.language === 'de' ? normalizeGermanThermalText(text) : text;
 
   lines.push('{INIT}');
 
@@ -307,12 +307,12 @@ export function renderBillDocumentToClassicLines(
         // the header block's position in reordered compositions.
         const footerLines: string[] = [];
         if (block.address) footerLines.push(block.address.text);
-        if (block.phone && block.phoneLabel) footerLines.push(labelOf(block.phoneLabel) + ': ' + block.phone.text);
-        if (block.taxId) footerLines.push(labelOf(block.taxId.label) + ': ' + block.taxId.value.text);
+        if (block.phone && block.phoneLabel) footerLines.push(normalize(labelOf(block.phoneLabel) + ': ' + block.phone.text));
+        if (block.taxId) footerLines.push(normalize(labelOf(block.taxId.label) + ': ' + block.taxId.value.text));
         if (block.instagramHandle) footerLines.push(block.instagramHandle.text);
         if (footerLines.length > 0) {
           segment.post.push(dash);
-          for (const footerLine of footerLines) pushCenteredWrapped(segment.post, footerLine, cols);
+          for (const footerLine of footerLines) pushCenteredWrapped(segment.post, footerLine, cols, options.language);
         }
         break;
       }
@@ -328,8 +328,8 @@ export function renderBillDocumentToClassicLines(
         const defaultTitle = block.title.conceptId === 'print.taxInvoiceTitle'
           ? printLabel(options.language, 'print.taxInvoiceTitle')
           : printLabel(options.language, 'print.invoiceTitle');
-        if (labelOf(block.title) !== defaultTitle) segment.main.push('{CENTER}' + labelOf(block.title) + '{/CENTER}');
-        segment.main.push('{CENTER}' + labelOf(block.invoiceNumberLabel) + ' ' + block.invoiceNumber.text + '{/CENTER}');
+        if (labelOf(block.title) !== defaultTitle) segment.main.push('{CENTER}' + normalize(labelOf(block.title)) + '{/CENTER}');
+        segment.main.push('{CENTER}' + normalize(labelOf(block.invoiceNumberLabel) + ' ' + block.invoiceNumber.text) + '{/CENTER}');
         const date = parseDbTimestamp(block.timestamp.text);
         segment.main.push('{CENTER}' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions) + '{/CENTER}');
         if (block.table) {
@@ -365,7 +365,7 @@ export function renderBillDocumentToClassicLines(
             segment.main.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language));
           }
           if (row.specialInstructions) {
-            segment.main.push('  ' + labelOf(block.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language));
+            segment.main.push(normalize('  ' + labelOf(block.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language)));
           }
         }
         segment.main.push(dash);
@@ -394,7 +394,7 @@ export function renderBillDocumentToClassicLines(
         const segment = segmentOf('totals');
         if (block.pointsRedeemed) {
           const label = labelOf(block.pointsRedeemed.label);
-          segment.main.push(label + rightAlign('-' + block.pointsRedeemed.points + ' pts', cols - label.length));
+          segment.main.push(...financialRows(label, '-' + block.pointsRedeemed.points + ' pts', cols, options.language));
         }
         segment.main.push(...financialRows(labelOf(block.subtotal.label), formatCurrency(block.subtotal.amount, prefix, options.locale, trimDecimals), cols, options.language));
         if (block.discount) {
@@ -417,11 +417,11 @@ export function renderBillDocumentToClassicLines(
           segment.post.push(dash);
           if (block.pointsEarned) {
             const label = labelOf(block.pointsEarned.label);
-            segment.post.push(label + rightAlign(String(block.pointsEarned.points), cols - label.length));
+            segment.post.push(...financialRows(label, String(block.pointsEarned.points), cols, options.language));
           }
           if (block.pointsBalance) {
             const label = labelOf(block.pointsBalance.label);
-            segment.post.push(label + rightAlign(String(block.pointsBalance.points), cols - label.length));
+            segment.post.push(...financialRows(label, String(block.pointsBalance.points), cols, options.language));
           }
         }
         break;
@@ -437,18 +437,18 @@ export function renderBillDocumentToClassicLines(
       case 'message': {
         const segment = segmentOf('message');
         if (block.reprintBanner) {
-          segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(block.reprintBanner) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+          segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(block.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
         }
         if (block.onlineOrderBanner) {
           const banner = block.onlineOrderBanner;
-          segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(banner.label) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-          if (banner.platform.text) segment.pre.push('{CENTER}' + banner.platform.text + '{/CENTER}');
-          if (banner.externalOrderId.text) segment.pre.push('{CENTER}#' + banner.externalOrderId.text + '{/CENTER}');
+          segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+          if (banner.platform.text) segment.pre.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
+          if (banner.externalOrderId.text) segment.pre.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
         }
         if (block.thankYou && labelOf(block.thankYou) !== printLabel(options.language, 'print.thankYouShort')) {
-          segment.main.push('{CENTER}' + labelOf(block.thankYou) + '{/CENTER}');
+          segment.main.push('{CENTER}' + normalize(labelOf(block.thankYou)) + '{/CENTER}');
         }
-        if (block.footerNote) pushCenteredWrapped(segment.post, block.footerNote.text, cols);
+        if (block.footerNote) pushCenteredWrapped(segment.post, block.footerNote.text, cols, options.language);
         break;
       }
     }

@@ -125,7 +125,7 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
 
   lines.push('{INIT}');
-  lines.push('{CENTER}{BOLD}' + labelOf(header.banner) + '{/BOLD}{/CENTER}');
+  lines.push('{CENTER}{BOLD}' + truncateShapedLine(labelOf(header.banner), cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
   lines.push('');
   lines.push(truncateShapedLine(labelOf(header.stationLabel) + ': ' + header.stationName.text, cols, options.arabicShaping, options.language));
   lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text), cols, options.arabicShaping, options.language));
@@ -135,7 +135,7 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   if (header.orderType) {
     lines.push(truncateShapedLine(labelOf(header.orderType.label) + ': ' + header.orderType.value.text, cols, options.arabicShaping, options.language));
   }
-  lines.push(labelOf(header.timeLabel) + ': ' + parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions));
+  lines.push(truncateShapedLine(labelOf(header.timeLabel) + ': ' + parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions), cols, options.arabicShaping, options.language));
   return lines;
 }
 

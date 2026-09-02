@@ -28,7 +28,6 @@ import {
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
-  rightAlign,
   truncate,
   truncateShapedLine,
 } from './thermal';
@@ -55,6 +54,7 @@ import {
 /** Renderer options: physical/locale presentation only, no business data. */
 export interface CompactDocumentRenderOptions {
   readonly columns: number;
+  readonly language: string;
   readonly locale: string;
   readonly timezone?: string;
   /** Currency prefix preference (symbol + unicode mode). */
@@ -115,20 +115,21 @@ export function renderBillDocumentToCompactLines(
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
+  const normalize = (text: string): string => options.language === 'de' ? normalizeGermanThermalText(text) : text;
 
   lines.push('{INIT}');
 
   // Reprint banner (MessageBlock).
   if (messages?.reprintBanner) {
-    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(messages.reprintBanner) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(messages.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
   }
 
   // Online-order banner (#284, MessageBlock).
   if (messages?.onlineOrderBanner) {
     const banner = messages.onlineOrderBanner;
-    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(banner.label) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-    if (banner.platform.text) lines.push('{CENTER}' + banner.platform.text + '{/CENTER}');
-    if (banner.externalOrderId.text) lines.push('{CENTER}#' + banner.externalOrderId.text + '{/CENTER}');
+    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+    if (banner.platform.text) lines.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
+    if (banner.externalOrderId.text) lines.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
   }
 
   // Business header (store name only — compact keeps contact facts in the footer).
@@ -137,15 +138,15 @@ export function renderBillDocumentToCompactLines(
 
   // Document meta.
   if (meta) {
-    lines.push(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text);
+    lines.push(normalize(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text));
     const date = parseDbTimestamp(meta.timestamp.text);
-    lines.push(labelOf(meta.dateLabel) + ': ' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions));
+    lines.push(normalize(labelOf(meta.dateLabel) + ': ' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions)));
     if (meta.table) {
       lines.push(truncateShapedLine(meta.table.label.primary.replace('{name}', meta.table.name.text), cols, options.arabicShaping, options.language));
     }
   }
   if (customer?.name) lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language));
-  if (customer?.phone) lines.push(labelOf(customer.phoneLabel) + ': ' + customer.phone.text);
+  if (customer?.phone) lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + customer.phone.text));
   lines.push(dash);
 
   // Item table.
@@ -176,7 +177,7 @@ export function renderBillDocumentToCompactLines(
         lines.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language));
       }
       if (row.specialInstructions) {
-        lines.push('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language));
+        lines.push(normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language)));
       }
     }
   }
@@ -212,11 +213,11 @@ export function renderBillDocumentToCompactLines(
 
   // Footer contact details.
   lines.push(bar);
-  if (header?.address) pushWrapped(lines, header.address.text, cols);
-  if (header?.phone && header.phoneLabel) pushWrapped(lines, labelOf(header.phoneLabel) + ': ' + header.phone.text, cols);
-  if (header?.taxId) pushWrapped(lines, labelOf(header.taxId.label) + ': ' + header.taxId.value.text, cols);
-  if (messages?.footerNote) pushCenteredWrapped(lines, messages.footerNote.text, cols);
-  else lines.push('{CENTER}' + labelOf(messages!.thankYou!) + '{/CENTER}');
+  if (header?.address) pushWrapped(lines, header.address.text, cols, options.language);
+  if (header?.phone && header.phoneLabel) pushWrapped(lines, labelOf(header.phoneLabel) + ': ' + header.phone.text, cols, options.language);
+  if (header?.taxId) pushWrapped(lines, labelOf(header.taxId.label) + ': ' + header.taxId.value.text, cols, options.language);
+  if (messages?.footerNote) pushCenteredWrapped(lines, messages.footerNote.text, cols, options.language);
+  else lines.push('{CENTER}' + normalize(labelOf(messages!.thankYou!)) + '{/CENTER}');
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
@@ -263,6 +264,7 @@ export function renderCompactReceiptViaDocument(
   const warnings: PrintWarning[] = [];
   const lines = renderBillDocumentToCompactLines(document, {
     columns: opts.columns,
+    language: printContext.languages[0],
     locale: printContext.locale,
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
     currencySymbol: printContext.currencySymbol,

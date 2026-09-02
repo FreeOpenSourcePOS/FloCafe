@@ -615,6 +615,7 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
         groups: groups.map((group) => ({
           stationName: group.stationName,
           itemIndexes: group.items.map((item) => rawKotSourceItems.indexOf(item)),
+          items: group.items,
         })),
       });
     }

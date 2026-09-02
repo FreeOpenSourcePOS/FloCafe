@@ -399,6 +399,30 @@ console.log('\n▶ Add-on quantity and charge financial parity');
         `${renderer} renders packaging charge`);
     }
   }
+
+  const malformedOrder = {
+    order_number: 'ORD-ADDON-MALFORMED',
+    created_at: '2026-08-21 18:42:00',
+    items: [{
+      product_name: 'Tea',
+      quantity: 2,
+      unit_price: 10,
+      total: 20,
+      addons: [null, 'legacy-addon', { name: 'Safe extra', price: 4, quantity: 2 }],
+    }],
+  };
+  const malformedData = buildBillPrintData(malformedOrder, {
+    bill_number: 'INV-ADDON-MALFORMED',
+    subtotal: 20,
+    discount_amount: 0,
+    tax_amount: 0,
+    total: 20,
+  }, { country: 'IN', currency_symbol: '₹' }, false);
+  assert.equal(malformedData.order.items[0].addons[0].price, 0);
+  assert.equal(malformedData.order.items[0].addons[1].price, 0);
+  assert.equal(malformedData.order.items[0].addons[2].price, 16,
+    'object add-on quantity still uses the extended amount after malformed entries');
+  ok('malformed add-on entries do not break normalization');
 }
 
 // ---------------------------------------------------------------------------

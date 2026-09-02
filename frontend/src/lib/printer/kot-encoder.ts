@@ -8,6 +8,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
 import { formatTime } from './format-date';
+import { normalizeGermanThermalText } from './unicode';
 import { safePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 
@@ -48,8 +49,10 @@ export function buildKotBytes(
   enc.initialize();
 
   // KOT Banner
-  enc.align('center').bold(true).width(2).height(2);
-  safePrinterText(enc, label('print.kot.banner'), warnings, false, arabicShaping, undefined, cols, language).width(1).height(1).bold(false).newline();
+  const bannerText = language === 'de' ? normalizeGermanThermalText(label('print.kot.banner')) : label('print.kot.banner');
+  const bannerWidth = bannerText.length * 2 <= cols ? 2 : 1;
+  enc.align('center').bold(true).width(bannerWidth).height(2);
+  safePrinterText(enc, bannerText, warnings, false, arabicShaping, undefined, cols, language).width(1).height(1).bold(false).newline();
 
   // Order details
   enc.align('left').bold(true);

@@ -204,6 +204,7 @@
   "dashboard": {
     "aov": "Valor Médio do Pedido",
     "avgPrepTime": "Tempo Médio de Preparo",
+    "avgTableTurn": "Rotatividade Média de Mesa",
     "billsCollected": "Contas Recebidas",
     "busiestDay": "Dia de Maior Movimento",
     "busiestHour": "Hora de Maior Movimento",

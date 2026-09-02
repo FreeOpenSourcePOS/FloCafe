@@ -204,6 +204,7 @@
   "dashboard": {
     "aov": "Panier moyen",
     "avgPrepTime": "Temps de préparation moyen",
+    "avgTableTurn": "Rotation moyenne des tables",
     "billsCollected": "Factures encaissées",
     "busiestDay": "Jour le plus fréquenté",
     "busiestHour": "Heure la plus fréquentée",

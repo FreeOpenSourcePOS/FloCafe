@@ -204,6 +204,7 @@
   "dashboard": {
     "aov": "میانگین ارزش سفارش",
     "avgPrepTime": "میانگین زمان آماده‌سازی",
+    "avgTableTurn": "میانگین چرخش میز",
     "billsCollected": "صورتحساب‌های دریافت‌شده",
     "busiestDay": "شلوغ‌ترین روز",
     "busiestHour": "شلوغ‌ترین ساعت",

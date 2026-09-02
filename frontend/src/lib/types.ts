@@ -122,6 +122,7 @@ export interface Table {
   is_active: boolean;
   activeOrder?: Order | null;
   current_order?: Order | null;
+  seated_at?: string | null;
   reservation_customer_id?: number | null;
   reservation_customer_name?: string | null;
   reservation_customer_phone?: string | null;

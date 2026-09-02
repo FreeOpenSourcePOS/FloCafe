@@ -31,6 +31,7 @@ function tableShape(table: any, activeOrder?: any) {
     name: table.number,
     activeOrder: currentOrder,
     current_order: currentOrder,
+    seated_at: currentOrder?.created_at ?? null,
   };
 }
 

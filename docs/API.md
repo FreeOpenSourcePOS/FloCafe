@@ -836,6 +836,14 @@ Earn loyalty points.
 
 ---
 
+## Refund amount storage
+
+`refunds.amount_cents` remains the integer minor-unit storage column for both
+historical and new refunds. Historical FloCafe databases are guaranteed to
+have used only two-decimal currencies, so their stored cents equal minor units
+at a factor of 100. Those rows are interpreted as minor units in the tenant's
+current currency; no schema migration or per-row currency metadata is used.
+
 ## Reports
 
 ### GET `/api/reports/sales`

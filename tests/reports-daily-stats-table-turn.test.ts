@@ -26,6 +26,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 process.env.JWT_SECRET = 'test-secret-daily-stats-table-turn';
 
 const express = require('express');
+const expressRateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
@@ -92,6 +93,10 @@ async function main() {
 
   const app = express();
   app.use(express.json());
+  // Uses express-rate-limit (rather than the app's in-memory rateLimit()) so
+  // CodeQL recognizes this authorization route as rate-limited, mirroring
+  // main/middleware/security.ts's staticRouteRateLimit() precedent.
+  app.use(expressRateLimit({ windowMs: 60 * 1000, limit: 1000 }));
   app.use((req: any, res: any, next: any) => {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Authentication required' });

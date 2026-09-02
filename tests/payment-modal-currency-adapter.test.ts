@@ -179,6 +179,7 @@ async function runCurrencyInputBehaviorTests() {
   assert.equal(normalizeFixedDiscountValue(12.345, kwdAdapter.maxDecimals), 12.35);
   assert.equal(normalizeFixedDiscountValue(0.001, kwdAdapter.maxDecimals), 0);
   assert.equal(roundCurrencyValue(1.5, jpyAdapter.maxDecimals), 2);
+  assert.equal(roundCurrencyValue(1.005, 2), 1.01);
   assert.equal(roundCurrencyValue(12.345, kwdAdapter.maxDecimals), 12.345);
   assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'payment', 'amount'), false);
   assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'discount', 'amount'), false);

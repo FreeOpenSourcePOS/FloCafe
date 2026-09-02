@@ -10,8 +10,10 @@ export function normalizeFixedDiscountValue(value: number, maxDecimals: number):
 }
 
 export function roundCurrencyValue(value: number, maxDecimals: number): number {
-  const factor = 10 ** Math.max(0, maxDecimals);
-  return Math.round(value * factor) / factor;
+  const decimals = Math.max(0, maxDecimals);
+  const epsilon = Number.EPSILON * Math.max(1, Math.abs(value));
+  const adjustedValue = value < 0 ? value - epsilon : value + epsilon;
+  return Number(adjustedValue.toFixed(decimals));
 }
 
 export function allowCurrencyDecimalKey(

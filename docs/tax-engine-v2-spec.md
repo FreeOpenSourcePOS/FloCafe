@@ -280,9 +280,9 @@ Implementation requirements:
 - Receipts and reports use the stored results rather than recalculating them.
 - Replace the current unconditional whole-number `Math.round()` behaviour with the active pack’s payable-rounding policy.
 
-Currency-decimal default: no new boolean flag — reuse `payableRounding.increment`, seed it from ISO 4217 minor-unit digits via `Intl.NumberFormat(...).resolvedOptions().maximumFractionDigits` (confirmed works, zero dependency), pack can override for real cash-rounding rules (Swiss/AU 5c rounding).
+Currency-decimal default: no new boolean flag — reuse `payableRounding.increment`, seed it from ISO 4217 minor-unit digits via `Intl.NumberFormat(...).resolvedOptions().maximumFractionDigits` (confirmed works, zero dependency), preserve the existing two-decimal IRR compatibility contract, and allow packs to override for real cash-rounding rules (Swiss/AU 5c rounding).
 
-Confirmed this replaces a real live bug — `tax.ts:170`, `orders.ts:333/521/876/1062`, `bills.ts:491` currently do unconditional whole-number rounding, wrong for every non-INR/THB currency already listed in `countries.ts`.
+Split-check monetary allocation and tax-snapshot projection use the resolved currency minor-unit factor; the broader payable-rounding migration remains part of this design.
 
 ## Product tax model
 

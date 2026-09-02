@@ -1492,6 +1492,32 @@ function normalizeGermanThermalText(text: string): string {
   return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
 }
 
+const ESCPOS_STYLE_TOKEN_RE = /^\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}$/;
+
+function truncateEscPosLine(line: string, maxCols: number): string {
+  if (maxCols <= 0) return '';
+  let visible = 0;
+  let result = '';
+  for (let index = 0; index < line.length;) {
+    if (line[index] === '{') {
+      const end = line.indexOf('}', index + 1);
+      if (end !== -1) {
+        const token = line.slice(index, end + 1);
+        if (ESCPOS_STYLE_TOKEN_RE.test(token)) {
+          result += token;
+          index = end + 1;
+          continue;
+        }
+      }
+    }
+    if (visible >= maxCols) break;
+    result += line[index];
+    visible += 1;
+    index += 1;
+  }
+  return result;
+}
+
 // Resolves the currency symbol into the exact text that will be printed,
 // padded to a fixed 3-column slot (leading spaces for shorter symbols/codes).
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
@@ -1578,6 +1604,10 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
     if (options.language === 'de') {
       line = normalizeGermanThermalText(line);
+      if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
+        const maxCols = lineDW ? Math.floor((options.columns as number) / 2) : (options.columns as number);
+        line = truncateEscPosLine(line, Math.max(1, maxCols));
+      }
       printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
     }
     const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');

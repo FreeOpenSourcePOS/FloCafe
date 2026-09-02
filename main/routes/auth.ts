@@ -186,14 +186,15 @@ function insertStaffUser(db: ReturnType<typeof getDatabase>, id: string, name: s
   `).run(id, name, email, bcrypt.hashSync(password, 10), role, isActive, now(), now());
 }
 
-function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: string): void {
-  insertCategory(db, 'cat-express-food', 'Food', '#F97316', '🍽️', 1);
-  insertCategory(db, 'cat-express-beverages', 'Beverages', '#0EA5E9', '🥤', 2);
+function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: string, language?: string): void {
+  const isGerman = language === 'de';
+  insertCategory(db, 'cat-express-food', isGerman ? 'Speisen' : 'Food', '#F97316', '🍽️', 1);
+  insertCategory(db, 'cat-express-beverages', isGerman ? 'Getränke' : 'Beverages', '#0EA5E9', '🥤', 2);
 
-  insertProduct(db, 'prod-express-meal', 'cat-express-food', 'Meal', 150, 1);
+  insertProduct(db, 'prod-express-meal', 'cat-express-food', isGerman ? 'Mahlzeit' : 'Meal', 150, 1);
   insertProduct(db, 'prod-express-snack', 'cat-express-food', 'Snack', 80, 2);
-  insertProduct(db, 'prod-express-tea', 'cat-express-beverages', 'Tea', 25, 1);
-  insertProduct(db, 'prod-express-coffee', 'cat-express-beverages', 'Coffee', 40, 2);
+  insertProduct(db, 'prod-express-tea', 'cat-express-beverages', isGerman ? 'Tee' : 'Tea', 25, 1);
+  insertProduct(db, 'prod-express-coffee', 'cat-express-beverages', isGerman ? 'Kaffee' : 'Coffee', 40, 2);
 
   if (serviceModel === 'finedine') {
     insertTable(db, 'tbl-express-1', 'T1', 4);
@@ -350,7 +351,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
 
 export function seedSetupProfile(db: ReturnType<typeof getDatabase>, profile: string, serviceModel: string, language?: string, country?: string): void {
   if (profile === 'express') {
-    seedExpressRestaurant(db, serviceModel);
+    seedExpressRestaurant(db, serviceModel, language);
   } else if (profile === 'demo') {
     seedDemoRestaurant(db, serviceModel, language, country);
   }

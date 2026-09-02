@@ -7,6 +7,7 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
+import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { formatTime } from './format-date';
 import { normalizeGermanThermalText } from './unicode';
 import { safePrinterText, type PrintWarning } from './warnings';
@@ -25,6 +26,8 @@ export interface KotOptions {
   arabicShaping?: boolean;
   /** Print language resolved from the KOT language policy. */
   language?: string;
+  /** Locale used for localized time formatting. */
+  locale?: string;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
@@ -42,6 +45,7 @@ export function buildKotBytes(
   const { paperWidth = 58, arabicShaping = false, language = 'en' } = opts;
   const cols = CHARS[paperWidth];
   const label = (key: string): string => printLabelResolver(key, language);
+  const locale = opts.locale ?? LANGUAGES[language as Language]?.locale ?? 'en-US';
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -70,7 +74,7 @@ export function buildKotBytes(
   }
 
   enc.bold(false);
-  enc.text(formatTime(order.created_at)).newline();
+  safePrinterText(enc, `${label('print.time')}: ${formatTime(order.created_at, locale)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   enc.rule({ style: 'double' });
 
   // ── Items ────────────────────────────────────────────────────────────────────

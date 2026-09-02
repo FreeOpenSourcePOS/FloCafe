@@ -493,8 +493,11 @@ export function applyPayableRounding(
   const cleaned = new TaxDecimal(exactTotal).toDecimalPlaces(places, Decimal.ROUND_HALF_UP);
   let incrementStr = pack.payableRounding.increment;
   if (currency !== undefined && pack.publisher === 'local') {
+    const configuredDecimals = new TaxDecimal(incrementStr).decimalPlaces() ?? 0;
     const factor = getCurrencyMinorUnitFactor(currency);
-    incrementStr = new TaxDecimal(1).div(factor).toString();
+    if (getCurrencyFractionDigits(currency) > configuredDecimals) {
+      incrementStr = new TaxDecimal(1).div(factor).toString();
+    }
   }
   const rounded = roundIncrement(cleaned, incrementStr, pack.payableRounding.method);
   return {

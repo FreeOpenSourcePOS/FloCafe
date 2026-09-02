@@ -64,6 +64,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const locale = useLocale();
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
+  const tReceipt = useTranslations('receipt');
   const tWhatsappSend = useTranslations('whatsapp.send');
 
   // sendBillViaFlo (shared with OrdersPage) takes a translator callback;
@@ -493,6 +494,12 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                 <div className="flex justify-between text-slate-300">
                   <span>{t('packaging')}</span>
                   <span>{currencyFmt(Number(bill.packaging_charge))}</span>
+                </div>
+              )}
+              {Number(bill.service_charge) > 0 && (
+                <div className="flex justify-between text-slate-300">
+                  <span>{tReceipt('serviceCharge')}</span>
+                  <span>{currencyFmt(Number(bill.service_charge))}</span>
                 </div>
               )}
               {Number(bill.round_off) !== 0 && (

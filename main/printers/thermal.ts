@@ -1532,6 +1532,12 @@ export function normalizeGermanThermalText(text: string): string {
   return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
 }
 
+function normalizeCurrencyToAscii(text: string): string {
+  return Object.entries(CURRENCY_ASCII_MAP)
+    .sort(([left], [right]) => right.length - left.length)
+    .reduce((value, [symbol, fallback]) => value.split(symbol).join(fallback), text);
+}
+
 // Resolves the currency symbol into the exact text that will be printed,
 // padded to a fixed 3-column slot (leading spaces for shorter symbols/codes).
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
@@ -1612,6 +1618,8 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       }
       continue;
     }
+
+    if (!_useUnicode) line = normalizeCurrencyToAscii(line);
 
     const isStoreName = line.includes('{STORE_NAME}');
     const isFinancial = line.includes('{FINANCIAL}');

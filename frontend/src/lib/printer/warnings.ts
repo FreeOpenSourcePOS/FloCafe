@@ -11,7 +11,7 @@
  * transport instead of sending a partial receipt.
  */
 
-import { CURRENCY_ASCII_MAP, normalizeGermanThermalText } from './unicode';
+import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeGermanThermalText } from './unicode';
 
 export interface PrintWarning {
   field: string;
@@ -145,12 +145,14 @@ export function safePrinterText<T extends { text(value: string): T }>(
   maxCols?: number,
   language?: string,
   financial = false,
+  useUnicode = true,
 ): T {
   if (!value) return enc;
   const printableValue = language === 'de' ? normalizeGermanThermalText(value) : value;
-  if (hasUnsupportedPrinterChars(printableValue)) {
-    if (arabicShaping && isArabicShapingSafeLine(printableValue)) {
-      const sanitized = printableValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
+  const printerValue = useUnicode ? printableValue : normalizeCurrencyToAscii(printableValue);
+  if (hasUnsupportedPrinterChars(printerValue)) {
+    if (arabicShaping && isArabicShapingSafeLine(printerValue)) {
+      const sanitized = printerValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
       if (!sanitized) {
         const warning = makePrintWarning(value, isStoreName);
         if (financial) warning.kind = 'financial';
@@ -179,5 +181,5 @@ export function safePrinterText<T extends { text(value: string): T }>(
     warnings?.push(warning);
     return enc;
   }
-  return enc.text(printableValue);
+  return enc.text(printerValue);
 }

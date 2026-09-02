@@ -361,6 +361,16 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
 
     assert('isArabicShapingSafeLine accepts ASCII+Persian', feWarnings.isArabicShapingSafeLine('2x چای - Rs50.00') === true);
     assert('isArabicShapingSafeLine rejects other non-ASCII', feWarnings.isArabicShapingSafeLine('کافé') === false);
+
+    const asciiCurrencyEnc = makeEnc();
+    const asciiCurrencyWarnings: any[] = [];
+    feWarnings.safePrinterText(asciiCurrencyEnc, '₹ Tax', asciiCurrencyWarnings, false, false, undefined, undefined, 'en', true, false);
+    assert('WebUSB ASCII mode normalizes currency labels before classification', asciiCurrencyEnc.out[0] === 'Rs Tax' && asciiCurrencyWarnings.length === 0);
+
+    const unicodeCurrencyEnc = makeEnc();
+    const unicodeCurrencyWarnings: any[] = [];
+    feWarnings.safePrinterText(unicodeCurrencyEnc, '₹ Tax', unicodeCurrencyWarnings, false, false, undefined, undefined, 'en', true, true);
+    assert('WebUSB Unicode mode preserves currency labels', unicodeCurrencyEnc.out[0] === '₹ Tax' && unicodeCurrencyWarnings.length === 0);
   }
 
   // Default (no capability): Persian is skipped with a precise warning.
@@ -379,6 +389,14 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   const shapedCurrencyBuf = buildEscPos(['چای زعفرانی ₹500.00'], true, { arabicShaping: true }, shapedCurrencyWarnings);
   assert('with flag, Persian line with Unicode currency is emitted', shapedCurrencyBuf.toString('utf8').includes('چای زعفرانی ₹500.00'));
   assert('with flag, Persian line with Unicode currency emits no warning', shapedCurrencyWarnings.length === 0);
+
+  const asciiCurrencyWarnings: any[] = [];
+  const asciiCurrencyBuf = buildEscPos(['{FINANCIAL}₹ Tax'], false, {}, asciiCurrencyWarnings);
+  assert('backend ASCII mode normalizes currency labels before classification', asciiCurrencyBuf.toString('utf8').includes('Rs Tax') && asciiCurrencyWarnings.length === 0);
+
+  const unicodeCurrencyWarnings: any[] = [];
+  const unicodeCurrencyBuf = buildEscPos(['{FINANCIAL}₹ Tax'], true, {}, unicodeCurrencyWarnings);
+  assert('backend Unicode mode preserves currency labels', unicodeCurrencyBuf.toString('utf8').includes('₹ Tax') && unicodeCurrencyWarnings.length === 0);
 
   for (const [label, value] of [
     ['ZWNJ', 'می\u200Cرود'],

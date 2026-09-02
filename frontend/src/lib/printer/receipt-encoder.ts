@@ -199,7 +199,7 @@ function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
-function safePrinterTextForLanguage(language: string) {
+function safePrinterTextForLanguage(language: string, useUnicode: boolean) {
   return <T extends { text(value: string): T }>(
     enc: T,
     value: string,
@@ -209,7 +209,7 @@ function safePrinterTextForLanguage(language: string) {
     centerCols?: number,
     maxCols?: number,
     financial = false,
-  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language, financial);
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language, financial, useUnicode);
 }
 
 function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean): string {
@@ -410,7 +410,7 @@ export function buildClassicReceiptBytes(
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
-  const safePrinterText = safePrinterTextForLanguage(primaryLang);
+  const safePrinterText = safePrinterTextForLanguage(primaryLang, useUnicode);
   const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang);
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang);
 
@@ -632,7 +632,7 @@ export function buildCompactReceiptBytes(
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
-  const safePrinterText = safePrinterTextForLanguage(primaryLang);
+  const safePrinterText = safePrinterTextForLanguage(primaryLang, useUnicode);
   const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang);
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang);
   const trim = opts.trimDecimals === true;
@@ -801,7 +801,7 @@ export function buildDetailedReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const primaryLang = opts.languages?.[0] ?? 'en';
-  const safePrinterText = safePrinterTextForLanguage(primaryLang);
+  const safePrinterText = safePrinterTextForLanguage(primaryLang, useUnicode);
   const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang);
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);

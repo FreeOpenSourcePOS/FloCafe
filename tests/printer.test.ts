@@ -367,6 +367,13 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
     feWarnings.safePrinterText(asciiCurrencyEnc, '₹ Tax', asciiCurrencyWarnings, false, false, undefined, undefined, 'en', true, false);
     assert('WebUSB ASCII mode normalizes currency labels before classification', asciiCurrencyEnc.out[0] === 'Rs Tax' && asciiCurrencyWarnings.length === 0);
 
+    for (const [symbol, fallback] of [['د.إ', 'AED'], ['৳', 'BDT'], ['E£', 'EGP']] as const) {
+      const mappedEnc = makeEnc();
+      const mappedWarnings: any[] = [];
+      feWarnings.safePrinterText(mappedEnc, `${symbol} Tax`, mappedWarnings, false, false, undefined, undefined, 'en', true, false);
+      assert(`WebUSB ASCII mode maps ${symbol} exactly`, mappedEnc.out[0] === `${fallback} Tax` && mappedWarnings.length === 0);
+    }
+
     const unicodeCurrencyEnc = makeEnc();
     const unicodeCurrencyWarnings: any[] = [];
     feWarnings.safePrinterText(unicodeCurrencyEnc, '₹ Tax', unicodeCurrencyWarnings, false, false, undefined, undefined, 'en', true, true);
@@ -393,6 +400,12 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   const asciiCurrencyWarnings: any[] = [];
   const asciiCurrencyBuf = buildEscPos(['{FINANCIAL}₹ Tax'], false, {}, asciiCurrencyWarnings);
   assert('backend ASCII mode normalizes currency labels before classification', asciiCurrencyBuf.toString('utf8').includes('Rs Tax') && asciiCurrencyWarnings.length === 0);
+
+  for (const [symbol, fallback] of [['د.إ', 'AED'], ['৳', 'BDT'], ['E£', 'EGP']] as const) {
+    const mappedWarnings: any[] = [];
+    const mappedBuf = buildEscPos([`{FINANCIAL}${symbol} Tax`], false, {}, mappedWarnings);
+    assert(`backend ASCII mode maps ${symbol} exactly`, mappedBuf.toString('utf8').includes(`${fallback} Tax`) && mappedWarnings.length === 0);
+  }
 
   const unicodeCurrencyWarnings: any[] = [];
   const unicodeCurrencyBuf = buildEscPos(['{FINANCIAL}₹ Tax'], true, {}, unicodeCurrencyWarnings);

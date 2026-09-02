@@ -20,7 +20,13 @@ export interface PrintWarning {
   kind?: 'line' | 'financial' | 'configuration';
 }
 
-const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(`[${Object.keys(CURRENCY_ASCII_MAP).join('')}]`, 'g');
+const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(
+  Object.keys(CURRENCY_ASCII_MAP)
+    .sort((left, right) => right.length - left.length)
+    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|'),
+  'g',
+);
 
 export function hasUnsupportedPrinterChars(text: string): boolean {
   return /[^\x00-\x7F]/.test(text.replace(SUPPORTED_CURRENCY_SYMBOLS, ''));

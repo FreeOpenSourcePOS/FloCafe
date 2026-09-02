@@ -282,6 +282,27 @@ async function main() {
       'service charge snapshot identifies its charge kind',
     );
 
+    const serviceOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        service_charge: 20,
+        items: [{ product_id: 'override-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(serviceOrder.status, 201, 'explicit service charge persists on order creation');
+    assertEqual(serviceOrder.data.order.service_charge, 20, 'order returns the persisted service charge');
+    assertEqual(serviceOrder.data.order.total, 121, 'order total includes service charge once');
+    const serviceBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: serviceOrder.data.order.id },
+      headers: owner.authHeader,
+    });
+    assertEqual(serviceBill.status, 201, 'service charge bill is generated');
+    assertEqual(serviceBill.data.bill.service_charge, 20, 'bill copies the persisted service charge');
+    assertEqual(serviceBill.data.bill.total, 121, 'bill total includes service charge once');
+
     const chargeOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {

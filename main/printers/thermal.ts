@@ -1525,6 +1525,14 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
   'E£': 'EGP',
 };
 
+const CURRENCY_TOKEN_RE = new RegExp(
+  Object.keys(CURRENCY_ASCII_MAP)
+    .sort((left, right) => right.length - left.length)
+    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|'),
+  'g',
+);
+
 const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
   'Ä': 'AE', 'Ö': 'OE', 'Ü': 'UE', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
 };
@@ -1630,7 +1638,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const lineDW = line.includes('{DOUBLE_WIDTH}');
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
-    const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
+    const textWithoutSupportedCurrency = printableLine.replace(CURRENCY_TOKEN_RE, '');
     if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
       // Allow Arabic/Persian script through only when the printer profile
       // explicitly declares Arabic shaping support AND the line contains no

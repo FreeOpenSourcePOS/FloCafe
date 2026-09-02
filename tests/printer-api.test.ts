@@ -9,6 +9,7 @@
  */
 
 import * as fs from 'node:fs';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
@@ -256,11 +257,23 @@ async function runTests() {
   // ── Test 9: unsupported financial rows refuse before transport ──────────
   console.log('\nTest 9: unsupported financial rows refuse before transport');
   {
+    let transportConnections = 0;
+    let transportBytes = 0;
+    const transportServer = net.createServer((socket) => {
+      transportConnections++;
+      socket.on('data', (chunk) => { transportBytes += chunk.length; });
+    });
+    await new Promise<void>((resolve, reject) => {
+      transportServer.once('error', reject);
+      transportServer.listen(0, '127.0.0.1', () => resolve());
+    });
+    const transportAddress = transportServer.address();
+    const transportPort = typeof transportAddress === 'object' && transportAddress ? transportAddress.port : 0;
     const printerRes = await request(app).post('/api/printers').send({
       name: 'Safety Network Printer',
       connection_type: 'network',
-      ip_address: '192.0.2.1',
-      port: 9100,
+      ip_address: '127.0.0.1',
+      port: transportPort,
     });
     assert(printerRes.status === 201, `safety printer fixture is created (got ${printerRes.status})`);
 
@@ -291,6 +304,8 @@ async function runTests() {
     assert(result.failureClass === 'unsupported', 'refusal is classified as unsupported');
     assert(result.detail?.startsWith('Receipt not printed: a financial row'), 'refusal gives an explicit operator warning');
     assert(result.warnings?.some((warning: any) => warning.kind === 'financial'), 'refusal returns the financial warning');
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert(transportConnections === 0 && transportBytes === 0, 'unsupported financial refusal opens no transport or sends bytes');
 
     const originalReportDiagnostic = cloudSync.reportDiagnostic;
     let diagnostic: any;
@@ -299,6 +314,7 @@ async function runTests() {
     cloudSync.reportDiagnostic = originalReportDiagnostic;
     assert(detailed.stage === 'prepare', 'unsupported financial refusal is reported at prepare stage');
     assert(diagnostic?.message === 'Receipt not printed: unsupported financial row', 'diagnostic message omits receipt row text');
+    await new Promise<void>((resolve, reject) => transportServer.close((error) => error ? reject(error) : resolve()));
   }
 
   console.log('\n' + '='.repeat(50));

@@ -190,7 +190,7 @@ export function buildTaxBillBytes(
   // ── Bill Details ─────────────────────────────────────────────────────────
   enc.align('left');
   safePrinterText(enc, `${labelFor('receipt.billNumber')}: ${bill.bill_number}`, warnings, false, arabicShaping, undefined, cols, language).newline();
-  safePrinterText(enc, `${labelFor('receipt.date')}: ${formatDate(bill.order?.created_at, locale, tenant.timezone ? { timeZone: tenant.timezone } : undefined)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, `${labelFor('receipt.date')}: ${formatDate(bill.order?.created_at, rawEscPos ? 'en-US' : locale, tenant.timezone ? { timeZone: tenant.timezone } : undefined)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (showTableNumber && order?.table?.name) {
     safePrinterText(enc, labelFor('pos.tableLabel').replace('{name}', String(order.table.name)), warnings, false, arabicShaping, undefined, cols, language).newline();

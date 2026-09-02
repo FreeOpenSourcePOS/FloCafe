@@ -62,8 +62,9 @@ The document-block renderer rule has explicit active raw-path exceptions:
 
 - Signed [#445](https://github.com/FreeOpenSourcePOS/FloCafe/issues/445) compliance packs use [`main/printers/thermal.ts`](../main/printers/thermal.ts) to render raw
   `Order`/`Bill`/business rows with the signed [`escpos-line-template-v1`](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1)
-  payload. This remains a separate compliance format; see [the compliance
-  template contract in printers.md](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1).
+  payload. This remains a separate compliance format, but its amount-bearing
+  item, add-on, total, and payment lines use the shared ESC/POS financial-warning guard
+  before dispatch; see [the compliance template contract in printers.md](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1).
 - [`frontend/src/lib/printer/kot-web-print.ts`](../frontend/src/lib/printer/kot-web-print.ts) renders browser KOT HTML from a
   raw `Order`; it uses the shared catalog and direction helpers but is not a
   `KotDocument` v1 consumer.
@@ -400,7 +401,7 @@ reorders bidi (evidence in [printing-nonlatin-capabilities.md](printing-nonlatin
 
 Renderers consume capabilities, they never guess them:
 
-- Desktop ESC/POS: unsupported non-financial lines are skipped with an explicit warning unless the profile's shaping flag (or a request-level override) admits strict ASCII+Arabic lines (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)). Unsupported item or financial rows are also warned, but the backend refuses the receipt before transport so no partial financial receipt is emitted.
+- Desktop ESC/POS: unsupported non-financial lines are skipped with an explicit warning unless the profile's shaping flag (or a request-level override) admits strict ASCII+Arabic lines (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)). On document-driven and signed country-pack receipt paths, unsupported item or financial rows are also warned, but the backend refuses the receipt before transport so no partial financial receipt is emitted.
 - The migrated WebUSB receipt path uses `safePrinterText` for renderer-managed
   text and its warning behavior ([`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts),
   [`frontend/src/lib/printer/warnings.ts`](../frontend/src/lib/printer/warnings.ts)). Unsupported item or financial rows are refused before `PrinterService` sends bytes; other unsupported lines retain the explicit skip warning. `buildClassicReceiptBytes` still
@@ -412,12 +413,12 @@ Renderers consume capabilities, they never guess them:
 - Browser HTML printing is the full-Unicode path: nothing is skipped for
   script reasons (asserted in [`tests/print-parity.test.ts`](../tests/print-parity.test.ts)).
 
-Warning semantics on the shared document-driven paths are **no silent loss of
-unsupported content**: every skipped line produces a `PrintWarning` naming the
-field, the skipped text, and the reason. Warnings marked `financial` cause the
-thermal receipt path to refuse before transport, with an explicit operator
-message; unsupported non-financial lines may still be skipped with their
-warning. Unsupported configuration (for example a merchant template selected
+Warning semantics on the migrated document-driven and signed country-pack
+receipt paths are **no silent loss of unsupported content**: every skipped line
+produces a `PrintWarning` naming the field, the skipped text, and the reason.
+Warnings marked `financial` cause the thermal receipt path to refuse before
+transport, with an explicit operator message; unsupported non-financial lines
+may still be skipped with their warning. Unsupported configuration (for example a merchant template selected
 on a print path that cannot honor it) produces a path-specific warning and a
 documented fallback layout. The frontend
 [`makeBillTemplateFallbackWarning`](../frontend/src/lib/printer/warnings.ts)

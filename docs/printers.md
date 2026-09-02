@@ -18,7 +18,7 @@ Enable **Open cash drawer on checkout** on a receipt printer only when a till is
 
 ## Arabic and Persian text
 
-In **Settings → Printers**, enable **Printer supports Arabic/Persian shaping** only for a thermal printer whose firmware performs Arabic/Persian contextual shaping and bidirectional ordering. With this setting enabled, receipt, tax-bill, and kitchen-ticket lines containing Arabic or Persian text are sent to the printer for it to shape; the setting is off by default for generic ESC/POS hardware. On shared document-driven ESC/POS receipt paths, guarded unsupported non-financial text is skipped with a warning, while an unsupported item or financial row refuses the receipt before transport with an explicit operator warning. See [printing-architecture.md](printing-architecture.md) for the exact warning contract, direct-write exceptions, and legacy WebUSB encoder behavior.
+In **Settings → Printers**, enable **Printer supports Arabic/Persian shaping** only for a thermal printer whose firmware performs Arabic/Persian contextual shaping and bidirectional ordering. With this setting enabled, receipt, tax-bill, and kitchen-ticket lines containing Arabic or Persian text are sent to the printer for it to shape; the setting is off by default for generic ESC/POS hardware. On document-driven and signed country-pack ESC/POS receipt paths, guarded unsupported non-financial text is skipped with a warning, while an unsupported item or financial row refuses the receipt before transport with an explicit operator warning. See [printing-architecture.md](printing-architecture.md) for the exact warning contract, direct-write exceptions, and legacy WebUSB encoder behavior.
 
 ## Receipt and kitchen-ticket languages
 

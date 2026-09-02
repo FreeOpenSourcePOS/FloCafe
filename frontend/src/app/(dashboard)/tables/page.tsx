@@ -12,6 +12,7 @@ import { parsePhone, dialCodeFor } from '@/lib/phone';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS, TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { TableTurnoverBadge } from '@/components/tables/TableTurnoverBadge';
 
 const statusColors: Record<string, string> = {
   available: 'bg-green-500',
@@ -355,7 +356,12 @@ export default function TablesPage() {
                     <h3 className="font-bold text-foreground">{table.name}</h3>
                     <span className="text-xs text-gray-400">· {tTables('capacitySeats', { count: table.capacity })}</span>
                   </div>
-                  <span className="text-xs text-gray-400">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</span>
+                  <div className="flex items-center gap-2">
+                    {table.status === 'occupied' && table.seated_at && (
+                      <TableTurnoverBadge seatedAt={table.seated_at} />
+                    )}
+                    <span className="text-xs text-gray-400">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</span>
+                  </div>
                 </div>
 
                 {/* Orders section */}
@@ -432,6 +438,9 @@ export default function TablesPage() {
               <h3 className="font-bold text-lg text-foreground">{table.name}</h3>
               <p className="text-sm text-muted-foreground">{tTables('capacitySeats', { count: table.capacity })}</p>
               <p className="text-xs text-gray-400 mt-1">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</p>
+              {table.status === 'occupied' && table.seated_at && (
+                <div className="mt-1"><TableTurnoverBadge seatedAt={table.seated_at} /></div>
+              )}
               {table.floor && <p className="text-xs text-gray-400">{table.floor}</p>}
               {table.status === 'reserved' && table.reservation_customer_name && (
                 <p className="text-xs text-yellow-700 font-medium mt-1 truncate">{table.reservation_customer_name}</p>

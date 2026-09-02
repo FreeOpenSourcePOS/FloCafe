@@ -204,6 +204,7 @@
   "dashboard": {
     "aov": "Avg Order Value",
     "avgPrepTime": "Avg Prep Time",
+    "avgTableTurn": "Avg Table Turn",
     "billsCollected": "Bills Collected",
     "busiestDay": "Busiest Day",
     "busiestHour": "Busiest Hour",

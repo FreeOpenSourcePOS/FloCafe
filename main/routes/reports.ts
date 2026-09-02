@@ -10,6 +10,10 @@ const router = Router();
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+// Mirrors main/routes/tables.ts's ACTIVE_ORDER_STATUS_SQL — an order still
+// "occupying" its table until it's completed or cancelled.
+const ACTIVE_ORDER_STATUS_SQL = "o.status NOT IN ('completed', 'cancelled')";
+
 function reportDate(value: unknown, fallback: string): string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
 }
@@ -133,11 +137,32 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
       SELECT COUNT(*) as count FROM tables WHERE status = 'occupied'
     `).get() as { count: number };
 
+    // Avg Table Turn: how long dine-in tables took to turn over today, for
+    // orders that finished today (mirrors /insights' avgPrepTimeMinutes idiom).
+    const tableTurn = db.prepare(`
+      SELECT AVG((julianday(completed_at) - julianday(created_at)) * 24 * 60) as avgMinutes,
+        COUNT(*) as sampleSize
+      FROM orders
+      WHERE type = 'dine_in' AND status = 'completed' AND completed_at IS NOT NULL
+        AND completed_at >= ? AND completed_at < ?
+    `).get(start, end) as { avgMinutes: number | null; sampleSize: number };
+
+    // Avg Current Occupancy: how long tables occupied right now have been seated.
+    const currentOccupancy = db.prepare(`
+      SELECT AVG((julianday('now') - julianday(o.created_at)) * 24 * 60) as avgMinutes,
+        COUNT(*) as sampleSize
+      FROM tables t
+      JOIN orders o ON o.table_id = t.id AND ${ACTIVE_ORDER_STATUS_SQL}
+      WHERE t.status = 'occupied'
+    `).get() as { avgMinutes: number | null; sampleSize: number };
+
     res.json({
       sales: salesToday.sales,
       runningOrders: runningOrders.count,
       pendingOrders: pendingOrders.count,
       tablesOccupied: tablesOccupied.count,
+      avgTableTurnMinutes: tableTurn.sampleSize > 0 && tableTurn.avgMinutes !== null ? Math.round(tableTurn.avgMinutes) : null,
+      avgCurrentOccupancyMinutes: currentOccupancy.sampleSize > 0 && currentOccupancy.avgMinutes !== null ? Math.round(currentOccupancy.avgMinutes) : null,
       paymentMethods: paymentMethodsToday,
     });
   } catch (error: any) {

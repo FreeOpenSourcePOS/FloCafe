@@ -204,6 +204,7 @@
   "dashboard": {
     "aov": "Valor Prom. de Pedido",
     "avgPrepTime": "Tiempo Prom. de Preparación",
+    "avgTableTurn": "Rotación Prom. de Mesa",
     "billsCollected": "Facturas Cobradas",
     "busiestDay": "Día Más Ocupado",
     "busiestHour": "Hora Más Ocupada",

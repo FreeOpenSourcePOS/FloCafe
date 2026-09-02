@@ -204,6 +204,7 @@
   "dashboard": {
     "aov": "Ortalama Sipariş Tutarı",
     "avgPrepTime": "Ort. Hazırlık Süresi",
+    "avgTableTurn": "Ort. Masa Devir Süresi",
     "billsCollected": "Tahsil Edilen Fişler",
     "busiestDay": "En Yoğun Gün",
     "busiestHour": "En Yoğun Saat",

@@ -204,6 +204,7 @@
   "dashboard": {
     "aov": "Average na Halaga ng Order",
     "avgPrepTime": "Average na Oras ng Paghahanda",
+    "avgTableTurn": "Average na Turnover ng Mesa",
     "billsCollected": "Mga Nasingil na Bill",
     "busiestDay": "Pinaka-abalang Araw",
     "busiestHour": "Pinaka-abalang Oras",

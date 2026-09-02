@@ -204,6 +204,7 @@
   "dashboard": {
     "aov": "Durchschnittlicher Bestellwert",
     "avgPrepTime": "Durchschn. Zubereitung",
+    "avgTableTurn": "Durchschn. Tischwechsel",
     "billsCollected": "Eingenommene Rechnungen",
     "busiestDay": "Umsatzstärkster Tag",
     "busiestHour": "Umsatzstärkste Stunde",

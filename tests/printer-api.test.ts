@@ -32,7 +32,8 @@ const request = require('supertest');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { printerRoutes } = require('../main/routes/printers');
 const { kitchenStationRoutes } = require('../main/routes/kitchen-stations');
-const { printReceipt } = require('../main/printers/thermal');
+const { printReceipt, printReceiptDetailed } = require('../main/printers/thermal');
+const { cloudSync } = require('../main/services/cloud-sync');
 
 let passed = 0;
 let failed = 0;
@@ -263,7 +264,7 @@ async function runTests() {
     });
     assert(printerRes.status === 201, `safety printer fixture is created (got ${printerRes.status})`);
 
-    const result = await printReceipt(
+    const printArgs = [
       {
         order_number: 'ORD-UNSUPPORTED-FINANCIAL',
         created_at: '2026-01-01 12:00:00',
@@ -284,11 +285,20 @@ async function runTests() {
       undefined,
       false,
       'fa',
-    );
+    ] as const;
+    const result = await printReceipt(...printArgs);
     assert(result.ok === false, 'unsupported financial receipt is refused');
     assert(result.failureClass === 'unsupported', 'refusal is classified as unsupported');
     assert(result.detail?.startsWith('Receipt not printed: a financial row'), 'refusal gives an explicit operator warning');
     assert(result.warnings?.some((warning: any) => warning.kind === 'financial'), 'refusal returns the financial warning');
+
+    const originalReportDiagnostic = cloudSync.reportDiagnostic;
+    let diagnostic: any;
+    cloudSync.reportDiagnostic = (input: any) => { diagnostic = input; };
+    const detailed = await printReceiptDetailed(...printArgs);
+    cloudSync.reportDiagnostic = originalReportDiagnostic;
+    assert(detailed.stage === 'prepare', 'unsupported financial refusal is reported at prepare stage');
+    assert(diagnostic?.message === 'Receipt not printed: unsupported financial row', 'diagnostic message omits receipt row text');
   }
 
   console.log('\n' + '='.repeat(50));

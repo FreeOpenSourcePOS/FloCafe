@@ -893,6 +893,32 @@ async function main() {
     assert(exactWidthReceipt.includes('TAX INVOICE'), 'plugin renderer supports an exact 42-column profile');
     assertEqual(widthProfileWarnings.length, 0, 'exact plugin width profile does not warn');
 
+    const configuredTaxWarnings: any[] = [];
+    formatReceipt(
+      {
+        order_number: 'ORD-GST-CONFIGURED-TAX',
+        created_at: '2026-08-01T10:30:00.000Z',
+        items: [{
+          product_name: 'Tax Tea',
+          quantity: 1,
+          total: 100,
+          tax_breakdown: [{ title: 'НДС', rate: null, amount: 5 }],
+        }],
+      },
+      { bill_number: 'BILL-GST-CONFIGURED-TAX', subtotal: 95, tax_amount: 5, total: 100 },
+      { name: 'Flo Test Cafe', country: 'IN', currency_symbol: '₹', show_tax_breakdown: true },
+      'in.gst.tax-invoice.v1',
+      42,
+      false,
+      false,
+      'full',
+      configuredTaxWarnings,
+    );
+    assert(
+      configuredTaxWarnings.some((warning) => warning.kind === 'financial'),
+      'configured plugin tax summary rows are refused as financial content',
+    );
+
     const smallerWidthReceipt = escPosToText(formatReceipt(
       {
         order_number: 'ORD-GST-SMALLER',

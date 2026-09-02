@@ -51,6 +51,8 @@ export function makeFinancialPrintRefusalMessage(warnings: readonly PrintWarning
   return `Receipt not printed: a financial row contains unsupported printer text${row?.text ? `: ${row.text}` : '.'} Use a supported printer profile or system/browser printing.`;
 }
 
+const FINANCIAL_PRINT_REFUSAL_DIAGNOSTIC = 'Receipt not printed: unsupported financial row';
+
 /** Low-level dispatch result — carries the actual OS/driver reason, not just ok/fail. */
 export type DispatchResult = {
   ok: boolean;
@@ -688,12 +690,15 @@ function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void 
   });
 
   try {
+    const message = hasFinancialPrintWarning(result.warnings || [])
+      ? FINANCIAL_PRINT_REFUSAL_DIAGNOSTIC
+      : (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300);
     cloudSync.reportDiagnostic({
       event_id: randomUUID(),
       event_code: result.code || `print.${kind}.failed`,
       severity: 'error',
       correlation_id: result.correlationId,
-      message: (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300),
+      message,
       metadata: {
         connection_type: connectionType,
         kind,
@@ -719,13 +724,14 @@ export async function printReceiptDetailed(...args: Parameters<typeof printRecei
   const id = correlationId();
   try {
     const dispatch = await printReceipt(...args);
+    const stage = !dispatch.ok && hasFinancialPrintWarning(dispatch.warnings || []) ? 'prepare' : 'dispatch';
     const result: PrintResult = dispatch.ok
       ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
       : {
         ok: false,
         code: 'print.receipt.failed',
         correlationId: id,
-        stage: 'dispatch',
+        stage,
         detail: dispatch.detail,
         failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
         platformErrorCode: dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
@@ -1241,7 +1247,7 @@ function pluginSummaryRow(label: string, amount: string, layout: any, cols: numb
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
   if (Number.isInteger(labelWidth) && Number.isInteger(amountWidth) && labelWidth > 0 && amountWidth > 0) {
-    return composePluginColumns([
+    return '{FINANCIAL}' + composePluginColumns([
       { value: normalizedLabel, width: labelWidth, align: 'left', ellipsis: true },
       { value: amount, width: amountWidth, align: 'right', ellipsis: true },
     ], Math.max(0, cols - labelWidth - amountWidth), cols);

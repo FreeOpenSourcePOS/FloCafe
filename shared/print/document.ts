@@ -460,7 +460,7 @@ function kotOrderTypeValue(labels: LabelContext, value: string): string {
   const conceptId = KOT_ORDER_TYPE_CONCEPTS[value];
   if (conceptId === undefined) return value.replace(/_/g, ' ').trim().toUpperCase();
   const resolved = resolveSemanticLabel(labels, conceptId).primary;
-  return labels.primary === 'en' ? resolved.toUpperCase() : resolved;
+  return resolved;
 }
 
 function optionalDirectional(text: string | undefined | null, base: TextDirection): DirectionalText | null {

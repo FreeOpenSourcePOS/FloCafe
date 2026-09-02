@@ -37,7 +37,7 @@ export const CURRENCY_ASCII_MAP: Record<string, string> = {
 };
 
 const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
-  'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+  'Ä': 'AE', 'Ö': 'OE', 'Ü': 'UE', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
 };
 
 export function normalizeGermanThermalText(text: string): string {

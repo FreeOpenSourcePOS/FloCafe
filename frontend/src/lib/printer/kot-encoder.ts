@@ -167,7 +167,7 @@ function resolveOrderType(type: string, language: string): string {
   const key = keys[type];
   if (!key) return String(type).replace(/_/g, ' ').toUpperCase();
   const resolved = printLabelResolver(key, language);
-  return language === 'en' ? resolved.toUpperCase() : resolved;
+  return resolved;
 }
 
 function formatOrderNumber(label: string, orderNumber: string): string {

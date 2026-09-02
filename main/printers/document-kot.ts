@@ -115,7 +115,8 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
   return labelOf(label).replace('{name}', tableName);
 }
 
-function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string): string {
+function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string): string {
+  if (language === 'en') return `Order: ${orderNumber}`;
   return labelOf(label).replace('{number}', orderNumber);
 }
 
@@ -128,7 +129,7 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   lines.push('{CENTER}{BOLD}' + truncateShapedLine(labelOf(header.banner), cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
   lines.push('');
   lines.push(truncateShapedLine(labelOf(header.stationLabel) + ': ' + header.stationName.text, cols, options.arabicShaping, options.language));
-  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text), cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language), cols, options.arabicShaping, options.language));
   if (header.table) {
     lines.push(truncateShapedLine(formatTableLabel(header.table.label, header.table.name.text), cols, options.arabicShaping, options.language));
   }

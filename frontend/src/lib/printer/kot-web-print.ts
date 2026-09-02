@@ -106,7 +106,7 @@ function resolveOrderType(type: unknown, language: Language, tr: (key: string) =
   const key = keys[normalized];
   if (!key) return normalized.replace(/_/g, ' ').toUpperCase();
   const resolved = tr(key);
-  return language === 'en' ? resolved.toUpperCase() : resolved;
+  return resolved;
 }
 
 /**

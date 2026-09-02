@@ -339,7 +339,8 @@ export interface CurrencyUnitAdapter {
 
 /**
  * Resolves standard ISO 4217 decimal fraction digits for a currency code using
- * native Intl.NumberFormat metadata, falling back safely to 2 decimals.
+ * native Intl.NumberFormat metadata, preserving IRR's legacy 2-decimal
+ * contract and falling back safely to 2 decimals.
  */
 export function getCurrencyFractionDigits(currency: string): number {
   if (!currency || typeof currency !== 'string') return 2;

@@ -340,11 +340,14 @@ export default function POSPage() {
     } catch (err) {
       // Non-fatal: print failure should not block the checkout flow.
       const msg = err instanceof Error ? err.message : 'print failed';
+      const supportMessage = msg.startsWith('Receipt not printed:')
+        ? 'Receipt not printed: unsupported financial row'
+        : msg;
       const code = 'print.receipt.failed';
       setSupportError({
         code,
         message: t('receiptPrintFailed'),
-        payload: { event_code: code, message: msg, category: 'printer', diagnostics: { bill_id: bill.id, stage: 'receipt_print' } },
+        payload: { event_code: code, message: supportMessage, category: 'printer', diagnostics: { bill_id: bill.id, stage: 'receipt_print' } },
       });
       toast.error(t('receiptPrintFailed'));
     }

@@ -62,8 +62,9 @@ The document-block renderer rule has explicit active raw-path exceptions:
 
 - Signed [#445](https://github.com/FreeOpenSourcePOS/FloCafe/issues/445) compliance packs use [`main/printers/thermal.ts`](../main/printers/thermal.ts) to render raw
   `Order`/`Bill`/business rows with the signed [`escpos-line-template-v1`](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1)
-  payload. This remains a separate compliance format; see [the compliance
-  template contract in printers.md](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1).
+  payload. This remains a separate compliance format, but its amount-bearing
+  item, add-on, total, and payment lines use the shared ESC/POS financial-warning guard
+  before dispatch; see [the compliance template contract in printers.md](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1).
 - [`frontend/src/lib/printer/kot-web-print.ts`](../frontend/src/lib/printer/kot-web-print.ts) renders browser KOT HTML from a
   raw `Order`; it uses the shared catalog and direction helpers but is not a
   `KotDocument` v1 consumer.
@@ -400,13 +401,10 @@ reorders bidi (evidence in [printing-nonlatin-capabilities.md](printing-nonlatin
 
 Renderers consume capabilities, they never guess them:
 
-- Desktop ESC/POS: lines whose content the target printer cannot render are
-  skipped with an explicit warning unless the profile's shaping flag (or a
-  request-level override) admits strict ASCII+Arabic lines
-  (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)).
+- Desktop ESC/POS: unsupported non-financial lines are skipped with an explicit warning unless the profile's shaping flag (or a request-level override) admits strict ASCII+Arabic lines (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)). On document-driven and signed country-pack receipt paths, unsupported item or financial rows are also warned, but the backend refuses the receipt before transport so no partial financial receipt is emitted.
 - The migrated WebUSB receipt path uses `safePrinterText` for renderer-managed
   text and its warning behavior ([`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts),
-  [`frontend/src/lib/printer/warnings.ts`](../frontend/src/lib/printer/warnings.ts)). `buildClassicReceiptBytes` still
+  [`frontend/src/lib/printer/warnings.ts`](../frontend/src/lib/printer/warnings.ts)). Unsupported item or financial rows are refused before `PrinterService` sends bytes; other unsupported lines retain the explicit skip warning. `buildClassicReceiptBytes` still
   writes the masked customer phone directly with `enc.text`, so that field is a
   documented warning-contract exception. The raw WebUSB [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) and
   legacy [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) paths are broader exceptions with their
@@ -415,23 +413,25 @@ Renderers consume capabilities, they never guess them:
 - Browser HTML printing is the full-Unicode path: nothing is skipped for
   script reasons (asserted in [`tests/print-parity.test.ts`](../tests/print-parity.test.ts)).
 
-Warning semantics on the shared document-driven paths are **no silent loss of
-unsupported content**: every skipped line produces a `PrintWarning` naming the
-field, the skipped text, and the reason; unsupported configuration (for example
-a merchant template selected on a print path that cannot honor it) produces a
-path-specific warning and a documented fallback layout. The frontend
+Warning semantics on the migrated document-driven and signed country-pack
+receipt paths are **no silent loss of unsupported content**: every skipped line
+produces a `PrintWarning` naming the field, the skipped text, and the reason.
+Warnings marked `financial` cause the thermal receipt path to refuse before
+transport, with an explicit operator message; unsupported non-financial lines
+may still be skipped with their warning. Unsupported configuration (for example a merchant template selected
+on a print path that cannot honor it) produces a path-specific warning and a
+documented fallback layout. The frontend
 [`makeBillTemplateFallbackWarning`](../frontend/src/lib/printer/warnings.ts)
-marks that warning `kind: 'configuration'`; desktop
-[`PrintWarning`](../main/printers/thermal.ts) carries `field`, `text`, and
-`message` without a `kind` field. A valid merchant template may intentionally
+marks that warning `kind: 'configuration'`; desktop and frontend financial
+warnings use `kind: 'financial'`. A valid merchant template may intentionally
 reorder, hide, or omit blocks — including `totals` — through explicit block
 selection and `visible` settings; that is merchant configuration, not a silent
 renderer omission. The legacy raw WebUSB encoders described above retain their
 own warning behavior and do not inherit the `PrintDocument` guarantees.
-Warnings surface to the user after printing
-([`frontend/src/lib/printer/warnings-toast.ts`](../frontend/src/lib/printer/warnings-toast.ts)) and in
-dispatch results (`classifyPrintFailure` in [`main/printers/thermal.ts`](../main/printers/thermal.ts) gives stable, privacy-safe failure
-classes for fleet telemetry). The end-state contract from [epic #438](https://github.com/FreeOpenSourcePOS/FloCafe/issues/438) for the
+Warnings surface to the user through print results and toast notifications
+([`frontend/src/lib/printer/warnings-toast.ts`](../frontend/src/lib/printer/warnings-toast.ts)); financial refusal warnings are shown before transport. Dispatch results use
+`classifyPrintFailure` in [`main/printers/thermal.ts`](../main/printers/thermal.ts) for stable, privacy-safe failure
+classes for fleet telemetry. The end-state contract from [epic #438](https://github.com/FreeOpenSourcePOS/FloCafe/issues/438) for the
 shared paths is native render, explicitly supported fallback, or an explicit
 warning/error for unsupported content or configuration. The recommended
 capability-tiered raster fallback for broader script coverage is future work

@@ -7,19 +7,26 @@
  * so both printing paths degrade the same way: a line with characters a
  * generic thermal printer can't render (Arabic, CJK, emoji, etc.) is skipped
  * rather than sent as garbage bytes, and the caller is told which line and
- * why.
+ * why. Financial rows are marked so receipt callers can refuse before
+ * transport instead of sending a partial receipt.
  */
 
-import { CURRENCY_ASCII_MAP, normalizeGermanThermalText } from './unicode';
+import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeGermanThermalText } from './unicode';
 
 export interface PrintWarning {
   field: string;
   text: string;
   message: string;
-  kind?: 'line' | 'configuration';
+  kind?: 'line' | 'financial' | 'configuration';
 }
 
-const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(`[${Object.keys(CURRENCY_ASCII_MAP).join('')}]`, 'g');
+const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(
+  Object.keys(CURRENCY_ASCII_MAP)
+    .sort((left, right) => right.length - left.length)
+    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|'),
+  'g',
+);
 
 export function hasUnsupportedPrinterChars(text: string): boolean {
   return /[^\x00-\x7F]/.test(text.replace(SUPPORTED_CURRENCY_SYMBOLS, ''));
@@ -75,6 +82,15 @@ function billTemplateSource(value: unknown): 'core' | 'non-core' {
   return selection === 'classic' || selection === 'compact' ? 'core' : 'non-core';
 }
 
+export function hasFinancialPrintWarning(warnings: readonly PrintWarning[]): boolean {
+  return warnings.some((warning) => warning.kind === 'financial');
+}
+
+export function makeFinancialPrintRefusalMessage(warnings: readonly PrintWarning[]): string {
+  const row = warnings.find((warning) => warning.kind === 'financial');
+  return `Receipt not printed: a financial row contains unsupported printer text${row?.text ? `: ${row.text}` : '.'} Use a supported printer profile or system/browser printing.`;
+}
+
 export function makeBillTemplateFallbackWarning(value: unknown): PrintWarning | null {
   if (billTemplateSource(value) === 'core') return null;
   const text = typeof value === 'string' ? value : JSON.stringify(value);
@@ -114,7 +130,8 @@ function boundShapedText(text: string, maxCols?: number): string {
 /**
  * Writes `value` to an ESC/POS encoder only if a generic thermal printer can
  * render every character; otherwise records a warning and skips it entirely
- * so the rest of the receipt/ticket still prints and cuts normally.
+ * so the rest of the receipt/ticket still prints and cuts normally. Callers
+ * mark financial rows so the receipt can be refused before transport.
  *
  * When `arabicShaping` is true (printer firmware shapes Arabic/Persian,
  * #437), pure ASCII+Arabic lines pass through instead of being skipped —
@@ -133,14 +150,19 @@ export function safePrinterText<T extends { text(value: string): T }>(
   centerCols?: number,
   maxCols?: number,
   language?: string,
+  financial = false,
+  useUnicode = true,
 ): T {
   if (!value) return enc;
   const printableValue = language === 'de' ? normalizeGermanThermalText(value) : value;
-  if (hasUnsupportedPrinterChars(printableValue)) {
-    if (arabicShaping && isArabicShapingSafeLine(printableValue)) {
-      const sanitized = printableValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
+  const printerValue = useUnicode ? printableValue : normalizeCurrencyToAscii(printableValue);
+  if (hasUnsupportedPrinterChars(printerValue)) {
+    if (arabicShaping && isArabicShapingSafeLine(printerValue)) {
+      const sanitized = printerValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
       if (!sanitized) {
-        warnings?.push(makePrintWarning(value, isStoreName));
+        const warning = makePrintWarning(value, isStoreName);
+        if (financial) warning.kind = 'financial';
+        warnings?.push(warning);
         return enc;
       }
       if ('raw' in enc && typeof (enc as { raw?: (data: Uint8Array) => T }).raw === 'function') {
@@ -160,8 +182,10 @@ export function safePrinterText<T extends { text(value: string): T }>(
       }
       return enc.text(boundShapedText(sanitized, maxCols));
     }
-    warnings?.push(makePrintWarning(value, isStoreName));
+    const warning = makePrintWarning(value, isStoreName);
+    if (financial) warning.kind = 'financial';
+    warnings?.push(warning);
     return enc;
   }
-  return enc.text(printableValue);
+  return enc.text(printerValue);
 }

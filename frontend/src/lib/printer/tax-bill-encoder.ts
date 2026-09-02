@@ -113,7 +113,7 @@ function getSafeLatnLocale(locale: string | undefined): string {
   return `${locale}-u-nu-latn`;
 }
 
-function safePrinterTextForLanguage(language: string) {
+function safePrinterTextForLanguage(language: string, useUnicode: boolean) {
   return <T extends { text(value: string): T }>(
     enc: T,
     value: string,
@@ -123,7 +123,7 @@ function safePrinterTextForLanguage(language: string) {
     centerCols?: number,
     maxCols?: number,
     _language?: string,
-  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language);
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language, false, useUnicode);
 }
 
 export function buildTaxBillBytes(
@@ -151,7 +151,7 @@ export function buildTaxBillBytes(
   } = opts;
   const labelFor = (key: string): string => printLabelResolver(key, language);
   const cols = CHARS[paperWidth];
-  const safePrinterText = safePrinterTextForLanguage(language);
+  const safePrinterText = safePrinterTextForLanguage(language, useUnicode);
   const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, language);
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, language);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);

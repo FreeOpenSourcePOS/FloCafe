@@ -140,6 +140,9 @@ export function buildBillPrintData(order: any, bill: any, business: any, isRepri
       discountAmount: Number(bill?.discount_amount) || 0,
       taxAmount: Number(bill?.tax_amount) || 0,
       total: Number(bill?.total) || 0,
+      // Backend bills persist delivery and packaging charges. Service charges
+      // are currently an order/tax-engine concept with no persisted bill source,
+      // so keep the normalized backend boundary explicit until one exists.
       deliveryCharge: Number(bill?.delivery_charge) || 0,
       packagingCharge: Number(bill?.packaging_charge) || 0,
       taxComponents: resolveTaxComponents({ ...bill, items }),

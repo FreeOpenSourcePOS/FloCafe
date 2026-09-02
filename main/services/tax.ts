@@ -596,6 +596,7 @@ export function scaleTaxBreakdowns(
 export function scaleTaxSnapshots(
   snapshotsJson: (string | null | undefined)[],
   ratio: number,
+  minorFactor = 100,
 ): string[] {
   const snapshots = snapshotsJson.flatMap((raw) => {
     if (!raw) return [];
@@ -607,6 +608,7 @@ export function scaleTaxSnapshots(
     }
   });
   const scale = new Decimal(ratio);
+  const decimals = Math.log10(minorFactor);
   const entries: Array<{
     component: any;
     line: any;
@@ -620,7 +622,7 @@ export function scaleTaxSnapshots(
       if (!Array.isArray(line.components)) continue;
       for (const component of line.components) {
         const raw = new Decimal(component.amount || 0).mul(scale);
-        const rounded = raw.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const rounded = raw.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
         entries.push({ component, line, raw, rounded, remainder: raw.minus(rounded) });
       }
     }
@@ -630,11 +632,11 @@ export function scaleTaxSnapshots(
     const targetTaxAmount = entries.reduce(
       (sum, entry) => sum.plus(new Decimal(entry.component.amount || 0)),
       new Decimal(0),
-    ).mul(scale).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    ).mul(scale).toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
     const roundedTotal = entries.reduce((sum, entry) => sum.plus(entry.rounded), new Decimal(0));
     const centsDelta = targetTaxAmount
       .minus(roundedTotal)
-      .mul(100)
+      .mul(minorFactor)
       .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
       .toNumber();
     const direction = Math.sign(centsDelta);
@@ -649,10 +651,10 @@ export function scaleTaxSnapshots(
     });
     for (let index = 0; index < Math.abs(centsDelta); index += 1) {
       const entry = ordered[index % ordered.length];
-      entry.rounded = entry.rounded.plus(direction * 0.01);
+      entry.rounded = entry.rounded.plus(direction / minorFactor);
     }
     for (const entry of entries) {
-      entry.component.amount = entry.rounded.toFixed(2);
+      entry.component.amount = entry.rounded.toFixed(decimals);
       entry.component.roundingRemainder = entry.raw.minus(entry.rounded).toString();
     }
   }
@@ -661,7 +663,7 @@ export function scaleTaxSnapshots(
     for (const line of snapshot.lines) {
       const scaleValue = (value: unknown) => {
         if (typeof value !== 'string' && typeof value !== 'number') return value;
-        return new Decimal(value).mul(scale).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
+        return new Decimal(value).mul(scale).toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP).toFixed(decimals);
       };
       line.grossAmount = scaleValue(line.grossAmount);
       line.taxableBase = scaleValue(line.taxableBase);
@@ -669,7 +671,7 @@ export function scaleTaxSnapshots(
         line.taxAmount = line.components.reduce(
           (sum: Decimal, component: any) => sum.plus(component.amount || 0),
           new Decimal(0),
-        ).toFixed(2);
+        ).toFixed(decimals);
       } else {
         line.taxAmount = scaleValue(line.taxAmount);
       }

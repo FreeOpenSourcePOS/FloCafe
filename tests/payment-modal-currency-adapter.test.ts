@@ -40,6 +40,7 @@ moduleApi._resolveFilename = function (request: string, parent: any, isMain: boo
 const React = frontendRequire('react');
 const ReactDOMServer = frontendRequire('react-dom/server');
 const TouchNumberPad = require('../frontend/src/components/pos/TouchNumberPad').default;
+const { allowCurrencyDecimalKey, getDiscountInputStep } = require('../frontend/src/lib/currency-input');
 
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
@@ -170,6 +171,13 @@ async function runCurrencyInputBehaviorTests() {
   const kwdAdapter = getCurrencyUnitAdapter('KWD', 'KW');
   assert.equal(kwdAdapter.step, '0.001');
   assert.equal(kwdAdapter.maxDecimals, 3);
+  assert.equal(getDiscountInputStep(jpyAdapter.maxDecimals, 'amount'), '1');
+  assert.equal(getDiscountInputStep(kwdAdapter.maxDecimals, 'amount'), '0.01');
+  assert.equal(getDiscountInputStep(kwdAdapter.maxDecimals, 'percentage'), '1');
+  assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'payment', 'amount'), false);
+  assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'discount', 'amount'), false);
+  assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'discount', 'percentage'), true);
+  assert.equal(allowCurrencyDecimalKey(kwdAdapter.maxDecimals, 'payment', 'amount'), true);
 
   const { chromium } = frontendRequire('playwright');
   const browser = await chromium.launch({ headless: true });
@@ -186,28 +194,28 @@ async function runCurrencyInputBehaviorTests() {
     );
 
     const page = await browser.newPage();
-    await page.setContent(renderKeypad(jpyAdapter.maxDecimals > 0));
+    await page.setContent(renderKeypad(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'payment', 'amount')));
     assert.equal(
       await page.getByRole('button', { name: '.', exact: true }).count(),
       0,
       'JPY keypad omits the decimal button',
     );
 
-    await page.setContent(renderKeypad(usdAdapter.maxDecimals > 0));
+    await page.setContent(renderKeypad(allowCurrencyDecimalKey(usdAdapter.maxDecimals, 'payment', 'amount')));
     assert.equal(
       await page.getByRole('button', { name: '.', exact: true }).count(),
       1,
       'USD keypad renders the decimal button',
     );
 
-    await page.setContent(renderKeypad(kwdAdapter.maxDecimals > 0));
+    await page.setContent(renderKeypad(allowCurrencyDecimalKey(kwdAdapter.maxDecimals, 'payment', 'amount')));
     assert.equal(
       await page.getByRole('button', { name: '.', exact: true }).count(),
       1,
       'KWD keypad renders the decimal button',
     );
 
-    await page.setContent(renderKeypad(true));
+    await page.setContent(renderKeypad(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'discount', 'percentage')));
     assert.equal(
       await page.getByRole('button', { name: '.', exact: true }).count(),
       1,

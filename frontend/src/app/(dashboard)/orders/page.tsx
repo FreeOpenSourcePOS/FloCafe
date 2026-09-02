@@ -14,6 +14,7 @@ import type { OrderItem, Table, Product, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { getDiscountInputStep } from '@/lib/currency-input';
 import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
@@ -1632,7 +1633,7 @@ placeholder={tOrders('managerPin')}
                     type="number"
                     min={0}
                     max={discountModal.type === 'percentage' ? 100 : Number(discountModal.order.total)}
-                    step={discountModal.type === 'percentage' ? 1 : unitAdapter.maxDecimals === 0 ? '1' : '0.01'}
+                    step={getDiscountInputStep(unitAdapter.maxDecimals, discountModal.type)}
                     value={discountModal.value || ''}
                     onChange={(e) => updateDiscountModal({ value: Number(e.target.value) })}
                     placeholder={discountModal.type === 'percentage' ? '0' : unitAdapter.formatInput(0)}

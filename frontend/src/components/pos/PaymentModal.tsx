@@ -15,6 +15,7 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { allowCurrencyDecimalKey, getDiscountInputStep } from '@/lib/currency-input';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
@@ -574,7 +575,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                     placeholder={discountType === 'percentage' ? '0' : '0.00'}
                     min="0"
                     max={discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))}
-                    step={discountType === 'percentage' ? 1 : inputCurrencyStep}
+                    step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                     inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
                     className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                   />
@@ -724,7 +725,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
               clearLabel={t('clearAmount')}
               backspaceLabel={t('backspaceAmount')}
               // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
-              allowDecimal={amountTarget.kind === 'discount' && discountType === 'percentage' ? true : unitAdapter.maxDecimals > 0}
+              allowDecimal={allowCurrencyDecimalKey(unitAdapter.maxDecimals, amountTarget.kind, discountType)}
               max={activeAmountMax}
               quickValues={activeAmountQuickValues}
             />

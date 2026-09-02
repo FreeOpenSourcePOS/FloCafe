@@ -6,6 +6,7 @@ import type {
   TaxLineKind,
   TaxRule,
 } from '../tax-packs/types';
+import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 
 const TaxDecimal = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -486,10 +487,16 @@ export class TaxEngine {
 export function applyPayableRounding(
   exactTotal: number,
   pack: CountryPack,
+  currency?: string,
 ): { total: number; adjustment: number } {
-  const places = pack.taxRounding.decimalPlaces;
+  const places = currency !== undefined ? getCurrencyFractionDigits(currency) : pack.taxRounding.decimalPlaces;
   const cleaned = new TaxDecimal(exactTotal).toDecimalPlaces(places, Decimal.ROUND_HALF_UP);
-  const rounded = roundIncrement(cleaned, pack.payableRounding.increment, pack.payableRounding.method);
+  let incrementStr = pack.payableRounding.increment;
+  if (currency !== undefined && pack.publisher === 'local') {
+    const factor = getCurrencyMinorUnitFactor(currency);
+    incrementStr = new TaxDecimal(1).div(factor).toString();
+  }
+  const rounded = roundIncrement(cleaned, incrementStr, pack.payableRounding.method);
   return {
     total: rounded.toNumber(),
     adjustment: rounded.minus(cleaned).toNumber(),

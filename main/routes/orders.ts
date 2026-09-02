@@ -15,6 +15,8 @@ import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes, validateProductQuantity } from './orders-validation';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { getCurrencyFractionDigits } from '../countries';
+import { getTenantCurrency } from './bills';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -592,7 +594,9 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
       });
       const preRoundTotal = subtotal + taxRollup.exclusiveTaxAmount
         + delCharge + pkgCharge + serviceCharge;
-      const total = Number(preRoundTotal.toFixed(2));
+      const currency = getTenantCurrency();
+      const decimals = getCurrencyFractionDigits(currency);
+      const total = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
       db.prepare(`
@@ -844,7 +848,9 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
-      const total = Number(preRoundTotal.toFixed(2));
+      const currency = getTenantCurrency();
+      const decimals = getCurrencyFractionDigits(currency);
+      const total = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
       // Update order totals and optionally update order-level notes
@@ -862,7 +868,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
       if (existingBill) {
         const pack = getActiveCountryPack(tenantInfo.country);
-        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
           .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, currentOrder.service_charge || 0, billRoundOff, now(), existingBill.id);
@@ -1306,7 +1312,9 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (currentOrder.packaging_charge || 0) + (currentOrder.delivery_charge || 0) + (currentOrder.service_charge || 0);
-      const newTotal = Number(preRoundTotal.toFixed(2));
+      const currency = getTenantCurrency();
+      const decimals = getCurrencyFractionDigits(currency);
+      const newTotal = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
       db.prepare(`
@@ -1527,7 +1535,9 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (order.packaging_charge || 0) + (order.delivery_charge || 0) + (order.service_charge || 0);
-      const orderTotal = Number(preRoundTotal.toFixed(2));
+      const currency = getTenantCurrency();
+      const decimals = getCurrencyFractionDigits(currency);
+      const orderTotal = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
       db.prepare(`
@@ -1538,7 +1548,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
       if (existingBill) {
         const pack = getActiveCountryPack(tenantInfo.country);
-        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(orderTotal, pack);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(orderTotal, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
           .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, order.service_charge || 0, billRoundOff, now(), existingBill.id);

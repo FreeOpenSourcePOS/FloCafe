@@ -176,7 +176,7 @@
     "test:rtl-kds-server-whatsapp": "ts-node --transpile-only -P tests/tsconfig.json tests/rtl-kds-server-whatsapp.test.ts",
     "test:phone": "ts-node --transpile-only -P tests/tsconfig.json tests/phone.test.ts",
     "test:country-localization": "ts-node --transpile-only -P tests/tsconfig.json tests/country-localization.test.ts",
-    "test:currency": "ts-node --transpile-only -P tests/tsconfig.json tests/currency.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/country-profile.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/locale-iran.test.ts && node tests/run-electron-node-test.cjs tests/currency-split-checks.test.ts",
+    "test:currency": "ts-node --transpile-only -P tests/tsconfig.json tests/currency.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/country-profile.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/locale-iran.test.ts && node tests/run-electron-node-test.cjs tests/currency-split-checks.test.ts && node tests/run-electron-node-test.cjs tests/currency-payments-refunds-minor-units.test.ts",
     "test:currency-split": "node tests/run-electron-node-test.cjs tests/currency-split-checks.test.ts",
     "test:update-state": "ts-node --transpile-only -P tests/tsconfig.json tests/update-state.test.ts",
     "test:update-ui": "ts-node --transpile-only -P tests/tsconfig.json tests/update-ui.test.ts",

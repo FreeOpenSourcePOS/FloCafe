@@ -35,7 +35,7 @@ import {
 const router = Router();
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 
-function getTenantCurrency(): string {
+export function getTenantCurrency(): string {
   const explicit = getSettingValue('currency');
   if (explicit && typeof explicit === 'string' && /^[A-Z]{3}$/.test(explicit)) return explicit;
   const country = getSettingValue('country') || 'IN';
@@ -485,8 +485,9 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
         const orderService       = order.service_charge  || 0;
         const orderTotal         = order.total           || 0;
 
+        const currency = getTenantCurrency();
         const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
-        const { total: roundedOrderTotal, adjustment: orderRoundOff } = applyPayableRounding(orderTotal, pack);
+        const { total: roundedOrderTotal, adjustment: orderRoundOff } = applyPayableRounding(orderTotal, pack, currency);
 
         const totalsChanged =
           existingBill.payment_status !== 'paid' && (
@@ -539,8 +540,9 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
       const deliveryCharge = order.delivery_charge || 0;
       const packagingCharge = order.packaging_charge || 0;
       const serviceCharge = order.service_charge || 0;
+      const currency = getTenantCurrency();
       const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
-      const { total, adjustment: roundOff } = applyPayableRounding(order.total || 0, pack);
+      const { total, adjustment: roundOff } = applyPayableRounding(order.total || 0, pack, currency);
 
       const runResult = db.prepare(`
         INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
@@ -1651,20 +1653,28 @@ function paymentIdempotencyKey(req: Request): string | null {
   return supplied;
 }
 
-function paymentAmountCents(value: unknown, label = 'Payment amount'): number {
+export function paymentAmountMinorUnits(value: unknown, currency: string, label = 'Payment amount'): number {
   if (typeof value !== 'number' && typeof value !== 'string') {
     throw Object.assign(new Error(`${label} must be a finite number greater than zero`), { statusCode: 400 });
   }
+  const decimals = getCurrencyFractionDigits(currency);
+  const factor = getCurrencyMinorUnitFactor(currency);
   const text = String(value).trim();
-  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) {
-    throw Object.assign(new Error(`${label} must be a finite number greater than zero with at most 2 decimal places`), { statusCode: 400 });
+  const pattern = decimals === 0 ? /^\d+$/ : new RegExp(`^\\d+(?:\\.\\d{1,${decimals}})?$`);
+  if (!pattern.test(text)) {
+    const decDesc = decimals === 0 ? 'without decimals' : `with at most ${decimals} decimal places`;
+    throw Object.assign(new Error(`${label} must be a finite number greater than zero ${decDesc}`), { statusCode: 400 });
   }
   const parsed = Number(text);
-  const cents = Math.round(parsed * 100);
-  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isSafeInteger(cents)) {
+  const minorUnits = Math.round(parsed * factor);
+  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isSafeInteger(minorUnits)) {
     throw Object.assign(new Error(`${label} must be a finite number greater than zero`), { statusCode: 400 });
   }
-  return cents;
+  return minorUnits;
+}
+
+export function paymentAmountCents(value: unknown, label = 'Payment amount'): number {
+  return paymentAmountMinorUnits(value, 'USD', label);
 }
 
 interface PreparedPayment {
@@ -1675,7 +1685,7 @@ interface PreparedPayment {
   amountOmitted?: boolean;
 }
 
-function validatePaymentFields(payment: PaymentInput, index: number): void {
+function validatePaymentFields(payment: PaymentInput, index: number, currency: string): void {
   if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
     throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
   }
@@ -1693,7 +1703,9 @@ function validatePaymentFields(payment: PaymentInput, index: number): void {
       throw Object.assign(new Error(`${field} is invalid or too long`), { statusCode: 400 });
     }
   }
-  if (payment.amount !== undefined && payment.amount !== null) paymentAmountCents(payment.amount);
+  if (payment.amount !== undefined && payment.amount !== null) {
+    paymentAmountMinorUnits(payment.amount, currency);
+  }
 }
 
 function paymentTransactionKey(payment: unknown): string | null {
@@ -1705,17 +1717,18 @@ function paymentTransactionKey(payment: unknown): string | null {
     : null;
 }
 
-function transactionPaymentMatches(existing: any, candidate: PaymentInput): boolean {
+function transactionPaymentMatches(existing: any, candidate: PaymentInput, currency: string): boolean {
   if (!existing) return false;
   if (existing.method !== candidate.method || existing.transaction_id !== candidate.transaction_id) return false;
   if ((existing.notes ?? null) !== (candidate.notes ?? null)) return false;
   const candidateOmitted = candidate.amount === undefined || candidate.amount === null;
   if (existing.amount_omitted !== undefined && Boolean(existing.amount_omitted) !== candidateOmitted) return false;
   if (candidateOmitted) return true;
-  const requestedCents = paymentAmountCents(candidate.amount);
+  const factor = getCurrencyMinorUnitFactor(currency);
+  const requestedMinorUnits = paymentAmountMinorUnits(candidate.amount, currency);
   const storedRequested = existing.requested_amount
     ?? (existing.method === 'cash' && existing.tendered_amount !== undefined ? existing.tendered_amount : existing.amount);
-  return typeof storedRequested === 'number' && Math.round(storedRequested * 100) === requestedCents;
+  return typeof storedRequested === 'number' && Math.round(storedRequested * factor) === requestedMinorUnits;
 }
 
 function preparePaymentBatch(
@@ -1740,7 +1753,9 @@ function preparePaymentBatch(
       existingPayments = [];
     }
   }
-  payments.forEach(validatePaymentFields);
+  const currency = getTenantCurrency();
+  const minorFactor = getCurrencyMinorUnitFactor(currency);
+  payments.forEach((payment, index) => validatePaymentFields(payment, index, currency));
   const resolvedPayments = payments.map((payment, index) => {
     if (PAYMENT_METHODS.has(payment.method)) return payment;
     const configured = payment.method === 'custom'
@@ -1796,7 +1811,7 @@ function preparePaymentBatch(
   const replay = requestTransactionKeys.every((key, index) => (
     key !== null
     && existingTransactionKeys.has(key)
-    && transactionPaymentMatches(existingTransactionPayments.get(key), resolvedPayments[index])
+    && transactionPaymentMatches(existingTransactionPayments.get(key), resolvedPayments[index], currency)
   ));
   if (replay) {
     return { bill, prepared: [], existingPayments, effectiveCustomerId, idempotentReplay: true };
@@ -1809,7 +1824,7 @@ function preparePaymentBatch(
     if (key) seenTransactionKeys.add(key);
   }
   if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
-  const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * 100));
+  const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * minorFactor));
   if (remainingCents <= 0) throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
   const raw = resolvedPayments.map((payment) => {
     // Preserve omitted/null compatibility for the legacy single-line contracts.
@@ -1819,7 +1834,7 @@ function preparePaymentBatch(
     const amountValue = supportsOmittedAmount && payment.amount === null ? undefined : payment.amount;
     const amount = amountValue === undefined
       ? (supportsOmittedAmount ? remainingCents : undefined)
-      : paymentAmountCents(amountValue);
+      : paymentAmountMinorUnits(amountValue, currency);
     if (amount === undefined) throw Object.assign(new Error('Payment amount is required for split payments'), { statusCode: 400 });
     const normalizedPayment: PaymentInput = {
       method: String(payment.method),
@@ -1855,7 +1870,7 @@ function preparePaymentBatch(
     const credits = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'credit' AND (expires_at IS NULL OR expires_at > datetime('now'))`).get(effectiveCustomerId) as { total: number };
     const debits = db.prepare(`SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'debit'`).get(effectiveCustomerId) as { total: number };
     const walletPoints = Math.max(0, Number(credits.total) - Number(debits.total));
-    const pointsRequired = prepared.filter((line) => line.payment.method === 'wallet').reduce((sum, line) => sum + line.amountCents, 0) / 100 * LOYALTY_REDEMPTION_RATE;
+    const pointsRequired = prepared.filter((line) => line.payment.method === 'wallet').reduce((sum, line) => sum + line.amountCents, 0) / minorFactor * LOYALTY_REDEMPTION_RATE;
     if (walletPoints < pointsRequired) throw Object.assign(new Error(`Insufficient wallet balance. Available: ${walletPoints} points, Required: ${pointsRequired}`), { statusCode: 400 });
   }
   return { bill, prepared, existingPayments, effectiveCustomerId };
@@ -1917,24 +1932,26 @@ function applyPaymentBatch(
   if (idempotentReplay) {
     return { bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)), walletDebited: false, loyaltyPointsEarned: 0 };
   }
+  const currency = getTenantCurrency();
+  const minorFactor = getCurrencyMinorUnitFactor(currency);
   const totalAppliedCents = prepared.reduce((sum, line) => sum + line.amountCents, 0);
-  const oldPaidCents = Math.round(Number(bill.paid_amount || 0) * 100);
-  const totalCents = Math.round(Number(bill.total || 0) * 100);
+  const oldPaidCents = Math.round(Number(bill.paid_amount || 0) * minorFactor);
+  const totalCents = Math.round(Number(bill.total || 0) * minorFactor);
   const newPaidCents = oldPaidCents + totalAppliedCents;
   const newBalanceCents = Math.max(0, totalCents - newPaidCents);
   const paymentStatus = newBalanceCents === 0 ? 'paid' : 'partial';
   const newPayments = prepared.map((line) => ({
     ...line.payment,
-    amount: line.amountCents / 100,
-    requested_amount: (line.tenderedCents || line.amountCents) / 100,
+    amount: line.amountCents / minorFactor,
+    requested_amount: (line.tenderedCents || line.amountCents) / minorFactor,
     amount_omitted: Boolean(line.amountOmitted),
-    ...(line.payment.method === 'cash' ? { tendered_amount: (line.tenderedCents || 0) / 100, change_amount: (line.changeCents || 0) / 100 } : {}),
+    ...(line.payment.method === 'cash' ? { tendered_amount: (line.tenderedCents || 0) / minorFactor, change_amount: (line.changeCents || 0) / minorFactor } : {}),
     timestamp: now(),
   }));
   let walletDebited = false;
   for (const line of prepared) {
     if (line.payment.method !== 'wallet' || line.amountCents <= 0) continue;
-    const pointsSpent = line.amountCents / 100 * LOYALTY_REDEMPTION_RATE;
+    const pointsSpent = line.amountCents / minorFactor * LOYALTY_REDEMPTION_RATE;
     db.prepare(`INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at) VALUES (?, ?, 'debit', ?, ?, ?, ?)`).run(effectiveCustomerId, bill.id, pointsSpent, `Payment for bill ${bill.bill_number}`, now(), now());
     walletDebited = true;
   }
@@ -1948,7 +1965,7 @@ function applyPaymentBatch(
     }
   }
   if (!bill.customer_id && effectiveCustomerId) db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?').run(effectiveCustomerId, changedAt, billId);
-  db.prepare(`UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?, payment_details = ?, paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END, updated_at = ? WHERE id = ?`).run(newPaidCents / 100, newBalanceCents / 100, paymentStatus, JSON.stringify(allPayments), paymentStatus, paymentStatus === 'paid' ? changedAt : null, changedAt, billId);
+  db.prepare(`UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?, payment_details = ?, paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END, updated_at = ? WHERE id = ?`).run(newPaidCents / minorFactor, newBalanceCents / minorFactor, paymentStatus, JSON.stringify(allPayments), paymentStatus, paymentStatus === 'paid' ? changedAt : null, changedAt, billId);
   let loyaltyPointsEarned = 0;
   if (paymentStatus === 'paid') {
     const unpaidSibling = db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status != 'paid' LIMIT 1`).get(bill.order_id, bill.id);
@@ -1961,7 +1978,7 @@ function applyPaymentBatch(
     const cashback = calculateCashback(db, bill, effectiveCustomerId);
     const alreadyCredited = db.prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`).get(bill.id);
     if (cashback > 0 && !alreadyCredited) {
-      const walletCents = allPayments.filter((p: any) => p.method === 'wallet').reduce((sum: number, p: any) => sum + Math.round(Number(p.amount || 0) * 100), 0);
+      const walletCents = allPayments.filter((p: any) => p.method === 'wallet').reduce((sum: number, p: any) => sum + Math.round(Number(p.amount || 0) * minorFactor), 0);
       const finalCashback = Math.floor(cashback * (1 - Math.min(1, walletCents / Math.max(1, totalCents))));
       if (finalCashback > 0) {
         db.prepare(`INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at) VALUES (?, ?, 'credit', ?, ?, ?, ?)`).run(effectiveCustomerId, bill.id, finalCashback, `Cashback on bill ${bill.bill_number}`, changedAt, changedAt);
@@ -2183,9 +2200,11 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
 
     const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
       + (bill.delivery_charge || 0) + (bill.packaging_charge || 0) + (bill.service_charge || 0);
-    const exactTotal = Number(preRoundTotal.toFixed(2));
+    const currency = getTenantCurrency();
+    const decimals = getCurrencyFractionDigits(currency);
+    const exactTotal = Number(preRoundTotal.toFixed(decimals));
     const pack = getActiveCountryPack(tenantInfo.country);
-    const { total: newTotal, adjustment: newRoundOff } = applyPayableRounding(exactTotal, pack);
+    const { total: newTotal, adjustment: newRoundOff } = applyPayableRounding(exactTotal, pack, currency);
     const newBalance = Math.max(0, newTotal - (bill.paid_amount || 0));
 
     const updatedBill = withTxn(() => {

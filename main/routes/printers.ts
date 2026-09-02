@@ -514,7 +514,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
 // by any station fall back to the default printer under the generic 'Kitchen'
 // label — this is also what happens for the whole order when no station is
 // configured at all, so stores not using stations see no behavior change.
-export function routeItemsToStations(db: any, orderItems: any[], includeWebUsbStations = false): { stationName: string; printer: any; items: any[] }[] {
+export function routeItemsToStations(db: any, orderItems: any[]): { stationName: string; printer: any; items: any[] }[] {
   const rawStations = db.prepare(
     `SELECT * FROM kitchen_stations WHERE is_active = 1 AND printer_id IS NOT NULL AND category_ids IS NOT NULL AND category_ids != ''`
   ).all() as any[];
@@ -529,11 +529,11 @@ export function routeItemsToStations(db: any, orderItems: any[], includeWebUsbSt
       }
       const printer = db.prepare(
         `SELECT * FROM printers
-         WHERE id = ?`,
+         WHERE id = ? AND connection_type != 'webusb'`,
       ).get(s.printer_id);
       return { ...s, categoryIds, printer };
     })
-    .filter((s) => s.categoryIds.length > 0 && s.printer && (includeWebUsbStations || s.printer.connection_type !== 'webusb'));
+    .filter((s) => s.categoryIds.length > 0 && s.printer);
 
   if (stations.length === 0) {
     return [{ stationName: 'Kitchen', printer: null, items: orderItems }];
@@ -571,7 +571,7 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     return res.status(403).json({ error: 'KOT printing is disabled for this business' });
   }
   try {
-    const { orderId, stationName, items, useUnicode = false, connectionType } = req.body;
+    const { orderId, stationName, items, useUnicode = false } = req.body;
     // Renderer's global "Arabic/Persian shaping" setting (#437). Only an
     // explicit boolean overrides the printer profile's declared capability.
     const arabicShapingOverride = typeof req.body?.arabicShaping === 'boolean' ? req.body.arabicShaping : undefined;
@@ -581,6 +581,17 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     }
 
     const db = getDatabase();
+    const printer = db.prepare(
+      `SELECT * FROM printers
+       WHERE connection_type != 'webusb'
+       ORDER BY is_default DESC, name
+       LIMIT 1`,
+    ).get();
+
+    if (!printer) {
+      return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
+    }
+
     const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -606,31 +617,8 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     let success = true;
     const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
     let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
-    const rawKotSourceItems = Array.isArray(items) ? items : orderItems;
-    const kotSourceItems = rawKotSourceItems
+    const kotSourceItems = (Array.isArray(items) ? items : orderItems)
       .filter((item: any) => item?.status !== 'served' && item?.status !== 'ready');
-    if (req.body?.resolveOnly === true) {
-      const groups = routeItemsToStations(db, kotSourceItems, true)
-        .filter((g) => g.items.length > 0)
-        .filter((g) => connectionType !== 'webusb' || !g.printer || g.printer.connection_type === 'webusb');
-      return res.json({
-        groups: groups.map((group) => ({
-          stationName: group.stationName,
-          items: group.items,
-        })),
-      });
-    }
-
-    const printer = db.prepare(
-      `SELECT * FROM printers
-       WHERE connection_type != 'webusb'
-       ORDER BY is_default DESC, name
-       LIMIT 1`,
-    ).get();
-
-    if (!printer) {
-      return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
-    }
 
     if (stationName) {
       const station = stationName || 'Kitchen';

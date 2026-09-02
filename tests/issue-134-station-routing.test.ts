@@ -125,11 +125,6 @@ function main() {
     assertEqual(groups.length, 1, 'F: WebUSB station falls back to one generic Kitchen group');
     assertEqual(groups[0].stationName, 'Kitchen', 'F: WebUSB station does not receive backend KOT items');
     assert(groups[0].printer === null, 'F: fallback group leaves printer selection to the backend fallback');
-
-    const crossTransportGroups = routeItemsToStations(db, [{ product_id: 'prod-bev' }], true);
-    assertEqual(crossTransportGroups.length, 1, 'F: cross-transport resolver preserves the WebUSB station group');
-    assertEqual(crossTransportGroups[0].stationName, 'Browser Bar', 'F: cross-transport resolver returns the WebUSB station name');
-    assertEqual(crossTransportGroups[0].items[0].product_id, 'prod-bev', 'F: cross-transport resolver keeps the routed item');
   }
 
   closeDatabase();

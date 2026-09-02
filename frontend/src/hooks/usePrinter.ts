@@ -353,45 +353,25 @@ export const usePrinterStore = create<PrinterState>()(
             }
           }
 
-          await printerService.awaitPendingReconnect();
-          const localWebUsbActive = get().printMethod === 'escpos' && printerService.isConnected;
           const orderForPrint = opts?.items ? { ...order, items: opts.items } : order;
-          const printTargets: { stationName: string; order: Order }[] = opts?.stationName
-            ? [{ stationName: opts.stationName, order: orderForPrint }]
-            : await api.post<{
-              groups?: { stationName?: string; items?: OrderItem[] }[];
-            }>('/printers/print-kot', {
-              orderId: order.id,
-              items: opts?.items,
-              connectionType: localWebUsbActive ? 'webusb' : undefined,
-              resolveOnly: true,
-            }).then((response) => (response.data.groups || [])
-              .map((group) => ({
-                stationName: group.stationName || 'Kitchen',
-                order: {
-                  ...orderForPrint,
-                  items: group.items || [],
-                },
-              })))
-              .filter((target) => target.order.items && target.order.items.length > 0))
-              .catch(() => [{ stationName: 'Kitchen', order: orderForPrint }]);
-
           const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
           const kotLanguage = resolveKotTicketLanguage();
           const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
 
+          // A startup silent-reconnect attempt may still be in flight (e.g.
+          // KOT auto-print firing on the first order right after launch) —
+          // wait for it to settle before trusting isConnected.
+          await printerService.awaitPendingReconnect();
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             const { paperWidth } = get();
             const warnings: PrintWarning[] = [];
-            for (const target of printTargets) {
-              const bytes = buildKotBytes(
-                target.order,
-                { ...opts, paperWidth, stationName: target.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone },
-                warnings,
-              );
-              set({ lastPrintedBytes: bytes });
-              await printerService.print(bytes);
-            }
+            const bytes = buildKotBytes(
+              orderForPrint,
+              { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone },
+              warnings,
+            );
+            set({ lastPrintedBytes: bytes });
+            await printerService.print(bytes);
             return [
               ...failedLanguages.map((language) => ({
                 field: 'kot language',
@@ -412,10 +392,8 @@ export const usePrinterStore = create<PrinterState>()(
           // don't silently fall back to English.
           const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
           const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
-          for (const target of printTargets) {
-            const html = generateKotHtml(target.order, { paperWidth, language: kotLanguage, stationName: target.stationName, timezone: tenantTimezone ?? opts?.timezone });
-            await printerService.printViaBrowser(html, paperWidth);
-          }
+          const html = generateKotHtml(orderForPrint, { paperWidth, language: kotLanguage, stationName: opts?.stationName ?? 'Kitchen', timezone: tenantTimezone ?? opts?.timezone });
+          await printerService.printViaBrowser(html, paperWidth);
           // A failed locale load degrades to English labels; surface it
           // through the established warning path instead of staying silent
           // (Greptile P1, PR #474).

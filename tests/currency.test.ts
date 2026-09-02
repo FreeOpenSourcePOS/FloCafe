@@ -70,6 +70,9 @@ test('getCurrencyFractionDigits: resolves ISO 4217 standard precision', () => {
   assert.equal(getCurrencyFractionDigits('INR'), 2);
   assert.equal(getCurrencyMinorUnitFactor('INR'), 100);
 
+  assert.equal(getCurrencyFractionDigits('IRR'), 2);
+  assert.equal(getCurrencyMinorUnitFactor('IRR'), 100);
+
   assert.equal(getCurrencyFractionDigits('KWD'), 3);
   assert.equal(getCurrencyMinorUnitFactor('KWD'), 1000);
 

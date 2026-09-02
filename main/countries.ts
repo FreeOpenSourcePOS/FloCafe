@@ -343,6 +343,7 @@ export interface CurrencyUnitAdapter {
  */
 export function getCurrencyFractionDigits(currency: string): number {
   if (!currency || typeof currency !== 'string') return 2;
+  if (currency === 'IRR') return 2;
   try {
     const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency });
     return formatter.resolvedOptions().maximumFractionDigits ?? 2;

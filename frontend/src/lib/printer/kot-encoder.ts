@@ -7,8 +7,11 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
+import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { formatTime } from './format-date';
-import { safePrinterText, type PrintWarning } from './warnings';
+import { normalizeGermanThermalText } from './unicode';
+import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { printLabelResolver } from './print-document';
 
 export interface KotOptions {
   /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
@@ -21,10 +24,29 @@ export interface KotOptions {
    * Default: false.
    */
   arabicShaping?: boolean;
+  /** Print language resolved from the KOT language policy. */
+  language?: string;
+  /** Locale used for localized time formatting. */
+  locale?: string;
+  /** Store timezone used for business-local time formatting. */
+  timezone?: string;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
 const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
+
+function safePrinterTextForLanguage(language: string, columns: number) {
+  return <T extends { text(value: string): T }>(
+    enc: T,
+    value: string,
+    warnings: PrintWarning[] | undefined,
+    isStoreName = false,
+    arabicShaping = false,
+    centerCols?: number,
+    maxCols?: number,
+    _language?: string,
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, language === 'de' ? maxCols ?? centerCols ?? columns : maxCols, language);
+}
 
 /**
  * Build a KOT byte array from an Order object.
@@ -35,8 +57,12 @@ export function buildKotBytes(
   opts: KotOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
-  const { paperWidth = 58, arabicShaping = false } = opts;
+  const { paperWidth = 58, arabicShaping = false, language = 'en' } = opts;
   const cols = CHARS[paperWidth];
+  const label = (key: string): string => printLabelResolver(key, language);
+  const locale = opts.locale ?? LANGUAGES[language as Language]?.locale ?? 'en-US';
+  const safePrinterText = safePrinterTextForLanguage(language, cols);
+  const truncateText = (text: string, max: number): string => truncate(text, max, language);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -44,25 +70,28 @@ export function buildKotBytes(
   enc.initialize();
 
   // KOT Banner
-  enc.align('center').bold(true).width(2).height(2).text('KOT').width(1).height(1).bold(false).newline();
+  const bannerText = language === 'de' ? normalizeGermanThermalText(label('print.kot.banner')) : label('print.kot.banner');
+  const bannerWidth = bannerText.length * 2 <= cols ? 2 : 1;
+  enc.align('center').bold(true).width(bannerWidth).height(2);
+  safePrinterText(enc, bannerText, warnings, false, arabicShaping, undefined, cols, language).width(1).height(1).bold(false).newline();
 
   // Order details
   enc.align('left').bold(true);
-  enc.text(`Order #${order.order_number}`).newline();
+  safePrinterText(enc, formatOrderNumber(label('pos.orderNumber'), String(order.order_number)), warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.table) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping, undefined, cols).newline();
+    safePrinterText(enc, label('pos.tableLabel').replace('{name}', String(order.table.name)), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
-  const orderType = order.type.replace('_', ' ').toUpperCase();
-  enc.text(`Type: ${orderType}`).newline();
+  const orderType = resolveOrderType(order.type, language);
+  safePrinterText(enc, `${label('print.kot.type')}: ${orderType}`, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.customer) {
-    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols).newline();
+    safePrinterText(enc, `${label('pos.customer')}: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   enc.bold(false);
-  enc.text(formatTime(order.created_at)).newline();
+  safePrinterText(enc, `${label('print.time')}: ${formatTime(order.created_at, locale, opts.timezone ? { timeZone: opts.timezone } : undefined)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   enc.rule({ style: 'double' });
 
   // ── Items ────────────────────────────────────────────────────────────────────
@@ -80,7 +109,7 @@ export function buildKotBytes(
     // Item name with quantity
     const qtyName = `${item.quantity}x ${item.product_name}`;
     enc.bold(true);
-    safePrinterText(enc, truncate(qtyName, cols), warnings, false, arabicShaping).newline();
+    safePrinterText(enc, truncateText(qtyName, cols), warnings, false, arabicShaping, undefined, undefined, language).newline();
     enc.bold(false);
 
     // Addons can come from older/API paths as a JSON string. Normalize before
@@ -91,26 +120,27 @@ export function buildKotBytes(
         if (addon.name) {
           const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
           const addonText = `${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
-          safePrinterText(enc, `   + ${truncate(addonText, cols - 5)}`, warnings, false, arabicShaping).newline();
+          safePrinterText(enc, `   + ${truncateText(addonText, cols - 5)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
         }
       }
     }
 
     // Special instructions
     if (item.special_instructions) {
-      safePrinterText(enc, `   >> ${truncate(item.special_instructions, cols - 6)}`, warnings, false, arabicShaping).newline();
+      safePrinterText(enc, `   >> ${truncateText(item.special_instructions, cols - 6)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
     }
 
     enc.newline();
   }
 
   if (!hasItems) {
-    enc.text('(No pending items)').newline();
+    safePrinterText(enc, `(${label('print.kot.noPendingItems')})`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   enc.rule({ style: 'single' });
-  enc.align('center').text('--- End of KOT ---').newline();
+  enc.align('center');
+  safePrinterText(enc, `--- ${label('print.kot.end')} ---`, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   enc.newline().newline().newline().cut();
 
@@ -121,8 +151,27 @@ export function buildKotBytes(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function truncate(str: string, max: number): string {
-  return str.length > max ? str.slice(0, max - 1) + '…' : str;
+function truncate(str: string, max: number, language: string = 'en'): string {
+  const normalized = language === 'de' ? normalizeGermanThermalText(str) : str;
+  return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
+}
+
+function resolveOrderType(type: string, language: string): string {
+  const keys: Record<string, string> = {
+    dine_in: 'pos.orderTypeDineIn',
+    delivery: 'pos.orderTypeDelivery',
+    online: 'pos.orderTypeOnline',
+    takeaway: 'pos.orderTypeTakeaway',
+  };
+  if (language !== 'de') return String(type).replace(/_/g, ' ').toUpperCase();
+  const key = keys[type];
+  if (!key) return String(type).replace(/_/g, ' ').toUpperCase();
+  const resolved = printLabelResolver(key, language);
+  return resolved;
+}
+
+function formatOrderNumber(label: string, orderNumber: string): string {
+  return label.replace('{number}', orderNumber);
 }
 
 function parseAddons(addons: unknown): Array<{ name: string }> {

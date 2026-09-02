@@ -69,8 +69,8 @@ The document-block renderer rule has explicit active raw-path exceptions:
   `KotDocument` v1 consumer.
 - [`frontend/src/hooks/usePrinter.ts`](../frontend/src/hooks/usePrinter.ts) still calls [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) with raw
   `Order` data for thermal KOT printing and calls the [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) raw
-  `Bill`/`Tenant` diagnostic path for the print-test page. The tax encoder is
-  explicitly LEGACY-FROZEN.
+  `Bill`/`Tenant` diagnostic path for the print-test page. Its raw layout
+  remains legacy-frozen while its catalog labels follow the resolved language.
 
 These paths retain their own raw-field and warning behavior outside the shared
 document boundary. New document features must use the migrated paths below;
@@ -231,8 +231,8 @@ Three decoupled domains (see also [i18n.md](i18n.md)):
   tickets in a Persian storefront (asserted in the backend policy section of
   [`tests/print-parity.test.ts`](../tests/print-parity.test.ts) and the browser cold-start regression
   [`tests/kot-locale-cold-start.test.ts`](../tests/kot-locale-cold-start.test.ts)). The frontend WebUSB
-  [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) is a legacy exception: its raw `buildKotBytes` path has no
-  language input and emits its historical English labels.
+  [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) is a legacy exception: its raw `buildKotBytes` path accepts the resolved
+  KOT language for catalog labels while retaining its historical raw-data layout.
 
 Thermal receipt paths resolve the receipt policy before building the document.
 The browser receipt path is an active exception: [`frontend/src/hooks/usePrinter.ts`](../frontend/src/hooks/usePrinter.ts) calls
@@ -309,9 +309,8 @@ Rules:
   page (protocol names, encodings/codepages, byte/hex output, addresses/ports,
   model and capability identifiers). These are intentionally absent from the
   concept catalog.
-- Known deliberate gap: the KOT `Order:` prefix has no assigned key yet;
-  the KOT document carries only the value (`KotHeaderBlock.orderNumber`
-  doc comment).
+- KOT order references and known order-type values resolve through the shared
+  catalog at the document boundary.
 - Renderer-only layout lookups remain explicit exceptions: the migrated WebUSB
   [`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts) resolves `receipt.rate` and `printTest.amt` through
   `printLabelResolver` for its 4-column layout. These labels live outside
@@ -409,8 +408,9 @@ Renderers consume capabilities, they never guess them:
   [`frontend/src/lib/printer/warnings.ts`](../frontend/src/lib/printer/warnings.ts)). `buildClassicReceiptBytes` still
   writes the masked customer phone directly with `enc.text`, so that field is a
   documented warning-contract exception. The raw WebUSB [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) and
-  LEGACY-FROZEN [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) paths are broader exceptions with their
-  own direct-write and warning behavior.
+  legacy [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) paths are broader exceptions with their
+  own direct-write and warning behavior; both paths accept the resolved print
+  language for their catalog labels.
 - Browser HTML printing is the full-Unicode path: nothing is skipped for
   script reasons (asserted in [`tests/print-parity.test.ts`](../tests/print-parity.test.ts)).
 
@@ -446,8 +446,8 @@ capability-tiered raster fallback for broader script coverage is future work
 | [`main/printers/document-merchant.ts`](../main/printers/document-merchant.ts) ([#447](https://github.com/FreeOpenSourcePOS/FloCafe/issues/447)/[#448](https://github.com/FreeOpenSourcePOS/FloCafe/issues/448)) | desktop receipts with active merchant template | applied PrintDocument | token lines → bytes (fail-closed fallback to classic) | same |
 | [`main/printers/thermal.ts`](../main/printers/thermal.ts) compliance plugin ([#445](https://github.com/FreeOpenSourcePOS/FloCafe/issues/445)) | desktop receipt with signed country-pack template | raw `Order`/`Bill`/business rows + signed [`escpos-line-template-v1`](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1) payload | ESC/POS bytes | desktop transport |
 | [`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts) ([#444](https://github.com/FreeOpenSourcePOS/FloCafe/issues/444)) | WebUSB thermal receipts | PrintDocument v1 via [`frontend/src/lib/printer/print-document.ts`](../frontend/src/lib/printer/print-document.ts) bridge | ESC/POS bytes | WebUSB device |
-| [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) ([#444](https://github.com/FreeOpenSourcePOS/FloCafe/issues/444), legacy exception) | WebUSB thermal KOT | raw `Order` data; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
-| [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) ([#444](https://github.com/FreeOpenSourcePOS/FloCafe/issues/444), LEGACY-FROZEN diagnostic exception) | WebUSB print-test tax bill | raw `Bill`/`Tenant` data; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
+| [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) ([#444](https://github.com/FreeOpenSourcePOS/FloCafe/issues/444), legacy exception) | WebUSB thermal KOT | raw `Order` data + resolved catalog language; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
+| [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) ([#444](https://github.com/FreeOpenSourcePOS/FloCafe/issues/444), legacy diagnostic exception) | WebUSB print-test tax bill | raw `Bill`/`Tenant` data + resolved catalog language; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
 | [`frontend/src/lib/printer/web-print.ts`](../frontend/src/lib/printer/web-print.ts) ([#444](https://github.com/FreeOpenSourcePOS/FloCafe/issues/444), browser-label legacy exception) | system print dialog receipts | PrintDocument v1 for values + direct `receipt.*`/`pos.*` catalog labels | HTML | browser print |
 | [`frontend/src/lib/printer/kot-web-print.ts`](../frontend/src/lib/printer/kot-web-print.ts) | system print dialog kitchen tickets | raw `Order` data; shared catalog/direction helpers, no KotDocument bridge | HTML | browser print |
 

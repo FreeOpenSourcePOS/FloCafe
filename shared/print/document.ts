@@ -429,6 +429,13 @@ const PAYMENT_METHOD_CONCEPTS: Readonly<Record<string, LabelConceptId>> = Object
   wallet: 'pos.methodWallet',
 });
 
+const KOT_ORDER_TYPE_CONCEPTS: Readonly<Record<string, LabelConceptId>> = Object.freeze({
+  dine_in: 'pos.orderTypeDineIn',
+  delivery: 'pos.orderTypeDelivery',
+  online: 'pos.orderTypeOnline',
+  takeaway: 'pos.orderTypeTakeaway',
+});
+
 function resolveSemanticLabel(labels: LabelContext, conceptId: LabelConceptId): SemanticLabel {
   return Object.freeze({
     conceptId,
@@ -446,6 +453,14 @@ function literalLabel(primary: string): SemanticLabel {
 function paymentLabel(labels: LabelContext, method: string): SemanticLabel {
   const conceptId = PAYMENT_METHOD_CONCEPTS[method.toLowerCase()];
   return conceptId !== undefined ? resolveSemanticLabel(labels, conceptId) : literalLabel(method);
+}
+
+function kotOrderTypeValue(labels: LabelContext, value: string): string {
+  if (labels.primary !== 'de') return value.replace(/_/g, ' ').trim().toUpperCase();
+  const conceptId = KOT_ORDER_TYPE_CONCEPTS[value];
+  if (conceptId === undefined) return value.replace(/_/g, ' ').trim().toUpperCase();
+  const resolved = resolveSemanticLabel(labels, conceptId).primary;
+  return resolved;
 }
 
 function optionalDirectional(text: string | undefined | null, base: TextDirection): DirectionalText | null {
@@ -705,11 +720,7 @@ export interface KotHeaderBlock {
   readonly banner: SemanticLabel;
   readonly stationLabel: SemanticLabel;
   readonly stationName: DirectionalText;
-  /**
-   * Order reference. The legacy renderer keeps an unaudited literal
-   * `Order:` prefix (#440/#441 note); label adoption is a later decision,
-   * so the document carries only the value here.
-   */
+  readonly orderNumberLabel: SemanticLabel;
   readonly orderNumber: DirectionalText;
   /** Table reference with its (uninterpolated) label concept. */
   readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
@@ -761,6 +772,7 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
     banner: resolveSemanticLabel(labels, 'print.kot.banner'),
     stationLabel: resolveSemanticLabel(labels, 'print.kot.station'),
     stationName: directionalText(String(printData.stationName ?? ''), base),
+    orderNumberLabel: resolveSemanticLabel(labels, 'pos.orderNumber'),
     orderNumber: directionalText(String(printData.order?.orderNumber ?? ''), base),
     table: typeof printData.order?.tableName === 'string' && printData.order.tableName.length > 0
       ? Object.freeze({
@@ -771,7 +783,7 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
     orderType: typeof printData.order?.orderType === 'string' && printData.order.orderType.length > 0
       ? Object.freeze({
         label: resolveSemanticLabel(labels, 'print.kot.type'),
-        value: directionalText(printData.order.orderType, base),
+        value: directionalText(kotOrderTypeValue(labels, printData.order.orderType), base),
       })
       : null,
     timeLabel: resolveSemanticLabel(labels, 'print.time'),

@@ -35,6 +35,8 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  11. Filipino safeguards: fil.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  12. German safeguards: de.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -811,6 +813,113 @@ function filFallbackErrors(filFlat: Record<string, string>, enFlat: Record<strin
   return errors;
 }
 
+/**
+ * German translation safeguards (PR #560).
+ *
+ * Like French and Turkish, de.json values must be fully translated with no leftover
+ * [DE] scaffolds or English fallbacks, except for legitimate international shared technical
+ * tokens or identical words.
+ */
+const DE_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.countryThailand',
+  'businessType.restaurant',
+  'common.appTitle',
+  'common.brandName',
+  'common.logoAlt',
+  'common.namePlaceholder',
+  'dashboard.title',
+  'kds.connectionLive',
+  'kds.emptyColumn',
+  'kds.viewKanban',
+  'nav.dashboard',
+  'nav.kds',
+  'nav.portLabel',
+  'nav.support',
+  'nav.whatsapp',
+  'orders.online',
+  'permissionMatrix.areas.support',
+  'permissionMatrix.areas.system',
+  'pos.addonPrice',
+  'pos.loadingEllipsis',
+  'pos.orderTypeOnline',
+  'pos.tagBestseller',
+  'pos.tagCount',
+  'pos.tagVegan',
+  'pos.taxLine',
+  'print.hsn',
+  'print.kot.station',
+  'printTest.escpos',
+  'products.addonSelectionRange',
+  'products.barcodeLabel',
+  'products.cashbackGlobalBadge',
+  'products.colorCyan',
+  'products.colorFuchsia',
+  'products.colorIndigo',
+  'products.colorOrange',
+  'products.colorRose',
+  'products.columnCashback',
+  'products.columnStatus',
+  'products.fieldBarcode',
+  'products.nameLabel',
+  'products.optional',
+  'products.optionalTag',
+  'products.saleUnitG',
+  'products.saleUnitKg',
+  'products.saleUnitLb',
+  'products.skuLabel',
+  'products.tagBestseller',
+  'products.tagVegan',
+  'serverApp.emailPlaceholder',
+  'settings.apiKeyInputPlaceholder',
+  'settings.connectionUsb',
+  'settings.errorDetails',
+  'settings.ipAddressPlaceholder',
+  'settings.iranCurrencyDisplayRial',
+  'settings.iranCurrencyDisplayToman',
+  'settings.kds',
+  'settings.name',
+  'settings.port',
+  'settings.portPlaceholder',
+  'settings.printerOffline',
+  'settings.printerOnline',
+  'settings.registrationLastError',
+  'settings.revflo',
+  'settings.status',
+  'settings.tabWhatsapp',
+  'settings.test',
+  'settings.themeSystem',
+  'settings.unicode',
+  'settings.updateStatusOffline',
+  'settings.updates',
+  'settings.version',
+  'settings.whatsapp',
+  'setup.demoLabel',
+  'setup.expressLabel',
+  'setup.pinLabel',
+  'staff.roleManager',
+  'support.version',
+  'tax.auditCreateOverride',
+  'tax.auditSystem',
+  'tax.auditUpdateOverride',
+  'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+  'whatsapp.sent.colStatus',
+]);
+
+function deFallbackErrors(deFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const deVal = deFlat[k];
+    if (deVal === undefined) continue; // reported by key parity
+    if (deVal.startsWith('[DE]') || deVal.startsWith('[TODO]')) {
+      errors.push(`de.json ${k} — placeholder prefix found: "${deVal}"`);
+    } else if (deVal === enFlat[k] && !DE_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`de.json ${k} — identical to English value (renders as English for German users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1158,6 +1267,17 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated fil.json values (${FIL_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 12. de.json values must not contain placeholders or fall back to English.
+  const deMessages = loadedStrings.get('de');
+  if (!deMessages) throw new Error('languages registry must include the maintained de locale');
+  const deErrors = deFallbackErrors(deMessages, loadedStrings.get('en')!);
+  if (deErrors.length) {
+    console.error(`\nde.json values with errors (${deErrors.length}):`);
+    for (const e of deErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'de.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated de.json values (${DE_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1263,7 +1383,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil).
+  // 7. Language safeguards (fa, fr, tr, fil, de).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -1287,6 +1407,14 @@ function runNegativeTests(): void {
   expectDetected(
     'fil: placeholder prefix value',
     filFallbackErrors({ 'a.b': '[FIL] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'de: English-identical value',
+    deFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'de: placeholder prefix value',
+    deFallbackErrors({ 'a.b': '[DE] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

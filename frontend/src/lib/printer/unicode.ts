@@ -36,6 +36,14 @@ export const CURRENCY_ASCII_MAP: Record<string, string> = {
   '₲': 'Pg',
 };
 
+const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
+  'Ä': 'AE', 'Ö': 'OE', 'Ü': 'UE', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+};
+
+export function normalizeGermanThermalText(text: string): string {
+  return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
+}
+
 export function normalizeCurrencyToAscii(text: string): string {
   let out = text;
   for (const [sym, ascii] of Object.entries(CURRENCY_ASCII_MAP)) {

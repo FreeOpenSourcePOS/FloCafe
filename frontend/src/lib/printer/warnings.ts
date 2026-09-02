@@ -10,7 +10,7 @@
  * why.
  */
 
-import { CURRENCY_ASCII_MAP } from './unicode';
+import { CURRENCY_ASCII_MAP, normalizeGermanThermalText } from './unicode';
 
 export interface PrintWarning {
   field: string;
@@ -131,12 +131,14 @@ export function safePrinterText<T extends { text(value: string): T }>(
   isStoreName = false,
   arabicShaping = false,
   centerCols?: number,
-  maxCols?: number
+  maxCols?: number,
+  language?: string,
 ): T {
   if (!value) return enc;
-  if (hasUnsupportedPrinterChars(value)) {
-    if (arabicShaping && isArabicShapingSafeLine(value)) {
-      const sanitized = value.replace(ESCPOS_TEXT_CONTROL_RE, '');
+  const printableValue = language === 'de' ? normalizeGermanThermalText(value) : value;
+  if (hasUnsupportedPrinterChars(printableValue)) {
+    if (arabicShaping && isArabicShapingSafeLine(printableValue)) {
+      const sanitized = printableValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
       if (!sanitized) {
         warnings?.push(makePrintWarning(value, isStoreName));
         return enc;
@@ -161,5 +163,5 @@ export function safePrinterText<T extends { text(value: string): T }>(
     warnings?.push(makePrintWarning(value, isStoreName));
     return enc;
   }
-  return enc.text(value);
+  return enc.text(printableValue);
 }

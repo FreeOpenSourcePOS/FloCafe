@@ -4,6 +4,7 @@
 
 [English](README.md) | [Español](README.es.md) | [Português](README.pt.md) | [Français](README.fr.md) | [Türkçe](README.tr.md) | [Filipino](README.fil.md) | **Deutsch**
 
+
 FloCafe läuft direkt auf dem Computer des Betriebs. Bestellungen, Kunden, Belege und Sicherungen werden in einer lokalen SQLite-Datenbank gespeichert. Dadurch können Kassenbetrieb und Küchenanzeigen auch ohne Internetverbindung weiterarbeiten. Für den grundlegenden Kassenbetrieb ist kein gehostetes oder cloudbasiertes Konto erforderlich. Optionale Integrationen wie Google-Drive-Sicherungen, der Versand von Belegen über WhatsApp und cloudbasierte Berichte können bei Bedarf aktiviert werden.
 
 ## FloCafe herunterladen

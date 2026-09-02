@@ -107,14 +107,16 @@ function run(): void {
   assert('fa resolves grand total to Persian', printLabel('fa', 'print.grandTotal') === 'جمع کل');
   assert('tr resolves grand total to Turkish', printLabel('tr', 'print.grandTotal') === 'GENEL TOPLAM');
   assert('fil resolves grand total to Filipino', printLabel('fil', 'print.grandTotal') === 'KABUUAN');
+  assert('de resolves grand total to German', printLabel('de', 'print.grandTotal') === 'GESAMTSUMME');
   assert('es resolves grand total', typeof printLabel('es', 'print.grandTotal') === 'string' && printLabel('es', 'print.grandTotal').length > 0);
   assert('fr resolves grand total to French', printLabel('fr', 'print.grandTotal') === 'TOTAL');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
-  assert('unknown language falls back to English', printLabel('de', 'print.grandTotal') === 'TOTAL');
+  assert('unknown language falls back to English', printLabel('xx', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');
   assert('borrowed key resolves from its own namespace', printLabel('en', 'pos.subtotal') === 'Subtotal');
   assert('tr resolves borrowed pos.subtotal', printLabel('tr', 'pos.subtotal') === 'Ara Toplam');
   assert('fil resolves borrowed pos.subtotal', printLabel('fil', 'pos.subtotal') === 'Subtotal');
+  assert('de resolves borrowed pos.subtotal', printLabel('de', 'pos.subtotal') === 'Zwischensumme');
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {
@@ -128,7 +130,11 @@ function run(): void {
     assert('fa classic renders Persian subtotal (borrowed pos.subtotal)', faText.includes('جمع جزء'));
     assert('fa classic localizes cash payment method', faText.includes('نقدی'));
     assert('fa classic translates table prefix', faText.includes('میز:'));
-    assert('unknown language keeps English output', escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'classic', 48, false, false, undefined, [], false, 'de')).includes('Invoice #:'));
+    const deText = escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'classic', 48, false, false, undefined, [], false, 'de'));
+    assert('de classic renders German invoice title label', deText.includes('Rechnungsnr.:') || deText.includes('Rechnung'));
+    assert('de classic renders German grand total', deText.includes('GESAMTSUMME'));
+    assert('de classic renders German subtotal', deText.includes('Zwischensumme'));
+    assert('unknown language keeps English output', escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'classic', 48, false, false, undefined, [], false, 'xx')).includes('Invoice #:'));
   }
 
   console.log('\n✅ Test 3: compact receipt honors language');
@@ -162,6 +168,10 @@ function run(): void {
     assert('fa KOT station label translated', faText.includes('ایستگاه:'));
     assert('fa KOT type label translated', faText.includes('نوع: DINE IN'));
     assert('fa KOT time label translated', faText.includes('ساعت:'));
+    const deWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const deText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'de-DE', undefined, deWarnings, false, 'de'));
+    assert('de KOT banner survives generic thermal output', deText.includes('KUECHENBESTELLSCHEIN'));
+    assert('de KOT umlaut fallback emits no warning', deWarnings.length === 0);
   }
 
   console.log('\n✅ Test 5: test page honors language');

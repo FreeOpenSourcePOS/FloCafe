@@ -96,7 +96,7 @@ const SUPPORTED: Record<string, Row> = {
     } },
 
   // Eurozone
-  DE: { locale: 'de-DE', currency: 'EUR', tz: 'Europe/Berlin' },
+  DE: { locale: 'de-DE', currency: 'EUR', tz: 'Europe/Berlin', taxIdLabel: 'Steuernummer' },
   FR: { locale: 'fr-FR', currency: 'EUR', tz: 'Europe/Paris' },
   IT: { locale: 'it-IT', currency: 'EUR', tz: 'Europe/Rome' },
   ES: { locale: 'es-ES', currency: 'EUR', tz: 'Europe/Madrid' },

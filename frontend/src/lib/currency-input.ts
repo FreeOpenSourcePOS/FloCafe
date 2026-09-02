@@ -6,8 +6,11 @@ export function getDiscountInputStep(maxDecimals: number, discountType: Currency
 }
 
 export function normalizeFixedDiscountValue(value: number, maxDecimals: number): number {
-  const decimals = maxDecimals === 0 ? 0 : 2;
-  const factor = 10 ** decimals;
+  return roundCurrencyValue(value, maxDecimals === 0 ? 0 : 2);
+}
+
+export function roundCurrencyValue(value: number, maxDecimals: number): number {
+  const factor = 10 ** Math.max(0, maxDecimals);
   return Math.round(value * factor) / factor;
 }
 

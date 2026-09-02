@@ -509,6 +509,7 @@
     "deliveryAddress": "Teslimat Adresi",
     "discount": "İndirim",
     "discountInvalid": "Lütfen geçerli bir indirim tutarı girin",
+    "fixedDiscountMinimum": "Sabit indirimler en az 1 birim olmalıdır",
     "discountReasonPlaceholder": "Neden (isteğe bağlı)",
     "discountRemoved": "İndirim kaldırıldı",
     "discountUpdated": "İndirim güncellendi",

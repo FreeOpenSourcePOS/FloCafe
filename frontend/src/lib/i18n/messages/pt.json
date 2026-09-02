@@ -509,6 +509,7 @@
     "deliveryAddress": "Endereço de entrega",
     "discount": "Desconto",
     "discountInvalid": "Digite um valor de desconto válido",
+    "fixedDiscountMinimum": "Descontos fixos devem ser de pelo menos 1 unidade",
     "discountReasonPlaceholder": "Motivo (opcional)",
     "discountRemoved": "Desconto removido",
     "discountUpdated": "Desconto atualizado",

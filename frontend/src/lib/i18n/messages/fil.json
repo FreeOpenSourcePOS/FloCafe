@@ -509,6 +509,7 @@
     "deliveryAddress": "Address ng Delivery",
     "discount": "Discount",
     "discountInvalid": "Pakilagay ang wastong halaga ng discount",
+    "fixedDiscountMinimum": "Ang mga fixed discount ay dapat hindi bababa sa 1 unit",
     "discountReasonPlaceholder": "Dahilan (opsyonal)",
     "discountRemoved": "Tinanggal ang discount",
     "discountUpdated": "Na-update ang discount",

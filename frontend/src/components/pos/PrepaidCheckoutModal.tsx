@@ -113,6 +113,12 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       value: discountType === 'percentage' ? normalizedValue : toStoredUnit(normalizedValue),
     };
   }, [discountType, discountValue, toStoredUnit, unitAdapter.maxDecimals]);
+  const rawDiscountValue = Number.parseFloat(discountValue);
+  const hasInvalidFixedDiscount = discountType === 'amount'
+    && unitAdapter.maxDecimals === 0
+    && Number.isFinite(rawDiscountValue)
+    && rawDiscountValue > 0
+    && normalizeFixedDiscountValue(rawDiscountValue, unitAdapter.maxDecimals) <= 0;
   const { tax, loading: taxLoading } = useTaxPreview(
     cart.items,
     cart.customerId,
@@ -285,6 +291,10 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   })();
 
   const handleConfirm = () => {
+    if (hasInvalidFixedDiscount) {
+      toast.error(t('fixedDiscountMinimum'));
+      return;
+    }
     if (!preview) return;
     const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,4})?$/.test(value.trim());
     if (payments.some((p) => (
@@ -641,7 +651,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         <div className="px-5 pb-6 pt-3 border-t border-border">
           <Button
             onClick={handleConfirm}
-            disabled={processing || taxLoading || !preview || totalPayment < remaining - 0.01}
+            disabled={processing || taxLoading || (!preview && !hasInvalidFixedDiscount) || totalPayment < remaining - 0.01}
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"
           >

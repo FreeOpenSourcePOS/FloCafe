@@ -12,6 +12,7 @@ import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { roundCurrencyValue } from '@/lib/currency-input';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
 import { nameToColor } from '@/lib/image-utils';
@@ -300,8 +301,8 @@ export default function ProductsPage() {
       const payload: Record<string, unknown> = {
         name: form.name,
         category_id: form.category_id || null,
-        price: Number(form.price),
-        cost_price: form.cost_price ? Number(form.cost_price) : null,
+        price: roundCurrencyValue(Number(form.price), unitAdapter.maxDecimals),
+        cost_price: form.cost_price ? roundCurrencyValue(Number(form.cost_price), unitAdapter.maxDecimals) : null,
         cb_percent: cbPercentVal,
         sku: form.sku || null,
         barcode: form.barcode || null,
@@ -445,7 +446,18 @@ export default function ProductsPage() {
   const handleAddonGroupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = { name: addonForm.name, description: addonForm.description || null, is_required: addonForm.is_required, allow_multiple_quantities: addonForm.allow_multiple_quantities, min_selection: addonForm.min_selection, max_selection: addonForm.max_selection, addons: addonList };
+      const payload = {
+        name: addonForm.name,
+        description: addonForm.description || null,
+        is_required: addonForm.is_required,
+        allow_multiple_quantities: addonForm.allow_multiple_quantities,
+        min_selection: addonForm.min_selection,
+        max_selection: addonForm.max_selection,
+        addons: addonList.map((addon) => ({
+          ...addon,
+          price: roundCurrencyValue(Number(addon.price), unitAdapter.maxDecimals),
+        })),
+      };
       if (editingAddonGroup) {
         await api.put(`/addon-groups/${editingAddonGroup.id}`, payload);
         toast.success(t('addonGroupUpdated'));

@@ -24,6 +24,7 @@ import {
   itemAmountWidth,
   itemRows,
   itemNameWidth,
+  normalizeGermanThermalText,
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
@@ -78,11 +79,14 @@ function capitalize(text: string): string {
 }
 
 /** Column header row, composed from the document's own header labels. */
-function compactItemHeader(block: ItemTableBlock, nameLen: number, amtLen: number): string {
+function compactItemHeader(block: ItemTableBlock, nameLen: number, amtLen: number, language: string): string {
   const qtyW = 4;
-  const item = labelOf(block.header.item).slice(0, nameLen).padEnd(nameLen);
-  const qty = labelOf(block.header.quantity).slice(0, qtyW).padEnd(qtyW);
-  const amount = labelOf(block.header.amount).slice(0, Math.max(1, amtLen - 1));
+  const itemLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.item)) : labelOf(block.header.item);
+  const qtyLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.quantity)) : labelOf(block.header.quantity);
+  const amountLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.amount)) : labelOf(block.header.amount);
+  const item = itemLabel.slice(0, nameLen).padEnd(nameLen);
+  const qty = qtyLabel.slice(0, qtyW).padEnd(qtyW);
+  const amount = amountLabel.slice(0, Math.max(1, amtLen - 1));
   return item + qty + ' '.repeat(amtLen - amount.length) + amount;
 }
 
@@ -128,7 +132,7 @@ export function renderBillDocumentToCompactLines(
   }
 
   // Business header (store name only — compact keeps contact facts in the footer).
-  if (header?.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(header.name.text, cols, options.arabicShaping) + '{/BOLD}{/CENTER}');
+  if (header?.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(header.name.text, cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
   lines.push(bar);
 
   // Document meta.
@@ -137,10 +141,10 @@ export function renderBillDocumentToCompactLines(
     const date = parseDbTimestamp(meta.timestamp.text);
     lines.push(labelOf(meta.dateLabel) + ': ' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions));
     if (meta.table) {
-      lines.push(truncateShapedLine(meta.table.label.primary.replace('{name}', meta.table.name.text), cols, options.arabicShaping));
+      lines.push(truncateShapedLine(meta.table.label.primary.replace('{name}', meta.table.name.text), cols, options.arabicShaping, options.language));
     }
   }
-  if (customer?.name) lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping));
+  if (customer?.name) lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language));
   if (customer?.phone) lines.push(labelOf(customer.phoneLabel) + ': ' + customer.phone.text);
   lines.push(dash);
 
@@ -154,7 +158,7 @@ export function renderBillDocumentToCompactLines(
       cols,
     );
     const nameLen = itemNameWidth(cols, amtLen);
-    lines.push(compactItemHeader(items, nameLen, amtLen));
+    lines.push(compactItemHeader(items, nameLen, amtLen, options.language));
     lines.push(dash);
 
     for (const row of items.rows) {
@@ -166,12 +170,13 @@ export function renderBillDocumentToCompactLines(
         prefix,
         options.locale,
         trimDecimals,
+        options.language,
       ));
       for (const addon of row.addons) {
-        lines.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals));
+        lines.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language));
       }
       if (row.specialInstructions) {
-        lines.push('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8));
+        lines.push('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language));
       }
     }
   }
@@ -180,28 +185,28 @@ export function renderBillDocumentToCompactLines(
 
   // Totals (compact has no loyalty points section).
   if (totals) {
-    lines.push(...financialRows(labelOf(totals.subtotal.label), formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals), cols));
+    lines.push(...financialRows(labelOf(totals.subtotal.label), formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals), cols, options.language));
     if (totals.discount) {
-      lines.push(...financialRows(labelOf(totals.discount.label), '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals), cols));
+      lines.push(...financialRows(labelOf(totals.discount.label), '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals), cols, options.language));
     }
     if (breakdown && breakdown.lines.length > 0) {
       for (const line of breakdown.lines) {
         const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
-        const label = truncate(labelOf(line.label) + rateSuffix, cols - 12);
-        lines.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols));
+        const label = truncate(labelOf(line.label) + rateSuffix, cols - 12, options.language);
+        lines.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols, options.language));
       }
     } else if (totals.tax) {
-      lines.push(...financialRows(labelOf(totals.tax.label), formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals), cols));
+      lines.push(...financialRows(labelOf(totals.tax.label), formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals), cols, options.language));
     }
-    lines.push(...financialRows(labelOf(totals.grandTotal.label), formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
+    lines.push(...financialRows(labelOf(totals.grandTotal.label), formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals), cols, options.language).map((line) => `{BOLD}${line}{/BOLD}`));
   }
 
   // Payments.
   if (payments && payments.lines.length > 0) {
     lines.push(dash);
     for (const line of payments.lines) {
-      const methodLabel = truncate(paymentLabel(line.label), cols - 12);
-      lines.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols));
+      const methodLabel = truncate(paymentLabel(line.label), cols - 12, options.language);
+      lines.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols, options.language));
     }
   }
 

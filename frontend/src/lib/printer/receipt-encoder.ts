@@ -27,7 +27,7 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
-import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
+import { normalizeCurrencyToAscii, normalizeGermanThermalText, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -199,7 +199,7 @@ function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
-function safePrinterTextForLanguage(language: string, columns: number) {
+function safePrinterTextForLanguage(language: string) {
   return <T extends { text(value: string): T }>(
     enc: T,
     value: string,
@@ -208,7 +208,7 @@ function safePrinterTextForLanguage(language: string, columns: number) {
     arabicShaping = false,
     centerCols?: number,
     maxCols?: number,
-  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, language === 'de' ? maxCols ?? centerCols ?? columns : maxCols, language);
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language);
 }
 
 function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean): string {
@@ -227,11 +227,12 @@ function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean): strin
  * the desktop document-classic renderer so the meta line stays printable by
  * generic ESC/POS printers for every locale.
  */
-function formatThermalTimestamp(iso: string, locale: string): string {
+function formatThermalTimestamp(iso: string, locale: string, timezone?: string | null): string {
   const parsed = parseDbTimestamp(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
   const safeLocale = getSafeLatnLocale(locale);
-  return `${parsed.toLocaleDateString(safeLocale)} ${parsed.toLocaleTimeString(safeLocale)}`;
+  const options = timezone ? { timeZone: timezone } : undefined;
+  return `${parsed.toLocaleDateString(safeLocale, options)} ${parsed.toLocaleTimeString(safeLocale, options)}`;
 }
 
 function getSafeLatnLocale(locale: string | undefined): string {
@@ -251,7 +252,7 @@ function getSafeLatnLocale(locale: string | undefined): string {
  */
 function buildReceiptEnvironment(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'> & Partial<Pick<Tenant, 'timezone'>>,
   opts: ReceiptOptions,
   cols: number,
 ): DocumentBlocks {
@@ -346,16 +347,18 @@ function col4Rows(
   currency: string,
   widths: Col4Widths,
   locale: string,
-  trimDecimals: boolean = false
+  trimDecimals: boolean = false,
+  language?: string,
 ): string[] {
   const [nameWidth, qtyWidth, rateWidth, amountWidth] = widths;
+  const normalizedName = language === 'de' ? normalizeGermanThermalText(name) : name;
   const rateStr = formatAmount(rate, currency, locale, trimDecimals);
   const amtStr = formatAmount(amount, currency, locale, trimDecimals);
   const qtyStr = String(qty);
 
   if (qtyStr.length > qtyWidth || rateStr.length > rateWidth || amtStr.length > amountWidth) {
     const itemWidth = Math.max(1, widths[0] + widths[1] - 1, colsForCol4(widths) - qtyStr.length - 1);
-    const itemLine = truncate(name, itemWidth).padEnd(itemWidth) + ' ' + qtyStr;
+    const itemLine = truncateForLanguage(normalizedName, itemWidth).padEnd(itemWidth) + ' ' + qtyStr;
     return [
       itemLine,
       ...fitLabeledValue('Rate', rateStr, colsForCol4(widths)),
@@ -363,7 +366,7 @@ function col4Rows(
     ];
   }
 
-  const nameColumn = truncate(name, nameWidth).padEnd(nameWidth);
+  const nameColumn = truncateForLanguage(normalizedName, nameWidth).padEnd(nameWidth);
   const qtyColumn = qtyStr.padStart(qtyWidth);
   return [nameColumn + qtyColumn + rateStr.padStart(rateWidth) + amtStr.padStart(amountWidth)];
 }
@@ -389,7 +392,7 @@ function fitLabeledValue(label: string, value: string, cols: number): string[] {
 
 export function buildClassicReceiptBytes(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'> & Partial<Pick<Tenant, 'timezone'>>,
   opts: ReceiptOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
@@ -406,7 +409,9 @@ export function buildClassicReceiptBytes(
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
-  const safePrinterText = safePrinterTextForLanguage(primaryLang, cols);
+  const safePrinterText = safePrinterTextForLanguage(primaryLang);
+  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang);
+  const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang);
 
   const col4Layout = resolveCol4Widths(
     cols,
@@ -465,7 +470,7 @@ export function buildClassicReceiptBytes(
       enc,
       padRow(
         `${labelOf(meta.invoiceNumberLabel)} ${meta.invoiceNumber.text}`,
-        formatThermalTimestamp(meta.timestamp.text, locale),
+        formatThermalTimestamp(meta.timestamp.text, locale, tenant.timezone),
         cols,
       ),
       warnings,
@@ -496,6 +501,7 @@ export function buildClassicReceiptBytes(
       col4Layout,
       locale,
       opts.trimDecimals === true,
+      primaryLang,
     )) {
       safePrinterText(enc, line, warnings, false, arabicShaping).newline();
     }
@@ -601,7 +607,7 @@ export function buildClassicReceiptBytes(
 
 export function buildCompactReceiptBytes(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'> & Partial<Pick<Tenant, 'timezone'>>,
   opts: ReceiptOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
@@ -619,7 +625,9 @@ export function buildCompactReceiptBytes(
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
-  const safePrinterText = safePrinterTextForLanguage(primaryLang, cols);
+  const safePrinterText = safePrinterTextForLanguage(primaryLang);
+  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang);
+  const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang);
   const trim = opts.trimDecimals === true;
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
@@ -653,7 +661,7 @@ export function buildCompactReceiptBytes(
       enc,
       padRow(
         `${labelOf(meta.invoiceNumberLabel)} ${meta.invoiceNumber.text}`,
-        formatThermalTimestamp(meta.timestamp.text, locale),
+        formatThermalTimestamp(meta.timestamp.text, locale, tenant.timezone),
         cols,
       ),
       warnings,
@@ -760,7 +768,7 @@ export function buildCompactReceiptBytes(
 
 export function buildDetailedReceiptBytes(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'> & Partial<Pick<Tenant, 'timezone'>>,
   opts: ReceiptOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
@@ -782,7 +790,9 @@ export function buildDetailedReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const primaryLang = opts.languages?.[0] ?? 'en';
-  const safePrinterText = safePrinterTextForLanguage(primaryLang, cols);
+  const safePrinterText = safePrinterTextForLanguage(primaryLang);
+  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang);
+  const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
@@ -822,7 +832,7 @@ export function buildDetailedReceiptBytes(
 
   // Bill info
   enc
-    .text(padRow(`Bill #: ${bill.bill_number}`, formatDate(bill.order?.created_at, locale), cols))
+    .text(padRow(`Bill #: ${bill.bill_number}`, formatDate(bill.order?.created_at, locale, tenant.timezone ? { timeZone: tenant.timezone } : undefined), cols))
     .newline();
 
   if (showCustomerName && order?.customer?.name) {
@@ -855,7 +865,7 @@ export function buildDetailedReceiptBytes(
   // Line items
   const items = order?.items ?? [];
   for (const item of items) {
-    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
+    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals, primaryLang)) {
       safePrinterText(enc, row, warnings, false, arabicShaping).newline();
     }
 
@@ -941,15 +951,18 @@ export const buildReceiptBytes = buildClassicReceiptBytes;
 // Formatting helpers (shared)
 // ---------------------------------------------------------------------------
 
-function padRow(left: string, right: string, cols: number): string {
-  const gap = cols - left.length - right.length;
+function padRowForLanguage(left: string, right: string, cols: number, language?: string): string {
+  const normalizedLeft = language === 'de' ? normalizeGermanThermalText(left) : left;
+  const normalizedRight = language === 'de' ? normalizeGermanThermalText(right) : right;
+  const gap = cols - normalizedLeft.length - normalizedRight.length;
   return gap > 0
-    ? left + ' '.repeat(gap) + right
-    : left.slice(0, cols - right.length - 1) + ' ' + right;
+    ? normalizedLeft + ' '.repeat(gap) + normalizedRight
+    : normalizedLeft.slice(0, cols - normalizedRight.length - 1) + ' ' + normalizedRight;
 }
 
-function truncate(str: string, max: number): string {
-  return str.length > max ? str.slice(0, max - 1) + '\u2026' : str;
+function truncateForLanguage(str: string, max: number, language?: string): string {
+  const normalized = language === 'de' ? normalizeGermanThermalText(str) : str;
+  return normalized.length > max ? normalized.slice(0, max - 1) + '\u2026' : normalized;
 }
 
 function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false): string {

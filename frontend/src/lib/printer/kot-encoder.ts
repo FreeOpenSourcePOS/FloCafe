@@ -62,6 +62,7 @@ export function buildKotBytes(
   const label = (key: string): string => printLabelResolver(key, language);
   const locale = opts.locale ?? LANGUAGES[language as Language]?.locale ?? 'en-US';
   const safePrinterText = safePrinterTextForLanguage(language, cols);
+  const truncateText = (text: string, max: number): string => truncate(text, max, language);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -108,7 +109,7 @@ export function buildKotBytes(
     // Item name with quantity
     const qtyName = `${item.quantity}x ${item.product_name}`;
     enc.bold(true);
-    safePrinterText(enc, truncate(qtyName, cols), warnings, false, arabicShaping, undefined, undefined, language).newline();
+    safePrinterText(enc, truncateText(qtyName, cols), warnings, false, arabicShaping, undefined, undefined, language).newline();
     enc.bold(false);
 
     // Addons can come from older/API paths as a JSON string. Normalize before
@@ -119,14 +120,14 @@ export function buildKotBytes(
         if (addon.name) {
           const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
           const addonText = `${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
-          safePrinterText(enc, `   + ${truncate(addonText, cols - 5)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
+          safePrinterText(enc, `   + ${truncateText(addonText, cols - 5)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
         }
       }
     }
 
     // Special instructions
     if (item.special_instructions) {
-      safePrinterText(enc, `   >> ${truncate(item.special_instructions, cols - 6)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
+      safePrinterText(enc, `   >> ${truncateText(item.special_instructions, cols - 6)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
     }
 
     enc.newline();
@@ -150,8 +151,9 @@ export function buildKotBytes(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function truncate(str: string, max: number): string {
-  return str.length > max ? str.slice(0, max - 1) + '…' : str;
+function truncate(str: string, max: number, language: string = 'en'): string {
+  const normalized = language === 'de' ? normalizeGermanThermalText(str) : str;
+  return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 
 function resolveOrderType(type: string, language: string): string {
@@ -169,7 +171,7 @@ function resolveOrderType(type: string, language: string): string {
 }
 
 function formatOrderNumber(label: string, orderNumber: string): string {
-  return label.replace(/\s*#?\{number\}/, `: ${orderNumber}`);
+  return label.replace('{number}', orderNumber);
 }
 
 function parseAddons(addons: unknown): Array<{ name: string }> {

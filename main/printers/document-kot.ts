@@ -90,6 +90,7 @@ export function buildKotPrintContext(opts: {
 /** Renderer options: physical/locale presentation only, no business data. */
 export interface KotDocumentRenderOptions {
   readonly columns: number;
+  readonly language: string;
   readonly locale?: string;
   readonly timezone?: string;
   readonly useUnicode: boolean;
@@ -115,7 +116,7 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
 }
 
 function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string): string {
-  return labelOf(label).replace(/\s*#?\{number\}/, `: ${orderNumber}`);
+  return labelOf(label).replace('{number}', orderNumber);
 }
 
 function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
@@ -126,27 +127,27 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   lines.push('{INIT}');
   lines.push('{CENTER}{BOLD}' + labelOf(header.banner) + '{/BOLD}{/CENTER}');
   lines.push('');
-  lines.push(truncateShapedLine(labelOf(header.stationLabel) + ': ' + header.stationName.text, cols, options.arabicShaping));
-  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text), cols, options.arabicShaping));
+  lines.push(truncateShapedLine(labelOf(header.stationLabel) + ': ' + header.stationName.text, cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text), cols, options.arabicShaping, options.language));
   if (header.table) {
-    lines.push(truncateShapedLine(formatTableLabel(header.table.label, header.table.name.text), cols, options.arabicShaping));
+    lines.push(truncateShapedLine(formatTableLabel(header.table.label, header.table.name.text), cols, options.arabicShaping, options.language));
   }
   if (header.orderType) {
-    lines.push(truncateShapedLine(labelOf(header.orderType.label) + ': ' + header.orderType.value.text, cols, options.arabicShaping));
+    lines.push(truncateShapedLine(labelOf(header.orderType.label) + ': ' + header.orderType.value.text, cols, options.arabicShaping, options.language));
   }
   lines.push(labelOf(header.timeLabel) + ': ' + parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions));
   return lines;
 }
 
-function kotItemLines(row: KotItemsBlock['rows'][number], cols: number, arabicShaping: boolean): string[] {
+function kotItemLines(row: KotItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
-  lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - itemPrefix.length), arabicShaping) + '{/BOLD}{/DOUBLE_HEIGHT}');
+  lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - itemPrefix.length), arabicShaping, language) + '{/BOLD}{/DOUBLE_HEIGHT}');
   for (const addon of row.addons) {
-    lines.push('  + ' + truncate(addonName(addon), cols - 4));
+    lines.push('  + ' + truncate(addonName(addon), cols - 4, language));
   }
   if (row.specialInstructions) {
-    lines.push('  ** ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping) + ' **');
+    lines.push('  ** ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language) + ' **');
   }
   return lines;
 }
@@ -173,7 +174,7 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
 
   if (items) {
     for (const row of items.rows) {
-      lines.push(...kotItemLines(row, cols, options.arabicShaping));
+      lines.push(...kotItemLines(row, cols, options.arabicShaping, options.language));
     }
   }
 
@@ -220,6 +221,7 @@ export function renderKotViaDocument(
   const warnings: PrintWarning[] = [];
   const lines = renderKotDocumentToLines(document, {
     columns: opts.columns,
+    language: opts.language,
     ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
     ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
     useUnicode: opts.useUnicode,

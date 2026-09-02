@@ -1282,9 +1282,10 @@ export function itemAmountWidth(
   return Math.min(width, Math.max(1, cols - 5));
 }
 
-export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
+export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en'): string[] {
   const qtyW = 4;
-  const name = truncate(item.product_name, nameLen).padEnd(nameLen);
+  const productName = language === 'de' ? normalizeGermanThermalText(item.product_name) : item.product_name;
+  const name = truncate(productName, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals);
@@ -1293,8 +1294,9 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
   return [label.trimEnd(), ...wrapValue(amount, cols)];
 }
 
-export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
-  const label = truncate('  + ' + addon.name, nameLen).padEnd(nameLen);
+export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en'): string[] {
+  const addonName = language === 'de' ? normalizeGermanThermalText(addon.name) : addon.name;
+  const label = truncate('  + ' + addonName, nameLen).padEnd(nameLen);
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals);
   const inlineWidth = Math.max(1, cols - label.length - 1);
@@ -1302,8 +1304,9 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
   return [label.trimEnd(), ...wrapValue(price, cols)];
 }
 
-export function financialRows(label: string, value: string, cols: number): string[] {
-  const safeLabel = label.slice(0, Math.max(1, cols - 1));
+export function financialRows(label: string, value: string, cols: number, language: string = 'en'): string[] {
+  const normalizedLabel = language === 'de' ? normalizeGermanThermalText(label) : label;
+  const safeLabel = normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
     return [safeLabel + rightAlign(value, cols - safeLabel.length)];
@@ -1350,12 +1353,14 @@ export function rightAlign(text: string, width: number = 24): string {
   return ' '.repeat(Math.max(1, width - text.length)) + text;
 }
 
-export function truncate(text: string, length: number): string {
-  return text.length > length ? text.substring(0, length - 2) + '..' : text;
+export function truncate(text: string, length: number, language: string = 'en'): string {
+  const normalizedText = language === 'de' ? normalizeGermanThermalText(text) : text;
+  return normalizedText.length > length ? normalizedText.substring(0, length - 2) + '..' : normalizedText;
 }
 
-export function truncateShapedLine(text: string, length: number, arabicShaping: boolean): string {
-  return arabicShaping && hasArabicScript(text) ? truncate(text, Math.max(1, length)) : text;
+export function truncateShapedLine(text: string, length: number, arabicShaping: boolean, language: string = 'en'): string {
+  const normalizedText = language === 'de' ? normalizeGermanThermalText(text) : text;
+  return arabicShaping && hasArabicScript(normalizedText) ? truncate(normalizedText, Math.max(1, length)) : normalizedText;
 }
 
 /**
@@ -1488,34 +1493,8 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
 const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
   'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
 };
-function normalizeGermanThermalText(text: string): string {
+export function normalizeGermanThermalText(text: string): string {
   return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
-}
-
-const ESCPOS_STYLE_TOKEN_RE = /^\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}$/;
-
-function truncateEscPosLine(line: string, maxCols: number): string {
-  if (maxCols <= 0) return '';
-  let visible = 0;
-  let result = '';
-  for (let index = 0; index < line.length;) {
-    if (line[index] === '{') {
-      const end = line.indexOf('}', index + 1);
-      if (end !== -1) {
-        const token = line.slice(index, end + 1);
-        if (ESCPOS_STYLE_TOKEN_RE.test(token)) {
-          result += token;
-          index = end + 1;
-          continue;
-        }
-      }
-    }
-    if (visible >= maxCols) break;
-    result += line[index];
-    visible += 1;
-    index += 1;
-  }
-  return result;
 }
 
 // Resolves the currency symbol into the exact text that will be printed,
@@ -1604,10 +1583,6 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
     if (options.language === 'de') {
       line = normalizeGermanThermalText(line);
-      if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
-        const maxCols = lineDW ? Math.floor((options.columns as number) / 2) : (options.columns as number);
-        line = truncateEscPosLine(line, Math.max(1, maxCols));
-      }
       printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
     }
     const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');

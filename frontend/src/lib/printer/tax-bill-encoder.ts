@@ -15,7 +15,7 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
-import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
+import { normalizeCurrencyToAscii, normalizeGermanThermalText, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -113,7 +113,7 @@ function getSafeLatnLocale(locale: string | undefined): string {
   return `${locale}-u-nu-latn`;
 }
 
-function safePrinterTextForLanguage(language: string, columns: number) {
+function safePrinterTextForLanguage(language: string) {
   return <T extends { text(value: string): T }>(
     enc: T,
     value: string,
@@ -123,12 +123,12 @@ function safePrinterTextForLanguage(language: string, columns: number) {
     centerCols?: number,
     maxCols?: number,
     _language?: string,
-  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, language === 'de' ? maxCols ?? centerCols ?? columns : maxCols, language);
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language);
 }
 
 export function buildTaxBillBytes(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'> & Partial<Pick<Tenant, 'timezone'>>,
   opts: TaxBillOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
@@ -151,7 +151,9 @@ export function buildTaxBillBytes(
   } = opts;
   const labelFor = (key: string): string => printLabelResolver(key, language);
   const cols = CHARS[paperWidth];
-  const safePrinterText = safePrinterTextForLanguage(language, cols);
+  const safePrinterText = safePrinterTextForLanguage(language);
+  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, language);
+  const truncate = (text: string, max: number): string => truncateForLanguage(text, max, language);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode, rawEscPos);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
@@ -188,7 +190,7 @@ export function buildTaxBillBytes(
   // ── Bill Details ─────────────────────────────────────────────────────────
   enc.align('left');
   safePrinterText(enc, `${labelFor('receipt.billNumber')}: ${bill.bill_number}`, warnings, false, arabicShaping, undefined, cols, language).newline();
-  safePrinterText(enc, `${labelFor('receipt.date')}: ${formatDate(bill.order?.created_at, locale)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, `${labelFor('receipt.date')}: ${formatDate(bill.order?.created_at, locale, tenant.timezone ? { timeZone: tenant.timezone } : undefined)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (showTableNumber && order?.table?.name) {
     safePrinterText(enc, labelFor('pos.tableLabel').replace('{name}', String(order.table.name)), warnings, false, arabicShaping, undefined, cols, language).newline();
@@ -312,14 +314,17 @@ export function buildTaxBillBytes(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function padRow(left: string, right: string, cols: number): string {
-  const safeRight = right.length > cols ? right.slice(-cols) : right;
+function padRowForLanguage(left: string, right: string, cols: number, language?: string): string {
+  const normalizedLeft = language === 'de' ? normalizeGermanThermalText(left) : left;
+  const normalizedRight = language === 'de' ? normalizeGermanThermalText(right) : right;
+  const safeRight = normalizedRight.length > cols ? normalizedRight.slice(-cols) : normalizedRight;
   const leftWidth = Math.max(0, cols - safeRight.length - 1);
-  return left.slice(0, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
+  return normalizedLeft.slice(0, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
 }
 
-function truncate(str: string, max: number): string {
-  return str.length > max ? str.slice(0, max - 1) + '…' : str;
+function truncateForLanguage(str: string, max: number, language?: string): string {
+  const normalized = language === 'de' ? normalizeGermanThermalText(str) : str;
+  return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 
 function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false, rawEscPos: boolean = true): string {

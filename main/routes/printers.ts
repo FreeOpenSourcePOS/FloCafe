@@ -581,17 +581,6 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     }
 
     const db = getDatabase();
-    const printer = db.prepare(
-      `SELECT * FROM printers
-       WHERE connection_type != 'webusb'
-       ORDER BY is_default DESC, name
-       LIMIT 1`,
-    ).get();
-
-    if (!printer) {
-      return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
-    }
-
     const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -617,8 +606,30 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     let success = true;
     const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
     let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
-    const kotSourceItems = (Array.isArray(items) ? items : orderItems)
+    const rawKotSourceItems = Array.isArray(items) ? items : orderItems;
+    const kotSourceItems = rawKotSourceItems
       .filter((item: any) => item?.status !== 'served' && item?.status !== 'ready');
+    if (req.body?.resolveOnly === true) {
+      const groups = routeItemsToStations(db, kotSourceItems).filter((g) => g.items.length > 0);
+      return res.json({
+        groups: groups.map((group) => ({
+          stationName: group.stationName,
+          itemIndexes: group.items.map((item) => rawKotSourceItems.indexOf(item)),
+        })),
+      });
+    }
+
+    const printer = db.prepare(
+      `SELECT * FROM printers
+       WHERE connection_type != 'webusb'
+       ORDER BY is_default DESC, name
+       LIMIT 1`,
+    ).get();
+
+    if (!printer) {
+      return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
+    }
+
     if (stationName) {
       const station = stationName || 'Kitchen';
       if (kotSourceItems.length > 0) {

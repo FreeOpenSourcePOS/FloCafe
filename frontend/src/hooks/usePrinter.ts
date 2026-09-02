@@ -10,16 +10,22 @@ import {
   type ReceiptOptions,
 } from '@/lib/printer/receipt-encoder';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import { useAuthStore } from '@/store/auth';
 import {
   ensurePrintLanguagesLoaded,
   resolveBillPrintLanguages,
 } from '@/lib/printer/print-document';
 import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
-import { makeBillTemplateFallbackWarning, type PrintWarning } from '@/lib/printer/warnings';
+import {
+  hasFinancialPrintWarning,
+  makeBillTemplateFallbackWarning,
+  makeFinancialPrintRefusalMessage,
+  type PrintWarning,
+} from '@/lib/printer/warnings';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import type { Bill, Tenant, Order } from '@/lib/types';
+import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
 
@@ -56,7 +62,7 @@ interface PrinterState {
   disconnect: () => Promise<void>;
   printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
   printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
-  printKot: (order: Order, opts?: KotOptions) => Promise<PrintWarning[]>;
+  printKot: (order: Order, opts?: KotOptions & { items?: OrderItem[] }) => Promise<PrintWarning[]>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;
   setPrintMethod: (method: PrintMode) => void;
@@ -155,6 +161,7 @@ export const usePrinterStore = create<PrinterState>()(
                 toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
                 return await executeBrowserPrint();
               }
+              if (errorMsg.startsWith('Receipt not printed:')) toast.error(errorMsg);
               throw new Error(errorMsg);
             }
           }
@@ -210,6 +217,12 @@ export const usePrinterStore = create<PrinterState>()(
             bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, warnings);
           } else {
             bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, warnings);
+          }
+
+          if (hasFinancialPrintWarning(warnings)) {
+            const refusal = makeFinancialPrintRefusalMessage(warnings);
+            toast.error(refusal);
+            throw new Error(refusal);
           }
 
           set({ lastPrintedBytes: bytes });
@@ -270,7 +283,13 @@ export const usePrinterStore = create<PrinterState>()(
             return [];
           }
 
-          const warnings: PrintWarning[] = [];
+          const languages = opts?.language ? [opts.language] as const : resolveBillPrintLanguages();
+          const failedLanguages = await ensurePrintLanguagesLoaded(languages);
+          const warnings: PrintWarning[] = failedLanguages.map((language) => ({
+            field: 'receipt language',
+            text: language,
+            message: `Receipt language "${language}" could not be loaded, so English labels were used.`,
+          }));
           const bytes = buildTaxBillBytes(bill, tenant, {
             ...opts,
             paperWidth: opts?.paperWidth ?? configuredPaperWidth,
@@ -288,6 +307,7 @@ export const usePrinterStore = create<PrinterState>()(
             arabicShaping: printerArabicShaping,
             trimDecimals: printerTrimDecimals,
             rawEscPos: true,
+            language: languages[0],
           }, warnings);
           set({ lastPrintedBytes: bytes });
           await printerService.print(bytes);
@@ -305,6 +325,7 @@ export const usePrinterStore = create<PrinterState>()(
         // (issue #133) — coarser than auto_print_kot, which only gates
         // automatic printing on order placement.
         const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
+        const tenantTimezone = useAuthStore.getState().currentTenant?.timezone;
         if (!kotPrintingEnabled) {
           const err = new Error('KOT printing is disabled for this business');
           set({ lastError: err.message });
@@ -314,13 +335,17 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping });
+              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, items: opts?.items, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping });
               return response.data.warnings || [];
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string } }; message?: string };
               throw new Error(e.response?.data?.error || e.message || 'KOT print failed');
             }
           }
+
+          const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+          const kotLanguage = resolveKotTicketLanguage();
+          const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
 
           // A startup silent-reconnect attempt may still be in flight (e.g.
           // KOT auto-print firing on the first order right after launch) —
@@ -329,10 +354,21 @@ export const usePrinterStore = create<PrinterState>()(
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             const { paperWidth } = get();
             const warnings: PrintWarning[] = [];
-            const bytes = buildKotBytes(order, { ...opts, paperWidth, arabicShaping: printerArabicShaping }, warnings);
+            const bytes = buildKotBytes(
+              opts?.items ? { ...order, items: opts.items } : order,
+              { ...opts, paperWidth, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone },
+              warnings,
+            );
             set({ lastPrintedBytes: bytes });
             await printerService.print(bytes);
-            return warnings;
+            return [
+              ...failedLanguages.map((language) => ({
+                field: 'kot language',
+                text: language,
+                message: `KOT language "${language}" could not be loaded, so English labels were used.`,
+              })),
+              ...warnings,
+            ] as PrintWarning[];
           }
 
           // Browser fallback: no backend hardware printer and no WebUSB
@@ -344,10 +380,8 @@ export const usePrinterStore = create<PrinterState>()(
           // in the loader cache yet - load it before generating so labels
           // don't silently fall back to English.
           const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
-          const { generateKotHtml, resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
-          const kotLanguage = resolveKotTicketLanguage();
-          const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
-          const html = generateKotHtml(order, { paperWidth });
+          const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
+          const html = generateKotHtml(order, { paperWidth, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone });
           await printerService.printViaBrowser(html, paperWidth);
           // A failed locale load degrades to English labels; surface it
           // through the established warning path instead of staying silent

@@ -29,7 +29,9 @@ import {
   buildBillPrintContext,
   buildBillPrintData,
   detectPrintLanguageDirection,
+  renderBillDocumentToClassicLines,
 } from '../main/printers/document-classic';
+import { renderBillDocumentToCompactLines } from '../main/printers/document-compact';
 import { buildParityFixtures } from './print-parity.test';
 
 // ---------------------------------------------------------------------------
@@ -134,13 +136,48 @@ console.log('\n▶ Block construction (fixture bill)');
   const totals = blockOf(document, 'totals');
   assert.equal(totals.subtotal.amount, 1220);
   assert.equal(totals.discount?.amount, 120);
-  assert.equal(totals.grandTotal.amount, 1100);
+  assert.equal(totals.serviceCharge, null, 'backend fixture does not invent a service-charge bill field');
+  assert.equal(totals.deliveryCharge?.amount, 8);
+  assert.equal(totals.packagingCharge?.amount, 9);
+  assert.equal(totals.grandTotal.amount, 1117);
   assert.equal(totals.tax, null, 'no flat tax line when tax amount is zero');
   assert.equal(blockOf(document, 'tax-breakdown').lines.length, 0, 'no breakdown lines when merchant hides them');
   const payments = blockOf(document, 'payments');
   assert.deepEqual(payments.lines.map((line) => line.method), ['cash', 'card']);
   assert.equal(payments.lines[0].label.conceptId, 'pos.methodCash');
   ok('totals/payments blocks copy printed truth verbatim');
+
+  const serviceDocument = buildBillDocument(
+    makePrintData({ bill: { serviceCharge: 12, total: 1129 } }),
+    makeContext(),
+  );
+  const serviceTotals = blockOf(serviceDocument, 'totals');
+  assert.equal(serviceTotals.serviceCharge?.amount, 12, 'server-persisted service charge is rendered once');
+  assert.equal(serviceTotals.grandTotal.amount, 1129, 'receipt uses the authoritative total alongside service charge');
+  ok('service charge is present on the shared receipt surface when persisted');
+
+  const { order, bill, business } = buildParityFixtures();
+  const serviceData = buildBillPrintData(order, { ...bill, service_charge: 12, total: 1129 }, business, false);
+  assert.equal(serviceData.bill.serviceCharge, 12, 'persisted service charge crosses the backend normalization boundary');
+  const serviceContext = buildBillPrintContext({ columns: 42, language: 'en', business });
+  const persistedServiceDocument = buildBillDocument(serviceData, serviceContext);
+  const serviceOptions = {
+    columns: 42,
+    language: 'en',
+    locale: serviceContext.locale,
+    currencySymbol: '₹',
+    trimDecimals: false,
+    useUnicode: true,
+    arabicShaping: false,
+    cutMode: 'full' as const,
+  };
+  for (const [renderer, lines] of [
+    ['classic', renderBillDocumentToClassicLines(persistedServiceDocument, serviceOptions)],
+    ['compact', renderBillDocumentToCompactLines(persistedServiceDocument, serviceOptions)],
+  ] as const) {
+    assert(lines.some((line) => line.includes('Service Charge') && line.includes('₹12.00')),
+      `${renderer} renders the persisted service charge`);
+  }
 
   assert.equal(blockOf(document, 'message').reprintBanner, null, 'no reprint banner on first print');
 }
@@ -180,6 +217,40 @@ console.log('\n▶ Show-flag and tax-presence decisions');
   const breakdownBlock = blockOf(breakdown, 'tax-breakdown');
   assert.deepEqual(breakdownBlock.lines.map((line) => line.label.primary), ['GST', 'VAT'], 'zero-amount components filtered');
   assert.equal(blockOf(breakdown, 'totals').tax, null, 'flat tax line suppressed when breakdown shown');
+
+  const chargedBreakdown = buildBillDocument(
+    makePrintData({
+      bill: {
+        taxAmount: 90,
+        taxComponents: [{ title: 'GST', rate: 5, amount: 90 }],
+        deliveryCharge: 8,
+        packagingCharge: 9,
+      },
+      business: { showTaxBreakdown: true },
+    }),
+    makeContext(),
+  );
+  const chargedOptions = {
+    columns: 48,
+    language: 'en',
+    locale: 'en-IN',
+    currencySymbol: '₹',
+    trimDecimals: false,
+    useUnicode: true,
+    arabicShaping: false,
+    cutMode: 'full' as const,
+  };
+  for (const [renderer, lines] of [
+    ['classic', renderBillDocumentToClassicLines(chargedBreakdown, chargedOptions)],
+    ['compact', renderBillDocumentToCompactLines(chargedBreakdown, chargedOptions)],
+  ] as const) {
+    const taxIndex = lines.findIndex((line) => line.includes('GST'));
+    const deliveryIndex = lines.findIndex((line) => line.includes('pos.delivery[en]'));
+    const packagingIndex = lines.findIndex((line) => line.includes('pos.packaging[en]'));
+    const totalIndex = lines.findIndex((line) => line.includes('print.grandTotal[en]'));
+    assert(taxIndex >= 0 && taxIndex < deliveryIndex && deliveryIndex < packagingIndex && packagingIndex < totalIndex,
+      `${renderer} places tax breakdown before charges and grand total`);
+  }
   ok('tax breakdown vs flat tax line decision');
 
   const noBreakdown = buildBillDocument(
@@ -201,7 +272,7 @@ console.log('\n▶ Printed truth is never recomputed');
   const totals = blockOf(odd, 'totals');
   assert.equal(totals.subtotal.amount, 1220.456);
   assert.equal(totals.grandTotal.amount, 999999.99);
-  assert.equal(blockOf(odd, 'payments').lines[1].amount, 500);
+  assert.equal(blockOf(odd, 'payments').lines[1].amount, 517);
   ok('amounts pass through verbatim');
 }
 
@@ -304,7 +375,7 @@ console.log('\n▶ Backend PrintData normalization (main layer)');
   const { order, bill, business } = buildParityFixtures();
   const rawBill = { ...bill, payment_details: JSON.stringify(bill.payment_details) };
   const printData = buildBillPrintData(order, rawBill, business, false);
-  assert.deepEqual(printData.bill.payments, [{ method: 'cash', amount: 600 }, { method: 'card', amount: 500 }]);
+  assert.deepEqual(printData.bill.payments, [{ method: 'cash', amount: 600 }, { method: 'card', amount: 517 }]);
   assert.equal(printData.bill.pointsEarned, 0);
   assert.equal(printData.business.showTaxId, 'force', 'fixture show_tax_id true maps to force');
   const unsetFlags = buildBillPrintData(order, rawBill, { ...business, show_tax_id: undefined }, false);
@@ -326,6 +397,100 @@ console.log('\n▶ Backend PrintData normalization (main layer)');
   ok('print context derived from business snapshot');
 }
 
+console.log('\n▶ Add-on quantity and charge financial parity');
+{
+  const cases = [
+    { itemQuantity: 1, addonQuantity: 1, addonPrice: 5, expected: 5 },
+    { itemQuantity: 2, addonQuantity: 3, addonPrice: 5, expected: 30 },
+    { itemQuantity: 3, addonQuantity: 2, addonPrice: 7.5, expected: 45 },
+  ];
+
+  for (const testCase of cases) {
+    const order = {
+      order_number: 'ORD-ADDON-PARITY',
+      created_at: '2026-08-21 18:42:00',
+      items: [{
+        product_name: 'Tea',
+        quantity: testCase.itemQuantity,
+        unit_price: 10,
+        total: 20,
+        addons: [
+          { name: 'Extra shot', price: testCase.addonPrice, quantity: testCase.addonQuantity },
+          { name: 'Vanilla syrup', price: 2, quantity: 2 },
+        ],
+      }],
+    };
+    const bill = {
+      bill_number: 'INV-ADDON-PARITY',
+      subtotal: 50,
+      discount_amount: 0,
+      tax_amount: 0,
+      delivery_charge: 8,
+      packaging_charge: 9,
+      total: 67,
+    };
+    const business = { country: 'IN', currency_symbol: '₹' };
+    const printData = buildBillPrintData(order, bill, business, false);
+    assert.equal(printData.order.items[0].quantity, testCase.itemQuantity);
+    assert.equal(printData.order.items[0].addons[0].quantity, testCase.addonQuantity);
+    assert.equal(printData.order.items[0].addons[0].price, testCase.expected,
+      `addon extension ${testCase.itemQuantity}x item × ${testCase.addonQuantity}x addon`);
+    assert.equal(printData.order.items[0].addons[1].price, testCase.itemQuantity * 2 * 2,
+      'multiple add-ons retain independent extensions');
+    assert.equal(printData.bill.serviceCharge, undefined, 'backend normalization does not invent service-charge storage');
+    assert.equal(printData.bill.deliveryCharge, 8);
+    assert.equal(printData.bill.packagingCharge, 9);
+
+    const context = buildBillPrintContext({ columns: 48, language: 'en', business });
+    const document = buildBillDocument(printData, context);
+    const options = {
+      columns: 48,
+      language: 'en',
+      locale: context.locale,
+      currencySymbol: '₹',
+      trimDecimals: false,
+      useUnicode: true,
+      arabicShaping: false,
+      cutMode: 'full' as const,
+    };
+    for (const [renderer, lines] of [
+      ['classic', renderBillDocumentToClassicLines(document, options)],
+      ['compact', renderBillDocumentToCompactLines(document, options)],
+    ] as const) {
+      assert(lines.some((line) => line.includes('Extra shot') && line.includes(`₹${testCase.expected.toFixed(2)}`)),
+        `${renderer} renders extended add-on amount`);
+      assert(lines.some((line) => line.includes('Delivery') && line.includes('₹8.00')),
+        `${renderer} renders delivery charge`);
+      assert(lines.some((line) => line.includes('Packaging') && line.includes('₹9.00')),
+        `${renderer} renders packaging charge`);
+    }
+  }
+
+  const malformedOrder = {
+    order_number: 'ORD-ADDON-MALFORMED',
+    created_at: '2026-08-21 18:42:00',
+    items: [{
+      product_name: 'Tea',
+      quantity: 2,
+      unit_price: 10,
+      total: 20,
+      addons: [null, 'legacy-addon', { name: 'Safe extra', price: 4, quantity: 2 }],
+    }],
+  };
+  const malformedData = buildBillPrintData(malformedOrder, {
+    bill_number: 'INV-ADDON-MALFORMED',
+    subtotal: 20,
+    discount_amount: 0,
+    tax_amount: 0,
+    total: 20,
+  }, { country: 'IN', currency_symbol: '₹' }, false);
+  assert.equal(malformedData.order.items[0].addons[0].price, 0);
+  assert.equal(malformedData.order.items[0].addons[1].price, 0);
+  assert.equal(malformedData.order.items[0].addons[2].price, 16,
+    'object add-on quantity still uses the extended amount after malformed entries');
+  ok('malformed add-on entries do not break normalization');
+}
+
 // ---------------------------------------------------------------------------
 // 5. KOT document variant (#443)
 // ---------------------------------------------------------------------------
@@ -343,6 +508,7 @@ console.log('\n▶ KOT document builder (#443)');
       orderNumber: 'ORD-PARITY-001',
       createdAt: '2026-08-21 18:42:00',
       tableName: '4',
+      orderType: 'DINE IN',
     },
     items: [
       {
@@ -376,8 +542,10 @@ console.log('\n▶ KOT document builder (#443)');
   assert.equal(header.orderNumber.direction, 'ltr', 'order number is an LTR island under rtl base');
   assert.equal(header.table?.label.conceptId, 'pos.tableLabel');
   assert.equal(header.table?.name.text, '4');
+  assert.equal(header.orderType?.label.conceptId, 'print.kot.type');
+  assert.equal(header.orderType?.value.text, 'DINE IN');
   assert.equal(header.timestamp.text, '2026-08-21 18:42:00');
-  ok('KOT header carries banner/station/order/table/time semantics');
+  ok('KOT header carries banner/station/order/table/type/time semantics');
 
   const noTable = buildKotDocument(
     { ...kotData, order: { ...kotData.order, tableName: '' } },

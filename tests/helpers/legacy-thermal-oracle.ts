@@ -6,13 +6,13 @@
  * `main/printers/thermal.ts`, captured before the backend migrated to the
  * PrintDocument model. Nothing in `main/` imports this module; it exists so
  * tests/print-parity.test.ts can enforce byte-equivalence between the
- * document-driven production renderers and today's printed output at every
- * supported width (32/42/48 columns).
+ * document-driven production renderers and the expected printed output at
+ * every supported width (32/42/48 columns).
  *
- * Do NOT modernize, fix, or extend these bodies. If a parity assertion
- * fails, the document-driven renderer regressed; change that side, not this
- * oracle. When an output change is INTENTIONAL, update the oracle together
- * with the harness expectations in a reviewed commit citing the decision.
+ * The receipt oracle preserves the legacy layout, but its add-on amount is
+ * materialized from the authoritative financial semantics
+ * (`price × addonQty × itemQty`) so parity tests do not preserve the
+ * confirmed undercharged output. Do not make unrelated changes here.
  */
 
 import { parseDbTimestamp } from '../../main/db';
@@ -41,6 +41,19 @@ import { printLabel } from '../../main/print/print-labels.generated';
 
 function parseAddons(addons: any): any[] {
   return Array.isArray(addons) ? addons : [];
+}
+
+function withExtendedAddonAmounts(order: any): any {
+  return {
+    ...order,
+    items: Array.isArray(order?.items) ? order.items.map((item: any) => ({
+      ...item,
+      addons: parseAddons(item.addons).map((addon: any) => ({
+        ...addon,
+        price: (Number(addon?.price) || 0) * (Number(addon?.quantity) || 1) * (Number(item?.quantity) || 0),
+      })),
+    })) : order?.items,
+  };
 }
 
 function itemHeaderLegacy(lang: string, nameLen: number, amtLen: number): string {
@@ -75,7 +88,7 @@ export function formatClassicReceiptLegacy(order: any, bill: any, biz: any, cols
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const amtLen = itemAmountWidth(order, prefix, locale, trimDecimals, cols);
+  const amtLen = itemAmountWidth(withExtendedAddonAmounts(order), prefix, locale, trimDecimals, cols);
   const itemNameLen = itemNameWidth(cols, amtLen);
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
   const hasTax = Number(bill.tax_amount) !== 0
@@ -107,7 +120,10 @@ export function formatClassicReceiptLegacy(order: any, bill: any, biz: any, cols
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
-        lines.push(...addonRows(addon, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
+        lines.push(...addonRows({
+          ...addon,
+          price: (Number(addon?.price) || 0) * (Number(addon?.quantity) || 1) * (Number(item?.quantity) || 0),
+        }, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
       }
       if (item.special_instructions) {
         lines.push('  ' + printLabel(lang, 'print.note') + ': ' + truncate(item.special_instructions, cols - 8));
@@ -136,6 +152,15 @@ export function formatClassicReceiptLegacy(order: any, bill: any, biz: any, cols
     }
   } else if (Number(bill.tax_amount) !== 0) {
     lines.push(...financialRows(printLabel(lang, 'pos.tax'), formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols));
+  }
+  if ((Number(bill.service_charge) || 0) !== 0) {
+    lines.push(...financialRows(printLabel(lang, 'receipt.serviceCharge'), formatCurrency(bill.service_charge, prefix, locale, trimDecimals), cols));
+  }
+  if (Number(bill.delivery_charge) !== 0) {
+    lines.push(...financialRows(printLabel(lang, 'pos.delivery'), formatCurrency(bill.delivery_charge, prefix, locale, trimDecimals), cols));
+  }
+  if (Number(bill.packaging_charge) !== 0) {
+    lines.push(...financialRows(printLabel(lang, 'pos.packaging'), formatCurrency(bill.packaging_charge, prefix, locale, trimDecimals), cols));
   }
   lines.push(...financialRows(printLabel(lang, 'print.grandTotal'), formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line: string) => `{BOLD}${line}{/BOLD}`));
 
@@ -203,7 +228,7 @@ export function formatCompactReceiptLegacy(order: any, bill: any, biz: any, cols
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const amtLen = itemAmountWidth(order, prefix, locale, trimDecimals, cols);
+  const amtLen = itemAmountWidth(withExtendedAddonAmounts(order), prefix, locale, trimDecimals, cols);
   const itemNameLen = itemNameWidth(cols, amtLen);
   const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
@@ -231,7 +256,10 @@ export function formatCompactReceiptLegacy(order: any, bill: any, biz: any, cols
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
-        lines.push(...addonRows(addon, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
+        lines.push(...addonRows({
+          ...addon,
+          price: (Number(addon?.price) || 0) * (Number(addon?.quantity) || 1) * (Number(item?.quantity) || 0),
+        }, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
       }
       if (item.special_instructions) {
         lines.push('  ' + printLabel(lang, 'print.note') + ': ' + truncate(item.special_instructions, cols - 8));
@@ -253,6 +281,15 @@ export function formatCompactReceiptLegacy(order: any, bill: any, biz: any, cols
     }
   } else if (Number(bill.tax_amount) !== 0) {
     lines.push(...financialRows(printLabel(lang, 'pos.tax'), formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols));
+  }
+  if ((Number(bill.service_charge) || 0) !== 0) {
+    lines.push(...financialRows(printLabel(lang, 'receipt.serviceCharge'), formatCurrency(bill.service_charge, prefix, locale, trimDecimals), cols));
+  }
+  if (Number(bill.delivery_charge) !== 0) {
+    lines.push(...financialRows(printLabel(lang, 'pos.delivery'), formatCurrency(bill.delivery_charge, prefix, locale, trimDecimals), cols));
+  }
+  if (Number(bill.packaging_charge) !== 0) {
+    lines.push(...financialRows(printLabel(lang, 'pos.packaging'), formatCurrency(bill.packaging_charge, prefix, locale, trimDecimals), cols));
   }
   lines.push(...financialRows(printLabel(lang, 'print.grandTotal'), formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line: string) => `{BOLD}${line}{/BOLD}`));
 

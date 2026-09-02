@@ -282,6 +282,27 @@ async function main() {
       'service charge snapshot identifies its charge kind',
     );
 
+    const serviceOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        service_charge: 20,
+        items: [{ product_id: 'override-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(serviceOrder.status, 201, 'explicit service charge persists on order creation');
+    assertEqual(serviceOrder.data.order.service_charge, 20, 'order returns the persisted service charge');
+    assertEqual(serviceOrder.data.order.total, 121, 'order total includes service charge once');
+    const serviceBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: serviceOrder.data.order.id },
+      headers: owner.authHeader,
+    });
+    assertEqual(serviceBill.status, 201, 'service charge bill is generated');
+    assertEqual(serviceBill.data.bill.service_charge, 20, 'bill copies the persisted service charge');
+    assertEqual(serviceBill.data.bill.total, 121, 'bill total includes service charge once');
+
     const chargeOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {
@@ -384,6 +405,163 @@ async function main() {
     assertEqual(chargeBillDiscount.status, 200, 'bill discount recomputes configured charges');
     assertEqual(chargeBillDiscount.data.bill.tax_amount, 2, 'bill discount leaves charge tax unscaled');
     assertEqual(chargeBillDiscount.data.bill.total, 137, 'bill discount scales items but not charges');
+
+    console.log('\n5a. Explicit service-charge amounts persist through billing and splits');
+    const malformedServiceCharge = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        service_charge: 'not-a-number',
+        items: [{ product_id: 'override-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(malformedServiceCharge.status, 400, 'malformed service charge is rejected');
+    const overflowServiceCharge = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        service_charge: '1e1000',
+        items: [{ product_id: 'override-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(overflowServiceCharge.status, 400, 'overflow service charge is rejected');
+    const negativeServiceCharge = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        service_charge: -1,
+        items: [{ product_id: 'override-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(negativeServiceCharge.status, 400, 'negative service charge is rejected');
+
+    const zeroServiceCharge = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'override-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(zeroServiceCharge.status, 201, 'missing service charge keeps the default path');
+    assertEqual(zeroServiceCharge.data.order.service_charge, 0, 'missing service charge persists as zero');
+
+    const persistedServiceOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        service_charge: 20,
+        items: [{ product_id: 'override-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(persistedServiceOrder.status, 201, 'explicit service charge order is created');
+    const serviceOrderId = persistedServiceOrder.data.order.id;
+    assertEqual(persistedServiceOrder.data.order.service_charge, 20, 'order returns the server-validated service charge');
+    const serviceOrderRead = await api(baseUrl, `/api/orders/${serviceOrderId}`, { headers: owner.authHeader });
+    assertEqual(serviceOrderRead.data.order.service_charge, 20, 'order read API returns the persisted service charge');
+    assertEqual(persistedServiceOrder.data.order.tax_amount, 1, 'configured service charge is taxed once');
+    assertEqual(persistedServiceOrder.data.order.total, 121, 'service charge is included in payable total once');
+    const serviceSnapshots = typeof persistedServiceOrder.data.order.tax_snapshot === 'string'
+      ? JSON.parse(persistedServiceOrder.data.order.tax_snapshot)
+      : persistedServiceOrder.data.order.tax_snapshot;
+    assertEqual(serviceSnapshots.length, 1, 'service charge contributes one tax snapshot');
+    assertEqual(serviceSnapshots[0].chargeKind, 'service_charge', 'service tax snapshot identifies its source');
+    const persistedServiceBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: serviceOrderId },
+      headers: owner.authHeader,
+    });
+    assertEqual(persistedServiceBill.status, 201, 'service bill is generated');
+    assertEqual(persistedServiceBill.data.bill.service_charge, 20, 'bill persists the order service charge');
+    const serviceBillRead = await api(baseUrl, `/api/bills/${persistedServiceBill.data.bill.id}`, { headers: owner.authHeader });
+    assertEqual(serviceBillRead.data.bill.service_charge, 20, 'bill read API returns the persisted service charge');
+    assertEqual(persistedServiceBill.data.bill.total, 121, 'bill total matches the order total');
+    const regeneratedServiceBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: serviceOrderId },
+      headers: owner.authHeader,
+    });
+    assertEqual(regeneratedServiceBill.status, 200, 'regenerating a service bill is idempotent');
+    assertEqual(regeneratedServiceBill.data.bill.service_charge, 20, 'regeneration does not drop the service charge');
+    assertEqual(regeneratedServiceBill.data.bill.total, 121, 'regeneration does not duplicate the service charge');
+
+    const recomputeServiceOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: { type: 'takeaway', service_charge: 20, items: [{ product_id: 'override-product', quantity: 1 }] },
+      headers: owner.authHeader,
+    });
+    const recomputeOrderDiscount = await api(baseUrl, `/api/orders/${recomputeServiceOrder.data.order.id}/discount`, {
+      method: 'PATCH',
+      body: { discount_type: 'percentage', discount_value: 50 },
+      headers: owner.authHeader,
+    });
+    assertEqual(recomputeOrderDiscount.data.order.service_charge, 20, 'order discount retains the service amount');
+    assertEqual(recomputeOrderDiscount.data.order.tax_amount, 1, 'order discount retains service tax once');
+    assertEqual(recomputeOrderDiscount.data.order.total, 71, 'order discount includes the service amount once');
+    const recomputeServiceBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: recomputeServiceOrder.data.order.id },
+      headers: owner.authHeader,
+    });
+    const recomputeBillDiscount = await api(baseUrl, `/api/bills/${recomputeServiceBill.data.bill.id}/applyDiscount`, {
+      method: 'POST',
+      body: { type: 'percentage', value: 50 },
+      headers: owner.authHeader,
+    });
+    assertEqual(recomputeBillDiscount.data.bill.service_charge, 20, 'bill discount retains the service amount');
+    assertEqual(recomputeBillDiscount.data.bill.tax_amount, 1, 'bill discount retains service tax once');
+    assertEqual(recomputeBillDiscount.data.bill.total, 71, 'bill discount includes the service amount once');
+
+    const paidServiceBill = await api(baseUrl, `/api/bills/${persistedServiceBill.data.bill.id}/payments`, {
+      method: 'POST',
+      body: { payments: [{ method: 'cash', amount: 121 }] },
+      headers: owner.authHeader,
+    });
+    assertEqual(paidServiceBill.status, 200, 'service bill can be paid at its authoritative total');
+    assertEqual(paidServiceBill.data.bill.payment_status, 'paid', 'service bill becomes immutable after payment');
+    db.prepare('UPDATE orders SET service_charge = 99, total = 200 WHERE id = ?').run(serviceOrderId);
+    const regeneratePaidServiceBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: serviceOrderId },
+      headers: owner.authHeader,
+    });
+    assertEqual(regeneratePaidServiceBill.data.bill.service_charge, 20, 'paid bill service charge is not silently rewritten');
+    assertEqual(regeneratePaidServiceBill.data.bill.total, 121, 'paid bill total remains immutable');
+
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('split_checks_enabled', 'true', datetime('now'))").run();
+    const splitServiceOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        service_charge: 20,
+        items: [{ product_id: 'override-product', quantity: 2 }],
+      },
+      headers: owner.authHeader,
+    });
+    const splitServiceBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: splitServiceOrder.data.order.id },
+      headers: owner.authHeader,
+    });
+    const splitResponse = await api(baseUrl, `/api/bills/${splitServiceBill.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: {
+        checks: [
+          { label: 'Guest 1', items: [{ order_item_id: splitServiceOrder.data.order.items[0].id, quantity: 1 }] },
+          { label: 'Guest 2', items: [{ order_item_id: splitServiceOrder.data.order.items[0].id, quantity: 1 }] },
+        ],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(splitResponse.status, 201, 'service charge order can be split');
+    assertEqual(splitResponse.data.bills[0].service_charge, 10, 'split allocates service charge to first check');
+    assertEqual(splitResponse.data.bills[1].service_charge, 10, 'split allocates service charge to second check');
+    assertEqual(splitResponse.data.bills[0].total, 110.5, 'split total includes allocated service tax once');
+    assertEqual(splitResponse.data.bills[1].total, 110.5, 'split totals reconcile to the source bill');
 
     for (const overrideIdToRemove of chargeOverrideIds) {
       const resetCharge = await api(baseUrl, `/api/tax-packs/overrides/${overrideIdToRemove}`, {
@@ -735,6 +913,32 @@ async function main() {
     ));
     assert(exactWidthReceipt.includes('TAX INVOICE'), 'plugin renderer supports an exact 42-column profile');
     assertEqual(widthProfileWarnings.length, 0, 'exact plugin width profile does not warn');
+
+    const configuredTaxWarnings: any[] = [];
+    formatReceipt(
+      {
+        order_number: 'ORD-GST-CONFIGURED-TAX',
+        created_at: '2026-08-01T10:30:00.000Z',
+        items: [{
+          product_name: 'Tax Tea',
+          quantity: 1,
+          total: 100,
+          tax_breakdown: [{ title: 'НДС', rate: null, amount: 5 }],
+        }],
+      },
+      { bill_number: 'BILL-GST-CONFIGURED-TAX', subtotal: 95, tax_amount: 5, total: 100 },
+      { name: 'Flo Test Cafe', country: 'IN', currency_symbol: '₹', show_tax_breakdown: true },
+      'in.gst.tax-invoice.v1',
+      42,
+      false,
+      false,
+      'full',
+      configuredTaxWarnings,
+    );
+    assert(
+      configuredTaxWarnings.some((warning) => warning.kind === 'financial'),
+      'configured plugin tax summary rows are refused as financial content',
+    );
 
     const smallerWidthReceipt = escPosToText(formatReceipt(
       {

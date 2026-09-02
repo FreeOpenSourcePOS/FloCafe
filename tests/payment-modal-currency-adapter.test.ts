@@ -24,6 +24,25 @@ import {
   formatNumberForTenant,
 } from '../main/countries';
 
+const ROOT = path.join(__dirname, '..');
+const Module = require('module');
+const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
+const moduleApi = require('module') as {
+  _resolveFilename: (...args: any[]) => string;
+  _load: (...args: any[]) => any;
+};
+const originalResolveFilename = moduleApi._resolveFilename;
+moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  const resolvedRequest = request.startsWith('@/')
+    ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+    : request;
+  return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+};
+const React = frontendRequire('react');
+const ReactDOMServer = frontendRequire('react-dom/server');
+const CurrencyTouchNumberPad = require('../frontend/src/components/pos/TouchNumberPad').CurrencyTouchNumberPad;
+const { allowCurrencyDecimalKey, getDiscountInputStep, normalizeFixedDiscountValue, roundCurrencyValue } = require('../frontend/src/lib/currency-input');
+
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
   path.join(os.tmpdir(), 'no-mistakes-evidence', '01M09EG8J030YCK62W10XAD7D6');
@@ -82,6 +101,26 @@ function runUnitTests() {
   assert.equal(inrAdapter.toDisplay(1200), 1200);
   assert.equal(inrAdapter.toStored(1200), 1200);
   console.log('  ✓ Standard currencies (USD, INR) adapter verified');
+
+  // Test 6: Zero-decimal currencies (JPY) UI behavior
+  const jpyAdapter = getCurrencyUnitAdapter('JPY', 'JP');
+  assert.equal(jpyAdapter.scale, 1);
+  assert.equal(jpyAdapter.label, 'JPY');
+  assert.equal(jpyAdapter.step, '1', 'JPY price input step is whole number 1');
+  assert.equal(jpyAdapter.maxDecimals, 0, 'JPY maxDecimals is 0');
+  assert.equal(jpyAdapter.toDisplay(1500), 1500);
+  assert.equal(jpyAdapter.toStored(1500), 1500);
+  assert.equal(jpyAdapter.formatInput(1500), '1500');
+  console.log('  ✓ JPY zero-decimal adapter verified');
+
+  // Test 7: Three-decimal currencies (KWD) UI control behavior
+  // Note: PR 2 only makes UI controls reflect currency precision; does not claim full 3-decimal country pack support.
+  const kwdAdapter = getCurrencyUnitAdapter('KWD', 'KW');
+  assert.equal(kwdAdapter.scale, 1);
+  assert.equal(kwdAdapter.label, 'KWD');
+  assert.equal(kwdAdapter.step, '0.001', 'KWD price input step is 0.001');
+  assert.equal(kwdAdapter.maxDecimals, 3, 'KWD maxDecimals is 3');
+  console.log('  ✓ KWD 3-decimal adapter verified');
 }
 
 function runPaymentMathTests() {
@@ -119,6 +158,368 @@ function runPaymentMathTests() {
   const maxWalletDisplay = tomanAdapter.toDisplay(maxWalletStored); // 200 Toman
   assert.equal(maxWalletDisplay, 200, 'Max wallet displayed is 200 Toman');
   console.log('  ✓ Payment split allocation, discount, and wallet math verified');
+}
+
+async function runCurrencyInputBehaviorTests() {
+  console.log('\n--- 3. Currency Input and Keypad Behavior Verification ---');
+
+  const jpyAdapter = getCurrencyUnitAdapter('JPY', 'JP');
+  assert.equal(jpyAdapter.step, '1');
+  assert.equal(jpyAdapter.maxDecimals, 0);
+  const usdAdapter = getCurrencyUnitAdapter('USD', 'US');
+  assert.equal(usdAdapter.step, '0.01');
+  assert.equal(usdAdapter.maxDecimals, 2);
+  const kwdAdapter = getCurrencyUnitAdapter('KWD', 'KW');
+  assert.equal(kwdAdapter.step, '0.001');
+  assert.equal(kwdAdapter.maxDecimals, 3);
+  assert.equal(getDiscountInputStep(jpyAdapter.maxDecimals, 'amount'), '1');
+  assert.equal(getDiscountInputStep(kwdAdapter.maxDecimals, 'amount'), '0.01');
+  assert.equal(getDiscountInputStep(kwdAdapter.maxDecimals, 'percentage'), '1');
+  assert.equal(normalizeFixedDiscountValue(1.5, jpyAdapter.maxDecimals), 2);
+  assert.equal(normalizeFixedDiscountValue(12.345, kwdAdapter.maxDecimals), 12.35);
+  assert.equal(normalizeFixedDiscountValue(0.001, kwdAdapter.maxDecimals), 0);
+  assert.equal(roundCurrencyValue(1.5, jpyAdapter.maxDecimals), 2);
+  assert.equal(roundCurrencyValue(1.005, 2), 1.01);
+  assert.equal(roundCurrencyValue(12.345, kwdAdapter.maxDecimals), 12.345);
+  assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'payment', 'amount'), false);
+  assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'discount', 'amount'), false);
+  assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'discount', 'percentage'), true);
+  assert.equal(allowCurrencyDecimalKey(kwdAdapter.maxDecimals, 'payment', 'amount'), true);
+
+  const renderKeypad = (
+    currencyMaxDecimals: number,
+    amountTarget: 'payment' | 'wallet' | 'discount',
+    discountType: 'percentage' | 'amount',
+  ) => ReactDOMServer.renderToStaticMarkup(
+    React.createElement(CurrencyTouchNumberPad, {
+      value: '',
+      onChange: () => undefined,
+      ariaLabel: 'Amount keypad',
+      clearLabel: 'Clear',
+      backspaceLabel: 'Backspace',
+      currencyMaxDecimals,
+      amountTarget,
+      discountType,
+    }),
+  );
+
+  const jpyKeypadMarkup = renderKeypad(jpyAdapter.maxDecimals, 'payment', 'amount');
+  assert.equal(jpyKeypadMarkup.includes('>.<'), false, 'JPY keypad omits the decimal button in static markup');
+
+  const usdKeypadMarkup = renderKeypad(usdAdapter.maxDecimals, 'payment', 'amount');
+  assert.equal(usdKeypadMarkup.includes('>.<'), true, 'USD keypad renders the decimal button in static markup');
+
+  const kwdKeypadMarkup = renderKeypad(kwdAdapter.maxDecimals, 'payment', 'amount');
+  assert.equal(kwdKeypadMarkup.includes('>.<'), true, 'KWD keypad renders the decimal button in static markup');
+
+  const jpyDiscountMarkup = renderKeypad(jpyAdapter.maxDecimals, 'discount', 'percentage');
+  assert.equal(jpyDiscountMarkup.includes('>.<'), true, 'Percentage discount keypad renders the decimal button in static markup');
+
+  let browser: any;
+  try {
+    const { chromium } = frontendRequire('playwright');
+    browser = await chromium.launch({ headless: true });
+  } catch (err: any) {
+    if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
+    console.warn(`  ! Playwright browser not available in this runner; static markup verified: ${err?.message || err}`);
+  }
+
+  if (browser) {
+    try {
+      const page = await browser.newPage();
+      await page.setContent(jpyKeypadMarkup);
+      assert.equal(
+        await page.getByRole('button', { name: '.', exact: true }).count(),
+        0,
+        'JPY keypad omits the decimal button',
+      );
+
+      await page.setContent(usdKeypadMarkup);
+      assert.equal(
+        await page.getByRole('button', { name: '.', exact: true }).count(),
+        1,
+        'USD keypad renders the decimal button',
+      );
+
+      await page.setContent(kwdKeypadMarkup);
+      assert.equal(
+        await page.getByRole('button', { name: '.', exact: true }).count(),
+        1,
+        'KWD keypad renders the decimal button',
+      );
+
+      await page.setContent(jpyDiscountMarkup);
+      assert.equal(
+        await page.getByRole('button', { name: '.', exact: true }).count(),
+        1,
+        'Percentage discount keypad renders the decimal button',
+      );
+    } finally {
+      await browser.close();
+    }
+  }
+  console.log('  ✓ Currency steps and rendered keypad precision behavior verified');
+}
+
+async function runModalKeypadIntegrationTests() {
+  console.log('\n--- 4. Modal Keypad Integration Verification ---');
+
+  const jpyAdapter = getCurrencyUnitAdapter('JPY', 'JP');
+  const Icon = () => React.createElement('span');
+  const translate = (key: string) => key;
+  const cart = {
+    customer: null,
+    customerId: null,
+    items: [],
+    orderType: 'dine_in',
+    itemCount: () => 0,
+  };
+  const currentTenant = { currency: 'JPY', country: 'JP' };
+  const mocks: Record<string, unknown> = {
+    'lucide-react': { X: Icon, Wallet: Icon, ArrowLeftRight: Icon, CheckCircle2: Icon, Sparkles: Icon, User: Icon, Percent: Icon, Send: Icon, ChevronDown: Icon, Banknote: Icon, CreditCard: Icon },
+    '@/components/ui/button': {
+      Button: ({ children, variant: _variant, size: _size, ...props }: any) => React.createElement('button', props, children),
+    },
+    '@/components/pos/TaxBreakdown': { __esModule: true, default: () => null },
+    '@/lib/api': { __esModule: true, default: { get: async () => ({ data: {} }), patch: async () => ({ data: {} }) } },
+    'react-hot-toast': { __esModule: true, default: { success: () => undefined, error: () => undefined } },
+    '@/lib/printer/tax-components': { resolveTaxComponents: () => [] },
+    '@/store/cart': { useCartStore: (selector?: (state: typeof cart) => unknown) => selector ? selector(cart) : cart },
+    '@/hooks/use-confirm': { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) },
+    'use-intl': { useTranslations: () => translate, useLocale: () => 'en-US' },
+    '@/lib/payment-methods': { PAYMENT_METHODS: [{ key: 'cash', icon: Icon }, { key: 'card', icon: Icon }] },
+    '@/hooks/useFormatCurrency': { useFormatCurrency: () => (amount: number) => String(amount) },
+    '@/hooks/useFormatNumber': { useFormatNumber: () => (amount: number) => String(amount) },
+    '@/hooks/useCurrencyUnitAdapter': { useCurrencyUnitAdapter: () => jpyAdapter },
+    '@/hooks/useWhatsAppReady': { useWhatsAppReady: () => false },
+    '@/lib/whatsapp-share': { sendBillViaFlo: async () => undefined, shareBillViaWhatsApp: async () => undefined },
+    '@/store/auth': { useAuthStore: () => ({ currentTenant }) },
+    '@/hooks/use-tax-preview': { useTaxPreview: () => ({ tax: null, loading: false, error: null }) },
+    '@/lib/utils': { cn: (...values: unknown[]) => values.filter(Boolean).join(' ') },
+  };
+  const originalLoad = moduleApi._load;
+  const originalUseState = React.useState;
+  moduleApi._load = function (request: string, parent: any, isMain: boolean) {
+    if (request in mocks) return mocks[request];
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  try {
+    let nullStateCount = 0;
+    const PaymentModal = require('../frontend/src/components/pos/PaymentModal').default;
+    const PrepaidCheckoutModal = require('../frontend/src/components/pos/PrepaidCheckoutModal').default;
+    const bill = {
+      id: 1,
+      bill_number: 'B-1',
+      order_id: 1,
+      customer_id: null,
+      balance: 100,
+      subtotal: 100,
+      tax_amount: 0,
+      discount_amount: 0,
+      delivery_charge: 0,
+      packaging_charge: 0,
+      service_charge: 0,
+      round_off: 0,
+      total: 100,
+      paid_amount: 0,
+    };
+    const renderModal = (Modal: any, props: Record<string, unknown>, target: 'payment' | 'discount', targetStateIndex: number) => {
+      nullStateCount = 0;
+      const amountTarget = target === 'payment' ? { kind: 'payment' as const, index: 0 } : { kind: 'discount' as const };
+      React.useState = ((initial: unknown) => {
+        if (initial === null) {
+          nullStateCount += 1;
+          if (nullStateCount === targetStateIndex) return [amountTarget, () => undefined];
+        }
+        return originalUseState(initial);
+      }) as typeof React.useState;
+      return ReactDOMServer.renderToStaticMarkup(React.createElement(Modal, props));
+    };
+    for (const [Modal, props, label] of [
+      [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
+      [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
+    ] as const) {
+      const targetStateIndex = 3;
+      const paymentMarkup = renderModal(Modal, props, 'payment', targetStateIndex);
+      assert.equal(paymentMarkup.includes('>.<'), false, `${label} hides JPY payment decimal key in static markup`);
+      const discountMarkup = renderModal(Modal, props, 'discount', targetStateIndex);
+      assert.equal(discountMarkup.includes('>.<'), true, `${label} keeps decimal key for percentage discount in static markup`);
+    }
+
+    let browser: any;
+    try {
+      browser = await frontendRequire('playwright').chromium.launch({ headless: true });
+    } catch (err: any) {
+      if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
+      console.warn(`  ! Playwright browser not available in this runner; modal static markup verified: ${err?.message || err}`);
+    }
+
+    if (browser) {
+      try {
+        const page = await browser.newPage();
+        for (const [Modal, props, label] of [
+          [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
+          [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
+        ] as const) {
+          const targetStateIndex = 3;
+          await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));
+          assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 0, `${label} hides JPY payment decimal key`);
+          await page.setContent(renderModal(Modal, props, 'discount', targetStateIndex));
+          assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 1, `${label} keeps decimal key for percentage discount`);
+        }
+      } finally {
+        await browser.close();
+      }
+    }
+  } finally {
+    React.useState = originalUseState;
+    moduleApi._load = originalLoad;
+  }
+  console.log('  ✓ PaymentModal and PrepaidCheckoutModal keypad wiring verified');
+}
+
+function collectElements(node: unknown, predicate: (element: any) => boolean, result: any[] = []): any[] {
+  if (Array.isArray(node)) {
+    for (const child of node) collectElements(child, predicate, result);
+    return result;
+  }
+  if (!node || typeof node !== 'object') return result;
+  if (predicate(node)) result.push(node);
+  const props = (node as { props?: { children?: unknown } }).props;
+  if (props) collectElements(props.children, predicate, result);
+  return result;
+}
+
+function elementText(element: any): string {
+  const children = element.props?.children;
+  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+  return typeof children === 'string' ? children : '';
+}
+
+async function runCatalogSaveBoundaryTests() {
+  console.log('\n--- 5. Catalog Save Boundary Verification ---');
+
+  const Icon = () => React.createElement('span');
+  const currentTenant = { currency: 'JPY', country: 'JP' };
+  const calls: Array<{ method: string; path: string; payload?: any }> = [];
+  const api = {
+    get: async () => ({ data: { products: [], categories: [], addon_groups: [] } }),
+    post: async (path: string, payload: any) => {
+      calls.push({ method: 'post', path, payload });
+      return { data: {} };
+    },
+    put: async (path: string, payload: any) => {
+      calls.push({ method: 'put', path, payload });
+      return { data: {} };
+    },
+    delete: async () => ({ data: {} }),
+  };
+  const translate = (namespace: string) => (key: string) => `${namespace}.${key}`;
+  const mocks: Record<string, unknown> = {
+    '@/components/ui/button': {
+      Button: ({ children, ...props }: any) => React.createElement('button', props, children),
+    },
+    '@/components/pos/DietaryBadge': { __esModule: true, default: () => null, tagLabel: (tag: string) => tag },
+    '@/components/products/ImageUploader': { __esModule: true, default: () => null },
+    '@/lib/api': { __esModule: true, default: api },
+    '@/lib/countries': {
+      getCurrencySymbol: () => 'JPY',
+      getCountryByCode: () => ({ locale: 'ja-JP' }),
+      getCurrencyUnitAdapter: () => getCurrencyUnitAdapter('JPY', 'JP'),
+    },
+    '@/lib/currency-input': { roundCurrencyValue },
+    '@/lib/image-utils': { nameToColor: () => '#000000' },
+    '@/lib/utils': { cn: (...values: unknown[]) => values.filter(Boolean).join(' '), parseDbTimestamp: (value: string) => value },
+    '@/store/auth': { useAuthStore: () => ({ currentTenant }) },
+    '@/hooks/use-confirm': { useConfirm: () => ({ confirm: async () => true, ConfirmDialog: null }) },
+    '@/hooks/useFormatCurrency': { useFormatCurrency: () => (amount: number) => String(amount) },
+    'react-hot-toast': { __esModule: true, default: { success: () => undefined, error: () => undefined } },
+    'use-intl': { useTranslations: (namespace: string) => translate(namespace) },
+    '@shared/role-permissions': { ROLE_ACCESS: { ownerManager: ['owner', 'manager'] }, hasRole: () => true },
+    'lucide-react': { Plus: Icon, Pencil: Icon, Trash2: Icon, X: Icon, Package: Icon, Folder: Icon, Puzzle: Icon, FileSpreadsheet: Icon, Download: Icon, Upload: Icon, CheckCircle: Icon, AlertCircle: Icon, AlertTriangle: Icon, ChevronDown: Icon, ChevronRight: Icon },
+  };
+  const originalLoad = moduleApi._load;
+  const originalUseState = React.useState;
+  const originalUseEffect = React.useEffect;
+  moduleApi._load = function (request: string, parent: any, isMain: boolean) {
+    if (request in mocks) return mocks[request];
+    return originalLoad.call(this, request, parent, isMain);
+  };
+  React.useEffect = (() => undefined) as typeof React.useEffect;
+
+  try {
+    const ProductsPage = require('../frontend/src/app/(dashboard)/products/page').default;
+    const renderProductsPage = (activeTab: 'products' | 'addons') => {
+      let stateCall = 0;
+      React.useState = ((initial: unknown) => {
+        stateCall += 1;
+        if (stateCall === 1) return [activeTab, () => undefined];
+        if (stateCall === 7) return [false, () => undefined];
+        if (stateCall === 8) return [activeTab === 'products', () => undefined];
+        if (stateCall === 14) return [activeTab === 'addons', () => undefined];
+        if (stateCall === 15) return [[{ name: 'Extra Sauce', price: 1.5 }], () => undefined];
+        if (stateCall === 16) return [{
+          name: 'Coffee', category_id: '', price: '1.5', cost_price: '2.5', cb_percent: '', sku: '', barcode: '',
+          sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3', tax_category_id: '',
+          tax_behavior: 'country_default', description: '', track_inventory: false, stock_quantity: '0',
+          low_stock_threshold: '5', is_active: true, tags: [], customTag: '', addon_group_ids: [], image_url: null,
+        }, () => undefined];
+        return [initial, () => undefined];
+      }) as typeof React.useState;
+      return ProductsPage();
+    };
+    const productTree = renderProductsPage('products');
+    const submitForms = collectElements(productTree, (element) => typeof element.props?.onSubmit === 'function');
+    assert.equal(submitForms.length, 1, 'ProductsPage exposes the product save form');
+    await submitForms[0].props.onSubmit({ preventDefault: () => undefined });
+    const productSave = calls.find((call) => call.method === 'post' && call.path === '/products');
+    assert.equal(productSave?.payload?.price, 2, 'product price is rounded at the save handler');
+    assert.equal(productSave?.payload?.cost_price, 3, 'product cost price is rounded at the save handler');
+
+    const addonGroupTree = renderProductsPage('addons');
+    const addonGroupForms = collectElements(addonGroupTree, (element) => typeof element.props?.onSubmit === 'function');
+    assert.equal(addonGroupForms.length, 1, 'ProductsPage exposes the add-on group save form');
+    await addonGroupForms[0].props.onSubmit({ preventDefault: () => undefined });
+    const addonGroupSave = calls.find((call) => call.method === 'post' && call.path === '/addon-groups');
+    assert.equal(addonGroupSave?.payload?.addons?.[0]?.price, 2, 'inline add-on price is rounded at the save handler');
+
+    const AddonGroupsPage = require('../frontend/src/app/(dashboard)/addon-groups/page').default;
+    const addon = { id: 'addon-1', name: 'Old Sauce', price: 1, is_active: true };
+    const group = { id: 'group-1', name: 'Extras', description: null, is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 1, is_active: true, addons: [addon] };
+    const renderAddonPage = (editing: boolean) => {
+      let addonStateCall = 0;
+      React.useState = ((initial: unknown) => {
+        addonStateCall += 1;
+        if (addonStateCall === 1) return [[group], () => undefined];
+        if (addonStateCall === 2) return [false, () => undefined];
+        if (addonStateCall === 5) return ['group-1', () => undefined];
+        if (addonStateCall === 8) return [{ name: 'New Sauce', price: '1.5' }, () => undefined];
+        if (addonStateCall === 9) return [editing ? null : 'group-1', () => undefined];
+        if (addonStateCall === 10) return [editing ? { groupId: 'group-1', addon } : null, () => undefined];
+        return [initial, () => undefined];
+      }) as typeof React.useState;
+      return AddonGroupsPage();
+    };
+    const addTree = renderAddonPage(false);
+    const addButton = collectElements(addTree, (element) => elementText(element) === 'products.addButton')[0];
+    assert(addButton, 'AddonGroupsPage exposes the add add-on handler');
+    await addButton.props.onClick();
+    const addSave = calls.find((call) => call.method === 'post' && call.path === '/addon-groups/group-1/addons');
+    assert.equal(addSave?.payload?.price, 2, 'add add-on handler rounds JPY price');
+
+    const updateTree = renderAddonPage(true);
+    const updateButton = collectElements(updateTree, (element) => elementText(element) === 'common.save')[0];
+    assert(updateButton, 'AddonGroupsPage exposes the update add-on handler');
+    await updateButton.props.onClick();
+    const updateSave = calls.find((call) => call.method === 'put' && call.path === '/addon-groups/group-1/addons/addon-1');
+    assert.equal(updateSave?.payload?.price, 2, 'update add-on handler rounds JPY price');
+  } finally {
+    React.useState = originalUseState;
+    React.useEffect = originalUseEffect;
+    moduleApi._load = originalLoad;
+  }
+  console.log('  ✓ Product and add-on save handlers verified');
 }
 
 function generatePaymentModalHtml(config: {
@@ -411,6 +812,9 @@ async function captureEvidenceArtifacts() {
 async function main() {
   runUnitTests();
   runPaymentMathTests();
+  await runCurrencyInputBehaviorTests();
+  await runModalKeypadIntegrationTests();
+  await runCatalogSaveBoundaryTests();
   await captureEvidenceArtifacts();
   console.log('\n========================================');
   console.log('All tests and visual evidence generation passed!');

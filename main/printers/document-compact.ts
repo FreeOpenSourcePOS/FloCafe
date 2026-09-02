@@ -24,10 +24,10 @@ import {
   itemAmountWidth,
   itemRows,
   itemNameWidth,
+  normalizeGermanThermalText,
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
-  rightAlign,
   truncate,
   truncateShapedLine,
 } from './thermal';
@@ -54,6 +54,7 @@ import {
 /** Renderer options: physical/locale presentation only, no business data. */
 export interface CompactDocumentRenderOptions {
   readonly columns: number;
+  readonly language: string;
   readonly locale: string;
   readonly timezone?: string;
   /** Currency prefix preference (symbol + unicode mode). */
@@ -78,11 +79,14 @@ function capitalize(text: string): string {
 }
 
 /** Column header row, composed from the document's own header labels. */
-function compactItemHeader(block: ItemTableBlock, nameLen: number, amtLen: number): string {
+function compactItemHeader(block: ItemTableBlock, nameLen: number, amtLen: number, language: string): string {
   const qtyW = 4;
-  const item = labelOf(block.header.item).slice(0, nameLen).padEnd(nameLen);
-  const qty = labelOf(block.header.quantity).slice(0, qtyW).padEnd(qtyW);
-  const amount = labelOf(block.header.amount).slice(0, Math.max(1, amtLen - 1));
+  const itemLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.item)) : labelOf(block.header.item);
+  const qtyLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.quantity)) : labelOf(block.header.quantity);
+  const amountLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.amount)) : labelOf(block.header.amount);
+  const item = itemLabel.slice(0, nameLen).padEnd(nameLen);
+  const qty = qtyLabel.slice(0, qtyW).padEnd(qtyW);
+  const amount = amountLabel.slice(0, Math.max(1, amtLen - 1));
   return item + qty + ' '.repeat(amtLen - amount.length) + amount;
 }
 
@@ -111,29 +115,38 @@ export function renderBillDocumentToCompactLines(
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
+  const normalize = (text: string): string => options.language === 'de' ? normalizeGermanThermalText(text) : text;
 
   lines.push('{INIT}');
 
   // Reprint banner (MessageBlock).
   if (messages?.reprintBanner) {
-    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(messages.reprintBanner) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(messages.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  }
+
+  // Online-order banner (#284, MessageBlock).
+  if (messages?.onlineOrderBanner) {
+    const banner = messages.onlineOrderBanner;
+    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+    if (banner.platform.text) lines.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
+    if (banner.externalOrderId.text) lines.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
   }
 
   // Business header (store name only — compact keeps contact facts in the footer).
-  if (header?.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(header.name.text, cols, options.arabicShaping) + '{/BOLD}{/CENTER}');
+  if (header?.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(header.name.text, cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
   lines.push(bar);
 
   // Document meta.
   if (meta) {
-    lines.push(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text);
+    lines.push(normalize(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text));
     const date = parseDbTimestamp(meta.timestamp.text);
-    lines.push(labelOf(meta.dateLabel) + ': ' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions));
+    lines.push(normalize(labelOf(meta.dateLabel) + ': ' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions)));
     if (meta.table) {
-      lines.push(truncateShapedLine(meta.table.label.primary.replace('{name}', meta.table.name.text), cols, options.arabicShaping));
+      lines.push(truncateShapedLine(meta.table.label.primary.replace('{name}', meta.table.name.text), cols, options.arabicShaping, options.language));
     }
   }
-  if (customer?.name) lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping));
-  if (customer?.phone) lines.push(labelOf(customer.phoneLabel) + ': ' + customer.phone.text);
+  if (customer?.name) lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language));
+  if (customer?.phone) lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + customer.phone.text));
   lines.push(dash);
 
   // Item table.
@@ -146,7 +159,7 @@ export function renderBillDocumentToCompactLines(
       cols,
     );
     const nameLen = itemNameWidth(cols, amtLen);
-    lines.push(compactItemHeader(items, nameLen, amtLen));
+    lines.push(compactItemHeader(items, nameLen, amtLen, options.language));
     lines.push(dash);
 
     for (const row of items.rows) {
@@ -158,12 +171,13 @@ export function renderBillDocumentToCompactLines(
         prefix,
         options.locale,
         trimDecimals,
+        options.language,
       ));
       for (const addon of row.addons) {
-        lines.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals));
+        lines.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language));
       }
       if (row.specialInstructions) {
-        lines.push('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8));
+        lines.push(normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language)));
       }
     }
   }
@@ -172,38 +186,47 @@ export function renderBillDocumentToCompactLines(
 
   // Totals (compact has no loyalty points section).
   if (totals) {
-    lines.push(...financialRows(labelOf(totals.subtotal.label), formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals), cols));
+    lines.push(...financialRows(labelOf(totals.subtotal.label), formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals), cols, options.language));
     if (totals.discount) {
-      lines.push(...financialRows(labelOf(totals.discount.label), '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals), cols));
+      lines.push(...financialRows(labelOf(totals.discount.label), '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals), cols, options.language));
     }
     if (breakdown && breakdown.lines.length > 0) {
       for (const line of breakdown.lines) {
         const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
-        const label = truncate(labelOf(line.label) + rateSuffix, cols - 12);
-        lines.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols));
+        const label = truncate(labelOf(line.label) + rateSuffix, cols - 12, options.language);
+        lines.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols, options.language));
       }
     } else if (totals.tax) {
-      lines.push(...financialRows(labelOf(totals.tax.label), formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals), cols));
+      lines.push(...financialRows(labelOf(totals.tax.label), formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals), cols, options.language));
     }
-    lines.push(...financialRows(labelOf(totals.grandTotal.label), formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
+    if (totals.serviceCharge) {
+      lines.push(...financialRows(labelOf(totals.serviceCharge.label), formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    }
+    if (totals.deliveryCharge) {
+      lines.push(...financialRows(labelOf(totals.deliveryCharge.label), formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    }
+    if (totals.packagingCharge) {
+      lines.push(...financialRows(labelOf(totals.packagingCharge.label), formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    }
+    lines.push(...financialRows(labelOf(totals.grandTotal.label), formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals), cols, options.language).map((line) => `{BOLD}${line}{/BOLD}`));
   }
 
   // Payments.
   if (payments && payments.lines.length > 0) {
     lines.push(dash);
     for (const line of payments.lines) {
-      const methodLabel = truncate(paymentLabel(line.label), cols - 12);
-      lines.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols));
+      const methodLabel = truncate(paymentLabel(line.label), cols - 12, options.language);
+      lines.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols, options.language));
     }
   }
 
   // Footer contact details.
   lines.push(bar);
-  if (header?.address) pushWrapped(lines, header.address.text, cols);
-  if (header?.phone && header.phoneLabel) pushWrapped(lines, labelOf(header.phoneLabel) + ': ' + header.phone.text, cols);
-  if (header?.taxId) pushWrapped(lines, labelOf(header.taxId.label) + ': ' + header.taxId.value.text, cols);
-  if (messages?.footerNote) pushCenteredWrapped(lines, messages.footerNote.text, cols);
-  else lines.push('{CENTER}' + labelOf(messages!.thankYou!) + '{/CENTER}');
+  if (header?.address) pushWrapped(lines, header.address.text, cols, options.language);
+  if (header?.phone && header.phoneLabel) pushWrapped(lines, labelOf(header.phoneLabel) + ': ' + header.phone.text, cols, options.language);
+  if (header?.taxId) pushWrapped(lines, labelOf(header.taxId.label) + ': ' + header.taxId.value.text, cols, options.language);
+  if (messages?.footerNote) pushCenteredWrapped(lines, messages.footerNote.text, cols, options.language);
+  else lines.push('{CENTER}' + normalize(labelOf(messages!.thankYou!)) + '{/CENTER}');
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
@@ -250,6 +273,7 @@ export function renderCompactReceiptViaDocument(
   const warnings: PrintWarning[] = [];
   const lines = renderBillDocumentToCompactLines(document, {
     columns: opts.columns,
+    language: printContext.languages[0],
     locale: printContext.locale,
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
     currencySymbol: printContext.currencySymbol,
@@ -258,6 +282,6 @@ export function renderCompactReceiptViaDocument(
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language }, warnings);
   return { document, lines, data, warnings };
 }

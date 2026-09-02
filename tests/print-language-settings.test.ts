@@ -69,7 +69,7 @@ console.log('✓ canonical storage');
 console.log('Testing invalid payloads are rejected...');
 const rejections: Array<[string, unknown]> = [
   [BILL_LANGUAGE_POLICY_KEY, 'not json'],
-  [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"fixed","language":"de"}}'],
+  [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"fixed","language":"xx"}}'],
   [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"auto"}}'],
   [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"inherit"},"additional":["fa","es"]}'],
   [BILL_LANGUAGE_POLICY_KEY, '{"primary":{"mode":"inherit"},"additional":["fa","fa"]}'],

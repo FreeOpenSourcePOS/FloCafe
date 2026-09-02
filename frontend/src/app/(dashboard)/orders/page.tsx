@@ -13,6 +13,8 @@ import { useConfirm } from '@/hooks/use-confirm';
 import type { OrderItem, Table, Product, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
@@ -228,6 +230,10 @@ export default function OrdersPage() {
   const linkSearchRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
+  const unitAdapter = useCurrencyUnitAdapter();
+  const normalizedDiscountValue = discountModal?.type === 'amount'
+    ? normalizeFixedDiscountValue(discountModal.value, unitAdapter.maxDecimals)
+    : discountModal?.value ?? 0;
   const fmt = useFormatCurrency();
   const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
 
@@ -733,12 +739,17 @@ export default function OrdersPage() {
   const handleApplyDiscount = async () => {
     if (!discountModal) return;
 
+    if (discountModal.type === 'amount' && discountModal.value > 0 && normalizedDiscountValue <= 0) {
+      toast.error(tOrders('discountFailed'));
+      return;
+    }
+
     // Check if PIN is required
-    if (discountRequiresApproval && discountModal.value > 0 && !discountPin) {
+    if (discountRequiresApproval && normalizedDiscountValue > 0 && !discountPin) {
       toast.error(tOrders('managerPinRequired'));
       return;
     }
-    if (discountModal.value > 0 && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
+    if (normalizedDiscountValue > 0 && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
       toast.error(tOrders('discountFailed'));
       return;
     }
@@ -746,9 +757,9 @@ export default function OrdersPage() {
     try {
       await api.patch(`/orders/${discountModal.order.id}/discount`, {
         discount_type: discountModal.type,
-        discount_value: discountModal.value,
+        discount_value: normalizedDiscountValue,
         discount_reason: discountModal.reason || undefined,
-        override_pin: discountRequiresApproval && discountModal.value > 0 ? discountPin : undefined,
+        override_pin: discountRequiresApproval && normalizedDiscountValue > 0 ? discountPin : undefined,
       });
       toast.success(tOrders('discountApplied'));
       fetchOrders();
@@ -1630,10 +1641,10 @@ placeholder={tOrders('managerPin')}
                     type="number"
                     min={0}
                     max={discountModal.type === 'percentage' ? 100 : Number(discountModal.order.total)}
-                    step={discountModal.type === 'percentage' ? 1 : 0.01}
+                    step={getDiscountInputStep(unitAdapter.maxDecimals, discountModal.type)}
                     value={discountModal.value || ''}
                     onChange={(e) => updateDiscountModal({ value: Number(e.target.value) })}
-                    placeholder={discountModal.type === 'percentage' ? '0' : '0.00'}
+                    placeholder={discountModal.type === 'percentage' ? '0' : unitAdapter.formatInput(0)}
                     className="w-full ps-8 pe-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   />
                 </div>
@@ -1674,7 +1685,7 @@ placeholder={tOrders('managerPin')}
                     -{fmt(
                       discountModal.type === 'percentage'
                         ? Number(discountModal.order.subtotal) * discountModal.value / 100
-                        : Number(discountModal.value)
+                        : normalizedDiscountValue
                     )}
                   </span>
                 </div>
@@ -1684,7 +1695,7 @@ placeholder={tOrders('managerPin')}
                     {fmt(
                       discountModal.type === 'percentage'
                         ? Number(discountModal.order.subtotal) * (1 - discountModal.value / 100) + Number(discountModal.order.tax_amount || 0)
-                        : Number(discountModal.order.subtotal) - Number(discountModal.value) + Number(discountModal.order.tax_amount || 0)
+                        : Number(discountModal.order.subtotal) - normalizedDiscountValue + Number(discountModal.order.tax_amount || 0)
                     )}
                   </span>
                 </div>

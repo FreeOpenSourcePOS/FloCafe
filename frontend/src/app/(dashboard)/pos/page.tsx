@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
@@ -87,6 +87,7 @@ export default function POSPage() {
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
@@ -258,7 +259,7 @@ export default function POSPage() {
     if (!autoPrintKot) return;
 
     try {
-      const printWarnings = await printKot(order);
+      const printWarnings = await printKot(order, order.items ? { items: order.items } : undefined);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       console.error('[POS] KOT print failed:', err);
@@ -272,6 +273,57 @@ export default function POSPage() {
       toast.error(t('kotPrintFailed'));
     }
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    if (window.electronAPI?.getWindowState) {
+      window.electronAPI
+        .getWindowState()
+        .then((state) => {
+          if (state && typeof state === 'object' && 'isMaximized' in state) {
+            setFullscreen(Boolean(state.isMaximized || state.isFullScreen));
+          }
+        })
+        .catch(() => {});
+
+      if (window.electronAPI.onWindowStateChanged) {
+        return window.electronAPI.onWindowStateChanged((state) => {
+          setFullscreen(Boolean(state?.isMaximized || state?.isFullScreen));
+        });
+      }
+      return;
+    }
+
+    const syncFullscreen = () => setFullscreen(document.fullscreenElement != null);
+    syncFullscreen();
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncFullscreen);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+
+    if (window.electronAPI?.windowAction) {
+      try {
+        await window.electronAPI.windowAction('toggle-maximize');
+      } catch {
+        toast.error(t('fullscreenUnavailable'));
+      }
+      return;
+    }
+
+    if (typeof document === 'undefined') return;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch {
+      toast.error(t('fullscreenUnavailable'));
+    }
+  }, [t]);
 
   const fetchLatestBill = async (billId: number): Promise<Bill> => {
     const { data } = await api.get(`/bills/${billId}`);
@@ -288,11 +340,14 @@ export default function POSPage() {
     } catch (err) {
       // Non-fatal: print failure should not block the checkout flow.
       const msg = err instanceof Error ? err.message : 'print failed';
+      const supportMessage = msg.startsWith('Receipt not printed:')
+        ? 'Receipt not printed: unsupported financial row'
+        : msg;
       const code = 'print.receipt.failed';
       setSupportError({
         code,
         message: t('receiptPrintFailed'),
-        payload: { event_code: code, message: msg, category: 'printer', diagnostics: { bill_id: bill.id, stage: 'receipt_print' } },
+        payload: { event_code: code, message: supportMessage, category: 'printer', diagnostics: { bill_id: bill.id, stage: 'receipt_print' } },
       });
       toast.error(t('receiptPrintFailed'));
     }
@@ -475,7 +530,10 @@ export default function POSPage() {
           { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } },
         );
         toast.success(t('itemsAddedToOrder', { number: pendingOrder.order_number }));
-        orderForKot = data.order as Order;
+        const updatedOrder = data.order as Order;
+        const existingItemIds = new Set((pendingOrder.items || []).map((item) => Number(item.id)));
+        const appendedItems = (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
+        orderForKot = appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder;
         if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
         addItemsAttemptRef.current = null;
         setPendingOrder(null);
@@ -486,6 +544,8 @@ export default function POSPage() {
           type: cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
+          online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
+          external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           items: cart.items.map((item) => ({
             product_id: item.product.id,
             quantity: item.quantity,
@@ -560,6 +620,8 @@ export default function POSPage() {
       type: cart.orderType,
       guest_count: cart.guestCount,
       special_instructions: cart.orderNotes,
+      online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
+      external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
       items: orderItems,
     });
     const storedAttempt = readPrepaidAttempt();
@@ -640,6 +702,8 @@ export default function POSPage() {
           type: cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
+          online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
+          external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           items: orderItems,
         }, { headers: { 'Idempotency-Key': attempt.orderIdempotencyKey } });
         orderData = data;
@@ -844,7 +908,7 @@ export default function POSPage() {
         orderNumber: order.order_number,
       });
       addItemsAttemptRef.current = itemAttempt;
-      await api.post(`/orders/${order.id}/items`, {
+      const { data } = await api.post(`/orders/${order.id}/items`, {
         items,
         special_instructions: specialInstructions,
       }, { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } });
@@ -853,6 +917,10 @@ export default function POSPage() {
       if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
       addItemsAttemptRef.current = null;
       toast.success(t('itemsAddedToOrder', { number: order.order_number }));
+      const updatedOrder = data.order as Order;
+      const existingItemIds = new Set((order.items || []).map((item) => Number(item.id)));
+      const appendedItems = (updatedOrder.items || []).filter((item) => !existingItemIds.has(Number(item.id)));
+      await printKotIfEnabled(appendedItems.length > 0 ? { ...updatedOrder, items: appendedItems } : updatedOrder);
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();
@@ -952,7 +1020,12 @@ export default function POSPage() {
           )}
         </div>
       )}
-      <PosTopbar tables={tables} onShowTablePicker={() => setShowTablePicker(true)} />
+      <PosTopbar
+        tables={tables}
+        onShowTablePicker={() => setShowTablePicker(true)}
+        fullscreen={fullscreen}
+        onToggleFullscreen={toggleFullscreen}
+      />
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
@@ -980,7 +1053,7 @@ export default function POSPage() {
       {/* Mobile: Floating Cart Button + Bottom Sheet — outside flex container */}
       <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
         <DrawerTrigger asChild>
-          <button className="fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg flex items-center justify-center hover:bg-brand-hover transition-colors md:hidden">
+          <button className="touch-target fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg hover:bg-brand-hover active:bg-brand-hover transition-colors md:hidden" aria-label={t('cart')}>
             <ShoppingCart size={22} />
             {itemCount > 0 && (
               <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
@@ -1059,7 +1132,7 @@ export default function POSPage() {
           <div className="bg-card rounded-2xl p-5 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold">{t('selectCustomer')}</h3>
-              <button onClick={() => setShowCustomerPrompt(false)} className="text-gray-400 hover:text-muted-foreground">
+              <button onClick={() => setShowCustomerPrompt(false)} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
                 <X size={20} />
               </button>
             </div>

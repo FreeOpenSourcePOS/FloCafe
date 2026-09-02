@@ -107,7 +107,7 @@ export const MERCHANT_TEMPLATE_LABEL_FIELDS: Readonly<
   'tax-breakdown': [],
   'totals': ['subtotal', 'discount', 'tax', 'grandTotal', 'pointsRedeemed', 'pointsEarned', 'pointsBalance'],
   'payments': [],
-  'message': ['reprintBanner', 'thankYou'],
+  'message': ['reprintBanner', 'onlineOrderBanner', 'thankYou'],
 });
 
 // ---------------------------------------------------------------------------
@@ -511,6 +511,9 @@ function applyLabelOverrides(
         reprintBanner: block.reprintBanner && labels.reprintBanner !== undefined
           ? overrideLabel(block.reprintBanner, labels.reprintBanner)
           : block.reprintBanner,
+        onlineOrderBanner: block.onlineOrderBanner && labels.onlineOrderBanner !== undefined
+          ? { ...block.onlineOrderBanner, label: overrideLabel(block.onlineOrderBanner.label, labels.onlineOrderBanner) }
+          : block.onlineOrderBanner,
         thankYou: block.thankYou && labels.thankYou !== undefined
           ? overrideLabel(block.thankYou, labels.thankYou)
           : block.thankYou,

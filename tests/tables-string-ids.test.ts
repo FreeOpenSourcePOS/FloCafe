@@ -132,6 +132,7 @@ async function main() {
     assertEqual(liveSource.activeOrder.id, orderId, 'GET /tables includes active order for occupied table');
     assertEqual(liveSource.current_order.id, orderId, 'GET /tables includes current_order alias for frontend compatibility');
     assertEqual(liveSource.current_order.customer.name, 'Table Guest', 'current_order includes customer for mismatch warning');
+    assertEqual(liveSource.seated_at, orderRes.data.order.created_at, 'GET /tables exposes seated_at from the active order (#595)');
 
     const moveRes = await api(baseUrl, '/api/tables/tbl-move-source/move-order', {
       method: 'POST',
@@ -146,6 +147,8 @@ async function main() {
     assertEqual(moveRes.data.targetTable.status, 'occupied', 'target table is occupied');
     assertEqual(moveRes.data.targetTable.activeOrder.id, orderId, 'target table now exposes active order');
     assertEqual(moveRes.data.targetTable.current_order.id, orderId, 'target table also exposes current_order alias');
+    assertEqual(moveRes.data.targetTable.seated_at, orderRes.data.order.created_at, 'target table seated_at reflects the moved order (#595)');
+    assertEqual(moveRes.data.sourceTable.seated_at, null, 'freed source table has no seated_at (#595)');
 
     const movedOrder = await api(baseUrl, `/api/orders/${orderId}`, { headers: authHeader });
     assertEqual(Number(movedOrder.data.order.table.name), 92, 'order detail resolves the new table immediately');

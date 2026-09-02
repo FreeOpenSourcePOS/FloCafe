@@ -39,7 +39,19 @@ export type PrintWarning = {
   field: string;
   text: string;
   message: string;
+  kind?: 'line' | 'financial' | 'configuration';
 };
+
+export function hasFinancialPrintWarning(warnings: readonly PrintWarning[]): boolean {
+  return warnings.some((warning) => warning.kind === 'financial');
+}
+
+export function makeFinancialPrintRefusalMessage(warnings: readonly PrintWarning[]): string {
+  const row = warnings.find((warning) => warning.kind === 'financial');
+  return `Receipt not printed: a financial row contains unsupported printer text${row?.text ? `: ${row.text}` : '.'} Use a supported printer profile or system/browser printing.`;
+}
+
+const FINANCIAL_PRINT_REFUSAL_DIAGNOSTIC = 'Receipt not printed: unsupported financial row';
 
 /** Low-level dispatch result — carries the actual OS/driver reason, not just ok/fail. */
 export type DispatchResult = {
@@ -595,6 +607,14 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
       return { ok: false, detail: 'No printer configured' };
     }
     const { data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language, additionalLanguage);
+    if (hasFinancialPrintWarning(warnings)) {
+      return {
+        ok: false,
+        detail: makeFinancialPrintRefusalMessage(warnings),
+        failureClass: 'unsupported',
+        warnings,
+      };
+    }
     const receiptData = printer.cash_drawer_pulse_enabled === 1 ? appendCashDrawerPulse(data) : data;
     console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
     console.log('[Printer] Receipt data length:', receiptData.length, 'bytes');
@@ -670,12 +690,15 @@ function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void 
   });
 
   try {
+    const message = hasFinancialPrintWarning(result.warnings || [])
+      ? FINANCIAL_PRINT_REFUSAL_DIAGNOSTIC
+      : (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300);
     cloudSync.reportDiagnostic({
       event_id: randomUUID(),
       event_code: result.code || `print.${kind}.failed`,
       severity: 'error',
       correlation_id: result.correlationId,
-      message: (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300),
+      message,
       metadata: {
         connection_type: connectionType,
         kind,
@@ -701,13 +724,14 @@ export async function printReceiptDetailed(...args: Parameters<typeof printRecei
   const id = correlationId();
   try {
     const dispatch = await printReceipt(...args);
+    const stage = !dispatch.ok && hasFinancialPrintWarning(dispatch.warnings || []) ? 'prepare' : 'dispatch';
     const result: PrintResult = dispatch.ok
       ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
       : {
         ok: false,
         code: 'print.receipt.failed',
         correlationId: id,
-        stage: 'dispatch',
+        stage,
         detail: dispatch.detail,
         failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
         platformErrorCode: dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
@@ -944,7 +968,8 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const configuredTaxLabel = sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID'));
+  const normalize = (text: string): string => lang === 'de' ? normalizeGermanThermalText(text) : text;
+  const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
   const hasTax = Number(bill.tax_amount) !== 0
     || taxComponents.some((component) => component.amount !== 0);
@@ -953,29 +978,29 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   // width profile before they reach the receipt builder; the localized resolver
   // fallback applies the same treatment.
   const title = hasTax
-    ? fitTemplateLabel(String(payload?.header?.taxTitleWhenTaxPresent || ''), cols) || resolveTemplateLabel(payload?.labels, 'taxInvoice', lang, cols)
-    : fitTemplateLabel(String(payload?.header?.titleWhenTaxAbsent || ''), cols) || resolveTemplateLabel(payload?.labels, 'invoice', lang, cols);
+    ? fitTemplateLabel(normalize(String(payload?.header?.taxTitleWhenTaxPresent || '')), cols) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'taxInvoice', lang)), cols)
+    : fitTemplateLabel(normalize(String(payload?.header?.titleWhenTaxAbsent || '')), cols) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'invoice', lang)), cols);
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
   lines.push('{INIT}');
-  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + printLabel(lang, 'receipt.reprint') + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(printLabel(lang, 'receipt.reprint')) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
   if (biz.show_name !== false && biz.name) {
     const name = payload?.header?.businessNameTransform === 'uppercase'
       ? String(biz.name).toUpperCase()
       : String(biz.name);
-    lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(name, cols, arabicShaping) + '{/BOLD}{/CENTER}');
+    lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(name, cols, arabicShaping, lang) + '{/BOLD}{/CENTER}');
   }
   lines.push(bar);
   lines.push(`{CENTER}${title}{/CENTER}`);
   lines.push(bar);
-  lines.push(printLabel(lang, 'print.invoiceNumber') + ' ' + (bill.bill_number || order.order_number));
-  lines.push(printLabel(lang, 'receipt.date') + ': ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions));
-  lines.push(printLabel(lang, 'print.time') + ': ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
-  if (biz.show_table_number !== false && order.table?.name) lines.push(truncateShapedLine(formatTableLabel(order.table.name, lang), cols, arabicShaping));
-  if (biz.show_customer_name !== false && biz.customer_name) lines.push(truncateShapedLine(printLabel(lang, 'pos.customer') + ': ' + biz.customer_name, cols, arabicShaping));
-  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push(printLabel(lang, 'print.numberShort') + ': ' + biz.customer_phone);
+  lines.push(normalize(printLabel(lang, 'print.invoiceNumber')) + ' ' + (bill.bill_number || order.order_number));
+  lines.push(normalize(printLabel(lang, 'receipt.date')) + ': ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions));
+  lines.push(normalize(printLabel(lang, 'print.time')) + ': ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
+  if (biz.show_table_number !== false && order.table?.name) lines.push(truncateShapedLine(formatTableLabel(order.table.name, lang), cols, arabicShaping, lang));
+  if (biz.show_customer_name !== false && biz.customer_name) lines.push(truncateShapedLine(printLabel(lang, 'pos.customer') + ': ' + biz.customer_name, cols, arabicShaping, lang));
+  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push(normalize(printLabel(lang, 'print.numberShort')) + ': ' + biz.customer_phone);
   lines.push(dash);
-  lines.push(pluginItemHeader(layout, cols));
+  lines.push(pluginItemHeader(layout, cols, lang));
   lines.push(dash);
 
   if (order.items) {
@@ -983,11 +1008,13 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
       lines.push(...pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, lang));
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
-          pushWrapped(lines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals) : ''), cols);
+          const addonLines: string[] = [];
+          pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals) : ''), cols, lang);
+          lines.push(...addonLines.map((line) => addon.price ? '{FINANCIAL}' + line : line));
         }
       }
       if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
-        pushWrapped(lines, '  ' + printLabel(lang, 'print.note') + ': ' + item.special_instructions, cols);
+        pushWrapped(lines, '  ' + normalize(printLabel(lang, 'print.note')) + ': ' + item.special_instructions, cols, lang);
       }
     }
   }
@@ -999,30 +1026,30 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   // width (#445 review F2).
   const rowLabelWidth = Math.max(8, cols - 12);
   if (payload?.totals?.showSubtotal !== false) {
-    const label = resolveTemplateLabel(payload?.labels, 'subtotal', lang, rowLabelWidth);
-    lines.push(label + rightAlign(formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols - label.length));
+    const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'subtotal', lang)), rowLabelWidth);
+    lines.push(...financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols, lang));
   }
   if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
-    const label = resolveTemplateLabel(payload?.labels, 'discount', lang, rowLabelWidth);
-    lines.push(label + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - label.length));
+    const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'discount', lang)), rowLabelWidth);
+    lines.push(...financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols, lang));
   }
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
       const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      lines.push(pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals), layout, cols));
+      lines.push(pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals), layout, cols, lang));
     }
   } else if (Number(bill.tax_amount) !== 0) {
-    const label = resolveTemplateLabel(payload?.labels, 'tax', lang, rowLabelWidth);
-    lines.push(label + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), Math.max(4, cols - label.length)));
+    const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)), rowLabelWidth);
+    lines.push(...financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols, lang));
   }
   lines.push(bar);
   // Label precedence (#445): the author's structural literal (e.g.
   // totals.grandTotalLabel) is most specific and wins first; the additive
   // payload-root `labels` map overrides next; otherwise the built-in default
   // resolves localized through the canonical print-labels catalog (#440).
-  const totalLabel = fitTemplateLabel(String(payload?.totals?.grandTotalLabel || ''), rowLabelWidth) || resolveTemplateLabel(payload?.labels, 'total', lang, rowLabelWidth);
-  lines.push('{BOLD}' + totalLabel + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - totalLabel.length) + '{/BOLD}');
+  const totalLabel = fitTemplateLabel(normalize(String(payload?.totals?.grandTotalLabel || '')), rowLabelWidth) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'total', lang)), rowLabelWidth);
+  lines.push(...financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals), cols, lang).map((line) => `{BOLD}${line}{/BOLD}`));
 
   if (bill.payment_details) {
     lines.push(dash);
@@ -1031,8 +1058,8 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
-            const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12);
-            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale, trimDecimals), cols - methodLabel.length));
+            const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12, lang);
+            lines.push(...financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals), cols, lang));
           }
         }
       }
@@ -1042,18 +1069,18 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   }
 
   lines.push(bar);
-  if (biz.show_address !== false && biz.address) pushWrapped(lines, printLabel(lang, 'print.address') + ': ' + biz.address, cols);
-  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, printLabel(lang, 'print.phoneLong') + ': ' + biz.phone, cols);
+  if (biz.show_address !== false && biz.address) pushWrapped(lines, normalize(printLabel(lang, 'print.address')) + ': ' + biz.address, cols, lang);
+  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, normalize(printLabel(lang, 'print.phoneLong')) + ': ' + biz.phone, cols, lang);
   const showTaxRegistration = payload?.totals?.showTaxRegistrationNumber === 'when_tax_present_or_enabled'
     ? (hasTax || biz.show_tax_id === true)
     : biz.show_tax_id === true;
-  if (showTaxRegistration && biz.taxRegistrationNumber) pushWrapped(lines, configuredTaxLabel + ': ' + biz.taxRegistrationNumber, cols);
-  if (payload?.footer?.useConfiguredFooterNote !== false && biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
-  else lines.push('{CENTER}' + (fitTemplateLabel(String(payload?.footer?.defaultMessage || ''), cols) || resolveTemplateLabel(payload?.labels, 'footerThanks', lang, cols)) + '{/CENTER}');
+  if (showTaxRegistration && biz.taxRegistrationNumber) pushWrapped(lines, configuredTaxLabel + ': ' + biz.taxRegistrationNumber, cols, lang);
+  if (payload?.footer?.useConfiguredFooterNote !== false && biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols, lang);
+  else lines.push('{CENTER}' + (fitTemplateLabel(normalize(String(payload?.footer?.defaultMessage || '')), cols) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'footerThanks', lang)), cols)) + '{/CENTER}');
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang }, warnings);
 }
 
 export function appendPoweredByFooter(lines: string[]): void {
@@ -1115,7 +1142,9 @@ function pluginLineItemColumns(layout: any, cols: number, lang: string = 'en'): 
     const columns = configured
       .map((column: any) => ({
         key: typeof column?.key === 'string' ? column.key : undefined,
-        label: typeof column?.label === 'string' ? column.label : undefined,
+        label: typeof column?.label === 'string'
+          ? (lang === 'de' ? normalizeGermanThermalText(column.label) : column.label)
+          : undefined,
         width: Number(column?.width),
         align: column?.align === 'right' || column?.align === 'center' ? column.align : 'left',
         wrap: column?.wrap === true,
@@ -1159,7 +1188,9 @@ function pluginItemRows(item: any, layout: any, cols: number, prefix: string, lo
   const gap = pluginLineGap(layout);
   const values = columns.map((column) => ({
     ...column,
-    value: pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals),
+    value: lang === 'de'
+      ? normalizeGermanThermalText(pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals))
+      : pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals),
   }));
   const wrappedValues = values.map((column) => {
     if (!column.wrap) return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
@@ -1174,7 +1205,7 @@ function pluginItemRows(item: any, layout: any, cols: number, prefix: string, lo
   const lineCount = Math.max(1, ...wrappedValues.map((value) => value.length));
   const rows: string[] = [];
   for (let index = 0; index < lineCount; index++) {
-    rows.push(composePluginColumns(values.map((column, columnIndex) => ({
+    rows.push('{FINANCIAL}' + composePluginColumns(values.map((column, columnIndex) => ({
       ...column,
       value: wrappedValues[columnIndex][index] || '',
     })), gap, cols));
@@ -1211,17 +1242,18 @@ function pluginItemTaxRate(item: any): string {
   return [...rates].join('+');
 }
 
-function pluginSummaryRow(label: string, amount: string, layout: any, cols: number): string {
+function pluginSummaryRow(label: string, amount: string, layout: any, cols: number, lang: string = 'en'): string {
+  const normalizedLabel = lang === 'de' ? normalizeGermanThermalText(label) : label;
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
   if (Number.isInteger(labelWidth) && Number.isInteger(amountWidth) && labelWidth > 0 && amountWidth > 0) {
-    return composePluginColumns([
-      { value: label, width: labelWidth, align: 'left', ellipsis: true },
+    return '{FINANCIAL}' + composePluginColumns([
+      { value: normalizedLabel, width: labelWidth, align: 'left', ellipsis: true },
       { value: amount, width: amountWidth, align: 'right', ellipsis: true },
     ], Math.max(0, cols - labelWidth - amountWidth), cols);
   }
-  const safeLabel = truncate(label, cols - 12);
-  return safeLabel + rightAlign(amount, cols - safeLabel.length);
+  const safeLabel = truncate(normalizedLabel, cols - 12, lang);
+  return '{FINANCIAL}' + safeLabel + rightAlign(amount, cols - safeLabel.length);
 }
 
 function composePluginColumns(columns: Array<PluginLineColumn & { value: string }>, gap: number, cols: number): string {
@@ -1282,33 +1314,36 @@ export function itemAmountWidth(
   return Math.min(width, Math.max(1, cols - 5));
 }
 
-export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
+export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en'): string[] {
   const qtyW = 4;
-  const name = truncate(item.product_name, nameLen).padEnd(nameLen);
+  const productName = language === 'de' ? normalizeGermanThermalText(item.product_name) : item.product_name;
+  const name = truncate(productName, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals);
   const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (amount.length <= inlineWidth) return [label + rightAlign(amount, cols - label.length)];
-  return [label.trimEnd(), ...wrapValue(amount, cols)];
+  if (amount.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(amount, cols - label.length)];
+  return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(amount, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
-export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
-  const label = truncate('  + ' + addon.name, nameLen).padEnd(nameLen);
+export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en'): string[] {
+  const addonName = language === 'de' ? normalizeGermanThermalText(addon.name) : addon.name;
+  const label = truncate('  + ' + addonName, nameLen).padEnd(nameLen);
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals);
   const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (price.length <= inlineWidth) return [label + rightAlign(price, cols - label.length)];
-  return [label.trimEnd(), ...wrapValue(price, cols)];
+  if (price.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(price, cols - label.length)];
+  return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(price, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
-export function financialRows(label: string, value: string, cols: number): string[] {
-  const safeLabel = label.slice(0, Math.max(1, cols - 1));
+export function financialRows(label: string, value: string, cols: number, language: string = 'en'): string[] {
+  const normalizedLabel = language === 'de' ? normalizeGermanThermalText(label) : label;
+  const safeLabel = normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
-    return [safeLabel + rightAlign(value, cols - safeLabel.length)];
+    return ['{FINANCIAL}' + safeLabel + rightAlign(value, cols - safeLabel.length)];
   }
-  return [safeLabel, ...wrapValue(value, cols)];
+  return ['{FINANCIAL}' + safeLabel, ...wrapValue(value, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
 function wrapValue(value: string, cols: number): string[] {
@@ -1350,12 +1385,14 @@ export function rightAlign(text: string, width: number = 24): string {
   return ' '.repeat(Math.max(1, width - text.length)) + text;
 }
 
-export function truncate(text: string, length: number): string {
-  return text.length > length ? text.substring(0, length - 2) + '..' : text;
+export function truncate(text: string, length: number, language: string = 'en'): string {
+  const normalizedText = language === 'de' ? normalizeGermanThermalText(text) : text;
+  return normalizedText.length > length ? normalizedText.substring(0, length - 2) + '..' : normalizedText;
 }
 
-export function truncateShapedLine(text: string, length: number, arabicShaping: boolean): string {
-  return arabicShaping && hasArabicScript(text) ? truncate(text, Math.max(1, length)) : text;
+export function truncateShapedLine(text: string, length: number, arabicShaping: boolean, language: string = 'en'): string {
+  const normalizedText = language === 'de' ? normalizeGermanThermalText(text) : text;
+  return arabicShaping && hasArabicScript(normalizedText) ? truncate(normalizedText, Math.max(1, length)) : normalizedText;
 }
 
 /**
@@ -1418,12 +1455,14 @@ export function wrapText(text: string, cols: number): string[] {
   return lines.length > 0 ? lines : [''];
 }
 
-export function pushWrapped(lines: string[], text: string, cols: number): void {
-  for (const line of wrapText(text, cols)) lines.push(line);
+export function pushWrapped(lines: string[], text: string, cols: number, language: string = 'en'): void {
+  const normalized = language === 'de' ? normalizeGermanThermalText(text) : text;
+  for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
-export function pushCenteredWrapped(lines: string[], text: string, cols: number): void {
-  for (const line of wrapText(text, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
+export function pushCenteredWrapped(lines: string[], text: string, cols: number, language: string = 'en'): void {
+  const normalized = language === 'de' ? normalizeGermanThermalText(text) : text;
+  for (const line of wrapText(normalized, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
 /**
@@ -1449,30 +1488,31 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
 export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', language?: string): Buffer {
   const width = columnsForPaperWidth(paperWidth) || 48;
   const lang = normalizePrintLanguage(language);
+  const label = (concept: PrintConceptId): string => lang === 'de' ? normalizeGermanThermalText(printLabel(lang, concept)) : printLabel(lang, concept);
   const bar = '='.repeat(width);
   const ruler = Array.from({ length: width }, (_, i) => String((i + 1) % 10)).join('');
   const edgeProbe = 'X'.repeat(width);
   const lines = [
     '{INIT}',
-    '{CENTER}{BOLD}' + printLabel(lang, 'print.test.title') + '{/BOLD}{/CENTER}',
+    '{CENTER}{BOLD}' + label('print.test.title') + '{/BOLD}{/CENTER}',
     '',
     bar,
-    '{CENTER}' + printLabel(lang, 'print.test.networkUsb') + '{/CENTER}',
+    '{CENTER}' + label('print.test.networkUsb') + '{/CENTER}',
     bar,
     '',
-    `${printLabel(lang, 'print.test.columns')}: ${width}`,
-    ...wrapText(printLabel(lang, 'print.test.wrapHint'), width),
+    `${label('print.test.columns')}: ${width}`,
+    ...wrapText(label('print.test.wrapHint'), width),
     ruler,
     edgeProbe,
     bar,
-    `${printLabel(lang, 'print.time')}: ${new Date().toLocaleString('en-US-u-nu-latn')}`,
+    `${label('print.time')}: ${new Date().toLocaleString('en-US-u-nu-latn')}`,
     '',
     bar,
-    '{CENTER}' + printLabel(lang, 'print.test.success') + '{/CENTER}',
+    '{CENTER}' + label('print.test.success') + '{/CENTER}',
     bar,
     '{CUT}',
   ];
-  return buildEscPos(lines, false, { cutMode });
+  return buildEscPos(lines, false, { cutMode, language: lang });
 }
 
 // Every ASCII fallback is no wider than 3 characters, so currency labels such
@@ -1484,6 +1524,27 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
   '₡': 'CRC', '₲': 'PYG', 'د.إ': 'AED', '﷼': 'SAR', 'ریال': 'IRR', '৳': 'BDT',
   'E£': 'EGP',
 };
+
+const CURRENCY_TOKEN_RE = new RegExp(
+  Object.keys(CURRENCY_ASCII_MAP)
+    .sort((left, right) => right.length - left.length)
+    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|'),
+  'g',
+);
+
+const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
+  'Ä': 'AE', 'Ö': 'OE', 'Ü': 'UE', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+};
+export function normalizeGermanThermalText(text: string): string {
+  return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
+}
+
+function normalizeCurrencyToAscii(text: string): string {
+  return Object.entries(CURRENCY_ASCII_MAP)
+    .sort(([left], [right]) => right.length - left.length)
+    .reduce((value, [symbol, fallback]) => value.split(symbol).join(fallback), text);
+}
 
 // Resolves the currency symbol into the exact text that will be printed,
 // padded to a fixed 3-column slot (leading spaces for shorter symbols/codes).
@@ -1530,7 +1591,12 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
   return Buffer.concat([data, Buffer.from([0x1B, 0x70, 0x00, 0x19, 0xFA])]);
 }
 
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number } = {}, warnings?: PrintWarning[]): Buffer {
+/**
+ * Build ESC/POS bytes and classify unsupported financial rows for the receipt
+ * transport guard. Receipt renderers mark amount-bearing lines with the
+ * internal {FINANCIAL} token; it is stripped before bytes are emitted.
+ */
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
 
   const resetAllStyles = () => {
@@ -1561,7 +1627,10 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       continue;
     }
 
+    if (!_useUnicode) line = normalizeCurrencyToAscii(line);
+
     const isStoreName = line.includes('{STORE_NAME}');
+    const isFinancial = line.includes('{FINANCIAL}');
     line = line.replace(/\{STORE_NAME\}/g, '');
     let printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
     const lineBold = line.includes('{BOLD}');
@@ -1569,11 +1638,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const lineDW = line.includes('{DOUBLE_WIDTH}');
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
-    // Currency symbols are an existing, explicit printer option. Do not treat
-    // them as a conflicting line; unsupported scripts (Arabic, CJK, emoji,
-    // etc.) are different because generic ESC/POS printers cannot shape or
-    // render them reliably.
-    const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
+    const textWithoutSupportedCurrency = printableLine.replace(CURRENCY_TOKEN_RE, '');
     if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
       // Allow Arabic/Persian script through only when the printer profile
       // explicitly declares Arabic shaping support AND the line contains no
@@ -1589,9 +1654,10 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         if (warnings) {
           const text = printableLine.trim();
           warnings.push({
-            field: isStoreName ? 'store name' : 'receipt line',
+            field: isFinancial ? 'financial row' : isStoreName ? 'store name' : 'receipt line',
             text,
             message: makeUnsupportedLineWarning(isStoreName, text),
+            kind: isFinancial ? 'financial' : 'line',
           });
         }
         continue;
@@ -1607,6 +1673,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     // ESC/POS mode byte bit 0 selects the character font: 0 = Font A (12x24,
     // the default), 1 = Font B (9x17, condensed). No token means Font A.
 
+    line = line.replace(/\{FINANCIAL\}/g, '');
     line = line.replace(/\{CENTER\}/g, '').replace(/\{\/CENTER\}/g, '');
     line = line.replace(/\{BOLD\}/g, '').replace(/\{\/BOLD\}/g, '');
     line = line.replace(/\{DOUBLE_HEIGHT\}/g, '').replace(/\{\/DOUBLE_HEIGHT\}/g, '');

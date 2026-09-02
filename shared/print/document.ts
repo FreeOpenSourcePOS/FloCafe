@@ -93,7 +93,7 @@ export function directionalText(text: string, base: TextDirection): DirectionalT
 // Snapshots (PrintData) — normalized authoritative values, no live rows
 // ---------------------------------------------------------------------------
 
-/** One addon line under an item row. Price is printed truth (0 = unpriced). */
+/** One add-on line; price is the extended printed amount (0 = unpriced). */
 export interface ItemAddonSnapshot {
   readonly name: string;
   readonly price: number;
@@ -117,6 +117,10 @@ export interface OrderSnapshot {
   /** Canonical stored timestamp; renderers localize for presentation. */
   readonly createdAt: string;
   readonly tableName: string;
+  /** Aggregator/web-order platform name (#284), e.g. "Swiggy". Empty when not an online order. */
+  readonly onlinePlatform: string;
+  /** The platform's own order id (#284), printed alongside the online-order banner. */
+  readonly externalOrderId: string;
   readonly items: readonly OrderItemSnapshot[];
 }
 
@@ -140,10 +144,12 @@ export interface BillSnapshot {
   readonly discountAmount: number;
   readonly taxAmount: number;
   readonly total: number;
-  /** Flat service charge, when the bill carries one (frontend bills). */
+  /** Flat service charge, when the server-persisted bill carries one. */
   readonly serviceCharge?: number;
   /** Flat delivery charge, when the bill carries one (frontend bills). */
   readonly deliveryCharge?: number;
+  /** Flat packaging charge, when the bill carries one. */
+  readonly packagingCharge?: number;
   readonly taxComponents: readonly TaxComponentSnapshot[];
   readonly payments: readonly PaymentSnapshot[];
   readonly pointsEarned: number;
@@ -272,7 +278,7 @@ export interface CustomerBlock {
   readonly phoneLabel: SemanticLabel;
 }
 
-/** One addon under an item row. `price === 0` means unpriced extra. */
+/** One add-on under an item row; price is its extended printed amount. */
 export interface ItemAddonValue {
   readonly name: DirectionalText;
   readonly price: number;
@@ -335,10 +341,12 @@ export interface TotalsBlock {
   readonly discount: { readonly label: SemanticLabel; readonly amount: number } | null;
   /** Flat tax line, present only when no breakdown lines are emitted. */
   readonly tax: { readonly label: SemanticLabel; readonly amount: number } | null;
-  /** Flat service-charge line, present when the snapshot carries a nonzero charge. */
+  /** Flat service-charge line, present when the server snapshot carries a nonzero charge. */
   readonly serviceCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
   /** Flat delivery-charge line, present when the snapshot carries a nonzero charge. */
   readonly deliveryCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
+  /** Flat packaging-charge line, present when the snapshot carries a nonzero charge. */
+  readonly packagingCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
   readonly grandTotal: { readonly label: SemanticLabel; readonly amount: number };
   readonly pointsRedeemed: { readonly label: SemanticLabel; readonly points: number } | null;
   readonly pointsEarned: { readonly label: SemanticLabel; readonly points: number } | null;
@@ -366,6 +374,12 @@ export interface MessageBlock {
   readonly kind: 'message';
   readonly direction: TextDirection;
   readonly reprintBanner: SemanticLabel | null;
+  /** Online-order banner (#284): present whenever the order carries a platform/external id. */
+  readonly onlineOrderBanner: {
+    readonly label: SemanticLabel;
+    readonly platform: DirectionalText;
+    readonly externalOrderId: DirectionalText;
+  } | null;
   readonly footerNote: DirectionalText | null;
   readonly thankYou: SemanticLabel | null;
 }
@@ -419,6 +433,13 @@ const PAYMENT_METHOD_CONCEPTS: Readonly<Record<string, LabelConceptId>> = Object
   wallet: 'pos.methodWallet',
 });
 
+const KOT_ORDER_TYPE_CONCEPTS: Readonly<Record<string, LabelConceptId>> = Object.freeze({
+  dine_in: 'pos.orderTypeDineIn',
+  delivery: 'pos.orderTypeDelivery',
+  online: 'pos.orderTypeOnline',
+  takeaway: 'pos.orderTypeTakeaway',
+});
+
 function resolveSemanticLabel(labels: LabelContext, conceptId: LabelConceptId): SemanticLabel {
   return Object.freeze({
     conceptId,
@@ -436,6 +457,14 @@ function literalLabel(primary: string): SemanticLabel {
 function paymentLabel(labels: LabelContext, method: string): SemanticLabel {
   const conceptId = PAYMENT_METHOD_CONCEPTS[method.toLowerCase()];
   return conceptId !== undefined ? resolveSemanticLabel(labels, conceptId) : literalLabel(method);
+}
+
+function kotOrderTypeValue(labels: LabelContext, value: string): string {
+  if (labels.primary !== 'de') return value.replace(/_/g, ' ').trim().toUpperCase();
+  const conceptId = KOT_ORDER_TYPE_CONCEPTS[value];
+  if (conceptId === undefined) return value.replace(/_/g, ' ').trim().toUpperCase();
+  const resolved = resolveSemanticLabel(labels, conceptId).primary;
+  return resolved;
 }
 
 function optionalDirectional(text: string | undefined | null, base: TextDirection): DirectionalText | null {
@@ -585,6 +614,12 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
         amount: toFiniteNumber(bill.deliveryCharge),
       })
       : null,
+    packagingCharge: toFiniteNumber(bill.packagingCharge) !== 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'pos.packaging'),
+        amount: toFiniteNumber(bill.packagingCharge),
+      })
+      : null,
     grandTotal: Object.freeze({
       label: resolveSemanticLabel(labels, 'print.grandTotal'),
       amount: bill.total,
@@ -621,10 +656,18 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       }))),
   });
 
+  const hasOnlineOrderInfo = order.onlinePlatform.length > 0 || order.externalOrderId.length > 0;
   const messages: MessageBlock = Object.freeze({
     kind: 'message',
     direction: base,
     reprintBanner: printData.isReprint ? resolveSemanticLabel(labels, 'receipt.reprint') : null,
+    onlineOrderBanner: hasOnlineOrderInfo
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'receipt.onlineOrder'),
+        platform: directionalText(order.onlinePlatform, base),
+        externalOrderId: directionalText(order.externalOrderId, base),
+      })
+      : null,
     footerNote: business.footerNote.length > 0 ? directionalText(business.footerNote, base) : null,
     thankYou: resolveSemanticLabel(labels, 'print.thankYouShort'),
   });
@@ -662,11 +705,12 @@ export interface KotItemSnapshot {
   readonly specialInstructions: string;
 }
 
-/** The order behind the ticket (order number, canonical timestamp, table). */
+/** The order behind the ticket (order number, canonical timestamp, table, type). */
 export interface KotOrderSnapshot {
   readonly orderNumber: string;
   readonly createdAt: string;
   readonly tableName: string;
+  readonly orderType: string;
 }
 
 /**
@@ -679,21 +723,18 @@ export interface KotPrintData {
   readonly items: readonly KotItemSnapshot[];
 }
 
-/** Ticket header: banner, station, order number, table, time. */
+/** Ticket header: banner, station, order number, table, type, time. */
 export interface KotHeaderBlock {
   readonly kind: 'kot-header';
   readonly direction: TextDirection;
   readonly banner: SemanticLabel;
   readonly stationLabel: SemanticLabel;
   readonly stationName: DirectionalText;
-  /**
-   * Order reference. The legacy renderer keeps an unaudited literal
-   * `Order:` prefix (#440/#441 note); label adoption is a later decision,
-   * so the document carries only the value here.
-   */
+  readonly orderNumberLabel: SemanticLabel;
   readonly orderNumber: DirectionalText;
   /** Table reference with its (uninterpolated) label concept. */
   readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
+  readonly orderType: { readonly label: SemanticLabel; readonly value: DirectionalText } | null;
   readonly timeLabel: SemanticLabel;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
@@ -741,11 +782,18 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
     banner: resolveSemanticLabel(labels, 'print.kot.banner'),
     stationLabel: resolveSemanticLabel(labels, 'print.kot.station'),
     stationName: directionalText(String(printData.stationName ?? ''), base),
+    orderNumberLabel: resolveSemanticLabel(labels, 'pos.orderNumber'),
     orderNumber: directionalText(String(printData.order?.orderNumber ?? ''), base),
     table: typeof printData.order?.tableName === 'string' && printData.order.tableName.length > 0
       ? Object.freeze({
         label: resolveSemanticLabel(labels, 'pos.tableLabel'),
         name: directionalText(printData.order.tableName, base),
+      })
+      : null,
+    orderType: typeof printData.order?.orderType === 'string' && printData.order.orderType.length > 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'print.kot.type'),
+        value: directionalText(kotOrderTypeValue(labels, printData.order.orderType), base),
       })
       : null,
     timeLabel: resolveSemanticLabel(labels, 'print.time'),

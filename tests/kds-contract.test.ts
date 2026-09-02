@@ -164,6 +164,56 @@ async function main() {
     const storedPairing = db.prepare('SELECT id FROM kds_pairing_tokens WHERE token = ?').get(pairingCreate.body.pairingToken.token) as { id: string };
     assertEqual(pairingCreate.body.pairingToken.id, storedPairing.id, 'pairing response returns stored identifier');
 
+    // Regression for the reported bug: a dine-in order (table has no
+    // kitchen_station_id of its own — there's no settings UI to set one)
+    // whose items are split across two category-scoped stations used to
+    // match neither station's routing clause and vanish from both screens.
+    db.prepare(`INSERT INTO tables (id, number, created_at, updated_at)
+      VALUES ('kds-split-table', '7', ?, ?)`).run(now(), now());
+    db.prepare(`INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
+      VALUES ('KDS-SPLIT-001', 'kds-split-table', 'dine_in', 'pending', 22, 22, ?, ?)`).run(now(), now());
+    const splitOrderId = (db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-SPLIT-001'").get() as any).id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(splitOrderId, now(), now());
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-contract-bar-product', 'Contract bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(splitOrderId, now(), now());
+
+    db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+      VALUES ('kds-split-counter-station', 'Split Counter Station', ?, 1, ?, ?)`).run(JSON.stringify(['kds-contract-bar']), now(), now());
+    const splitKitchenChefId = 'kds-split-kitchen-chef';
+    db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES (?, 'Split Kitchen Chef', ?, ?, 'chef', 1, ?, ?)`).run(
+      splitKitchenChefId, 'kds-split-kitchen@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+    );
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(splitKitchenChefId, 'kds-contract-station', now());
+    const splitKitchenAuth = { Authorization: `Bearer ${jwt.sign({ userId: splitKitchenChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
+
+    const splitCounterChefId = 'kds-split-counter-chef';
+    db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES (?, 'Split Counter Chef', ?, ?, 'chef', 1, ?, ?)`).run(
+      splitCounterChefId, 'kds-split-counter@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+    );
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(splitCounterChefId, 'kds-split-counter-station', now());
+    const splitCounterAuth = { Authorization: `Bearer ${jwt.sign({ userId: splitCounterChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
+
+    const kitchenSplitOrders = await request(app).get('/api/kds/orders').set(splitKitchenAuth);
+    assertEqual(kitchenSplitOrders.status, 200, 'kitchen-station chef can access embedded KDS orders for a dine-in split order');
+    const kitchenSplitOrder = kitchenSplitOrders.body.orders.find((entry: any) => entry.id === splitOrderId);
+    assertEqual(kitchenSplitOrder?.items?.length, 1, 'kitchen-station chef sees only the food item on a dine-in order with category-split stations');
+
+    const counterSplitOrders = await request(app).get('/api/kds/orders').set(splitCounterAuth);
+    assertEqual(counterSplitOrders.status, 200, 'counter-station chef can access embedded KDS orders for a dine-in split order');
+    const counterSplitOrder = counterSplitOrders.body.orders.find((entry: any) => entry.id === splitOrderId);
+    assertEqual(counterSplitOrder?.items?.length, 1, 'counter-station chef sees only the drink item on a dine-in order with category-split stations');
+
+    const kitchenSplitDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(splitKitchenAuth);
+    assertEqual(kitchenSplitDisplay.status, 200, 'kitchen-station display request succeeds for a dine-in split order');
+    assertEqual(kitchenSplitDisplay.body.orders.some((entry: any) => entry.order_id === splitOrderId), true, 'kitchen station display shows the dine-in split order food item');
+
+    const counterSplitDisplay = await request(app).get('/api/kds/display?station_id=kds-split-counter-station').set(splitCounterAuth);
+    assertEqual(counterSplitDisplay.status, 200, 'counter-station display request succeeds for a dine-in split order');
+    assertEqual(counterSplitDisplay.body.orders.some((entry: any) => entry.order_id === splitOrderId), true, 'counter station display shows the dine-in split order drink item');
+
     db.exec('PRAGMA foreign_keys = OFF');
     db.prepare('UPDATE order_items SET order_id = ? WHERE id = ?').run('missing-order', barItemId);
     db.exec('PRAGMA foreign_keys = ON');

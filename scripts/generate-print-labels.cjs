@@ -33,7 +33,8 @@ const MESSAGES_DIR = path.join(ROOT, 'frontend/src/lib/i18n/messages');
 const OUT_FILE = path.join(ROOT, 'main/print/print-labels.generated.ts');
 
 /** Committed languages, in stable generation order (keep in sync with languages.ts). */
-const LANGUAGES = ['en', 'fa', 'es', 'fr', 'pt'];
+const LANGUAGES = ['en', 'fa', 'es', 'fr', 'pt', 'tr', 'fil', 'de'];
+
 
 /**
  * New `print.*` keys owned by issue #440, in contract order. Dotted leaf
@@ -96,6 +97,7 @@ const BORROWED_KEYS = [
   'pos.discount',
   'pos.tax',
   'pos.delivery',
+  'pos.packaging',
   'receipt.totalTax',
   'receipt.serviceCharge',
   'receipt.taxDetails',
@@ -103,6 +105,12 @@ const BORROWED_KEYS = [
   'receipt.thankYou',
   'receipt.taxIncluded',
   'receipt.reprint',
+  'receipt.onlineOrder',
+  'pos.orderNumber',
+  'pos.orderTypeDineIn',
+  'pos.orderTypeDelivery',
+  'pos.orderTypeOnline',
+  'pos.orderTypeTakeaway',
   // Payment-method names, ported from web-print.ts's method mapping (#440).
   'pos.methodCash',
   'pos.methodCard',

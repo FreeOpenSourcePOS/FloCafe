@@ -19,29 +19,40 @@
 export const CURRENCY_ASCII_MAP: Record<string, string> = {
   '₹': 'Rs', // Indian Rupee
   '₨': 'Rs', // Rupee sign
-  '€': 'Eu',
-  '£': 'Pd',
-  '¥': 'Yn',
-  '₩': 'Kw',
-  '₺': 'Tl',
-  '₫': 'Vd',
-  '₪': 'Ns',
-  '₽': 'Rb',
-  '฿': 'Bh',
-  '₱': 'Ph',
-  '₴': 'Uh',
-  '₦': 'Ng',
-  '₵': 'Gh',
-  '₡': 'Cr',
-  '₲': 'Pg',
+  '€': 'EUR',
+  '£': 'GBP',
+  '¥': 'Yen',
+  '₩': 'KRW',
+  '₺': 'TRY',
+  '₫': 'VND',
+  '₪': 'ILS',
+  '₽': 'RUB',
+  '฿': 'THB',
+  '₱': 'PHP',
+  '₴': 'UAH',
+  '₦': 'NGN',
+  '₵': 'GHS',
+  '₡': 'CRC',
+  '₲': 'PYG',
+  'د.إ': 'AED',
+  '﷼': 'SAR',
+  'ریال': 'IRR',
+  '৳': 'BDT',
+  'E£': 'EGP',
 };
 
+const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
+  'Ä': 'AE', 'Ö': 'OE', 'Ü': 'UE', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+};
+
+export function normalizeGermanThermalText(text: string): string {
+  return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
+}
+
 export function normalizeCurrencyToAscii(text: string): string {
-  let out = text;
-  for (const [sym, ascii] of Object.entries(CURRENCY_ASCII_MAP)) {
-    if (out.includes(sym)) out = out.split(sym).join(ascii);
-  }
-  return out;
+  return Object.entries(CURRENCY_ASCII_MAP)
+    .sort(([left], [right]) => right.length - left.length)
+    .reduce((value, [sym, ascii]) => value.split(sym).join(ascii), text);
 }
 
 /**

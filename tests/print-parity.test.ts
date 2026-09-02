@@ -142,12 +142,12 @@ export function buildParityFixtures() {
     subtotal: 1220,
     discount_amount: 120,
     tax_amount: 0,
-    service_charge: 0,
-    delivery_charge: 0,
-    total: 1100,
+    delivery_charge: 8,
+    packaging_charge: 9,
+    total: 1117,
     payment_details: [
       { method: 'cash', amount: 600 },
-      { method: 'card', amount: 500 },
+      { method: 'card', amount: 517 },
     ],
   };
   // Frontend renderers navigate bill.order for items/table/customer.
@@ -300,7 +300,7 @@ function run(): void {
   const baseExpect = {
     items: [LATIN_ITEM, LONG_NAME_STEM],
     discount: 120,
-    total: 1100,
+    total: 1117,
     payments: ['Cash', 'Card'],
     businessName: 'Flo Parity Cafe',
     truncationMarker: true,
@@ -383,6 +383,85 @@ function run(): void {
   }
 
   // ------------------------------------------------------------------
+  // 2b. Financial parity — backend normalization must match the proven
+  // frontend add-on extension (`price × addonQty × itemQty`) and retain
+  // existing charge totals.
+  // ------------------------------------------------------------------
+  section('Add-on quantity and charge parity');
+  {
+    const quantityOrder = {
+      order_number: 'ORD-FINANCIAL-PARITY',
+      created_at: '2026-08-21 18:42:00',
+      items: [{
+        product_name: 'Tea',
+        quantity: 2,
+        unit_price: 10,
+        total: 20,
+        addons: [
+          { name: 'Extra shot', price: 5, quantity: 3 },
+          { name: 'Vanilla syrup', price: 2, quantity: 2 },
+        ],
+      }],
+    };
+    const quantityBill = {
+      bill_number: 'INV-FINANCIAL-PARITY',
+      subtotal: 50,
+      discount_amount: 0,
+      tax_amount: 0,
+      delivery_charge: 8,
+      packaging_charge: 9,
+      total: 67,
+      payment_details: [{ method: 'cash', amount: 67 }],
+      order: quantityOrder,
+    };
+    const quantityBusiness = { ...business, name: 'Flo Parity Cafe' };
+    const backendOutputs = ['classic', 'compact'].map((template) => escPosToText(
+      formatReceipt(quantityOrder, quantityBill, quantityBusiness, template, 48, true, false, 'full', []),
+    ));
+    const frontendText = new TextDecoder().decode(
+      fe.receiptEncoder.buildClassicReceiptBytes(quantityBill as any, { ...tenant, business_name: 'Flo Parity Cafe' } as any, { paperWidth: 80, useUnicode: true }, []),
+    );
+    const browserHtml = fe.webPrint.generateBillHtml(
+      quantityBill as any,
+      { ...tenant, business_name: 'Flo Parity Cafe' } as any,
+      { paperSize: 'thermal80', businessName: 'Flo Parity Cafe' },
+    );
+
+    for (const [renderer, text] of [['backend/classic', backendOutputs[0]], ['backend/compact', backendOutputs[1]], ['frontend/webusb/classic', frontendText]] as const) {
+      const addonRow = contentRows(text).find((row) => /Extra shot/.test(row));
+      warn(addonRow != null && digitsOf(addonRow).includes('3000'), `${renderer}: addon 5 × 3 × 2 renders 30.00`);
+      const secondAddonRow = contentRows(text).find((row) => /Vanilla syrup/.test(row));
+      warn(secondAddonRow != null && digitsOf(secondAddonRow).includes('800'), `${renderer}: second addon extension renders 8.00`);
+      warn(text.includes('8.00') && text.includes('9.00'), `${renderer}: delivery and packaging charges render`);
+    }
+    warn(browserHtml.includes('Extra shot') && browserHtml.includes('×3'), 'browser: addon quantity remains visible');
+    warn(browserHtml.includes('Delivery Charge') && browserHtml.includes('Packaging'), 'browser: delivery and packaging charges render');
+
+    let malformedPrintSucceeded = true;
+    for (const addons of [
+      [null, 'legacy-addon', { name: 'Safe extra', price: 4, quantity: 2 }],
+      'legacy-addon',
+      { legacy: true },
+    ]) {
+      const malformedBill = {
+        ...quantityBill,
+        order: {
+          ...quantityOrder,
+          items: [{ ...quantityOrder.items[0], addons }],
+        },
+      };
+      try {
+        fe.receiptEncoder.buildClassicReceiptBytes(malformedBill as any, { ...tenant, business_name: 'Flo Parity Cafe' } as any, { paperWidth: 80 }, []);
+        fe.receiptEncoder.buildCompactReceiptBytes(malformedBill as any, { ...tenant, business_name: 'Flo Parity Cafe' } as any, { paperWidth: 80 }, []);
+        fe.webPrint.generateBillHtml(malformedBill as any, { ...tenant, business_name: 'Flo Parity Cafe' } as any, { paperSize: 'thermal80' });
+      } catch {
+        malformedPrintSucceeded = false;
+      }
+    }
+    warn(malformedPrintSucceeded, 'frontend: malformed add-on containers and entries do not crash printing');
+  }
+
+  // ------------------------------------------------------------------
   // 3. Browser HTML — full Unicode path (Persian MUST be present here)
   // ------------------------------------------------------------------
   for (const paperSize of ['thermal58', 'thermal80'] as const) {
@@ -436,6 +515,7 @@ function run(): void {
       ['receipt.amount', 'Amount'],
       ['pos.subtotal', 'Subtotal'],
       ['pos.discount', 'Discount'],
+      ['pos.packaging', 'Packaging'],
       ['receipt.grandTotal', 'Grand Total'],
       ['receipt.payments', 'Payments'],
       ['pos.methodCash', 'Cash'],
@@ -462,6 +542,7 @@ function run(): void {
     created_at: order.created_at,
     table: { name: '4' },
   };
+  const typedKotOrder = { ...kotOrder, type: 'dine_in' };
 
   section('PrintDocument vs legacy classic');
   for (const cols of [32, 42, 48]) {
@@ -531,6 +612,8 @@ function run(): void {
     warn(kotText.includes('** Less sugar **'), `${label}: instruction lines rendered`);
     if (cols >= 42) warn(!kotText.includes(PERSIAN_ITEM), `${label}: unsupported-script item skipped with warning only`);
   }
+  const typedKotText = escPosToText(formatKOT(typedKotOrder, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en'));
+  warn(typedKotText.includes('Type: DINE IN'), 'kot-document/order-type: order type rendered when present');
 
   // ------------------------------------------------------------------
   // 5. Receipt/KOT language routing (#443): fa/es/fr tenants get localized

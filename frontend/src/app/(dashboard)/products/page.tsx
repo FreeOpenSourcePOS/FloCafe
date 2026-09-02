@@ -10,7 +10,8 @@ import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
-import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+import { getCurrencySymbol, getCountryByCode, getCurrencyUnitAdapter } from '@/lib/countries';
+import { roundCurrencyValue } from '@/lib/currency-input';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
 import { nameToColor } from '@/lib/image-utils';
@@ -119,6 +120,7 @@ export default function ProductsPage() {
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
+  const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency || 'INR', currentTenant?.country);
   const fmt = useFormatCurrency();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
@@ -298,8 +300,8 @@ export default function ProductsPage() {
       const payload: Record<string, unknown> = {
         name: form.name,
         category_id: form.category_id || null,
-        price: Number(form.price),
-        cost_price: form.cost_price ? Number(form.cost_price) : null,
+        price: roundCurrencyValue(Number(form.price), unitAdapter.maxDecimals),
+        cost_price: form.cost_price ? roundCurrencyValue(Number(form.cost_price), unitAdapter.maxDecimals) : null,
         cb_percent: cbPercentVal,
         sku: form.sku || null,
         barcode: form.barcode || null,
@@ -443,7 +445,18 @@ export default function ProductsPage() {
   const handleAddonGroupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = { name: addonForm.name, description: addonForm.description || null, is_required: addonForm.is_required, allow_multiple_quantities: addonForm.allow_multiple_quantities, min_selection: addonForm.min_selection, max_selection: addonForm.max_selection, addons: addonList };
+      const payload = {
+        name: addonForm.name,
+        description: addonForm.description || null,
+        is_required: addonForm.is_required,
+        allow_multiple_quantities: addonForm.allow_multiple_quantities,
+        min_selection: addonForm.min_selection,
+        max_selection: addonForm.max_selection,
+        addons: addonList.map((addon) => ({
+          ...addon,
+          price: roundCurrencyValue(Number(addon.price), unitAdapter.maxDecimals),
+        })),
+      };
       if (editingAddonGroup) {
         await api.put(`/addon-groups/${editingAddonGroup.id}`, payload);
         toast.success(t('addonGroupUpdated'));
@@ -756,13 +769,13 @@ export default function ProductsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">{t('priceLabel', { currency })}<span className="text-red-500 ms-1">*</span></label>
-                  <input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
+                  <input type="number" step={unitAdapter.step} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
                     onWheel={(e) => e.currentTarget.blur()}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">{t('fieldCostPrice')}</label>
-                  <input type="number" step="0.01" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
+                  <input type="number" step={unitAdapter.step} value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
                     onWheel={(e) => e.currentTarget.blur()}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
@@ -1133,7 +1146,7 @@ export default function ProductsPage() {
                       {addonList.map((addon, idx) => (
                         <div key={idx} className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center">
                           <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder={tCommon('namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                          <input type="number" step="0.01" value={addon.price} onChange={(e) => updateAddonItem(idx, 'price', Number(e.target.value))} onWheel={(e) => e.currentTarget.blur()} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                          <input type="number" step={unitAdapter.step} value={addon.price} onChange={(e) => updateAddonItem(idx, 'price', Number(e.target.value))} onWheel={(e) => e.currentTarget.blur()} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                           <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
                         </div>
                       ))}

@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
 import * as os from 'os';
 import { app } from 'electron';
+import log from 'electron-log';
 import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -71,6 +72,19 @@ function createDatabaseShutdownError(): Error & { code: string } {
 function createDatabaseShutdownTimeoutError(): Error & { code: string } {
   const error = new Error(`Database shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
   error.code = 'ERR_SHUTDOWN_TIMEOUT';
+  return error;
+}
+
+// #278: fail closed instead of silently opening a brand-new, empty database
+// in place of one that has gone missing (deleted, unmounted drive, wrong
+// path). See getDbInitializedMarkerPath().
+function createDatabaseMissingError(dbPath: string): Error & { code: string } {
+  const error = new Error(
+    `Database file is missing at ${dbPath}, but this install was previously initialized. ` +
+    'Refusing to start with a new, empty database to avoid silently losing existing data. ' +
+    'Restore from a backup (Settings → Backup & Restore, or the backups folder) and restart Flo Cafe.'
+  ) as Error & { code: string };
+  error.code = 'ERR_DATABASE_MISSING';
   return error;
 }
 
@@ -370,6 +384,16 @@ function getBackupDir(): string {
   return path.join(userDataPath, 'backups');
 }
 
+// #278: written once a production install finishes a normal, healthy startup.
+// Its presence is what lets initDatabase() tell "this install's database file
+// has gone missing" apart from "this is a brand-new install that has never
+// had a database" — both look identical (dbPath absent) from the filesystem
+// alone.
+function getDbInitializedMarkerPath(): string {
+  const userDataPath = app.getPath('userData');
+  return path.join(userDataPath, '.flo-db-initialized');
+}
+
 type ReplacementJournal = {
   phase: 'prepared' | 'committed';
   recoveryPath: string;
@@ -625,6 +649,18 @@ export function initDatabase(recoverInterruptedReplacement = true, allowDuringSh
   }
   if (recoverInterruptedReplacement) recoverInterruptedDatabaseReplacement(dbPath, backupDir);
 
+  // #278: this guard only applies to the top-level startup call (the
+  // default recoverInterruptedReplacement=true). Every internal
+  // backup/restore/reset call site passes false and already manages the
+  // db file's lifecycle itself (including recreating it deliberately, as
+  // resetDatabaseWithBackup does) — recoverInterruptedReplacement having
+  // already run above means any legitimate interrupted-replacement
+  // recovery has had its chance to restore dbPath before this check.
+  const isProductionStartup = recoverInterruptedReplacement && app.isPackaged && !process.env.FLO_E2E_DB_PATH;
+  if (isProductionStartup && !fs.existsSync(dbPath) && fs.existsSync(getDbInitializedMarkerPath())) {
+    throw createDatabaseMissingError(dbPath);
+  }
+
   console.log(`[DB] Opening database at: ${dbPath}`);
   dbHealthError = null;
   db = new Database(dbPath);
@@ -641,6 +677,30 @@ export function initDatabase(recoverInterruptedReplacement = true, allowDuringSh
   repairSequences();
   autoRepairPaymentDetails();
   autoRepairDefaultPrinter();
+
+  if (app.isPackaged && !process.env.FLO_E2E_DB_PATH) {
+    const markerPath = getDbInitializedMarkerPath();
+    try {
+      fs.writeFileSync(markerPath, now());
+    } catch (err) {
+      // Most failures here are transient (AV scan lock, momentary ENOSPC);
+      // retry once immediately rather than leaving this install's #278
+      // missing-database guard blind until some future boot happens to
+      // succeed. If it still fails, log to the persistent app log (not just
+      // console) so the gap is visible to support/diagnostics instead of
+      // being truly swallowed.
+      try {
+        fs.writeFileSync(markerPath, now());
+      } catch (retryErr) {
+        console.error('[DB] Failed to write init marker after retry:', retryErr);
+        log.error(
+          '[DB] Failed to write .flo-db-initialized marker after retry — the #278 ' +
+          'missing-database guard will not protect this install until a future boot succeeds:',
+          retryErr,
+        );
+      }
+    }
+  }
 }
 
 export function ensureCloudIdentity(): { posHash: string; deviceSecret: string } {
@@ -4147,6 +4207,36 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 78,
+    name: 'add_online_order_reference',
+    up: () => {
+      // #284: 'online' orders (third-party aggregators / web ordering) carry
+      // the platform name + the platform's own order id so the KOT/receipt
+      // can cross-reference it back to the source system.
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('online_platform')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN online_platform TEXT DEFAULT NULL`);
+      }
+      if (!orderColumns.includes('external_order_id')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN external_order_id TEXT DEFAULT NULL`);
+      }
+    },
+  },
+  {
+    version: 79,
+    name: 'add_service_charge_amounts',
+    up: () => {
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('service_charge')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN service_charge REAL DEFAULT 0`);
+      }
+      const billColumns = getColumns(db, 'bills');
+      if (!billColumns.includes('service_charge')) {
+        db.exec(`ALTER TABLE bills ADD COLUMN service_charge REAL DEFAULT 0`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4452,6 +4542,7 @@ function createSchema(): void {
       special_instructions TEXT,
       packaging_charge REAL DEFAULT 0,
       delivery_charge REAL DEFAULT 0,
+      service_charge REAL DEFAULT 0,
       status TEXT DEFAULT 'pending',
       subtotal REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
@@ -4518,6 +4609,7 @@ function createSchema(): void {
       discount_reason TEXT,
       delivery_charge REAL DEFAULT 0,
       packaging_charge REAL DEFAULT 0,
+      service_charge REAL DEFAULT 0,
       round_off REAL DEFAULT 0,
       total REAL DEFAULT 0,
       paid_amount REAL DEFAULT 0,

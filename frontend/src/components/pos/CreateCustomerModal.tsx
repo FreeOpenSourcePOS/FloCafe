@@ -72,7 +72,7 @@ export default function CreateCustomerModal({ initialSearch = '', onClose, onCre
       <div className="bg-card rounded-2xl w-full max-w-sm p-5 shadow-xl">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold text-foreground">{t('addCustomer')}</h3>
-          <button onClick={onClose} disabled={saving} className="text-gray-400 hover:text-muted-foreground">
+          <button onClick={onClose} disabled={saving} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted disabled:opacity-50" aria-label={t('close')}>
             <X size={20} />
           </button>
         </div>

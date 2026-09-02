@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useTranslations, type AppConfig } from 'use-intl';
+import { TableTurnoverBadge } from '@/components/tables/TableTurnoverBadge';
 
 interface Props {
   tables: Table[];
@@ -55,7 +56,7 @@ export default function TablePickerModal({
       <div className="bg-card rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold">{t('selectTable')}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-muted-foreground">
+          <button onClick={onClose} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />
           </button>
         </div>
@@ -72,7 +73,7 @@ export default function TablePickerModal({
                 key={table.id}
                 onClick={() => !isDisabled && handleClick(table)}
                 disabled={isDisabled}
-                className={`p-4 rounded-xl border-2 text-center transition-colors relative ${
+                className={`min-h-28 p-4 rounded-xl border-2 text-center transition-colors relative ${
                   isSelected
                     ? 'border-brand bg-brand-light'
                     : isHeld
@@ -97,6 +98,9 @@ export default function TablePickerModal({
                     #{(table.current_order || table.activeOrder)?.order_number}
                   </p>
                 )}
+                {table.status === 'occupied' && table.seated_at && (
+                  <div className="mt-1"><TableTurnoverBadge seatedAt={table.seated_at} /></div>
+                )}
               </button>
             );
           })}
@@ -110,7 +114,7 @@ export default function TablePickerModal({
           <div className="flex gap-3 mt-4 pt-4 border-t border-border">
             <button
               onClick={() => onHoldTable(selectedTableId)}
-              className="flex-1 px-4 py-3 rounded-xl border-2 border-border text-foreground font-medium hover:bg-muted transition-colors"
+              className="touch-target flex-1 px-4 rounded-xl border-2 border-border text-foreground font-medium hover:bg-muted active:bg-muted transition-colors"
             >
               {t('holdTable')}
             </button>
@@ -119,7 +123,7 @@ export default function TablePickerModal({
                 onPlaceOrder();
                 onClose();
               }}
-              className="flex-1 px-4 py-3 rounded-xl bg-brand text-white font-medium hover:bg-brand/90 transition-colors"
+              className="touch-target flex-1 px-4 rounded-xl bg-brand text-white font-medium hover:bg-brand/90 active:bg-brand/90 transition-colors"
             >
               {t('placeOrderButton')}
             </button>

@@ -166,13 +166,16 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       orderNumber: String(order?.order_number ?? ''),
       createdAt: String(order?.created_at ?? ''),
       tableName: String(order?.table?.name ?? ''),
+      onlinePlatform: String(order?.online_platform ?? ''),
+      externalOrderId: String(order?.external_order_id ?? ''),
       items: items.map((item) => ({
         productName: String(item?.product_name ?? ''),
         quantity: Number(item?.quantity) || 0,
         unitPrice: Number(item?.unit_price) || 0,
         total: Number(item?.total) || 0,
-        addons: (item?.addons ?? []).map((addon) => {
-          const addonQty = ('quantity' in addon && typeof addon.quantity === 'number' && addon.quantity) || 1;
+        addons: (Array.isArray(item?.addons) ? item.addons : []).map((addon) => {
+          const addonQty = (addon !== null && typeof addon === 'object' && 'quantity' in addon
+            && typeof addon.quantity === 'number' && addon.quantity) || 1;
           return {
             name: String(addon?.name ?? ''),
             price: (Number(addon?.price) || 0) * addonQty * (Number(item?.quantity) || 0),
@@ -190,6 +193,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       total: Number(bill?.total) || 0,
       serviceCharge: Number(bill?.service_charge) || 0,
       deliveryCharge: Number(bill?.delivery_charge) || 0,
+      packagingCharge: Number(bill?.packaging_charge) || 0,
       taxComponents: resolveTaxComponents(bill),
       payments: parsePaymentDetails(bill?.payment_details),
       pointsEarned: Number(bill?.points_earned) || 0,

@@ -306,6 +306,7 @@ export function generateBillHtml(
     rate: printLabelResolver('receipt.rate', lang),
     totalTax: surfaceLabel(totals?.tax?.label, 'pos.tax', 'receipt.totalTax', lang),
     deliveryCharge: surfaceLabel(totals?.deliveryCharge?.label, 'pos.delivery', 'receipt.deliveryCharge', lang),
+    packagingCharge: documentLabel(totals?.packagingCharge?.label, 'pos.packaging', lang),
     grandTotal: surfaceLabel(totals?.grandTotal?.label, 'print.grandTotal', 'receipt.grandTotal', lang),
     taxDetails: printLabelResolver('receipt.taxDetails', lang),
     paymentsHeader: printLabelResolver('receipt.payments', lang),
@@ -344,6 +345,7 @@ export function generateBillHtml(
 <body>
   <div class="bill-container">
     ${messages?.reprintBanner ? `<div class="reprint-banner">${escapeHtml(messages.reprintBanner.primary)}</div>` : ''}
+    ${messages?.onlineOrderBanner ? `<div class="online-order-banner">${escapeHtml(messages.onlineOrderBanner.label.primary)}${messages.onlineOrderBanner.platform.text ? `<div class="online-order-detail">${escapeHtml(messages.onlineOrderBanner.platform.text)}</div>` : ''}${messages.onlineOrderBanner.externalOrderId.text ? `<div class="online-order-detail">#${escapeHtml(messages.onlineOrderBanner.externalOrderId.text)}</div>` : ''}</div>` : ''}
     <!-- Header -->
     <div class="header">
       ${header?.name ? `<h1>${escapeHtml(header.name.text)}</h1>` : ''}
@@ -413,6 +415,7 @@ export function generateBillHtml(
       ${totals.tax ? `<tr><td>${escapeHtml(L.totalTax)}</td><td class="text-end num">${fmtAmount(totals.tax.amount)}</td></tr>` : ''}
       ${totals.serviceCharge ? `<tr><td>${escapeHtml(totals.serviceCharge.label.primary)}</td><td class="text-end num">${fmtAmount(totals.serviceCharge.amount)}</td></tr>` : ''}
       ${totals.deliveryCharge ? `<tr><td>${escapeHtml(L.deliveryCharge)}</td><td class="text-end num">${fmtAmount(totals.deliveryCharge.amount)}</td></tr>` : ''}
+      ${totals.packagingCharge ? `<tr><td>${escapeHtml(L.packagingCharge)}</td><td class="text-end num">${fmtAmount(totals.packagingCharge.amount)}</td></tr>` : ''}
       <tr class="total-row"><td><strong>${escapeHtml(L.grandTotal)}</strong></td><td class="text-end num"><strong>${fmtAmount(totals.grandTotal.amount)}</strong></td></tr>
       ` : ''}
     </table>
@@ -500,6 +503,8 @@ function getPaperStyles(size: PaperSize): string {
     body { font-family: -apple-system, 'Segoe UI', Tahoma, 'Noto Naskh Arabic', 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.4; color: #333; }
     .bill-container { max-width: 100%; margin: 0 auto; }
     .reprint-banner { text-align: center; font-size: 22px; font-weight: bold; letter-spacing: 2px; color: #c00; border: 3px solid #c00; padding: 6px; margin-bottom: 15px; }
+    .online-order-banner { text-align: center; font-size: 18px; font-weight: bold; letter-spacing: 1px; border: 2px solid #333; padding: 6px; margin-bottom: 15px; }
+    .online-order-banner .online-order-detail { font-size: 13px; font-weight: normal; letter-spacing: normal; margin-top: 2px; }
     .header { text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #ccc; }
     .header h1 { font-size: 24px; margin-bottom: 5px; }
     .bill-details { margin-bottom: 15px; }

@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  ShoppingCart, UtensilsCrossed, Package, Truck,
+  ShoppingCart, UtensilsCrossed, Package, Truck, Globe,
   Plus, Minus, Trash2, Pause, MapPin, SquarePen,
   Users,
 } from 'lucide-react';
@@ -30,6 +30,7 @@ const orderTypeIcons = {
   dine_in: UtensilsCrossed,
   takeaway: Package,
   delivery: Truck,
+  online: Globe,
 };
 
 export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
@@ -73,16 +74,16 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       {/* Order Type */}
       <div className="p-4 border-b border-border dark:border-border space-y-2">
         <div className="flex gap-1 bg-muted rounded-lg p-1">
-          {(['dine_in', 'takeaway', 'delivery'] as const)
+          {(['dine_in', 'takeaway', 'delivery', 'online'] as const)
             .filter((type) => isRestaurant || type !== 'dine_in')
             .map((type) => {
               const Icon = orderTypeIcons[type];
-              const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : t('orderTypeDelivery');
+              const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : type === 'delivery' ? t('orderTypeDelivery') : t('orderTypeOnline');
               return (
                 <button
                   key={type}
                   onClick={() => cart.setOrderType(type)}
-                  className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-md text-xs font-medium transition-colors ${
+                  className={`touch-target flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors ${
                     cart.orderType === type
                       ? 'bg-card text-brand shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -99,9 +100,9 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           <div className="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground"><Users size={15} /><span>{t('pax')}</span></div>
             <div className="flex items-center gap-2">
-              <button type="button" aria-label={t('decreasePax')} onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))} className="size-7 rounded-full bg-muted flex items-center justify-center"><Minus size={13} /></button>
-              <input aria-label={t('pax')} type="number" min="1" max="99" value={cart.guestCount} onChange={(e) => cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))} className="w-10 text-center text-sm font-semibold border-0 outline-none bg-transparent" />
-              <button type="button" aria-label={t('increasePax')} onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))} className="size-7 rounded-full bg-muted flex items-center justify-center"><Plus size={13} /></button>
+              <button type="button" aria-label={t('decreasePax')} onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))} className="touch-target rounded-full bg-muted"><Minus size={15} /></button>
+              <input aria-label={t('pax')} inputMode="numeric" type="number" min="1" max="99" value={cart.guestCount} onChange={(e) => cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))} className="w-12 text-center text-base font-semibold border-0 outline-none bg-transparent" />
+              <button type="button" aria-label={t('increasePax')} onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))} className="touch-target rounded-full bg-muted"><Plus size={15} /></button>
             </div>
           </div>
         )}
@@ -115,7 +116,30 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               value={cart.deliveryAddress}
               onChange={(e) => cart.setDeliveryAddress(e.target.value)}
               placeholder={t('deliveryAddress')}
-              className="flex-1 px-3 py-1.5 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+            />
+          </div>
+        )}
+
+        {/* Online platform + external order id — shown inline when online is selected */}
+        {cart.orderType === 'online' && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <Globe size={14} className="text-gray-400 shrink-0" />
+              <input
+                type="text"
+                value={cart.onlinePlatform}
+                onChange={(e) => cart.setOnlinePlatform(e.target.value)}
+                placeholder={t('onlinePlatformPlaceholder')}
+                className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              />
+            </div>
+            <input
+              type="text"
+              value={cart.externalOrderId}
+              onChange={(e) => cart.setExternalOrderId(e.target.value)}
+              placeholder={t('externalOrderIdPlaceholder')}
+              className="flex-1 min-h-11 px-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
             />
           </div>
         )}
@@ -149,9 +173,10 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               <div key={item.id} className="flex items-start gap-3">
                 <button
                   onClick={() => cart.removeItem(item.id)}
-                  className="w-6 h-6 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 flex items-center justify-center transition-colors mt-0.5 shrink-0"
+                  className="touch-target -ms-2 -mt-2 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 active:bg-red-50 transition-colors shrink-0"
+                  aria-label={t('remove')}
                 >
-                  <Trash2 size={13} />
+                  <Trash2 size={16} />
                 </button>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
@@ -161,7 +186,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                     {onEditItem && (
                       <button
                         onClick={() => onEditItem(item)}
-                        className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 text-xs font-medium transition-colors"
+                        className="touch-target shrink-0 gap-1 rounded-full bg-amber-100 px-3 text-amber-700 hover:bg-amber-200 active:bg-amber-200 text-xs font-medium transition-colors"
                       >
                         <SquarePen size={12} />
                         {tCommon('edit')}
@@ -187,16 +212,18 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => cart.updateQuantity(item.id, item.quantity - 1)}
-                    className="w-7 h-7 rounded-full bg-muted flex items-center justify-center hover:bg-muted/70 transition-colors"
+                    className="touch-target rounded-full bg-muted hover:bg-muted/70 active:bg-muted/70 transition-colors"
+                    aria-label={t('remove')}
                   >
-                    <Minus size={14} />
+                    <Minus size={16} />
                   </button>
-                  <span className="text-sm font-medium w-5 text-center">{item.quantity}</span>
+                  <span className="text-base font-semibold w-6 text-center tabular-nums">{item.quantity}</span>
                   <button
                     onClick={() => cart.updateQuantity(item.id, item.quantity + 1)}
-                    className="w-7 h-7 rounded-full bg-muted flex items-center justify-center hover:bg-muted/70 transition-colors"
+                    className="touch-target rounded-full bg-muted hover:bg-muted/70 active:bg-muted/70 transition-colors"
+                    aria-label={t('addItems')}
                   >
-                    <Plus size={14} />
+                    <Plus size={16} />
                   </button>
                 </div>
               </div>
@@ -216,7 +243,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               placeholder={t('orderNotesPlaceholder')}
               rows={2}
               maxLength={200}
-              className="w-full px-3 py-2 text-sm border border-border bg-card rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+              className="w-full min-h-20 px-3 py-2 text-sm border border-border bg-card rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
             <p className="text-xs text-gray-400 text-end mt-0.5">{cart.orderNotes.length}/200</p>
           </div>

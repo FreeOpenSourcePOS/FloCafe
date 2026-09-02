@@ -509,6 +509,7 @@
     "deliveryAddress": "Dirección de entrega",
     "discount": "Descuento",
     "discountInvalid": "Ingresá un valor de descuento válido",
+    "fixedDiscountMinimum": "Los descuentos fijos deben ser de al menos 1 unidad",
     "discountReasonPlaceholder": "Motivo (opcional)",
     "discountRemoved": "Descuento eliminado",
     "discountUpdated": "Descuento actualizado",

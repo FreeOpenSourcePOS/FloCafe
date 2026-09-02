@@ -509,6 +509,7 @@
     "deliveryAddress": "Lieferadresse",
     "discount": "Rabatt",
     "discountInvalid": "Bitte geben Sie einen gültigen Rabattwert ein",
+    "fixedDiscountMinimum": "Feste Rabatte müssen mindestens 1 Einheit betragen",
     "discountReasonPlaceholder": "Grund (optional)",
     "discountRemoved": "Rabatt entfernt",
     "discountUpdated": "Rabatt aktualisiert",

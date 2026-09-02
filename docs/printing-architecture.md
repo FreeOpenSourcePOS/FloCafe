@@ -137,7 +137,7 @@ Receipt block vocabulary v1 ([`shared/print/document.ts`](../shared/print/docume
 | `document-meta` | invoice title (tax vs plain), number, canonical timestamp, optional table |
 | `customer` | customer name/phone with their labels |
 | `item-table` | header labels, item rows (quantity, unit price, amount, add-ons with quantity and extended amount, special instructions) |
-| `totals` | subtotal, discount, flat tax, optional frontend service charge, delivery/packaging charges, grand total, loyalty points lines |
+| `totals` | subtotal, discount, flat tax, optional server-persisted service charge, delivery/packaging charges, grand total, loyalty points lines |
 | `tax-breakdown` | per-component lines when the merchant shows the breakdown |
 | `payments` | captured payment lines (known methods resolve through concept ids, unknown stay literal) |
 | `message` | reprint banner, footer note, thank-you |

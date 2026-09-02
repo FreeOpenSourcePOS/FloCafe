@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
 import * as os from 'os';
 import { app } from 'electron';
+import log from 'electron-log';
 import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
@@ -678,10 +679,26 @@ export function initDatabase(recoverInterruptedReplacement = true, allowDuringSh
   autoRepairDefaultPrinter();
 
   if (app.isPackaged && !process.env.FLO_E2E_DB_PATH) {
+    const markerPath = getDbInitializedMarkerPath();
     try {
-      fs.writeFileSync(getDbInitializedMarkerPath(), now());
+      fs.writeFileSync(markerPath, now());
     } catch (err) {
-      console.error('[DB] Failed to write init marker:', err);
+      // Most failures here are transient (AV scan lock, momentary ENOSPC);
+      // retry once immediately rather than leaving this install's #278
+      // missing-database guard blind until some future boot happens to
+      // succeed. If it still fails, log to the persistent app log (not just
+      // console) so the gap is visible to support/diagnostics instead of
+      // being truly swallowed.
+      try {
+        fs.writeFileSync(markerPath, now());
+      } catch (retryErr) {
+        console.error('[DB] Failed to write init marker after retry:', retryErr);
+        log.error(
+          '[DB] Failed to write .flo-db-initialized marker after retry — the #278 ' +
+          'missing-database guard will not protect this install until a future boot succeeds:',
+          retryErr,
+        );
+      }
     }
   }
 }

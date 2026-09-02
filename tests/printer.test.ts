@@ -1247,7 +1247,7 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
 
   const browserHtml = generateBillHtml(frontendBill as any, frontendTenant, { useUnicode: false });
   assert('browser printing preserves the Persian Rial symbol', browserHtml.includes('ریال') && !browserHtml.includes('IRR'));
-  assert('shared currency normalization leaves the Persian Rial symbol unchanged', normalizeCurrencyToAscii('ریال') === 'ریال');
+  assert('shared currency normalization maps the Persian Rial token to ASCII IRR', normalizeCurrencyToAscii('ریال') === 'IRR');
   const browserTaxHtml = generateBillHtml(frontendBill as any, frontendTenant, { useUnicode: false });
   assert('browser tax-bill printing preserves Persian Rial output', browserTaxHtml.includes('ریال') && !browserTaxHtml.includes('IRR'));
   assert('browser tax-bill printing preserves Persian numeric output', /[۰-۹]/.test(browserTaxHtml));
@@ -1273,8 +1273,8 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   assert('frontend Persian warning names Arabic script as the cause', frontendWarnings.some((w: any) => /Persian\/Arabic script/.test(w.message)));
 
   // 3. Currency normalization and unsupported character guard unit tests
-  assert('hasUnsupportedPrinterChars("ریال") remains true before currency normalization', hasUnsupportedPrinterChars('ریال') === true);
-  assert('hasUnsupportedPrinterChars("﷼") remains true', hasUnsupportedPrinterChars('﷼') === true);
+  assert('hasUnsupportedPrinterChars("ریال") accepts the documented currency token', hasUnsupportedPrinterChars('ریال') === false);
+  assert('hasUnsupportedPrinterChars("﷼") accepts the documented currency token', hasUnsupportedPrinterChars('﷼') === false);
   assert('hasUnsupportedPrinterChars("یار") remains true', hasUnsupportedPrinterChars('یار') === true);
   assert('hasUnsupportedPrinterChars("کافه") remains true', hasUnsupportedPrinterChars('کافه') === true);
   assert('hasUnsupportedPrinterChars("IRR100,000.00") is false', hasUnsupportedPrinterChars('IRR100,000.00') === false);

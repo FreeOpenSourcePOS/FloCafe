@@ -156,7 +156,7 @@
     "test:phone-search-integration": "node tests/run-electron-node-test.cjs tests/phone-search-integration.test.ts",
     "test:e2e-argentina-flow": "ts-node --transpile-only -P tests/tsconfig.json tests/e2e-argentina-flow.test.ts",
     "test:translations": "ts-node --transpile-only -P tests/tsconfig.json tests/translations.test.ts",
-    "test:print-labels": "ts-node --transpile-only -P tests/tsconfig.json tests/print-labels.test.ts && node scripts/generate-print-labels.cjs --check",
+    "test:print-labels": "ts-node --transpile-only -P tests/tsconfig.json tests/print-labels.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/phase3-print-regressions.test.ts && node scripts/generate-print-labels.cjs --check",
     "test:locale-chunks": "ts-node --transpile-only -P tests/tsconfig.json tests/locale-chunk-splitting.test.ts",
     "test:browser-receipts": "ts-node --transpile-only -P tests/tsconfig.json tests/browser-receipts.test.ts",
     "test:decoupled-ui-locale": "ts-node --transpile-only -P tests/tsconfig.json tests/decoupled-ui-locale.test.ts",

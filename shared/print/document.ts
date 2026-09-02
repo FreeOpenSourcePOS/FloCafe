@@ -460,11 +460,9 @@ function paymentLabel(labels: LabelContext, method: string): SemanticLabel {
 }
 
 function kotOrderTypeValue(labels: LabelContext, value: string): string {
-  if (labels.primary !== 'de') return value.replace(/_/g, ' ').trim().toUpperCase();
   const conceptId = KOT_ORDER_TYPE_CONCEPTS[value];
   if (conceptId === undefined) return value.replace(/_/g, ' ').trim().toUpperCase();
-  const resolved = resolveSemanticLabel(labels, conceptId).primary;
-  return resolved;
+  return resolveSemanticLabel(labels, conceptId).primary;
 }
 
 function optionalDirectional(text: string | undefined | null, base: TextDirection): DirectionalText | null {

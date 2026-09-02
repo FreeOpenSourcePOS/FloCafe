@@ -18,6 +18,7 @@ import type { PrinterCutMode } from './profiles';
 import type { PrintWarning } from './thermal';
 import {
   buildEscPos,
+  normalizeGermanThermalText,
   truncate,
   truncateShapedLine,
 } from './thermal';
@@ -43,7 +44,9 @@ import {
  * This is the ONLY step allowed to touch raw rows so the builder stays pure.
  */
 export function buildKotPrintData(order: any, items: any[], stationName: string): KotPrintData {
-  const ticketItems = Array.isArray(items) ? items : [];
+  const ticketItems = Array.isArray(items)
+    ? items.filter((item: any) => item?.status !== 'served' && item?.status !== 'ready')
+    : [];
   return {
     stationName: String(stationName ?? ''),
     order: {
@@ -115,9 +118,19 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
   return labelOf(label).replace('{name}', tableName);
 }
 
-function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string): string {
-  if (language === 'en') return `Order: ${orderNumber}`;
-  return labelOf(label).replace('{number}', orderNumber);
+// Header metadata must stay visible on generic ESC/POS. Keep the localized
+// value when the selected capability can represent it; otherwise use the
+// existing ASCII labels rather than silently losing ticket identity.
+function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
+  const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
+  return !arabicShaping && /[^\x00-\x7F]/.test(normalized) ? fallback : normalized;
+}
+
+function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string, arabicShaping: boolean): string {
+  const localized = language === 'en'
+    ? `Order: ${orderNumber}`
+    : labelOf(label).replace('{number}', orderNumber);
+  return thermalSafeText(localized, `Order: ${orderNumber}`, language, arabicShaping);
 }
 
 function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
@@ -126,17 +139,44 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
 
   lines.push('{INIT}');
-  lines.push('{CENTER}{BOLD}' + truncateShapedLine(labelOf(header.banner), cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
+  const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping);
+  const station = thermalSafeText(
+    `${labelOf(header.stationLabel)}: ${header.stationName.text}`,
+    `Station: ${header.stationName.text}`,
+    options.language,
+    options.arabicShaping,
+  );
+  const table = header.table
+    ? thermalSafeText(
+      formatTableLabel(header.table.label, header.table.name.text),
+      `Table: ${header.table.name.text}`,
+      options.language,
+      options.arabicShaping,
+    )
+    : null;
+  const orderType = header.orderType
+    ? thermalSafeText(
+      `${labelOf(header.orderType.label)}: ${header.orderType.value.text}`,
+      `Type: ${header.orderType.value.text.replace(/_/g, ' ').trim().toUpperCase()}`,
+      options.language,
+      options.arabicShaping,
+    )
+    : null;
+  const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions);
+  const timeLine = thermalSafeText(
+    `${labelOf(header.timeLabel)}: ${time}`,
+    `Time: ${parseDbTimestamp(header.timestamp.text).toLocaleTimeString('en-US-u-nu-latn', tzOptions)}`,
+    options.language,
+    options.arabicShaping,
+  );
+
+  lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
   lines.push('');
-  lines.push(truncateShapedLine(labelOf(header.stationLabel) + ': ' + header.stationName.text, cols, options.arabicShaping, options.language));
-  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language), cols, options.arabicShaping, options.language));
-  if (header.table) {
-    lines.push(truncateShapedLine(formatTableLabel(header.table.label, header.table.name.text), cols, options.arabicShaping, options.language));
-  }
-  if (header.orderType) {
-    lines.push(truncateShapedLine(labelOf(header.orderType.label) + ': ' + header.orderType.value.text, cols, options.arabicShaping, options.language));
-  }
-  lines.push(truncateShapedLine(labelOf(header.timeLabel) + ': ' + parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions), cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping), cols, options.arabicShaping, options.language));
+  if (table) lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language));
+  if (orderType) lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language));
   return lines;
 }
 

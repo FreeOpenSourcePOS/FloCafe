@@ -10,7 +10,7 @@ import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { formatTime } from './format-date';
 import { normalizeGermanThermalText } from './unicode';
-import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { hasUnsupportedPrinterChars, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 
 export interface KotOptions {
@@ -70,28 +70,37 @@ export function buildKotBytes(
   enc.initialize();
 
   // KOT Banner
-  const bannerText = language === 'de' ? normalizeGermanThermalText(label('print.kot.banner')) : label('print.kot.banner');
+  const bannerText = thermalSafeHeaderText(label('print.kot.banner'), 'KITCHEN ORDER TICKET', language, arabicShaping);
   const bannerWidth = bannerText.length * 2 <= cols ? 2 : 1;
   enc.align('center').bold(true).width(bannerWidth).height(2);
   safePrinterText(enc, bannerText, warnings, false, arabicShaping, undefined, cols, language).width(1).height(1).bold(false).newline();
 
   // Order details
   enc.align('left').bold(true);
-  safePrinterText(enc, formatOrderNumber(label('pos.orderNumber'), String(order.order_number)), warnings, false, arabicShaping, undefined, cols, language).newline();
+  if (opts.stationName) {
+    const stationName = String(opts.stationName);
+    safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.station')}: ${stationName}`, `Station: ${stationName}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+  }
+  const orderNumber = String(order.order_number);
+  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order: ${orderNumber}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.table) {
-    safePrinterText(enc, label('pos.tableLabel').replace('{name}', String(order.table.name)), warnings, false, arabicShaping, undefined, cols, language).newline();
+    const tableName = String(order.table.name);
+    safePrinterText(enc, thermalSafeHeaderText(label('pos.tableLabel').replace('{name}', tableName), `Table: ${tableName}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   const orderType = resolveOrderType(order.type, language);
-  safePrinterText(enc, `${label('print.kot.type')}: ${orderType}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.type')}: ${orderType}`, `Type: ${String(order.type).replace(/_/g, ' ').toUpperCase()}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.customer) {
-    safePrinterText(enc, `${label('pos.customer')}: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+    const customerName = String(order.customer.name);
+    safePrinterText(enc, thermalSafeHeaderText(`${label('pos.customer')}: ${customerName}`, `Customer: ${customerName}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   enc.bold(false);
-  safePrinterText(enc, `${label('print.time')}: ${formatTime(order.created_at, locale, opts.timezone ? { timeZone: opts.timezone } : undefined)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  const time = formatTime(order.created_at, locale, opts.timezone ? { timeZone: opts.timezone } : undefined);
+  const fallbackTime = formatTime(order.created_at, 'en-US', opts.timezone ? { timeZone: opts.timezone } : undefined);
+  safePrinterText(enc, thermalSafeHeaderText(`${label('print.time')}: ${time}`, `Time: ${fallbackTime}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
   enc.rule({ style: 'double' });
 
   // ── Items ────────────────────────────────────────────────────────────────────
@@ -156,6 +165,13 @@ function truncate(str: string, max: number, language: string = 'en'): string {
   return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 
+// Keep nonfinancial KOT identity visible when generic ESC/POS cannot
+// represent a localized header label; item text still follows safePrinterText.
+function thermalSafeHeaderText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
+  const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
+  return !arabicShaping && hasUnsupportedPrinterChars(normalized) ? fallback : normalized;
+}
+
 function resolveOrderType(type: string, language: string): string {
   const keys: Record<string, string> = {
     dine_in: 'pos.orderTypeDineIn',
@@ -163,11 +179,9 @@ function resolveOrderType(type: string, language: string): string {
     online: 'pos.orderTypeOnline',
     takeaway: 'pos.orderTypeTakeaway',
   };
-  if (language !== 'de') return String(type).replace(/_/g, ' ').toUpperCase();
   const key = keys[type];
   if (!key) return String(type).replace(/_/g, ' ').toUpperCase();
-  const resolved = printLabelResolver(key, language);
-  return resolved;
+  return printLabelResolver(key, language);
 }
 
 function formatOrderNumber(label: string, orderNumber: string): string {

@@ -26,6 +26,7 @@ import {
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
+import type { Language } from '@/lib/i18n/languages';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
 
@@ -131,6 +132,7 @@ export const usePrinterStore = create<PrinterState>()(
             const { printWebBill } = await import('@/lib/printer/web-print');
             await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
+              languages: opts?.languages ?? resolveBillPrintLanguages(),
               includeTaxId: billShowTaxId,
               taxRegistrationNumber: billShowTaxId && billTaxRegistrationNumber ? billTaxRegistrationNumber : undefined,
               address: billShowAddress && billAddress ? billAddress : undefined,
@@ -244,6 +246,9 @@ export const usePrinterStore = create<PrinterState>()(
             billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
           } = usePosSettingsStore.getState();
           const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
+          const languages = opts?.language
+            ? [opts.language as Language] as const
+            : resolveBillPrintLanguages();
 
           // No backend route exists for tax-bill printing, so this path only
           // has the WebUSB transport for 'escpos' — unlike printBill/printKot,
@@ -264,6 +269,7 @@ export const usePrinterStore = create<PrinterState>()(
             const { printWebBill } = await import('@/lib/printer/web-print');
             await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
+              languages,
               includeTaxId: billShowTaxId,
               taxRegistrationNumber: billShowTaxId
                 ? (opts?.taxRegistrationNumber || billTaxRegistrationNumber || undefined)
@@ -283,7 +289,6 @@ export const usePrinterStore = create<PrinterState>()(
             return [];
           }
 
-          const languages = opts?.language ? [opts.language] as const : resolveBillPrintLanguages();
           const failedLanguages = await ensurePrintLanguagesLoaded(languages);
           const warnings: PrintWarning[] = failedLanguages.map((language) => ({
             field: 'receipt language',
@@ -309,6 +314,11 @@ export const usePrinterStore = create<PrinterState>()(
             rawEscPos: true,
             language: languages[0],
           }, warnings);
+          if (hasFinancialPrintWarning(warnings)) {
+            const refusal = makeFinancialPrintRefusalMessage(warnings);
+            toast.error(refusal);
+            throw new Error(refusal);
+          }
           set({ lastPrintedBytes: bytes });
           await printerService.print(bytes);
           return warnings;
@@ -381,7 +391,7 @@ export const usePrinterStore = create<PrinterState>()(
           // don't silently fall back to English.
           const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
           const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
-          const html = generateKotHtml(order, { paperWidth, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone });
+          const html = generateKotHtml(order, { paperWidth, language: kotLanguage, stationName: opts?.stationName ?? 'Kitchen', timezone: tenantTimezone ?? opts?.timezone });
           await printerService.printViaBrowser(html, paperWidth);
           // A failed locale load degrades to English labels; surface it
           // through the established warning path instead of staying silent

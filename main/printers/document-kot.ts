@@ -157,7 +157,7 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   const orderType = header.orderType
     ? thermalSafeText(
       `${labelOf(header.orderType.label)}: ${header.orderType.value.text}`,
-      `Type: ${header.orderType.value.text.replace(/_/g, ' ').trim().toUpperCase()}`,
+      `Type: ${header.orderType.code.replace(/_/g, ' ').trim().toUpperCase()}`,
       options.language,
       options.arabicShaping,
     )

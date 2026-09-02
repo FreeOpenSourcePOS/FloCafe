@@ -732,7 +732,7 @@ export interface KotHeaderBlock {
   readonly orderNumber: DirectionalText;
   /** Table reference with its (uninterpolated) label concept. */
   readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
-  readonly orderType: { readonly label: SemanticLabel; readonly value: DirectionalText } | null;
+  readonly orderType: { readonly label: SemanticLabel; readonly value: DirectionalText; readonly code: string } | null;
   readonly timeLabel: SemanticLabel;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
@@ -792,6 +792,7 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
       ? Object.freeze({
         label: resolveSemanticLabel(labels, 'print.kot.type'),
         value: directionalText(kotOrderTypeValue(labels, printData.order.orderType), base),
+        code: printData.order.orderType,
       })
       : null,
     timeLabel: resolveSemanticLabel(labels, 'print.time'),

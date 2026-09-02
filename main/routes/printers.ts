@@ -617,14 +617,16 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     let success = true;
     const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
     let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
-    const kotSourceItems = Array.isArray(items) ? items : orderItems;
+    const kotSourceItems = (Array.isArray(items) ? items : orderItems)
+      .filter((item: any) => item?.status !== 'served' && item?.status !== 'ready');
     if (stationName) {
-      const kotItems = items || orderItems;
       const station = stationName || 'Kitchen';
-      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req), arabicShapingOverride, kotLanguage);
-      success = result.ok;
-      failure = result.ok ? null : result;
-      warnings.push(...(result.warnings || []));
+      if (kotSourceItems.length > 0) {
+        const result = await printKOTDetailed(order, kotSourceItems, station, useUnicode, undefined, getHttpRequestSignal(req), arabicShapingOverride, kotLanguage);
+        success = result.ok;
+        failure = result.ok ? null : result;
+        warnings.push(...(result.warnings || []));
+      }
     } else {
       const groups = routeItemsToStations(db, kotSourceItems).filter((g) => g.items.length > 0);
       for (const group of groups) {

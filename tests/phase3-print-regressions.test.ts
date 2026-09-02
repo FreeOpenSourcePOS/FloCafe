@@ -153,6 +153,9 @@ async function run(): Promise<void> {
   assert.doesNotMatch(Buffer.from(unsupportedFinancialBytes).toString('utf8'), /قهوه/, 'unsupported tax-bill item text is not transported');
 
   const faShapedWarnings: any[] = [];
+  const faGenericWarnings: any[] = [];
+  const faGenericText = escPosToText(formatKOT(order, order.items, 'Main Kitchen', 42, false, 'full', 'fa-IR', { timeZone: 'UTC' }, faGenericWarnings, false, 'fa'));
+  assert.match(faGenericText, /Type: DINE IN/, 'generic thermal path keeps an ASCII order type fallback');
   const faShapedText = escPosToText(formatKOT(order, order.items, 'Main Kitchen', 42, false, 'full', 'fa-IR', { timeZone: 'UTC' }, faShapedWarnings, true, 'fa'));
   assert.match(faShapedText, /برگ سفارش آشپزخانه/, 'fa shaping path keeps localized KOT banner');
   assert.match(faShapedText, /نوع: خوردن در محل/, 'fa shaping path keeps localized order type');

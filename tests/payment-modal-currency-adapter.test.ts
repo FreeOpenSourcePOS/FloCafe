@@ -321,7 +321,7 @@ async function runModalKeypadIntegrationTests() {
         [PaymentModal, { bill, currency: 'JPY', onClose: () => undefined, onPaid: () => undefined }, 'PaymentModal'],
         [PrepaidCheckoutModal, { currency: 'JPY', onClose: () => undefined, onConfirm: () => undefined }, 'PrepaidCheckoutModal'],
       ] as const) {
-        const targetStateIndex = label === 'PaymentModal' ? 2 : 3;
+        const targetStateIndex = 3;
         await page.setContent(renderModal(Modal, props, 'payment', targetStateIndex));
         assert.equal(await page.getByRole('button', { name: '.', exact: true }).count(), 0, `${label} hides JPY payment decimal key`);
         await page.setContent(renderModal(Modal, props, 'discount', targetStateIndex));

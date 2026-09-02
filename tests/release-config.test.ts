@@ -250,7 +250,7 @@ function run() {
 
   const linuxJob = jobs['release-linux'];
   const downloadNotes = findStep(linuxJob, 'Download release notes artifact');
-  assert.equal(downloadNotes.uses, 'actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16');
+  assert.equal(downloadNotes.uses, 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c');
   assert.equal(downloadNotes.with?.name, 'release-notes');
   assert.equal(downloadNotes.with?.path, '/tmp');
   assert.equal(downloadNotes['continue-on-error'], undefined, 'Download release notes artifact must strictly require artifact to guarantee note parity');

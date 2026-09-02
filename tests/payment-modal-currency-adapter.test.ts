@@ -24,6 +24,23 @@ import {
   formatNumberForTenant,
 } from '../main/countries';
 
+const ROOT = path.join(__dirname, '..');
+const Module = require('module');
+const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
+const moduleApi = require('module') as {
+  _resolveFilename: (...args: any[]) => string;
+};
+const originalResolveFilename = moduleApi._resolveFilename;
+moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+  const resolvedRequest = request.startsWith('@/')
+    ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+    : request;
+  return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+};
+const React = frontendRequire('react');
+const ReactDOMServer = frontendRequire('react-dom/server');
+const TouchNumberPad = require('../frontend/src/components/pos/TouchNumberPad').default;
+
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
   path.join(os.tmpdir(), 'no-mistakes-evidence', '01M09EG8J030YCK62W10XAD7D6');
@@ -145,65 +162,65 @@ function runPaymentMathTests() {
   console.log('  ✓ Payment split allocation, discount, and wallet math verified');
 }
 
-function runSavePathPrecisionTests() {
-  console.log('\n--- 3. Product, Addon, and Discount Precision Verification ---');
+async function runCurrencyInputBehaviorTests() {
+  console.log('\n--- 3. Currency Input and Keypad Behavior Verification ---');
 
-  // 1. JPY Verification
   const jpyAdapter = getCurrencyUnitAdapter('JPY', 'JP');
   assert.equal(jpyAdapter.step, '1');
   assert.equal(jpyAdapter.maxDecimals, 0);
-  const jpyPrice = Number(jpyAdapter.formatInput(1500));
-  assert.equal(Number.isInteger(jpyPrice), true, 'JPY price is whole integer');
-  const jpyKeypadAmountAllowed = jpyAdapter.maxDecimals > 0;
-  assert.equal(jpyKeypadAmountAllowed, false, 'JPY amount keypad suppresses decimal point');
-  const jpyKeypadDiscountPercentAllowed = true;
-  assert.equal(jpyKeypadDiscountPercentAllowed, true, 'Percentage discount keypad allows decimal point in JPY');
-
-  // 2. USD Verification
   const usdAdapter = getCurrencyUnitAdapter('USD', 'US');
   assert.equal(usdAdapter.step, '0.01');
   assert.equal(usdAdapter.maxDecimals, 2);
-  const usdKeypadAmountAllowed = usdAdapter.maxDecimals > 0;
-  assert.equal(usdKeypadAmountAllowed, true, 'USD amount keypad allows decimal point');
-
-  // 3. KWD Verification (Product and Addon precision)
   const kwdAdapter = getCurrencyUnitAdapter('KWD', 'KW');
   assert.equal(kwdAdapter.step, '0.001');
   assert.equal(kwdAdapter.maxDecimals, 3);
-  const kwdKeypadAmountAllowed = kwdAdapter.maxDecimals > 0;
-  assert.equal(kwdKeypadAmountAllowed, true, 'KWD amount keypad allows decimal point');
 
-  // Verify DB save and read persistence for 3-decimal KWD product and addon amounts
-  const Database = require('better-sqlite3');
-  const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE products (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      price REAL NOT NULL,
-      cost REAL DEFAULT 0
+  const { chromium } = frontendRequire('playwright');
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const renderKeypad = (allowDecimal: boolean) => ReactDOMServer.renderToStaticMarkup(
+      React.createElement(TouchNumberPad, {
+        value: '',
+        onChange: () => undefined,
+        ariaLabel: 'Amount keypad',
+        clearLabel: 'Clear',
+        backspaceLabel: 'Backspace',
+        allowDecimal,
+      }),
     );
-    CREATE TABLE addons (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      price REAL NOT NULL DEFAULT 0
+
+    const page = await browser.newPage();
+    await page.setContent(renderKeypad(jpyAdapter.maxDecimals > 0));
+    assert.equal(
+      await page.getByRole('button', { name: '.', exact: true }).count(),
+      0,
+      'JPY keypad omits the decimal button',
     );
-  `);
 
-  const kwdProductPrice = 1.255;
-  const kwdProductCost = 0.85;
-  db.prepare('INSERT INTO products (id, name, price, cost) VALUES (?, ?, ?, ?)').run('prod-kwd', 'Kuwait Coffee', kwdProductPrice, kwdProductCost);
-  const savedProduct = db.prepare('SELECT price, cost FROM products WHERE id = ?').get('prod-kwd') as { price: number; cost: number };
-  assert.equal(savedProduct.price, 1.255, '3-decimal KWD product price 1.255 preserved exactly');
-  assert.equal(savedProduct.cost, 0.85, '3-decimal KWD product cost 0.85 preserved exactly');
+    await page.setContent(renderKeypad(usdAdapter.maxDecimals > 0));
+    assert.equal(
+      await page.getByRole('button', { name: '.', exact: true }).count(),
+      1,
+      'USD keypad renders the decimal button',
+    );
 
-  const kwdAddonPrice = 0.255;
-  db.prepare('INSERT INTO addons (id, name, price) VALUES (?, ?, ?)').run('addon-kwd', 'Extra Shot', kwdAddonPrice);
-  const savedAddon = db.prepare('SELECT price FROM addons WHERE id = ?').get('addon-kwd') as { price: number };
-  assert.equal(savedAddon.price, 0.255, '3-decimal KWD addon price 0.255 preserved exactly');
+    await page.setContent(renderKeypad(kwdAdapter.maxDecimals > 0));
+    assert.equal(
+      await page.getByRole('button', { name: '.', exact: true }).count(),
+      1,
+      'KWD keypad renders the decimal button',
+    );
 
-  db.close();
-  console.log('  ✓ JPY whole-unit, USD 2-decimal, and KWD 3-decimal product/addon persistence verified');
+    await page.setContent(renderKeypad(true));
+    assert.equal(
+      await page.getByRole('button', { name: '.', exact: true }).count(),
+      1,
+      'Percentage discount keypad renders the decimal button',
+    );
+  } finally {
+    await browser.close();
+  }
+  console.log('  ✓ Currency steps and rendered keypad precision behavior verified');
 }
 
 function generatePaymentModalHtml(config: {
@@ -496,7 +513,7 @@ async function captureEvidenceArtifacts() {
 async function main() {
   runUnitTests();
   runPaymentMathTests();
-  runSavePathPrecisionTests();
+  await runCurrencyInputBehaviorTests();
   await captureEvidenceArtifacts();
   console.log('\n========================================');
   console.log('All tests and visual evidence generation passed!');

@@ -1059,7 +1059,7 @@ and the financial warnings in `warnings`; dispatch failures use
 
 ### POST `/api/printers/print-kot`
 
-Print a kitchen order ticket for `orderId`. A caller may provide `stationName` and `items`; otherwise FloCafe routes items to configured kitchen stations. This endpoint returns `403` when KOT printing is disabled.
+Print a kitchen order ticket for `orderId`. A caller may provide `stationName` and `items`; otherwise FloCafe routes items to configured kitchen stations. The KOT status-filtering contract is defined in [printing architecture](printing-architecture.md#3-printdocument-v1-model). This endpoint returns `403` when KOT printing is disabled.
 
 ```json
 {

@@ -13,6 +13,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import type { OrderItem, Table, Product, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
@@ -228,6 +229,7 @@ export default function OrdersPage() {
   const linkSearchRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
+  const unitAdapter = useCurrencyUnitAdapter();
   const fmt = useFormatCurrency();
   const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
 
@@ -1630,10 +1632,10 @@ placeholder={tOrders('managerPin')}
                     type="number"
                     min={0}
                     max={discountModal.type === 'percentage' ? 100 : Number(discountModal.order.total)}
-                    step={discountModal.type === 'percentage' ? 1 : 0.01}
+                    step={discountModal.type === 'percentage' ? 1 : unitAdapter.step}
                     value={discountModal.value || ''}
                     onChange={(e) => updateDiscountModal({ value: Number(e.target.value) })}
-                    placeholder={discountModal.type === 'percentage' ? '0' : '0.00'}
+                    placeholder={discountModal.type === 'percentage' ? '0' : unitAdapter.formatInput(0)}
                     className="w-full ps-8 pe-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   />
                 </div>

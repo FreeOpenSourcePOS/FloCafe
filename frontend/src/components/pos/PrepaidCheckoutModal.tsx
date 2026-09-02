@@ -624,7 +624,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
               ariaLabel={t('numericKeypad')}
               clearLabel={t('clearAmount')}
               backspaceLabel={t('backspaceAmount')}
-              allowDecimal={amountTarget.kind !== 'discount' || discountType === 'amount'}
+              allowDecimal={amountTarget.kind === 'discount' && discountType === 'percentage' ? true : unitAdapter.maxDecimals > 0}
               max={activeAmountMax}
               quickValues={activeAmountQuickValues}
             />

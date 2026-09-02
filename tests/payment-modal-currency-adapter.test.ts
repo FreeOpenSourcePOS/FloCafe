@@ -82,6 +82,30 @@ function runUnitTests() {
   assert.equal(inrAdapter.toDisplay(1200), 1200);
   assert.equal(inrAdapter.toStored(1200), 1200);
   console.log('  ✓ Standard currencies (USD, INR) adapter verified');
+
+  // Test 6: Zero-decimal currencies (JPY) UI behavior
+  const jpyAdapter = getCurrencyUnitAdapter('JPY', 'JP');
+  assert.equal(jpyAdapter.scale, 1);
+  assert.equal(jpyAdapter.label, 'JPY');
+  assert.equal(jpyAdapter.step, '1', 'JPY price input step is whole number 1');
+  assert.equal(jpyAdapter.maxDecimals, 0, 'JPY maxDecimals is 0');
+  assert.equal(jpyAdapter.toDisplay(1500), 1500);
+  assert.equal(jpyAdapter.toStored(1500), 1500);
+  assert.equal(jpyAdapter.formatInput(1500), '1500');
+  const jpyPaymentAllowDecimal = jpyAdapter.maxDecimals > 0;
+  assert.equal(jpyPaymentAllowDecimal, false, 'JPY payment keypad disables decimal key');
+  console.log('  ✓ JPY zero-decimal UI step (1) and keypad decimal suppression verified');
+
+  // Test 7: Three-decimal currencies (KWD) UI control behavior
+  // Note: PR 2 only makes UI controls reflect currency precision; does not claim full 3-decimal country pack support.
+  const kwdAdapter = getCurrencyUnitAdapter('KWD', 'KW');
+  assert.equal(kwdAdapter.scale, 1);
+  assert.equal(kwdAdapter.label, 'KWD');
+  assert.equal(kwdAdapter.step, '0.001', 'KWD price input step is 0.001');
+  assert.equal(kwdAdapter.maxDecimals, 3, 'KWD maxDecimals is 3');
+  const kwdPaymentAllowDecimal = kwdAdapter.maxDecimals > 0;
+  assert.equal(kwdPaymentAllowDecimal, true, 'KWD payment keypad enables decimal key');
+  console.log('  ✓ KWD 3-decimal UI step (0.001) and keypad decimal availability verified');
 }
 
 function runPaymentMathTests() {

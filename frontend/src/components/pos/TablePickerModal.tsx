@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useTranslations, type AppConfig } from 'use-intl';
+import { TableTurnoverBadge } from '@/components/tables/TableTurnoverBadge';
 
 interface Props {
   tables: Table[];
@@ -96,6 +97,9 @@ export default function TablePickerModal({
                   <p className="text-xs text-orange-600 font-medium mt-1">
                     #{(table.current_order || table.activeOrder)?.order_number}
                   </p>
+                )}
+                {table.status === 'occupied' && table.seated_at && (
+                  <div className="mt-1"><TableTurnoverBadge seatedAt={table.seated_at} /></div>
                 )}
               </button>
             );

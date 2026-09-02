@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
-import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText } from 'lucide-react';
+import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass } from 'lucide-react';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import toast from 'react-hot-toast';
@@ -13,6 +13,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { ORDER_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { splitHoursMinutes } from '@/lib/table-timing';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 interface PaymentMethodBreakdown {
@@ -26,6 +27,7 @@ interface DailyStats {
   runningOrders: number;
   pendingOrders: number;
   tablesOccupied: number;
+  avgTableTurnMinutes?: number | null;
   paymentMethods: PaymentMethodBreakdown[];
 }
 
@@ -299,6 +301,18 @@ export default function DashboardPage() {
           icon: LayoutGrid,
           color: 'bg-purple-50 border-purple-200',
           iconColor: 'text-purple-600',
+          href: '/tables',
+        },
+        {
+          label: t('avgTableTurn'),
+          value: (() => {
+            if (stats?.avgTableTurnMinutes == null) return '—';
+            const { h, m } = splitHoursMinutes(stats.avgTableTurnMinutes);
+            return h > 0 ? tCommon('timeHoursMinutes', { h, m }) : tCommon('timeMinutes', { m });
+          })(),
+          icon: Hourglass,
+          color: 'bg-cyan-50 border-cyan-200',
+          iconColor: 'text-cyan-600',
           href: '/tables',
         },
       ]

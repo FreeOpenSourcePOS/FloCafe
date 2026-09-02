@@ -11,7 +11,7 @@ Module._load = function (request, parent, isMain) {
 
 const { initTestDb, createApp, startServer, seedOwnerUser, seedCategory, seedProduct, api, assert, assertEqual, now } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
-const { billRoutes, allocateMinorUnits } = require('../main/routes/bills');
+const { billRoutes, allocateMinorUnits, allocateTaxSnapshots, projectOrderItems } = require('../main/routes/bills');
 const { settingsRoutes } = require('../main/routes/settings');
 const { getCurrencyFractionDigits, getCurrencyMinorUnitFactor, getCurrencyUnitAdapter } = require('../main/countries');
 
@@ -62,6 +62,28 @@ async function main() {
   const usdAllocated = allocateMinorUnits(usdTotalMinor, [1, 1, 1]).map((m) => m / usdFactor);
   assertEqual(JSON.stringify(usdAllocated), JSON.stringify([3.34, 3.33, 3.33]), '$10.00 USD split 3 ways allocates [3.34, 3.33, 3.33]');
   assertEqual(Number((usdAllocated.reduce((a, b) => a + b, 0)).toFixed(2)), 10.00, 'Sum of USD split checks equals $10.00');
+
+  const jpySnapshot = JSON.stringify({
+    lines: [{
+      grossAmount: 1000,
+      taxableBase: 1000,
+      components: [{ amount: 1, rate: 10 }],
+    }],
+  });
+  const jpySnapshots = allocateTaxSnapshots(jpySnapshot, [1, 1], undefined, jpyFactor)
+    .map((raw) => JSON.parse(raw));
+  assertEqual(jpySnapshots[0].lines[0].components[0].amount, 1, 'JPY snapshot keeps one-yen tax on first child');
+  assertEqual(jpySnapshots[1].lines[0].components[0].amount, 0, 'JPY snapshot allocates zero tax to second child');
+  assertEqual(jpySnapshots[0].lines[0].taxAmount, 1, 'JPY snapshot taxAmount uses whole-yen units');
+
+  const projectedJpy = projectOrderItems(
+    { subtotal: 1000, discount_amount: 0 },
+    [{ id: 1, quantity: 1, subtotal: 1000, tax_amount: 1, total: 1001, tax_breakdown: JSON.stringify([{ amount: 1 }]), tax_snapshot: null }],
+    [{ order_item_id: 1, quantity: 1 }],
+    new Map(),
+    jpyFactor,
+  )[0];
+  assertEqual(projectedJpy.tax_amount, 1, 'Projected JPY item tax keeps whole-yen precision');
 
   // ── 3. End-to-End API Split Check: JPY Store ─────────────────────
   console.log('\n3. End-to-End JPY Split Check via API:');

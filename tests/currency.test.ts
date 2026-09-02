@@ -97,6 +97,10 @@ test('getCurrencyUnitAdapter: zero-decimal currencies use whole integer steps', 
   assert.equal(krwAdapter.step, '1');
   assert.equal(krwAdapter.maxDecimals, 0);
 
+  const clfAdapter = getCurrencyUnitAdapter('CLF', 'CL');
+  assert.equal(clfAdapter.step, '0.0001');
+  assert.equal(clfAdapter.maxDecimals, 4);
+
   const usdAdapter = getCurrencyUnitAdapter('USD', 'US');
   assert.equal(usdAdapter.scale, 1);
   assert.equal(usdAdapter.label, 'USD');

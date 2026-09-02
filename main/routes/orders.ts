@@ -408,8 +408,12 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
       pkgCharge = normalizeChargeAmount(packaging_charge, 'packaging');
       delCharge = normalizeChargeAmount(delivery_charge, 'delivery');
       serviceCharge = normalizeChargeAmount(service_charge, 'service_charge');
-    } catch (error: any) {
-      return res.status(error.statusCode || 400).json({ error: error.message });
+    } catch (error: unknown) {
+      const statusCode = typeof error === 'object' && error !== null && 'statusCode' in error && typeof error.statusCode === 'number'
+        ? error.statusCode
+        : 400;
+      const message = error instanceof Error ? error.message : 'Invalid charge amount';
+      return res.status(statusCode).json({ error: message });
     }
 
     if (online_platform !== undefined && online_platform !== null && typeof online_platform !== 'string') {

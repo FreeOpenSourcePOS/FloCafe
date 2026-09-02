@@ -509,6 +509,7 @@
     "deliveryAddress": "Delivery address",
     "discount": "Discount",
     "discountInvalid": "Please enter a valid discount value",
+    "fixedDiscountMinimum": "Fixed discounts must be at least 1 unit",
     "discountReasonPlaceholder": "Reason (optional)",
     "discountRemoved": "Discount removed",
     "discountUpdated": "Discount updated",

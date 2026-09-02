@@ -1,21 +1,21 @@
 # Non-Latin thermal receipt printing — capability study and decision record
 
 **Refs:** #446 (research issue) · epic #438
-**Status of this document:** Study and decision record. It describes a *recommended* target architecture that is **not yet implemented**; thermal production renderers remain on the current text/skip-with-warning behavior. The browser system-print path now shares the semantic label pipeline, but this change does not alter raw thermal output or the non-Latin fallback studied here. Any prototype or dependency adoption requires separate review (see Section 8, *Open decisions*).
+**Status of this document:** Study and decision record. It describes a *recommended* target architecture that is **not yet implemented**; thermal production renderers retain text handling with skip-with-warning for non-financial lines, while unsupported item and financial rows are refused before transport. The browser system-print path now shares the semantic label pipeline. Any prototype or dependency adoption requires separate review (see Section 8, *Open decisions*).
 
 ---
 
 ## 1. Problem
 
-Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — currently degrades to a stopgap: a per-profile `arabicShaping` passthrough plus skip-with-warning behavior.
+Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — currently degrades to a stopgap: a per-profile `arabicShaping` passthrough plus skip-with-warning behavior for non-financial lines. Unsupported item and financial rows are refused before transport so a receipt is never printed with missing financial content.
 
 Current code (verified at the time of writing):
 
 | Location | Behavior |
 | --- | --- |
 | `main/printers/profiles.ts` (`SupportedPrinterProfile.arabicShaping`) | Profile flag declaring firmware Arabic shaping; unset/false on all four shipped profiles. |
-| `main/printers/thermal.ts` (`buildEscPos`) | Lines whose non-currency content is not ASCII are skipped with a warning, unless `arabicShaping` passes the strict Arabic-only rule. |
-| `frontend/src/lib/printer/warnings.ts` (`safePrinterText`, `isArabicShapingSafeLine`) | Browser/WebUSB encoders mirror the same guard so both paths degrade identically. |
+| `main/printers/thermal.ts` (`buildEscPos`) | Non-financial lines whose non-currency content is not ASCII are skipped with a warning, unless `arabicShaping` passes the strict Arabic-only rule; financial rows are marked for pre-transport refusal. |
+| `frontend/src/lib/printer/warnings.ts` (`safePrinterText`, `isArabicShapingSafeLine`) | Browser/WebUSB encoders mirror the same guard; financial-row warnings are refused by the migrated receipt caller before transport. |
 | `shared/print/direction.ts` | Direction model: per-document/block/value direction with conservative LTR-island classification (`isLtrIsland`, `containsRtlScript`). |
 
 Why generic ESC/POS printers fail non-Latin text:

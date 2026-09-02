@@ -17,7 +17,12 @@ import {
 } from '@/lib/printer/print-document';
 import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
-import { makeBillTemplateFallbackWarning, type PrintWarning } from '@/lib/printer/warnings';
+import {
+  hasFinancialPrintWarning,
+  makeBillTemplateFallbackWarning,
+  makeFinancialPrintRefusalMessage,
+  type PrintWarning,
+} from '@/lib/printer/warnings';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
@@ -156,6 +161,7 @@ export const usePrinterStore = create<PrinterState>()(
                 toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
                 return await executeBrowserPrint();
               }
+              if (errorMsg.startsWith('Receipt not printed:')) toast.error(errorMsg);
               throw new Error(errorMsg);
             }
           }
@@ -211,6 +217,12 @@ export const usePrinterStore = create<PrinterState>()(
             bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, warnings);
           } else {
             bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, warnings);
+          }
+
+          if (hasFinancialPrintWarning(warnings)) {
+            const refusal = makeFinancialPrintRefusalMessage(warnings);
+            toast.error(refusal);
+            throw new Error(refusal);
           }
 
           set({ lastPrintedBytes: bytes });

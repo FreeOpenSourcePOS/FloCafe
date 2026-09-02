@@ -70,6 +70,8 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     if (fs.existsSync(wal)) fs.unlinkSync(wal);
     const shm = path.join(tempDir, 'flo.db-shm');
     if (fs.existsSync(shm)) fs.unlinkSync(shm);
+    const marker = path.join(tempDir, '.flo-db-initialized');
+    if (fs.existsSync(marker)) fs.unlinkSync(marker);
     initDatabase();
     ownerAuth = seedOwnerUser(getDatabase());
   });

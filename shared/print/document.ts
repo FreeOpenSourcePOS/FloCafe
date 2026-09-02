@@ -93,7 +93,7 @@ export function directionalText(text: string, base: TextDirection): DirectionalT
 // Snapshots (PrintData) — normalized authoritative values, no live rows
 // ---------------------------------------------------------------------------
 
-/** One addon line under an item row. Price is printed truth (0 = unpriced). */
+/** One add-on line; price is the extended printed amount (0 = unpriced). */
 export interface ItemAddonSnapshot {
   readonly name: string;
   readonly price: number;
@@ -278,7 +278,7 @@ export interface CustomerBlock {
   readonly phoneLabel: SemanticLabel;
 }
 
-/** One addon under an item row. `price === 0` means unpriced extra. */
+/** One add-on under an item row; price is its extended printed amount. */
 export interface ItemAddonValue {
   readonly name: DirectionalText;
   readonly price: number;

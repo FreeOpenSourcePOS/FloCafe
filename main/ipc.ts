@@ -320,6 +320,15 @@ export function registerIpcHandlers(
     return applyWindowControlAction(win, action);
   });
 
+  handle('get-window-state', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return { isMaximized: false, isFullScreen: false };
+    return {
+      isMaximized: win.isMaximized(),
+      isFullScreen: win.isFullScreen(),
+    };
+  });
+
   handle('window-ready', (event, payload: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return { error: 'Window unavailable' };

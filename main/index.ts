@@ -680,6 +680,23 @@ function createWindow(): void {
     usbDevicePermissionsRegistered = true;
   }
 
+  const sendWindowState = () => {
+    if (!createdWindow || createdWindow.isDestroyed()) return;
+    try {
+      createdWindow.webContents.send('window-state-changed', {
+        isMaximized: createdWindow.isMaximized(),
+        isFullScreen: createdWindow.isFullScreen(),
+      });
+    } catch {
+      // Ignored if webContents destroyed
+    }
+  };
+
+  createdWindow.on('maximize', sendWindowState);
+  createdWindow.on('unmaximize', sendWindowState);
+  createdWindow.on('enter-full-screen', sendWindowState);
+  createdWindow.on('leave-full-screen', sendWindowState);
+
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault();

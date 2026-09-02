@@ -488,7 +488,14 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');
     const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, getHttpRequestSignal(req), arabicShapingOverride, receiptLanguages.primary, receiptLanguages.additional);
-    console.log('[Print Bill] Print completed', result);
+    console.log('[Print Bill] Print completed', {
+      ok: result.ok,
+      code: result.code,
+      correlation_id: result.correlationId,
+      stage: result.stage,
+      failure_class: result.failureClass,
+      warning_count: result.warnings?.length || 0,
+    });
 
     if (result.ok) {
       res.json({ success: true, warnings: result.warnings || [] });

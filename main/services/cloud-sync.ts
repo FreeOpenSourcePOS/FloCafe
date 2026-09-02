@@ -1077,7 +1077,7 @@ export class CloudSyncService {
     const todaySales = db.prepare(`
       SELECT
         COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
-        - COALESCE((SELECT SUM(amount_cents) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as total,
+        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as total,
         (SELECT COUNT(*) FROM bills WHERE paid_at >= ? AND paid_at < ?) as count
     `).get(ts, te, minorFactor, ts, te, ts, te) as { total: number; count: number };
     return {
@@ -1631,7 +1631,7 @@ export class CloudSyncService {
         COALESCE(SUM(tax_amount), 0) as tax_amount,
         COALESCE(SUM(discount_amount), 0) as discount_amount,
         COALESCE(SUM(paid_amount), 0)
-          - COALESCE((SELECT SUM(amount_cents) / ? FROM refunds WHERE created_at >= ? AND created_at <= ?), 0) as paid_amount
+          - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at <= ?), 0) as paid_amount
       FROM bills
       WHERE paid_at >= ? AND paid_at <= ?
     `).get(minorFactor, range.from, range.to, range.from, range.to);
@@ -1641,7 +1641,7 @@ export class CloudSyncService {
         SELECT date(paid_at) as date, 1 as bill_count, paid_amount as gross_sales
         FROM bills WHERE paid_at >= ? AND paid_at <= ?
         UNION ALL
-        SELECT date(created_at), 0, -(amount_cents / ?)
+        SELECT date(created_at), 0, -(CAST(amount_cents AS REAL) / ?)
         FROM refunds WHERE created_at >= ? AND created_at <= ?
       )
       SELECT date, SUM(bill_count) as bill_count, COALESCE(SUM(gross_sales), 0) as gross_sales
@@ -1679,7 +1679,7 @@ export class CloudSyncService {
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const totals = db.prepare(`
       SELECT COUNT(*) AS bill_count, COALESCE(SUM(paid_amount), 0)
-             - COALESCE((SELECT SUM(amount_cents) / ? FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)), 0) AS total_sales,
+             - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)), 0) AS total_sales,
              COALESCE(SUM(tax_amount), 0) AS total_tax,
              COALESCE(SUM(discount_amount), 0) AS total_discount
         FROM bills
@@ -1714,7 +1714,7 @@ export class CloudSyncService {
         SELECT strftime('%H', paid_at) AS hour, paid_amount AS sales, 1 AS bills
         FROM bills WHERE paid_at IS NOT NULL AND date(paid_at) BETWEEN date(?) AND date(?)
         UNION ALL
-        SELECT strftime('%H', created_at), -(amount_cents / ?), 0
+        SELECT strftime('%H', created_at), -(CAST(amount_cents AS REAL) / ?), 0
         FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)
       )
       SELECT hour, COALESCE(SUM(sales), 0) AS sales, SUM(bills) AS bills
@@ -1765,7 +1765,7 @@ export class CloudSyncService {
           LEFT JOIN payment_methods pm ON pm.id = CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER)
          WHERE b.payment_details IS NOT NULL
         UNION ALL
-        SELECT method, -(amount_cents / ?), created_at FROM refunds
+        SELECT method, -(CAST(amount_cents AS REAL) / ?), created_at FROM refunds
       )
       SELECT method, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount
         FROM entries

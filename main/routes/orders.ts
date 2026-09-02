@@ -474,6 +474,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         country: settings.country || 'IN',
         business_type: settings.business_type || 'restaurant',
         state_code: settings.state_code || '',
+        currency: getTenantCurrency(),
         taxes_enabled: settings.taxes_enabled === 'true',
       };
       const chargeCategories = getConfiguredChargeTaxCategories(tenantInfo.country);
@@ -687,6 +688,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       country: settings.country || 'IN',
       business_type: settings.business_type || 'restaurant',
       state_code: settings.state_code || '',
+      currency: getTenantCurrency(),
       taxes_enabled: settings.taxes_enabled === 'true',
     };
 
@@ -1243,6 +1245,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       country: getSettingValue('country') || 'IN',
       business_type: getSettingValue('business_type') || 'restaurant',
       state_code: getSettingValue('state_code') || '',
+      currency: getTenantCurrency(),
       taxes_enabled: getSettingValue('taxes_enabled') === 'true',
     };
     // BUG #6 FIX: Wrap discount + tax + bill sync in a transaction
@@ -1469,6 +1472,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       country: settingsMap.country || 'IN',
       business_type: settingsMap.business_type || 'restaurant',
       state_code: settingsMap.state_code || '',
+      currency: getTenantCurrency(),
       taxes_enabled: settingsMap.taxes_enabled === 'true',
     };
     const taxResult = calculateItemTax(tenantInfo, product, newSubtotal, customer);

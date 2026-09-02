@@ -7,6 +7,7 @@ interface TenantInfo {
   country: string;
   business_type: string;
   state_code: string;
+  currency?: string;
   // Read from settings once per request by the caller (main/routes/orders.ts)
   // and passed in explicitly, rather than read here via getSettingValue —
   // calculateItemTax's other inputs are all explicit parameters, and isolated
@@ -239,6 +240,7 @@ export function calculateItemTax(
     try {
       calculation = TaxEngine.calculate({
         pack,
+        currency: tenant.currency,
         country: tenant.country,
         businessType: tenant.business_type,
         storeStateCode: tenant.state_code,
@@ -397,6 +399,7 @@ export function calculateConfiguredChargeTaxes(
     try {
       calculation = TaxEngine.calculate({
         pack,
+        currency: tenant.currency,
         country: tenant.country,
         businessType: tenant.business_type,
         storeStateCode: tenant.state_code,
@@ -751,6 +754,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     const currency = settings.currency && /^[A-Z]{3}$/.test(settings.currency)
       ? settings.currency
       : getCountryByCode(tenantInfo.country)?.currency || 'INR';
+    tenantInfo.currency = currency;
     const decimals = getCurrencyFractionDigits(currency);
     const minorFactor = getCurrencyMinorUnitFactor(currency);
 

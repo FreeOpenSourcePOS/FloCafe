@@ -34,6 +34,7 @@ export interface TaxEngineLine {
 
 export interface TaxEngineInput {
   pack: CountryPack;
+  currency?: string;
   country: string;
   jurisdiction?: string;
   businessType?: string;
@@ -356,9 +357,13 @@ function calculateRawLine(input: TaxEngineInput, line: TaxEngineLine): RawLine {
   return { input: line, resolution, behavior, gross, taxableBase, components };
 }
 
-function applyTaxRounding(pack: CountryPack, lines: RawLine[]): void {
+function applyTaxRounding(
+  pack: CountryPack,
+  lines: RawLine[],
+  decimalPlaces = pack.taxRounding.decimalPlaces,
+): void {
   const policy = pack.taxRounding;
-  const quantum = new TaxDecimal('10').pow(-policy.decimalPlaces);
+  const quantum = new TaxDecimal('10').pow(-decimalPlaces);
 
   if (policy.scope === 'unit') {
     for (const line of lines) {
@@ -366,8 +371,8 @@ function applyTaxRounding(pack: CountryPack, lines: RawLine[]): void {
       for (const component of line.components) {
         const isLineFixed = component.rule.type === 'fixed' && component.rule.appliesPer === 'line';
         component.rounded = isLineFixed
-          ? roundPlaces(component.amount, policy.decimalPlaces, policy.method)
-          : roundPlaces(component.amount.div(quantity), policy.decimalPlaces, policy.method).mul(quantity);
+          ? roundPlaces(component.amount, decimalPlaces, policy.method)
+          : roundPlaces(component.amount.div(quantity), decimalPlaces, policy.method).mul(quantity);
         component.remainder = component.amount.minus(component.rounded);
       }
     }
@@ -377,7 +382,7 @@ function applyTaxRounding(pack: CountryPack, lines: RawLine[]): void {
   if (policy.scope === 'line') {
     for (const line of lines) {
       for (const component of line.components) {
-        component.rounded = roundPlaces(component.amount, policy.decimalPlaces, policy.method);
+        component.rounded = roundPlaces(component.amount, decimalPlaces, policy.method);
         component.remainder = component.amount.minus(component.rounded);
       }
     }
@@ -387,11 +392,11 @@ function applyTaxRounding(pack: CountryPack, lines: RawLine[]): void {
   const components = lines.flatMap((line) => line.components);
   const target = roundPlaces(
     components.reduce((sum, component) => sum.plus(component.amount), new TaxDecimal('0')),
-    policy.decimalPlaces,
+    decimalPlaces,
     policy.method,
   );
   for (const component of components) {
-    component.rounded = component.amount.toDecimalPlaces(policy.decimalPlaces, Decimal.ROUND_FLOOR);
+    component.rounded = component.amount.toDecimalPlaces(decimalPlaces, Decimal.ROUND_FLOOR);
     component.remainder = component.amount.minus(component.rounded);
   }
   let units = target.minus(
@@ -416,9 +421,10 @@ function applyTaxRounding(pack: CountryPack, lines: RawLine[]): void {
 export class TaxEngine {
   static calculate(input: TaxEngineInput): TaxCalculation {
     const rawLines = input.lines.map((line) => calculateRawLine(input, line));
-    applyTaxRounding(input.pack, rawLines);
-
-    const places = input.pack.taxRounding.decimalPlaces;
+    const places = input.currency !== undefined
+      ? getCurrencyFractionDigits(input.currency)
+      : input.pack.taxRounding.decimalPlaces;
+    applyTaxRounding(input.pack, rawLines, places);
     const lineResults: TaxLineResult[] = rawLines.map((line) => {
       const components = line.components.map((component) => ({
         ruleId: component.rule.id,

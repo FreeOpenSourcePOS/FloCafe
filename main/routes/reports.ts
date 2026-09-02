@@ -90,7 +90,7 @@ function paymentMethodBreakdown(
         ) AS payment_time
       FROM payment_lines
       UNION ALL
-      SELECT r.method, NULL, -(r.amount_cents / ?),
+      SELECT r.method, NULL, -(CAST(r.amount_cents AS REAL) / ?),
         datetime(CASE WHEN ? = 1 THEN b.paid_at ELSE r.created_at END)
       FROM refunds r
       JOIN bills b ON b.id = r.bill_id
@@ -125,7 +125,7 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     const salesToday = db.prepare(`
       SELECT
         COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
-        - COALESCE((SELECT SUM(amount_cents) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) AS sales
+        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) AS sales
     `).get(start, end, minorFactor, start, end) as { sales: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, today) as { total: number }[];
 
@@ -192,7 +192,7 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
     const billsToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total,
         COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
-        - COALESCE((SELECT SUM(amount_cents) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
+        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
       FROM bills WHERE created_at >= ? AND created_at < ?
     `).get(start, end, minorFactor, start, end, start, end) as { count: number; total: number; collected: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, date);
@@ -242,12 +242,12 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
       FROM bills WHERE paid_at >= ? AND paid_at < ?
     `).get(start, end) as { bill_count: number; gross_collected: number };
     const refundTotals = db.prepare(`
-      SELECT COUNT(*) AS refund_count, COALESCE(SUM(r.amount_cents) / ?, 0) AS refunded
+      SELECT COUNT(*) AS refund_count, COALESCE(SUM(CAST(r.amount_cents AS REAL)) / ?, 0) AS refunded
       FROM refunds r JOIN bills b ON b.id = r.bill_id
       WHERE b.paid_at >= ? AND b.paid_at < ?
     `).get(minorFactor, start, end) as { refund_count: number; refunded: number };
     const refunds = db.prepare(`
-      SELECT r.id, r.amount_cents / ? AS amount, r.method, r.reason,
+      SELECT r.id, CAST(r.amount_cents AS REAL) / ? AS amount, r.method, r.reason,
         r.created_at, b.bill_number, b.paid_at, o.order_number,
         COALESCE(approver.name, creator.name, 'Unknown') AS approved_by_name
       FROM refunds r
@@ -545,7 +545,7 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     const revenue = db.prepare(`
       SELECT COUNT(*) as billCount,
         COALESCE(SUM(paid_amount), 0)
-        - COALESCE((SELECT SUM(amount_cents) / ? FROM refunds WHERE created_at >= ?), 0) as total
+        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ?), 0) as total
       FROM bills
       WHERE paid_at >= ?
     `).get(minorFactor, windowStart, windowStart) as { billCount: number; total: number };

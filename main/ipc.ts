@@ -524,7 +524,7 @@ export function registerIpcHandlers(
         SELECT
           (SELECT COUNT(*) FROM bills WHERE date(paid_at) = date(?)) as bill_count,
           COALESCE((SELECT SUM(paid_amount) FROM bills WHERE date(paid_at) = date(?)), 0)
-          - COALESCE((SELECT SUM(amount_cents) / ? FROM refunds WHERE date(created_at) = date(?)), 0) as revenue
+          - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE date(created_at) = date(?)), 0) as revenue
       `).get(today, today, minorFactor, today) as { bill_count: number; revenue: number };
 
       const covers = db.prepare(`

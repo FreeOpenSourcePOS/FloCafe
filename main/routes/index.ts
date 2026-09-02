@@ -486,6 +486,7 @@ export function registerRoutes(app: Express): void {
           country: getSettingValue('country') || 'IN',
           business_type: getSettingValue('business_type') || 'restaurant',
           state_code: getSettingValue('state_code') || '',
+          currency: getTenantCurrency(),
           taxes_enabled: getSettingValue('taxes_enabled') === 'true',
         };
         const customer = currentOrder.customer_id
@@ -674,6 +675,7 @@ export function registerRoutes(app: Express): void {
           country: getSettingValue('country') || 'IN',
           business_type: getSettingValue('business_type') || 'restaurant',
           state_code: getSettingValue('state_code') || '',
+          currency: getTenantCurrency(),
           taxes_enabled: getSettingValue('taxes_enabled') === 'true',
         };
         const customer = currentOrder.customer_id

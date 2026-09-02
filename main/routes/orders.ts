@@ -15,7 +15,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes, validateProductQuantity } from './orders-validation';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
-import { getCurrencyFractionDigits } from '../countries';
+import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency } from './bills';
 import expressRateLimit from 'express-rate-limit';
 
@@ -584,6 +584,9 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
       }
 
       const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, chargeContext, customer);
+      const currency = getTenantCurrency();
+      const decimals = getCurrencyFractionDigits(currency);
+      const minorFactor = getCurrencyMinorUnitFactor(currency);
       const taxRollup = combineItemAndChargeTaxes({
         itemTaxAmount: totalTax,
         itemExclusiveTaxAmount: exclusiveTax,
@@ -591,11 +594,10 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         itemSnapshots: allTaxSnapshots,
         itemTaxRatio: 1,
         chargeTaxes,
+        minorFactor,
       });
       const preRoundTotal = subtotal + taxRollup.exclusiveTaxAmount
         + delCharge + pkgCharge + serviceCharge;
-      const currency = getTenantCurrency();
-      const decimals = getCurrencyFractionDigits(currency);
       const total = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
@@ -819,6 +821,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       // BUG #12 FIX: Preserve order-level discount (scale percentage proportionally)
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
+      const minorFactor = getCurrencyMinorUnitFactor(currency);
       const existingDiscountAmount = currentOrder.discount_amount || 0;
       let newDiscountAmount = existingDiscountAmount;
       if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
@@ -847,6 +850,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         itemSnapshots: allTaxSnapshots,
         itemTaxRatio: taxRatio,
         chargeTaxes,
+        minorFactor,
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
@@ -1259,6 +1263,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         : null;
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
+      const minorFactor = getCurrencyMinorUnitFactor(currency);
 
       // Calculate discount amount
       let discountAmount = 0;
@@ -1311,6 +1316,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         itemSnapshots: allTaxSnapshots,
         itemTaxRatio: taxRatio,
         chargeTaxes,
+        minorFactor,
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (currentOrder.packaging_charge || 0) + (currentOrder.delivery_charge || 0) + (currentOrder.service_charge || 0);
@@ -1441,6 +1447,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
     const itemBaseTotal = item.unit_price * item.quantity + addonTotal;
     const currency = getTenantCurrency();
     const decimals = getCurrencyFractionDigits(currency);
+    const minorFactor = getCurrencyMinorUnitFactor(currency);
 
     let discountAmount: number;
     if (discount_type === 'percentage') {
@@ -1534,6 +1541,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
         itemSnapshots: allTaxSnapshots,
         itemTaxRatio: taxRatio,
         chargeTaxes,
+        minorFactor,
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (order.packaging_charge || 0) + (order.delivery_charge || 0) + (order.service_charge || 0);

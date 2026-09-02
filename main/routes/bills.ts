@@ -2146,6 +2146,7 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
     }
     const currency = getTenantCurrency();
     const decimals = getCurrencyFractionDigits(currency);
+    const minorFactor = getCurrencyMinorUnitFactor(currency);
     discountAmount = Number(discountAmount.toFixed(decimals));
 
     // Always derive the undiscounted tax basis from active item rows. Using
@@ -2197,6 +2198,7 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
       itemSnapshots,
       itemTaxRatio: taxRatio,
       chargeTaxes,
+      minorFactor,
     });
     const taxBreakdownJson = JSON.stringify(taxRollup.breakdowns);
 

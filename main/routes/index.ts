@@ -34,7 +34,7 @@ import { whatsappRoutes } from './whatsapp';
 import { supportTicketRoutes } from './support-ticket';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
-import { getCurrencyFractionDigits } from '../countries';
+import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 import {
@@ -462,6 +462,7 @@ export function registerRoutes(app: Express): void {
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
+        const minorFactor = getCurrencyMinorUnitFactor(currency);
         const existingDiscountAmount = currentOrder.discount_amount || 0;
         let newDiscountAmount = existingDiscountAmount;
         if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
@@ -498,6 +499,7 @@ export function registerRoutes(app: Express): void {
           itemSnapshots: allTaxSnapshots,
           itemTaxRatio: taxRatio,
           chargeTaxes,
+          minorFactor,
         });
 
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
@@ -648,6 +650,7 @@ export function registerRoutes(app: Express): void {
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
+        const minorFactor = getCurrencyMinorUnitFactor(currency);
         const existingDiscountAmount = currentOrder.discount_amount || 0;
         let newDiscountAmount = existingDiscountAmount;
         if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
@@ -684,6 +687,7 @@ export function registerRoutes(app: Express): void {
           itemSnapshots: allTaxSnapshots,
           itemTaxRatio: taxRatio,
           chargeTaxes,
+          minorFactor,
         });
 
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)

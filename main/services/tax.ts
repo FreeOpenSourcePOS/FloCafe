@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
-import { getCountryByCode, getCurrencyFractionDigits, type TaxIdFormat } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencyMinorUnitFactor, type TaxIdFormat } from '../countries';
 
 interface TenantInfo {
   country: string;
@@ -453,7 +453,7 @@ export function calculateConfiguredChargeTaxes(
   };
 }
 
-export function aggregateTaxBreakdown(itemBreakdowns: TaxBreakdown[][]): TaxBreakdown[] {
+export function aggregateTaxBreakdown(itemBreakdowns: TaxBreakdown[][], minorFactor = 100): TaxBreakdown[] {
   const merged: Record<string, TaxBreakdown> = {};
 
   for (const breakdown of itemBreakdowns) {
@@ -470,7 +470,7 @@ export function aggregateTaxBreakdown(itemBreakdowns: TaxBreakdown[][]): TaxBrea
 
   return Object.values(merged).map((line) => ({
     ...line,
-    amount: round(line.amount, 2),
+    amount: round(line.amount, Math.log10(minorFactor)),
   }));
 }
 
@@ -539,7 +539,9 @@ export function scaleTaxBreakdowns(
   breakdowns: any[],
   ratio: number,
   targetTaxAmount: number,
+  minorFactor = 100,
 ): any[] {
+  const decimals = Math.log10(minorFactor);
   const cloned = breakdowns.map((breakdown) => Array.isArray(breakdown)
     ? breakdown.map((component) => ({ ...component }))
     : breakdown);
@@ -556,7 +558,7 @@ export function scaleTaxBreakdowns(
     if (!Array.isArray(breakdown)) return;
     breakdown.forEach((component: any, innerIndex: number) => {
       const rawAmount = new Decimal(component.amount || 0).mul(scale);
-      const rounded = rawAmount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      const rounded = rawAmount.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
       entries.push({
         component,
         rounded,
@@ -569,12 +571,12 @@ export function scaleTaxBreakdowns(
 
   if (entries.length === 0) return cloned;
   const roundedTotal = entries.reduce((sum, entry) => sum.plus(entry.rounded), new Decimal(0));
-  const centsDelta = new Decimal(targetTaxAmount)
+  const minorDelta = new Decimal(targetTaxAmount)
     .minus(roundedTotal)
-    .mul(100)
+    .mul(minorFactor)
     .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
     .toNumber();
-  const direction = Math.sign(centsDelta);
+  const direction = Math.sign(minorDelta);
   const allocationOrder = [...entries].sort((left, right) => {
     const remainderOrder = direction >= 0
       ? right.remainder.comparedTo(left.remainder)
@@ -585,9 +587,9 @@ export function scaleTaxBreakdowns(
     return left.outerIndex - right.outerIndex || left.innerIndex - right.innerIndex;
   });
 
-  for (let index = 0; index < Math.abs(centsDelta); index++) {
+  for (let index = 0; index < Math.abs(minorDelta); index++) {
     const entry = allocationOrder[index % allocationOrder.length];
-    entry.rounded = entry.rounded.plus(direction * 0.01);
+    entry.rounded = entry.rounded.plus(direction / minorFactor);
   }
   for (const entry of entries) entry.component.amount = entry.rounded.toNumber();
   return cloned;
@@ -687,15 +689,18 @@ export function combineItemAndChargeTaxes(args: {
   itemSnapshots: (string | null | undefined)[];
   itemTaxRatio: number;
   chargeTaxes: ChargeTaxSummary;
+  minorFactor?: number;
 }): TaxRollup {
   const scaledBreakdowns = scaleTaxBreakdowns(
     args.itemBreakdowns,
     args.itemTaxRatio,
     args.itemTaxAmount,
+    args.minorFactor,
   );
   const scaledSnapshots = scaleTaxSnapshots(
     args.itemSnapshots,
     args.itemTaxRatio,
+    args.minorFactor,
   );
   const nonEmptyBreakdowns = [
     ...scaledBreakdowns,
@@ -747,6 +752,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       ? settings.currency
       : getCountryByCode(tenantInfo.country)?.currency || 'INR';
     const decimals = getCurrencyFractionDigits(currency);
+    const minorFactor = getCurrencyMinorUnitFactor(currency);
 
     const customer = customer_id
       ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id) as Customer | undefined)
@@ -867,8 +873,9 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       itemSnapshots: allTaxSnapshots,
       itemTaxRatio: taxRatio.toNumber(),
       chargeTaxes,
+      minorFactor,
     });
-    const aggregatedBreakdown = aggregateTaxBreakdown(taxRollup.breakdowns);
+    const aggregatedBreakdown = aggregateTaxBreakdown(taxRollup.breakdowns, minorFactor);
     const exactTotal = discountedSubtotal
       .plus(taxRollup.exclusiveTaxAmount)
       .plus(packaging)

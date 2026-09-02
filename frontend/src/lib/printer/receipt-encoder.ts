@@ -199,7 +199,7 @@ function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
-function safePrinterTextForLanguage(language: string) {
+function safePrinterTextForLanguage(language: string, columns: number) {
   return <T extends { text(value: string): T }>(
     enc: T,
     value: string,
@@ -208,7 +208,7 @@ function safePrinterTextForLanguage(language: string) {
     arabicShaping = false,
     centerCols?: number,
     maxCols?: number,
-  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language);
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, language === 'de' ? maxCols ?? centerCols ?? columns : maxCols, language);
 }
 
 function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean): string {
@@ -406,7 +406,7 @@ export function buildClassicReceiptBytes(
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
-  const safePrinterText = safePrinterTextForLanguage(primaryLang);
+  const safePrinterText = safePrinterTextForLanguage(primaryLang, cols);
 
   const col4Layout = resolveCol4Widths(
     cols,
@@ -619,7 +619,7 @@ export function buildCompactReceiptBytes(
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
-  const safePrinterText = safePrinterTextForLanguage(primaryLang);
+  const safePrinterText = safePrinterTextForLanguage(primaryLang, cols);
   const trim = opts.trimDecimals === true;
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
@@ -782,7 +782,7 @@ export function buildDetailedReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const primaryLang = opts.languages?.[0] ?? 'en';
-  const safePrinterText = safePrinterTextForLanguage(primaryLang);
+  const safePrinterText = safePrinterTextForLanguage(primaryLang, cols);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';

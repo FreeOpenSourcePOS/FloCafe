@@ -10,6 +10,7 @@ import {
   type ReceiptOptions,
 } from '@/lib/printer/receipt-encoder';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import { useAuthStore } from '@/store/auth';
 import {
   ensurePrintLanguagesLoaded,
   resolveBillPrintLanguages,
@@ -312,6 +313,7 @@ export const usePrinterStore = create<PrinterState>()(
         // (issue #133) — coarser than auto_print_kot, which only gates
         // automatic printing on order placement.
         const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
+        const tenantTimezone = useAuthStore.getState().currentTenant?.timezone;
         if (!kotPrintingEnabled) {
           const err = new Error('KOT printing is disabled for this business');
           set({ lastError: err.message });
@@ -342,7 +344,7 @@ export const usePrinterStore = create<PrinterState>()(
             const warnings: PrintWarning[] = [];
             const bytes = buildKotBytes(
               opts?.items ? { ...order, items: opts.items } : order,
-              { ...opts, paperWidth, arabicShaping: printerArabicShaping, language: kotLanguage },
+              { ...opts, paperWidth, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone },
               warnings,
             );
             set({ lastPrintedBytes: bytes });
@@ -367,7 +369,7 @@ export const usePrinterStore = create<PrinterState>()(
           // don't silently fall back to English.
           const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
           const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
-          const html = generateKotHtml(order, { paperWidth, language: kotLanguage });
+          const html = generateKotHtml(order, { paperWidth, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone });
           await printerService.printViaBrowser(html, paperWidth);
           // A failed locale load degrades to English labels; surface it
           // through the established warning path instead of staying silent

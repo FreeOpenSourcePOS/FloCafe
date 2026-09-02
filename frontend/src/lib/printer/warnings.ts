@@ -111,6 +111,11 @@ function boundShapedText(text: string, maxCols?: number): string {
   return bounded + ellipsis;
 }
 
+function boundGermanText(text: string, maxCols?: number): string {
+  if (!maxCols || maxCols <= 0 || text.length <= maxCols) return text;
+  return text.slice(0, maxCols);
+}
+
 /**
  * Writes `value` to an ESC/POS encoder only if a generic thermal printer can
  * render every character; otherwise records a warning and skips it entirely
@@ -163,5 +168,5 @@ export function safePrinterText<T extends { text(value: string): T }>(
     warnings?.push(makePrintWarning(value, isStoreName));
     return enc;
   }
-  return enc.text(printableValue);
+  return enc.text(language === 'de' ? boundGermanText(printableValue, maxCols ?? centerCols) : printableValue);
 }

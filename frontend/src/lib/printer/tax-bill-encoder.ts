@@ -19,7 +19,7 @@ import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
-import { safePrinterText, type PrintWarning } from './warnings';
+import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 import { printLabelResolver } from './print-document';
 
@@ -113,6 +113,19 @@ function getSafeLatnLocale(locale: string | undefined): string {
   return `${locale}-u-nu-latn`;
 }
 
+function safePrinterTextForLanguage(language: string, columns: number) {
+  return <T extends { text(value: string): T }>(
+    enc: T,
+    value: string,
+    warnings: PrintWarning[] | undefined,
+    isStoreName = false,
+    arabicShaping = false,
+    centerCols?: number,
+    maxCols?: number,
+    _language?: string,
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, language === 'de' ? maxCols ?? centerCols ?? columns : maxCols, language);
+}
+
 export function buildTaxBillBytes(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
@@ -138,6 +151,7 @@ export function buildTaxBillBytes(
   } = opts;
   const labelFor = (key: string): string => printLabelResolver(key, language);
   const cols = CHARS[paperWidth];
+  const safePrinterText = safePrinterTextForLanguage(language, cols);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode, rawEscPos);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';

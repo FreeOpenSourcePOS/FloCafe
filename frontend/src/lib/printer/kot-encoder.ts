@@ -10,7 +10,7 @@ import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { formatTime } from './format-date';
 import { normalizeGermanThermalText } from './unicode';
-import { safePrinterText, type PrintWarning } from './warnings';
+import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 
 export interface KotOptions {
@@ -28,10 +28,25 @@ export interface KotOptions {
   language?: string;
   /** Locale used for localized time formatting. */
   locale?: string;
+  /** Store timezone used for business-local time formatting. */
+  timezone?: string;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
 const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
+
+function safePrinterTextForLanguage(language: string, columns: number) {
+  return <T extends { text(value: string): T }>(
+    enc: T,
+    value: string,
+    warnings: PrintWarning[] | undefined,
+    isStoreName = false,
+    arabicShaping = false,
+    centerCols?: number,
+    maxCols?: number,
+    _language?: string,
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, language === 'de' ? maxCols ?? centerCols ?? columns : maxCols, language);
+}
 
 /**
  * Build a KOT byte array from an Order object.
@@ -46,6 +61,7 @@ export function buildKotBytes(
   const cols = CHARS[paperWidth];
   const label = (key: string): string => printLabelResolver(key, language);
   const locale = opts.locale ?? LANGUAGES[language as Language]?.locale ?? 'en-US';
+  const safePrinterText = safePrinterTextForLanguage(language, cols);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -74,7 +90,7 @@ export function buildKotBytes(
   }
 
   enc.bold(false);
-  safePrinterText(enc, `${label('print.time')}: ${formatTime(order.created_at, locale)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, `${label('print.time')}: ${formatTime(order.created_at, locale, opts.timezone ? { timeZone: opts.timezone } : undefined)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   enc.rule({ style: 'double' });
 
   // ── Items ────────────────────────────────────────────────────────────────────

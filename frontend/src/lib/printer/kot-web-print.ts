@@ -31,6 +31,8 @@ export interface KotWebPrintOptions {
   paperWidth?: 58 | 80;
   /** UI/receipt language (defaults to the client KOT language policy). */
   language?: Language;
+  /** Store timezone used for business-local time formatting. */
+  timezone?: string;
 }
 
 /** Resolve the KOT ticket language: fixed policy language or the UI language. */
@@ -108,6 +110,7 @@ export function generateKotHtml(
 
   const fontSize = paperWidth === 58 ? '10px' : '12px';
   const padding = paperWidth === 58 ? '4px' : '6px';
+  const locale = LANGUAGES[lang]?.locale ?? 'en-US';
 
   // Header facts annotated by the direction kernel.
   const orderNumber = directionalText(String(order.order_number ?? ''), base);
@@ -147,7 +150,7 @@ export function generateKotHtml(
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(labelWithoutPlaceholder(tr('pos.tableLabel')))}: ${directionalValue(directionalText(String(order.table.name), base), base)}</p>` : ''}
       ${orderType ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.type'))}: ${escapeHtml(orderType)}</p>` : ''}
       ${order.customer?.name ? `<p style="margin:2px 0;">${escapeHtml(tr('pos.customer'))}: ${directionalValue(directionalText(String(order.customer.name), base), base)}</p>` : ''}
-      <p style="margin:2px 0;">${escapeHtml(formatTime(createdAt, LANGUAGES[lang]?.locale))}</p>
+      <p style="margin:2px 0;">${escapeHtml(`${tr('print.time')}: ${formatTime(createdAt, locale, opts.timezone ? { timeZone: opts.timezone } : undefined)}`)}</p>
       <hr style="border:1px dashed #000;margin:${padding} 0;">
       ${itemRows}
       <hr style="border:1px dashed #000;margin:${padding} 0;">

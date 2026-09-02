@@ -1776,7 +1776,7 @@
     "noTaxId": "Keine Steuer-ID",
     "ownerEmail": "E-Mail des Inhabers",
     "ownerEmailDomainWarning": "Diese E-Mail-Domain empfängt möglicherweise keine E-Mails. Sie können fortfahren, aber wichtige Softwaremitteilungen und Nachrichten zur Kontowiederherstellung erreichen Sie möglicherweise nicht.",
-    "ownerEmailPlaceholder": "owner@Restaurant.com",
+    "ownerEmailPlaceholder": "inhaber@restaurant.de",
     "ownerName": "Name des Inhabers",
     "ownerNamePlaceholder": "Name des Inhabers",
     "ownerSubtitle": "Dieser erste Benutzer erhält vollen Inhaberzugriff auf diesem POS.",

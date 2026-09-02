@@ -19,7 +19,7 @@ import { normalizeCurrencyToAscii, normalizeGermanThermalText, padCurrencyPrefix
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
-import { hasUnsupportedPrinterChars, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 import { printLabelResolver } from './print-document';
 
@@ -223,8 +223,16 @@ export function buildTaxBillBytes(
   const items = order?.items ?? [];
   for (const item of items) {
     const line = `${item.product_name}`;
+    const amount = formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos);
+    const rawFinancialRow = `${line}${amount}`;
+    const normalizedFinancialRow = language === 'de' ? normalizeGermanThermalText(rawFinancialRow) : rawFinancialRow;
+    const printerFinancialRow = useUnicode ? normalizedFinancialRow : normalizeCurrencyToAscii(normalizedFinancialRow);
+    const financialRow = hasUnsupportedPrinterChars(printerFinancialRow)
+      && !(arabicShaping && isArabicShapingSafeLine(printerFinancialRow))
+      ? rawFinancialRow
+      : padRow(line, amount, cols);
 
-    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos), cols), warnings, false, arabicShaping, undefined, undefined, language, true).newline();
+    safePrinterText(enc, financialRow, warnings, false, arabicShaping, undefined, undefined, language, true).newline();
 
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;

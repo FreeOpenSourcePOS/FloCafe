@@ -188,6 +188,17 @@ async function run(): Promise<void> {
   assert.ok(frontend.warnings.hasFinancialPrintWarning(unsupportedFinancialWarnings), 'unsupported tax-bill item rows are classified as financial');
   assert.doesNotMatch(Buffer.from(unsupportedFinancialBytes).toString('utf8'), /قهوه/, 'unsupported tax-bill item text is not transported');
 
+  const truncatedUnsupportedName = `${'A'.repeat(40)}قهوه`;
+  const truncatedUnsupportedWarnings: any[] = [];
+  frontend.taxBillEncoder.buildTaxBillBytes({
+    bill_number: 'INV-PHASE3-005', subtotal: 100, discount_amount: 0, tax_amount: 0, total: 100,
+    order: { created_at: '2026-04-21 10:30:00', items: [{ product_name: truncatedUnsupportedName, quantity: 1, total: 100, addons: [] }] },
+  } as any, { business_name: 'Cafe', country: 'IN', currency: 'INR' } as any, {
+    rawEscPos: true, useUnicode: false, language: 'fa',
+  }, truncatedUnsupportedWarnings);
+  assert.ok(frontend.warnings.hasFinancialPrintWarning(truncatedUnsupportedWarnings), 'financial safety checks the full item name before layout truncation');
+  assert.ok(truncatedUnsupportedWarnings.some((warning) => warning.text.includes(truncatedUnsupportedName)), 'financial warning preserves the unsupported suffix that layout would truncate');
+
   const faShapedWarnings: any[] = [];
   const faGenericWarnings: any[] = [];
   const faGenericText = escPosToText(formatKOT(order, order.items, 'Main Kitchen', 42, false, 'full', 'fa-IR', { timeZone: 'UTC' }, faGenericWarnings, false, 'fa'));

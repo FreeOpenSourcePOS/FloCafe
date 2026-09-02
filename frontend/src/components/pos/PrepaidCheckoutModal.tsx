@@ -13,6 +13,7 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import { CurrencyTouchNumberPad } from '@/components/pos/TouchNumberPad';
 import {
@@ -75,7 +76,7 @@ interface Payment {
 
 type AmountTarget = { kind: 'payment'; index: number } | { kind: 'wallet' } | { kind: 'discount' } | null;
 
-export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
+export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: Props) {
   const cart = useCartStore();
   const customer = cart.customer;
   const t = useTranslations('pos');
@@ -84,6 +85,8 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const fmtNum = useFormatNumber();
   const unitAdapter = useCurrencyUnitAdapter();
   const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, formatInput } = unitAdapter;
+  const minorFactor = getCurrencyMinorUnitFactor(currency);
+  const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
 
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -223,7 +226,9 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   }
 
   const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
-  const totalPayment = payments.reduce((s, p) => s + toStoredUnit(parseFloat(p.amount) || 0), 0) + walletAmt;
+  const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt);
+  const totalPayment = totalPaymentMinor / minorFactor;
+  const remainingMinor = toMinorUnits(remaining);
 
   const updatePaymentAmount = (idx: number, value: string) => {
     setPaymentsTouched(true);
@@ -239,8 +244,8 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   };
 
   const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
-  const change = hasCash && totalPayment > remaining + 0.009
-    ? parseFloat((totalPayment - remaining).toFixed(2))
+  const change = hasCash && totalPaymentMinor > remainingMinor
+    ? (totalPaymentMinor - remainingMinor) / minorFactor
     : 0;
 
   const activeAmountValue = amountTarget?.kind === 'payment'
@@ -297,7 +302,9 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       return;
     }
     if (!preview) return;
-    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,4})?$/.test(value.trim());
+    const decimalPart = unitAdapter.maxDecimals > 0 ? `(?:\\.\\d{1,${unitAdapter.maxDecimals}})?` : '';
+    const amountPattern = new RegExp(`^\\d+${decimalPart}$`);
+    const amountIsValid = (value: string) => value.trim() === '' || amountPattern.test(value.trim());
     if (payments.some((p) => (
       !PAYMENT_METHODS.some((allowed) => allowed.key === p.method)
       && !customMethods.some((method) => method.id === p.payment_method_id)
@@ -305,18 +312,18 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       toast.error(t('paymentFailed'));
       return;
     }
-    if (walletAmount.trim() && !/^\d+(?:\.\d{1,4})?$/.test(walletAmount.trim())) {
+    if (walletAmount.trim() && !amountPattern.test(walletAmount.trim())) {
       toast.error(t('paymentFailed'));
       return;
     }
-    const nonCashTotal = payments
+    const nonCashTotalMinor = payments
       .filter((p) => p.method !== 'cash')
-      .reduce((sum, p) => sum + toStoredUnit(Number(p.amount) || 0), 0) + walletAmt;
-    if (nonCashTotal > remaining + 0.000001) {
+      .reduce((sum, p) => sum + toMinorUnits(toStoredUnit(Number(p.amount) || 0)), 0) + toMinorUnits(walletAmt);
+    if (nonCashTotalMinor > remainingMinor) {
       toast.error(t('paymentAboveBalance'));
       return;
     }
-    if (totalPayment < remaining - 0.01) {
+    if (totalPaymentMinor < remainingMinor) {
       toast.error(t('paymentBelowBalance'));
       return;
     }
@@ -652,7 +659,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         <div className="px-5 pb-6 pt-3 border-t border-border">
           <Button
             onClick={handleConfirm}
-            disabled={processing || taxLoading || (!preview && !hasInvalidFixedDiscount) || totalPayment < remaining - 0.01}
+            disabled={processing || taxLoading || (!preview && !hasInvalidFixedDiscount) || totalPaymentMinor < remainingMinor}
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"
           >

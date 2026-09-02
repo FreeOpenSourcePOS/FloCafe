@@ -18,6 +18,7 @@ import {
 import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from '../tax-packs/trusted-signing-key';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
+import { getCurrencyFractionDigits } from '../countries';
 
 const router = Router();
 const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id, pack]));
@@ -1304,12 +1305,14 @@ router.post('/test-calculation', requireRole(...ROLE_ACCESS.ownerManager), (req:
       return res.status(400).json({ error: `tax_behavior must be one of: ${TAX_BEHAVIORS.join(', ')}` });
     }
     const country = getSettingValue('country') || 'IN';
+    const currency = getSettingValue('currency') || 'INR';
     const active = activePackForCountry(country);
     if (!active.definition.categories.some((category) => category.id === category_id)) {
       return res.status(400).json({ error: 'Unknown category for the active pack' });
     }
     const calculation = TaxEngine.calculate({
       pack: active.definition,
+      currency,
       country,
       jurisdiction: active.definition.jurisdiction,
       businessType: getSettingValue('business_type') || 'restaurant',
@@ -1332,7 +1335,7 @@ router.post('/test-calculation', requireRole(...ROLE_ACCESS.ownerManager), (req:
         ...calculation,
         taxableBase: calculation.lines
           .reduce((sum, line) => sum.plus(line.taxableBase), new Decimal(0))
-          .toFixed(active.definition.taxRounding.decimalPlaces),
+          .toFixed(getCurrencyFractionDigits(currency)),
       },
     });
   } catch (error: any) {

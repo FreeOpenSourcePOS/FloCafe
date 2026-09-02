@@ -12,6 +12,7 @@ import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 import { ROLE_KEYS } from '../shared/role-permissions';
+import { getCurrencyFractionDigits } from './countries';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
 
@@ -5398,6 +5399,10 @@ export function parseRowJson(row: any): any {
   // Aggregate into a flat array of { title, rate, amount } for the frontend.
   let taxBreakdown = tryParse(row.tax_breakdown);
   if (Array.isArray(taxBreakdown) && taxBreakdown.length > 0 && Array.isArray(taxBreakdown[0])) {
+    let fractionDigits = 2;
+    try {
+      fractionDigits = getCurrencyFractionDigits(getSettingValue('currency') || 'INR');
+    } catch { }
     const merged: Record<string, { title: string; rate: number; amount: number }> = {};
     for (const itemBreakdown of taxBreakdown) {
       if (!Array.isArray(itemBreakdown)) continue;
@@ -5411,7 +5416,7 @@ export function parseRowJson(row: any): any {
     }
     taxBreakdown = Object.values(merged).filter((line) => line.amount !== 0).map((line) => ({
       ...line,
-      amount: Math.round(line.amount * 100) / 100,
+      amount: Number(line.amount.toFixed(fractionDigits)),
     }));
   }
 

@@ -966,6 +966,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
+  const fractionDigits = getCurrencyFractionDigits(biz.currency || 'INR');
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const normalize = (text: string): string => lang === 'de' ? normalizeGermanThermalText(text) : text;
@@ -1005,11 +1006,11 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(...pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, lang));
+      lines.push(...pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang));
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
           const addonLines: string[] = [];
-          pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals) : ''), cols, lang);
+          pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits) : ''), cols, lang);
           lines.push(...addonLines.map((line) => addon.price ? '{FINANCIAL}' + line : line));
         }
       }
@@ -1027,21 +1028,21 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const rowLabelWidth = Math.max(8, cols - 12);
   if (payload?.totals?.showSubtotal !== false) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'subtotal', lang)), rowLabelWidth);
-    lines.push(...financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols, lang));
+    lines.push(...financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits), cols, lang));
   }
   if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'discount', lang)), rowLabelWidth);
-    lines.push(...financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols, lang));
+    lines.push(...financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang));
   }
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
       const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      lines.push(pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals), layout, cols, lang));
+      lines.push(pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits), layout, cols, lang));
     }
   } else if (Number(bill.tax_amount) !== 0) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)), rowLabelWidth);
-    lines.push(...financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols, lang));
+    lines.push(...financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang));
   }
   lines.push(bar);
   // Label precedence (#445): the author's structural literal (e.g.
@@ -1049,7 +1050,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   // payload-root `labels` map overrides next; otherwise the built-in default
   // resolves localized through the canonical print-labels catalog (#440).
   const totalLabel = fitTemplateLabel(normalize(String(payload?.totals?.grandTotalLabel || '')), rowLabelWidth) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'total', lang)), rowLabelWidth);
-  lines.push(...financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals), cols, lang).map((line) => `{BOLD}${line}{/BOLD}`));
+  lines.push(...financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits), cols, lang).map((line) => `{BOLD}${line}{/BOLD}`));
 
   if (bill.payment_details) {
     lines.push(dash);
@@ -1059,7 +1060,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
         for (const payment of payments) {
           if (payment && payment.method) {
             const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12, lang);
-            lines.push(...financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals), cols, lang));
+            lines.push(...financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang));
           }
         }
       }
@@ -1183,14 +1184,14 @@ function pluginItemHeader(layout: any, cols: number, lang: string = 'en'): strin
   );
 }
 
-function pluginItemRows(item: any, layout: any, cols: number, prefix: string, locale: string, trimDecimals: boolean, lang: string = 'en'): string[] {
+function pluginItemRows(item: any, layout: any, cols: number, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number, lang: string = 'en'): string[] {
   const columns = pluginLineItemColumns(layout, cols, lang);
   const gap = pluginLineGap(layout);
   const values = columns.map((column) => ({
     ...column,
     value: lang === 'de'
-      ? normalizeGermanThermalText(pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals))
-      : pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals),
+      ? normalizeGermanThermalText(pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits))
+      : pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
   }));
   const wrappedValues = values.map((column) => {
     if (!column.wrap) return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
@@ -1213,7 +1214,7 @@ function pluginItemRows(item: any, layout: any, cols: number, prefix: string, lo
   return rows;
 }
 
-function pluginItemColumnValue(key: string, item: any, prefix: string, locale: string, trimDecimals: boolean): string {
+function pluginItemColumnValue(key: string, item: any, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number): string {
   switch (key) {
     case 'item':
       return String(item.product_name || '');
@@ -1222,12 +1223,12 @@ function pluginItemColumnValue(key: string, item: any, prefix: string, locale: s
     case 'rate': {
       const quantity = Number(item.quantity) || 0;
       const rate = Number(item.unit_price ?? item.price ?? (quantity ? Number(item.total) / quantity : 0));
-      return formatCurrency(rate, prefix, locale, trimDecimals);
+      return formatCurrency(rate, prefix, locale, trimDecimals, fractionDigits);
     }
     case 'taxRate':
       return pluginItemTaxRate(item);
     case 'amount':
-      return formatCurrency(item.total, prefix, locale, trimDecimals);
+      return formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
     default:
       return '';
   }
@@ -1299,38 +1300,39 @@ export function itemAmountWidth(
   locale: string,
   trimDecimals: boolean,
   cols: number,
+  fractionDigits: number = 2,
 ): number {
   // rightAlign() keeps at least one separator before an amount, so reserve
   // that separator when a long currency prefix expands the amount column.
   let width = 10;
   for (const item of order?.items ?? []) {
-    width = Math.max(width, formatCurrency(item.total ?? 0, prefix, locale, trimDecimals).length + 1);
+    width = Math.max(width, formatCurrency(item.total ?? 0, prefix, locale, trimDecimals, fractionDigits).length + 1);
     for (const addon of parseAddons(item.addons)) {
       if (addon?.price) {
-        width = Math.max(width, formatCurrency(addon.price, prefix, locale, trimDecimals).length + 1);
+        width = Math.max(width, formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits).length + 1);
       }
     }
   }
   return Math.min(width, Math.max(1, cols - 5));
 }
 
-export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en'): string[] {
+export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2): string[] {
   const qtyW = 4;
   const productName = language === 'de' ? normalizeGermanThermalText(item.product_name) : item.product_name;
   const name = truncate(productName, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
-  const amount = formatCurrency(item.total, prefix, locale, trimDecimals);
+  const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
   const inlineWidth = Math.max(1, cols - label.length - 1);
   if (amount.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(amount, cols - label.length)];
   return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(amount, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
-export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en'): string[] {
+export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2): string[] {
   const addonName = language === 'de' ? normalizeGermanThermalText(addon.name) : addon.name;
   const label = truncate('  + ' + addonName, nameLen).padEnd(nameLen);
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
-  const price = formatCurrency(addon.price, prefix, locale, trimDecimals);
+  const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits);
   const inlineWidth = Math.max(1, cols - label.length - 1);
   if (price.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(price, cols - label.length)];
   return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(price, cols).map((line) => '{FINANCIAL}' + line)];
@@ -1370,13 +1372,14 @@ function getSafeLatnLocale(locale: string | undefined): string {
   return `${locale}-u-nu-latn`;
 }
 
-export function formatCurrency(amount: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string {
+export function formatCurrency(amount: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, fractionDigits: number = 2): string {
   const numeric = Number(amount) || 0;
-  const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
+  const factor = 10 ** fractionDigits;
+  const hasDecimals = Math.round(numeric * factor) % factor !== 0;
   const safeLocale = getSafeLatnLocale(locale);
   const formattedNum = numeric.toLocaleString(safeLocale, {
-    minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : fractionDigits,
+    maximumFractionDigits: fractionDigits,
   }).replace(/[\u00A0\u202F]/g, ' ');
   return prefix + formattedNum;
 }

@@ -199,6 +199,17 @@ async function run(): Promise<void> {
   assert.ok(frontend.warnings.hasFinancialPrintWarning(truncatedUnsupportedWarnings), 'financial safety checks the full item name before layout truncation');
   assert.ok(truncatedUnsupportedWarnings.some((warning) => warning.text.includes(truncatedUnsupportedName)), 'financial warning preserves the unsupported suffix that layout would truncate');
 
+  const truncatedUnsupportedAddonName = `${'A'.repeat(40)}قهوه`;
+  const truncatedUnsupportedAddonWarnings: any[] = [];
+  frontend.taxBillEncoder.buildTaxBillBytes({
+    bill_number: 'INV-PHASE3-006', subtotal: 110, discount_amount: 0, tax_amount: 0, total: 110,
+    order: { created_at: '2026-04-21 10:30:00', items: [{ product_name: 'Coffee', quantity: 1, total: 100, addons: [{ name: truncatedUnsupportedAddonName, price: 10 }] }] },
+  } as any, { business_name: 'Cafe', country: 'IN', currency: 'INR' } as any, {
+    rawEscPos: true, useUnicode: false, language: 'fa',
+  }, truncatedUnsupportedAddonWarnings);
+  assert.ok(frontend.warnings.hasFinancialPrintWarning(truncatedUnsupportedAddonWarnings), 'financial safety checks priced add-ons before layout truncation');
+  assert.ok(truncatedUnsupportedAddonWarnings.some((warning) => warning.text.includes(truncatedUnsupportedAddonName)), 'priced add-on warning preserves unsupported text that layout would truncate');
+
   const faShapedWarnings: any[] = [];
   const faGenericWarnings: any[] = [];
   const faGenericText = escPosToText(formatKOT(order, order.items, 'Main Kitchen', 42, false, 'full', 'fa-IR', { timeZone: 'UTC' }, faGenericWarnings, false, 'fa'));

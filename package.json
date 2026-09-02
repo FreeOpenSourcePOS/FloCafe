@@ -224,7 +224,6 @@
     "@types/node": "^26.4.0",
     "@types/qrcode": "^1.5.6",
     "@types/supertest": "^7.2.1",
-    "@types/uuid": "^9.0.8",
     "@types/ws": "^8.5.10",
     "@typescript-eslint/eslint-plugin": "^8.68.0",
     "@typescript-eslint/parser": "^8.63.0",
@@ -253,7 +252,6 @@
     "libphonenumber-js": "^1.13.12",
     "pino": "^10.3.1",
     "qrcode": "^1.5.3",
-    "uuid": "^14.0.2",
     "ws": "^8.21.2"
   },
   "build": {

@@ -6,7 +6,7 @@
  */
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { getDatabase, now } from '../db';
 import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
 import { isValidEmail } from './auth';
@@ -137,7 +137,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
       return res.status(400).json({ error: 'Email already in use' });
     }
 
-    const id = uuidv4();
+    const id = randomUUID();
     const hashedPassword = bcrypt.hashSync(password, 10);
 
     const hashedPin = hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null;

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
@@ -368,7 +368,7 @@ router.post('/import/categories', requireRole(...ROLE_ACCESS.ownerManager), (req
       db.prepare(
         `INSERT INTO categories (id, name, slug, description, color, icon, sort_order, is_active, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
-      ).run(uuidv4(), r.name, slug, r.description || null, r.color || null, r.icon || null,
+      ).run(randomUUID(), r.name, slug, r.description || null, r.color || null, r.icon || null,
         sortOrder.value, now(), now());
       created++;
     } })();
@@ -680,7 +680,7 @@ router.post('/import/addons', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
             groupsUpdated++;
           }
         } else {
-          groupId = uuidv4();
+          groupId = randomUUID();
           db.prepare(
             `INSERT INTO addon_groups (id, name, is_required, min_selection, max_selection, is_active, sort_order, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?)`
@@ -708,7 +708,7 @@ router.post('/import/addons', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
       db.prepare(
         `INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, 1, 0, ?, ?)`
-      ).run(uuidv4(), groupId, r.addon_name, price, now(), now());
+      ).run(randomUUID(), groupId, r.addon_name, price, now(), now());
       addonsCreated++;
     } })();
 

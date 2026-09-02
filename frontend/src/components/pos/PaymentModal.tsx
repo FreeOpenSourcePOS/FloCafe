@@ -15,6 +15,7 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { isValidCurrencyAmount } from '@/lib/countries';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
@@ -82,7 +83,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const { currentTenant } = useAuthStore();
   const isWhatsAppReady = useWhatsAppReady();
   const unitAdapter = useCurrencyUnitAdapter();
-  const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, formatInput } = unitAdapter;
+  const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, maxDecimals: inputCurrencyMaxDecimals, formatInput } = unitAdapter;
 
   const idempotencyKeyRef = useRef<string | null>(null);
   useEffect(() => {
@@ -311,7 +312,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   };
 
   const handlePay = async () => {
-    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,4})?$/.test(value.trim());
+    const amountIsValid = (value: string) => isValidCurrencyAmount(value, inputCurrencyMaxDecimals);
     if (payments.some((p) => (
       !PAYMENT_METHODS.some((allowed) => allowed.key === p.method)
       && !customMethods.some((method) => method.id === p.payment_method_id)
@@ -319,7 +320,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       toast.error(t('paymentFailed'));
       return;
     }
-    if (walletAmount.trim() && !/^\d+(?:\.\d{1,4})?$/.test(walletAmount.trim())) {
+    if (!amountIsValid(walletAmount)) {
       toast.error(t('paymentFailed'));
       return;
     }

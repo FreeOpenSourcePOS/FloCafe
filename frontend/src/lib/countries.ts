@@ -15,6 +15,7 @@ export {
   formatDateForTenant,
   getCurrencyFractionDigits,
   getCurrencyMinorUnitFactor,
+  isValidCurrencyAmount,
   getCurrencyUnitAdapter,
   countryName,
   type Country,

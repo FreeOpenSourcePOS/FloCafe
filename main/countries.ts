@@ -359,6 +359,13 @@ export function getCurrencyMinorUnitFactor(currency: string): number {
   return Math.pow(10, getCurrencyFractionDigits(currency));
 }
 
+export function isValidCurrencyAmount(value: string, maxDecimals: number): boolean {
+  const trimmed = value.trim();
+  if (trimmed === '') return true;
+  if (maxDecimals <= 0) return /^\d+$/.test(trimmed);
+  return new RegExp(`^\\d+(?:\\.\\d{1,${maxDecimals}})?$`).test(trimmed);
+}
+
 /**
  * Returns a centralized adapter for handling input/display unit conversions
  * across all currencies and tenant display preferences (e.g. Rial vs Toman).

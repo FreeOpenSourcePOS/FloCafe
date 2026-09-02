@@ -13,6 +13,7 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { isValidCurrencyAmount } from '@/lib/countries';
 import TouchNumberPad from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
@@ -82,7 +83,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const currencyFmt = useFormatCurrency();
   const fmtNum = useFormatNumber();
   const unitAdapter = useCurrencyUnitAdapter();
-  const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, formatInput } = unitAdapter;
+  const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, maxDecimals: inputCurrencyMaxDecimals, formatInput } = unitAdapter;
 
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -283,7 +284,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
 
   const handleConfirm = () => {
     if (!preview) return;
-    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,4})?$/.test(value.trim());
+    const amountIsValid = (value: string) => isValidCurrencyAmount(value, inputCurrencyMaxDecimals);
     if (payments.some((p) => (
       !PAYMENT_METHODS.some((allowed) => allowed.key === p.method)
       && !customMethods.some((method) => method.id === p.payment_method_id)
@@ -291,7 +292,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
       toast.error(t('paymentFailed'));
       return;
     }
-    if (walletAmount.trim() && !/^\d+(?:\.\d{1,4})?$/.test(walletAmount.trim())) {
+    if (!amountIsValid(walletAmount)) {
       toast.error(t('paymentFailed'));
       return;
     }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCurrency, formatCurrencyForTenant } from '../main/countries';
+import { formatCurrency, formatCurrencyForTenant, isValidCurrencyAmount } from '../main/countries';
 
 test('formatCurrency: en-US / USD', () => {
   assert.equal(formatCurrency(1234.5, 'USD', 'en-US'), '$1,234.50');
@@ -83,6 +83,14 @@ test('getCurrencyFractionDigits: resolves ISO 4217 standard precision', () => {
   assert.equal(getCurrencyFractionDigits(''), 2);
   assert.equal(getCurrencyFractionDigits(null as any), 2);
   assert.equal(getCurrencyFractionDigits('INVALID'), 2);
+});
+
+test('isValidCurrencyAmount: enforces the currency fraction limit', () => {
+  assert.equal(isValidCurrencyAmount('1', 0), true);
+  assert.equal(isValidCurrencyAmount('1.5', 0), false);
+  assert.equal(isValidCurrencyAmount('1.234', 3), true);
+  assert.equal(isValidCurrencyAmount('1.2345', 3), false);
+  assert.equal(isValidCurrencyAmount('', 0), true);
 });
 
 test('getCurrencyUnitAdapter: zero-decimal currencies use whole integer steps', () => {

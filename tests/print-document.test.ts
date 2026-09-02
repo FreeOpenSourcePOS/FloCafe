@@ -160,7 +160,7 @@ console.log('\n▶ Block construction (fixture bill)');
   const serviceData = buildBillPrintData(order, { ...bill, service_charge: 12, total: 1129 }, business, false);
   assert.equal(serviceData.bill.serviceCharge, 12, 'persisted service charge crosses the backend normalization boundary');
   const serviceContext = buildBillPrintContext({ columns: 42, language: 'en', business });
-  const serviceDocument = buildBillDocument(serviceData, serviceContext);
+  const persistedServiceDocument = buildBillDocument(serviceData, serviceContext);
   const serviceOptions = {
     columns: 42,
     language: 'en',
@@ -172,8 +172,8 @@ console.log('\n▶ Block construction (fixture bill)');
     cutMode: 'full' as const,
   };
   for (const [renderer, lines] of [
-    ['classic', renderBillDocumentToClassicLines(serviceDocument, serviceOptions)],
-    ['compact', renderBillDocumentToCompactLines(serviceDocument, serviceOptions)],
+    ['classic', renderBillDocumentToClassicLines(persistedServiceDocument, serviceOptions)],
+    ['compact', renderBillDocumentToCompactLines(persistedServiceDocument, serviceOptions)],
   ] as const) {
     assert(lines.some((line) => line.includes('Service Charge') && line.includes('₹12.00')),
       `${renderer} renders the persisted service charge`);

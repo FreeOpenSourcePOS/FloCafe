@@ -427,10 +427,10 @@ reorder, hide, or omit blocks — including `totals` — through explicit block
 selection and `visible` settings; that is merchant configuration, not a silent
 renderer omission. The legacy raw WebUSB encoders described above retain their
 own warning behavior and do not inherit the `PrintDocument` guarantees.
-Warnings surface to the user after printing
-([`frontend/src/lib/printer/warnings-toast.ts`](../frontend/src/lib/printer/warnings-toast.ts)) and in
-dispatch results (`classifyPrintFailure` in [`main/printers/thermal.ts`](../main/printers/thermal.ts) gives stable, privacy-safe failure
-classes for fleet telemetry). The end-state contract from [epic #438](https://github.com/FreeOpenSourcePOS/FloCafe/issues/438) for the
+Warnings surface to the user through print results and toast notifications
+([`frontend/src/lib/printer/warnings-toast.ts`](../frontend/src/lib/printer/warnings-toast.ts)); financial refusal warnings are shown before transport. Dispatch results use
+`classifyPrintFailure` in [`main/printers/thermal.ts`](../main/printers/thermal.ts) for stable, privacy-safe failure
+classes for fleet telemetry. The end-state contract from [epic #438](https://github.com/FreeOpenSourcePOS/FloCafe/issues/438) for the
 shared paths is native render, explicitly supported fallback, or an explicit
 warning/error for unsupported content or configuration. The recommended
 capability-tiered raster fallback for broader script coverage is future work

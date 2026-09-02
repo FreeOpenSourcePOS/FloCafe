@@ -69,8 +69,8 @@ The document-block renderer rule has explicit active raw-path exceptions:
   `KotDocument` v1 consumer.
 - [`frontend/src/hooks/usePrinter.ts`](../frontend/src/hooks/usePrinter.ts) still calls [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) with raw
   `Order` data for thermal KOT printing and calls the [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) raw
-  `Bill`/`Tenant` diagnostic path for the print-test page. The tax encoder is
-  explicitly LEGACY-FROZEN.
+  `Bill`/`Tenant` diagnostic path for the print-test page. Its raw layout
+  remains legacy-frozen while its catalog labels follow the resolved language.
 
 These paths retain their own raw-field and warning behavior outside the shared
 document boundary. New document features must use the migrated paths below;
@@ -309,9 +309,8 @@ Rules:
   page (protocol names, encodings/codepages, byte/hex output, addresses/ports,
   model and capability identifiers). These are intentionally absent from the
   concept catalog.
-- Known deliberate gap: the KOT `Order:` prefix has no assigned key yet;
-  the KOT document carries only the value (`KotHeaderBlock.orderNumber`
-  doc comment).
+- KOT order references and known order-type values resolve through the shared
+  catalog at the document boundary.
 - Renderer-only layout lookups remain explicit exceptions: the migrated WebUSB
   [`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts) resolves `receipt.rate` and `printTest.amt` through
   `printLabelResolver` for its 4-column layout. These labels live outside

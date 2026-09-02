@@ -105,6 +105,11 @@ const BORROWED_KEYS = [
   'receipt.taxIncluded',
   'receipt.reprint',
   'receipt.onlineOrder',
+  'pos.orderNumber',
+  'pos.orderTypeDineIn',
+  'pos.orderTypeDelivery',
+  'pos.orderTypeOnline',
+  'pos.orderTypeTakeaway',
   // Payment-method names, ported from web-print.ts's method mapping (#440).
   'pos.methodCash',
   'pos.methodCard',

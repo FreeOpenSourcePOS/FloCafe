@@ -75,6 +75,25 @@ function labelWithoutPlaceholder(label: string): string {
   return label.replace('{name}', '').replace(/[:：]\s*$/, '').trim();
 }
 
+function labelWithoutOrderNumber(label: string): string {
+  return label.replace(/\s*#?\{number\}/, '').trim();
+}
+
+function resolveOrderType(type: unknown, language: Language, tr: (key: string) => string): string {
+  const keys: Record<string, string> = {
+    dine_in: 'pos.orderTypeDineIn',
+    delivery: 'pos.orderTypeDelivery',
+    online: 'pos.orderTypeOnline',
+    takeaway: 'pos.orderTypeTakeaway',
+  };
+  const normalized = String(type ?? '').trim();
+  if (language !== 'de') return normalized.replace(/_/g, ' ').toUpperCase();
+  const key = keys[normalized];
+  if (!key) return normalized.replace(/_/g, ' ').toUpperCase();
+  const resolved = tr(key);
+  return language === 'en' ? resolved.toUpperCase() : resolved;
+}
+
 /**
  * Generate the semantic KOT HTML fragment (without opening a print dialog).
  */
@@ -94,7 +113,7 @@ export function generateKotHtml(
   const orderNumber = directionalText(String(order.order_number ?? ''), base);
   const createdAt = String(order.created_at ?? '');
 
-  const orderType = String(order.type ?? '').replace('_', ' ').toUpperCase();
+  const orderType = resolveOrderType(order.type, lang, tr);
 
   const items = (order.items ?? [])
     .filter((item) => item.status !== 'served' && item.status !== 'ready')
@@ -124,7 +143,7 @@ export function generateKotHtml(
   return `
     <div class="kot-container" dir="${base}" style="text-align:start;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
       <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(tr('print.kot.banner'))}</h2>
-      <p style="margin:2px 0;font-weight:bold;">${directionalValue(orderNumber, base)}</p>
+      <p style="margin:2px 0;font-weight:bold;">${escapeHtml(labelWithoutOrderNumber(tr('pos.orderNumber')))}: ${directionalValue(orderNumber, base)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(labelWithoutPlaceholder(tr('pos.tableLabel')))}: ${directionalValue(directionalText(String(order.table.name), base), base)}</p>` : ''}
       ${orderType ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.type'))}: ${escapeHtml(orderType)}</p>` : ''}
       ${order.customer?.name ? `<p style="margin:2px 0;">${escapeHtml(tr('pos.customer'))}: ${directionalValue(directionalText(String(order.customer.name), base), base)}</p>` : ''}

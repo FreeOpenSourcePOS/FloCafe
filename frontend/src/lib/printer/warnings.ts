@@ -132,10 +132,10 @@ export function safePrinterText<T extends { text(value: string): T }>(
   arabicShaping = false,
   centerCols?: number,
   maxCols?: number,
+  language?: string,
 ): T {
   if (!value) return enc;
-  const normalized = normalizeGermanThermalText(value);
-  const printableValue = normalized;
+  const printableValue = language === 'de' ? normalizeGermanThermalText(value) : value;
   if (hasUnsupportedPrinterChars(printableValue)) {
     if (arabicShaping && isArabicShapingSafeLine(printableValue)) {
       const sanitized = printableValue.replace(ESCPOS_TEXT_CONTROL_RE, '');

@@ -32,7 +32,7 @@ import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { parseDbTimestamp } from '@/lib/utils';
-import { safePrinterText, type PrintWarning } from './warnings';
+import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 import {
   buildFrontendBillDocument,
@@ -102,13 +102,14 @@ function printReprintBanner(
   warnings: PrintWarning[] | undefined,
   arabicShaping: boolean,
   cols: number,
+  language?: string,
 ): void {
   enc
     .align('center')
     .bold(true)
     .width(2)
     .height(2);
-  safePrinterText(enc, `** ${bannerLabel} **`, warnings, false, arabicShaping, Math.floor(cols / 2));
+  writeSafePrinterText(enc, `** ${bannerLabel} **`, warnings, false, arabicShaping, Math.floor(cols / 2), undefined, language);
   enc
     .width(1)
     .height(1)
@@ -125,19 +126,20 @@ function printOnlineOrderBanner(
   warnings: PrintWarning[] | undefined,
   arabicShaping: boolean,
   cols: number,
+  language?: string,
 ): void {
   enc
     .align('center')
     .bold(true)
     .width(2)
     .height(2);
-  safePrinterText(enc, `** ${bannerLabel} **`, warnings, false, arabicShaping, Math.floor(cols / 2));
+  writeSafePrinterText(enc, `** ${bannerLabel} **`, warnings, false, arabicShaping, Math.floor(cols / 2), undefined, language);
   enc
     .width(1)
     .height(1)
     .newline();
-  if (platform) safePrinterText(enc, platform, warnings, false, arabicShaping, cols).newline();
-  if (externalOrderId) safePrinterText(enc, `#${externalOrderId}`, warnings, false, arabicShaping, cols).newline();
+  if (platform) writeSafePrinterText(enc, platform, warnings, false, arabicShaping, cols, undefined, language).newline();
+  if (externalOrderId) writeSafePrinterText(enc, `#${externalOrderId}`, warnings, false, arabicShaping, cols, undefined, language).newline();
   enc
     .bold(false)
     .align('left');
@@ -195,6 +197,18 @@ function paymentLabel(label: SemanticLabel): string {
 
 function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
+function safePrinterTextForLanguage(language: string) {
+  return <T extends { text(value: string): T }>(
+    enc: T,
+    value: string,
+    warnings: PrintWarning[] | undefined,
+    isStoreName = false,
+    arabicShaping = false,
+    centerCols?: number,
+    maxCols?: number,
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language);
 }
 
 function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean): string {
@@ -392,6 +406,7 @@ export function buildClassicReceiptBytes(
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
+  const safePrinterText = safePrinterTextForLanguage(primaryLang);
 
   const col4Layout = resolveCol4Widths(
     cols,
@@ -410,7 +425,7 @@ export function buildClassicReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols);
+  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols, primaryLang);
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
       enc,
@@ -420,6 +435,7 @@ export function buildClassicReceiptBytes(
       warnings,
       arabicShaping,
       cols,
+      primaryLang,
     );
   }
 
@@ -603,12 +619,13 @@ export function buildCompactReceiptBytes(
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
+  const safePrinterText = safePrinterTextForLanguage(primaryLang);
   const trim = opts.trimDecimals === true;
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols);
+  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols, primaryLang);
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
       enc,
@@ -618,6 +635,7 @@ export function buildCompactReceiptBytes(
       warnings,
       arabicShaping,
       cols,
+      primaryLang,
     );
   }
 
@@ -763,6 +781,8 @@ export function buildDetailedReceiptBytes(
     trimDecimals = false,
   } = opts;
   const cols = CHARS[paperWidth];
+  const primaryLang = opts.languages?.[0] ?? 'en';
+  const safePrinterText = safePrinterTextForLanguage(primaryLang);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
@@ -774,7 +794,7 @@ export function buildDetailedReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (isReprint) printReprintBanner(enc, 'REPRINT', warnings, arabicShaping, cols);
+  if (isReprint) printReprintBanner(enc, 'REPRINT', warnings, arabicShaping, cols, primaryLang);
 
   // Header
   if (showBusinessName && tenant.business_name) {

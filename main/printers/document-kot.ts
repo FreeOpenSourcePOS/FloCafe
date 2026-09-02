@@ -50,7 +50,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       orderNumber: String(order?.order_number ?? ''),
       createdAt: String(order?.created_at ?? ''),
       tableName: String(order?.table?.name ?? ''),
-      orderType: formatKotOrderType(order?.type),
+      orderType: String(order?.type ?? '').trim(),
     },
     items: ticketItems.map((item: any) => ({
       productName: String(item?.product_name ?? ''),
@@ -114,8 +114,8 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
   return labelOf(label).replace('{name}', tableName);
 }
 
-function formatKotOrderType(type: unknown): string {
-  return String(type ?? '').replace(/_/g, ' ').trim().toUpperCase();
+function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string): string {
+  return labelOf(label).replace(/\s*#?\{number\}/, `: ${orderNumber}`);
 }
 
 function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
@@ -127,9 +127,7 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   lines.push('{CENTER}{BOLD}' + labelOf(header.banner) + '{/BOLD}{/CENTER}');
   lines.push('');
   lines.push(truncateShapedLine(labelOf(header.stationLabel) + ': ' + header.stationName.text, cols, options.arabicShaping));
-  // NOTE (#440/#441): keep this unaudited technical prefix verbatim; label
-  // adoption remains outside this renderer change.
-  lines.push(truncateShapedLine('Order: ' + header.orderNumber.text, cols, options.arabicShaping));
+  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text), cols, options.arabicShaping));
   if (header.table) {
     lines.push(truncateShapedLine(formatTableLabel(header.table.label, header.table.name.text), cols, options.arabicShaping));
   }

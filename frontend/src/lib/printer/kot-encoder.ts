@@ -49,21 +49,21 @@ export function buildKotBytes(
 
   // KOT Banner
   enc.align('center').bold(true).width(2).height(2);
-  safePrinterText(enc, label('print.kot.banner'), warnings, false, arabicShaping, undefined, cols).width(1).height(1).bold(false).newline();
+  safePrinterText(enc, label('print.kot.banner'), warnings, false, arabicShaping, undefined, cols, language).width(1).height(1).bold(false).newline();
 
   // Order details
   enc.align('left').bold(true);
-  safePrinterText(enc, label('orders.orderNumber').replace('{number}', String(order.order_number)), warnings, false, arabicShaping, undefined, cols).newline();
+  safePrinterText(enc, formatOrderNumber(label('pos.orderNumber'), String(order.order_number)), warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.table) {
-    safePrinterText(enc, label('pos.tableLabel').replace('{name}', String(order.table.name)), warnings, false, arabicShaping, undefined, cols).newline();
+    safePrinterText(enc, label('pos.tableLabel').replace('{name}', String(order.table.name)), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   const orderType = resolveOrderType(order.type, language);
-  safePrinterText(enc, `${label('print.kot.type')}: ${orderType}`, warnings, false, arabicShaping, undefined, cols).newline();
+  safePrinterText(enc, `${label('print.kot.type')}: ${orderType}`, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.customer) {
-    safePrinterText(enc, `${label('pos.customer')}: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols).newline();
+    safePrinterText(enc, `${label('pos.customer')}: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   enc.bold(false);
@@ -85,7 +85,7 @@ export function buildKotBytes(
     // Item name with quantity
     const qtyName = `${item.quantity}x ${item.product_name}`;
     enc.bold(true);
-    safePrinterText(enc, truncate(qtyName, cols), warnings, false, arabicShaping).newline();
+    safePrinterText(enc, truncate(qtyName, cols), warnings, false, arabicShaping, undefined, undefined, language).newline();
     enc.bold(false);
 
     // Addons can come from older/API paths as a JSON string. Normalize before
@@ -96,27 +96,27 @@ export function buildKotBytes(
         if (addon.name) {
           const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
           const addonText = `${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
-          safePrinterText(enc, `   + ${truncate(addonText, cols - 5)}`, warnings, false, arabicShaping).newline();
+          safePrinterText(enc, `   + ${truncate(addonText, cols - 5)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
         }
       }
     }
 
     // Special instructions
     if (item.special_instructions) {
-      safePrinterText(enc, `   >> ${truncate(item.special_instructions, cols - 6)}`, warnings, false, arabicShaping).newline();
+      safePrinterText(enc, `   >> ${truncate(item.special_instructions, cols - 6)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
     }
 
     enc.newline();
   }
 
   if (!hasItems) {
-    safePrinterText(enc, `(${label('print.kot.noPendingItems')})`, warnings, false, arabicShaping, undefined, cols).newline();
+    safePrinterText(enc, `(${label('print.kot.noPendingItems')})`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   // ── Footer ─────────────────────────────────────────────────────────────────
   enc.rule({ style: 'single' });
   enc.align('center');
-  safePrinterText(enc, `--- ${label('print.kot.end')} ---`, warnings, false, arabicShaping, undefined, cols).newline();
+  safePrinterText(enc, `--- ${label('print.kot.end')} ---`, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   enc.newline().newline().newline().cut();
 
@@ -133,13 +133,20 @@ function truncate(str: string, max: number): string {
 
 function resolveOrderType(type: string, language: string): string {
   const keys: Record<string, string> = {
-    dine_in: 'orders.orderTypeDineIn',
-    delivery: 'orders.orderTypeDelivery',
-    online: 'orders.orderTypeOnline',
-    takeaway: 'orders.orderTypeTakeaway',
+    dine_in: 'pos.orderTypeDineIn',
+    delivery: 'pos.orderTypeDelivery',
+    online: 'pos.orderTypeOnline',
+    takeaway: 'pos.orderTypeTakeaway',
   };
+  if (language !== 'de') return String(type).replace(/_/g, ' ').toUpperCase();
   const key = keys[type];
-  return key ? printLabelResolver(key, language) : String(type).replace('_', ' ').toUpperCase();
+  if (!key) return String(type).replace(/_/g, ' ').toUpperCase();
+  const resolved = printLabelResolver(key, language);
+  return language === 'en' ? resolved.toUpperCase() : resolved;
+}
+
+function formatOrderNumber(label: string, orderNumber: string): string {
+  return label.replace(/\s*#?\{number\}/, `: ${orderNumber}`);
 }
 
 function parseAddons(addons: unknown): Array<{ name: string }> {

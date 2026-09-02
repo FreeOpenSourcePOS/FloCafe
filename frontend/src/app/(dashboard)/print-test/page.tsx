@@ -88,7 +88,7 @@ export default function PrintTestPage() {
             // renders translated labels on cold start (mirrors usePrinter).
             const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
             await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
-            const html = generateKotHtml(testOrder, { paperWidth, timezone: testTenant.timezone });
+            const html = generateKotHtml(testOrder, { paperWidth, stationName: 'Kitchen', timezone: testTenant.timezone });
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));
           } else {

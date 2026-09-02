@@ -199,6 +199,9 @@ export function renderBillDocumentToCompactLines(
     } else if (totals.tax) {
       lines.push(...financialRows(labelOf(totals.tax.label), formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals), cols, options.language));
     }
+    if (totals.serviceCharge) {
+      lines.push(...financialRows(labelOf(totals.serviceCharge.label), formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    }
     if (totals.deliveryCharge) {
       lines.push(...financialRows(labelOf(totals.deliveryCharge.label), formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
     }

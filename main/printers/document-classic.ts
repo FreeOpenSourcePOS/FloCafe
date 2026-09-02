@@ -309,6 +309,9 @@ export function renderBillDocumentToClassicLines(
   };
 
   const renderCharges = (block: TotalsBlock, target: BlockSegments): void => {
+    if (block.serviceCharge) {
+      target.main.push(...financialRows(labelOf(block.serviceCharge.label), formatCurrency(block.serviceCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    }
     if (block.deliveryCharge) {
       target.main.push(...financialRows(labelOf(block.deliveryCharge.label), formatCurrency(block.deliveryCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
     }

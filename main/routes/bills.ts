@@ -1588,7 +1588,13 @@ router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier),
             .run(groupId, check.label, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.service_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], now(), txnSource.id);
           billId = Number(txnSource.id);
         } else {
-          const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, service_charge, round_off, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)`)
+          const inserted = db.prepare(`
+            INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
+              discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge,
+              service_charge, round_off, total, paid_amount, balance, payment_status, split_group_id, split_label,
+              created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)
+          `)
             .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.tax_amount[index], splitBk, splitSnapshot, allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.service_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
           billId = Number(inserted.lastInsertRowid);
         }

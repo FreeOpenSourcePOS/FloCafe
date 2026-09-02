@@ -1051,6 +1051,12 @@ Print the bill identified by `billId` or the bill associated with `orderId`.
 
 Pass `preview: true` to generate receipt preview text, base64 ESC/POS payload, and column metrics without dispatching to a physical printer. If no hardware printer is configured, preview mode falls back to default 80 mm formatting.
 
+Successful print responses include `{ "success": true, "warnings": [] }`. If
+receipt preparation finds unsupported financial text, the endpoint returns HTTP
+502 before transport with `stage: "prepare"`, `failure_class: "unsupported"`,
+and the financial warnings in `warnings`; dispatch failures use
+`stage: "dispatch"`. See [printing architecture warning semantics](printing-architecture.md#6-printer-capability-model--warning-semantics) for the warning contract.
+
 ### POST `/api/printers/print-kot`
 
 Print a kitchen order ticket for `orderId`. A caller may provide `stationName` and `items`; otherwise FloCafe routes items to configured kitchen stations. This endpoint returns `403` when KOT printing is disabled.

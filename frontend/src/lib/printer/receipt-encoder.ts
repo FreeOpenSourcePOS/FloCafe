@@ -540,6 +540,9 @@ export function buildClassicReceiptBytes(
     if (totals.deliveryCharge) {
       safePrinterText(enc, padRow(labelOf(totals.deliveryCharge.label), formatAmount(totals.deliveryCharge.amount, currency, locale, opts.trimDecimals === true), cols), warnings, false, arabicShaping).newline();
     }
+    if (totals.packagingCharge) {
+      safePrinterText(enc, padRow(labelOf(totals.packagingCharge.label), formatAmount(totals.packagingCharge.amount, currency, locale, opts.trimDecimals === true), cols), warnings, false, arabicShaping).newline();
+    }
 
     enc.rule({ style: 'double' });
     enc.bold(true);
@@ -719,6 +722,9 @@ export function buildCompactReceiptBytes(
   }
   if (totals?.deliveryCharge) {
     safePrinterText(enc, padRow(labelOf(totals.deliveryCharge.label), formatAmount(totals.deliveryCharge.amount, currency, locale, trim), cols), warnings, false, arabicShaping).newline();
+  }
+  if (totals?.packagingCharge) {
+    safePrinterText(enc, padRow(labelOf(totals.packagingCharge.label), formatAmount(totals.packagingCharge.amount, currency, locale, trim), cols), warnings, false, arabicShaping).newline();
   }
   if (breakdown && breakdown.lines.length > 0) {
     for (const line of breakdown.lines) {

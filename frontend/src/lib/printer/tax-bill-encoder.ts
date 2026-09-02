@@ -115,7 +115,7 @@ function getSafeLatnLocale(locale: string | undefined): string {
 
 function formatRawTaxBillDate(value: string | undefined, locale: string, timezone?: string): string {
   const options = timezone ? { timeZone: timezone } : undefined;
-  const localized = formatDate(value, getSafeLatnLocale(locale), options);
+  const localized = normalizeGermanThermalText(formatDate(value, getSafeLatnLocale(locale), options));
   return hasUnsupportedPrinterChars(localized)
     ? formatDate(value, 'en-US-u-nu-latn', options)
     : localized;

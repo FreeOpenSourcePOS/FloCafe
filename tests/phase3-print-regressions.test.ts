@@ -126,12 +126,12 @@ async function run(): Promise<void> {
   const germanTaxWarnings: any[] = [];
   const germanTaxText = Buffer.from(frontend.taxBillEncoder.buildTaxBillBytes({
     bill_number: 'INV-PHASE3-003', subtotal: 100, discount_amount: 0, tax_amount: 0, total: 100,
-    order: { created_at: '2026-04-21 10:30:00', items: [{ product_name: 'Coffee', quantity: 1, total: 100, addons: [] }] },
+    order: { created_at: '2026-03-21 10:30:00', items: [{ product_name: 'Coffee', quantity: 1, total: 100, addons: [] }] },
   } as any, { business_name: 'Cafe', country: 'DE', currency: 'EUR', timezone: 'UTC' } as any, {
     rawEscPos: true, useUnicode: false, language: 'de',
   }, germanTaxWarnings)).toString('utf8');
-  assert.match(germanTaxText, /Datum: .*Apr/, 'raw tax bill keeps a representable country locale date');
-  assert.doesNotMatch(taxWarnings.map((warning) => warning.text).join('\n'), /Date:/, 'raw tax bill date fallback does not create a date omission warning');
+  assert.match(germanTaxText, /Datum: .*Maer/, 'raw tax bill keeps a representable country locale date');
+  assert.doesNotMatch(germanTaxWarnings.map((warning) => warning.text).join('\n'), /Datum:/, 'raw tax bill date fallback does not create a date omission warning');
 
   const taxHeaderWarnings: any[] = [];
   frontend.taxBillEncoder.buildTaxBillBytes({

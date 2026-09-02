@@ -39,7 +39,7 @@ moduleApi._resolveFilename = function (request: string, parent: any, isMain: boo
 };
 const React = frontendRequire('react');
 const ReactDOMServer = frontendRequire('react-dom/server');
-const TouchNumberPad = require('../frontend/src/components/pos/TouchNumberPad').default;
+const CurrencyTouchNumberPad = require('../frontend/src/components/pos/TouchNumberPad').CurrencyTouchNumberPad;
 const { allowCurrencyDecimalKey, getDiscountInputStep, normalizeFixedDiscountValue } = require('../frontend/src/lib/currency-input');
 
 const EVIDENCE_DIR =
@@ -190,7 +190,7 @@ async function runCurrencyInputBehaviorTests() {
       amountTarget: 'payment' | 'wallet' | 'discount',
       discountType: 'percentage' | 'amount',
     ) => ReactDOMServer.renderToStaticMarkup(
-      React.createElement(TouchNumberPad, {
+      React.createElement(CurrencyTouchNumberPad, {
         value: '',
         onChange: () => undefined,
         ariaLabel: 'Amount keypad',

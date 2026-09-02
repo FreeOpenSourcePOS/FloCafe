@@ -14,7 +14,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
-import TouchNumberPad from '@/components/pos/TouchNumberPad';
+import { CurrencyTouchNumberPad } from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -621,7 +621,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
             </div>
           )}
           {amountTarget && (
-            <TouchNumberPad
+            <CurrencyTouchNumberPad
               value={activeAmountValue}
               onChange={updateActiveAmount}
               ariaLabel={t('numericKeypad')}

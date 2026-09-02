@@ -19,7 +19,7 @@ import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currenc
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
-import TouchNumberPad from '@/components/pos/TouchNumberPad';
+import { CurrencyTouchNumberPad } from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -725,7 +725,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             </div>
           )}
           {amountTarget && (
-            <TouchNumberPad
+            <CurrencyTouchNumberPad
               value={activeAmountValue}
               onChange={updateActiveAmount}
               ariaLabel={t('numericKeypad')}

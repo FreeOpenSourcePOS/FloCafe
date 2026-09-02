@@ -15,9 +15,7 @@ interface Props {
   ariaLabel: string;
   clearLabel: string;
   backspaceLabel: string;
-  currencyMaxDecimals: number;
-  amountTarget: CurrencyAmountTarget;
-  discountType: CurrencyDiscountType;
+  allowDecimal?: boolean;
   max?: number;
   quickValues?: QuickValue[];
   className?: string;
@@ -45,14 +43,11 @@ export default function TouchNumberPad({
   ariaLabel,
   clearLabel,
   backspaceLabel,
-  currencyMaxDecimals,
-  amountTarget,
-  discountType,
+  allowDecimal = true,
   max,
   quickValues = [],
   className,
 }: Props) {
-  const allowDecimal = allowCurrencyDecimalKey(currencyMaxDecimals, amountTarget, discountType);
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', allowDecimal ? '.' : '', '0'];
 
   return (
@@ -103,5 +98,20 @@ export default function TouchNumberPad({
         </button>
       </div>
     </div>
+  );
+}
+
+interface CurrencyTouchNumberPadProps extends Omit<Props, 'allowDecimal'> {
+  currencyMaxDecimals: number;
+  amountTarget: CurrencyAmountTarget;
+  discountType: CurrencyDiscountType;
+}
+
+export function CurrencyTouchNumberPad({ currencyMaxDecimals, amountTarget, discountType, ...props }: CurrencyTouchNumberPadProps) {
+  return (
+    <TouchNumberPad
+      {...props}
+      allowDecimal={allowCurrencyDecimalKey(currencyMaxDecimals, amountTarget, discountType)}
+    />
   );
 }

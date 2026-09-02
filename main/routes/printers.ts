@@ -571,7 +571,7 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     return res.status(403).json({ error: 'KOT printing is disabled for this business' });
   }
   try {
-    const { orderId, stationName, items, useUnicode = false } = req.body;
+    const { orderId, stationName, items, useUnicode = false, connectionType } = req.body;
     // Renderer's global "Arabic/Persian shaping" setting (#437). Only an
     // explicit boolean overrides the printer profile's declared capability.
     const arabicShapingOverride = typeof req.body?.arabicShaping === 'boolean' ? req.body.arabicShaping : undefined;
@@ -610,7 +610,9 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
     const kotSourceItems = rawKotSourceItems
       .filter((item: any) => item?.status !== 'served' && item?.status !== 'ready');
     if (req.body?.resolveOnly === true) {
-      const groups = routeItemsToStations(db, kotSourceItems, true).filter((g) => g.items.length > 0);
+      const groups = routeItemsToStations(db, kotSourceItems, true)
+        .filter((g) => g.items.length > 0)
+        .filter((g) => connectionType !== 'webusb' || !g.printer || g.printer.connection_type === 'webusb');
       return res.json({
         groups: groups.map((group) => ({
           stationName: group.stationName,

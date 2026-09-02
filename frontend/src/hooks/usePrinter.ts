@@ -353,6 +353,8 @@ export const usePrinterStore = create<PrinterState>()(
             }
           }
 
+          await printerService.awaitPendingReconnect();
+          const localWebUsbActive = get().printMethod === 'escpos' && printerService.isConnected;
           const orderForPrint = opts?.items ? { ...order, items: opts.items } : order;
           const printTargets: { stationName: string; order: Order }[] = opts?.stationName
             ? [{ stationName: opts.stationName, order: orderForPrint }]
@@ -361,6 +363,7 @@ export const usePrinterStore = create<PrinterState>()(
             }>('/printers/print-kot', {
               orderId: order.id,
               items: opts?.items,
+              connectionType: localWebUsbActive ? 'webusb' : undefined,
               resolveOnly: true,
             }).then((response) => (response.data.groups || [])
               .map((group) => ({
@@ -377,10 +380,6 @@ export const usePrinterStore = create<PrinterState>()(
           const kotLanguage = resolveKotTicketLanguage();
           const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
 
-          // A startup silent-reconnect attempt may still be in flight (e.g.
-          // KOT auto-print firing on the first order right after launch) —
-          // wait for it to settle before trusting isConnected.
-          await printerService.awaitPendingReconnect();
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             const { paperWidth } = get();
             const warnings: PrintWarning[] = [];

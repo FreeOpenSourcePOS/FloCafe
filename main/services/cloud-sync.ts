@@ -1634,7 +1634,7 @@ export class CloudSyncService {
           - COALESCE((SELECT SUM(amount_cents) / ? FROM refunds WHERE created_at >= ? AND created_at <= ?), 0) as paid_amount
       FROM bills
       WHERE paid_at >= ? AND paid_at <= ?
-    `).get(range.from, range.to, minorFactor, range.from, range.to);
+    `).get(minorFactor, range.from, range.to, range.from, range.to);
 
     const byDay = db.prepare(`
       WITH events AS (

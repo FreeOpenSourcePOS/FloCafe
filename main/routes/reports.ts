@@ -119,6 +119,7 @@ function pickExtreme(counts: number[], mode: 'max' | 'min', include: (count: num
 router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const today = utcTodayDate();
     const [start, end] = utcDayBounds(today);
     const salesToday = db.prepare(`

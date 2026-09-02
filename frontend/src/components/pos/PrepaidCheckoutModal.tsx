@@ -13,7 +13,7 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
-import { allowCurrencyDecimalKey, getDiscountInputStep } from '@/lib/currency-input';
+import { allowCurrencyDecimalKey, getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import TouchNumberPad from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
@@ -104,13 +104,15 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const previewDiscount = useMemo(() => {
     const rawValue = Number.parseFloat(discountValue);
     if (!Number.isFinite(rawValue) || rawValue <= 0) return null;
+    const normalizedValue = discountType === 'amount'
+      ? normalizeFixedDiscountValue(rawValue, unitAdapter.maxDecimals)
+      : Math.min(100, Math.max(0, rawValue));
+    if (discountType === 'amount' && normalizedValue <= 0) return null;
     return {
       type: discountType,
-      value: discountType === 'percentage'
-        ? Math.min(100, Math.max(0, rawValue))
-        : toStoredUnit(Math.max(0, rawValue)),
+      value: discountType === 'percentage' ? normalizedValue : toStoredUnit(normalizedValue),
     };
-  }, [discountType, discountValue, toStoredUnit]);
+  }, [discountType, discountValue, toStoredUnit, unitAdapter.maxDecimals]);
   const { tax, loading: taxLoading } = useTaxPreview(
     cart.items,
     cart.customerId,

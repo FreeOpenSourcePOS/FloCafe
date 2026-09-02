@@ -15,7 +15,7 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
-import { allowCurrencyDecimalKey, getDiscountInputStep } from '@/lib/currency-input';
+import { allowCurrencyDecimalKey, getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
@@ -266,8 +266,15 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   const handleApplyDiscount = async (customVal?: number) => {
     if (applyingDiscount) return;
-    const val = customVal !== undefined ? customVal : parseFloat(discountValue);
-    if (customVal === undefined && (isNaN(val) || val < 0)) {
+    const rawVal = customVal !== undefined ? customVal : parseFloat(discountValue);
+    if (customVal === undefined && (isNaN(rawVal) || rawVal < 0)) {
+      toast.error(t('discountInvalid'));
+      return;
+    }
+    const val = discountType === 'amount'
+      ? normalizeFixedDiscountValue(rawVal, unitAdapter.maxDecimals)
+      : rawVal;
+    if (discountType === 'amount' && rawVal > 0 && val <= 0) {
       toast.error(t('discountInvalid'));
       return;
     }

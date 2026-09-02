@@ -40,7 +40,7 @@ moduleApi._resolveFilename = function (request: string, parent: any, isMain: boo
 const React = frontendRequire('react');
 const ReactDOMServer = frontendRequire('react-dom/server');
 const TouchNumberPad = require('../frontend/src/components/pos/TouchNumberPad').default;
-const { allowCurrencyDecimalKey, getDiscountInputStep } = require('../frontend/src/lib/currency-input');
+const { allowCurrencyDecimalKey, getDiscountInputStep, normalizeFixedDiscountValue } = require('../frontend/src/lib/currency-input');
 
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
@@ -174,6 +174,9 @@ async function runCurrencyInputBehaviorTests() {
   assert.equal(getDiscountInputStep(jpyAdapter.maxDecimals, 'amount'), '1');
   assert.equal(getDiscountInputStep(kwdAdapter.maxDecimals, 'amount'), '0.01');
   assert.equal(getDiscountInputStep(kwdAdapter.maxDecimals, 'percentage'), '1');
+  assert.equal(normalizeFixedDiscountValue(1.5, jpyAdapter.maxDecimals), 2);
+  assert.equal(normalizeFixedDiscountValue(12.345, kwdAdapter.maxDecimals), 12.35);
+  assert.equal(normalizeFixedDiscountValue(0.001, kwdAdapter.maxDecimals), 0);
   assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'payment', 'amount'), false);
   assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'discount', 'amount'), false);
   assert.equal(allowCurrencyDecimalKey(jpyAdapter.maxDecimals, 'discount', 'percentage'), true);

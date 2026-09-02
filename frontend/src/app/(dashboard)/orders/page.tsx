@@ -14,7 +14,7 @@ import type { OrderItem, Table, Product, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
-import { getDiscountInputStep } from '@/lib/currency-input';
+import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
@@ -736,12 +736,20 @@ export default function OrdersPage() {
   const handleApplyDiscount = async () => {
     if (!discountModal) return;
 
+    const discountValue = discountModal.type === 'amount'
+      ? normalizeFixedDiscountValue(discountModal.value, unitAdapter.maxDecimals)
+      : discountModal.value;
+    if (discountModal.type === 'amount' && discountModal.value > 0 && discountValue <= 0) {
+      toast.error(tOrders('discountFailed'));
+      return;
+    }
+
     // Check if PIN is required
-    if (discountRequiresApproval && discountModal.value > 0 && !discountPin) {
+    if (discountRequiresApproval && discountValue > 0 && !discountPin) {
       toast.error(tOrders('managerPinRequired'));
       return;
     }
-    if (discountModal.value > 0 && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
+    if (discountValue > 0 && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
       toast.error(tOrders('discountFailed'));
       return;
     }
@@ -749,9 +757,9 @@ export default function OrdersPage() {
     try {
       await api.patch(`/orders/${discountModal.order.id}/discount`, {
         discount_type: discountModal.type,
-        discount_value: discountModal.value,
+        discount_value: discountValue,
         discount_reason: discountModal.reason || undefined,
-        override_pin: discountRequiresApproval && discountModal.value > 0 ? discountPin : undefined,
+        override_pin: discountRequiresApproval && discountValue > 0 ? discountPin : undefined,
       });
       toast.success(tOrders('discountApplied'));
       fetchOrders();

@@ -7,7 +7,7 @@ import { productRoutes } from './products';
 import { addonGroupRoutes } from './addon-groups';
 import { orderRoutes } from './orders';
 import { orderItemRoutes } from './order-items';
-import { billRoutes, syncUnpaidBillsForOrder } from './bills';
+import { billRoutes, syncUnpaidBillsForOrder, getTenantCurrency } from './bills';
 import { refundRoutes } from './refunds';
 import { tableRoutes } from './tables';
 import { kitchenStationRoutes } from './kitchen-stations';
@@ -34,6 +34,7 @@ import { whatsappRoutes } from './whatsapp';
 import { supportTicketRoutes } from './support-ticket';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
+import { getCurrencyFractionDigits } from '../countries';
 
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 import {
@@ -459,12 +460,14 @@ export function registerRoutes(app: Express): void {
           allTaxSnapshots.push(i.tax_snapshot || null);
         }
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
+        const currency = getTenantCurrency();
+        const decimals = getCurrencyFractionDigits(currency);
         const existingDiscountAmount = currentOrder.discount_amount || 0;
         let newDiscountAmount = existingDiscountAmount;
         if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
           if (currentOrder.discount_type === 'percentage') {
             const pct = currentOrder.discount_value || 0;
-            newDiscountAmount = Math.round(subtotal * pct / 100 * 100) / 100;
+            newDiscountAmount = Number((subtotal * pct / 100).toFixed(decimals));
           }
           // amount type: keep same value
         }
@@ -475,8 +478,8 @@ export function registerRoutes(app: Express): void {
         let taxRatio = 1;
         if (newDiscountAmount > 0 && subtotal > 0) {
           taxRatio = discountedSubtotal / subtotal;
-          newTaxAmount = Math.round(totalTax * taxRatio * 100) / 100;
-          newExclusiveTax = Math.round(exclusiveTax * taxRatio * 100) / 100;
+          newTaxAmount = Number((totalTax * taxRatio).toFixed(decimals));
+          newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
         }
         const tenantInfo = {
           country: getSettingValue('country') || 'IN',
@@ -501,7 +504,7 @@ export function registerRoutes(app: Express): void {
         const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
           + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
         const roundOff = 0;
-        const total = Number(preRoundTotal.toFixed(2));
+        const total = Number(preRoundTotal.toFixed(decimals));
 
         // #132 FIX: cancelling the last active item leaves nothing to serve or
         // bill — treat it as the whole order being cancelled, the same way the
@@ -643,12 +646,14 @@ export function registerRoutes(app: Express): void {
           allTaxSnapshots.push(i.tax_snapshot || null);
         }
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
+        const currency = getTenantCurrency();
+        const decimals = getCurrencyFractionDigits(currency);
         const existingDiscountAmount = currentOrder.discount_amount || 0;
         let newDiscountAmount = existingDiscountAmount;
         if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
           if (currentOrder.discount_type === 'percentage') {
             const pct = currentOrder.discount_value || 0;
-            newDiscountAmount = Math.round(subtotal * pct / 100 * 100) / 100;
+            newDiscountAmount = Number((subtotal * pct / 100).toFixed(decimals));
           }
           // amount type: keep same value
         }
@@ -659,8 +664,8 @@ export function registerRoutes(app: Express): void {
         let taxRatio = 1;
         if (newDiscountAmount > 0 && subtotal > 0) {
           taxRatio = discountedSubtotal / subtotal;
-          newTaxAmount = Math.round(totalTax * taxRatio * 100) / 100;
-          newExclusiveTax = Math.round(exclusiveTax * taxRatio * 100) / 100;
+          newTaxAmount = Number((totalTax * taxRatio).toFixed(decimals));
+          newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
         }
         const tenantInfo = {
           country: getSettingValue('country') || 'IN',
@@ -685,7 +690,7 @@ export function registerRoutes(app: Express): void {
         const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
           + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
         const roundOff = 0;
-        const total = Number(preRoundTotal.toFixed(2));
+        const total = Number(preRoundTotal.toFixed(decimals));
 
         db.prepare(`
           UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?

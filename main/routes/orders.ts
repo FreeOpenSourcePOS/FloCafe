@@ -817,12 +817,14 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       }
 
       // BUG #12 FIX: Preserve order-level discount (scale percentage proportionally)
+      const currency = getTenantCurrency();
+      const decimals = getCurrencyFractionDigits(currency);
       const existingDiscountAmount = currentOrder.discount_amount || 0;
       let newDiscountAmount = existingDiscountAmount;
       if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
         if (currentOrder.discount_type === 'percentage') {
           const pct = currentOrder.discount_value || 0;
-          newDiscountAmount = Math.round(subtotal * pct / 100 * 100) / 100;
+          newDiscountAmount = Number((subtotal * pct / 100).toFixed(decimals));
         }
         // amount type: keep same value
       }
@@ -833,8 +835,8 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       let taxRatio = 1;
       if (newDiscountAmount > 0 && subtotal > 0) {
         taxRatio = discountedSubtotal / subtotal;
-        newTaxAmount = Math.round(totalTax * taxRatio * 100) / 100;
-        newExclusiveTax = Math.round(exclusiveTax * taxRatio * 100) / 100;
+        newTaxAmount = Number((totalTax * taxRatio).toFixed(decimals));
+        newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
       }
 
       const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, currentOrder, customer);
@@ -848,8 +850,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
-      const currency = getTenantCurrency();
-      const decimals = getCurrencyFractionDigits(currency);
       const total = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
@@ -1257,6 +1257,8 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       const customer = currentOrder.customer_id
         ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
         : null;
+      const currency = getTenantCurrency();
+      const decimals = getCurrencyFractionDigits(currency);
 
       // Calculate discount amount
       let discountAmount = 0;
@@ -1266,7 +1268,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         } else {
           discountAmount = Math.min(discount_value, currentOrder.subtotal);
         }
-        discountAmount = Math.round(discountAmount * 100) / 100;
+        discountAmount = Number(discountAmount.toFixed(decimals));
       }
 
       // Always recalculate tax from item-level data (not by scaling the already-discounted
@@ -1296,8 +1298,8 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       if (discountAmount > 0 && currentOrder.subtotal > 0) {
         const discountedSubtotal = Math.max(0, currentOrder.subtotal - discountAmount);
         taxRatio = discountedSubtotal / currentOrder.subtotal;
-        newTaxAmount = Math.round(freshTax * taxRatio * 100) / 100;
-        newExclusiveTax = Math.round(exclusiveTax * taxRatio * 100) / 100;
+        newTaxAmount = Number((freshTax * taxRatio).toFixed(decimals));
+        newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
       }
 
       const discountedSubtotal = Math.max(0, currentOrder.subtotal - discountAmount);
@@ -1312,8 +1314,6 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (currentOrder.packaging_charge || 0) + (currentOrder.delivery_charge || 0) + (currentOrder.service_charge || 0);
-      const currency = getTenantCurrency();
-      const decimals = getCurrencyFractionDigits(currency);
       const newTotal = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
@@ -1333,7 +1333,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         .get(req.params.id, 'paid') as any;
       if (existingBill) {
         const pack = getActiveCountryPack(tenantInfo.country);
-        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(newTotal, pack);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(newTotal, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`
           UPDATE bills SET discount_amount = ?, discount_type = ?, discount_value = ?,
@@ -1439,6 +1439,8 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
     const addonRows = db.prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?').all(item.id) as { price: number; quantity?: number }[];
     const addonTotal = addonRows.reduce((sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * item.quantity, 0);
     const itemBaseTotal = item.unit_price * item.quantity + addonTotal;
+    const currency = getTenantCurrency();
+    const decimals = getCurrencyFractionDigits(currency);
 
     let discountAmount: number;
     if (discount_type === 'percentage') {
@@ -1446,7 +1448,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
     } else {
       discountAmount = Math.min(discount_value, itemBaseTotal);
     }
-    discountAmount = Math.round(discountAmount * 100) / 100;
+    discountAmount = Number(discountAmount.toFixed(decimals));
 
     // Recalculate item subtotal after discount
     const newSubtotal = Math.max(0, itemBaseTotal - discountAmount);
@@ -1510,7 +1512,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       let newOrderDiscount = existingDiscountAmount;
       if (existingDiscountAmount > 0 && order.subtotal > 0) {
         // Scale discount proportionally to new subtotal
-        newOrderDiscount = Math.round(existingDiscountAmount * (orderSubtotal / order.subtotal) * 100) / 100;
+        newOrderDiscount = Number((existingDiscountAmount * (orderSubtotal / order.subtotal)).toFixed(decimals));
       }
 
       // Recalculate tax on discounted subtotal
@@ -1520,8 +1522,8 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       let taxRatio = 1;
       if (newOrderDiscount > 0 && orderSubtotal > 0) {
         taxRatio = discountedSubtotal / orderSubtotal;
-        newOrderTax = Math.round(orderTax * taxRatio * 100) / 100;
-        newExclusiveOrderTax = Math.round(exclusiveOrderTax * taxRatio * 100) / 100;
+        newOrderTax = Number((orderTax * taxRatio).toFixed(decimals));
+        newExclusiveOrderTax = Number((exclusiveOrderTax * taxRatio).toFixed(decimals));
       }
 
       const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, order, customer);
@@ -1535,8 +1537,6 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (order.packaging_charge || 0) + (order.delivery_charge || 0) + (order.service_charge || 0);
-      const currency = getTenantCurrency();
-      const decimals = getCurrencyFractionDigits(currency);
       const orderTotal = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 

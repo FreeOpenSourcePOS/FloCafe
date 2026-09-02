@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
-import { getCountryByCode, type TaxIdFormat } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, type TaxIdFormat } from '../countries';
 
 interface TenantInfo {
   country: string;
@@ -743,6 +743,10 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       state_code: settings.state_code || '',
       taxes_enabled: settings.taxes_enabled === 'true',
     };
+    const currency = settings.currency && /^[A-Z]{3}$/.test(settings.currency)
+      ? settings.currency
+      : getCountryByCode(tenantInfo.country)?.currency || 'INR';
+    const decimals = getCurrencyFractionDigits(currency);
 
     const customer = customer_id
       ? (db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id) as Customer | undefined)
@@ -786,12 +790,12 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         product_name: product.name,
         quantity,
         unit_price: unitPrice,
-        subtotal: round(subtotal, 2),
+        subtotal: round(subtotal, decimals),
         discount_amount: itemDiscount,
         tax_amount: taxResult.tax_amount,
         tax_breakdown: taxResult.tax_breakdown,
         tax_type: taxResult.tax_type,
-        total: round(subtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount), 2),
+        total: round(subtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount), decimals),
       });
 
       if (taxResult.tax_breakdown) {
@@ -830,7 +834,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       } else {
         discountAmount = Decimal.min(new Decimal(parsedDiscount), subtotalDecimal);
       }
-      discountAmount = discountAmount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      discountAmount = discountAmount.toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP);
     }
 
     const subtotalDecimal = new Decimal(totalSubtotal);
@@ -840,11 +844,11 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       : new Decimal(1);
     const discountedItemTax = new Decimal(totalTax)
       .mul(taxRatio)
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+      .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
       .toNumber();
     const discountedExclusiveTax = new Decimal(totalExclusiveTax)
       .mul(taxRatio)
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+      .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
       .toNumber();
 
     const chargeCategories = getConfiguredChargeTaxCategories(tenantInfo.country);
@@ -870,18 +874,18 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       .plus(packaging)
       .plus(delivery)
       .plus(service)
-      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+      .toDecimalPlaces(decimals, Decimal.ROUND_HALF_UP)
       .toNumber();
     const pack = getActiveCountryPack(tenantInfo.country);
-    const { total, adjustment: roundOff } = applyPayableRounding(exactTotal, pack);
+    const { total, adjustment: roundOff } = applyPayableRounding(exactTotal, pack, currency);
 
     res.json({
       items: itemResults,
       summary: {
-        subtotal: round(totalSubtotal, 2),
+        subtotal: round(totalSubtotal, decimals),
         discount_amount: discountAmount.toNumber(),
         discounted_subtotal: discountedSubtotal.toNumber(),
-        tax_amount: round(taxRollup.taxAmount, 2),
+        tax_amount: round(taxRollup.taxAmount, decimals),
         tax_breakdown: aggregatedBreakdown,
         packaging_charge: packaging,
         delivery_charge: delivery,

@@ -1354,8 +1354,9 @@ export function syncUnpaidBillsForOrder(
   const unpaidBills = bills.filter((bill) => bill.payment_status !== 'paid');
   if (unpaidBills.length === 0) return;
 
+  const tenantCurrency = getTenantCurrency();
   const pack = getActiveCountryPack(country);
-  const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(source.total, pack);
+  const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(source.total, pack, tenantCurrency);
 
   if (!splitBills) {
     const update = db.prepare(`
@@ -1373,7 +1374,6 @@ export function syncUnpaidBillsForOrder(
     return;
   }
 
-  const tenantCurrency = getTenantCurrency();
   const minorFactor = getCurrencyMinorUnitFactor(tenantCurrency);
   const decimals = getCurrencyFractionDigits(tenantCurrency);
   const {
@@ -2144,7 +2144,9 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
     } else {
       discountAmount = Number(value);
     }
-    discountAmount = Math.round(discountAmount * 100) / 100;
+    const currency = getTenantCurrency();
+    const decimals = getCurrencyFractionDigits(currency);
+    discountAmount = Number(discountAmount.toFixed(decimals));
 
     // Always derive the undiscounted tax basis from active item rows. Using
     // bill.tax_amount here compounds the previous discount whenever a manager
@@ -2171,8 +2173,8 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
 
     const discountedSubtotal = Math.max(0, bill.subtotal - discountAmount);
     const taxRatio = bill.subtotal > 0 ? discountedSubtotal / bill.subtotal : 1;
-    const newTaxAmount = Math.round(itemTaxAmount * taxRatio * 100) / 100;
-    const newExclusiveTax = Math.round(itemExclusiveTax * taxRatio * 100) / 100;
+    const newTaxAmount = Number((itemTaxAmount * taxRatio).toFixed(decimals));
+    const newExclusiveTax = Number((itemExclusiveTax * taxRatio).toFixed(decimals));
     const tenantInfo = {
       country: getSettingValue('country') || 'IN',
       business_type: getSettingValue('business_type') || 'restaurant',
@@ -2200,8 +2202,6 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
 
     const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
       + (bill.delivery_charge || 0) + (bill.packaging_charge || 0) + (bill.service_charge || 0);
-    const currency = getTenantCurrency();
-    const decimals = getCurrencyFractionDigits(currency);
     const exactTotal = Number(preRoundTotal.toFixed(decimals));
     const pack = getActiveCountryPack(tenantInfo.country);
     const { total: newTotal, adjustment: newRoundOff } = applyPayableRounding(exactTotal, pack, currency);

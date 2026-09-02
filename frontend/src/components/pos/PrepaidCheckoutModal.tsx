@@ -624,6 +624,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
               ariaLabel={t('numericKeypad')}
               clearLabel={t('clearAmount')}
               backspaceLabel={t('backspaceAmount')}
+              // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
               allowDecimal={amountTarget.kind === 'discount' && discountType === 'percentage' ? true : unitAdapter.maxDecimals > 0}
               max={activeAmountMax}
               quickValues={activeAmountQuickValues}

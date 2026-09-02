@@ -1632,7 +1632,7 @@ placeholder={tOrders('managerPin')}
                     type="number"
                     min={0}
                     max={discountModal.type === 'percentage' ? 100 : Number(discountModal.order.total)}
-                    step={discountModal.type === 'percentage' ? 1 : unitAdapter.step}
+                    step={discountModal.type === 'percentage' ? 1 : unitAdapter.maxDecimals === 0 ? '1' : '0.01'}
                     value={discountModal.value || ''}
                     onChange={(e) => updateDiscountModal({ value: Number(e.target.value) })}
                     placeholder={discountModal.type === 'percentage' ? '0' : unitAdapter.formatInput(0)}

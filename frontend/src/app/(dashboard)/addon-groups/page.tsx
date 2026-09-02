@@ -139,7 +139,7 @@ export default function AddonGroupsPage() {
       setMutating(true);
       await api.post(`/addon-groups/${groupId}/addons`, {
         name: addonForm.name,
-        price: Number(addonForm.price),
+        price: unitAdapter.maxDecimals === 0 ? Math.round(Number(addonForm.price)) : Number(addonForm.price),
       });
       toast.success(t('addonAdded'));
       setAddonForm({ name: '', price: '0' });
@@ -159,7 +159,7 @@ export default function AddonGroupsPage() {
       setMutating(true);
       await api.put(`/addon-groups/${editingAddon.groupId}/addons/${editingAddon.addon.id}`, {
         name: addonForm.name,
-        price: Number(addonForm.price),
+        price: unitAdapter.maxDecimals === 0 ? Math.round(Number(addonForm.price)) : Number(addonForm.price),
       });
       toast.success(t('addonUpdated'));
       setAddonForm({ name: '', price: '0' });

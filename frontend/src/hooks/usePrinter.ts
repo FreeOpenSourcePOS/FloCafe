@@ -345,7 +345,7 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, items: opts?.items, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping });
+              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, items: opts?.items, stationName: opts?.stationName, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping });
               return response.data.warnings || [];
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string } }; message?: string };

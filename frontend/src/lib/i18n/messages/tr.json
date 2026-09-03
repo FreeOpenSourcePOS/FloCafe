@@ -690,12 +690,15 @@
     "htmlDownloaded": "HTML indirildi",
     "item": "Ürün",
     "kotDisabled": "KOT devre dışı",
+    "kitchenStation": "Mutfak",
     "kotPrinted": "KOT yazdırıldı!",
     "lastPrintedBytes": "Son yazdırılan: {bytes} bayt",
     "optionBasicReceipt": "Temel Fiş (Termal)",
     "optionKot": "KOT (Mutfak Fişi)",
     "optionTaxBill": "Ayrıntılı Vergi Fişi (Termal)",
     "optionWhatsapp": "WhatsApp Paylaşımı",
+    "optionWebPrint": "Web Yazdırma (Tarayıcı)",
+    "kotLanguageLoadError": "KOT dili \"{language}\" yüklenemedi; İngilizce etiketler kullanıldı. Dil paketini kontrol edip tekrar deneyin.",
     "paperWidth58": "58 mm (2.5\")",
     "paperWidth80": "80 mm (3.5\")",
     "paperWidthLabel": "Kağıt Genişliği",
@@ -718,6 +721,7 @@
     "arabicShapingHint": "Yazıcınız Farsça/Arapça metni basamadı. Ayarlar → Yazdırma bölümünden 'Yazıcı Arapça/Farsça şekillendirmeyi destekler' seçeneğini etkinleştirin veya tarayıcı üzerinden yazdırın.",
     "genericHint": "Aşağıdaki satırlar bu termal yazıcının basamadığı karakterler içeriyor.",
     "moreLines": "…ve {count} satır daha",
+    "languageLoadError": "Yazdırma dili paketleri (\"{languages}\") yüklenemedi. Dil paketini kontrol edip uygulamayı yeniden yükleyin.",
     "templateFallback": "Seçilen fiş şablonu bu yazdırma yolunda desteklenmediği için dahili fiş düzeni kullanıldı."
   },
   "print": {

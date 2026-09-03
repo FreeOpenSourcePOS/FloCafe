@@ -690,12 +690,15 @@
     "htmlDownloaded": "HTML baixado",
     "item": "Item",
     "kotDisabled": "KOT desativado",
+    "kitchenStation": "Cozinha",
     "kotPrinted": "KOT impresso!",
     "lastPrintedBytes": "Última impressão: {bytes} bytes",
     "optionBasicReceipt": "Comprovante Básico (Térmico)",
     "optionKot": "KOT (Cupom de Cozinha)",
     "optionTaxBill": "Documento Fiscal Detalhado (Térmico)",
     "optionWhatsapp": "Compartilhamento via WhatsApp",
+    "optionWebPrint": "Impressão web (navegador)",
+    "kotLanguageLoadError": "Não foi possível carregar o idioma do KOT \"{language}\"; foram usados rótulos em inglês. Verifique o pacote de idioma e tente novamente.",
     "paperWidth58": "2.5\" (58mm)",
     "paperWidth80": "3.5\" (80mm)",
     "paperWidthLabel": "Largura do Papel",
@@ -718,6 +721,7 @@
     "arabicShapingHint": "Sua impressora não conseguiu imprimir o texto em persa/árabe. Ative \"Impressora suporta moldagem de árabe/persa\" em Configurações → Impressão ou imprima pelo navegador.",
     "genericHint": "As linhas abaixo contêm caracteres que esta impressora térmica não consegue renderizar.",
     "moreLines": "…e mais {count}",
+    "languageLoadError": "Não foi possível carregar os pacotes de idioma de impressão \"{languages}\". Verifique o pacote de idioma e recarregue o aplicativo para tentar novamente.",
     "templateFallback": "O modelo de recibo selecionado não é compatível com este caminho de impressão; o layout de recibo integrado foi usado."
   },
   "print": {

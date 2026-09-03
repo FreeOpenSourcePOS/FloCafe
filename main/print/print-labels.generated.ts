@@ -564,7 +564,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'print.grandTotal': "GESAMTSUMME",
     'print.thankYouShort': "Vielen Dank!",
     'print.thankYouVisitAgain': "Vielen Dank für Ihren Besuch!",
-    'print.pleaseComeAgain': "Auf Wiedersehen!",
+    'print.pleaseComeAgain': "Bitte kommen Sie wieder!",
     'print.ratesInclusiveNote': "Die Preise enthalten die Steuern",
     'print.pointsEarned': "Punkte gesammelt",
     'print.pointsBalance': "Punktestand",

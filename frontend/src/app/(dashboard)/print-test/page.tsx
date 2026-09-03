@@ -94,8 +94,9 @@ export default function PrintTestPage() {
             // ticket locale so a fixed KOT language ≠ UI language still
             // renders translated labels on cold start (mirrors usePrinter).
             const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
-            const failedLanguages = await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
-            const html = generateKotHtml(testOrder, { paperWidth, stationName: t('kitchenStation'), timezone: testTenant.timezone });
+            const kotLanguage = resolveKotTicketLanguage();
+            const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
+            const html = generateKotHtml(testOrder, { paperWidth, language: kotLanguage, stationName: t('kitchenStation'), timezone: testTenant.timezone });
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));
             showPrintWarningsToast(failedLanguages.map((language) => ({

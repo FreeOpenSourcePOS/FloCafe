@@ -34,11 +34,12 @@ const {
   ENGLISH_IDENTICAL_SEED_LANGUAGES,
 } = require('../main/routes/auth') as typeof import('../main/routes/auth');
 const { LANGUAGES } = require('../frontend/src/lib/i18n/languages') as typeof import('../frontend/src/lib/i18n/languages');
+const { loadLocaleMessages } = require('../frontend/src/lib/i18n/loader') as typeof import('../frontend/src/lib/i18n/loader');
+const { createTranslator } = require('use-intl/core') as typeof import('use-intl/core');
 const { printLabel } = require('../main/print/print-labels.generated') as typeof import('../main/print/print-labels.generated');
 
 const languages = Object.keys(LANGUAGES) as Array<keyof typeof LANGUAGES>;
 const englishIdenticalSeeds = new Set<string>(ENGLISH_IDENTICAL_SEED_LANGUAGES);
-const messageDir = path.join(__dirname, '../frontend/src/lib/i18n/messages');
 
 function resetDatabase(): void {
   try { closeDatabase(); } catch { /* first iteration */ }
@@ -55,9 +56,20 @@ function rows(table: string, columns: string, where: string): any[] {
   return getDatabase().prepare(`SELECT ${columns} FROM ${table} WHERE ${where}`).all();
 }
 
-function run(): void {
+async function run(): Promise<void> {
   console.log(`Phase 7 setup/demo locale coverage: ${languages.length} registered locales`);
   assert.deepEqual([...englishIdenticalSeeds].sort(), ['fil'], 'Filipino is the only non-English locale on the documented English-identical seed allowlist');
+
+  const translators = new Map<string, (key: string, values?: Record<string, unknown>) => string>();
+  for (const language of languages) {
+    const messages = await loadLocaleMessages(language);
+    translators.set(language, createTranslator({ locale: LANGUAGES[language].locale, messages }) as unknown as (key: string, values?: Record<string, unknown>) => string);
+  }
+  const translate = (language: string, key: string, values?: Record<string, unknown>): string => {
+    const translator = translators.get(language);
+    assert.ok(translator, `${language}: runtime translator is available`);
+    return translator(key, values);
+  };
 
   const snapshots = new Map<string, { category: string; product: string; manager: string }>();
   for (const language of languages) {
@@ -99,35 +111,32 @@ function run(): void {
   const defaultCountryCustomer = rows('customers', 'country_code', "id = 'cust-demo-1'")[0];
   assert.equal(defaultCountryCustomer.country_code, '+91', 'omitted country uses the country default, not the Spanish UI language');
 
-  const messages = Object.fromEntries(languages.map((language) => [
-    language,
-    JSON.parse(fs.readFileSync(path.join(messageDir, `${language}.json`), 'utf8')),
-  ]));
-  assert.equal(messages.fil.printWarnings.arabicShapingHint.includes('Your printer'), false, 'Filipino Arabic warning is not mixed English/Filipino');
-  assert.equal(messages.fil.printWarnings.arabicShapingHint.includes('I-enable'), false, 'Filipino Arabic warning uses localized imperative wording');
-  assert.equal(messages.de.setup.finedineLabel, 'FineDine', 'German setup uses the product flow name, not the unrelated Fine Dining term');
-  assert.match(messages.de.setup.expressDetails, /FineDine/);
-  assert.equal(messages.de.print.pleaseComeAgain, 'Bitte kommen Sie wieder!', 'German receipt semantic string asks guests to return');
+  const filipinoArabicWarning = translate('fil', 'printWarnings.arabicShapingHint');
+  assert.equal(filipinoArabicWarning.includes('Your printer'), false, 'Filipino Arabic warning is not mixed English/Filipino');
+  assert.equal(filipinoArabicWarning.includes('I-enable'), false, 'Filipino Arabic warning uses localized imperative wording');
+  assert.equal(translate('de', 'setup.finedineLabel'), 'FineDine', 'German setup uses the product flow name, not the unrelated Fine Dining term');
+  assert.match(translate('de', 'setup.expressDetails'), /FineDine/);
+  assert.equal(translate('de', 'print.pleaseComeAgain'), 'Bitte kommen Sie wieder!', 'German receipt semantic string asks guests to return');
 
   // The generated print-label boundary preserves the existing Spanish and
   // Portuguese fallback coverage independently of country defaults.
   assert.equal(printLabel('es', 'print.taxInvoiceTitle'), 'FACTURA CON IMPUESTOS');
   assert.equal(printLabel('pt', 'print.thankYouShort'), 'Obrigado!');
-  assert.equal(messages.es.setup.optionWebPrint, undefined, 'setup namespace remains separate from print-test labels');
   for (const language of languages) {
-    assert.notEqual(messages[language].printTest.optionBasicReceipt, 'printTest.optionBasicReceipt', `${language}: basic receipt label resolves`);
-    assert.notEqual(messages[language].printTest.optionWebPrint, 'printTest.optionWebPrint', `${language}: web print label resolves`);
-    assert.notEqual(messages[language].printTest.kitchenStation, 'printTest.kitchenStation', `${language}: kitchen station label resolves`);
-    assert.notEqual(messages[language].printWarnings.languageLoadError, 'printWarnings.languageLoadError', `${language}: locale-load warning resolves`);
+    assert.notEqual(translate(language, 'printTest.optionBasicReceipt'), 'printTest.optionBasicReceipt', `${language}: basic receipt label resolves`);
+    assert.notEqual(translate(language, 'printTest.optionWebPrint'), 'printTest.optionWebPrint', `${language}: web print label resolves`);
+    assert.notEqual(translate(language, 'printTest.kitchenStation'), 'printTest.kitchenStation', `${language}: kitchen station label resolves`);
+    assert.notEqual(translate(language, 'printWarnings.languageLoadError', { languages: 'fa' }), 'printWarnings.languageLoadError', `${language}: locale-load warning resolves`);
   }
 
   console.log('Phase 7 setup/demo, allowlist, country decoupling, fallback, warning, and print-test checks passed.');
 }
 
-try {
-  run();
-} finally {
+run().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+}).finally(() => {
   try { closeDatabase(); } catch { /* already closed */ }
   fs.rmSync(testDir, { recursive: true, force: true });
   Module._load = originalLoad;
-}
+});

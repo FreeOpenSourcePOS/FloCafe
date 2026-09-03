@@ -437,10 +437,11 @@ function run(): void {
       subtotal: 50,
       discount_amount: 0,
       tax_amount: 0,
+      service_charge: 7,
       delivery_charge: 8,
       packaging_charge: 9,
-      total: 67,
-      payment_details: [{ method: 'cash', amount: 67 }],
+      total: 74,
+      payment_details: [{ method: 'cash', amount: 74 }],
       order: quantityOrder,
     };
     const quantityBusiness = { ...business, name: 'Flo Parity Cafe' };
@@ -461,10 +462,25 @@ function run(): void {
       warn(addonRow != null && digitsOf(addonRow).includes('3000'), `${renderer}: addon 5 × 3 × 2 renders 30.00`);
       const secondAddonRow = contentRows(text).find((row) => /Vanilla syrup/.test(row));
       warn(secondAddonRow != null && digitsOf(secondAddonRow).includes('800'), `${renderer}: second addon extension renders 8.00`);
-      warn(text.includes('8.00') && text.includes('9.00'), `${renderer}: delivery and packaging charges render`);
+      warn(text.includes('7.00') && text.includes('8.00') && text.includes('9.00'), `${renderer}: service, delivery, and packaging charges render`);
     }
     warn(browserHtml.includes('Extra shot') && browserHtml.includes('×3'), 'browser: addon quantity remains visible');
-    warn(browserHtml.includes('Delivery Charge') && browserHtml.includes('Packaging'), 'browser: delivery and packaging charges render');
+    warn(browserHtml.includes('Service Charge') && browserHtml.includes('Delivery Charge') && browserHtml.includes('Packaging'), 'browser: service, delivery, and packaging charges render');
+
+    const zeroChargeBill = {
+      ...quantityBill,
+      service_charge: 0,
+      delivery_charge: 0,
+      packaging_charge: 0,
+      total: 50,
+    };
+    for (const [renderer, build] of [
+      ['frontend/webusb/classic', fe.receiptEncoder.buildClassicReceiptBytes],
+      ['frontend/webusb/compact', fe.receiptEncoder.buildCompactReceiptBytes],
+    ] as const) {
+      const zeroText = new TextDecoder().decode(build(zeroChargeBill as any, { ...tenant, business_name: 'Flo Parity Cafe' } as any, { paperWidth: 80, useUnicode: true }, []));
+      warn(!zeroText.includes('Service Charge') && !zeroText.includes('Delivery Charge') && !zeroText.includes('Packaging'), `${renderer}: zero charges do not create rows`);
+    }
 
     let malformedPrintSucceeded = true;
     for (const addons of [

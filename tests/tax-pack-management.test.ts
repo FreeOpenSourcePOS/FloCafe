@@ -752,6 +752,7 @@ async function main() {
           showDiscount: 'when_non_zero',
           showTaxRegistrationNumber: 'when_tax_present_or_enabled',
           grandTotalLabel: 'GRAND TOTAL',
+          chargeRows: ['packagingCharge', 'serviceCharge', 'deliveryCharge'],
         },
         footer: {
           useConfiguredFooterNote: true,
@@ -872,8 +873,11 @@ async function main() {
         subtotal: 200,
         discount_amount: 0,
         tax_amount: 10,
-        total: 210,
-        payment_details: [{ method: 'cash', amount: 210 }],
+        service_charge: 20,
+        delivery_charge: 30,
+        packaging_charge: 5,
+        total: 265,
+        payment_details: [{ method: 'cash', amount: 265 }],
       },
       {
         name: 'Flo Test Cafe',
@@ -893,7 +897,40 @@ async function main() {
     assert(pluginReceipt.includes('ITEM'), 'installed GST plugin template renders the plugin item-table layout');
     assert(pluginReceipt.includes('GSTIN: 27ABCDE1234F1Z5'), 'installed GST plugin template renders GSTIN');
     assert(pluginReceipt.includes('CGST @2.5%'), 'installed GST plugin template renders tax components');
+    assert(pluginReceipt.includes('Service Charge') && pluginReceipt.includes('₹20.00'), 'declared plugin service charge row renders its persisted amount');
+    assert(pluginReceipt.includes('Delivery') && pluginReceipt.includes('₹30.00'), 'declared plugin delivery charge row renders its persisted amount');
+    assert(pluginReceipt.includes('Packaging') && pluginReceipt.includes('₹5.00'), 'declared plugin packaging charge row renders its persisted amount');
+    assert(
+      pluginReceipt.indexOf('Service Charge') < pluginReceipt.indexOf('Delivery')
+        && pluginReceipt.indexOf('Delivery') < pluginReceipt.indexOf('Packaging')
+        && pluginReceipt.indexOf('Packaging') < pluginReceipt.indexOf('GRAND TOTAL'),
+      'declared plugin charge rows keep service, delivery, packaging, total order',
+    );
     assert(pluginReceipt.includes('GRAND TOTAL'), 'installed GST plugin template renders plugin grand total label');
+
+    const zeroPluginReceipt = escPosToText(formatReceipt(
+      {
+        order_number: 'ORD-GST-ZERO-CHARGES',
+        created_at: '2026-08-01T10:30:00.000Z',
+        items: [{ product_name: 'Masala Chai', quantity: 1, total: 100 }],
+      },
+      {
+        bill_number: 'BILL-GST-ZERO-CHARGES',
+        subtotal: 100,
+        discount_amount: 0,
+        tax_amount: 0,
+        service_charge: 0,
+        delivery_charge: 0,
+        packaging_charge: 0,
+        total: 100,
+      },
+      { name: 'Flo Test Cafe', country: 'IN', currency_symbol: '₹', show_tax_breakdown: false },
+      'in.gst.tax-invoice.v1',
+      48,
+      true,
+    ));
+    assert(!zeroPluginReceipt.includes('Service Charge') && !zeroPluginReceipt.includes('Delivery') && !zeroPluginReceipt.includes('Packaging'),
+      'declared plugin charge rows omit zero-valued charges');
 
     const widthProfileWarnings: any[] = [];
     const exactWidthReceipt = escPosToText(formatReceipt(
@@ -1141,6 +1178,14 @@ async function main() {
     const labelsTotalReceipt = renderLabeled('in.gst.labels-total.v1');
     assert(labelsTotalReceipt.includes('SUMA TOTAL'), 'labels.total overrides the grand total when no structural label exists');
 
+    const fallbackWithCharges = renderLabeled('in.gst.label-fallback.v1', {
+      service_charge: 20,
+      delivery_charge: 30,
+      packaging_charge: 5,
+      total: 155,
+    });
+    assert(!fallbackWithCharges.includes('Service Charge') && !fallbackWithCharges.includes('Delivery') && !fallbackWithCharges.includes('Packaging'),
+      'plugin templates without charge-row support retain their legacy output');
     const fallbackEnReceipt = renderLabeled('in.gst.label-fallback.v1', {}, 'en');
     assert(fallbackEnReceipt.includes('INVOICE'), 'EN fallback title matches the pre-#445 hardcoded default');
     assert(fallbackEnReceipt.includes('Subtotal'), 'EN fallback subtotal matches the pre-#445 hardcoded default');

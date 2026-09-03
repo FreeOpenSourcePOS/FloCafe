@@ -189,7 +189,11 @@ export function buildTaxBillBytes(
   const safeFinancialRow = (left: string, right: string): string => {
     const rawFinancialRow = `${left}${right}`;
     const normalizedFinancialRow = normalizeThermalText(rawFinancialRow, opts.capabilities);
-    const printerFinancialRow = useUnicode ? normalizedFinancialRow : normalizeCurrencyToAscii(normalizedFinancialRow);
+    const printerFinancialRow = opts.capabilities
+      ? normalizedFinancialRow
+      : useUnicode
+        ? normalizedFinancialRow
+        : normalizeCurrencyToAscii(normalizedFinancialRow);
     return hasUnsupportedPrinterChars(printerFinancialRow)
       && !(arabicShaping && isArabicShapingSafeLine(printerFinancialRow))
       ? rawFinancialRow

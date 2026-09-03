@@ -170,33 +170,24 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         ) : (
           <div className="space-y-3">
             {cart.items.map((item) => (
-              <div key={item.id} className="flex items-start gap-3">
-                <button
-                  onClick={() => cart.removeItem(item.id)}
-                  className="touch-target -ms-2 -mt-2 rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 active:bg-red-50 transition-colors shrink-0"
-                  aria-label={t('remove')}
-                >
-                  <Trash2 size={16} />
-                </button>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {item.product.name}
-                    </p>
-                    {onEditItem && (
-                      <button
-                        onClick={() => onEditItem(item)}
-                        className="touch-target shrink-0 gap-1 rounded-full bg-amber-100 px-3 text-amber-700 hover:bg-amber-200 active:bg-amber-200 text-xs font-medium transition-colors"
-                      >
-                        <SquarePen size={12} />
-                        {tCommon('edit')}
-                      </button>
-                    )}
-                  </div>
+              <div key={item.id} className="border-b border-border/60 pb-3 last:border-b-0 last:pb-0">
+                <div className="flex items-start gap-2">
+                  <p className="min-w-0 flex-1 break-words text-sm font-medium leading-snug text-foreground">
+                    {item.product.name}
+                  </p>
+                  <button
+                    onClick={() => cart.removeItem(item.id)}
+                    className="touch-target -me-2 -mt-2 shrink-0 rounded-full text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500 active:bg-red-50"
+                    aria-label={t('remove')}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+                <div className="min-w-0">
                   {item.addons.length > 0 && (
                     <div className="mt-0.5">
                       {item.addons.map((a) => (
-                        <p key={a.id} className="text-xs text-gray-400">
+                        <p key={a.id} className="break-words text-xs text-gray-400">
                           + {a.name}{(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''} {Number(a.price) > 0 && `(${fmt(Number(a.price) * (a.quantity || 1))})`}
                         </p>
                       ))}
@@ -205,26 +196,37 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                   {item.special_instructions && (
                     <p className="text-xs text-gray-400 italic mt-0.5 break-words">{item.special_instructions}</p>
                   )}
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-muted-foreground">
                     {fmt(Number(item.product.price))}
                   </p>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => cart.updateQuantity(item.id, item.quantity - 1)}
-                    className="touch-target rounded-full bg-muted hover:bg-muted/70 active:bg-muted/70 transition-colors"
-                    aria-label={t('remove')}
-                  >
-                    <Minus size={16} />
-                  </button>
-                  <span className="text-base font-semibold w-6 text-center tabular-nums">{item.quantity}</span>
-                  <button
-                    onClick={() => cart.updateQuantity(item.id, item.quantity + 1)}
-                    className="touch-target rounded-full bg-muted hover:bg-muted/70 active:bg-muted/70 transition-colors"
-                    aria-label={t('addItems')}
-                  >
-                    <Plus size={16} />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {onEditItem && (
+                      <button
+                        onClick={() => onEditItem(item)}
+                        className="touch-target shrink-0 gap-1 rounded-full bg-amber-100 px-3 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-200 active:bg-amber-200"
+                      >
+                        <SquarePen size={12} />
+                        {tCommon('edit')}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => cart.updateQuantity(item.id, item.quantity - 1)}
+                      className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+                      aria-label={t('remove')}
+                    >
+                      <Minus size={16} />
+                    </button>
+                    <span className="w-6 text-center text-base font-semibold tabular-nums">{item.quantity}</span>
+                    <button
+                      onClick={() => cart.updateQuantity(item.id, item.quantity + 1)}
+                      className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+                      aria-label={t('addItems')}
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

@@ -44,6 +44,7 @@ function parsePolicy(value: string | null | undefined, kind: 'receipt' | 'kot'):
 export async function syncPrintPoliciesAtBootstrap(
   tenant: Tenant,
   settingsStore: PosSettingsActions,
+  isCurrent: () => boolean = () => true,
 ): Promise<Language[]> {
   const receiptPolicy = parsePolicy(tenant.bill_language_policy, 'receipt') as ReceiptLanguagePolicy;
   const kotPolicy = parsePolicy(tenant.kot_language_policy, 'kot') as KotLanguagePolicy;
@@ -53,10 +54,11 @@ export async function syncPrintPoliciesAtBootstrap(
   const receiptLanguages = resolveReceiptLanguages(receiptPolicy, uiLanguage) as ResolvedPrintLanguages;
   const kotLanguage = resolveKotLanguage(kotPolicy, uiLanguage) as Language;
 
-  settingsStore.getState().setBillLanguagePolicy?.(receiptPolicy);
-  settingsStore.getState().setKotLanguagePolicy?.(kotPolicy);
-
   const languages = [...new Set([...receiptLanguages, kotLanguage])] as Language[];
   const outcomes = await Promise.allSettled(languages.map((language) => loadLocaleMessages(language)));
+  if (!isCurrent()) return [];
+
+  settingsStore.getState().setBillLanguagePolicy?.(receiptPolicy);
+  settingsStore.getState().setKotLanguagePolicy?.(kotPolicy);
   return languages.filter((_, index) => outcomes[index].status === 'rejected');
 }

@@ -9,6 +9,8 @@ import { THEME_REHYDRATION_EVENT } from './theme';
 import { isLanguage, type Language } from '../lib/i18n/languages';
 import { syncPrintPoliciesAtBootstrap } from '../lib/print-policy-bootstrap';
 
+let authOperation = 0;
+
 function syncTenantLanguage(t: Tenant | null | undefined) {
   const lang = t?.language;
   if (isLanguage(lang)) {
@@ -76,14 +78,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   printLanguageLoadErrors: [],
 
   login: async (email: string, password: string, rememberMe = false) => {
+    const operation = ++authOperation;
     const { data } = await api.post('/auth/login', { email, password, rememberMe });
+    if (operation !== authOperation) return;
     const tenants: Tenant[] = data.tenants;
     const currentTenant = tenants.length === 1 ? tenants[0] : null;
     persistSession(data.access_token, currentTenant);
     syncTenantLanguage(currentTenant);
     const failedLanguages = currentTenant
-      ? await syncPrintPoliciesAtBootstrap(currentTenant, usePosSettingsStore)
+      ? await syncPrintPoliciesAtBootstrap(currentTenant, usePosSettingsStore, () => operation === authOperation)
       : [];
+    if (operation !== authOperation) return;
     set({
       user: data.user,
       token: data.access_token,
@@ -94,10 +99,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   selectTenant: async (tenantId: number) => {
+    const operation = ++authOperation;
     const { data } = await api.post('/auth/tenants/select', { tenant_id: tenantId });
+    if (operation !== authOperation) return;
     persistSession(data.access_token, data.tenant);
     syncTenantLanguage(data.tenant);
-    const failedLanguages = await syncPrintPoliciesAtBootstrap(data.tenant, usePosSettingsStore);
+    const failedLanguages = await syncPrintPoliciesAtBootstrap(data.tenant, usePosSettingsStore, () => operation === authOperation);
+    if (operation !== authOperation) return;
     set({
       token: data.access_token,
       currentTenant: data.tenant,
@@ -106,6 +114,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
+    ++authOperation;
     api.post('/auth/logout').catch(() => {});
     localStorage.removeItem('token');
     localStorage.removeItem('tenant');
@@ -122,6 +131,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   loadFromStorage: async () => {
+    const operation = ++authOperation;
     if (typeof window === 'undefined') {
       set({ loading: false, printLanguageLoadErrors: [] });
       return;
@@ -145,6 +155,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (token) {
       await api.get('/auth/me')
         .then(({ data }) => {
+          if (operation !== authOperation) return null;
           const tenants: Tenant[] = data.tenants;
           // Find the fresh version of the currently selected tenant, or default to the first one
           const freshTenant = currentTenant ? tenants.find((t: Tenant) => t.id === currentTenant.id) : null;
@@ -158,13 +169,15 @@ export const useAuthStore = create<AuthState>((set) => ({
           });
           syncTenantLanguage(resolved);
           return resolved
-            ? syncPrintPoliciesAtBootstrap(resolved, usePosSettingsStore)
+            ? syncPrintPoliciesAtBootstrap(resolved, usePosSettingsStore, () => operation === authOperation)
             : [];
         })
         .then((failedLanguages) => {
+          if (operation !== authOperation || failedLanguages === null) return;
           set({ loading: false, printLanguageLoadErrors: failedLanguages });
         })
         .catch(() => {
+          if (operation !== authOperation) return;
           localStorage.removeItem('token');
           localStorage.removeItem('tenant');
           set({ loading: false, printLanguageLoadErrors: [] });

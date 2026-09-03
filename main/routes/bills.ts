@@ -2153,7 +2153,7 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
     // bill.tax_amount here compounds the previous discount whenever a manager
     // edits 10% to 20%. Keep inclusive tax out of the payable total.
     const activeItems = db.prepare(
-      "SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'refunded')"
+      "SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')"
     ).all(bill.order_id) as any[];
     let itemTaxAmount = 0;
     let itemExclusiveTax = 0;

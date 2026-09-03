@@ -1389,8 +1389,8 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
-    if (['cancelled', 'refunded'].includes(item.status)) {
-      return res.status(400).json({ error: 'Cannot apply discount to a cancelled or refunded item' });
+    if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(item.status)) {
+      return res.status(400).json({ error: 'Cannot apply discount to a cancelled, voided, or refunded item' });
     }
 
     const { discount_type, discount_value } = req.body;
@@ -1500,7 +1500,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       // Note: status != 'cancelled' — a cancelled item's tax must not re-enter
       // the order total here, same filter every other recompute site in this
       // file already uses (BUG #3 FIX above, index.ts cancel/restore below).
-      const allItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'refunded')").all(req.params.id) as any[];
+      const allItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')").all(req.params.id) as any[];
       let orderSubtotal = 0;
       let orderTax = 0;
       let exclusiveOrderTax = 0;

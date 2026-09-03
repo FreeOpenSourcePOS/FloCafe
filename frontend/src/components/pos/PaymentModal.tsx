@@ -15,7 +15,7 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
-import { getCurrencyMinorUnitFactor } from '@/lib/countries';
+import { getCountryByCode, getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
@@ -85,7 +85,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const isWhatsAppReady = useWhatsAppReady();
   const unitAdapter = useCurrencyUnitAdapter();
   const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, formatInput } = unitAdapter;
-  const currencyCode = currentTenant?.currency || 'INR';
+  const currencyCode =
+    currentTenant?.currency ||
+    (currentTenant?.country ? getCountryByCode(currentTenant.country)?.currency : undefined) ||
+    'INR';
   const minorFactor = getCurrencyMinorUnitFactor(currencyCode);
   const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
 

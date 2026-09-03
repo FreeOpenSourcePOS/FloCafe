@@ -10,6 +10,7 @@
 
 import toast from 'react-hot-toast';
 import { createTranslator } from 'use-intl/core';
+import type { PrintLanguageCode } from '@print/types';
 import type { PrintWarning } from './warnings';
 import { hasArabicScript } from './warnings';
 import { getCachedMessages } from '@/lib/i18n/loader';
@@ -70,7 +71,7 @@ export function showPrintWarningsToast(warnings: PrintWarning[]): void {
   });
 }
 
-export function showPrintLanguageLoadErrorsToast(languages: readonly Language[]): void {
+export function showPrintLanguageLoadErrorsToast(languages: readonly PrintLanguageCode[]): void {
   if (languages.length === 0) return;
 
   toast.error(

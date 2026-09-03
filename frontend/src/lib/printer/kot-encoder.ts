@@ -79,7 +79,7 @@ export function buildKotBytes(
   enc.initialize();
 
   // KOT Banner
-  const bannerText = thermalSafeHeaderText(label('print.kot.banner'), 'KITCHEN ORDER TICKET', language, arabicShaping);
+  const bannerText = thermalSafeHeaderText(label('print.kot.banner'), 'KITCHEN ORDER TICKET', language, arabicShaping, opts.capabilities);
   const bannerWidth = bannerText.length * 2 <= cols ? 2 : 1;
   enc.align('center').bold(true).width(bannerWidth).height(2);
   safePrinterText(enc, bannerText, warnings, false, arabicShaping, undefined, cols, language).width(1).height(1).bold(false).newline();
@@ -88,14 +88,14 @@ export function buildKotBytes(
   enc.align('left').bold(true);
   if (opts.stationName) {
     const stationName = String(opts.stationName);
-    safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.station')}: ${stationName}`, `Station: ${thermalSafeMetadataValue(stationName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.station')}: ${stationName}`, `Station: ${thermalSafeMetadataValue(stationName, language, arabicShaping, opts.capabilities)}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
   const orderNumber = String(order.order_number);
-  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order #${thermalSafeMetadataValue(orderNumber, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order #${thermalSafeMetadataValue(orderNumber, language, arabicShaping, opts.capabilities)}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.table) {
     const tableName = String(order.table.name);
-    safePrinterText(enc, thermalSafeHeaderText(label('pos.tableLabel').replace('{name}', tableName), `Table: ${thermalSafeMetadataValue(tableName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, thermalSafeHeaderText(label('pos.tableLabel').replace('{name}', tableName), `Table: ${thermalSafeMetadataValue(tableName, language, arabicShaping, opts.capabilities)}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   const orderType = resolveOrderType(order.type, language);
@@ -103,13 +103,13 @@ export function buildKotBytes(
 
   if (order.customer) {
     const customerName = String(order.customer.name);
-    safePrinterText(enc, thermalSafeHeaderText(`${label('pos.customer')}: ${customerName}`, `Customer: ${thermalSafeMetadataValue(customerName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, thermalSafeHeaderText(`${label('pos.customer')}: ${customerName}`, `Customer: ${thermalSafeMetadataValue(customerName, language, arabicShaping, opts.capabilities)}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   enc.bold(false);
   const time = formatTime(order.created_at, locale, opts.timezone ? { timeZone: opts.timezone } : undefined);
   const fallbackTime = formatTime(order.created_at, 'en-US', opts.timezone ? { timeZone: opts.timezone } : undefined);
-  safePrinterText(enc, thermalSafeHeaderText(`${label('print.time')}: ${time}`, `Time: ${fallbackTime}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, thermalSafeHeaderText(`${label('print.time')}: ${time}`, `Time: ${fallbackTime}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
   enc.rule({ style: 'double' });
 
   // ── Items ────────────────────────────────────────────────────────────────────
@@ -179,8 +179,8 @@ function truncate(str: string, max: number, language: string = 'en'): string {
 // represent a localized header label; item text still follows safePrinterText.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
 
-function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean): string {
-  return thermalSafeHeaderText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping);
+function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
+  return thermalSafeHeaderText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping, capabilities);
 }
 
 function thermalSafeHeaderText(value: string, fallback: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {

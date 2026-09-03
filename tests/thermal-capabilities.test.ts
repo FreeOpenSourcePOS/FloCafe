@@ -7,6 +7,7 @@ import {
   isThermalTextRepresentable,
   normalizeThermalText,
   selectThermalCodePage,
+  escPosCodePageId,
   type ThermalPrinterCapabilities,
 } from '../shared/print/thermal-capabilities';
 
@@ -84,7 +85,6 @@ function run(): void {
   assert.deepEqual(generic.capabilities.encoding.codePages, ['ascii']);
   assert.equal(generic.capabilities.warnings.financialText, 'refuse');
   assert.equal(normalizeThermalText('Küche', generic.capabilities), 'Kueche');
-  assert.equal(normalizeThermalText('Küche', generic.capabilities), normalizeThermalText('Küche', generic.capabilities));
 
   assert.equal(selectThermalCodePage('Cafe', latinCodePageCapabilities), 'cp437');
   assert.equal(selectThermalCodePage('€', latinCodePageCapabilities), 'cp858');
@@ -92,6 +92,41 @@ function run(): void {
   assert.equal(isThermalTextRepresentable('עברית', latinCodePageCapabilities), false);
   const codePageBytes = buildEscPos(['À'], false, { capabilities: latinCodePageCapabilities });
   assert.equal(codePageBytes.includes(Buffer.from([0x1B, 0x74, 2])), true);
+
+  const latinOrder = {
+    ...order,
+    items: [{ ...order.items[0], product_name: 'Smørrebrød' }],
+  };
+  const latinBackendWarnings: any[] = [];
+  const latinBackendBytes = formatKOT(
+    latinOrder,
+    latinOrder.items,
+    'Kitchen',
+    42,
+    false,
+    'full',
+    'en-US',
+    { timeZone: 'UTC' },
+    latinBackendWarnings,
+    false,
+    'en',
+    latinCodePageCapabilities,
+  );
+  const latinWebUsbWarnings: any[] = [];
+  const latinWebUsbBytes = loadFrontendKotEncoder().buildKotBytes(latinOrder as any, {
+    paperWidth: 58,
+    language: 'en',
+    stationName: 'Kitchen',
+    locale: 'en-US',
+    timezone: 'UTC',
+    capabilities: latinCodePageCapabilities,
+  }, latinWebUsbWarnings);
+  const cp850Command = Buffer.from([0x1B, 0x74, escPosCodePageId('cp850')]);
+  assert.equal(selectThermalCodePage('Smørrebrød', latinCodePageCapabilities), 'cp850');
+  assert.equal(Buffer.from(latinBackendBytes).includes(cp850Command), true);
+  assert.equal(Buffer.from(latinWebUsbBytes).includes(cp850Command), true);
+  assert.deepEqual(latinBackendWarnings, []);
+  assert.deepEqual(latinWebUsbWarnings, []);
 
   const genericPair = outputPair(GENERIC_THERMAL_CAPABILITIES, false);
   assert.match(genericPair.backend, /Type: DINE IN|Type: Dine in/);

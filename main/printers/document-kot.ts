@@ -135,18 +135,18 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
 // value when the selected capability can represent it; otherwise use the
 // existing ASCII labels rather than silently losing ticket identity.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
-function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean, capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities): string {
+function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
   return thermalTextFallback(value, fallback, mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping));
 }
 
-function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean): string {
-  return thermalSafeText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping);
+function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
+  return thermalSafeText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping, capabilities);
 }
 
-function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string, arabicShaping: boolean): string {
+function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
   const localized = labelOf(label).replace('{number}', orderNumber);
-  const fallbackOrderNumber = thermalSafeMetadataValue(orderNumber, language, arabicShaping);
-  return thermalSafeText(localized, `Order #${fallbackOrderNumber}`, language, arabicShaping);
+  const fallbackOrderNumber = thermalSafeMetadataValue(orderNumber, language, arabicShaping, capabilities);
+  return thermalSafeText(localized, `Order #${fallbackOrderNumber}`, language, arabicShaping, capabilities);
 }
 
 function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
@@ -155,19 +155,21 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
 
   lines.push('{INIT}');
-  const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping);
+  const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping, options.capabilities);
   const station = thermalSafeText(
     `${labelOf(header.stationLabel)}: ${header.stationName.text}`,
-    `Station: ${thermalSafeMetadataValue(header.stationName.text, options.language, options.arabicShaping)}`,
+    `Station: ${thermalSafeMetadataValue(header.stationName.text, options.language, options.arabicShaping, options.capabilities)}`,
     options.language,
     options.arabicShaping,
+    options.capabilities,
   );
   const table = header.table
     ? thermalSafeText(
       formatTableLabel(header.table.label, header.table.name.text),
-      `Table: ${thermalSafeMetadataValue(header.table.name.text, options.language, options.arabicShaping)}`,
+      `Table: ${thermalSafeMetadataValue(header.table.name.text, options.language, options.arabicShaping, options.capabilities)}`,
       options.language,
       options.arabicShaping,
+      options.capabilities,
     )
     : null;
   const orderType = header.orderType
@@ -185,20 +187,22 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
     `Time: ${parseDbTimestamp(header.timestamp.text).toLocaleTimeString('en-US-u-nu-latn', tzOptions)}`,
     options.language,
     options.arabicShaping,
+    options.capabilities,
   );
 
   lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
   lines.push('');
   lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language));
-  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping), cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping, options.capabilities), cols, options.arabicShaping, options.language));
   if (table) lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language));
   if (orderType) lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language));
   if (header.customer) {
     const customer = thermalSafeText(
       `${labelOf(header.customer.label)}: ${header.customer.name.text}`,
-      `Customer: ${thermalSafeMetadataValue(header.customer.name.text, options.language, options.arabicShaping)}`,
+      `Customer: ${thermalSafeMetadataValue(header.customer.name.text, options.language, options.arabicShaping, options.capabilities)}`,
       options.language,
       options.arabicShaping,
+      options.capabilities,
     );
     lines.push(truncateShapedLine(customer, cols, options.arabicShaping, options.language));
   }
@@ -302,6 +306,7 @@ export function renderKotViaDocument(
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
+    capabilities: opts.capabilities,
   });
   const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);
   return { document, lines, data, warnings };

@@ -50,6 +50,14 @@ function normalizeOptionalTableLabel(value: unknown): string | null | undefined 
   return value.trim() || null;
 }
 
+/** Accept only positive integer number primitives or their non-empty string representation. */
+function normalizeTableCapacity(value: unknown): number | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  if (typeof value === 'string' && !value.trim()) return null;
+  const normalized = Number(value);
+  return Number.isInteger(normalized) && normalized > 0 ? normalized : null;
+}
+
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -116,8 +124,8 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
       return res.status(400).json({ code: 'TABLE_NAME_REQUIRED', error: 'Table number is required' });
     }
 
-    const normalizedCapacity = capacity === undefined || capacity === null ? 4 : Number(capacity);
-    if (!Number.isInteger(normalizedCapacity) || normalizedCapacity < 1) {
+    const normalizedCapacity = capacity === undefined ? 4 : normalizeTableCapacity(capacity);
+    if (normalizedCapacity === null) {
       return res.status(400).json({ code: 'TABLE_CAPACITY_INVALID', error: 'Capacity must be a positive whole number' });
     }
 
@@ -171,7 +179,8 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       return res.status(400).json({ code: 'TABLE_NAME_REQUIRED', error: 'Table number is required' });
     }
 
-    if (has('capacity') && (!Number.isInteger(Number(capacity)) || Number(capacity) < 1)) {
+    const normalizedCapacity = has('capacity') ? normalizeTableCapacity(capacity) : table.capacity;
+    if (normalizedCapacity === null) {
       return res.status(400).json({ code: 'TABLE_CAPACITY_INVALID', error: 'Capacity must be a positive whole number' });
     }
 
@@ -201,7 +210,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       WHERE id = ?
     `).run(
       hasTableNumber ? tableNumber : table.number,
-      has('capacity') ? Number(capacity) : table.capacity,
+      normalizedCapacity,
       normalizedFloor,
       normalizedSection,
       has('position_x') ? position_x : table.position_x,

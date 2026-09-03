@@ -186,6 +186,24 @@ async function main() {
     assertEqual(invalidCreate.status, 400, 'malformed names are rejected during table creation');
     assertEqual(invalidCreate.data.code, 'TABLE_NAME_REQUIRED', 'create validation uses the same stable UI error code');
 
+    for (const [label, malformedCapacity] of [['boolean', true], ['array', [2]]] as const) {
+      const invalidCreateCapacity = await api(baseUrl, '/api/tables', {
+        method: 'POST',
+        headers: authHeader,
+        body: JSON.stringify({ name: `T-BAD-CREATE-${label}`, capacity: malformedCapacity }),
+      });
+      assertEqual(invalidCreateCapacity.status, 400, `${label} capacity is rejected during table creation`);
+      assertEqual(invalidCreateCapacity.data.code, 'TABLE_CAPACITY_INVALID', `${label} create rejection has a stable UI error code`);
+
+      const invalidUpdateCapacity = await api(baseUrl, `/api/tables/${tableId}`, {
+        method: 'PUT',
+        headers: authHeader,
+        body: JSON.stringify({ capacity: malformedCapacity }),
+      });
+      assertEqual(invalidUpdateCapacity.status, 400, `${label} capacity is rejected during table editing`);
+      assertEqual(invalidUpdateCapacity.data.code, 'TABLE_CAPACITY_INVALID', `${label} edit rejection has a stable UI error code`);
+    }
+
     // ═══════════════════════════════════════════════════════════════════
     // Scenario D: Tables expose active orders and move order between tables
     // ═══════════════════════════════════════════════════════════════════

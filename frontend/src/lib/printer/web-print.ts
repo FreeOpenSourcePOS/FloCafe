@@ -161,6 +161,7 @@ export async function printWebBill(
     field: 'receipt language',
     text: language,
     message: `Receipt language "${language}" could not be loaded, so English labels were used. Check the locale bundle and retry.`,
+    kind: 'locale' as const,
   }));
   const html = generateBillHtml(bill, tenant, { ...opts, languages });
 

@@ -193,6 +193,7 @@ export const usePrinterStore = create<PrinterState>()(
             field: 'receipt language',
             text: language,
             message: `Receipt language "${language}" could not be loaded, so English labels were used.`,
+            kind: 'locale' as const,
           }));
           if (billTemplateWarning) warnings.push(billTemplateWarning);
           const builderOpts: ReceiptOptions = {
@@ -294,6 +295,7 @@ export const usePrinterStore = create<PrinterState>()(
             field: 'receipt language',
             text: language,
             message: `Receipt language "${language}" could not be loaded, so English labels were used.`,
+            kind: 'locale' as const,
           }));
           const bytes = buildTaxBillBytes(bill, tenant, {
             ...opts,
@@ -377,6 +379,7 @@ export const usePrinterStore = create<PrinterState>()(
                 field: 'kot language',
                 text: language,
                 message: `KOT language "${language}" could not be loaded, so English labels were used.`,
+                kind: 'locale' as const,
               })),
               ...warnings,
             ] as PrintWarning[];
@@ -401,6 +404,7 @@ export const usePrinterStore = create<PrinterState>()(
             field: 'kot language',
             text: language,
             message: `KOT language "${language}" could not be loaded, so English labels were used.`,
+            kind: 'locale' as const,
           })) as PrintWarning[];
         } catch (err) {
           set({ lastError: (err as Error).message });

@@ -102,6 +102,7 @@ export default function PrintTestPage() {
               field: 'kot language',
               text: language,
               message: `KOT language "${language}" could not be loaded, so English labels were used. Check the locale bundle and retry.`,
+              kind: 'locale' as const,
             })));
           } else {
             const printWarnings = await printKot(testOrder, { paperWidth, stationName: 'Kitchen' });

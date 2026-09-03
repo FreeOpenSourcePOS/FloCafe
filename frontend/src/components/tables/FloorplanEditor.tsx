@@ -467,7 +467,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     e.preventDefault();
     const cur = posOf(tb) ?? { x: 50, y: 50 };
     const canvas = canvasRef.current;
-    const step = (e.shiftKey ? 5 : 1);
+    // Step a whole grid cell so plain arrows always visibly move (a 1% nudge
+    // would snap straight back); Shift jumps two cells.
+    const step = e.shiftKey ? GRID_STEP * 2 : GRID_STEP;
     const rect = canvas?.getBoundingClientRect();
     const half = rect && rect.width > 0 && rect.height > 0
       ? {
@@ -698,7 +700,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
   return (
     <div>
       <div className="sticky top-0 z-20 -mx-1 mb-5 flex flex-wrap items-center justify-between gap-3 rounded-b-2xl bg-card px-2 py-2.5 shadow-sm">
-        <div className="flex flex-wrap items-center gap-1 rounded-xl bg-muted/50 p-1 border border-border">
+        <div data-testid="floorplan-floor-tabs" className="flex flex-wrap items-center gap-1 rounded-xl bg-muted/50 p-1 border border-border">
           <button
             onClick={() => setActiveFloor(ALL_FLOORS)}
             className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${

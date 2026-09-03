@@ -136,9 +136,12 @@ async function main() {
       db.prepare(`INSERT INTO tables (id, number, capacity, status, created_at, updated_at) VALUES (?, ?, ?, 'available', ?, ?)`)
         .run('tbl-turn-1', 'TT1', 4, now(), now());
 
-      // Anchor timestamps to 01:00 UTC today to guarantee they fall within today's Asia/Kolkata store day
-      const todayBase = new Date();
-      todayBase.setUTCHours(1, 0, 0, 0);
+      // Anchor to noon of the store-local (Asia/Kolkata) day so fixtures fall
+      // inside the report bounds no matter what UTC time the suite runs at.
+      const [ky, km, kd] = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(new Date()).split('-').map(Number);
+      const todayBase = new Date(Date.UTC(ky, km - 1, kd, 6, 30)); // 12:00 IST
       const order1CreatedAt = dbTimestamp(new Date(todayBase.getTime()));
       const order1CompletedAt = dbTimestamp(new Date(todayBase.getTime() + 10 * 60 * 1000)); // 10 minutes
       db.prepare(`

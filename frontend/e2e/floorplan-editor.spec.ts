@@ -49,9 +49,11 @@ test('floorplan editor: drag table onto map, save, persist after reload', async 
   const canvas = page.getByTestId('floorplan-canvas');
   await expect(canvas).toBeVisible();
 
-  // Floor tabs derived from table floors
-  await expect(page.getByRole('button', { name: 'Ground' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'First' })).toBeVisible();
+  // Floor tabs derived from table floors (scoped: the hidden list view holds
+  // same-named filter pills that would make unscoped locators ambiguous)
+  const tabs = page.getByTestId('floorplan-floor-tabs');
+  await expect(tabs.getByRole('button', { name: 'Ground' })).toBeVisible();
+  await expect(tabs.getByRole('button', { name: 'First' })).toBeVisible();
 
   // Drag T1 from the staging tray onto the canvas center
   const trayChip = page.getByTestId('floorplan-tray-T1');
@@ -97,7 +99,7 @@ test('floorplan editor: drag table onto map, save, persist after reload', async 
   await expect(page.getByTestId('floorplan-tray-T3')).toBeHidden();
 
   // Switching floors shows the other floor's tables
-  await page.getByRole('button', { name: 'First' }).click();
+  await tabs.getByRole('button', { name: 'First' }).click();
   await expect(page.getByTestId('floorplan-tray-T3')).toBeVisible();
   await expect(page.getByTestId('floorplan-chip-T1')).toBeHidden();
 });
@@ -156,13 +158,14 @@ test('floorplan editor: quick-add suggests the next number and active floor', as
 
   const name = await page.getByLabel('Name').inputValue();
   expect(name).toMatch(/^\d+$/);
-  await expect(page.getByLabel('Floor')).toHaveValue('Ground');
+  await expect(form.getByLabel('Floor')).toHaveValue('Ground');
 
   await page.getByLabel('Capacity').fill('2');
   await form.getByRole('button', { name: 'Create Table' }).click();
   await expect(page.getByText('Table created')).toBeVisible();
 
-  await expect(page.getByTestId(`floorplan-tray-${name}`)).toBeVisible();
+  // Quick-add auto-places the new table on the canvas at a free corner
+  await expect(page.getByTestId(`floorplan-chip-${name}`)).toBeVisible();
 });
 
 test('floorplan editor: add a named floor and see it in the all-floors overview', async ({ page }) => {
@@ -179,11 +182,11 @@ test('floorplan editor: add a named floor and see it in the all-floors overview'
   await floorForm.getByRole('button', { name: 'Create Table' }).click();
   await expect(page.getByText('Table created')).toBeVisible();
 
-  // Editor switches to the new floor with its first table in the tray
-  await expect(page.getByTestId(`floorplan-tray-${floorTable}`)).toBeVisible();
+  // Editor switches to the new floor; its first table starts placed on the canvas
+  await expect(page.getByTestId(`floorplan-chip-${floorTable}`)).toBeVisible();
 
   // The all-floors overview shows every floor side by side
-  await page.getByRole('button', { name: 'All floors' }).click();
+  await page.getByTestId('floorplan-floor-tabs').getByRole('button', { name: 'All floors' }).click();
   await expect(page.getByTestId('floorplan-mini-Ground')).toBeVisible();
   await expect(page.getByTestId('floorplan-mini-First')).toBeVisible();
   await expect(page.getByTestId('floorplan-mini-Patio')).toBeVisible();
@@ -192,5 +195,5 @@ test('floorplan editor: add a named floor and see it in the all-floors overview'
   await expect(page.getByTestId('floorplan-canvas')).toBeHidden();
   await page.getByTestId('floorplan-mini-Patio').getByRole('button').click();
   await expect(page.getByTestId('floorplan-canvas')).toBeVisible();
-  await expect(page.getByTestId(`floorplan-tray-${floorTable}`)).toBeVisible();
+  await expect(page.getByTestId(`floorplan-chip-${floorTable}`)).toBeVisible();
 });

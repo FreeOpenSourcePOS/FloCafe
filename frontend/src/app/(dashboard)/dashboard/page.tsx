@@ -196,6 +196,7 @@ export default function DashboardPage() {
     ? getMonthRange(selectedMonth)
     : { startDate: selectedDate, endDate: selectedDate };
 
+  /** Opens Chromium's native calendar UI while preserving keyboard fallback. */
   const openPicker = (input: HTMLInputElement | null) => {
     if (!input) return;
     try {

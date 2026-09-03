@@ -96,6 +96,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [walletLoadFailed, setWalletLoadFailed] = useState(false);
   const [walletAmount, setWalletAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
@@ -179,9 +180,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const [syncedCustomerId, setSyncedCustomerId] = useState(customer?.id ?? null);
   if ((customer?.id ?? null) !== syncedCustomerId) {
     setSyncedCustomerId(customer?.id ?? null);
-    if (!customer?.id) {
-      setWalletBalance(null);
-    }
+    setWalletLoadFailed(false);
+    setWalletBalance(null);
   }
 
   useEffect(() => {
@@ -190,7 +190,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
         .then((res) => {
           setWalletBalance(Number(res.data.balance) || 0);
         })
-        .catch(() => {});
+        .catch(() => setWalletLoadFailed(true));
     }
   }, [customer?.id]);
 
@@ -587,7 +587,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           )}
 
           {/* Loyalty Info Strip (staff reference) */}
-          {loyaltySettings?.loyalty_enabled && customer && (
+          {loyaltySettings?.loyalty_enabled && customer && !walletLoadFailed && (
             <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border border-border rounded-xl">
               <Sparkles size={13} className="text-gray-400 shrink-0" />
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">

@@ -12,6 +12,7 @@ import { formatTime } from './format-date';
 import { normalizeGermanThermalText } from './unicode';
 import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
+import { isKotItemPending } from '@print/document';
 
 export interface KotOptions {
   /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
@@ -109,7 +110,7 @@ export function buildKotBytes(
 
   for (const item of items) {
     // Skip items that are already served/completed
-    if (item.status === 'served' || item.status === 'ready') {
+    if (!isKotItemPending(item.status)) {
       continue;
     }
 
@@ -195,7 +196,7 @@ function formatOrderNumber(label: string, orderNumber: string): string {
   return label.replace('{number}', orderNumber);
 }
 
-function parseAddons(addons: unknown): Array<{ name: string }> {
+function parseAddons(addons: unknown): Array<{ name: string; quantity?: number }> {
   if (!addons) return [];
   if (typeof addons === 'string') {
     try {

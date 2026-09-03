@@ -19,7 +19,7 @@ import { createTranslator } from 'use-intl/core';
 import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
 import { defaultPrintLanguagePolicy, resolveKotLanguage } from '@print/policy';
-import { directionalText, type DirectionalText } from '@print/document';
+import { directionalText, isKotItemPending, type DirectionalText } from '@print/document';
 import { containsRtlScript } from '@print/direction';
 import type { TextDirection } from '@print/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -134,7 +134,7 @@ export function generateKotHtml(
   const orderType = resolveOrderType(order.type, lang, tr);
 
   const items = (order.items ?? [])
-    .filter((item) => item.status !== 'served' && item.status !== 'ready')
+    .filter((item) => isKotItemPending(item.status))
     .map((item) => ({
       name: directionalText(String(item.product_name ?? ''), base),
       quantity: Number(item.quantity) || 0,

@@ -691,9 +691,16 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
 // KOT document variant (kitchen order ticket) — #443
 // ---------------------------------------------------------------------------
 
-/** One addon under a KOT item row. Kitchen tickets print names only. */
+/** Whether an order item belongs on a new kitchen ticket. */
+export function isKotItemPending(status: unknown): boolean {
+  return status !== 'served' && status !== 'ready';
+}
+
+/** One add-on under a KOT item row; quantity is display-only kitchen truth. */
 export interface KotAddonSnapshot {
   readonly name: string;
+  /** Add-on unit quantity, when greater than the default of one. */
+  readonly quantity?: number;
 }
 /** One item on the kitchen ticket, as printed truth. */
 export interface KotItemSnapshot {
@@ -709,6 +716,8 @@ export interface KotOrderSnapshot {
   readonly createdAt: string;
   readonly tableName: string;
   readonly orderType: string;
+  /** Customer display name, when the order carries one. */
+  readonly customerName?: string;
 }
 
 /**
@@ -733,19 +742,25 @@ export interface KotHeaderBlock {
   /** Table reference with its (uninterpolated) label concept. */
   readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
   readonly orderType: { readonly label: SemanticLabel; readonly value: DirectionalText; readonly code: string } | null;
+  readonly customer: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
   readonly timeLabel: SemanticLabel;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
 }
 
 /** Ordered kitchen item rows with addons and preparation instructions. */
+export interface KotAddonValue extends DirectionalText {
+  /** Add-on unit quantity, when greater than the default of one. */
+  readonly quantity?: number;
+}
+
 export interface KotItemsBlock {
   readonly kind: 'kot-items';
   readonly direction: TextDirection;
   readonly rows: readonly {
     readonly quantity: number;
     readonly name: DirectionalText;
-    readonly addons: readonly DirectionalText[];
+    readonly addons: readonly KotAddonValue[];
     readonly specialInstructions: DirectionalText | null;
   }[];
 }
@@ -795,6 +810,12 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
         code: printData.order.orderType,
       })
       : null,
+    customer: typeof printData.order?.customerName === 'string' && printData.order.customerName.length > 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'pos.customer'),
+        name: directionalText(printData.order.customerName, base),
+      })
+      : null,
     timeLabel: resolveSemanticLabel(labels, 'print.time'),
     timestamp: directionalText(String(printData.order?.createdAt ?? ''), base),
   });
@@ -807,7 +828,12 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
       name: directionalText(String(item?.productName ?? ''), base),
       addons: Object.freeze((item?.addons ?? new Array<KotAddonSnapshot>())
         .filter((addon: KotAddonSnapshot) => typeof addon?.name === 'string' && addon.name.length > 0)
-        .map((addon: KotAddonSnapshot) => directionalText(String(addon.name), base))),
+        .map((addon: KotAddonSnapshot) => Object.freeze({
+          ...directionalText(String(addon.name), base),
+          ...(typeof addon.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
+            ? { quantity: addon.quantity }
+            : {}),
+        }))),
       specialInstructions: optionalDirectional(item?.specialInstructions, base),
     }))),
   });

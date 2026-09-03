@@ -222,6 +222,10 @@ export interface Bill {
   order?: Order;
   /** Loyalty points credited for this bill (sum of loyalty_ledger credits). Only populated by /orders endpoints. */
   points_earned?: number;
+  /** Loyalty points debited for this bill when supplied by a customer-bills endpoint. */
+  points_redeemed?: number;
+  /** Running loyalty balance when supplied by a print/order API. */
+  points_balance?: number;
 }
 
 export interface TaxSnapshot {

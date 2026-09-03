@@ -509,12 +509,13 @@ console.log('\n▶ KOT document builder (#443)');
       createdAt: '2026-08-21 18:42:00',
       tableName: '4',
       orderType: 'DINE IN',
+      customerName: 'Asha Kumar',
     },
     items: [
       {
         productName: 'Espresso Doppio',
         quantity: 2,
-        addons: [{ name: 'Oat milk' }, { name: '' }],
+        addons: [{ name: 'Oat milk', quantity: 3 }, { name: '' }],
         specialInstructions: 'Less sugar',
       },
       {
@@ -544,6 +545,8 @@ console.log('\n▶ KOT document builder (#443)');
   assert.equal(header.table?.name.text, '4');
   assert.equal(header.orderType?.label.conceptId, 'print.kot.type');
   assert.equal(header.orderType?.value.text, 'DINE IN');
+  assert.equal(header.customer?.label.conceptId, 'pos.customer');
+  assert.equal(header.customer?.name.text, 'Asha Kumar');
   assert.equal(header.timestamp.text, '2026-08-21 18:42:00');
   ok('KOT header carries banner/station/order/table/type/time semantics');
 
@@ -560,6 +563,7 @@ console.log('\n▶ KOT document builder (#443)');
   assert.equal(items.rows[0].quantity, 2);
   assert.equal(items.rows[0].name.text, 'Espresso Doppio');
   assert.deepEqual(items.rows[0].addons.map((addon) => addon.text), ['Oat milk'], 'blank addon names are dropped');
+  assert.equal(items.rows[0].addons[0].quantity, 3, 'KOT add-on quantity is retained');
   assert.equal(items.rows[0].specialInstructions?.text, 'Less sugar');
   assert.equal(items.rows[1].specialInstructions, null);
   ok('KOT item rows carry quantity/name/addons/instructions');

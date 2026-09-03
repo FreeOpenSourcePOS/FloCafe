@@ -197,8 +197,10 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       taxComponents: resolveTaxComponents(bill),
       payments: parsePaymentDetails(bill?.payment_details),
       pointsEarned: Number(bill?.points_earned) || 0,
-      pointsRedeemed: 0,
-      pointsBalance: null,
+      pointsRedeemed: Number(bill?.points_redeemed) || 0,
+      pointsBalance: Object.prototype.hasOwnProperty.call(bill || {}, 'points_balance')
+        ? Number(bill?.points_balance) || 0
+        : null,
     },
     business: {
       name: String(opts.businessName ?? ''),

@@ -533,6 +533,9 @@ export function buildClassicReceiptBytes(
 
   // Totals
   if (totals) {
+    if (totals.pointsRedeemed) {
+      safePrinterText(enc, padRow(labelOf(totals.pointsRedeemed.label), `-${totals.pointsRedeemed.points} pts`, cols), warnings, false, arabicShaping).newline();
+    }
     safePrinterText(enc, padRow(labelOf(totals.subtotal.label), formatAmount(totals.subtotal.amount, currency, locale, opts.trimDecimals === true, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
     if (totals.discount) {
       safePrinterText(enc, padRow(labelOf(totals.discount.label), `-${formatAmount(totals.discount.amount, currency, locale, opts.trimDecimals === true, fractionDigits)}`, cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
@@ -562,6 +565,15 @@ export function buildClassicReceiptBytes(
   // Payment methods
   for (const line of payments?.lines ?? []) {
     safePrinterText(enc, padRow(paymentLabel(line.label), formatAmount(line.amount, currency, locale, opts.trimDecimals === true, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
+  }
+  if (totals?.pointsEarned || totals?.pointsBalance) {
+    enc.rule({ style: 'single' });
+    if (totals.pointsEarned) {
+      safePrinterText(enc, padRow(labelOf(totals.pointsEarned.label), String(totals.pointsEarned.points), cols), warnings, false, arabicShaping).newline();
+    }
+    if (totals.pointsBalance) {
+      safePrinterText(enc, padRow(labelOf(totals.pointsBalance.label), String(totals.pointsBalance.points), cols), warnings, false, arabicShaping).newline();
+    }
   }
 
   enc.newline();
@@ -717,6 +729,21 @@ export function buildCompactReceiptBytes(
         .newline()
         .size('normal')
         .align('left');
+    }
+
+    // Compact keeps the same add-on and instruction semantics as the other
+    // document-driven receipt surfaces, while retaining its one-line item layout.
+    for (const addon of row.addons) {
+      const addonQty = addon.quantity ?? 1;
+      const addonLabel = truncate(`  + ${addon.name.text}${addonQty > 1 ? ` x${addonQty}` : ''}`, cols - 8);
+      if (addon.price > 0) {
+        safePrinterText(enc, padRow(addonLabel, formatAmount(addon.price, currency, locale, trim, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
+      } else {
+        safePrinterText(enc, addonLabel, warnings, false, arabicShaping).newline();
+      }
+    }
+    if (row.specialInstructions) {
+      safePrinterText(enc, truncate(`${labelOf(items?.noteLabel ?? { primary: '' })}: ${row.specialInstructions.text}`, cols), warnings, false, arabicShaping).newline();
     }
   }
 

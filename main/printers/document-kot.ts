@@ -25,6 +25,7 @@ import {
 import { detectPrintLanguageDirection } from './document-classic';
 import {
   buildKotDocument,
+  isKotItemPending,
   type DirectionalText,
   type KotDocument,
   type KotDocumentBlock,
@@ -45,7 +46,7 @@ import {
  */
 export function buildKotPrintData(order: any, items: any[], stationName: string): KotPrintData {
   const ticketItems = Array.isArray(items)
-    ? items.filter((item: any) => item?.status !== 'served' && item?.status !== 'ready')
+    ? items.filter((item: any) => isKotItemPending(item?.status))
     : [];
   return {
     stationName: String(stationName ?? ''),
@@ -54,12 +55,16 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       createdAt: String(order?.created_at ?? ''),
       tableName: String(order?.table?.name ?? ''),
       orderType: String(order?.type ?? '').trim(),
+      customerName: String(order?.customer?.name ?? order?.customer_name ?? '').trim(),
     },
     items: ticketItems.map((item: any) => ({
       productName: String(item?.product_name ?? ''),
       quantity: Number(item?.quantity) || 0,
       addons: (Array.isArray(item?.addons) ? item.addons : []).map((addon: any) => ({
         name: String(addon?.name ?? ''),
+        ...(typeof addon?.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
+          ? { quantity: addon.quantity }
+          : {}),
       })),
       specialInstructions: String(item?.special_instructions ?? ''),
     })),
@@ -197,6 +202,15 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping), cols, options.arabicShaping, options.language));
   if (table) lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language));
   if (orderType) lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language));
+  if (header.customer) {
+    const customer = thermalSafeText(
+      `${labelOf(header.customer.label)}: ${header.customer.name.text}`,
+      `Customer: ${thermalSafeMetadataValue(header.customer.name.text, options.language, options.arabicShaping)}`,
+      options.language,
+      options.arabicShaping,
+    );
+    lines.push(truncateShapedLine(customer, cols, options.arabicShaping, options.language));
+  }
   lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language));
   return lines;
 }
@@ -206,7 +220,9 @@ function kotItemLines(row: KotItemsBlock['rows'][number], cols: number, arabicSh
   const itemPrefix = row.quantity + 'x  ';
   lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - itemPrefix.length), arabicShaping, language) + '{/BOLD}{/DOUBLE_HEIGHT}');
   for (const addon of row.addons) {
-    lines.push('  + ' + truncate(addonName(addon), cols - 4, language));
+    const quantity = addon.quantity ?? 1;
+    const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';
+    lines.push('  + ' + truncate(addonName(addon) + quantitySuffix, cols - 4, language));
   }
   if (row.specialInstructions) {
     lines.push('  ** ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language) + ' **');

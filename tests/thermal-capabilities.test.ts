@@ -87,6 +87,7 @@ function run(): void {
   assert.equal(normalizeThermalText('Küche', generic.capabilities), 'Kueche');
 
   assert.equal(selectThermalCodePage('Cafe', latinCodePageCapabilities), 'cp437');
+  assert.equal(selectThermalCodePage('√2', latinCodePageCapabilities), 'cp437');
   assert.equal(selectThermalCodePage('€', latinCodePageCapabilities), 'cp858');
   assert.equal(isThermalTextRepresentable('€', latinCodePageCapabilities), true);
   assert.equal(isThermalTextRepresentable('עברית', latinCodePageCapabilities), false);

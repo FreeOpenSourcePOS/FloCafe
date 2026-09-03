@@ -190,12 +190,12 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
     options.capabilities,
   );
 
-  lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
+  lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
   lines.push('');
-  lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language));
-  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping, options.capabilities), cols, options.arabicShaping, options.language));
-  if (table) lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language));
-  if (orderType) lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language, options.capabilities));
+  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping, options.capabilities), cols, options.arabicShaping, options.language, options.capabilities));
+  if (table) lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language, options.capabilities));
+  if (orderType) lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language, options.capabilities));
   if (header.customer) {
     const customer = thermalSafeText(
       `${labelOf(header.customer.label)}: ${header.customer.name.text}`,
@@ -204,24 +204,24 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
       options.arabicShaping,
       options.capabilities,
     );
-    lines.push(truncateShapedLine(customer, cols, options.arabicShaping, options.language));
+    lines.push(truncateShapedLine(customer, cols, options.arabicShaping, options.language, options.capabilities));
   }
-  lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language, options.capabilities));
   return lines;
 }
 
-function kotItemLines(row: KotItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string): string[] {
+function kotItemLines(row: KotItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string, capabilities?: ThermalPrinterCapabilities): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
-  lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - itemPrefix.length), arabicShaping, language) + '{/BOLD}{/DOUBLE_HEIGHT}');
+  lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - itemPrefix.length), arabicShaping, language, capabilities) + '{/BOLD}{/DOUBLE_HEIGHT}');
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
     const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';
-    const name = truncate(addonName(addon), Math.max(1, cols - 4 - quantitySuffix.length), language);
+    const name = truncate(addonName(addon), Math.max(1, cols - 4 - quantitySuffix.length), language, capabilities);
     lines.push('  + ' + name + quantitySuffix);
   }
   if (row.specialInstructions) {
-    lines.push('  >> ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language));
+    lines.push('  >> ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language, capabilities));
   }
   return lines;
 }
@@ -248,7 +248,7 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
 
   if (items) {
     for (const row of items.rows) {
-      lines.push(...kotItemLines(row, cols, options.arabicShaping, options.language));
+      lines.push(...kotItemLines(row, cols, options.arabicShaping, options.language, options.capabilities));
     }
   }
 

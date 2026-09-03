@@ -71,7 +71,7 @@ export function buildKotBytes(
   const label = (key: string): string => printLabelResolver(key, language);
   const locale = opts.locale ?? LANGUAGES[language as Language]?.locale ?? 'en-US';
   const safePrinterText = safePrinterTextForLanguage(language, cols, opts.capabilities);
-  const truncateText = (text: string, max: number): string => truncate(text, max, language);
+  const truncateText = (text: string, max: number): string => truncate(text, max, language, opts.capabilities);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -170,8 +170,8 @@ export function buildKotBytes(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function truncate(str: string, max: number, language: string = 'en'): string {
-  const normalized = normalizeThermalText(str);
+function truncate(str: string, max: number, language: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
+  const normalized = normalizeThermalText(str, capabilities);
   return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 

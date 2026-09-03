@@ -164,8 +164,8 @@ export function buildTaxBillBytes(
   const labelFor = (key: string): string => printLabelResolver(key, language);
   const cols = CHARS[paperWidth];
   const safePrinterText = safePrinterTextForLanguage(language, useUnicode, opts.capabilities);
-  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, language);
-  const truncate = (text: string, max: number): string => truncateForLanguage(text, max, language);
+  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, language, opts.capabilities);
+  const truncate = (text: string, max: number): string => truncateForLanguage(text, max, language, opts.capabilities);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode, rawEscPos);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
@@ -179,7 +179,7 @@ export function buildTaxBillBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
   const safeFinancialRow = (left: string, right: string): string => {
     const rawFinancialRow = `${left}${right}`;
-    const normalizedFinancialRow = normalizeThermalText(rawFinancialRow);
+    const normalizedFinancialRow = normalizeThermalText(rawFinancialRow, opts.capabilities);
     const printerFinancialRow = useUnicode ? normalizedFinancialRow : normalizeCurrencyToAscii(normalizedFinancialRow);
     return hasUnsupportedPrinterChars(printerFinancialRow)
       && !(arabicShaping && isArabicShapingSafeLine(printerFinancialRow))
@@ -340,16 +340,16 @@ export function buildTaxBillBytes(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function padRowForLanguage(left: string, right: string, cols: number, language?: string): string {
-  const normalizedLeft = normalizeThermalText(left);
-  const normalizedRight = normalizeThermalText(right);
+function padRowForLanguage(left: string, right: string, cols: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {
+  const normalizedLeft = normalizeThermalText(left, capabilities);
+  const normalizedRight = normalizeThermalText(right, capabilities);
   const safeRight = normalizedRight.length > cols ? normalizedRight.slice(-cols) : normalizedRight;
   const leftWidth = Math.max(0, cols - safeRight.length - 1);
   return normalizedLeft.slice(0, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
 }
 
-function truncateForLanguage(str: string, max: number, language?: string): string {
-  const normalized = normalizeThermalText(str);
+function truncateForLanguage(str: string, max: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {
+  const normalized = normalizeThermalText(str, capabilities);
   return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 

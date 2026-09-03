@@ -263,11 +263,12 @@ export default function TablesPage() {
   const [syncedShowDetails, setSyncedShowDetails] = useState(showDetails);
   if (showDetails !== syncedShowDetails) {
     setSyncedShowDetails(showDetails);
-    if (!showDetails) setOrders([]);
+    if (!showDetails && view !== 'plan') setOrders([]);
   }
 
   useEffect(() => {
-    if (!showDetails || layoutMode) return;
+    if (layoutMode) return;
+    if (view !== 'plan' && !showDetails) return;
     const fetchOrders = () => {
       api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
         .then(({ data }) => setOrders(data.orders || []))
@@ -278,7 +279,7 @@ export default function TablesPage() {
     fetchOrders();
     const interval = setInterval(fetchOrders, 10000);
     return () => clearInterval(interval);
-  }, [showDetails, layoutMode]);
+  }, [showDetails, layoutMode, view]);
 
   // Group active orders by table_id — always built so both the floorplan
   // editor and the list view can read active orders per table.
@@ -486,26 +487,7 @@ export default function TablesPage() {
         </div>
       )}
 
-      {floorValues.length > 1 && (
-        <div className="mb-5 flex flex-wrap gap-2" aria-label={tTables('floorFilter')}>
-          {['all', ...floorValues].map((floor) => (
-            <button
-              key={floor}
-              type="button"
-              onClick={() => setSelectedFloor(floor)}
-              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-                activeFloor === floor
-                  ? 'border-brand bg-brand text-white'
-                  : 'border-border bg-card text-muted-foreground hover:border-brand hover:text-brand'
-              }`}
-            >
-              {floor === 'all' ? tTables('allFloors') : floor}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {view === 'list' && showDetails ? (
+      {view === 'list' ? (showDetails ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibleTables.map((table) => {
             const tableOrders = ordersByTable.get(table.id) || [];
@@ -646,7 +628,7 @@ export default function TablesPage() {
             </div>
           ))}
         </div>
-      )}
+      )) : null}
 
       {view === 'list' && visibleTables.length === 0 && (
         <p className="text-center text-muted-foreground py-12">{tTables('noTablesYet')}</p>

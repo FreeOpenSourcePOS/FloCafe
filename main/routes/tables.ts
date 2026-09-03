@@ -162,6 +162,14 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
   }
 });
 
+// Canvas-percentage coordinate: null/undefined clears, otherwise a finite
+// 0–100 number. Returns undefined for anything else so callers can reject it.
+function normalizePositionCoord(value: unknown): number | null | undefined {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : undefined;
+}
+
 router.patch('/positions', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const raw = req.body?.positions;
@@ -174,15 +182,25 @@ router.patch('/positions', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
       if (!item || typeof item.id !== 'string' || !item.id.trim()) {
         return res.status(400).json({ error: 'Invalid table ID in positions payload' });
       }
-      const x = item.position_x === null || item.position_x === undefined ? null : Number(item.position_x);
-      const y = item.position_y === null || item.position_y === undefined ? null : Number(item.position_y);
-      if ((x !== null && !Number.isFinite(x)) || (y !== null && !Number.isFinite(y))) {
-        return res.status(400).json({ error: 'Coordinates must be numbers or null' });
+      const x = normalizePositionCoord(item.position_x);
+      const y = normalizePositionCoord(item.position_y);
+      if (x === undefined || y === undefined) {
+        return res.status(400).json({ error: 'Coordinates must be numbers between 0 and 100, or null' });
       }
       updates.push({ id: item.id.trim(), position_x: x, position_y: y });
     }
 
     const db = getDatabase();
+    if (updates.length > 0) {
+      const rows = db.prepare(
+        `SELECT id FROM tables WHERE id IN (${updates.map(() => '?').join(',')})`
+      ).all(...updates.map((u) => u.id)) as Array<{ id: string }>;
+      const found = new Set(rows.map((r) => r.id));
+      const missing = updates.find((u) => !found.has(u.id));
+      if (missing) {
+        return res.status(404).json({ error: `Table not found: ${missing.id}` });
+      }
+    }
     withTxn(() => {
       const stmt = db.prepare(`
         UPDATE tables SET
@@ -228,6 +246,11 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
 
     const normalizedFloor = has('floor') ? normalizeOptionalTableLabel(floor) : table.floor;
     const normalizedSection = has('section') ? normalizeOptionalTableLabel(section) : table.section;
+    const normalizedX = has('position_x') ? normalizePositionCoord(position_x) : table.position_x;
+    const normalizedY = has('position_y') ? normalizePositionCoord(position_y) : table.position_y;
+    if (normalizedX === undefined || normalizedY === undefined) {
+      return res.status(400).json({ error: 'Coordinates must be numbers between 0 and 100, or null' });
+    }
     if (normalizedFloor === undefined || normalizedSection === undefined) {
       return res.status(400).json({ code: 'TABLE_LOCATION_INVALID', error: 'Floor and section must be text values' });
     }
@@ -255,12 +278,8 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       normalizedCapacity,
       normalizedFloor,
       normalizedSection,
-      has('position_x')
-        ? (position_x === null ? null : (Number.isFinite(Number(position_x)) ? Number(position_x) : table.position_x))
-        : table.position_x,
-      has('position_y')
-        ? (position_y === null ? null : (Number.isFinite(Number(position_y)) ? Number(position_y) : table.position_y))
-        : table.position_y,
+      normalizedX,
+      normalizedY,
       has('kitchen_station_id') ? kitchen_station_id : table.kitchen_station_id,
       now(),
       req.params.id,

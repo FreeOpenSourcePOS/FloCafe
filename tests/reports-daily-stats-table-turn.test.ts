@@ -138,10 +138,11 @@ async function main() {
 
       // Anchor to noon of the store-local (Asia/Kolkata) day so fixtures fall
       // inside the report bounds no matter what UTC time the suite runs at.
-      const [ky, km, kd] = new Intl.DateTimeFormat('en-CA', {
+      const kolkataParts = new Intl.DateTimeFormat('en-US', {
         timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
-      }).format(new Date()).split('-').map(Number);
-      const todayBase = new Date(Date.UTC(ky, km - 1, kd, 6, 30)); // 12:00 IST
+      }).formatToParts(new Date());
+      const part = (type: string) => Number(kolkataParts.find((p) => p.type === type)?.value);
+      const todayBase = new Date(Date.UTC(part('year'), part('month') - 1, part('day'), 6, 30)); // 12:00 IST
       const order1CreatedAt = dbTimestamp(new Date(todayBase.getTime()));
       const order1CompletedAt = dbTimestamp(new Date(todayBase.getTime() + 10 * 60 * 1000)); // 10 minutes
       db.prepare(`

@@ -387,6 +387,33 @@ async function main() {
     assertEqual(cashierPatchRes.status, 403, 'cashier role is denied on PATCH /tables/positions');
     console.log('   ✓ RBAC enforced on layout positions endpoint');
 
+    // ── Coordinate range validation (0–100 canvas percent) ──
+    const rangeRes = await api(baseUrl, '/api/tables/positions', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { positions: [{ id: 'tbl-floor-1', position_x: 101, position_y: -1 }] },
+    });
+    assertEqual(rangeRes.status, 400, 'out-of-range coordinates are rejected with 400');
+    console.log('   ✓ Batch rejects coordinates outside 0–100');
+
+    // ── Unknown table IDs are rejected, not silently skipped ──
+    const unknownRes = await api(baseUrl, '/api/tables/positions', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { positions: [{ id: 'tbl-does-not-exist', position_x: 10, position_y: 10 }] },
+    });
+    assertEqual(unknownRes.status, 404, 'unknown table ID returns 404');
+    console.log('   ✓ Batch rejects unknown table IDs');
+
+    // ── PUT mirrors the contract: invalid coordinates are rejected ──
+    const putBadRes = await api(baseUrl, '/api/tables/tbl-floor-1', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { position_x: 'not-a-number' },
+    });
+    assertEqual(putBadRes.status, 400, 'PUT with non-numeric position returns 400');
+    console.log('   ✓ PUT rejects invalid coordinates with 400');
+
     console.log('\n✅ All tables string ID tests passed');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

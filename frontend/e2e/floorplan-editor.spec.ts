@@ -31,6 +31,15 @@ test.beforeEach(async ({ request }) => {
       });
     }
   }
+  // Reset seed coordinates so every test starts with T1-T3 unplaced,
+  // even when the e2e DB persists between runs.
+  const fresh = await (await request.get(`${BASE}/api/tables`, { headers: auth })).json();
+  const ids = (fresh.tables ?? [])
+    .filter((t: { number: string }) => ['T1', 'T2', 'T3'].includes(t.number))
+    .map((t: { id: string }) => ({ id: t.id, position_x: null, position_y: null }));
+  if (ids.length > 0) {
+    await request.patch(`${BASE}/api/tables/positions`, { headers: auth, data: { positions: ids } });
+  }
 });
 
 async function login(page: import('@playwright/test').Page) {
@@ -128,7 +137,21 @@ test('floorplan editor: discard reverts unsaved drags', async ({ page }) => {
   await expect(page.getByTestId('floorplan-chip-T2')).toBeHidden();
 });
 
-test('floorplan editor: click a table to edit its seats', async ({ page }) => {
+test('floorplan editor: click a table to edit its seats', async ({ page, request }) => {
+  // This test needs T1 placed; establish it here via API instead of relying
+  // on the persistence test (beforeEach resets all seeds to unplaced).
+  const apiLogin = await request.post(`${BASE}/api/auth/login`, {
+    data: { email: EMAIL, password: PASSWORD },
+  });
+  const { access_token } = await apiLogin.json();
+  const apiAuth = { Authorization: `Bearer ${access_token}` };
+  const tableList = await (await request.get(`${BASE}/api/tables`, { headers: apiAuth })).json();
+  const t1 = (tableList.tables ?? []).find((t: { number: string }) => t.number === 'T1');
+  await request.patch(`${BASE}/api/tables/positions`, {
+    headers: apiAuth,
+    data: { positions: [{ id: t1.id, position_x: 30, position_y: 30 }] },
+  });
+
   await login(page);
 
   await page.getByRole('button', { name: 'Edit layout' }).click();

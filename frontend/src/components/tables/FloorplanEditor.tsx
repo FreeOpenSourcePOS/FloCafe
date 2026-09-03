@@ -330,7 +330,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [overview]);
 
   // Count tables per floor (including the empty-string "Unassigned" bucket)
   // so each tab can show "(N)" — makes Unassigned actionable, not mysterious.
@@ -514,8 +514,8 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
         let position_x: number | null = null;
         let position_y: number | null = null;
         if (floor) {
-          const others = placedSaved
-            .filter((tb) => tb.position_x != null && tb.position_y != null)
+          const others = tables
+            .filter((tb) => (tb.floor || '') === floor && tb.position_x != null && tb.position_y != null)
             .map((tb) => ({ x: tb.position_x!, y: tb.position_y!, capacity: tb.capacity }));
           const pos = findNextFreePosition(capacity, others);
           position_x = pos.x;
@@ -551,10 +551,8 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     try {
       // First table of a brand-new floor — drop it at the top-left grid corner
       // so the new floor starts with a placed table, not an empty tray.
-      const others = placedSaved
-        .filter((tb) => tb.position_x != null && tb.position_y != null)
-        .map((tb) => ({ x: tb.position_x!, y: tb.position_y!, capacity: tb.capacity }));
-      const pos = findNextFreePosition(capacity, others);
+      // The floor is brand-new, so the collision set is empty by definition.
+      const pos = findNextFreePosition(capacity, []);
       await api.post('/tables', {
         number: tableName,
         capacity,
@@ -1247,7 +1245,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
           position_y: p ? p.y : null,
         })),
       });
-      setEdits({});
+      // Keep edits until the refetch lands: the render-time prune drops
+      // entries as the tables prop converges, so the dirty badge stays
+      // truthful through failures instead of clearing optimistically.
       onSaved?.();
       toast.success(t('floorplanSaved'), { position: 'top-center' });
     } catch {

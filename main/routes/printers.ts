@@ -307,7 +307,12 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
     const profile = resolvePrinterProfile(printer);
-    const testData = buildTestPage(printer.paper_width || profile.defaultPaperWidth, profile.cutMode, tenantLanguage(db));
+    const testData = buildTestPage(
+      printer.paper_width || profile.defaultPaperWidth,
+      profile.cutMode,
+      tenantLanguage(db),
+      tenantSettingValue(db, 'timezone') || 'Asia/Kolkata',
+    );
     let result: { ok: boolean; detail?: string } = { ok: false };
 
     switch (printer.connection_type) {
@@ -450,6 +455,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       points_redeemed: pointsRedeemed,
       points_balance: pointsBalance,
       trim_decimals: settings.printer_trim_decimals === 'true',
+      timezone: settings.timezone || 'Asia/Kolkata',
       show_name: settings.bill_show_name !== 'false',
       show_address: settings.bill_show_address !== 'false',
       show_phone: settings.bill_show_phone !== 'false',

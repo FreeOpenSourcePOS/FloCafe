@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import { useAuthStore } from '@/store/auth';
 import { printerService } from '@/lib/printer/PrinterService';
 import { createTestBill, createTestOrder, createTestTenant, createTestCustomer } from '@/lib/printer/test-data';
 import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
@@ -23,6 +24,7 @@ export default function PrintTestPage() {
   const [testing, setTesting] = useState(false);
 
   const { printBill, printTaxBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
+  const currentTenant = useAuthStore((s) => s.currentTenant);
   const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
   const printerPaperSize = usePosSettingsStore((s) => s.printerPaperSize);
   const t = useTranslations('printTest');
@@ -31,7 +33,10 @@ export default function PrintTestPage() {
 
   const testBill = useMemo(() => createTestBill(), []);
   const testOrder = useMemo(() => createTestOrder(), []);
-  const testTenant = useMemo(() => createTestTenant(), []);
+  const testTenant = useMemo(
+    () => createTestTenant({ timezone: currentTenant?.timezone || 'Asia/Kolkata' }),
+    [currentTenant?.timezone],
+  );
   const testCustomer = useMemo(() => createTestCustomer(), []);
 
   const handlePrint = async () => {

@@ -13,7 +13,8 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
-import TouchNumberPad from '@/components/pos/TouchNumberPad';
+import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
+import { CurrencyTouchNumberPad } from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -103,13 +104,22 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const previewDiscount = useMemo(() => {
     const rawValue = Number.parseFloat(discountValue);
     if (!Number.isFinite(rawValue) || rawValue <= 0) return null;
+    const normalizedValue = discountType === 'amount'
+      ? normalizeFixedDiscountValue(rawValue, unitAdapter.maxDecimals)
+      : Math.min(100, Math.max(0, rawValue));
+    if (discountType === 'amount' && normalizedValue <= 0) return null;
     return {
       type: discountType,
-      value: discountType === 'percentage'
-        ? Math.min(100, Math.max(0, rawValue))
-        : toStoredUnit(Math.max(0, rawValue)),
+      value: discountType === 'percentage' ? normalizedValue : toStoredUnit(normalizedValue),
     };
-  }, [discountType, discountValue, toStoredUnit]);
+  }, [discountType, discountValue, toStoredUnit, unitAdapter.maxDecimals]);
+  const rawDiscountValue = Number.parseFloat(discountValue);
+  const normalizedFixedDiscountValue = discountType === 'amount'
+    && Number.isFinite(rawDiscountValue)
+    && rawDiscountValue > 0
+    ? normalizeFixedDiscountValue(rawDiscountValue, unitAdapter.maxDecimals)
+    : null;
+  const hasInvalidFixedDiscount = normalizedFixedDiscountValue === 0;
   const { tax, loading: taxLoading } = useTaxPreview(
     cart.items,
     cart.customerId,
@@ -282,6 +292,10 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   })();
 
   const handleConfirm = () => {
+    if (hasInvalidFixedDiscount) {
+      toast.error(unitAdapter.maxDecimals === 0 ? t('fixedDiscountMinimum') : t('discountInvalid'));
+      return;
+    }
     if (!preview) return;
     const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,4})?$/.test(value.trim());
     if (payments.some((p) => (
@@ -480,7 +494,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
                     placeholder={discountType === 'percentage' ? '0' : '0.00'}
                     min="0"
                     max={discountType === 'percentage' ? 100 : (preview ? toDisplayUnit(preview.subtotal) : undefined)}
-                    step={discountType === 'percentage' ? 1 : inputCurrencyStep}
+                    step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                     inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
                     className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                   />
@@ -618,13 +632,16 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
             </div>
           )}
           {amountTarget && (
-            <TouchNumberPad
+            <CurrencyTouchNumberPad
               value={activeAmountValue}
               onChange={updateActiveAmount}
               ariaLabel={t('numericKeypad')}
               clearLabel={t('clearAmount')}
               backspaceLabel={t('backspaceAmount')}
-              allowDecimal={amountTarget.kind !== 'discount' || discountType === 'amount'}
+              // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
+              currencyMaxDecimals={unitAdapter.maxDecimals}
+              amountTarget={amountTarget.kind}
+              discountType={discountType}
               max={activeAmountMax}
               quickValues={activeAmountQuickValues}
             />
@@ -635,7 +652,7 @@ export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
         <div className="px-5 pb-6 pt-3 border-t border-border">
           <Button
             onClick={handleConfirm}
-            disabled={processing || taxLoading || !preview || totalPayment < remaining - 0.01}
+            disabled={processing || taxLoading || (!preview && !hasInvalidFixedDiscount) || totalPayment < remaining - 0.01}
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"
           >

@@ -7,8 +7,11 @@ import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AddonGroup, Addon } from '@/lib/types';
+import { useAuthStore } from '@/store/auth';
+import { getCurrencyUnitAdapter } from '@/lib/countries';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
+import { roundCurrencyValue } from '@/lib/currency-input';
 
 export default function AddonGroupsPage() {
   const t = useTranslations('addonGroups');
@@ -16,6 +19,8 @@ export default function AddonGroupsPage() {
   const tPos = useTranslations('pos');
   const tProducts = useTranslations('products');
   const tTables = useTranslations('tables');
+  const { currentTenant } = useAuthStore();
+  const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency ?? 'INR', currentTenant?.country);
   const [groups, setGroups] = useState<AddonGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const { confirm, ConfirmDialog } = useConfirm();
@@ -137,7 +142,7 @@ export default function AddonGroupsPage() {
       setMutating(true);
       await api.post(`/addon-groups/${groupId}/addons`, {
         name: addonForm.name,
-        price: Number(addonForm.price),
+        price: roundCurrencyValue(Number(addonForm.price), unitAdapter.maxDecimals),
       });
       toast.success(t('addonAdded'));
       setAddonForm({ name: '', price: '0' });
@@ -157,7 +162,7 @@ export default function AddonGroupsPage() {
       setMutating(true);
       await api.put(`/addon-groups/${editingAddon.groupId}/addons/${editingAddon.addon.id}`, {
         name: addonForm.name,
-        price: Number(addonForm.price),
+        price: roundCurrencyValue(Number(addonForm.price), unitAdapter.maxDecimals),
       });
       toast.success(t('addonUpdated'));
       setAddonForm({ name: '', price: '0' });
@@ -257,7 +262,7 @@ export default function AddonGroupsPage() {
                             </label>
                             <label className="w-24">
                               <span className="block text-[11px] font-medium text-muted-foreground mb-0.5">{tProducts('columnPrice')}</span>
-                              <input type="number" step="0.01" value={addonForm.price} onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })} onWheel={(e) => e.currentTarget.blur()}
+                              <input type="number" step={unitAdapter.step} value={addonForm.price} onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })} onWheel={(e) => e.currentTarget.blur()}
                                 className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-border rounded outline-none focus:ring-1 focus:ring-brand" />
                             </label>
                             <button onClick={handleUpdateAddon} disabled={mutating} className="text-xs text-brand font-medium hover:underline disabled:opacity-50">{tCommon('save')}</button>
@@ -292,7 +297,7 @@ export default function AddonGroupsPage() {
                       </label>
                       <label className="w-24">
                         <span className="block text-[11px] font-medium text-muted-foreground mb-0.5">{tProducts('columnPrice')}</span>
-                        <input type="number" step="0.01" placeholder={tProducts('addonPricePlaceholder')} value={addonForm.price}
+                        <input type="number" step={unitAdapter.step} placeholder={tProducts('addonPricePlaceholder')} value={addonForm.price}
                           onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })}
                           onWheel={(e) => e.currentTarget.blur()}
                           className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />

@@ -37,6 +37,7 @@ const {
 const { authRoutes } = require('../main/routes/auth');
 const { settingsRoutes } = require('../main/routes/settings');
 const { customerRoutes } = require('../main/routes/customers');
+const { collectCalledKeys } = require('./helpers/i18n-scanner');
 
 async function main() {
   console.log('End-to-End Test: Argentina Country Flow');
@@ -227,7 +228,7 @@ async function runArgentinaTranslations(db) {
   // Walk the entire frontend src tree and assert every `t('key')` reference
   // resolves to a known key. Catches wiring gaps: a developer adds
   // `t('foo.bar')` and forgets to define the key.
-  const referenced = scanFrontendForTKeys(path.join(__dirname, '../frontend/src'));
+  const referenced = collectCalledKeys(path.join(__dirname, '../frontend/src'));
   console.log(`    found ${referenced.size} unique t() keys referenced in frontend`);
   assert(referenced.size >= 20, `at least 20 translation keys should be wired in (found ${referenced.size})`);
   const unknownRefs = [...referenced].filter((k) => !enKeys.has(k));
@@ -244,26 +245,6 @@ function extractJsonKeys(jsonSrc) {
     }
   };
   walk(JSON.parse(jsonSrc), '');
-  return keys;
-}
-
-function scanFrontendForTKeys(root) {
-  const keys = new Set();
-  const skip = new Set(['node_modules', '.next', 'dist']);
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (skip.has(entry.name)) continue;
-      const p = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(p);
-      else if (entry.isFile() && /\.(tsx|ts)$/.test(entry.name)) {
-        const src = fs.readFileSync(p, 'utf8');
-        const re = /\bt\(\s*['"]([a-z]+\.[a-zA-Z]+)['"]/g;
-        let m;
-        while ((m = re.exec(src)) !== null) keys.add(m[1]);
-      }
-    }
-  };
-  walk(root);
   return keys;
 }
 

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { getDatabase, now } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
@@ -59,7 +59,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
       if (!printer) return res.status(400).json({ error: 'printer_id does not match an existing printer' });
     }
 
-    const id = uuidv4();
+    const id = randomUUID();
     db.prepare(`
       INSERT INTO kitchen_stations (id, name, description, category_ids, printer_id, printer_ip, printer_port, printer_name, sort_order, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

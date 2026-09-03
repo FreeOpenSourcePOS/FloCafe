@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt, { SignOptions } from 'jsonwebtoken';
-import { v4 as uuidv4 } from 'uuid';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
@@ -476,7 +475,7 @@ router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Re
 
     const remember = !!rememberMe;
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, remember, jti: uuidv4() },
+      { userId: user.id, email: user.email, role: user.role, remember, jti: randomUUID() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -532,7 +531,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, tenantId: 1, remember, jti: uuidv4() },
+      { userId: user.id, email: user.email, role: user.role, tenantId: 1, remember, jti: randomUUID() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -589,7 +588,7 @@ router.post('/refresh', (req: Request, res: Response) => {
 
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId, remember, jti: uuidv4() },
+      { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId, remember, jti: randomUUID() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -951,7 +950,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         throw new Error('User with this email already exists');
       }
 
-      userId = uuidv4();
+      userId = randomUUID();
       db.prepare(`
         INSERT INTO users (id, name, email, password, role, is_active, terms_accepted_at, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1015,7 +1014,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { userId, email, role: INITIAL_ADMIN_ROLE, jti: uuidv4() },
+      { userId, email, role: INITIAL_ADMIN_ROLE, jti: randomUUID() },
       getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );

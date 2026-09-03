@@ -15,10 +15,11 @@ import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
-import TouchNumberPad from '@/components/pos/TouchNumberPad';
+import { CurrencyTouchNumberPad } from '@/components/pos/TouchNumberPad';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -265,8 +266,15 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   const handleApplyDiscount = async (customVal?: number) => {
     if (applyingDiscount) return;
-    const val = customVal !== undefined ? customVal : parseFloat(discountValue);
-    if (customVal === undefined && (isNaN(val) || val < 0)) {
+    const rawVal = customVal !== undefined ? customVal : parseFloat(discountValue);
+    if (customVal === undefined && (isNaN(rawVal) || rawVal < 0)) {
+      toast.error(t('discountInvalid'));
+      return;
+    }
+    const val = discountType === 'amount'
+      ? normalizeFixedDiscountValue(rawVal, unitAdapter.maxDecimals)
+      : rawVal;
+    if (discountType === 'amount' && rawVal > 0 && val <= 0) {
       toast.error(t('discountInvalid'));
       return;
     }
@@ -574,7 +582,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                     placeholder={discountType === 'percentage' ? '0' : '0.00'}
                     min="0"
                     max={discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))}
-                    step={discountType === 'percentage' ? 1 : inputCurrencyStep}
+                    step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                     inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
                     className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                   />
@@ -717,13 +725,16 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             </div>
           )}
           {amountTarget && (
-            <TouchNumberPad
+            <CurrencyTouchNumberPad
               value={activeAmountValue}
               onChange={updateActiveAmount}
               ariaLabel={t('numericKeypad')}
               clearLabel={t('clearAmount')}
               backspaceLabel={t('backspaceAmount')}
-              allowDecimal={amountTarget.kind !== 'discount' || discountType === 'amount'}
+              // Percentage discounts are dimensionless rates, so they retain decimal input for zero-decimal currencies.
+              currencyMaxDecimals={unitAdapter.maxDecimals}
+              amountTarget={amountTarget.kind}
+              discountType={discountType}
               max={activeAmountMax}
               quickValues={activeAmountQuickValues}
             />

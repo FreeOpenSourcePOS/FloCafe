@@ -33,9 +33,11 @@ const moduleApi = require('module') as {
 };
 const originalResolveFilename = moduleApi._resolveFilename;
 moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
-  const resolvedRequest = request.startsWith('@/')
-    ? path.resolve(ROOT, 'frontend/src', request.slice(2))
-    : request;
+  const resolvedRequest = request === '@countries'
+    ? path.resolve(ROOT, 'main/countries.ts')
+    : request.startsWith('@/')
+      ? path.resolve(ROOT, 'frontend/src', request.slice(2))
+      : request;
   return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
 };
 const React = frontendRequire('react');

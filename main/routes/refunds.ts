@@ -51,10 +51,6 @@ function refundAmountMinorUnits(value: unknown, currency: string): number {
   return minorUnits;
 }
 
-function refundAmountCents(value: unknown): number {
-  return refundAmountMinorUnits(value, 'USD');
-}
-
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const body = req.body || {};

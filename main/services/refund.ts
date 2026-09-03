@@ -56,6 +56,12 @@ function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
 }
 
+/**
+ * Returns the refundable balance for a bill in integer minor units.
+ * `refunds.amount_cents` stores integer minor units scaled by `minorFactor`
+ * (e.g. factor 1 for JPY, 100 for USD/INR, 1000 for KWD). Historical rows
+ * originated exclusively under 2-decimal currencies where cents = minor units.
+ */
 export function getRefundableBalance(db: Database, billId: string | number, currency?: string): {
   paidCents: number;
   refundedCents: number;

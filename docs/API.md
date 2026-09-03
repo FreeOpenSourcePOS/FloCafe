@@ -838,11 +838,12 @@ Earn loyalty points.
 
 ## Refund amount storage
 
-`refunds.amount_cents` remains the integer minor-unit storage column for both
-historical and new refunds. Historical FloCafe databases are guaranteed to
-have used only two-decimal currencies, so their stored cents equal minor units
-at a factor of 100. Those rows are interpreted as minor units in the tenant's
-current currency; no schema migration or per-row currency metadata is used.
+`refunds.amount_cents` stores integer minor units for all refunds:
+- For zero-decimal currencies (e.g. JPY, KRW), `amount_cents` stores whole currency units (factor 1).
+- For standard two-decimal currencies (e.g. USD, EUR, INR), `amount_cents` stores cents (factor 100).
+- For three-decimal currencies (e.g. KWD, BHD, OMR), `amount_cents` stores integer minor units (factor 1000).
+
+Historical FloCafe databases operated exclusively under two-decimal currencies, where stored cents identically represent integer minor units (factor 100). Tenant business currency is configured during setup and governs store-wide order, billing, and settlement records; currency changes must not occur on active stores with open or unclosed financial periods. No database schema migration is required.
 
 ## Reports
 

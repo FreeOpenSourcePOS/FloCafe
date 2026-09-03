@@ -109,7 +109,7 @@ export function buildKotBytes(
   let hasItems = false;
 
   for (const item of items) {
-    // Skip items that are already served/completed
+    // Skip items that are already served or ready.
     if (!isKotItemPending(item.status)) {
       continue;
     }

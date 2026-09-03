@@ -1,9 +1,8 @@
 /**
  * PrintDocument v1 → kitchen order ticket renderer (#443, epic #438).
  *
- * Maps a `buildKotDocument` KOT document onto the SAME ESC/POS token lines
- * the legacy `formatKOT` layout produces, so kitchen tickets flow through
- * `data → document → lines → bytes` without changing printed semantics.
+ * Maps a `buildKotDocument` KOT document onto the shared ESC/POS token-line
+ * layout, so kitchen tickets flow through `data → document → lines → bytes`.
  *
  * Layering: this module lives in `main/` (transport token syntax + generated
  * label catalog); all SEMANTICS come from the document — no order row is

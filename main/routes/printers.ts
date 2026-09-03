@@ -618,7 +618,7 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
       }
     }
     if (order.customer_id) {
-      const customer: any = db.prepare('SELECT name FROM customers WHERE id = ?').get(order.customer_id);
+      const customer = db.prepare('SELECT name FROM customers WHERE id = ?').get(order.customer_id) as { name: string } | null;
       if (customer) order.customer = { name: customer.name };
     }
 

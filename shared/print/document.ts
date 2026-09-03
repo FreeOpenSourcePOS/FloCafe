@@ -710,7 +710,7 @@ export interface KotItemSnapshot {
   readonly specialInstructions: string;
 }
 
-/** The order behind the ticket (order number, canonical timestamp, table, type). */
+/** The order behind the ticket (order number, canonical timestamp, table, type, optional customer). */
 export interface KotOrderSnapshot {
   readonly orderNumber: string;
   readonly createdAt: string;
@@ -730,7 +730,7 @@ export interface KotPrintData {
   readonly items: readonly KotItemSnapshot[];
 }
 
-/** Ticket header: banner, station, order number, table, type, time. */
+/** Ticket header: banner, station, order number, table, type, optional customer, time. */
 export interface KotHeaderBlock {
   readonly kind: 'kot-header';
   readonly direction: TextDirection;

@@ -42,7 +42,13 @@ export function getTenantCurrency(): string {
   return getCountryByCode(country)?.currency || 'INR';
 }
 
-export function addBillLoyaltyFields(db: ReturnType<typeof getDatabase>, bill: any): any {
+type BillLoyaltyRow = {
+  [key: string]: unknown;
+  id: number;
+  customer_id?: number | string | null;
+};
+
+export function addBillLoyaltyFields(db: ReturnType<typeof getDatabase>, bill: BillLoyaltyRow | null | undefined) {
   if (!bill?.customer_id) return bill;
 
   const earned = db.prepare(

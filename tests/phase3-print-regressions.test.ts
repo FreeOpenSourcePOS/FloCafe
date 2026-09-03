@@ -174,7 +174,7 @@ async function run(): Promise<void> {
     'fa',
   ));
   assert.match(metadataThermalText, /Station: \[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII station visibility with an explicit placeholder');
-  assert.match(metadataThermalText, /Order #: \[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII order-number visibility with an explicit placeholder');
+  assert.match(metadataThermalText, /Order #\[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII order-number visibility with an explicit placeholder');
   assert.match(metadataThermalText, /Table: \[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII table visibility with an explicit placeholder');
 
   const metadataWebUsbWarnings: any[] = [];
@@ -186,7 +186,7 @@ async function run(): Promise<void> {
     timezone: 'UTC',
   }, metadataWebUsbWarnings)).toString('utf8');
   assert.match(metadataWebUsbText, /Station: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII station visibility with an explicit placeholder');
-  assert.match(metadataWebUsbText, /Order #: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII order-number visibility with an explicit placeholder');
+  assert.match(metadataWebUsbText, /Order #\[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII order-number visibility with an explicit placeholder');
   assert.match(metadataWebUsbText, /Table: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII table visibility with an explicit placeholder');
   assert.match(metadataWebUsbText, /Customer: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII customer visibility with an explicit placeholder');
 
@@ -210,7 +210,7 @@ async function run(): Promise<void> {
     'en',
   ));
   assert.match(shapedMetadataThermalText, /Station: \[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic station visibility');
-  assert.match(shapedMetadataThermalText, /Order #: \[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic order-number visibility');
+  assert.match(shapedMetadataThermalText, /Order #\[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic order-number visibility');
   assert.match(shapedMetadataThermalText, /Table: \[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic table visibility');
 
   const shapedMetadataWebUsbText = Buffer.from(frontend.kotEncoder.buildKotBytes(shapedMetadataOrder as any, {
@@ -222,7 +222,7 @@ async function run(): Promise<void> {
     arabicShaping: true,
   }, [])).toString('utf8');
   assert.match(shapedMetadataWebUsbText, /Station: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic station visibility');
-  assert.match(shapedMetadataWebUsbText, /Order #: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic order-number visibility');
+  assert.match(shapedMetadataWebUsbText, /Order #\[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic order-number visibility');
   assert.match(shapedMetadataWebUsbText, /Table: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic table visibility');
   assert.match(shapedMetadataWebUsbText, /Customer: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic customer visibility');
 

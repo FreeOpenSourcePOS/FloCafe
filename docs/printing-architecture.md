@@ -482,10 +482,13 @@ Parity harness usage and fixture matrix ([`tests/print-parity.test.ts`](../tests
 - **Semantic assertions** (content present / explicit warning recorded), not
   byte snapshots, for cross-renderer checks; amounts compared after stripping
   grouping separators so `en-IN` and `en-US` styles both pass.
-- **Byte-exact oracle**: every migrated backend surface (classic, compact,
-  KOT) must reproduce its frozen pre-migration output BYTE FOR BYTE at every
-  tested width, including skip rules and reprint banners
+- **Byte-exact oracle**: migrated backend receipt surfaces (classic and
+  compact) must reproduce their frozen pre-migration output BYTE FOR BYTE at
+  every tested width, including skip rules and reprint banners
   ([`tests/helpers/legacy-thermal-oracle.ts`](../tests/helpers/legacy-thermal-oracle.ts)).
+  KOT parity is semantic because the current contract normalizes order
+  metadata, add-on quantities, special-instruction markers, and served/ready
+  filtering across its renderers.
 - **Width coverage expectations**: backend ESC/POS at 32/42/48 columns;
   WebUSB at 58 mm and 80 mm; browser HTML at `thermal58`/`thermal80`;
   bilingual fit strategies evaluated across 32–48 columns

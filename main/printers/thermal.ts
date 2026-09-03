@@ -6,7 +6,7 @@ import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, parseDbTimestamp } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
-import { getCountryByCode } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
 import { renderMerchantReceiptViaDocument } from './document-merchant';

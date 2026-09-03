@@ -4,8 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Search, UserPlus, RotateCcw, Pencil, MapPin } from 'lucide-react';
+import { Plus, X, Search, UserPlus, RotateCcw, Pencil, MapPin, MapPinned, List } from 'lucide-react';
 import type { Table, Customer, Order, OrderItem } from '@/lib/types';
+import FloorplanEditor from '@/components/tables/FloorplanEditor';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
@@ -199,6 +201,7 @@ const itemStatusColors: Record<string, { bg: string; text: string; dot: string }
 
 export default function TablesPage() {
   const tTables = useTranslations('tables');
+  const router = useRouter();
   const tOrders = useTranslations('orders');
   const { currentTenant } = useAuthStore();
   const canManageTables = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
@@ -209,6 +212,11 @@ export default function TablesPage() {
   const [editingTable, setEditingTable] = useState<Table | null>(null);
   const [selectedFloor, setSelectedFloor] = useState('all');
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
+  // Plan / List view toggle. Floor plan is the default so the new editor
+  // is visible immediately; List view keeps the legacy card grid and floor
+  // filter from main for staff who prefer it.
+  const [view, setView] = useState<'plan' | 'list'>('plan');
+  const [layoutMode, setLayoutMode] = useState(false);
   const [form, setForm] = useState({ name: '', capacity: '4', floor: 'Ground', section: '' });
   const [showDetails, setShowDetails] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -236,6 +244,7 @@ export default function TablesPage() {
   };
 
   useEffect(() => {
+    if (layoutMode) return;
     const load = () => {
       api.get('/tables')
         .then(({ data }) => setTables(data.tables || []))
@@ -246,7 +255,7 @@ export default function TablesPage() {
     const interval = setInterval(load, 10000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [layoutMode]);
 
   // Clear stale orders the moment details get hidden, read directly during render (React's
   // recommended pattern for "adjusting state when a prop changes") so the effect below only
@@ -258,7 +267,7 @@ export default function TablesPage() {
   }
 
   useEffect(() => {
-    if (!showDetails) return;
+    if (!showDetails || layoutMode) return;
     const fetchOrders = () => {
       api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
         .then(({ data }) => setOrders(data.orders || []))
@@ -269,18 +278,17 @@ export default function TablesPage() {
     fetchOrders();
     const interval = setInterval(fetchOrders, 10000);
     return () => clearInterval(interval);
-  }, [showDetails]);
+  }, [showDetails, layoutMode]);
 
-  // Group active orders by table_id
+  // Group active orders by table_id — always built so both the floorplan
+  // editor and the list view can read active orders per table.
   const ordersByTable = new Map<string, Order[]>();
-  if (showDetails) {
-    for (const order of orders) {
-      if (!order.table_id) continue;
-      const tableKey = String(order.table_id);
-      const existing = ordersByTable.get(tableKey);
-      if (existing) existing.push(order);
-      else ordersByTable.set(tableKey, [order]);
-    }
+  for (const order of orders) {
+    if (!order.table_id) continue;
+    const tableKey = String(order.table_id);
+    const existing = ordersByTable.get(tableKey);
+    if (existing) existing.push(order);
+    else ordersByTable.set(tableKey, [order]);
   }
 
   const closeTableForm = () => {
@@ -395,22 +403,88 @@ export default function TablesPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-foreground">{tTables('title')}</h1>
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={showDetails}
-              onChange={toggleDetails}
-              className="w-4 h-4 rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
-            />
-            {tTables('showOrderDetails')}
-          </label>
-          {canManageTables && (
-            <Button onClick={openCreate}>
+          <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1">
+            <button
+              onClick={() => { setView('plan'); setLayoutMode(false); }}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                view === 'plan' ? 'bg-card text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <MapPinned size={14} /> {tTables('floorplanViewPlan')}
+            </button>
+            <button
+              onClick={() => { setView('list'); setLayoutMode(false); }}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                view === 'list' ? 'bg-card text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <List size={14} /> {tTables('floorplanViewList')}
+            </button>
+          </div>
+          {view === 'plan' && !layoutMode && canManageTables && (
+            <Button variant="outline" onClick={() => setLayoutMode(true)} aria-pressed={layoutMode}>
+              {tTables('editLayout')}
+            </Button>
+          )}
+          {layoutMode && (
+            <Button variant="outline" onClick={() => setLayoutMode(false)}>
+              {tTables('backToPlan')}
+            </Button>
+          )}
+          {view === 'list' && (
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={showDetails}
+                onChange={toggleDetails}
+                className="w-4 h-4 rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
+              />
+              {tTables('showOrderDetails')}
+            </label>
+          )}
+          {view === 'list' && canManageTables && (
+            <Button onClick={() => {
+              setForm((p) => ({ ...p, floor: [...new Set(tables.map((tb) => tb.floor).filter((f): f is string => Boolean(f)))][0] ?? '' }));
+              openCreate();
+            }}>
               <Plus size={16} className="me-1" /> {tTables('addTable')}
             </Button>
           )}
         </div>
       </div>
+
+      {/* Plan view: floorplan editor stays mounted so unsaved drag edits
+          survive view switches between Plan and List. */}
+      <div className={view === 'plan' ? '' : 'hidden'}>
+        <FloorplanEditor
+          mode={layoutMode && canManageTables ? 'edit' : 'service'}
+          canManage={canManageTables}
+          tables={tables}
+          ordersByTable={ordersByTable}
+          onSaved={fetchTables}
+          onReserve={(tb) => setReservingTable(tb)}
+          onViewOrder={() => router.push('/orders')}
+        />
+      </div>
+
+      {view === 'list' && floorValues.length > 1 && (
+        <div className="mb-5 flex flex-wrap gap-2" aria-label={tTables('floorFilter')}>
+          {['all', ...floorValues].map((floor) => (
+            <button
+              key={floor}
+              type="button"
+              onClick={() => setSelectedFloor(floor)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                activeFloor === floor
+                  ? 'border-brand bg-brand text-white'
+                  : 'border-border bg-card text-muted-foreground hover:border-brand hover:text-brand'
+              }`}
+            >
+              {floor === 'all' ? tTables('allFloors') : floor}
+            </button>
+          ))}
+        </div>
+      )}
 
       {floorValues.length > 1 && (
         <div className="mb-5 flex flex-wrap gap-2" aria-label={tTables('floorFilter')}>
@@ -431,7 +505,7 @@ export default function TablesPage() {
         </div>
       )}
 
-      {showDetails ? (
+      {view === 'list' && showDetails ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibleTables.map((table) => {
             const tableOrders = ordersByTable.get(table.id) || [];
@@ -574,7 +648,7 @@ export default function TablesPage() {
         </div>
       )}
 
-      {visibleTables.length === 0 && (
+      {view === 'list' && visibleTables.length === 0 && (
         <p className="text-center text-muted-foreground py-12">{tTables('noTablesYet')}</p>
       )}
 
@@ -587,8 +661,9 @@ export default function TablesPage() {
         />
       )}
 
-      {/* Add / Edit Table Modal */}
-      {showForm && (
+      {/* Add / Edit Table Modal (List view only — the floor plan editor
+          has its own modal for click-to-edit on the canvas). */}
+      {view === 'list' && showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-card rounded-2xl p-6 w-full max-w-md shadow-xl">
             <div className="flex justify-between items-center mb-4">

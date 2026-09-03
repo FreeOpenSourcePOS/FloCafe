@@ -162,6 +162,48 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
   }
 });
 
+router.patch('/positions', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const raw = req.body?.positions;
+    if (!Array.isArray(raw)) {
+      return res.status(400).json({ error: 'Positions array is required' });
+    }
+
+    const updates: Array<{ id: string; position_x: number | null; position_y: number | null }> = [];
+    for (const item of raw) {
+      if (!item || typeof item.id !== 'string' || !item.id.trim()) {
+        return res.status(400).json({ error: 'Invalid table ID in positions payload' });
+      }
+      const x = item.position_x === null || item.position_x === undefined ? null : Number(item.position_x);
+      const y = item.position_y === null || item.position_y === undefined ? null : Number(item.position_y);
+      if ((x !== null && !Number.isFinite(x)) || (y !== null && !Number.isFinite(y))) {
+        return res.status(400).json({ error: 'Coordinates must be numbers or null' });
+      }
+      updates.push({ id: item.id.trim(), position_x: x, position_y: y });
+    }
+
+    const db = getDatabase();
+    withTxn(() => {
+      const stmt = db.prepare(`
+        UPDATE tables SET
+          position_x = ?,
+          position_y = ?,
+          updated_at = ?
+        WHERE id = ?
+      `);
+      const currentTime = now();
+      for (const u of updates) {
+        stmt.run(u.position_x, u.position_y, currentTime, u.id);
+      }
+    });
+
+    res.json({ success: true, count: updates.length });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
@@ -213,8 +255,12 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       normalizedCapacity,
       normalizedFloor,
       normalizedSection,
-      has('position_x') ? position_x : table.position_x,
-      has('position_y') ? position_y : table.position_y,
+      has('position_x')
+        ? (position_x === null ? null : (Number.isFinite(Number(position_x)) ? Number(position_x) : table.position_x))
+        : table.position_x,
+      has('position_y')
+        ? (position_y === null ? null : (Number.isFinite(Number(position_y)) ? Number(position_y) : table.position_y))
+        : table.position_y,
       has('kitchen_station_id') ? kitchen_station_id : table.kitchen_station_id,
       now(),
       req.params.id,

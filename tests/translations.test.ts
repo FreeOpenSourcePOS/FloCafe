@@ -506,7 +506,9 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'permissionMatrix.areas.menu', // same word in French
   'support.restaurant', // same word in French
   'support.version', // same word in French
+  'tables.section', // same word in French
   'tables.title', // same word in French
+  'tables.floorplanAuto', // same word in French ("Auto")
   'tax.actions', // same word in French
   'tax.auditCreateOverride', // pure format with identifiers
   'tax.type', // same word in French

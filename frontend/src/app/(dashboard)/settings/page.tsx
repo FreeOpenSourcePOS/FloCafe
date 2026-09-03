@@ -5148,7 +5148,7 @@ export default function SettingsPage() {
                   <p className="text-sm text-yellow-700 dark:text-yellow-300">{t('devModeDisabled')}</p>
                 )}
                 {(updateStatus.status === 'check-failed' || updateStatus.status === 'offline') && (
-                  <p className="text-sm mt-1 text-red-600">
+                  <p className="text-sm mt-1 text-red-600 dark:text-red-300">
                     {updateStatus.reason === 'manifest-missing'
                       ? t('updateErrorManifestMissing')
                       : updateStatus.reason === 'download-failed'

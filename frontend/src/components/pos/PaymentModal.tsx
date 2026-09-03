@@ -469,7 +469,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           </button>
         </div>
 
-        <div className="px-5 py-4 max-h-[75vh] overflow-y-auto sm:min-h-0 lg:max-h-none lg:grid lg:grid-cols-2 lg:gap-5 lg:overflow-visible">
+        <div className="px-5 py-4 max-h-[75vh] overflow-y-auto sm:min-h-0 lg:grid lg:grid-cols-2 lg:gap-5">
 
           <div className="space-y-4">
 

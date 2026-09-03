@@ -35,6 +35,21 @@ function tableShape(table: any, activeOrder?: any) {
   };
 }
 
+/** Normalize a customer-facing table name without coercing objects or nullish values. */
+function normalizeTableNumber(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  if (typeof value === 'number' && !Number.isFinite(value)) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
+/** Normalize optional floor/section labels and flag non-string payloads as invalid. */
+function normalizeOptionalTableLabel(value: unknown): string | null | undefined {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return undefined;
+  return value.trim() || null;
+}
+
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -95,19 +110,30 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
   try {
     // Accept `number` (schema column) or `name` (legacy frontend field)
     const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
-    const tableNumber = number || name;
+    const tableNumber = normalizeTableNumber(number ?? name);
 
     if (!tableNumber) {
-      return res.status(400).json({ error: 'Table number is required' });
+      return res.status(400).json({ code: 'TABLE_NAME_REQUIRED', error: 'Table number is required' });
+    }
+
+    const normalizedCapacity = capacity === undefined || capacity === null ? 4 : Number(capacity);
+    if (!Number.isInteger(normalizedCapacity) || normalizedCapacity < 1) {
+      return res.status(400).json({ code: 'TABLE_CAPACITY_INVALID', error: 'Capacity must be a positive whole number' });
+    }
+
+    const normalizedFloor = normalizeOptionalTableLabel(floor);
+    const normalizedSection = normalizeOptionalTableLabel(section);
+    if (normalizedFloor === undefined || normalizedSection === undefined) {
+      return res.status(400).json({ code: 'TABLE_LOCATION_INVALID', error: 'Floor and section must be text values' });
     }
 
     const db = getDatabase();
     const existing = db.prepare('SELECT * FROM tables WHERE number = ?').get(tableNumber) as any;
     if (existing) {
       if (existing.is_active === 0) {
-        return res.status(400).json({ error: `Table ${tableNumber} already exists but is deactivated. Please reactivate it from the list.` });
+        return res.status(400).json({ code: 'TABLE_INACTIVE_DUPLICATE', error: `Table ${tableNumber} already exists but is deactivated. Please reactivate it from the list.` });
       } else {
-        return res.status(400).json({ error: 'Table number already exists' });
+        return res.status(400).json({ code: 'TABLE_NAME_DUPLICATE', error: 'Table number already exists' });
       }
     }
 
@@ -116,7 +142,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
       INSERT INTO tables (id, number, capacity, floor, section, position_x, position_y, kitchen_station_id, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      tableId, tableNumber, capacity || 4, floor || null, section || null,
+      tableId, tableNumber, normalizedCapacity, normalizedFloor, normalizedSection,
       position_x || null, position_y || null, kitchen_station_id || null, now(), now()
     );
 
@@ -133,7 +159,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
     const has = (key: string) => Object.prototype.hasOwnProperty.call(req.body, key);
     const hasTableNumber = has('number') || has('name');
-    const tableNumber = hasTableNumber ? String(has('number') ? number : name).trim() : undefined;
+    const tableNumber = hasTableNumber ? normalizeTableNumber(has('number') ? number : name) : undefined;
     const db = getDatabase();
 
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
@@ -142,25 +168,25 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     }
 
     if (hasTableNumber && !tableNumber) {
-      return res.status(400).json({ error: 'Table number is required' });
+      return res.status(400).json({ code: 'TABLE_NAME_REQUIRED', error: 'Table number is required' });
     }
 
     if (has('capacity') && (!Number.isInteger(Number(capacity)) || Number(capacity) < 1)) {
-      return res.status(400).json({ error: 'Capacity must be a positive whole number' });
+      return res.status(400).json({ code: 'TABLE_CAPACITY_INVALID', error: 'Capacity must be a positive whole number' });
+    }
+
+    const normalizedFloor = has('floor') ? normalizeOptionalTableLabel(floor) : table.floor;
+    const normalizedSection = has('section') ? normalizeOptionalTableLabel(section) : table.section;
+    if (normalizedFloor === undefined || normalizedSection === undefined) {
+      return res.status(400).json({ code: 'TABLE_LOCATION_INVALID', error: 'Floor and section must be text values' });
     }
 
     if (hasTableNumber) {
       const existing = db.prepare('SELECT * FROM tables WHERE number = ? AND id != ?').get(tableNumber, req.params.id);
       if (existing) {
-        return res.status(400).json({ error: 'Table number already exists' });
+        return res.status(400).json({ code: 'TABLE_NAME_DUPLICATE', error: 'Table number already exists' });
       }
     }
-
-    const optionalText = (value: unknown) => {
-      if (value === null || value === undefined) return null;
-      const normalized = String(value).trim();
-      return normalized || null;
-    };
 
     db.prepare(`
       UPDATE tables SET
@@ -176,8 +202,8 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     `).run(
       hasTableNumber ? tableNumber : table.number,
       has('capacity') ? Number(capacity) : table.capacity,
-      has('floor') ? optionalText(floor) : table.floor,
-      has('section') ? optionalText(section) : table.section,
+      normalizedFloor,
+      normalizedSection,
       has('position_x') ? position_x : table.position_x,
       has('position_y') ? position_y : table.position_y,
       has('kitchen_station_id') ? kitchen_station_id : table.kitchen_station_id,

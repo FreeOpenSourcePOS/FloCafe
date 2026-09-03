@@ -144,6 +144,47 @@ async function main() {
     });
     assertEqual(duplicateRename.status, 400, 'duplicate table rename is rejected');
     assertIncludes(duplicateRename.data.error, 'already exists', 'duplicate rename returns a clear validation message');
+    assertEqual(duplicateRename.data.code, 'TABLE_NAME_DUPLICATE', 'duplicate rename returns a stable UI error code');
+
+    const invalidName = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ name: { unexpected: true } }),
+    });
+    assertEqual(invalidName.status, 400, 'object table names are rejected');
+    assertEqual(invalidName.data.code, 'TABLE_NAME_REQUIRED', 'malformed names return a stable UI error code');
+
+    const nullName = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ name: null }),
+    });
+    assertEqual(nullName.status, 400, 'null table names are rejected');
+    assertEqual(nullName.data.code, 'TABLE_NAME_REQUIRED', 'null names return a stable UI error code');
+
+    const invalidCapacity = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ capacity: 0 }),
+    });
+    assertEqual(invalidCapacity.status, 400, 'non-positive capacity is rejected');
+    assertEqual(invalidCapacity.data.code, 'TABLE_CAPACITY_INVALID', 'invalid capacity returns a stable UI error code');
+
+    const invalidLocation = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ floor: { label: 'First' } }),
+    });
+    assertEqual(invalidLocation.status, 400, 'non-text floor is rejected');
+    assertEqual(invalidLocation.data.code, 'TABLE_LOCATION_INVALID', 'invalid location returns a stable UI error code');
+
+    const invalidCreate = await api(baseUrl, '/api/tables', {
+      method: 'POST',
+      headers: authHeader,
+      body: JSON.stringify({ name: ['not-a-name'], capacity: 2 }),
+    });
+    assertEqual(invalidCreate.status, 400, 'malformed names are rejected during table creation');
+    assertEqual(invalidCreate.data.code, 'TABLE_NAME_REQUIRED', 'create validation uses the same stable UI error code');
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario D: Tables expose active orders and move order between tables

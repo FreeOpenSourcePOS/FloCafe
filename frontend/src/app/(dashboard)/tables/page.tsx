@@ -308,10 +308,21 @@ export default function TablesPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const name = form.name.trim();
+    const capacity = Number(form.capacity);
+    if (!name) {
+      toast.error(tTables('tableNameRequired'));
+      return;
+    }
+    if (!Number.isInteger(capacity) || capacity < 1) {
+      toast.error(tTables('tableCapacityInvalid'));
+      return;
+    }
+
     try {
       const payload = {
-        name: form.name.trim(),
-        capacity: Number(form.capacity),
+        name,
+        capacity,
         floor: form.floor.trim() || null,
         section: form.section.trim() || null,
       };
@@ -326,8 +337,15 @@ export default function TablesPage() {
       }
       closeTableForm();
     } catch (error: unknown) {
-      const message = (error as { response?: { data?: { error?: string } } })?.response?.data?.error;
-      toast.error(message || (editingTable ? tTables('tableUpdateFailed') : tTables('tableCreateFailed')));
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      const knownMessages: Record<string, string> = {
+        TABLE_NAME_REQUIRED: tTables('tableNameRequired'),
+        TABLE_CAPACITY_INVALID: tTables('tableCapacityInvalid'),
+        TABLE_LOCATION_INVALID: tTables('tableLocationInvalid'),
+        TABLE_NAME_DUPLICATE: tTables('tableNameDuplicate'),
+        TABLE_INACTIVE_DUPLICATE: tTables('tableInactiveDuplicate'),
+      };
+      toast.error((code && knownMessages[code]) || (editingTable ? tTables('tableUpdateFailed') : tTables('tableCreateFailed')));
     }
   };
 
@@ -605,7 +623,13 @@ export default function TablesPage() {
               </div>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={closeTableForm} className="flex-1">{tTables('cancel')}</Button>
-                <Button type="submit" className="flex-1">{editingTable ? tTables('saveChanges') : tTables('createTable')}</Button>
+                <Button
+                  type="submit"
+                  disabled={!form.name.trim() || !Number.isInteger(Number(form.capacity)) || Number(form.capacity) < 1}
+                  className="flex-1"
+                >
+                  {editingTable ? tTables('saveChanges') : tTables('createTable')}
+                </Button>
               </div>
             </form>
           </div>

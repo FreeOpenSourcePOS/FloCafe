@@ -22,7 +22,7 @@ import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components'
 import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 import { printLabelResolver } from './print-document';
-import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
+import { GENERIC_THERMAL_CAPABILITIES, isThermalTextRepresentable, selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 
 export interface TaxBillOptions {
   /** 58 mm (2.5", 42 chars) or 80 mm (3.5", 48 chars). Default: 58 */
@@ -91,7 +91,16 @@ function maskPhoneOnReceipt(phone: string): string {
 /**
  * Build a detailed tax bill byte array from a Bill object.
  */
-function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean, rawEscPos: boolean): string {
+function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean, rawEscPos: boolean, capabilities?: ThermalPrinterCapabilities): string {
+  const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
+  if (capabilities) {
+    const normalizedForCapabilities = normalizeThermalText(normalizedCurrency, capabilities);
+    return padCurrencyPrefix(
+      selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
+        ? normalizedForCapabilities
+        : normalizeCurrencyToAscii(normalizedCurrency),
+    );
+  }
   if (!rawEscPos) {
     return padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
   }
@@ -99,7 +108,6 @@ function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean, rawEsc
   // printers cannot shape that token, so normalize this known currency even
   // when the caller requests Unicode. Preserve the existing useUnicode
   // behavior for every other currency value.
-  const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
   return padCurrencyPrefix(
     useUnicode ? normalizedCurrency : normalizeCurrencyToAscii(normalizedCurrency),
   );
@@ -116,12 +124,13 @@ function getSafeLatnLocale(locale: string | undefined): string {
   return `${locale}-u-nu-latn`;
 }
 
-function formatRawTaxBillDate(value: string | undefined, locale: string, timezone?: string): string {
+function formatRawTaxBillDate(value: string | undefined, locale: string, timezone?: string, capabilities?: ThermalPrinterCapabilities): string {
   const options = timezone ? { timeZone: timezone } : undefined;
-  const localized = normalizeThermalText(formatDate(value, getSafeLatnLocale(locale), options));
-  return hasUnsupportedPrinterChars(localized)
-    ? formatDate(value, 'en-US-u-nu-latn', options)
-    : localized;
+  const thermalCapabilities = capabilities ?? GENERIC_THERMAL_CAPABILITIES;
+  const localized = normalizeThermalText(formatDate(value, getSafeLatnLocale(locale), options), thermalCapabilities);
+  return isThermalTextRepresentable(localized, thermalCapabilities)
+    ? localized
+    : formatDate(value, 'en-US-u-nu-latn', options);
 }
 
 function safePrinterTextForLanguage(language: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities) {
@@ -167,7 +176,7 @@ export function buildTaxBillBytes(
   const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, language, opts.capabilities);
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, language, opts.capabilities);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = resolveEncoderCurrency(rawCurrency, useUnicode, rawEscPos);
+  const currency = resolveEncoderCurrency(rawCurrency, useUnicode, rawEscPos, opts.capabilities);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const amountLocale = rawEscPos ? getSafeLatnLocale(locale) : locale;
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
@@ -212,7 +221,7 @@ export function buildTaxBillBytes(
   enc.align('left');
   safePrinterText(enc, `${labelFor('receipt.billNumber')}: ${bill.bill_number}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   const billDate = rawEscPos
-    ? formatRawTaxBillDate(bill.order?.created_at, locale, tenant.timezone)
+    ? formatRawTaxBillDate(bill.order?.created_at, locale, tenant.timezone, opts.capabilities)
     : formatDate(bill.order?.created_at, locale, tenant.timezone ? { timeZone: tenant.timezone } : undefined);
   safePrinterText(enc, `${labelFor('receipt.date')}: ${billDate}`, warnings, false, arabicShaping, undefined, cols, language).newline();
 

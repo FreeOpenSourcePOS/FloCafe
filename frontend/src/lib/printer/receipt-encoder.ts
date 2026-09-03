@@ -28,7 +28,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
-import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
+import { selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -215,12 +215,20 @@ function safePrinterTextForLanguage(language: string, useUnicode: boolean, capab
   ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language, financial, useUnicode, capabilities);
 }
 
-function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean): string {
+function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities): string {
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS
   // printers cannot shape that token, so normalize this known currency even
   // when the caller requests Unicode. Preserve the existing useUnicode
   // behavior for every other currency value.
   const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
+  if (capabilities) {
+    const normalizedForCapabilities = normalizeThermalText(normalizedCurrency, capabilities);
+    return padCurrencyPrefix(
+      selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
+        ? normalizedForCapabilities
+        : normalizeCurrencyToAscii(normalizedCurrency),
+    );
+  }
   return padCurrencyPrefix(
     useUnicode ? normalizedCurrency : normalizeCurrencyToAscii(normalizedCurrency),
   );
@@ -411,7 +419,7 @@ export function buildClassicReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
+  const currency = resolveEncoderCurrency(rawCurrency, useUnicode, opts.capabilities);
   const fractionDigits = getCurrencyFractionDigits(tenant.currency ?? 'INR');
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
@@ -647,7 +655,7 @@ export function buildCompactReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
+  const currency = resolveEncoderCurrency(rawCurrency, useUnicode, opts.capabilities);
   const fractionDigits = getCurrencyFractionDigits(tenant.currency ?? 'INR');
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   // Business/show flags flow into the document via `opts`; the renderer only
@@ -843,7 +851,7 @@ export function buildDetailedReceiptBytes(
   const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang, opts.capabilities);
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang, opts.capabilities);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
+  const currency = resolveEncoderCurrency(rawCurrency, useUnicode, opts.capabilities);
   const fractionDigits = getCurrencyFractionDigits(tenant.currency ?? 'INR');
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';

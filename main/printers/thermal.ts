@@ -980,7 +980,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const date = parseDbTimestamp(order.created_at);
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
+  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode, capabilities);
   const fractionDigits = getCurrencyFractionDigits(biz.currency || 'INR');
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
@@ -1582,16 +1582,23 @@ function normalizeCurrencyToAscii(text: string): string {
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
 // symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
 // pushes trailing digits onto the next line.
-export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
+export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities): string {
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS printers
   // cannot shape that token, so normalize this known currency even when the
   // caller requests Unicode. Preserve the existing useUnicode behavior for
   // every other currency value.
   const normalizedSymbol = symbol === 'ریال' ? 'IRR' : symbol;
   const isAsciiSafe = /^[\x00-\x7F]+$/.test(normalizedSymbol);
-  const rawPrefix = (useUnicode || isAsciiSafe)
-    ? normalizedSymbol
-    : (CURRENCY_ASCII_MAP[normalizedSymbol] || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs');
+  const normalizedForCapabilities = capabilities
+    ? normalizeThermalTextByCapabilities(normalizedSymbol, capabilities)
+    : normalizedSymbol;
+  const rawPrefix = capabilities
+    ? (selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
+      ? normalizedForCapabilities
+      : (CURRENCY_ASCII_MAP[normalizedSymbol] || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs'))
+    : (useUnicode || isAsciiSafe)
+      ? normalizedSymbol
+      : (CURRENCY_ASCII_MAP[normalizedSymbol] || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs');
   const prefix = rawPrefix.length > 3 ? rawPrefix.slice(0, 3) : rawPrefix;
   return prefix.length >= 3 ? prefix : ' '.repeat(3 - prefix.length) + prefix;
 }

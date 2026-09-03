@@ -5,7 +5,7 @@ import { WebSocketServer } from 'ws';
 import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { closeServerResources, createShutdownCancellationError, installHttpShutdownTracking } from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
@@ -215,7 +215,7 @@ export function startKdsServer(): Promise<void> {
         }
 
         const token = jwt.sign(
-          { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
+          { userId: user.id, email: user.email, role: user.role, jti: randomUUID() },
           getJWTSecret(),
           { expiresIn: '24h' }
         );

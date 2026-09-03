@@ -210,11 +210,13 @@ function contentRows(text: string): string[] {
 
 /** Normalize transport/layout markers before comparing semantic fixture content. */
 export function normalizeSemanticContent(text: string): string {
+  const ampersandMarker = '\u0000ampersand\u0000';
   return text
     .replace(/<[^>]+>/g, ' ')
     .replace(/&gt;/g, '>')
     .replace(/&lt;/g, '<')
-    .replace(/&amp;/g, '&')
+    .replace(/&amp;/g, ampersandMarker)
+    .replace(/&/g, ampersandMarker)
     .replace(/&quot;|&#39;/g, '')
     .replace(/[×]/g, 'x')
     .replace(/\*\*|>>/g, '')

@@ -88,10 +88,6 @@ async function main() {
 
   const db = getDatabase();
 
-  // This test exercises a current-day report, so own the report timezone rather
-  // than relying on the database's default tenant settings.
-  db.prepare("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'").run();
-
   const ownerId = 'owner-daily-stats-turn';
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
     .run(ownerId, 'Owner', 'owner-daily-stats-turn@test.local', bcrypt.hashSync('pw', 10), 'owner', now(), now());
@@ -140,10 +136,9 @@ async function main() {
       db.prepare(`INSERT INTO tables (id, number, capacity, status, created_at, updated_at) VALUES (?, ?, ?, 'available', ?, ?)`)
         .run('tbl-turn-1', 'TT1', 4, now(), now());
 
-      // Use noon in the explicitly configured UTC tenant day. Fixed early-UTC
-      // timestamps are not safe proxies for "today" in other tenant zones.
+      // Anchor timestamps to 01:00 UTC today to guarantee they fall within today's Asia/Kolkata store day
       const todayBase = new Date();
-      todayBase.setUTCHours(12, 0, 0, 0);
+      todayBase.setUTCHours(1, 0, 0, 0);
       const order1CreatedAt = dbTimestamp(new Date(todayBase.getTime()));
       const order1CompletedAt = dbTimestamp(new Date(todayBase.getTime() + 10 * 60 * 1000)); // 10 minutes
       db.prepare(`

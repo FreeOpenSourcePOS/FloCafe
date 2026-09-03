@@ -525,8 +525,6 @@ Parity harness usage and fixture matrix ([`tests/print-parity.test.ts`](../tests
   bilingual fit strategies evaluated across 32–48 columns
   ([`shared/print/bilingual.ts`](../shared/print/bilingual.ts)). New print features must state their width
   behavior at these widths.
-- **Timezone determinism**: follow the repository-wide
-  [timezone-test determinism rule](../AGENTS.md#working-conventions--safety-rules).
 - **Merchant-template mode**: the golden fixture
   ([`tests/fixtures/merchant-templates/golden-receipt-v1.json`](../tests/fixtures/merchant-templates/golden-receipt-v1.json), all blocks,
   canonical order) must be an identity transform on rendered bytes for the

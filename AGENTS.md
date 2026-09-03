@@ -54,7 +54,6 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 - **No unapproved mutations:** Do not create, edit, close, label, or assign GitHub issues or pull requests unless the task specifically instructs issue maintenance. Do not commit, tag, or push without instruction.
 - **Changelog & commit governance:** Use Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `ci:`). Release notes and `CHANGELOG.md` are automated via `git-cliff` (`npm run changelog`) and CI; do not manually draft or invent ad-hoc changelog formats.
 - **Dependencies:** Evaluate built-in Node/Electron/browser APIs and existing project packages before proposing new dependencies.
-- **Timezone-test determinism:** Tests that query a tenant-local current day must set the tenant timezone explicitly and derive fixture timestamps from that same timezone. Never use a fixed UTC wall-clock time as a proxy for “today” in a different tenant timezone.
 
 ## Commands
 

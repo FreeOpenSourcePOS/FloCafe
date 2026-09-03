@@ -192,7 +192,7 @@ function insertStaffUser(db: ReturnType<typeof getDatabase>, id: string, name: s
 
 type SeedLanguage = 'en' | 'es' | 'fr' | 'pt' | 'de' | 'tr' | 'fil' | 'fa';
 
-/** Non-English locales intentionally using the English sample data until reviewed catalogs exist. */
+/** Filipino intentionally uses the English sample data as its reviewed exception. */
 export const ENGLISH_IDENTICAL_SEED_LANGUAGES = ['fil'] as const;
 
 function resolveSeedLanguage(language?: string): SeedLanguage {

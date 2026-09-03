@@ -14,6 +14,10 @@ import assert from 'node:assert/strict';
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-phase7-i18n-'));
 const Module = require('module');
+process.env.NODE_PATH = [path.join(__dirname, '../frontend/node_modules'), process.env.NODE_PATH]
+  .filter(Boolean)
+  .join(path.delimiter);
+Module._initPaths();
 const originalLoad = Module._load;
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {

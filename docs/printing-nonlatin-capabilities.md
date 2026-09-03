@@ -20,7 +20,7 @@ The end-state contract from epic #438 is **no silent data loss**: native render,
 
 ## 2. Method
 
-- Code paths above were read directly; line-level references reflect the state after #443/#473/#474/#472 landed.
+- Runtime behavior claims were checked against the current implementation after #443/#473/#474/#472 landed; the current text-capability contract is owned by [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics).
 - External evidence: Epson's official ESC/POS command reference, the ReceiptPrinterEncoder/escpos-php/python-escpos/node-thermal-printer issue trackers, Odoo's IoT printer driver source, and qzind/tray. Links inline.
 - First-class user requirements come from real reports by @MaMaDTHUG82 (Iran, Meva TP-UN hardware): #437, #241, discussions #239/#326.
 

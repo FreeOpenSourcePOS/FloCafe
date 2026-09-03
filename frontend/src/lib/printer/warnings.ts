@@ -4,11 +4,11 @@
  * Shared "skip unsupported characters, keep printing" logic for the browser
  * ESC/POS encoders (receipt-encoder.ts, kot-encoder.ts, tax-bill-encoder.ts).
  * Mirrors the equivalent check in the desktop path (main/printers/thermal.ts)
- * so both printing paths degrade the same way: a line with characters a
- * generic thermal printer can't render (Arabic, CJK, emoji, etc.) is skipped
- * rather than sent as garbage bytes, and the caller is told which line and
- * why. Financial rows are marked so receipt callers can refuse before
- * transport instead of sending a partial receipt.
+ * so both printing paths apply the same selected-capability policy: a line
+ * whose characters the thermal profile cannot represent (Arabic, CJK, emoji,
+ * etc.) is skipped rather than sent as garbage bytes, and the caller is told
+ * which line and why. Financial rows are marked so receipt callers can refuse
+ * before transport instead of sending a partial receipt.
  */
 
 import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeThermalText } from './unicode';
@@ -125,10 +125,11 @@ function boundShapedText(text: string, maxCols?: number): string {
 }
 
 /**
- * Writes `value` to an ESC/POS encoder only if a generic thermal printer can
- * render every character; otherwise records a warning and skips it entirely
- * so the rest of the receipt/ticket still prints and cuts normally. Callers
- * mark financial rows so the receipt can be refused before transport.
+ * Writes `value` to an ESC/POS encoder only if the selected thermal
+ * capabilities can represent every character; otherwise records a warning
+ * and skips it entirely so the rest of the receipt/ticket still prints and
+ * cuts normally. Callers mark financial rows so the receipt can be refused
+ * before transport.
  *
  * When `arabicShaping` is true (printer firmware shapes Arabic/Persian,
  * #437), pure ASCII+Arabic lines pass through instead of being skipped —

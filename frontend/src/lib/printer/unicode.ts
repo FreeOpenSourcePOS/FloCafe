@@ -9,9 +9,9 @@
  * printer firmware cannot render a symbol, the 2–3 UTF-8 bytes that
  * encode it print as garbage glyphs.
  *
- * When the user marks their printer as *not* Unicode-capable, we replace
- * these symbols with an ASCII equivalent before handing bytes to the
- * printer.
+ * Legacy callers that do not supply profile capabilities can request this
+ * ASCII fallback with the non-Unicode option. Capability-aware encoders use
+ * the shared policy to select a declared code page before falling back.
  */
 
 import {

@@ -197,7 +197,7 @@ function truncate(str: string, max: number, capabilities?: ThermalPrinterCapabil
   return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 
-// Keep nonfinancial KOT identity visible when generic ESC/POS cannot
+// Keep nonfinancial KOT identity visible when the selected capabilities cannot
 // represent a localized header label; item text still follows safePrinterText.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
 

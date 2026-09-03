@@ -1607,8 +1607,8 @@ export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capab
 // Arabic (incl. Persian) Unicode blocks: Arabic, Arabic Supplement, Arabic
 // Extended-A, Arabic Presentation Forms-A/B. These scripts require contextual
 // shaping and bidirectional ordering that generic ESC/POS firmware does not
-// implement — a printer profile must declare `arabicShaping` before they are
-// emitted as UTF-8 bytes.
+// implement — the selected profile capability (or legacy request override)
+// must declare Arabic shaping before they are passed through unchanged.
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
 const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
 const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;

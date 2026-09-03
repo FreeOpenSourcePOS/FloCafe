@@ -23,10 +23,23 @@ export function preferChildScopedBill(bill: Bill, fallbackOrder?: Order): Bill {
   if (!fallbackOrder) return bill;
   const fallbackBill = fallbackOrder.bill;
   const merged = { ...bill };
-  for (const field of ['points_earned', 'points_redeemed', 'points_balance'] as const) {
-    if (!Object.prototype.hasOwnProperty.call(merged, field) && fallbackBill && Object.prototype.hasOwnProperty.call(fallbackBill, field)) {
-      merged[field] = fallbackBill[field];
-    }
+  if (!Object.prototype.hasOwnProperty.call(merged, 'points_earned')
+    && fallbackBill
+    && Object.prototype.hasOwnProperty.call(fallbackBill, 'points_earned')
+    && fallbackBill.points_earned !== undefined) {
+    merged.points_earned = fallbackBill.points_earned;
+  }
+  if (!Object.prototype.hasOwnProperty.call(merged, 'points_redeemed')
+    && fallbackBill
+    && Object.prototype.hasOwnProperty.call(fallbackBill, 'points_redeemed')
+    && fallbackBill.points_redeemed !== undefined) {
+    merged.points_redeemed = fallbackBill.points_redeemed;
+  }
+  if (!Object.prototype.hasOwnProperty.call(merged, 'points_balance')
+    && fallbackBill
+    && Object.prototype.hasOwnProperty.call(fallbackBill, 'points_balance')
+    && fallbackBill.points_balance !== undefined) {
+    merged.points_balance = fallbackBill.points_balance;
   }
   if (!merged.order) merged.order = fallbackOrder;
   return merged;

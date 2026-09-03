@@ -12,6 +12,7 @@ import { formatTime } from './format-date';
 import { normalizeGermanThermalText } from './unicode';
 import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
+import { isKotItemPending } from '@print/document';
 
 export interface KotOptions {
   /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
@@ -82,7 +83,7 @@ export function buildKotBytes(
     safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.station')}: ${stationName}`, `Station: ${thermalSafeMetadataValue(stationName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
   const orderNumber = String(order.order_number);
-  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order: ${thermalSafeMetadataValue(orderNumber, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order #${thermalSafeMetadataValue(orderNumber, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.table) {
     const tableName = String(order.table.name);
@@ -108,8 +109,8 @@ export function buildKotBytes(
   let hasItems = false;
 
   for (const item of items) {
-    // Skip items that are already served/completed
-    if (item.status === 'served' || item.status === 'ready') {
+    // Skip items that are already served or ready.
+    if (!isKotItemPending(item.status)) {
       continue;
     }
 
@@ -128,8 +129,9 @@ export function buildKotBytes(
       for (const addon of addons) {
         if (addon.name) {
           const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
-          const addonText = `${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
-          safePrinterText(enc, `   + ${truncateText(addonText, cols - 5)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
+          const quantitySuffix = qty > 1 ? ` x${qty}` : '';
+          const addonName = truncateText(addon.name, Math.max(1, cols - 5 - quantitySuffix.length));
+          safePrinterText(enc, `   + ${addonName}${quantitySuffix}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
         }
       }
     }
@@ -195,7 +197,7 @@ function formatOrderNumber(label: string, orderNumber: string): string {
   return label.replace('{number}', orderNumber);
 }
 
-function parseAddons(addons: unknown): Array<{ name: string }> {
+function parseAddons(addons: unknown): Array<{ name: string; quantity?: number }> {
   if (!addons) return [];
   if (typeof addons === 'string') {
     try {

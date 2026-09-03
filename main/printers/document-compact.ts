@@ -179,7 +179,7 @@ export function renderBillDocumentToCompactLines(
         fractionDigits,
       ));
       for (const addon of row.addons) {
-        lines.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits));
+        lines.push(...addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits));
       }
       if (row.specialInstructions) {
         lines.push(normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language)));

@@ -35,7 +35,6 @@ import { renderClassicReceiptViaDocument } from '../main/printers/document-class
 import {
   formatClassicReceiptLegacy,
   formatCompactReceiptLegacy,
-  formatKOTLegacy,
 } from './helpers/legacy-thermal-oracle';
 import { printLabel } from '../main/print/print-labels.generated';
 import {
@@ -113,7 +112,7 @@ export function buildParityFixtures() {
         unit_price: 250,
         total: 500,
         tax_amount: 0,
-        addons: [{ name: 'Oat milk', price: 40 }],
+        addons: [{ name: 'Oat milk', price: 40, quantity: 2 }],
         special_instructions: 'Less sugar',
       },
       {
@@ -209,6 +208,23 @@ function contentRows(text: string): string[] {
   return raw.map((row) => row.replace(/<[^>]+>/g, ' '));
 }
 
+/** Normalize transport/layout markers before comparing semantic fixture content. */
+export function normalizeSemanticContent(text: string): string {
+  const ampersandMarker = '\u0000ampersand\u0000';
+  return text
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, ampersandMarker)
+    .replace(/&/g, ampersandMarker)
+    .replace(/&quot;|&#39;/g, '')
+    .replace(/[×]/g, 'x')
+    .replace(/\*\*|>>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 /** First row whose label matches `pattern` (optionally excluding `except`). */
 function labeledRow(rows: string[], pattern: RegExp, except?: RegExp): string | undefined {
   return rows.find((row) => pattern.test(row) && !(except && except.test(row)));
@@ -235,15 +251,17 @@ function expectContent(
     reprintStyle?: 'ascii' | 'html';
     businessName: string;
     truncationMarker?: boolean;
+    addons?: Array<{ name: string; quantity?: number }>;
+    instructions?: string[];
   },
   warn: (ok: boolean, msg: string) => void
 ): void {
-  const normalized = text.replace(/[,\s]/g, '');
+  const normalized = normalizeSemanticContent(text).replace(/[,\s]/g, '');
   for (const item of expectations.items) {
-    warn(normalized.includes(item.replace(/[,\s]/g, '')), `${label}: item "${item.slice(0, 24)}${item.length > 24 ? '…' : ''}" present`);
+    warn(normalized.includes(normalizeSemanticContent(item).replace(/[,\s]/g, '')), `${label}: item "${item.slice(0, 24)}${item.length > 24 ? '…' : ''}" present`);
   }
   for (const absent of expectations.absentItems ?? []) {
-    warn(!text.includes(absent), `${label}: known-absent item correctly not rendered verbatim`);
+    warn(!normalized.includes(normalizeSemanticContent(absent).replace(/[,\s]/g, '')), `${label}: known-absent item correctly not rendered verbatim`);
   }
   // Amount assertions are field-scoped: each expected amount must appear on
   // the row carrying its own label (Subtotal / Discount / TOTAL), so stray
@@ -268,6 +286,15 @@ function expectContent(
   warn(text.includes(expectations.businessName), `${label}: business header`);
   if (expectations.truncationMarker) {
     warn(text.includes(LONG_NAME_STEM) && text.includes('..'), `${label}: long item truncated with marker`);
+  }
+  for (const addon of expectations.addons ?? []) {
+    const normalizedText = normalizeSemanticContent(text);
+    const quantitySuffix = addon.quantity && addon.quantity > 1 ? `x${addon.quantity}` : '';
+    warn(normalizedText.includes(normalizeSemanticContent(addon.name)) && (!quantitySuffix || normalizedText.includes(quantitySuffix)), `${label}: add-on ${addon.name}${quantitySuffix ? ` quantity ${addon.quantity}` : ''}`);
+  }
+  const normalizedText = normalizeSemanticContent(text);
+  for (const instruction of expectations.instructions ?? []) {
+    warn(normalizedText.includes(normalizeSemanticContent(instruction)), `${label}: special instruction content`);
   }
 }
 
@@ -299,6 +326,8 @@ function run(): void {
 
   const baseExpect = {
     items: [LATIN_ITEM, LONG_NAME_STEM],
+    addons: [{ name: 'Oat milk', quantity: 2 }],
+    instructions: ['Less sugar'],
     discount: 120,
     total: 1117,
     payments: ['Cash', 'Card'],
@@ -462,6 +491,37 @@ function run(): void {
   }
 
   // ------------------------------------------------------------------
+  // 2c. Loyalty semantic parity — classic receipt surfaces expose the same
+  // earned-points content; compact remains intentionally loyalty-free.
+  // ------------------------------------------------------------------
+  section('Classic receipt loyalty content parity');
+  {
+    const loyaltyBill = { ...bill, points_earned: 14, points_redeemed: 5, points_balance: 30 };
+    const loyaltyBusiness = { ...business, points_earned: 14, points_redeemed: 5, points_balance: 30 };
+    const backendText = escPosToText(formatReceipt(
+      order, loyaltyBill, loyaltyBusiness, 'classic', 48, true, false, 'full', [], false, 'en',
+    ));
+    const webUsbText = new TextDecoder().decode(fe.receiptEncoder.buildClassicReceiptBytes(
+      loyaltyBill as any,
+      tenant as any,
+      { paperWidth: 80, useUnicode: true, languages: ['en'] },
+      [],
+    ));
+    const browserHtml = fe.webPrint.generateBillHtml(
+      loyaltyBill as any,
+      tenant as any,
+      { paperSize: 'thermal80', businessName: business.name, languages: ['en'] },
+    );
+    const earnedLabel = printLabel('en', 'print.pointsEarned');
+    for (const [renderer, text] of [['backend', backendText], ['webusb', webUsbText], ['browser', browserHtml]] as const) {
+      const semantic = normalizeSemanticContent(text);
+      warn(semantic.includes(earnedLabel.toLowerCase()) && semantic.includes('14'), `${renderer}: loyalty earned-points line`);
+      warn(semantic.includes(printLabel('en', 'print.pointsRedeemed').toLowerCase()) && semantic.includes('5'), `${renderer}: loyalty redeemed-points line`);
+      warn(semantic.includes(printLabel('en', 'print.pointsBalance').toLowerCase()) && semantic.includes('30'), `${renderer}: loyalty balance line`);
+    }
+  }
+
+  // ------------------------------------------------------------------
   // 3. Browser HTML — full Unicode path (Persian MUST be present here)
   // ------------------------------------------------------------------
   for (const paperSize of ['thermal58', 'thermal80'] as const) {
@@ -601,15 +661,13 @@ function run(): void {
   for (const cols of [32, 42, 48]) {
     const label = `kot-document/${cols}`;
     section(label);
-    const legacyWarnings: Warnings = [];
-    const legacyBuf = formatKOTLegacy(kotOrder, order.items, 'Main Kitchen', cols, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, legacyWarnings, false, 'en');
     const migratedBuf = formatKOT(kotOrder, order.items, 'Main Kitchen', cols, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en');
-    warn(legacyBuf.equals(migratedBuf), `${label}: byte-identical output to legacy KOT`);
     const kotText = escPosToText(migratedBuf);
     warn(kotText.includes('Main Kitchen'), `${label}: station block rendered`);
+    warn(kotText.includes('Order #ORD-PARITY-001'), `${label}: shared order-number format rendered`);
     warn(kotText.includes('2x  Espresso Doppio'), `${label}: item rows with quantity prefix`);
     warn(kotText.includes('+ Oat milk'), `${label}: addon lines rendered`);
-    warn(kotText.includes('** Less sugar **'), `${label}: instruction lines rendered`);
+    warn(kotText.includes('>> Less sugar'), `${label}: instruction lines rendered`);
     if (cols >= 42) warn(!kotText.includes(PERSIAN_ITEM), `${label}: unsupported-script item skipped with warning only`);
   }
   const typedKotText = escPosToText(formatKOT(typedKotOrder, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en'));

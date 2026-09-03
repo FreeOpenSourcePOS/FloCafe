@@ -42,6 +42,41 @@ export function getTenantCurrency(): string {
   return getCountryByCode(country)?.currency || 'INR';
 }
 
+type BillLoyaltyRow = {
+  [key: string]: unknown;
+  id: number;
+  customer_id?: number | string | null;
+};
+
+export function addBillLoyaltyFields(db: ReturnType<typeof getDatabase>, bill: BillLoyaltyRow | null | undefined) {
+  if (!bill?.customer_id) return bill;
+
+  const earned = db.prepare(
+    `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`,
+  ).get(bill.id) as { total: number };
+  const redeemed = db.prepare(
+    `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE bill_id = ? AND type = 'debit'`,
+  ).get(bill.id) as { total: number };
+  const loyaltyEnabled = ['true', '1'].includes(getSettingValue('loyalty_enabled') || '');
+  let pointsBalance: number | null = null;
+  if (loyaltyEnabled) {
+    const credits = db.prepare(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'credit'`,
+    ).get(bill.customer_id) as { total: number };
+    const debits = db.prepare(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'debit'`,
+    ).get(bill.customer_id) as { total: number };
+    pointsBalance = Math.max(0, Number(credits.total) - Number(debits.total));
+  }
+
+  return {
+    ...bill,
+    points_earned: Number(earned.total) || 0,
+    points_redeemed: Number(redeemed.total) || 0,
+    points_balance: pointsBalance,
+  };
+}
+
 function scaleTaxBreakdown(
   raw: unknown,
   ratio: number,
@@ -422,7 +457,7 @@ router.get('/', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, 
 router.get('/:id', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const bill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));
+    const bill = addBillLoyaltyFields(db, parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id)));
     if (!bill) {
       return res.status(404).json({ error: 'Bill not found' });
     }
@@ -441,7 +476,7 @@ router.get('/:id', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Reques
 router.get('/order/:orderId', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const bill = parseRowJson(db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY created_at DESC LIMIT 1').get(req.params.orderId));
+    const bill = addBillLoyaltyFields(db, parseRowJson(db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY created_at DESC LIMIT 1').get(req.params.orderId)));
     if (!bill) {
       return res.status(404).json({ error: 'Bill not found for this order' });
     }

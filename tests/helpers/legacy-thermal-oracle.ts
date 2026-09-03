@@ -351,7 +351,8 @@ export function formatKOTLegacy(order: any, items: any[], stationName: string, c
     const addons = parseAddons(item.addons);
     for (const addon of addons) {
       if (addon?.name) {
-        lines.push('  + ' + truncate(String(addon.name), cols - 4));
+        const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
+        lines.push('  + ' + truncate(String(addon.name) + quantity, cols - 4));
       }
     }
     if (item.special_instructions) {

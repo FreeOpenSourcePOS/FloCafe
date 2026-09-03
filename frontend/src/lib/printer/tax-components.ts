@@ -20,8 +20,42 @@ interface TaxDocument extends TaxSource {
 const SPLIT_TAX_SNAPSHOT_VERSION = 'minor-unit-v1';
 
 export function preferChildScopedBill(bill: Bill, fallbackOrder?: Order): Bill {
-  if (bill.order || !fallbackOrder) return bill;
-  return { ...bill, order: fallbackOrder };
+  if (!fallbackOrder) return bill;
+  const fallbackBill = fallbackOrder.bill;
+  const merged = { ...bill };
+  if (!Object.prototype.hasOwnProperty.call(merged, 'points_earned')
+    && fallbackBill
+    && Object.prototype.hasOwnProperty.call(fallbackBill, 'points_earned')
+    && fallbackBill.points_earned !== undefined) {
+    merged.points_earned = fallbackBill.points_earned;
+  }
+  if (!Object.prototype.hasOwnProperty.call(merged, 'points_redeemed')
+    && fallbackBill
+    && Object.prototype.hasOwnProperty.call(fallbackBill, 'points_redeemed')
+    && fallbackBill.points_redeemed !== undefined) {
+    merged.points_redeemed = fallbackBill.points_redeemed;
+  }
+  if (!Object.prototype.hasOwnProperty.call(merged, 'points_balance')
+    && fallbackBill
+    && Object.prototype.hasOwnProperty.call(fallbackBill, 'points_balance')
+    && fallbackBill.points_balance !== undefined) {
+    merged.points_balance = fallbackBill.points_balance;
+  }
+  if (!merged.order) {
+    merged.order = fallbackOrder;
+  } else if (fallbackOrder.table || fallbackOrder.customer) {
+    const order = merged.order;
+    const table = order.table ?? fallbackOrder.table;
+    const customer = order.customer ?? fallbackOrder.customer;
+    if (table !== order.table || customer !== order.customer) {
+      merged.order = {
+        ...order,
+        ...(table ? { table } : {}),
+        ...(customer ? { customer } : {}),
+      };
+    }
+  }
+  return merged;
 }
 
 function parseJson(value: unknown): unknown {

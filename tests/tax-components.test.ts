@@ -347,6 +347,24 @@ test('active item snapshots retain residual document legacy tax without relabeli
   assert.deepEqual(resolveFrontendTaxComponents(document), expected);
 });
 
+test('relation-complete fallback hydrates missing receipt order relations', () => {
+  const childOrder = {
+    order_number: 'ORD-RELATION-CHILD',
+    items: [{ product_name: 'Tea', quantity: 1 }],
+  };
+  const relationCompleteOrder = {
+    ...childOrder,
+    table: { name: 'T7' },
+    customer: { name: 'Asha Kumar', phone: '+91 98765 43210' },
+  };
+  const childBill = { bill_number: 'INV-RELATION-CHILD', order: childOrder };
+  const printableBill = preferChildScopedBill(childBill as any, relationCompleteOrder as any);
+
+  assert.equal(printableBill.order?.table?.name, 'T7');
+  assert.equal(printableBill.order?.customer?.name, 'Asha Kumar');
+  assert.equal(printableBill.order?.customer?.phone, '+91 98765 43210');
+});
+
 test('frontend split printing keeps the child-scoped order payload', () => {
   const childOrder = {
     items: [{

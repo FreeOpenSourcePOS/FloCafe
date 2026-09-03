@@ -263,8 +263,35 @@ async function runTests() {
     }
   }
 
-  // ── Test 9: prepareReceipt honors the arabicShaping request override (#437) ──
-  console.log('\nTest 9: prepareReceipt arabicShaping override (#437)');
+  // ── Test 9: GET /api/bills/:id returns hydrated loyalty fields ──────────
+  console.log('\nTest 9: GET /api/bills/:id returns hydrated loyalty fields');
+  {
+    const customerId = 'customer-print-api-loyalty';
+    db.exec(`INSERT OR REPLACE INTO customers (id, name, phone) VALUES ('${customerId}', 'Loyalty Customer', '+91 9876543210')`);
+    db.prepare('UPDATE bills SET customer_id = ? WHERE id = ?').run(customerId, testBillId?.id);
+    db.prepare(`DELETE FROM loyalty_ledger WHERE customer_id = ?`).run(customerId);
+    db.prepare(`INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description) VALUES (?, ?, 'credit', ?, ?)`)
+      .run(customerId, testBillId?.id, 14, 'API test earned points');
+    db.prepare(`INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description) VALUES (?, ?, 'debit', ?, ?)`)
+      .run(customerId, testBillId?.id, 5, 'API test redeemed points');
+    db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('loyalty_enabled', 'true')`).run();
+
+    if (!testBillId) {
+      assert(false, 'skipped: no test bill found');
+    } else {
+      const res = await request(app)
+        .get(`/api/bills/${testBillId.id}`)
+        .set('Authorization', authHeader);
+
+      assert(res.status === 200, `GET bill returns 200 (got ${res.status})`);
+      assert(res.body.bill.points_earned === 14, 'GET bill returns earned loyalty points');
+      assert(res.body.bill.points_redeemed === 5, 'GET bill returns redeemed loyalty points');
+      assert(res.body.bill.points_balance === 9, 'GET bill returns current loyalty balance');
+    }
+  }
+
+  // ── Test 10: prepareReceipt honors the arabicShaping request override (#437) ──
+  console.log('\nTest 10: prepareReceipt arabicShaping override (#437)');
   {
     const { prepareReceipt } = require('../main/printers/thermal');
 

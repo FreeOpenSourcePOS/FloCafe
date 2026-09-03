@@ -388,7 +388,7 @@ export function renderBillDocumentToClassicLines(
             fractionDigits,
           ));
           for (const addon of row.addons) {
-            segment.main.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits));
+            segment.main.push(...addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits));
           }
           if (row.specialInstructions) {
             segment.main.push(normalize('  ' + labelOf(block.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language)));

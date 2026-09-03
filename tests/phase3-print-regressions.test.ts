@@ -11,7 +11,7 @@ const order = {
   table: { name: 'T3' },
   customer: { name: 'Asha Kumar' },
   items: [
-    { quantity: 1, product_name: 'Pending coffee', status: 'pending', addons: [{ name: 'Oat milk' }], special_instructions: 'Less sugar' },
+    { quantity: 1, product_name: 'Pending coffee', status: 'pending', addons: [{ name: 'Oat milk', quantity: 3 }], special_instructions: 'Less sugar' },
     { quantity: 1, product_name: 'Ready coffee', status: 'ready', addons: [], special_instructions: '' },
     { quantity: 1, product_name: 'Served coffee', status: 'served', addons: [], special_instructions: '' },
   ],
@@ -64,6 +64,9 @@ async function run(): Promise<void> {
     assert.match(browserHtml, new RegExp(`>${printLabel(language, 'print.kot.banner').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<`), `${language}: browser banner`);
     assert.match(browserHtml, /KOT-PHASE3-001/, `${language}: browser order number`);
     assert.match(browserHtml, /Pending coffee/, `${language}: browser pending item`);
+    assert.match(browserHtml, /Oat milk.*x3/, `${language}: browser preserves addon quantity`);
+    assert.match(browserHtml, /Less sugar/, `${language}: browser preserves special-instruction content`);
+    assert.match(browserHtml, /Asha Kumar/, `${language}: browser preserves customer field`);
     assert.doesNotMatch(browserHtml, /Ready coffee|Served coffee/, `${language}: browser filters served/ready items`);
     for (const { type, label } of expectedTypes) {
       const typeHtml = frontend.kotWebPrint.generateKotHtml({ ...order, type } as any, { language, stationName: 'Main Kitchen', timezone: 'UTC' });
@@ -89,6 +92,11 @@ async function run(): Promise<void> {
     assert.match(thermalText, /(?:Time|Hora|Uhrzeit|Saat|Oras|Heure)/, `${language}: thermal time remains visible`);
     assert.match(thermalText, /KITCHEN ORDER TICKET|COMANDA DE COCINA|KUECHENBESTELLSCHEIN|BON DE COMMANDE CUISINE|COMANDA DE COZINHA/, `${language}: thermal banner remains visible`);
     assert.match(thermalText, /Pending coffee/, `${language}: thermal pending item`);
+    assert.match(thermalText, /\+ Oat milk x3/, `${language}: thermal preserves addon quantity`);
+    assert.match(thermalText, />> Less sugar/, `${language}: thermal preserves special-instruction marker`);
+    const localizedCustomerLine = `${printLabel(language, 'pos.customer')}: Asha Kumar`;
+    const thermalCustomerLine = /[^\x00-\x7F]/.test(localizedCustomerLine) ? 'Customer: Asha Kumar' : localizedCustomerLine;
+    assert.match(thermalText, new RegExp(thermalCustomerLine.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${language}: thermal preserves customer field`);
     assert.doesNotMatch(thermalText, /Ready coffee|Served coffee/, `${language}: thermal filters served/ready items`);
     for (const { type, label } of expectedTypes) {
       const typeOrder = { ...order, type };
@@ -123,6 +131,10 @@ async function run(): Promise<void> {
     assert.match(webUsbText, /KOT-PHASE3-001/, `${language}: WebUSB order number remains visible`);
     assert.match(webUsbText, /Main Kitchen/, `${language}: WebUSB station remains visible`);
     assert.match(webUsbText, /Pending coffee/, `${language}: WebUSB pending item`);
+    assert.match(webUsbText, /\+ Oat milk x3/, `${language}: WebUSB preserves addon quantity`);
+    assert.match(webUsbText, />> Less sugar/, `${language}: WebUSB preserves special-instruction marker`);
+    const webUsbCustomerLine = /[^\x00-\x7F]/.test(localizedCustomerLine) ? 'Customer: Asha Kumar' : localizedCustomerLine;
+    assert.match(webUsbText, new RegExp(webUsbCustomerLine.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${language}: WebUSB preserves customer field`);
     assert.doesNotMatch(webUsbText, /Ready coffee|Served coffee/, `${language}: WebUSB filters served/ready items`);
     for (const { type, label } of expectedTypes) {
       const typeOrder = { ...order, type };
@@ -162,7 +174,7 @@ async function run(): Promise<void> {
     'fa',
   ));
   assert.match(metadataThermalText, /Station: \[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII station visibility with an explicit placeholder');
-  assert.match(metadataThermalText, /Order: \[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII order-number visibility with an explicit placeholder');
+  assert.match(metadataThermalText, /Order #\[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII order-number visibility with an explicit placeholder');
   assert.match(metadataThermalText, /Table: \[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII table visibility with an explicit placeholder');
 
   const metadataWebUsbWarnings: any[] = [];
@@ -174,7 +186,7 @@ async function run(): Promise<void> {
     timezone: 'UTC',
   }, metadataWebUsbWarnings)).toString('utf8');
   assert.match(metadataWebUsbText, /Station: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII station visibility with an explicit placeholder');
-  assert.match(metadataWebUsbText, /Order: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII order-number visibility with an explicit placeholder');
+  assert.match(metadataWebUsbText, /Order #\[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII order-number visibility with an explicit placeholder');
   assert.match(metadataWebUsbText, /Table: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII table visibility with an explicit placeholder');
   assert.match(metadataWebUsbText, /Customer: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII customer visibility with an explicit placeholder');
 
@@ -198,7 +210,7 @@ async function run(): Promise<void> {
     'en',
   ));
   assert.match(shapedMetadataThermalText, /Station: \[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic station visibility');
-  assert.match(shapedMetadataThermalText, /Order: \[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic order-number visibility');
+  assert.match(shapedMetadataThermalText, /Order #\[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic order-number visibility');
   assert.match(shapedMetadataThermalText, /Table: \[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic table visibility');
 
   const shapedMetadataWebUsbText = Buffer.from(frontend.kotEncoder.buildKotBytes(shapedMetadataOrder as any, {
@@ -210,7 +222,7 @@ async function run(): Promise<void> {
     arabicShaping: true,
   }, [])).toString('utf8');
   assert.match(shapedMetadataWebUsbText, /Station: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic station visibility');
-  assert.match(shapedMetadataWebUsbText, /Order: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic order-number visibility');
+  assert.match(shapedMetadataWebUsbText, /Order #\[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic order-number visibility');
   assert.match(shapedMetadataWebUsbText, /Table: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic table visibility');
   assert.match(shapedMetadataWebUsbText, /Customer: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic customer visibility');
 

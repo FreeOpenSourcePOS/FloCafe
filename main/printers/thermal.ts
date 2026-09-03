@@ -1331,7 +1331,8 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2): string[] {
   const addonName = language === 'de' ? normalizeGermanThermalText(addon.name) : addon.name;
-  const label = truncate('  + ' + addonName, nameLen).padEnd(nameLen);
+  const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
+  const label = truncate('  + ' + addonName + quantity, nameLen).padEnd(nameLen);
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits);
   const inlineWidth = Math.max(1, cols - label.length - 1);

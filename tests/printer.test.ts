@@ -864,7 +864,7 @@ console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
   assert('renders each item with qty prefix', text.includes('2x  Cheeseburger'));
   assert('renders addon "Extra Cheese"', text.includes('+ Extra Cheese'));
   assert('renders addon "Bacon"', text.includes('+ Bacon'));
-  assert('renders special instructions with ** markers', text.includes('** No onions **'));
+  assert('renders special instructions with >> markers', text.includes('>> No onions'));
   assert('sets DOUBLE_HEIGHT mode for items', bytesContain(buf, [ESC, 0x21, 0x18]));
   assert('does NOT render prices (KOT has no money)', !text.includes('₹'));
   assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x00]));

@@ -17,7 +17,7 @@ export interface PrintWarning {
   field: string;
   text: string;
   message: string;
-  kind?: 'line' | 'financial' | 'configuration';
+  kind?: 'line' | 'financial' | 'configuration' | 'locale';
 }
 
 const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(

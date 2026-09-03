@@ -22,7 +22,7 @@ In **Settings → Printers**, enable **Printer supports Arabic/Persian shaping**
 
 ## Receipt and kitchen-ticket languages
 
-On policy-aware paths, receipt labels (invoice title, bill number, date, totals, payment methods) and kitchen-ticket labels are resolved from the tenant's language configuration at print time. The detailed language, fallback, and warning contracts live in [printing-architecture.md](printing-architecture.md).
+On policy-aware paths, receipt labels (invoice title, bill number, date, totals, payment methods) and kitchen-ticket labels are resolved from the tenant's language configuration. During authenticated POS bootstrap, FloCafe loads the bundles selected by the receipt and kitchen-ticket policies before releasing the dashboard, so the first print does not depend on visiting Settings. If a bundle cannot load, the app surfaces an actionable error and the print warning reports any English fallback explicitly. The detailed language, fallback, and warning contracts live in [printing-architecture.md](printing-architecture.md).
 
 - **Receipts** on the document-driven thermal and browser paths follow the tenant **language** setting combined with the stored `bill_language_policy`.
 - **Kitchen tickets** resolve their label language independently through the stored `kot_language_policy` across backend, browser, and WebUSB paths.

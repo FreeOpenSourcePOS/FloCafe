@@ -95,13 +95,17 @@ function loadWarningsToastWithCapture(captured: string[]): typeof import('../fro
   };
   const toastPath = require.resolve('react-hot-toast', { paths: [path.resolve(__dirname, '../frontend')] });
   const previousToastModule = require.cache[toastPath];
+  const toastMock = Object.assign(
+    (message: string) => { captured.push(message); },
+    { error: (message: string) => { captured.push(message); } },
+  );
   require.cache[toastPath] = {
     id: toastPath,
     filename: toastPath,
     loaded: true,
     exports: {
       __esModule: true,
-      default: (message: string) => captured.push(message),
+      default: toastMock,
     },
   } as any;
   const originalResolveFilename = moduleApi._resolveFilename;
@@ -450,6 +454,8 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('core bill templates do not create a fallback warning', templateWarnings.makeBillTemplateFallbackWarning('classic') === null);
   showPrintWarningsToast([merchantFallbackWarning!]);
   assert('template fallback warnings are user-visible', toastMessages.length === 2 && toastMessages[1].includes('selected bill template'));
+  showPrintWarningsToast([{ field: 'receipt language', text: 'de', message: 'locale warning', kind: 'locale' }]);
+  assert('locale warnings use actionable language-load guidance', toastMessages.length === 3 && toastMessages[2].includes('Print language bundle(s) "de"') && !toastMessages[2].includes('line was not printed'));
 
   // The full receipt path threads the flag into the encoder.
   const persianBiz = { ...fixtureBusiness, name: 'کافه فلو تهران', currency_symbol: 'IRR', country: 'IR' };

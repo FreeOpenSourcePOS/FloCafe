@@ -24,6 +24,9 @@ export interface Tenant {
   status: string;
   role?: string;
   language?: Language;
+  /** Raw backend-authoritative print policies included in auth bootstrap. */
+  bill_language_policy?: string | null;
+  kot_language_policy?: string | null;
   // Iran locale display preferences (Batch G, Refs #241). Display-only —
   // stored amounts stay in the tenant currency (IRR/Rial for Iran).
   currency_display?: CurrencyDisplay;

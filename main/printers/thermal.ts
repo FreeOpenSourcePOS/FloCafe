@@ -30,6 +30,7 @@ import { renderKotViaDocument } from './document-kot';
 import {
   GENERIC_THERMAL_CAPABILITIES,
   normalizeThermalText as normalizeThermalTextByCapabilities,
+  isThermalTextRepresentable,
   selectThermalCodePage,
   escPosCodePageId,
   mergeThermalCapabilities,
@@ -1697,8 +1698,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
             .replace(ARABIC_SCRIPT_GLOBAL_RE, '')
             .replace(ARABIC_SHAPING_ALLOWED_GLOBAL_RE, '')
         );
-      const codePageRepresentable = selectedCodePage !== null
-        && capabilities.representability.scripts.includes('latin');
+      const codePageRepresentable = isThermalTextRepresentable(textWithoutSupportedCurrency, capabilities);
       if (!arabicOnly && !codePageRepresentable) {
         if (warnings) {
           const text = printableLine.trim();

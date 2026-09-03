@@ -88,9 +88,15 @@ function run(): void {
 
   assert.equal(selectThermalCodePage('Cafe', latinCodePageCapabilities), 'cp437');
   assert.equal(selectThermalCodePage('√2', latinCodePageCapabilities), 'cp437');
+  assert.equal(selectThermalCodePage('π', latinCodePageCapabilities), 'cp437');
   assert.equal(selectThermalCodePage('€', latinCodePageCapabilities), 'cp858');
   assert.equal(isThermalTextRepresentable('€', latinCodePageCapabilities), true);
+  assert.equal(isThermalTextRepresentable('π', latinCodePageCapabilities), false);
   assert.equal(isThermalTextRepresentable('עברית', latinCodePageCapabilities), false);
+  const greekWarnings: any[] = [];
+  const greekBytes = buildEscPos(['π'], false, { capabilities: latinCodePageCapabilities }, greekWarnings);
+  assert.equal(escPosToText(greekBytes).includes('π'), false);
+  assert.equal(greekWarnings.length, 1);
   const codePageBytes = buildEscPos(['À'], false, { capabilities: latinCodePageCapabilities });
   assert.equal(codePageBytes.includes(Buffer.from([0x1B, 0x74, 2])), true);
 

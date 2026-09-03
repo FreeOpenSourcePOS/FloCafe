@@ -57,6 +57,8 @@ const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
 const SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
 const THERMAL_CURRENCY_TOKEN_RE = /(?:د\.إ|ریال|E£|₹|₨|€|£|¥|₩|₺|₫|₪|₽|฿|₱|₴|₦|₵|₡|₲|﷼|৳)/g;
+const LATIN_LETTER_RE = /\p{Script=Latin}/u;
+const LETTER_RE = /\p{Letter}/u;
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities): string {
   if (!capabilities.transliteration.enabled) return text;
@@ -93,6 +95,12 @@ export function isThermalTextRepresentable(text: string, capabilities: ThermalPr
   const normalized = normalizeThermalText(text, capabilities);
   if (capabilities.shaping.arabic && isArabicShapingSafeLine(normalized)) return true;
   if (hasArabicScript(normalized)) return false;
+  if (
+    capabilities.representability.scripts.includes('latin')
+    && [...normalized].some((character) => LETTER_RE.test(character) && !LATIN_LETTER_RE.test(character))
+  ) {
+    return false;
+  }
   return selectThermalCodePage(normalized, capabilities) !== null
     && capabilities.representability.scripts.includes('ascii')
     && (!/[^\x00-\x7F]/.test(normalized) || capabilities.representability.scripts.includes('latin'));

@@ -109,11 +109,12 @@ export default function PrintTestPage() {
             showPrintWarningsToast(printWarnings);
           }
           break;
-        case 'web-print':
+        case 'web-print': {
           const printWarnings = await printWebBill(testBill, testTenant, { paperSize: printerPaperSize, includeTaxId: true });
           toast.success(t('webPrintDialogOpened'));
           showPrintWarningsToast(printWarnings);
           break;
+        }
         case 'whatsapp':
           shareBillViaWhatsApp(testBill, testCustomer, testTenant, {
             pointsEarned: 50,

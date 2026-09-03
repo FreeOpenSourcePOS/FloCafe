@@ -246,6 +246,16 @@ browser receipt labels as well as thermal labels. An additional receipt
 language may still be loaded and carried by the document for the future
 bilingual renderer work above.
 
+Authenticated POS bootstrap applies the tenant's stored receipt and KOT
+policies and warms every resolved print locale before releasing the dashboard.
+For a selected tenant, this happens during single-tenant login, session
+restore, and tenant selection, so the selected print language is available
+before the first print without visiting Settings.
+If a packaged locale bundle fails to load, bootstrap records the failed
+language and surfaces an actionable operator error. A later print retry may
+fall back to English only with an explicit print warning; the print-test HTML
+download is withheld when its required locale cannot be loaded.
+
 Policy payloads are untrusted input: `parsePrintLanguagePolicy` /
 `parseKotLanguagePolicy` reject unknown top-level keys and validate the relevant
 nested `primary`/`additional` values, but extra fields inside a primary
@@ -472,6 +482,7 @@ directly and [`main/printers/thermal.ts`](../main/printers/thermal.ts) owns that
 | --- | --- | --- |
 | Kernel units | `npm run test:print-kernel` | policy resolution/validation, direction, bilingual fit, settings glue ([`tests/print-kernel.test.ts`](../tests/print-kernel.test.ts), [`tests/kernel-purity.test.ts`](../tests/kernel-purity.test.ts), [`tests/print-language-settings.test.ts`](../tests/print-language-settings.test.ts)) |
 | Labels | `npm run test:print-labels` | generated-table selection, English fallback, all eight locale Phase 3 cross-path print regressions, generator drift (`--check`) ([`tests/print-labels.test.ts`](../tests/print-labels.test.ts), [`tests/phase3-print-regressions.test.ts`](../tests/phase3-print-regressions.test.ts), [`scripts/generate-print-labels.cjs`](../scripts/generate-print-labels.cjs)) |
+| Locale loading | `npm run test:phase6-locale-loading` | bootstrap policy application plus browser and WebUSB receipt loading for every registered locale ([`tests/phase6-locale-loading.test.ts`](../tests/phase6-locale-loading.test.ts)) |
 | Document model | `npm run test:print-document` | block construction, document builders, bilingual pairs, direction annotations, purity ([`tests/print-document.test.ts`](../tests/print-document.test.ts)) |
 | Parity harness | `npm run test:print-parity` | cross-renderer semantic parity + byte-exact migration oracle ([`tests/print-parity.test.ts`](../tests/print-parity.test.ts)) |
 | Merchant templates | `npm run test:merchant-print-templates` | kernel validation, apply semantics, CRUD lifecycle, render path ([`tests/merchant-print-templates.test.ts`](../tests/merchant-print-templates.test.ts)) |

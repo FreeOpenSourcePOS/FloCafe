@@ -303,12 +303,12 @@ export default function CustomersPage() {
                           <th className="text-end px-6 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnRedeemed')}</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-50">
+                      <tbody className="divide-y divide-border">
                         {ledgerData.bills.map((b) => (
                           <tr key={b.id} className="hover:bg-muted">
-                            <td className="px-6 py-3 text-gray-600 whitespace-nowrap">{formatDate(b.paid_at || b.created_at)}</td>
-                            <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{b.bill_number}</td>
-                            <td className="px-4 py-3 text-end text-gray-900 whitespace-nowrap">{fmt(b.total)}</td>
+                            <td className="px-6 py-3 text-muted-foreground whitespace-nowrap">{formatDate(b.paid_at || b.created_at)}</td>
+                            <td className="px-4 py-3 text-foreground whitespace-nowrap">{b.bill_number}</td>
+                            <td className="px-4 py-3 text-end text-foreground whitespace-nowrap">{fmt(b.total)}</td>
                             <td className="px-4 py-3 text-end whitespace-nowrap">
                               {b.points_earned > 0 ? <span className="text-green-600 font-semibold">+{b.points_earned}</span> : <span className="text-gray-300">—</span>}
                             </td>

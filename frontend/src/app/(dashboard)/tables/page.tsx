@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Search, UserPlus, RotateCcw } from 'lucide-react';
+import { Plus, X, Search, UserPlus, RotateCcw, Pencil, MapPin } from 'lucide-react';
 import type { Table, Customer, Order, OrderItem } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { countryName } from '@/lib/countries';
@@ -200,10 +200,14 @@ const itemStatusColors: Record<string, { bg: string; text: string; dot: string }
 export default function TablesPage() {
   const tTables = useTranslations('tables');
   const tOrders = useTranslations('orders');
+  const { currentTenant } = useAuthStore();
+  const canManageTables = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
   const [tables, setTables] = useState<Table[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editingTable, setEditingTable] = useState<Table | null>(null);
+  const [selectedFloor, setSelectedFloor] = useState('all');
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
   const [form, setForm] = useState({ name: '', capacity: '4', floor: 'Ground', section: '' });
   const [showDetails, setShowDetails] = useState(() => {
@@ -279,16 +283,69 @@ export default function TablesPage() {
     }
   }
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const closeTableForm = () => {
+    setShowForm(false);
+    setEditingTable(null);
+    setForm({ name: '', capacity: '4', floor: 'Ground', section: '' });
+  };
+
+  const openCreate = () => {
+    setEditingTable(null);
+    setForm({ name: '', capacity: '4', floor: 'Ground', section: '' });
+    setShowForm(true);
+  };
+
+  const openEdit = (table: Table) => {
+    setEditingTable(table);
+    setForm({
+      name: table.name,
+      capacity: String(table.capacity),
+      floor: table.floor || '',
+      section: table.section || '',
+    });
+    setShowForm(true);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const name = form.name.trim();
+    const capacity = Number(form.capacity);
+    if (!name) {
+      toast.error(tTables('tableNameRequired'));
+      return;
+    }
+    if (!Number.isInteger(capacity) || capacity < 1) {
+      toast.error(tTables('tableCapacityInvalid'));
+      return;
+    }
+
     try {
-      await api.post('/tables', { ...form, capacity: Number(form.capacity) });
-      toast.success(tTables('tableCreated'));
-      setShowForm(false);
-      setForm({ name: '', capacity: '4', floor: 'Ground', section: '' });
-      fetchTables();
-    } catch {
-      toast.error(tTables('tableCreateFailed'));
+      const payload = {
+        name,
+        capacity,
+        floor: form.floor.trim() || null,
+        section: form.section.trim() || null,
+      };
+      if (editingTable) {
+        const { data } = await api.put(`/tables/${editingTable.id}`, payload);
+        setTables((current) => current.map((table) => table.id === editingTable.id ? data.table : table));
+        toast.success(tTables('tableUpdated'));
+      } else {
+        const { data } = await api.post('/tables', payload);
+        setTables((current) => [...current, { ...data.table, name: data.table.name || data.table.number }]);
+        toast.success(tTables('tableCreated'));
+      }
+      closeTableForm();
+    } catch (error: unknown) {
+      const code = (error as { response?: { data?: { code?: string } } })?.response?.data?.code;
+      const knownMessages: Record<string, string> = {
+        TABLE_NAME_REQUIRED: tTables('tableNameRequired'),
+        TABLE_CAPACITY_INVALID: tTables('tableCapacityInvalid'),
+        TABLE_LOCATION_INVALID: tTables('tableLocationInvalid'),
+        TABLE_NAME_DUPLICATE: tTables('tableNameDuplicate'),
+        TABLE_INACTIVE_DUPLICATE: tTables('tableInactiveDuplicate'),
+      };
+      toast.error((code && knownMessages[code]) || (editingTable ? tTables('tableUpdateFailed') : tTables('tableCreateFailed')));
     }
   };
 
@@ -318,6 +375,21 @@ export default function TablesPage() {
     );
   }
 
+  const floorValues = [...new Set(
+    tables.filter((table) => table.is_active && table.floor?.trim()).map((table) => table.floor!.trim()),
+  )].sort((a, b) => a.localeCompare(b));
+  const activeFloor = selectedFloor === 'all' || floorValues.includes(selectedFloor) ? selectedFloor : 'all';
+  const visibleTables = activeFloor === 'all' ? tables : tables.filter((table) => table.floor?.trim() === activeFloor);
+
+  const locationBadge = (table: Table) => {
+    if (!table.floor && !table.section) return null;
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        <MapPin size={11} /> {[table.floor, table.section].filter(Boolean).join(' · ')}
+      </span>
+    );
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -332,15 +404,36 @@ export default function TablesPage() {
             />
             {tTables('showOrderDetails')}
           </label>
-          <Button onClick={() => setShowForm(true)}>
-            <Plus size={16} className="me-1" /> {tTables('addTable')}
-          </Button>
+          {canManageTables && (
+            <Button onClick={openCreate}>
+              <Plus size={16} className="me-1" /> {tTables('addTable')}
+            </Button>
+          )}
         </div>
       </div>
 
+      {floorValues.length > 1 && (
+        <div className="mb-5 flex flex-wrap gap-2" aria-label={tTables('floorFilter')}>
+          {['all', ...floorValues].map((floor) => (
+            <button
+              key={floor}
+              type="button"
+              onClick={() => setSelectedFloor(floor)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                activeFloor === floor
+                  ? 'border-brand bg-brand text-white'
+                  : 'border-border bg-card text-muted-foreground hover:border-brand hover:text-brand'
+              }`}
+            >
+              {floor === 'all' ? tTables('allFloors') : floor}
+            </button>
+          ))}
+        </div>
+      )}
+
       {showDetails ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {tables.map((table) => {
+          {visibleTables.map((table) => {
             const tableOrders = ordersByTable.get(table.id) || [];
             const hasOrders = tableOrders.length > 0;
 
@@ -355,6 +448,7 @@ export default function TablesPage() {
                     <div className={`w-3 h-3 rounded-full ${statusColors[table.status]}`} />
                     <h3 className="font-bold text-foreground">{table.name}</h3>
                     <span className="text-xs text-gray-400">· {tTables('capacitySeats', { count: table.capacity })}</span>
+                    {locationBadge(table)}
                   </div>
                   <div className="flex items-center gap-2">
                     {table.status === 'occupied' && table.seated_at && (
@@ -408,6 +502,11 @@ export default function TablesPage() {
 
                 {/* Actions */}
                 <div className="px-4 py-2 border-t border-border flex justify-end gap-2">
+                  {canManageTables && (
+                    <button onClick={() => openEdit(table)} className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1">
+                      <Pencil size={12} /> {tTables('editTable')}
+                    </button>
+                  )}
                   {(table.status === 'occupied' || table.status === 'reserved') && (
                     <button onClick={() => updateStatus(table.id, 'available')}
                       className="text-xs text-brand hover:text-brand-hover font-medium">
@@ -431,7 +530,7 @@ export default function TablesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-          {tables.map((table) => (
+          {visibleTables.map((table) => (
             <div key={table.id}
               className={`bg-card rounded-xl p-5 border border-border text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}>
               <div className={`w-3 h-3 rounded-full ${statusColors[table.status]} mx-auto mb-3`} />
@@ -441,7 +540,7 @@ export default function TablesPage() {
               {table.status === 'occupied' && table.seated_at && (
                 <div className="mt-1"><TableTurnoverBadge seatedAt={table.seated_at} /></div>
               )}
-              {table.floor && <p className="text-xs text-gray-400">{table.floor}</p>}
+              <div className="mt-2 flex justify-center">{locationBadge(table)}</div>
               {table.status === 'reserved' && table.reservation_customer_name && (
                 <p className="text-xs text-yellow-700 font-medium mt-1 truncate">{table.reservation_customer_name}</p>
               )}
@@ -461,6 +560,11 @@ export default function TablesPage() {
                   {tTables('reserve')}
                 </button>
               )}
+              {canManageTables && (
+                <button onClick={() => openEdit(table)} className="mt-2 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1">
+                  <Pencil size={12} /> {tTables('editTable')}
+                </button>
+              )}
               <button onClick={() => toggleActive(table)}
                 className={`mt-2 block mx-auto text-xs font-medium ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
                 {!table.is_active ? tTables('reactivate') : tTables('deactivate')}
@@ -470,7 +574,7 @@ export default function TablesPage() {
         </div>
       )}
 
-      {tables.length === 0 && (
+      {visibleTables.length === 0 && (
         <p className="text-center text-muted-foreground py-12">{tTables('noTablesYet')}</p>
       )}
 
@@ -483,15 +587,18 @@ export default function TablesPage() {
         />
       )}
 
-      {/* Add Table Modal */}
+      {/* Add / Edit Table Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-md shadow-xl">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{tTables('add')}</h2>
-              <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
+              <div>
+                <h2 className="text-lg font-bold text-foreground">{editingTable ? tTables('editTable') : tTables('add')}</h2>
+                {editingTable && <p className="text-xs text-muted-foreground mt-0.5">{tTables('editTableHelp')}</p>}
+              </div>
+              <button onClick={closeTableForm} className="text-gray-400 hover:text-muted-foreground"><X size={20} /></button>
             </div>
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form onSubmit={handleSave} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-1">{tTables('tableName')}</label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
@@ -509,7 +616,21 @@ export default function TablesPage() {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                 </div>
               </div>
-              <Button type="submit" className="w-full">{tTables('createTable')}</Button>
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">{tTables('section')}</label>
+                <input type="text" value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={closeTableForm} className="flex-1">{tTables('cancel')}</Button>
+                <Button
+                  type="submit"
+                  disabled={!form.name.trim() || !Number.isInteger(Number(form.capacity)) || Number(form.capacity) < 1}
+                  className="flex-1"
+                >
+                  {editingTable ? tTables('saveChanges') : tTables('createTable')}
+                </Button>
+              </div>
             </form>
           </div>
         </div>

@@ -4,7 +4,8 @@
  * Tests that:
  * A) POST /tables generates string IDs in tbl-{uuid} format
  * B) GET /tables returns tables with string IDs
- * C) Migration converts NULL/integer IDs to strings
+ * C) Table properties can be edited and explicitly cleared
+ * D) Migration converts NULL/integer IDs to strings
  *
  * Regression test for Issue #27: ID type mismatch
  *
@@ -102,6 +103,106 @@ async function main() {
       assert(table.id.length > 0, `Table ${table.number} has non-empty ID`);
     }
     console.log(`   ✓ All ${allTables.length} tables have string IDs`);
+
+    // ════════════════════════════════════════════════════════════════════
+    // Scenario C2: PUT edits table properties and supports explicit clears
+    // ══════════════════════════════════════════════════════════════════
+    console.log('\n─── Scenario C2: Edit table properties ───');
+
+    const editRes = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ name: 'T-EDITED-1', capacity: 6, floor: 'First', section: 'Patio' }),
+    });
+    assertEqual(editRes.status, 200, 'PUT /tables/:id returns 200');
+    assertEqual(editRes.data.table.number, 'T-EDITED-1', 'table number is updated');
+    assertEqual(editRes.data.table.name, 'T-EDITED-1', 'normalized name alias is returned');
+    assertEqual(editRes.data.table.capacity, 6, 'capacity is updated');
+    assertEqual(editRes.data.table.floor, 'First', 'floor is updated');
+    assertEqual(editRes.data.table.section, 'Patio', 'section is updated');
+    assertEqual(editRes.data.table.activeOrder, null, 'normalized activeOrder field is returned');
+
+    const clearRes = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ floor: null, section: '' }),
+    });
+    assertEqual(clearRes.status, 200, 'optional location fields can be cleared');
+    assertEqual(clearRes.data.table.floor, null, 'floor is explicitly cleared');
+    assertEqual(clearRes.data.table.section, null, 'blank section is normalized to null');
+    assertEqual(clearRes.data.table.name, 'T-EDITED-1', 'omitted name remains unchanged');
+
+    const duplicateCreate = await api(baseUrl, '/api/tables', {
+      method: 'POST',
+      headers: authHeader,
+      body: JSON.stringify({ number: 'T-DUPLICATE', capacity: 2 }),
+    });
+    const duplicateRename = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ name: duplicateCreate.data.table.number }),
+    });
+    assertEqual(duplicateRename.status, 400, 'duplicate table rename is rejected');
+    assertIncludes(duplicateRename.data.error, 'already exists', 'duplicate rename returns a clear validation message');
+    assertEqual(duplicateRename.data.code, 'TABLE_NAME_DUPLICATE', 'duplicate rename returns a stable UI error code');
+
+    const invalidName = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ name: { unexpected: true } }),
+    });
+    assertEqual(invalidName.status, 400, 'object table names are rejected');
+    assertEqual(invalidName.data.code, 'TABLE_NAME_REQUIRED', 'malformed names return a stable UI error code');
+
+    const nullName = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ name: null }),
+    });
+    assertEqual(nullName.status, 400, 'null table names are rejected');
+    assertEqual(nullName.data.code, 'TABLE_NAME_REQUIRED', 'null names return a stable UI error code');
+
+    const invalidCapacity = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ capacity: 0 }),
+    });
+    assertEqual(invalidCapacity.status, 400, 'non-positive capacity is rejected');
+    assertEqual(invalidCapacity.data.code, 'TABLE_CAPACITY_INVALID', 'invalid capacity returns a stable UI error code');
+
+    const invalidLocation = await api(baseUrl, `/api/tables/${tableId}`, {
+      method: 'PUT',
+      headers: authHeader,
+      body: JSON.stringify({ floor: { label: 'First' } }),
+    });
+    assertEqual(invalidLocation.status, 400, 'non-text floor is rejected');
+    assertEqual(invalidLocation.data.code, 'TABLE_LOCATION_INVALID', 'invalid location returns a stable UI error code');
+
+    const invalidCreate = await api(baseUrl, '/api/tables', {
+      method: 'POST',
+      headers: authHeader,
+      body: JSON.stringify({ name: ['not-a-name'], capacity: 2 }),
+    });
+    assertEqual(invalidCreate.status, 400, 'malformed names are rejected during table creation');
+    assertEqual(invalidCreate.data.code, 'TABLE_NAME_REQUIRED', 'create validation uses the same stable UI error code');
+
+    for (const [label, malformedCapacity] of [['boolean', true], ['array', [2]]] as const) {
+      const invalidCreateCapacity = await api(baseUrl, '/api/tables', {
+        method: 'POST',
+        headers: authHeader,
+        body: JSON.stringify({ name: `T-BAD-CREATE-${label}`, capacity: malformedCapacity }),
+      });
+      assertEqual(invalidCreateCapacity.status, 400, `${label} capacity is rejected during table creation`);
+      assertEqual(invalidCreateCapacity.data.code, 'TABLE_CAPACITY_INVALID', `${label} create rejection has a stable UI error code`);
+
+      const invalidUpdateCapacity = await api(baseUrl, `/api/tables/${tableId}`, {
+        method: 'PUT',
+        headers: authHeader,
+        body: JSON.stringify({ capacity: malformedCapacity }),
+      });
+      assertEqual(invalidUpdateCapacity.status, 400, `${label} capacity is rejected during table editing`);
+      assertEqual(invalidUpdateCapacity.data.code, 'TABLE_CAPACITY_INVALID', `${label} edit rejection has a stable UI error code`);
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario D: Tables expose active orders and move order between tables

@@ -5211,21 +5211,69 @@ export function parseDbTimestamp(ts: string | null | undefined): Date {
   return /^\d{4}-\d{2}-\d{2} /.test(ts) ? new Date(`${ts.replace(' ', 'T')}Z`) : new Date(ts);
 }
 
-/**
- * "Today" as a `YYYY-MM-DD` string in UTC. All daily boundaries are UTC —
- * the tenant timezone setting only drives the insights hour/day bucketing,
- * never which day a row belongs to.
- */
+/** "Today" as a `YYYY-MM-DD` string in UTC for non-tenant uses. */
 export function utcTodayDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Return the calendar date represented by an instant in an IANA timezone. */
+export function localDateInTimezone(instant: Date, timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(instant);
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+    return `${get('year')}-${get('month')}-${get('day')}`;
+  } catch {
+    return instant.toISOString().slice(0, 10);
+  }
+}
+
+function timezoneOffsetMilliseconds(instant: Date, timezone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(instant);
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - instant.getTime();
+}
+
 /**
- * `[start, end)` half-open range strings (UTC wall, `YYYY-MM-DD HH:MM:SS`)
- * for a given `YYYY-MM-DD` date. Use with `WHERE col >= ? AND col < ?`
- * against the UTC timestamp columns (`created_at`, `paid_at`, etc.) so
- * indexes apply instead of `date(col) = date('now')`, which can't. #208
- *
+ * `[start, end)` half-open UTC ranges for one date in the tenant timezone.
+ * The offset is resolved at each boundary so DST transitions retain their
+ * actual local midnight rather than assuming every day is 24 hours.
+ */
+export function dayBoundsInTimezone(date: string, timezone: string): [string, string] {
+  const [y, m, d] = date.split('-').map(Number);
+  const format = (instant: Date) => instant.toISOString().replace('T', ' ').replace(/\..*$/, '');
+  try {
+    const toUtc = (localWallTime: number): Date => {
+      let instant = new Date(localWallTime);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        instant = new Date(localWallTime - timezoneOffsetMilliseconds(instant, timezone));
+      }
+      return instant;
+    };
+    return [
+      format(toUtc(Date.UTC(y, m - 1, d))),
+      format(toUtc(Date.UTC(y, m - 1, d + 1))),
+    ];
+  } catch {
+    return utcDayBounds(date);
+  }
+}
+
+/**
+ * `[start, end)` half-open UTC range strings for a UTC calendar date.
  * Bounds are emitted in the space form so string comparisons line up exactly
  * with stored rows (migration v40 normalized all rows to it).
  */

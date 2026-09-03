@@ -33,13 +33,17 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
-const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, now, localDateInTimezone, parseDbTimestamp } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { reportRoutes } = require('../main/routes/reports');
 
 let passed = 0;
 let failed = 0;
 let total = 0;
+
+function dbTimestamp(date: Date): string {
+  return date.toISOString().replace('T', ' ').replace(/\..*$/, '');
+}
 
 function assert(condition: boolean, message: string) {
   total++;
@@ -120,7 +124,7 @@ async function main() {
     const daysSinceWeekday = (date.getUTCDay() - weekday + 7) % 7;
     date.setUTCDate(date.getUTCDate() - daysSinceWeekday - weeksAgo * 7);
     date.setUTCHours(utcHour, utcMinute, 0, 0);
-    return date.toISOString();
+    return dbTimestamp(date);
   };
   const recentWeekdayTimestamp = (weekday: number, utcHour: number) => relativeWeekdayTimestamp(weekday, utcHour, 0, 1);
   const prepOneCreatedAt = recentWeekdayTimestamp(3, 4); // Wed, 09:30 Kolkata
@@ -170,7 +174,7 @@ async function main() {
     const d = new Date(bucketWeekAnchor);
     d.setUTCDate(d.getUTCDate() + dayOffsetFromMonday);
     d.setUTCHours(utcHour, utcMinute, 0, 0);
-    return d.toISOString();
+    return dbTimestamp(d);
   };
   const hourDayFixtures: { id: string; createdAt: string }[] = [
     { id: 'ORD-INS-1', createdAt: bucketTimestamp(0, 8, 30) }, // Mon 14:00 Kolkata
@@ -182,11 +186,11 @@ async function main() {
     { id: 'ORD-INS-7', createdAt: bucketTimestamp(5, 6, 0) },  // Sat 11:30 Kolkata
     { id: 'ORD-INS-8', createdAt: bucketTimestamp(6, 7, 0) },  // Sun 12:30 Kolkata
   ];
-  // UTC calendar dates of the Monday/Wednesday fixtures above, reused by the
-  // recentOrders date-scoping assertions (section 9) instead of hardcoding
-  // the dates a second time.
-  const bucketMondayDate = hourDayFixtures[0].createdAt.slice(0, 10);
-  const bucketWednesdayDate = hourDayFixtures[3].createdAt.slice(0, 10);
+  // Tenant-local calendar dates of the Monday/Wednesday fixtures above,
+  // reused by the recentOrders date-scoping assertions (section 9) instead
+  // of hardcoding the dates a second time.
+  const bucketMondayDate = localDateInTimezone(parseDbTimestamp(hourDayFixtures[0].createdAt), 'Asia/Kolkata');
+  const bucketWednesdayDate = localDateInTimezone(parseDbTimestamp(hourDayFixtures[3].createdAt), 'Asia/Kolkata');
   // Zero-value on purpose — only created_at matters for bucketing, and this
   // keeps these 8 orders from perturbing the top-staff revenue ranking below.
   const insertOrder = db.prepare(`
@@ -203,11 +207,11 @@ async function main() {
   db.prepare(`
     INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, cooking_started_at, ready_at)
     VALUES (?, ?, 'takeaway', 'completed', 50, 50, ?, ?, ?, ?)
-  `).run('ORD-PREP-1', cashierId, prepOneCreatedAt, prepOneCreatedAt, prepOneCreatedAt, new Date(new Date(prepOneCreatedAt).getTime() + 10 * 60 * 1000).toISOString());
+  `).run('ORD-PREP-1', cashierId, prepOneCreatedAt, prepOneCreatedAt, prepOneCreatedAt, dbTimestamp(new Date(parseDbTimestamp(prepOneCreatedAt).getTime() + 10 * 60 * 1000)));
   db.prepare(`
     INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, cooking_started_at, ready_at)
     VALUES (?, ?, 'takeaway', 'completed', 50, 50, ?, ?, ?, ?)
-  `).run('ORD-PREP-2', waiterId, prepTwoCreatedAt, prepTwoCreatedAt, prepTwoCreatedAt, new Date(new Date(prepTwoCreatedAt).getTime() + 20 * 60 * 1000).toISOString());
+  `).run('ORD-PREP-2', waiterId, prepTwoCreatedAt, prepTwoCreatedAt, prepTwoCreatedAt, dbTimestamp(new Date(parseDbTimestamp(prepTwoCreatedAt).getTime() + 20 * 60 * 1000)));
 
   // ── Seed top-staff orders: cashier earns more than server ────────────
   db.prepare(`
@@ -354,7 +358,7 @@ async function main() {
 
     console.log('\n10. Dynamic tax component report handles mixed categorized + legacy items');
     {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDateInTimezone(new Date(), 'Asia/Kolkata');
       const forbidden = await request(app)
         .get(`/api/reports/tax-components?start_date=${today}&end_date=${today}`)
         .set('Authorization', `Bearer ${waiterToken}`);

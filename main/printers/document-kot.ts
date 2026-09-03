@@ -74,6 +74,8 @@ export function buildKotPrintContext(opts: {
   columns: number;
   /** KOT label language (already resolved from the kitchen policy). */
   language: string;
+  /** Store timezone for business-local ticket time formatting. */
+  timezone?: string;
 }): PrintContext {
   return {
     columns: opts.columns,
@@ -82,6 +84,7 @@ export function buildKotPrintContext(opts: {
     locale: 'en-US',
     currencySymbol: '',
     trimDecimals: false,
+    ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
     resolveLabel: (conceptId, language) => printLabel(language, conceptId as PrintConceptId),
   };
 }
@@ -275,14 +278,18 @@ export function renderKotViaDocument(
   },
 ): KotDocumentRenderResult {
   const printData = buildKotPrintData(order, items, stationName);
-  const printContext = buildKotPrintContext({ columns: opts.columns, language: opts.language });
+  const printContext = buildKotPrintContext({
+    columns: opts.columns,
+    language: opts.language,
+    ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
+  });
   const document = buildKotDocument(printData, printContext);
   const warnings: PrintWarning[] = [];
   const lines = renderKotDocumentToLines(document, {
     columns: opts.columns,
     language: opts.language,
     ...(opts.locale !== undefined ? { locale: opts.locale } : {}),
-    ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
+    ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,

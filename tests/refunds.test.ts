@@ -39,6 +39,10 @@ const { getJWTSecret } = require('../main/routes/auth');
 async function main() {
   console.log('Issue #278: refund system');
   const db = initTestDb();
+  db.prepare("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'").run();
+  if ((db.prepare("SELECT COUNT(*) as c FROM settings WHERE key = 'timezone'").get() as any).c === 0) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('timezone', 'UTC')").run();
+  }
   const { authHeader: ownerAuth } = seedOwnerUser(db);
   const { userId: managerId, authHeader: managerAuth } = seedManagerUser(db);
   seedCategory(db, 'cat-refund', 'Refund menu');

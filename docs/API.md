@@ -848,7 +848,9 @@ Historical FloCafe databases operated exclusively under two-decimal currencies, 
 ## Reports
 
 ### GET `/api/reports/sales`
-Daily/monthly sales report.
+Daily/monthly sales report. Date query parameters use the tenant's configured
+store timezone: each `YYYY-MM-DD` value identifies that tenant-local calendar
+day, and omitted dates default to the tenant-local current day.
 
 **Headers:** `Authorization: Bearer <token>`
 
@@ -868,6 +870,9 @@ Daily/monthly sales report.
 
 ### GET `/api/reports/financial-summary`
 Owner-only collection summary and refund audit for a date range. Refunds are attributed to the original bill payment date so gross, refund, net, and payment-method totals reconcile for the selected period.
+
+`start_date` and `end_date` use tenant-local `YYYY-MM-DD` calendar days and
+are converted to UTC ranges using the store timezone.
 
 **Headers:** `Authorization: Bearer <owner-token>`
 
@@ -1042,7 +1047,9 @@ Make a printer the default for regular receipt printing.
 
 ### POST `/api/printers/:id/test`
 
-Send a test page. For WebUSB, the response contains the ESC/POS bytes for the browser to send.
+Send a test page. The printed timestamp uses the tenant's configured store
+timezone. For WebUSB, the response contains the ESC/POS bytes for the browser
+to send.
 
 ### POST `/api/printers/print-bill`
 

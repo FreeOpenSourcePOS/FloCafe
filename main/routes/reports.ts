@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Decimal from 'decimal.js';
-import { getDatabase, getSettingValue, parseDbTimestamp, utcDayBounds, utcTodayDate } from '../db';
+import { dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, parseDbTimestamp } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getOrdersWithItemsForBills } from './bills';
@@ -15,6 +15,18 @@ const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', '
 // Mirrors main/routes/tables.ts's ACTIVE_ORDER_STATUS_SQL — an order still
 // "occupying" its table until it's completed or cancelled.
 const ACTIVE_ORDER_STATUS_SQL = "o.status NOT IN ('completed', 'cancelled')";
+
+function tenantTimezone(): string {
+  return getSettingValue('timezone') || 'Asia/Kolkata';
+}
+
+function reportToday(): string {
+  return localDateInTimezone(new Date(), tenantTimezone());
+}
+
+function reportDayBounds(date: string): [string, string] {
+  return dayBoundsInTimezone(date, tenantTimezone());
+}
 
 function reportDate(value: unknown, fallback: string): string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
@@ -59,8 +71,8 @@ function paymentMethodBreakdown(
   paidOnly = false,
   attributeRefundsToBillDate = false,
 ) {
-  const start = utcDayBounds(startDate)[0];
-  const end = utcDayBounds(endDate)[1];
+  const start = reportDayBounds(startDate)[0];
+  const end = reportDayBounds(endDate)[1];
   const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
   return db.prepare(`
     WITH payment_lines AS (
@@ -120,8 +132,8 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
   try {
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-    const today = utcTodayDate();
-    const [start, end] = utcDayBounds(today);
+    const today = reportToday();
+    const [start, end] = reportDayBounds(today);
     const salesToday = db.prepare(`
       SELECT
         COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
@@ -179,10 +191,10 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
   try {
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-    // #208: an explicit date param is a UTC `YYYY-MM-DD`; resolve to the
-    // half-open UTC range. `reportDate` validates the param shape.
-    const date = reportDate(req.query.date, utcTodayDate());
-    const [start, end] = utcDayBounds(date);
+    // #208: an explicit date param is a tenant-local `YYYY-MM-DD`; resolve
+    // it to the corresponding half-open UTC range. `reportDate` validates the param shape.
+    const date = reportDate(req.query.date, reportToday());
+    const [start, end] = reportDayBounds(date);
 
     const ordersToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total
@@ -223,7 +235,7 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
 
 router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
-    const today = utcTodayDate();
+    const today = reportToday();
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, startDate);
     if ((req.query.start_date !== undefined && reportDate(req.query.start_date, '') === '')
@@ -233,8 +245,8 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
     if (startDate > endDate) {
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
-    const [start] = utcDayBounds(startDate);
-    const [, end] = utcDayBounds(endDate);
+    const [start] = reportDayBounds(startDate);
+    const [, end] = reportDayBounds(endDate);
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const collections = db.prepare(`
@@ -288,14 +300,14 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
 router.get('/tax-components', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const today = utcTodayDate();
+    const today = reportToday();
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, today);
     if (startDate > endDate) {
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
-    const windowStart = utcDayBounds(startDate)[0];
-    const windowEnd = utcDayBounds(endDate)[1];
+    const windowStart = reportDayBounds(startDate)[0];
+    const windowEnd = reportDayBounds(endDate)[1];
 
     const bills = db.prepare(`
       SELECT b.*
@@ -336,26 +348,36 @@ router.get('/tax-components', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
 router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const today = utcTodayDate();
+    const today = reportToday();
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, today);
     if (startDate > endDate) {
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
     // #208: half-open UTC ranges so the orders/bills indexes apply instead
-    // of `date(...)` on every row. All day boundaries are UTC.
-    const windowStart = utcDayBounds(startDate)[0];
-    const windowEnd = utcDayBounds(endDate)[1];
+    // of `date(...)` on every row. The bounds represent tenant-local days.
+    const windowStart = reportDayBounds(startDate)[0];
+    const windowEnd = reportDayBounds(endDate)[1];
 
-    // Daily series bucketed by UTC day (substr of the stored UTC timestamp) —
-    // same labels the previous `date(created_at)` produced, at index cost.
-    const dailySales = db.prepare(`
-      SELECT substr(created_at, 1, 10) as date, COUNT(*) as orders, SUM(total) as sales
+    // Daily series is grouped by the tenant-local calendar date rather than
+    // the UTC date stored in SQLite.
+    const dailyRows = db.prepare(`
+      SELECT created_at, total
       FROM orders
       WHERE created_at >= ? AND created_at < ?
-      GROUP BY substr(created_at, 1, 10)
-      ORDER BY date
-    `).all(windowStart, windowEnd);
+    `).all(windowStart, windowEnd) as { created_at: string; total: number }[];
+    const dailyByDate = new Map<string, { orders: number; sales: number }>();
+    const timeZone = tenantTimezone();
+    for (const row of dailyRows) {
+      const date = localDateInTimezone(parseDbTimestamp(row.created_at), timeZone);
+      const bucket = dailyByDate.get(date) || { orders: 0, sales: 0 };
+      bucket.orders += 1;
+      bucket.sales += Number(row.total || 0);
+      dailyByDate.set(date, bucket);
+    }
+    const dailySales = [...dailyByDate.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([date, totals]) => ({ date, ...totals }));
 
     const byPaymentMethod = paymentMethodBreakdown(db, startDate, endDate, true) as { method: string; count: number; total: number }[];
 
@@ -384,7 +406,7 @@ router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
 router.get('/topProducts', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const today = utcTodayDate();
+    const today = reportToday();
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, today);
     if (startDate > endDate) {
@@ -392,8 +414,8 @@ router.get('/topProducts', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     }
     const requestedLimit = Number(req.query.limit);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 10;
-    const windowStart = utcDayBounds(startDate)[0];
-    const windowEnd = utcDayBounds(endDate)[1];
+    const windowStart = reportDayBounds(startDate)[0];
+    const windowEnd = reportDayBounds(endDate)[1];
 
     const topProducts = db.prepare(`
       SELECT oi.product_id, oi.product_name,
@@ -443,14 +465,14 @@ router.get('/recentOrders', requireRole(...ROLE_ACCESS.ownerManager), (req: Requ
     const params: any[] = [];
     let where = '';
     if (date) {
-      const [s, e] = utcDayBounds(date);
+      const [s, e] = reportDayBounds(date);
       where = 'WHERE o.created_at >= ? AND o.created_at < ?';
       params.push(s, e);
     } else if (startDate || endDate) {
       const effectiveStart = startDate || endDate!;
       const effectiveEnd = endDate || startDate!;
-      const [s] = utcDayBounds(effectiveStart);
-      const [, e] = utcDayBounds(effectiveEnd);
+      const [s] = reportDayBounds(effectiveStart);
+      const [, e] = reportDayBounds(effectiveEnd);
       where = 'WHERE o.created_at >= ? AND o.created_at < ?';
       params.push(s, e);
     }
@@ -492,7 +514,7 @@ router.get('/recentOrders', requireRole(...ROLE_ACCESS.ownerManager), (req: Requ
 router.get('/tables', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const [start, end] = utcDayBounds(utcTodayDate());
+    const [start, end] = reportDayBounds(reportToday());
 
     const tableStats = db.prepare(`
       SELECT t.*,
@@ -534,12 +556,15 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const days = Math.min(Math.max(parseInt(req.query.days as string) || 30, 1), 365);
-    // #208: "N days back" in UTC, with the UTC day range so the window
-    // filters on the index. Day boundaries are UTC; the tenant timezone only
-    // drives the hour/day-of-week bucketing below.
-    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const timeZone = getSettingValue('timezone') || 'Asia/Kolkata';
-    const [windowStart] = utcDayBounds(startDate);
+    // #208: "N days back" in the tenant's local calendar, with a UTC range
+    // so the window filters on the index. The same timezone drives the
+    // hour/day-of-week bucketing below.
+    const timeZone = tenantTimezone();
+    const today = localDateInTimezone(new Date(), timeZone);
+    const startDateValue = new Date(`${today}T00:00:00Z`);
+    startDateValue.setUTCDate(startDateValue.getUTCDate() - days);
+    const startDate = startDateValue.toISOString().slice(0, 10);
+    const [windowStart] = dayBoundsInTimezone(startDate, timeZone);
 
     // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
     const revenue = db.prepare(`

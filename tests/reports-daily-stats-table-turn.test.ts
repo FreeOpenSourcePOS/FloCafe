@@ -64,8 +64,12 @@ function isNativeAbiMismatch(error: any): boolean {
   return error?.code === 'ERR_DLOPEN_FAILED' && String(error?.message || '').includes('NODE_MODULE_VERSION');
 }
 
+function dbTimestamp(date: Date): string {
+  return date.toISOString().replace('T', ' ').replace(/\..*$/, '');
+}
+
 function minutesAgo(minutes: number): string {
-  return new Date(Date.now() - minutes * 60 * 1000).toISOString();
+  return dbTimestamp(new Date(Date.now() - minutes * 60 * 1000));
 }
 
 async function main() {
@@ -132,18 +136,18 @@ async function main() {
       db.prepare(`INSERT INTO tables (id, number, capacity, status, created_at, updated_at) VALUES (?, ?, ?, 'available', ?, ?)`)
         .run('tbl-turn-1', 'TT1', 4, now(), now());
 
-      // Anchor timestamps to 01:00 UTC today to guarantee they fall within today's UTC bounds
+      // Anchor timestamps to 01:00 UTC today to guarantee they fall within today's Asia/Kolkata store day
       const todayBase = new Date();
       todayBase.setUTCHours(1, 0, 0, 0);
-      const order1CreatedAt = new Date(todayBase.getTime()).toISOString();
-      const order1CompletedAt = new Date(todayBase.getTime() + 10 * 60 * 1000).toISOString(); // 10 minutes
+      const order1CreatedAt = dbTimestamp(new Date(todayBase.getTime()));
+      const order1CompletedAt = dbTimestamp(new Date(todayBase.getTime() + 10 * 60 * 1000)); // 10 minutes
       db.prepare(`
         INSERT INTO orders (order_number, table_id, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
         VALUES (?, ?, ?, 'dine_in', 'completed', 100, 100, ?, ?, ?)
       `).run('ORD-TURN-1', 'tbl-turn-1', ownerId, order1CreatedAt, order1CompletedAt, order1CompletedAt);
 
-      const order2CreatedAt = new Date(todayBase.getTime() + 20 * 60 * 1000).toISOString();
-      const order2CompletedAt = new Date(todayBase.getTime() + 40 * 60 * 1000).toISOString(); // 20 minutes
+      const order2CreatedAt = dbTimestamp(new Date(todayBase.getTime() + 20 * 60 * 1000));
+      const order2CompletedAt = dbTimestamp(new Date(todayBase.getTime() + 40 * 60 * 1000)); // 20 minutes
       db.prepare(`
         INSERT INTO orders (order_number, table_id, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
         VALUES (?, ?, ?, 'dine_in', 'completed', 100, 100, ?, ?, ?)
@@ -153,11 +157,11 @@ async function main() {
       db.prepare(`
         INSERT INTO orders (order_number, table_id, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
         VALUES (?, NULL, ?, 'takeaway', 'completed', 100, 100, ?, ?, ?)
-      `).run('ORD-TURN-TAKEAWAY', ownerId, new Date(todayBase.getTime() + 50 * 60 * 1000).toISOString(), new Date(todayBase.getTime() + 55 * 60 * 1000).toISOString(), new Date(todayBase.getTime() + 55 * 60 * 1000).toISOString());
+      `).run('ORD-TURN-TAKEAWAY', ownerId, dbTimestamp(new Date(todayBase.getTime() + 50 * 60 * 1000)), dbTimestamp(new Date(todayBase.getTime() + 55 * 60 * 1000)), dbTimestamp(new Date(todayBase.getTime() + 55 * 60 * 1000)));
       db.prepare(`
         INSERT INTO orders (order_number, table_id, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
         VALUES (?, ?, ?, 'dine_in', 'cancelled', 100, 100, ?, ?, ?)
-      `).run('ORD-TURN-CANCELLED', 'tbl-turn-1', ownerId, new Date(todayBase.getTime()).toISOString(), new Date(todayBase.getTime() + 55 * 60 * 1000).toISOString(), new Date(todayBase.getTime() + 55 * 60 * 1000).toISOString());
+      `).run('ORD-TURN-CANCELLED', 'tbl-turn-1', ownerId, dbTimestamp(new Date(todayBase.getTime())), dbTimestamp(new Date(todayBase.getTime() + 55 * 60 * 1000)), dbTimestamp(new Date(todayBase.getTime() + 55 * 60 * 1000)));
 
       const res = await request(app).get('/api/reports/daily-stats').set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(res.status, 200, `owner gets 200 (got ${res.status})`);

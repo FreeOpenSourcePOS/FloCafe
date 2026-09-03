@@ -182,6 +182,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     setSyncedCustomerId(customer?.id ?? null);
     setWalletLoadFailed(false);
     setWalletBalance(null);
+    setWalletAmount('');
+    setAmountTarget(null);
   }
 
   useEffect(() => {
@@ -331,6 +333,10 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     }
     if (totalPaymentMinor < remainingMinor) {
       toast.error(t('paymentBelowBalance'));
+      return;
+    }
+    if (walletAmt > 0 && walletBalance === null) {
+      toast.error(t('paymentFailed'));
       return;
     }
     if (walletAmt > 0 && walletBalance !== null) {

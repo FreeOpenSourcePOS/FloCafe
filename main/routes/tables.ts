@@ -131,36 +131,62 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
 router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
-    const tableNumber = number || name;
+    const has = (key: string) => Object.prototype.hasOwnProperty.call(req.body, key);
+    const hasTableNumber = has('number') || has('name');
+    const tableNumber = hasTableNumber ? String(has('number') ? number : name).trim() : undefined;
     const db = getDatabase();
 
-    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
+    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
     if (!table) {
       return res.status(404).json({ error: 'Table not found' });
     }
 
-    if (tableNumber) {
+    if (hasTableNumber && !tableNumber) {
+      return res.status(400).json({ error: 'Table number is required' });
+    }
+
+    if (has('capacity') && (!Number.isInteger(Number(capacity)) || Number(capacity) < 1)) {
+      return res.status(400).json({ error: 'Capacity must be a positive whole number' });
+    }
+
+    if (hasTableNumber) {
       const existing = db.prepare('SELECT * FROM tables WHERE number = ? AND id != ?').get(tableNumber, req.params.id);
       if (existing) {
         return res.status(400).json({ error: 'Table number already exists' });
       }
     }
 
+    const optionalText = (value: unknown) => {
+      if (value === null || value === undefined) return null;
+      const normalized = String(value).trim();
+      return normalized || null;
+    };
+
     db.prepare(`
       UPDATE tables SET
-        number = COALESCE(?, number),
-        capacity = COALESCE(?, capacity),
-        floor = COALESCE(?, floor),
-        section = COALESCE(?, section),
-        position_x = COALESCE(?, position_x),
-        position_y = COALESCE(?, position_y),
-        kitchen_station_id = COALESCE(?, kitchen_station_id),
+        number = ?,
+        capacity = ?,
+        floor = ?,
+        section = ?,
+        position_x = ?,
+        position_y = ?,
+        kitchen_station_id = ?,
         updated_at = ?
       WHERE id = ?
-    `).run(tableNumber, capacity, floor, section, position_x, position_y, kitchen_station_id, now(), req.params.id);
+    `).run(
+      hasTableNumber ? tableNumber : table.number,
+      has('capacity') ? Number(capacity) : table.capacity,
+      has('floor') ? optionalText(floor) : table.floor,
+      has('section') ? optionalText(section) : table.section,
+      has('position_x') ? position_x : table.position_x,
+      has('position_y') ? position_y : table.position_y,
+      has('kitchen_station_id') ? kitchen_station_id : table.kitchen_station_id,
+      now(),
+      req.params.id,
+    );
 
     const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
-    res.json({ table: updated });
+    res.json({ table: tableShape(updated as any, activeOrderForTable(db, req.params.id as string)) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

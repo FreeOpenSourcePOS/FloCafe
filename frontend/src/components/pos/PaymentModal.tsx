@@ -452,7 +452,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-card w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-card w-full sm:max-w-4xl sm:max-h-[95vh] sm:flex sm:flex-col rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
@@ -469,7 +469,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-4 max-h-[75vh] overflow-y-auto">
+        <div className="px-5 py-4 max-h-[75vh] overflow-y-auto sm:min-h-0 lg:max-h-none lg:grid lg:grid-cols-2 lg:gap-5 lg:overflow-visible">
+
+          <div className="space-y-4">
 
           {/* Amount + Customer Card */}
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl px-5 py-4 text-white">
@@ -635,6 +637,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             )}
           </div>}
 
+          </div>
+
+          <div className="space-y-4">
           <div className="space-y-2">
             {payments.map((payment, idx) => {
               const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
@@ -750,6 +755,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               quickValues={activeAmountQuickValues}
             />
           )}
+          </div>
         </div>
 
         <div className="px-5 pb-5 border-t border-border pt-3 space-y-2">

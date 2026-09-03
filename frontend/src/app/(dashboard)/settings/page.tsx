@@ -5091,13 +5091,13 @@ export default function SettingsPage() {
             {isElectron && updateStatus && updateStatus.status !== 'store-managed' && updateStatus.status !== 'linux-managed' && (
               <div className={`p-4 rounded-lg mb-4 ${
                 updateStatus.status === 'available' || updateStatus.status === 'ready-to-install'
-                  ? 'bg-green-50 border border-green-200'
+                  ? 'bg-green-50 border border-green-200 dark:bg-green-950/50 dark:border-green-800'
                   : updateStatus.status === 'up-to-date'
-                  ? 'bg-green-50 border border-green-200'
+                  ? 'bg-green-50 border border-green-200 dark:bg-green-950/50 dark:border-green-800'
                   : updateStatus.status === 'check-failed'
-                  ? 'bg-red-50 border border-red-200'
+                  ? 'bg-red-50 border border-red-200 dark:bg-red-950/50 dark:border-red-800'
                   : updateStatus.status === 'offline' || updateStatus.status === 'dev-mode'
-                  ? 'bg-yellow-50 border border-yellow-200'
+                  ? 'bg-yellow-50 border border-yellow-200 dark:bg-yellow-950/50 dark:border-yellow-800'
                   : 'bg-muted border border-border'
               }`}>
                 <div className="flex items-center gap-2 mb-2">
@@ -5145,7 +5145,7 @@ export default function SettingsPage() {
                   <p className="text-sm text-muted-foreground">{t('notCheckedYetHint')}</p>
                 )}
                 {updateStatus.status === 'dev-mode' && (
-                  <p className="text-sm text-yellow-700">{t('devModeDisabled')}</p>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300">{t('devModeDisabled')}</p>
                 )}
                 {(updateStatus.status === 'check-failed' || updateStatus.status === 'offline') && (
                   <p className="text-sm mt-1 text-red-600">

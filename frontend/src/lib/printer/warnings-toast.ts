@@ -82,8 +82,9 @@ export function showPrintWarningsToast(warnings: PrintWarning[]): void {
 export function showPrintLanguageLoadErrorsToast(languages: readonly PrintLanguageCode[]): void {
   if (languages.length === 0) return;
 
+  const t = getTranslator(resolveLanguage());
   toast.error(
-    `Print language bundle(s) "${languages.join(', ')}" could not be loaded. Check the locale bundle and reload the app to retry.`,
+    t('printWarnings.languageLoadError', { languages: languages.join(', ') }),
     { duration: 7000, id: 'print-language-load-errors' },
   );
 }

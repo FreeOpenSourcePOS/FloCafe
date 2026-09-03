@@ -643,9 +643,11 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'pos.taxLine',
   'pos.numericKeypad',
   'printTest.escpos',
+  'printTest.kitchenStation', // English-identical station sample data
   'printTest.item',
   'printTest.paperWidth58',
   'printTest.paperWidth80',
+  'printTest.optionWebPrint', // technical browser print mode label
   'print.taxInvoiceTitle',
   'print.customerShort',
   'print.address',
@@ -896,6 +898,7 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'settings.whatsapp',
   'setup.demoLabel',
   'setup.expressLabel',
+  'setup.finedineLabel', // FloCafe product flow name
   'setup.pinLabel',
   'staff.roleManager',
   'support.version',

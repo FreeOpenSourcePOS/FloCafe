@@ -690,12 +690,15 @@
     "htmlDownloaded": "HTML downloaded",
     "item": "Item",
     "kotDisabled": "KOT disabled",
+    "kitchenStation": "Kitchen",
     "kotPrinted": "KOT printed!",
     "lastPrintedBytes": "Last printed: {bytes} bytes",
     "optionBasicReceipt": "Basic Receipt (Thermal)",
     "optionKot": "KOT (Kitchen Ticket)",
     "optionTaxBill": "Detailed Tax Bill (Thermal)",
     "optionWhatsapp": "WhatsApp Share",
+    "optionWebPrint": "Web Print (Browser)",
+    "kotLanguageLoadError": "KOT language \"{language}\" could not be loaded, so English labels were used. Check the locale bundle and retry.",
     "paperWidth58": "2.5\" (58mm)",
     "paperWidth80": "3.5\" (80mm)",
     "paperWidthLabel": "Paper Width",
@@ -718,6 +721,7 @@
     "arabicShapingHint": "Your printer could not print the Persian/Arabic text. Enable \"Printer supports Arabic/Persian shaping\" in Settings → Printing, or print via the browser.",
     "genericHint": "The lines below contain characters this thermal printer cannot render.",
     "moreLines": "…and {count} more",
+    "languageLoadError": "Print language bundle(s) \"{languages}\" could not be loaded. Check the locale bundle and reload the app to retry.",
     "templateFallback": "The selected bill template is not supported on this print path, so the built-in receipt layout was used."
   },
   "print": {

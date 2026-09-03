@@ -690,12 +690,15 @@
     "htmlDownloaded": "Fichier HTML téléchargé",
     "item": "Article",
     "kotDisabled": "Bon de cuisine désactivé",
+    "kitchenStation": "Cuisine",
     "kotPrinted": "Bon de cuisine imprimé !",
     "lastPrintedBytes": "Dernière impression : {bytes} octets",
     "optionBasicReceipt": "Reçu simple (thermique)",
     "optionKot": "Bon de cuisine",
     "optionTaxBill": "Facture fiscale détaillée (thermique)",
     "optionWhatsapp": "Partage WhatsApp",
+    "optionWebPrint": "Impression web (navigateur)",
+    "kotLanguageLoadError": "La langue du bon de cuisine \"{language}\" n’a pas pu être chargée ; les libellés anglais ont été utilisés. Vérifiez le module de langue et réessayez.",
     "paperWidth58": "2.5\" (58mm)",
     "paperWidth80": "3.5\" (80mm)",
     "paperWidthLabel": "Largeur du papier",
@@ -718,6 +721,7 @@
     "arabicShapingHint": "Votre imprimante n’a pas pu imprimer le texte persan ou arabe. Activez \"L’imprimante prend en charge la mise en forme arabe/persane\" dans Paramètres → Impression, ou imprimez depuis le navigateur.",
     "genericHint": "Les lignes ci-dessous contiennent des caractères que cette imprimante thermique ne peut pas restituer.",
     "moreLines": "…et {count} de plus",
+    "languageLoadError": "Les modules de langue d’impression \"{languages}\" n’ont pas pu être chargés. Vérifiez le module de langue et rechargez l’application pour réessayer.",
     "templateFallback": "Le modèle de facture sélectionné n’est pas pris en charge par ce mode d’impression. La mise en page de reçu intégrée a donc été utilisée."
   },
   "print": {

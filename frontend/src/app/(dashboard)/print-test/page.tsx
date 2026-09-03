@@ -94,18 +94,19 @@ export default function PrintTestPage() {
             // ticket locale so a fixed KOT language ≠ UI language still
             // renders translated labels on cold start (mirrors usePrinter).
             const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
-            const failedLanguages = await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
-            const html = generateKotHtml(testOrder, { paperWidth, stationName: 'Kitchen', timezone: testTenant.timezone });
+            const kotLanguage = resolveKotTicketLanguage();
+            const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
+            const html = generateKotHtml(testOrder, { paperWidth, language: kotLanguage, stationName: t('kitchenStation'), timezone: testTenant.timezone });
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));
             showPrintWarningsToast(failedLanguages.map((language) => ({
               field: 'kot language',
               text: language,
-              message: `KOT language "${language}" could not be loaded, so English labels were used. Check the locale bundle and retry.`,
+              message: t('kotLanguageLoadError', { language }),
               kind: 'locale' as const,
             })));
           } else {
-            const printWarnings = await printKot(testOrder, { paperWidth, stationName: 'Kitchen' });
+            const printWarnings = await printKot(testOrder, { paperWidth, stationName: t('kitchenStation') });
             toast.success(t('kotPrinted'));
             showPrintWarningsToast(printWarnings);
           }
@@ -167,13 +168,13 @@ export default function PrintTestPage() {
   };
 
   const testOptions: { value: TestMode; label: string; icon: React.ElementType }[] = [
-    { value: 'receipt', label: 'Basic Receipt (Thermal)', icon: Printer },
-    { value: 'tax', label: 'Detailed Tax Bill (Thermal)', icon: Printer },
+    { value: 'receipt', label: t('optionBasicReceipt'), icon: Printer },
+    { value: 'tax', label: t('optionTaxBill'), icon: Printer },
     // Hidden entirely when KOT printing is disabled — this is a manual
     // "Print KOT" action, which must never be reachable in that state (#133).
-    ...(kotPrintingEnabled ? [{ value: 'kot' as TestMode, label: 'KOT (Kitchen Ticket)', icon: Printer }] : []),
-    { value: 'web-print', label: 'Web Print (Browser)', icon: FileText },
-    { value: 'whatsapp', label: 'WhatsApp Share', icon: MessageCircle },
+    ...(kotPrintingEnabled ? [{ value: 'kot' as TestMode, label: t('optionKot'), icon: Printer }] : []),
+    { value: 'web-print', label: t('optionWebPrint'), icon: FileText },
+    { value: 'whatsapp', label: t('optionWhatsapp'), icon: MessageCircle },
   ];
 
   return (

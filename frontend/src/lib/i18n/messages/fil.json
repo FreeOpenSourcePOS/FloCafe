@@ -690,12 +690,15 @@
     "htmlDownloaded": "Na-download ang HTML",
     "item": "Item",
     "kotDisabled": "Naka-disable ang KOT",
+    "kitchenStation": "Kitchen",
     "kotPrinted": "Nai-print ang KOT!",
     "lastPrintedBytes": "Huling na-print: {bytes} bytes",
     "optionBasicReceipt": "Basic Resibo (Thermal)",
     "optionKot": "KOT (Kusina Ticket)",
     "optionTaxBill": "Detailed Buwis Bill (Thermal)",
     "optionWhatsapp": "Ibahagi sa WhatsApp",
+    "optionWebPrint": "Web Print (Browser)",
+    "kotLanguageLoadError": "Hindi ma-load ang KOT language na \"{language}\", kaya English labels ang ginamit. Suriin ang locale bundle at subukan muli.",
     "paperWidth58": "2.5\" (58mm)",
     "paperWidth80": "3.5\" (80mm)",
     "paperWidthLabel": "Lapad ng Papel",
@@ -715,9 +718,10 @@
   },
   "printWarnings": {
     "title": "{count, plural, one {# Babala sa Pag-print} other {# Mga Babala sa Pag-print}}",
-    "arabicShapingHint": "Your printer could not print the Persian/Arabic text. I-enable \"Printer supports Arabic/Persian shaping\" in Mga Setting → Pag-print, or print via the browser.",
+    "arabicShapingHint": "Hindi nakapag-print ang iyong printer ng tekstong Persian/Arabic. Paganahin ang \"Sinusuportahan ng printer ang Arabic/Persian shaping\" sa Mga Setting → Pag-print, o mag-print gamit ang browser.",
     "genericHint": "Naglalaman ang mga linya sa ibaba ng mga character na hindi mai-render ng thermal printer na ito.",
     "moreLines": "…at {count} pa",
+    "languageLoadError": "Hindi ma-load ang print language bundle(s) na \"{languages}\". Suriin ang locale bundle at i-reload ang app para subukan muli.",
     "templateFallback": "Hindi sinusuportahan ang napiling template ng bill sa print path na ito, kaya ginamit ang built-in na layout ng resibo."
   },
   "print": {

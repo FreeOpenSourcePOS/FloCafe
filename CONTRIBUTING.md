@@ -155,11 +155,11 @@ FloCafe runs on real business data that must survive software upgrades.
 
 ## Translations and i18n
 
-FloCafe currently provides translations for English (`en`), Spanish (`es`), French (`fr`), Brazilian Portuguese (`pt`), Filipino (`fil`), Turkish (`tr`), and Persian (`fa`, including RTL support).
+FloCafe currently provides translations for English (`en`), Spanish (`es`), French (`fr`), Brazilian Portuguese (`pt`), Filipino (`fil`), Turkish (`tr`), Persian (`fa`, including RTL support), and German (`de`).
 
 - **Existing languages:** Narrowly scoped fixes and improvements to existing translation strings are always welcome. Verify changes with `npm run i18n:check`.
 - **New languages:** Adding an entirely new language requires maintainer coordination through an issue first while the broader internationalization architecture (#372) is being modernized.
-- **Local scaffolding:** Once a new language is approved, run `npm run i18n:add -- de` (using the lowercase two- or three-letter code) to copy the English schema without overwriting an existing file. Add the generated language entry to `frontend/src/lib/i18n/languages.ts`, translate the copied leaves while preserving ICU placeholders/tags, then run `npm run i18n:check`.
+- **Local scaffolding:** Once a new language is approved, run `npm run i18n:add -- ar` (using the lowercase two- or three-letter code) to copy the English schema without overwriting an existing file. Add the generated language entry to `frontend/src/lib/i18n/languages.ts`, translate the copied leaves while preserving ICU placeholders/tags, then run `npm run i18n:check`.
 
 The validation command is fully offline and checks registry/file consistency, exact English key parity, string and ICU validity, placeholder/tag parity, Persian fallback safeguards, and frontend translation-key safety.
 

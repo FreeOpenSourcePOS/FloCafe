@@ -485,7 +485,11 @@ function run(): void {
       ['frontend/webusb/compact', fe.receiptEncoder.buildCompactReceiptBytes],
     ] as const) {
       const zeroText = new TextDecoder().decode(build(zeroChargeBill as any, { ...tenant, business_name: 'Flo Parity Cafe' } as any, { paperWidth: 80, useUnicode: true }, []));
-      warn(!zeroText.includes('Service Charge') && !zeroText.includes('Delivery Charge') && !zeroText.includes('Packaging'), `${renderer}: zero charges do not create rows`);
+      const zeroRows = zeroText.split(/\r?\n/);
+      warn(
+        !zeroRows.some((row) => row.includes('Service Charge') || row.includes('Delivery') || row.includes('Packaging')),
+        `${renderer}: zero charges do not create rows`,
+      );
     }
 
     let malformedPrintSucceeded = true;

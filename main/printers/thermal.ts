@@ -1368,7 +1368,7 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
   return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(price, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
-export function financialRows(label: string, value: string, cols: number, language: string = 'en', capabilities?: ThermalPrinterCapabilities): string[] {
+export function financialRows(label: string, value: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): string[] {
   const normalizedLabel = normalizeThermalText(label, capabilities);
   const safeLabel = normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
@@ -1418,7 +1418,7 @@ export function rightAlign(text: string, width: number = 24): string {
   return ' '.repeat(Math.max(1, width - text.length)) + text;
 }
 
-export function truncate(text: string, length: number, language: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
+export function truncate(text: string, length: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
   const normalizedText = normalizeThermalText(text, capabilities);
   return normalizedText.length > length ? normalizedText.substring(0, length - 2) + '..' : normalizedText;
 }
@@ -1488,12 +1488,12 @@ export function wrapText(text: string, cols: number): string[] {
   return lines.length > 0 ? lines : [''];
 }
 
-export function pushWrapped(lines: string[], text: string, cols: number, language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
+export function pushWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
   const normalized = normalizeThermalText(text, capabilities);
   for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
-export function pushCenteredWrapped(lines: string[], text: string, cols: number, language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
+export function pushCenteredWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
   const normalized = normalizeThermalText(text, capabilities);
   for (const line of wrapText(normalized, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }

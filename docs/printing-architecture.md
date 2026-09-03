@@ -108,6 +108,7 @@ restrictions over [`shared/`](../shared/).
 | [`bilingual.ts`](../shared/print/bilingual.ts) | `BilingualLabel`, width-fit strategies (`inline` vs `stacked`) | [#441](https://github.com/FreeOpenSourcePOS/FloCafe/issues/441) |
 | [`document.ts`](../shared/print/document.ts) | `PrintDocument` v1 / `KotDocument` v1 models + pure builders | [#442](https://github.com/FreeOpenSourcePOS/FloCafe/issues/442)/[#443](https://github.com/FreeOpenSourcePOS/FloCafe/issues/443) |
 | [`merchant-template.ts`](../shared/print/merchant-template.ts) | semantic merchant template payload validation, offline transfer envelope, `applyMerchantTemplate` | [#447](https://github.com/FreeOpenSourcePOS/FloCafe/issues/447)/[#448](https://github.com/FreeOpenSourcePOS/FloCafe/issues/448) |
+| [`thermal-capabilities.ts`](../shared/print/thermal-capabilities.ts) | capability-driven thermal normalization, representability, code-page selection, shaping, and warning policy | Phase 8 |
 
 Dependency direction is one-way: registry → call site → kernel. The central
 language registry ([frontend/src/lib/i18n/languages.ts](../frontend/src/lib/i18n/languages.ts))
@@ -428,7 +429,7 @@ profile with proven Latin code-page coverage or Arabic shaping to opt in.
 
 Renderers consume capabilities, they never guess them:
 
-- Desktop ESC/POS: unsupported non-financial lines are skipped with an explicit warning unless the profile's shaping flag (or a request-level override) admits strict ASCII+Arabic lines (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)). KOT header metadata uses an explicit ASCII-safe `[UNSUPPORTED]` placeholder when a generic printer cannot represent its localized text, while unsupported KOT item/instruction text remains subject to the warning path. On document-driven and signed country-pack receipt paths, unsupported item or financial rows are also warned, but the backend refuses the receipt before transport so no partial financial receipt is emitted.
+- Desktop ESC/POS: unsupported non-financial lines are skipped with an explicit warning unless the selected profile capability represents the line or its shaping flag (or a request-level override) admits strict ASCII+Arabic lines (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)). KOT header metadata uses an explicit ASCII-safe `[UNSUPPORTED]` placeholder when a generic printer cannot represent its localized text, while unsupported KOT item/instruction text remains subject to the warning path. On document-driven and signed country-pack receipt paths, unsupported item or financial rows are also warned, but the backend refuses the receipt before transport so no partial financial receipt is emitted.
 - The migrated WebUSB receipt path uses `safePrinterText` for renderer-managed
   text and its warning behavior ([`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts),
   [`frontend/src/lib/printer/warnings.ts`](../frontend/src/lib/printer/warnings.ts)). Unsupported item or financial rows are refused before `PrinterService` sends bytes; other unsupported lines retain the explicit skip warning. `buildClassicReceiptBytes` still
@@ -641,7 +642,11 @@ Profiles live in [`main/printers/profiles.ts`](../main/printers/profiles.ts)
 (`SUPPORTED_PRINTER_PROFILES`). One entry declares: unique `id`, make/model +
 lowercase `aliases` (matched by substring after normalization), command set,
 default paper width and port, Font A/B column counts, optional physical print
-width, cut mode, and notes.
+width, cut mode, profile-owned thermal capabilities, and notes. The capability
+block declares supported code pages and preferred page, Arabic shaping,
+representable scripts, transliteration, and warning policies; use the generic
+ASCII-only capability block unless the profile has evidence for a narrower
+hardware capability.
 
 Rules:
 

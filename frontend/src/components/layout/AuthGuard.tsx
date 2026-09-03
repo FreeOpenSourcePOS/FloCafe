@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useTranslations } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
+import { showPrintLanguageLoadErrorsToast } from '@/lib/printer/warnings-toast';
 
 export function getLandingPage(): string {
   return '/pos';
@@ -15,6 +16,7 @@ const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/server-standalone', '/auth/lo
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const t = useTranslations('common');
   const { user, currentTenant, loading, loadFromStorage } = useAuthStore();
+  const printLanguageLoadErrors = useAuthStore((s) => s.printLanguageLoadErrors);
   const router = useRouter();
   const pathname = usePathname();
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null); // null = still checking
@@ -31,6 +33,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (isStandalonePath) return;
     loadFromStorage();
   }, [isStandalonePath, loadFromStorage]);
+
+  useEffect(() => {
+    showPrintLanguageLoadErrorsToast(printLanguageLoadErrors);
+  }, [printLanguageLoadErrors]);
 
   // Single effect: determine where to redirect after auth state + setup status are known
   useEffect(() => {

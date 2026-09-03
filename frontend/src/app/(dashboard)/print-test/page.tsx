@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { Printer, FileText, MessageCircle, Download, Usb, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { usePrinterStore } from '@/hooks/usePrinter';
-import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
+import { showPrintLanguageLoadErrorsToast, showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
 import { printerService } from '@/lib/printer/PrinterService';
@@ -131,7 +131,11 @@ export default function PrintTestPage() {
 
   const handleDownloadHtml = async () => {
     const languages = resolveBillPrintLanguages();
-    await ensurePrintLanguagesLoaded(languages);
+    const failedLanguages = await ensurePrintLanguagesLoaded(languages);
+    if (failedLanguages.length > 0) {
+      showPrintLanguageLoadErrorsToast(failedLanguages);
+      return;
+    }
     const html = generateBillHtml(testBill, testTenant, {
       paperSize: printerPaperSize,
       includeTaxId: true,

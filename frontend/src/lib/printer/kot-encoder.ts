@@ -10,7 +10,7 @@ import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { formatTime } from './format-date';
 import { normalizeGermanThermalText } from './unicode';
-import { hasUnsupportedPrinterChars, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 
 export interface KotOptions {
@@ -175,7 +175,8 @@ function thermalSafeMetadataValue(value: string, language: string, arabicShaping
 
 function thermalSafeHeaderText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
   const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
-  return !arabicShaping && hasUnsupportedPrinterChars(normalized) ? fallback : normalized;
+  const shapingSafe = arabicShaping && isArabicShapingSafeLine(normalized);
+  return hasUnsupportedPrinterChars(normalized) && !shapingSafe ? fallback : normalized;
 }
 
 function resolveOrderType(type: string, language: string): string {

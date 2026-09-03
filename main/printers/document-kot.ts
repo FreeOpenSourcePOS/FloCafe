@@ -122,10 +122,21 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
 // value when the selected capability can represent it; otherwise use the
 // existing ASCII labels rather than silently losing ticket identity.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
+const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
+const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
+
+function isArabicShapingSafeLine(value: string): boolean {
+  if (!ARABIC_SCRIPT_RE.test(value)) return false;
+  return !/[^\x00-\x7F]/.test(
+    value.replace(ARABIC_SCRIPT_GLOBAL_RE, '').replace(ARABIC_SHAPING_ALLOWED_GLOBAL_RE, ''),
+  );
+}
 
 function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
   const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
-  return !arabicShaping && /[^\x00-\x7F]/.test(normalized) ? fallback : normalized;
+  const shapingSafe = arabicShaping && isArabicShapingSafeLine(normalized);
+  return /[^\x00-\x7F]/.test(normalized) && !shapingSafe ? fallback : normalized;
 }
 
 function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean): string {

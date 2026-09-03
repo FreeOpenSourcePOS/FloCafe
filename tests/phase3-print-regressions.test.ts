@@ -178,6 +178,42 @@ async function run(): Promise<void> {
   assert.match(metadataWebUsbText, /Table: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII table visibility with an explicit placeholder');
   assert.match(metadataWebUsbText, /Customer: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII customer visibility with an explicit placeholder');
 
+  const shapedMetadataOrder = {
+    ...order,
+    order_number: 'ORD-Café-001',
+    table: { name: 'Table Café' },
+    customer: { name: 'Customer Café' },
+  };
+  const shapedMetadataThermalText = escPosToText(formatKOT(
+    shapedMetadataOrder,
+    shapedMetadataOrder.items,
+    'Kitchen Café',
+    42,
+    false,
+    'full',
+    'en-US',
+    { timeZone: 'UTC' },
+    [],
+    true,
+    'en',
+  ));
+  assert.match(shapedMetadataThermalText, /Station: \[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic station visibility');
+  assert.match(shapedMetadataThermalText, /Order: \[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic order-number visibility');
+  assert.match(shapedMetadataThermalText, /Table: \[UNSUPPORTED\]/, 'shaped thermal KOT preserves non-Arabic table visibility');
+
+  const shapedMetadataWebUsbText = Buffer.from(frontend.kotEncoder.buildKotBytes(shapedMetadataOrder as any, {
+    paperWidth: 58,
+    language: 'en',
+    stationName: 'Kitchen Café',
+    locale: 'en-US',
+    timezone: 'UTC',
+    arabicShaping: true,
+  }, [])).toString('utf8');
+  assert.match(shapedMetadataWebUsbText, /Station: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic station visibility');
+  assert.match(shapedMetadataWebUsbText, /Order: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic order-number visibility');
+  assert.match(shapedMetadataWebUsbText, /Table: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic table visibility');
+  assert.match(shapedMetadataWebUsbText, /Customer: \[UNSUPPORTED\]/, 'shaped WebUSB KOT preserves non-Arabic customer visibility');
+
   const taxWarnings: any[] = [];
   const taxBillText = Buffer.from(frontend.taxBillEncoder.buildTaxBillBytes({
     bill_number: 'INV-PHASE3-001',

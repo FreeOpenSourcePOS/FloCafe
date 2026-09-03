@@ -404,14 +404,27 @@ the normative validator is `validateMerchantTemplateEnvelope` in
 ## 6. Printer capability model & warning semantics
 
 Capabilities are declared per profile in
-[`main/printers/profiles.ts`](../main/printers/profiles.ts):
-paper-width/column geometry (`fontAColumns`, `defaultPaperWidth`), cut mode,
-command set (`escpos` today), and `arabicShaping`. Profile resolution order:
-explicit `profile_id` → name/make/model alias match → paper-width-based
-generic fallback (`resolvePrinterProfile`). `arabicShaping` defaults to unset
-(false) and may only be set true after a real print on that hardware proves
-shaped Persian output — generic ESC/POS firmware neither shapes Arabic nor
-reorders bidi (evidence in [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md)).
+[`main/printers/profiles.ts`](../main/printers/profiles.ts) and use the shared
+pure policy in [`shared/print/thermal-capabilities.ts`](../shared/print/thermal-capabilities.ts).
+In addition to paper geometry and command set, every profile owns the thermal
+text boundary: ordered supported `encoding.codePages` plus a preferred page,
+`shaping.arabic`, representable scripts, transliteration enablement, and the
+unsupported/financial/order-type warning policies. Selection is deliberate:
+`selectThermalCodePage` chooses the first declared page that represents the
+normalized line, while the backend and WebUSB guards use the same policy.
+Profile resolution remains explicit `profile_id` → name/make/model alias →
+paper-width generic fallback (`resolvePrinterProfile`). The legacy
+`arabicShaping` field is retained only as a compatibility input; new code reads
+`capabilities.shaping.arabic`.
+
+The durable boundary is printer capability, not UI or receipt locale. Thermal
+normalization, representability, code-page selection, and the deferred
+non-shaping order-type ASCII fallback are therefore shared pure decisions;
+renderers only provide layout and transports only move bytes. Generic profiles
+remain ASCII-only, transliterate the established German characters, skip
+unsupported non-financial lines with warnings, and refuse unsupported
+financial rows. This preserves safe generic-printer behavior while allowing a
+profile with proven Latin code-page coverage or Arabic shaping to opt in.
 
 Renderers consume capabilities, they never guess them:
 
@@ -453,8 +466,13 @@ Warnings surface to the user through print results and toast notifications
 classes for fleet telemetry. The end-state contract from [epic #438](https://github.com/FreeOpenSourcePOS/FloCafe/issues/438) for the
 shared paths is native render, explicitly supported fallback, or an explicit
 warning/error for unsupported content or configuration. The recommended
-capability-tiered raster fallback for broader script coverage is future work
+capability-tiered raster fallback for broader script coverage remains future
+work and is explicitly not part of this boundary change
 ([printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md)).
+Native code pages are intentionally limited to declared text representability;
+this change does not claim Arabic shaping, broad non-Latin support, raster
+output, or new hardware coverage. Those alternatives remain deferred pending
+hardware evidence and a separate architecture decision.
 
 ## 7. Renderer/transport map
 
@@ -485,6 +503,7 @@ directly and [`main/printers/thermal.ts`](../main/printers/thermal.ts) owns that
 | Locale loading | `npm run test:phase6-locale-loading` | bootstrap policy application plus browser and WebUSB receipt loading for every registered locale ([`tests/phase6-locale-loading.test.ts`](../tests/phase6-locale-loading.test.ts)) |
 | Document model | `npm run test:print-document` | block construction, document builders, bilingual pairs, direction annotations, purity ([`tests/print-document.test.ts`](../tests/print-document.test.ts)) |
 | Parity harness | `npm run test:print-parity` | cross-renderer semantic parity + byte-exact migration oracle ([`tests/print-parity.test.ts`](../tests/print-parity.test.ts)) |
+| Thermal capabilities | `npm run test:thermal-capabilities` | profile-owned encoding/shaping/representability/transliteration policy, code-page choice, backend/WebUSB normalized fixtures, unsupported-text and order-type safety ([`tests/thermal-capabilities.test.ts`](../tests/thermal-capabilities.test.ts)) |
 | Merchant templates | `npm run test:merchant-print-templates` | kernel validation, apply semantics, CRUD lifecycle, render path ([`tests/merchant-print-templates.test.ts`](../tests/merchant-print-templates.test.ts)) |
 | Transfer envelope | `npm run test:merchant-template-transfer` | import/export contract, tampered-checksum rejection ([`tests/merchant-template-import-export.test.ts`](../tests/merchant-template-import-export.test.ts)) |
 
@@ -626,9 +645,9 @@ width, cut mode, and notes.
 
 Rules:
 
-- Set `arabicShaping: true` ONLY after a real print on that specific hardware
-  proves shaped, correctly ordered Persian output; leave it unset otherwise.
-  Generic ESC/POS profiles ship with it unset (§6).
+- Set `capabilities.shaping.arabic: true` ONLY after a real print on that
+  specific hardware proves shaped, correctly ordered Persian output; leave it
+  false otherwise. Generic ESC/POS profiles ship with it false (§6).
 - Resolution is explicit-id → alias-match → paper-width generic fallback
   (`resolvePrinterProfile`); choose aliases so real-world USB/device names
   match (`matchSupportedPrinterProfile` normalizes case and underscores) in

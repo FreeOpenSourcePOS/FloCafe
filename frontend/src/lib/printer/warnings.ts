@@ -11,7 +11,14 @@
  * transport instead of sending a partial receipt.
  */
 
-import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeGermanThermalText } from './unicode';
+import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeThermalText } from './unicode';
+import {
+  isArabicShapingSafeLine as isCapabilityArabicShapingSafeLine,
+  isThermalTextRepresentable,
+  mergeThermalCapabilities,
+  selectThermalCodePage,
+  type ThermalPrinterCapabilities,
+} from '@print/thermal-capabilities';
 
 export interface PrintWarning {
   field: string;
@@ -34,9 +41,6 @@ export function hasUnsupportedPrinterChars(text: string): boolean {
 
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
-const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
-const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
-
 export function hasArabicScript(text: string): boolean {
   return ARABIC_SCRIPT_RE.test(text);
 }
@@ -47,14 +51,7 @@ export function hasArabicScript(text: string): boolean {
  * backend buildEscPos arabic-only rule: any other non-ASCII script on the
  * same line still blocks it, even with shaping enabled.
  */
-export function isArabicShapingSafeLine(text: string): boolean {
-  if (!hasArabicScript(text)) return false;
-  return !/[^\x00-\x7F]/.test(
-    text.replace(SUPPORTED_CURRENCY_SYMBOLS, '')
-      .replace(ARABIC_SCRIPT_GLOBAL_RE, '')
-      .replace(ARABIC_SHAPING_ALLOWED_GLOBAL_RE, '')
-  );
-}
+export const isArabicShapingSafeLine = isCapabilityArabicShapingSafeLine;
 
 export function makePrintWarning(text: string, isStoreName = false): PrintWarning {
   const field = isStoreName ? 'store name' : 'receipt line';
@@ -152,12 +149,17 @@ export function safePrinterText<T extends { text(value: string): T }>(
   language?: string,
   financial = false,
   useUnicode = true,
+  capabilities?: ThermalPrinterCapabilities,
 ): T {
   if (!value) return enc;
-  const printableValue = language === 'de' ? normalizeGermanThermalText(value) : value;
+  const thermalCapabilities = mergeThermalCapabilities(capabilities, arabicShaping);
+  const printableValue = normalizeThermalText(value, thermalCapabilities);
   const printerValue = useUnicode ? printableValue : normalizeCurrencyToAscii(printableValue);
-  if (hasUnsupportedPrinterChars(printerValue)) {
-    if (arabicShaping && isArabicShapingSafeLine(printerValue)) {
+  const hasUnsupported = hasUnsupportedPrinterChars(printerValue);
+  const shapingSafe = thermalCapabilities.shaping.arabic && isCapabilityArabicShapingSafeLine(printerValue);
+  const representable = !hasUnsupported || (isThermalTextRepresentable(printerValue, thermalCapabilities) && !shapingSafe);
+  if (hasUnsupported) {
+    if (shapingSafe) {
       const sanitized = printerValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
       if (!sanitized) {
         const warning = makePrintWarning(value, isStoreName);
@@ -182,10 +184,16 @@ export function safePrinterText<T extends { text(value: string): T }>(
       }
       return enc.text(boundShapedText(sanitized, maxCols));
     }
-    const warning = makePrintWarning(value, isStoreName);
-    if (financial) warning.kind = 'financial';
-    warnings?.push(warning);
-    return enc;
+    if (!representable) {
+      const warning = makePrintWarning(value, isStoreName);
+      if (financial) warning.kind = 'financial';
+      warnings?.push(warning);
+      return enc;
+    }
+  }
+  const codePage = selectThermalCodePage(printerValue, thermalCapabilities);
+  if (codePage && codePage !== 'ascii' && 'codepage' in enc && typeof (enc as { codepage?: (value: string) => T }).codepage === 'function') {
+    (enc as { codepage: (value: string) => T }).codepage(codePage);
   }
   return enc.text(printerValue);
 }

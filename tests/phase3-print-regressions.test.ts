@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { formatKOT, escPosToText } from '../main/printers/thermal';
 import { printLabel } from '../main/print/print-labels.generated';
+import { GENERIC_THERMAL_CAPABILITIES, thermalTextFallback } from '../shared/print/thermal-capabilities';
 
 const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'fa'] as const;
 const order = {
@@ -101,9 +102,11 @@ async function run(): Promise<void> {
     for (const { type, label } of expectedTypes) {
       const typeOrder = { ...order, type };
       const localizedTypeLine = `${printLabel(language, 'print.kot.type')}: ${label}`;
-      const thermalTypeLine = /[^\x00-\x7F]/.test(localizedTypeLine)
-        ? `Type: ${type.replace(/_/g, ' ').toUpperCase()}`
-        : localizedTypeLine;
+      const thermalTypeLine = thermalTextFallback(
+        localizedTypeLine,
+        `Type: ${type.replace(/_/g, ' ').toUpperCase()}`,
+        GENERIC_THERMAL_CAPABILITIES,
+      );
       const typeThermalText = escPosToText(formatKOT(
         typeOrder,
         typeOrder.items,
@@ -139,9 +142,11 @@ async function run(): Promise<void> {
     for (const { type, label } of expectedTypes) {
       const typeOrder = { ...order, type };
       const localizedTypeLine = `${printLabel(language, 'print.kot.type')}: ${label}`;
-      const webUsbTypeLine = /[^\x00-\x7F]/.test(localizedTypeLine)
-        ? `Type: ${type.replace(/_/g, ' ').toUpperCase()}`
-        : localizedTypeLine;
+      const webUsbTypeLine = thermalTextFallback(
+        localizedTypeLine,
+        `Type: ${type.replace(/_/g, ' ').toUpperCase()}`,
+        GENERIC_THERMAL_CAPABILITIES,
+      );
       const typeWebUsbText = Buffer.from(frontend.kotEncoder.buildKotBytes(typeOrder as any, {
         paperWidth: 58,
         language,

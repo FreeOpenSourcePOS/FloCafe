@@ -15,6 +15,7 @@
 import { parseDbTimestamp } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
+import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { PrintWarning } from './thermal';
 import {
   addonRows,
@@ -25,7 +26,7 @@ import {
   itemAmountWidth,
   itemRows,
   itemNameWidth,
-  normalizeGermanThermalText,
+  normalizeThermalText,
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
@@ -65,6 +66,7 @@ export interface CompactDocumentRenderOptions {
   readonly useUnicode: boolean;
   readonly arabicShaping: boolean;
   readonly cutMode: PrinterCutMode;
+  readonly capabilities?: ThermalPrinterCapabilities;
 }
 
 function labelOf(label: SemanticLabel): string {
@@ -83,9 +85,9 @@ function capitalize(text: string): string {
 /** Column header row, composed from the document's own header labels. */
 function compactItemHeader(block: ItemTableBlock, nameLen: number, amtLen: number, language: string): string {
   const qtyW = 4;
-  const itemLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.item)) : labelOf(block.header.item);
-  const qtyLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.quantity)) : labelOf(block.header.quantity);
-  const amountLabel = language === 'de' ? normalizeGermanThermalText(labelOf(block.header.amount)) : labelOf(block.header.amount);
+  const itemLabel = normalizeThermalText(labelOf(block.header.item));
+  const qtyLabel = normalizeThermalText(labelOf(block.header.quantity));
+  const amountLabel = normalizeThermalText(labelOf(block.header.amount));
   const item = itemLabel.slice(0, nameLen).padEnd(nameLen);
   const qty = qtyLabel.slice(0, qtyW).padEnd(qtyW);
   const amount = amountLabel.slice(0, Math.max(1, amtLen - 1));
@@ -118,7 +120,7 @@ export function renderBillDocumentToCompactLines(
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
-  const normalize = (text: string): string => options.language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalize = (text: string): string => normalizeThermalText(text);
 
   lines.push('{INIT}');
 
@@ -265,6 +267,7 @@ export function renderCompactReceiptViaDocument(
     useUnicode: boolean;
     arabicShaping: boolean;
     cutMode: PrinterCutMode;
+    capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities;
   },
 ): CompactDocumentRenderResult {
   const printData = buildBillPrintData(order, bill, business, opts.isReprint);
@@ -288,6 +291,6 @@ export function renderCompactReceiptViaDocument(
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);
   return { document, lines, data, warnings };
 }

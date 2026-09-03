@@ -15,13 +15,14 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
-import { normalizeCurrencyToAscii, normalizeGermanThermalText, padCurrencyPrefix } from './unicode';
+import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 import { printLabelResolver } from './print-document';
+import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 
 export interface TaxBillOptions {
   /** 58 mm (2.5", 42 chars) or 80 mm (3.5", 48 chars). Default: 58 */
@@ -60,6 +61,8 @@ export interface TaxBillOptions {
   arabicShaping?: boolean;
   /** Print language resolved from the receipt language policy. */
   language?: string;
+  /** Selected thermal text capabilities; defaults to generic ESC/POS safety. */
+  capabilities?: ThermalPrinterCapabilities;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
@@ -115,13 +118,13 @@ function getSafeLatnLocale(locale: string | undefined): string {
 
 function formatRawTaxBillDate(value: string | undefined, locale: string, timezone?: string): string {
   const options = timezone ? { timeZone: timezone } : undefined;
-  const localized = normalizeGermanThermalText(formatDate(value, getSafeLatnLocale(locale), options));
+  const localized = normalizeThermalText(formatDate(value, getSafeLatnLocale(locale), options));
   return hasUnsupportedPrinterChars(localized)
     ? formatDate(value, 'en-US-u-nu-latn', options)
     : localized;
 }
 
-function safePrinterTextForLanguage(language: string, useUnicode: boolean) {
+function safePrinterTextForLanguage(language: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities) {
   return <T extends { text(value: string): T }>(
     enc: T,
     value: string,
@@ -132,7 +135,7 @@ function safePrinterTextForLanguage(language: string, useUnicode: boolean) {
     maxCols?: number,
     _language?: string,
     financial = false,
-  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language, financial, useUnicode);
+  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language, financial, useUnicode, capabilities);
 }
 
 export function buildTaxBillBytes(
@@ -160,7 +163,7 @@ export function buildTaxBillBytes(
   } = opts;
   const labelFor = (key: string): string => printLabelResolver(key, language);
   const cols = CHARS[paperWidth];
-  const safePrinterText = safePrinterTextForLanguage(language, useUnicode);
+  const safePrinterText = safePrinterTextForLanguage(language, useUnicode, opts.capabilities);
   const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, language);
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, language);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
@@ -176,7 +179,7 @@ export function buildTaxBillBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
   const safeFinancialRow = (left: string, right: string): string => {
     const rawFinancialRow = `${left}${right}`;
-    const normalizedFinancialRow = language === 'de' ? normalizeGermanThermalText(rawFinancialRow) : rawFinancialRow;
+    const normalizedFinancialRow = normalizeThermalText(rawFinancialRow);
     const printerFinancialRow = useUnicode ? normalizedFinancialRow : normalizeCurrencyToAscii(normalizedFinancialRow);
     return hasUnsupportedPrinterChars(printerFinancialRow)
       && !(arabicShaping && isArabicShapingSafeLine(printerFinancialRow))
@@ -338,15 +341,15 @@ export function buildTaxBillBytes(
 // ---------------------------------------------------------------------------
 
 function padRowForLanguage(left: string, right: string, cols: number, language?: string): string {
-  const normalizedLeft = language === 'de' ? normalizeGermanThermalText(left) : left;
-  const normalizedRight = language === 'de' ? normalizeGermanThermalText(right) : right;
+  const normalizedLeft = normalizeThermalText(left);
+  const normalizedRight = normalizeThermalText(right);
   const safeRight = normalizedRight.length > cols ? normalizedRight.slice(-cols) : normalizedRight;
   const leftWidth = Math.max(0, cols - safeRight.length - 1);
   return normalizedLeft.slice(0, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
 }
 
 function truncateForLanguage(str: string, max: number, language?: string): string {
-  const normalized = language === 'de' ? normalizeGermanThermalText(str) : str;
+  const normalized = normalizeThermalText(str);
   return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 

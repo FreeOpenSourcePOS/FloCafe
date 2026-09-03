@@ -5,7 +5,7 @@ import * as path from 'path';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
-import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
+import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, getPrinterCapabilities, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode, getCurrencyFractionDigits } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
@@ -14,6 +14,7 @@ import { correlationId, type FloErrorCode } from '../errors';
 import { sendEvent } from '../services/telemetry';
 import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
+import CodepageEncoder from '@point-of-sale/codepage-encoder';
 import { printLabel, isGeneratedPrintLanguage } from '../print/print-labels.generated';
 import type { PrintConceptId } from '../print/print-labels.generated';
 import {
@@ -26,6 +27,14 @@ import {
 import { renderClassicReceiptViaDocument } from './document-classic';
 import { renderCompactReceiptViaDocument } from './document-compact';
 import { renderKotViaDocument } from './document-kot';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  normalizeThermalText as normalizeThermalTextByCapabilities,
+  selectThermalCodePage,
+  escPosCodePageId,
+  mergeThermalCapabilities,
+  type ThermalPrinterCapabilities,
+} from '../../shared/print/thermal-capabilities';
 
 export type PrintResult = {
   ok: boolean;
@@ -658,10 +667,8 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     // A request-body override (from the renderer's global shaping setting)
     // wins over the profile default so the merchant's explicit choice (#437)
     // applies even when the matched profile leaves the flag unset.
-    const effectiveArabicShaping = typeof arabicShapingOverride === 'boolean'
-      ? arabicShapingOverride
-      : (profile.arabicShaping ?? false);
-    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, effectiveArabicShaping, normalizePrintLanguage(language ?? biz?.language));
+    const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, capabilities.shaping.arabic, normalizePrintLanguage(language ?? biz?.language), capabilities);
     console.log('[Printer] KOT data length:', data.length, 'bytes');
     const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
@@ -862,14 +869,12 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   // A request-body override (from the renderer's global shaping setting)
   // wins over the profile default (#437); absent override keeps the
   // profile's declared capability.
-  const arabicShaping = typeof arabicShapingOverride === 'boolean'
-    ? arabicShapingOverride
-    : (profile.arabicShaping ?? false);
-  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, arabicShaping, language, additionalLanguage);
+  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, capabilities.shaping.arabic, language, additionalLanguage, capabilities);
   return { printer, data, warnings, columns };
 }
 
-export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, additionalLanguage?: string): Buffer {
+export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
   console.log('[Printer] formatReceipt - template:', template);
   console.log('[Printer] formatReceipt - order:', order?.order_number, 'bill:', bill?.bill_number);
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
@@ -886,6 +891,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
     return renderPluginReceipt(
       loadInstalledPrintTemplate(selection.id),
       order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang,
+      capabilities,
     );
   }
   if (selection?.source === 'merchant') {
@@ -897,6 +903,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
       useUnicode,
       arabicShaping,
       cutMode,
+      capabilities,
     });
     if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
     return result.data;
@@ -906,9 +913,9 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   try {
     switch (tpl) {
       case 'classic':
-        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, additionalLanguage);
+        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, additionalLanguage, capabilities);
       default:
-        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, additionalLanguage);
+        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, additionalLanguage, capabilities);
     }
   } catch (err) {
     console.error('[Printer] formatReceipt error:', err);
@@ -922,8 +929,8 @@ export function normalizeReceiptTemplate(template?: string): 'classic' | 'compac
   return 'classic';
 }
 
-function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTemplate>, order: any, bill: any, biz: any, cols: number, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en'): Buffer {
-  if (!template) return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang);
+function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTemplate>, order: any, bill: any, biz: any, cols: number, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
+  if (!template) return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, undefined, capabilities);
   const renderer = parseJson(template.renderer_json, {}) as { id?: string; version?: number };
   const payload = parseJson(template.template_payload_json, {}) as any;
   if (renderer.id !== 'flocafe-thermal-receipt-template'
@@ -932,7 +939,7 @@ function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTempl
     throw new Error(`Unsupported receipt plugin renderer for template ${template.template_id}`);
   }
   const profile = selectTemplateWidthProfile(payload, cols, warnings);
-  return renderEscposLineTemplateV1(payload, profile, order, bill, biz, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang);
+  return renderEscposLineTemplateV1(payload, profile, order, bill, biz, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, capabilities);
 }
 
 function parseJson(raw: string, fallback: unknown): unknown {
@@ -965,7 +972,7 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
     .sort((a: { columns: number }, b: { columns: number }) => a.columns - b.columns);
 }
 
-function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en'): Buffer {
+function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
   const lines: string[] = [];
   const cols = profile.columns;
   const layout = profile.layout || {};
@@ -976,7 +983,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const fractionDigits = getCurrencyFractionDigits(biz.currency || 'INR');
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const normalize = (text: string): string => lang === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalize = (text: string): string => normalizeThermalText(text);
   const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
   const hasTax = Number(bill.tax_amount) !== 0
@@ -1102,7 +1109,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang, capabilities }, warnings);
 }
 
 export function appendPoweredByFooter(lines: string[]): void {
@@ -1114,7 +1121,7 @@ export function appendPoweredByFooter(lines: string[]): void {
  * Compact thermal receipt (#443): builds a PrintDocument from normalized
  * print data and renders it through the document pipeline (document-compact).
  */
-export function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string): Buffer {
+export function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
   const result = renderCompactReceiptViaDocument(order, bill, biz, {
     columns: cols,
     language: lang,
@@ -1123,6 +1130,7 @@ export function formatCompactReceipt(order: any, bill: any, biz: any, cols: numb
     useUnicode,
     arabicShaping,
     cutMode,
+    capabilities,
   });
   if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
   return result.data;
@@ -1133,7 +1141,7 @@ export function formatCompactReceipt(order: any, bill: any, biz: any, cols: numb
  * print data and renders it through the document pipeline (document-classic).
  * Token-line emission stays an implementation detail of the ESC/POS renderer.
  */
-export function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string): Buffer {
+export function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
   const result = renderClassicReceiptViaDocument(order, bill, biz, {
     columns: cols,
     language: lang,
@@ -1142,6 +1150,7 @@ export function formatClassicReceipt(order: any, bill: any, biz: any, cols: numb
     useUnicode,
     arabicShaping,
     cutMode,
+    capabilities,
   });
   if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
   return result.data;
@@ -1165,7 +1174,7 @@ function pluginLineItemColumns(layout: any, cols: number, lang: string = 'en'): 
       .map((column: any) => ({
         key: typeof column?.key === 'string' ? column.key : undefined,
         label: typeof column?.label === 'string'
-          ? (lang === 'de' ? normalizeGermanThermalText(column.label) : column.label)
+          ? normalizeThermalText(column.label)
           : undefined,
         width: Number(column?.width),
         align: column?.align === 'right' || column?.align === 'center' ? column.align : 'left',
@@ -1210,9 +1219,7 @@ function pluginItemRows(item: any, layout: any, cols: number, prefix: string, lo
   const gap = pluginLineGap(layout);
   const values = columns.map((column) => ({
     ...column,
-    value: lang === 'de'
-      ? normalizeGermanThermalText(pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits))
-      : pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits),
+    value: normalizeThermalText(pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits)),
   }));
   const wrappedValues = values.map((column) => {
     if (!column.wrap) return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
@@ -1265,7 +1272,7 @@ function pluginItemTaxRate(item: any): string {
 }
 
 function pluginSummaryRow(label: string, amount: string, layout: any, cols: number, lang: string = 'en'): string {
-  const normalizedLabel = lang === 'de' ? normalizeGermanThermalText(label) : label;
+  const normalizedLabel = normalizeThermalText(label);
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
   if (Number.isInteger(labelWidth) && Number.isInteger(amountWidth) && labelWidth > 0 && amountWidth > 0) {
@@ -1339,7 +1346,7 @@ export function itemAmountWidth(
 
 export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2): string[] {
   const qtyW = 4;
-  const productName = language === 'de' ? normalizeGermanThermalText(item.product_name) : item.product_name;
+  const productName = normalizeThermalText(item.product_name);
   const name = truncate(productName, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
@@ -1350,7 +1357,7 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
 }
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2): string[] {
-  const addonName = language === 'de' ? normalizeGermanThermalText(addon.name) : addon.name;
+  const addonName = normalizeThermalText(addon.name);
   const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
   const label = truncate('  + ' + addonName + quantity, nameLen).padEnd(nameLen);
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
@@ -1361,7 +1368,7 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
 }
 
 export function financialRows(label: string, value: string, cols: number, language: string = 'en'): string[] {
-  const normalizedLabel = language === 'de' ? normalizeGermanThermalText(label) : label;
+  const normalizedLabel = normalizeThermalText(label);
   const safeLabel = normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
@@ -1411,12 +1418,12 @@ export function rightAlign(text: string, width: number = 24): string {
 }
 
 export function truncate(text: string, length: number, language: string = 'en'): string {
-  const normalizedText = language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalizedText = normalizeThermalText(text);
   return normalizedText.length > length ? normalizedText.substring(0, length - 2) + '..' : normalizedText;
 }
 
 export function truncateShapedLine(text: string, length: number, arabicShaping: boolean, language: string = 'en'): string {
-  const normalizedText = language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalizedText = normalizeThermalText(text);
   return arabicShaping && hasArabicScript(normalizedText) ? truncate(normalizedText, Math.max(1, length)) : normalizedText;
 }
 
@@ -1481,12 +1488,12 @@ export function wrapText(text: string, cols: number): string[] {
 }
 
 export function pushWrapped(lines: string[], text: string, cols: number, language: string = 'en'): void {
-  const normalized = language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalized = normalizeThermalText(text);
   for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
 export function pushCenteredWrapped(lines: string[], text: string, cols: number, language: string = 'en'): void {
-  const normalized = language === 'de' ? normalizeGermanThermalText(text) : text;
+  const normalized = normalizeThermalText(text);
   for (const line of wrapText(normalized, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
@@ -1495,7 +1502,7 @@ export function pushCenteredWrapped(lines: string[], text: string, cols: number,
  * resolved by the caller through the kernel) and renders it via the document
  * pipeline (document-kot).
  */
-export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string): Buffer {
+export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
   const lang = normalizePrintLanguage(language);
   const result = renderKotViaDocument(order, items, stationName, {
     columns: cols,
@@ -1505,6 +1512,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
     useUnicode,
     arabicShaping,
     cutMode,
+    capabilities,
   });
   if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
   return result.data;
@@ -1513,7 +1521,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
 export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', language?: string, timezone?: string): Buffer {
   const width = columnsForPaperWidth(paperWidth) || 48;
   const lang = normalizePrintLanguage(language);
-  const label = (concept: PrintConceptId): string => lang === 'de' ? normalizeGermanThermalText(printLabel(lang, concept)) : printLabel(lang, concept);
+  const label = (concept: PrintConceptId): string => normalizeThermalText(printLabel(lang, concept));
   const bar = '='.repeat(width);
   const ruler = Array.from({ length: width }, (_, i) => String((i + 1) % 10)).join('');
   const edgeProbe = 'X'.repeat(width);
@@ -1558,11 +1566,8 @@ const CURRENCY_TOKEN_RE = new RegExp(
   'g',
 );
 
-const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
-  'Ä': 'AE', 'Ö': 'OE', 'Ü': 'UE', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
-};
-export function normalizeGermanThermalText(text: string): string {
-  return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
+export function normalizeThermalText(text: string): string {
+  return normalizeThermalTextByCapabilities(text, GENERIC_THERMAL_CAPABILITIES);
 }
 
 function normalizeCurrencyToAscii(text: string): string {
@@ -1621,8 +1626,10 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
  * transport guard. Receipt renderers mark amount-bearing lines with the
  * internal {FINANCIAL} token; it is stripped before bytes are emitted.
  */
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string } = {}, warnings?: PrintWarning[]): Buffer {
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
+  const capabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
+  let activeCodePage = capabilities.encoding.preferredCodePage;
 
   const resetAllStyles = () => {
     buf.push(0x1B, 0x45, 0x00);
@@ -1653,6 +1660,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     }
 
     if (!_useUnicode) line = normalizeCurrencyToAscii(line);
+    line = normalizeThermalTextByCapabilities(line, capabilities);
 
     const isStoreName = line.includes('{STORE_NAME}');
     const isFinancial = line.includes('{FINANCIAL}');
@@ -1664,18 +1672,21 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
     const textWithoutSupportedCurrency = printableLine.replace(CURRENCY_TOKEN_RE, '');
+    const selectedCodePage = selectThermalCodePage(textWithoutSupportedCurrency, capabilities);
     if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
       // Allow Arabic/Persian script through only when the printer profile
       // explicitly declares Arabic shaping support AND the line contains no
       // other non-ASCII script. Otherwise skip it — never emit unshaped text.
-      const arabicOnly = options.arabicShaping === true
+      const arabicOnly = capabilities.shaping.arabic
         && hasArabicScript(printableLine)
         && !/[^\x00-\x7F]/.test(
           textWithoutSupportedCurrency
             .replace(ARABIC_SCRIPT_GLOBAL_RE, '')
             .replace(ARABIC_SHAPING_ALLOWED_GLOBAL_RE, '')
         );
-      if (!arabicOnly) {
+      const codePageRepresentable = selectedCodePage !== null
+        && capabilities.representability.scripts.includes('latin');
+      if (!arabicOnly && !codePageRepresentable) {
         if (warnings) {
           const text = printableLine.trim();
           warnings.push({
@@ -1713,12 +1724,19 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     if (lineBold) mode |= 0x08;
     if (lineFontB) mode |= 0x01;
     buf.push(0x1B, 0x21, mode);
+    if (selectedCodePage && selectedCodePage !== activeCodePage && !_useUnicode) {
+      buf.push(0x1B, 0x74, escPosCodePageId(selectedCodePage));
+      activeCodePage = selectedCodePage;
+    }
 
     if (lineBold) {
       buf.push(0x1B, 0x45, 0x01);
     }
 
-    buf.push(...Buffer.from(line, 'utf8'));
+    const encodedText = !_useUnicode && selectedCodePage
+      ? CodepageEncoder.encode(line, selectedCodePage)
+      : Buffer.from(line, 'utf8');
+    buf.push(...encodedText);
     buf.push(0x0A);
   }
 

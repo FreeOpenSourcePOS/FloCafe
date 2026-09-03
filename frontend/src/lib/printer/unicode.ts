@@ -14,6 +14,12 @@
  * printer.
  */
 
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  normalizeThermalText as normalizeThermalTextByCapabilities,
+  type ThermalPrinterCapabilities,
+} from '@print/thermal-capabilities';
+
 // Currency fallbacks are kept to two or three ASCII characters so receipt
 // amount columns remain bounded for common symbols and ISO-style tokens.
 export const CURRENCY_ASCII_MAP: Record<string, string> = {
@@ -41,12 +47,8 @@ export const CURRENCY_ASCII_MAP: Record<string, string> = {
   'E£': 'EGP',
 };
 
-const GERMAN_THERMAL_ASCII_MAP: Record<string, string> = {
-  'Ä': 'AE', 'Ö': 'OE', 'Ü': 'UE', 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
-};
-
-export function normalizeGermanThermalText(text: string): string {
-  return text.replace(/[ÄÖÜäöüß]/g, (character) => GERMAN_THERMAL_ASCII_MAP[character]);
+export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
+  return normalizeThermalTextByCapabilities(text, capabilities);
 }
 
 export function normalizeCurrencyToAscii(text: string): string {

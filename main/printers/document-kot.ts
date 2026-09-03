@@ -14,13 +14,18 @@
 import { parseDbTimestamp } from '../db';
 import { printLabel, type PrintConceptId } from '../print/print-labels.generated';
 import type { PrinterCutMode } from './profiles';
+import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { PrintWarning } from './thermal';
 import {
   buildEscPos,
-  normalizeGermanThermalText,
   truncate,
   truncateShapedLine,
 } from './thermal';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  mergeThermalCapabilities,
+  thermalTextFallback,
+} from '../../shared/print/thermal-capabilities';
 import { detectPrintLanguageDirection } from './document-classic';
 import {
   buildKotDocument,
@@ -106,6 +111,7 @@ export interface KotDocumentRenderOptions {
   readonly useUnicode: boolean;
   readonly arabicShaping: boolean;
   readonly cutMode: PrinterCutMode;
+  readonly capabilities?: ThermalPrinterCapabilities;
 }
 
 /** Typed accessor for one block kind within a KOT document. */
@@ -129,21 +135,8 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
 // value when the selected capability can represent it; otherwise use the
 // existing ASCII labels rather than silently losing ticket identity.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
-const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
-const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
-const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
-
-function isArabicShapingSafeLine(value: string): boolean {
-  if (!ARABIC_SCRIPT_RE.test(value)) return false;
-  return !/[^\x00-\x7F]/.test(
-    value.replace(ARABIC_SCRIPT_GLOBAL_RE, '').replace(ARABIC_SHAPING_ALLOWED_GLOBAL_RE, ''),
-  );
-}
-
-function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
-  const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
-  const shapingSafe = arabicShaping && isArabicShapingSafeLine(normalized);
-  return /[^\x00-\x7F]/.test(normalized) && !shapingSafe ? fallback : normalized;
+function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean, capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities): string {
+  return thermalTextFallback(value, fallback, mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping));
 }
 
 function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean): string {
@@ -183,6 +176,7 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
       `Type: ${header.orderType.code.replace(/_/g, ' ').trim().toUpperCase()}`,
       options.language,
       options.arabicShaping,
+      options.capabilities,
     )
     : null;
   const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions);
@@ -289,6 +283,7 @@ export function renderKotViaDocument(
     useUnicode: boolean;
     arabicShaping: boolean;
     cutMode: PrinterCutMode;
+    capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities;
   },
 ): KotDocumentRenderResult {
   const printData = buildKotPrintData(order, items, stationName);
@@ -308,6 +303,6 @@ export function renderKotViaDocument(
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);
   return { document, lines, data, warnings };
 }

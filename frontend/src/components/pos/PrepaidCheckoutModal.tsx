@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { X, Sparkles, ArrowLeftRight, CheckCircle2, User, Percent, Wallet, ChevronDown } from 'lucide-react';
+import { X, Sparkles, ArrowLeftRight, CheckCircle2, Percent, Wallet, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
@@ -373,109 +373,81 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-      <div className="bg-card w-full sm:max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-card flex max-h-[95vh] w-full flex-col overflow-hidden rounded-t-3xl shadow-2xl sm:max-w-md sm:rounded-2xl">
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-border">
-          <div>
-            <h2 className="text-lg font-bold text-foreground">{t('checkout')}</h2>
-            <p className="text-xs text-gray-400 mt-0.5 capitalize">
-              {t(ORDER_TYPE_SUFFIX_KEYS[cart.orderType])}
-            </p>
+        {/* Compact header and bill summary share one block to preserve vertical space. */}
+        <div className="shrink-0 border-b border-border px-5 pb-3 pt-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-foreground">{t('checkout')}</h2>
+              <p className="mt-0.5 truncate text-xs capitalize text-muted-foreground">
+                {t(ORDER_TYPE_SUFFIX_KEYS[cart.orderType])}
+                {customer ? ` · ${customer.name}` : ''}
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="touch-target rounded-full bg-muted text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+              aria-label={t('close')}
+            >
+              <X size={16} />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="touch-target rounded-full bg-muted hover:bg-muted active:bg-muted text-muted-foreground transition-colors"
-            aria-label={t('close')}
-          >
-            <X size={16} />
-          </button>
-        </div>
 
-        <div className="px-5 py-4 space-y-4 max-h-[75vh] overflow-y-auto">
-
-          {/* Amount + Customer Card */}
-          <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl px-5 py-4 text-white">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">
-                  {taxLoading ? t('subtotal') : t('totalDue')}
-                </p>
-                {taxLoading || !preview ? (
-                  <div className="h-10 w-32 bg-card/10 rounded animate-pulse mt-1" />
-                ) : (
-                  <p className="text-4xl font-bold mt-1 tracking-tight">
-                    {currencyFmt(remaining)}
-                  </p>
-                )}
-                <p className="text-xs text-slate-400 mt-1.5">
-                  {t('itemCount', { count: cart.itemCount() })}
-                </p>
-                {!taxLoading && preview && (
-                  <div className="mt-2 space-y-1">
-                    <div className="flex justify-between text-xs text-slate-300">
-                      <span>{t('subtotal')}</span>
-                      <span>{currencyFmt(preview.subtotal)}</span>
-                    </div>
-                    {preview.discountAmount > 0 && (
-                      <div className="flex justify-between text-xs text-emerald-400 font-medium">
-                        <span>{t('discount')}</span>
-                        <span>− {currencyFmt(preview.discountAmount)}</span>
-                      </div>
-                    )}
-                    <TaxBreakdown taxAmount={preview.taxAmount} taxBreakdown={preview.taxBreakdown} />
-                    {preview.packagingCharge > 0 && (
-                      <div className="flex justify-between text-xs text-slate-300">
-                        <span>{t('packaging')}</span>
-                        <span>{currencyFmt(preview.packagingCharge)}</span>
-                      </div>
-                    )}
-                    {preview.roundOff !== 0 && (
-                      <div className="flex justify-between text-xs text-slate-300">
-                        <span>{t('roundOff')}</span>
-                        <span>{preview.roundOff > 0 ? '+' : ''}{currencyFmt(preview.roundOff)}</span>
-                      </div>
-                    )}
-                  </div>
-                )}
+          {taxLoading || !preview ? (
+            <div className="mt-3 h-24 animate-pulse rounded-xl bg-muted" />
+          ) : (
+            <div className="mt-3 space-y-1 text-sm tabular-nums">
+              <div className="flex justify-between text-foreground">
+                <span>{t('itemCount', { count: cart.itemCount() })}</span>
+                <span>{currencyFmt(preview.subtotal)}</span>
               </div>
-              {customer && (
-                <div className="text-end ms-4 shrink-0">
-                  <div className="w-8 h-8 rounded-full bg-card/10 flex items-center justify-center mb-1 ms-auto">
-                    <User size={16} className="text-white/70" />
-                  </div>
-                  <p className="text-sm font-semibold text-white leading-tight">{customer.name}</p>
+              {preview.discountAmount > 0 && (
+                <div className="flex justify-between font-medium text-emerald-600">
+                  <span>{t('discount')}</span>
+                  <span>− {currencyFmt(preview.discountAmount)}</span>
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* Loyalty Info Strip (staff reference) */}
-          {loyaltySettings?.loyalty_enabled && customer && (
-            <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border border-border rounded-xl">
-              <Sparkles size={13} className="text-gray-400 shrink-0" />
-              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-                <span className="text-foreground font-medium">{t('loyalty')}</span>
-                <span className="font-semibold text-foreground">
-                  {walletBalance !== null
-                    ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) })
-                    : '…'}
-                </span>
+              <div className="flex justify-between text-muted-foreground">
+                <span>{t('subtotal')}</span>
+                <span>{currencyFmt(preview.discountedSubtotal)}</span>
+              </div>
+              <TaxBreakdown taxAmount={preview.taxAmount} taxBreakdown={preview.taxBreakdown} theme="light" />
+              {preview.packagingCharge > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>{t('packaging')}</span>
+                  <span>{currencyFmt(preview.packagingCharge)}</span>
+                </div>
+              )}
+              {preview.roundOff !== 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>{t('roundOff')}</span>
+                  <span>{preview.roundOff > 0 ? '+' : ''}{currencyFmt(preview.roundOff)}</span>
+                </div>
+              )}
+              <div className="mt-2 flex items-end justify-between border-t border-border pt-2 font-bold text-foreground">
+                <span className="text-xs uppercase tracking-wide text-muted-foreground">{t('totalDue')}</span>
+                <span className="text-xl leading-none">{currencyFmt(remaining)}</span>
               </div>
             </div>
           )}
 
-          {/* Discount */}
-          <div className="rounded-xl border border-border overflow-hidden">
-            <button type="button" onClick={() => setDiscountOpen((open) => !open)} className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start">
-              <span className="text-sm font-medium text-foreground">
-                {preview?.discountAmount ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}` : t('applyDiscount')}
-              </span>
-              <ChevronDown size={16} className={`text-gray-400 transition-transform ${discountOpen ? 'rotate-180' : ''}`} />
-            </button>
+          <button
+            type="button"
+            onClick={() => setDiscountOpen((open) => !open)}
+            className="mt-2 inline-flex h-7 items-center gap-1 rounded-md border border-border bg-muted px-2 text-xs font-medium text-foreground transition-colors hover:border-brand hover:text-brand"
+            aria-expanded={discountOpen}
+          >
+            {preview?.discountAmount ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}` : t('discounts')}
+            <ChevronDown size={12} className={`transition-transform ${discountOpen ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
 
-            {discountOpen && (
-              <div className="bg-purple-50 border-t border-purple-200 p-3 space-y-2">
+        <div className="min-h-0 space-y-3 overflow-y-auto px-5 py-3">
+
+          {/* Cart-level discount editor. */}
+          {discountOpen && (
+            <div className="overflow-hidden rounded-xl border border-purple-200 bg-purple-50 p-3 space-y-2">
                 <div className="flex rounded-lg overflow-hidden border border-purple-200">
                   {isDiscountTypeAllowed(discountMode, 'percentage') && (
                     <button
@@ -539,9 +511,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                     {t('remove')}
                   </Button>
                 )}
-              </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Every method has one compact amount row; clicking its label fills the unallocated balance. */}
           <div className="space-y-2">
@@ -573,36 +544,6 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
               </div>;
             })}
           </div>
-
-          {/* Change Returned */}
-          {hasCash && (
-            <div className={`rounded-xl px-4 py-3 flex items-center justify-between border-2 transition-all duration-200 ${
-              change > 0
-                ? 'bg-emerald-50 border-emerald-200'
-                : 'bg-muted border-border'
-            }`}>
-              <div className="flex items-center gap-2.5">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                  change > 0 ? 'bg-emerald-100' : 'bg-gray-200'
-                }`}>
-                  {change > 0
-                    ? <CheckCircle2 size={15} className="text-emerald-600" />
-                    : <ArrowLeftRight size={13} className="text-gray-400" />
-                  }
-                </div>
-                <span className={`text-sm font-semibold ${
-                  change > 0 ? 'text-emerald-800' : 'text-gray-400'
-                }`}>
-                  {t('changeReturned')}
-                </span>
-              </div>
-              <span className={`text-xl font-bold tabular-nums ${
-                change > 0 ? 'text-emerald-600' : 'text-gray-300'
-              }`}>
-                {currencyFmt(change)}
-              </span>
-            </div>
-          )}
 
           {/* Loyalty Wallet Section */}
           {loyaltySettings?.loyalty_enabled && customer && walletBalance !== null && (
@@ -644,6 +585,21 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
               <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
           )}
+
+          {/* Loyalty Info Strip (staff reference) */}
+          {loyaltySettings?.loyalty_enabled && customer && (
+            <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border border-border rounded-xl">
+              <Sparkles size={13} className="text-gray-400 shrink-0" />
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
+                <span className="text-foreground font-medium">{t('loyalty')}</span>
+                <span className="font-semibold text-foreground">
+                  {walletBalance !== null
+                    ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) })
+                    : '…'}
+                </span>
+              </div>
+            </div>
+          )}
           {amountTarget && (
             <CurrencyTouchNumberPad
               value={activeAmountValue}
@@ -659,10 +615,40 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
               quickValues={activeAmountQuickValues}
             />
           )}
+
+          {/* Change stays at the bottom of all payment controls. */}
+          {hasCash && (
+            <div className={`rounded-xl px-4 py-2.5 flex items-center justify-between border transition-all duration-200 ${
+              change > 0
+                ? 'bg-emerald-50 border-emerald-200'
+                : 'bg-muted border-border'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                  change > 0 ? 'bg-emerald-100' : 'bg-gray-200'
+                }`}>
+                  {change > 0
+                    ? <CheckCircle2 size={15} className="text-emerald-600" />
+                    : <ArrowLeftRight size={13} className="text-gray-400" />
+                  }
+                </div>
+                <span className={`text-sm font-semibold ${
+                  change > 0 ? 'text-emerald-800' : 'text-gray-400'
+                }`}>
+                  {t('changeReturned')}
+                </span>
+              </div>
+              <span className={`text-lg font-bold tabular-nums ${
+                change > 0 ? 'text-emerald-600' : 'text-gray-300'
+              }`}>
+                {currencyFmt(change)}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Pay Button */}
-        <div className="px-5 pb-6 pt-3 border-t border-border">
+        <div className="shrink-0 border-t border-border px-5 pb-6 pt-3">
           <Button
             onClick={handleConfirm}
             disabled={processing || taxLoading || (!preview && !hasInvalidFixedDiscount) || totalPaymentMinor < remainingMinor}

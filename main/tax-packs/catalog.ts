@@ -286,10 +286,12 @@ function validPluginPrintTemplate(value: unknown): value is PluginPrintTemplate 
   validateTemplateLabelsMap(payloadObject.labels);
   // Charge rows are an additive v1 capability declaration. Validate only when
   // present so older signed templates retain their existing contract.
-  const totals = payloadObject.totals && typeof payloadObject.totals === 'object' && !Array.isArray(payloadObject.totals)
-    ? payloadObject.totals as Record<string, unknown>
-    : {};
-  validateTemplateChargeRows(totals.chargeRows);
+  if (payloadObject.format === 'escpos-line-template-v1') {
+    const totals = payloadObject.totals && typeof payloadObject.totals === 'object' && !Array.isArray(payloadObject.totals)
+      ? payloadObject.totals as Record<string, unknown>
+      : {};
+    validateTemplateChargeRows(totals.chargeRows);
+  }
   const payloadProfiles = Array.isArray(payloadObject.widthProfiles) ? payloadObject.widthProfiles : [];
   const hasMatchingProfiles = payloadObject.format === 'escpos-line-template-v1'
     && payloadProfiles.length > 0

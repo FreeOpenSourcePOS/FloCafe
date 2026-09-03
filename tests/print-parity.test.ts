@@ -462,10 +462,16 @@ function run(): void {
       warn(addonRow != null && digitsOf(addonRow).includes('3000'), `${renderer}: addon 5 × 3 × 2 renders 30.00`);
       const secondAddonRow = contentRows(text).find((row) => /Vanilla syrup/.test(row));
       warn(secondAddonRow != null && digitsOf(secondAddonRow).includes('800'), `${renderer}: second addon extension renders 8.00`);
-      warn(text.includes('7.00') && text.includes('8.00') && text.includes('9.00'), `${renderer}: service, delivery, and packaging charges render`);
+      for (const [label, amount] of [['Service Charge', '700'], ['Delivery', '800'], ['Packaging', '900']] as const) {
+        const chargeRow = contentRows(text).find((row) => row.includes(label));
+        warn(chargeRow != null && digitsOf(chargeRow).includes(amount), `${renderer}: ${label} charge renders its persisted amount`);
+      }
     }
     warn(browserHtml.includes('Extra shot') && browserHtml.includes('×3'), 'browser: addon quantity remains visible');
-    warn(browserHtml.includes('Service Charge') && browserHtml.includes('Delivery Charge') && browserHtml.includes('Packaging'), 'browser: service, delivery, and packaging charges render');
+    for (const [label, amount] of [['Service Charge', '700'], ['Delivery Charge', '800'], ['Packaging', '900']] as const) {
+      const chargeRow = contentRows(browserHtml).find((row) => row.includes(label));
+      warn(chargeRow != null && digitsOf(chargeRow).includes(amount), `browser: ${label} charge renders its persisted amount`);
+    }
 
     const zeroChargeBill = {
       ...quantityBill,

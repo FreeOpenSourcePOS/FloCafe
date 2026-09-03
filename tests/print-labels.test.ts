@@ -162,11 +162,11 @@ function run(): void {
     const order = { ...buildOrder(), table: { name: '3' } };
     const text = escPosToText(formatKOT(order, order.items, 'Grill', 48));
     assert('default KOT banner stays English', text.includes('KITCHEN ORDER TICKET'));
-    assert('default KOT type label stays English', text.includes('Type: DINE IN'));
+    assert('default KOT type label stays English', text.includes('Type: Dine in'));
     const faText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'en-US', undefined, [], true, 'fa'));
     assert('fa KOT banner translated', faText.includes('برگ سفارش آشپزخانه'));
     assert('fa KOT station label translated', faText.includes('ایستگاه:'));
-    assert('fa KOT type label translated', faText.includes('نوع: DINE IN'));
+    assert('fa KOT type label translated', faText.includes('نوع: خوردن در محل'));
     assert('fa KOT time label translated', faText.includes('ساعت:'));
     const deWarnings: Array<{ field: string; text: string; message: string }> = [];
     const deText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'de-DE', undefined, deWarnings, false, 'de'));

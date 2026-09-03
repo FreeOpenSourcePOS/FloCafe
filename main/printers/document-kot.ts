@@ -18,6 +18,7 @@ import type { PrinterCutMode } from './profiles';
 import type { PrintWarning } from './thermal';
 import {
   buildEscPos,
+  normalizeGermanThermalText,
   truncate,
   truncateShapedLine,
 } from './thermal';
@@ -43,7 +44,9 @@ import {
  * This is the ONLY step allowed to touch raw rows so the builder stays pure.
  */
 export function buildKotPrintData(order: any, items: any[], stationName: string): KotPrintData {
-  const ticketItems = Array.isArray(items) ? items : [];
+  const ticketItems = Array.isArray(items)
+    ? items.filter((item: any) => item?.status !== 'served' && item?.status !== 'ready')
+    : [];
   return {
     stationName: String(stationName ?? ''),
     order: {
@@ -115,9 +118,37 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
   return labelOf(label).replace('{name}', tableName);
 }
 
-function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string): string {
-  if (language === 'en') return `Order: ${orderNumber}`;
-  return labelOf(label).replace('{number}', orderNumber);
+// Header metadata must stay visible on generic ESC/POS. Keep the localized
+// value when the selected capability can represent it; otherwise use the
+// existing ASCII labels rather than silently losing ticket identity.
+const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
+const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
+const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
+
+function isArabicShapingSafeLine(value: string): boolean {
+  if (!ARABIC_SCRIPT_RE.test(value)) return false;
+  return !/[^\x00-\x7F]/.test(
+    value.replace(ARABIC_SCRIPT_GLOBAL_RE, '').replace(ARABIC_SHAPING_ALLOWED_GLOBAL_RE, ''),
+  );
+}
+
+function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
+  const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
+  const shapingSafe = arabicShaping && isArabicShapingSafeLine(normalized);
+  return /[^\x00-\x7F]/.test(normalized) && !shapingSafe ? fallback : normalized;
+}
+
+function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean): string {
+  return thermalSafeText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping);
+}
+
+function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string, arabicShaping: boolean): string {
+  const localized = language === 'en'
+    ? `Order: ${orderNumber}`
+    : labelOf(label).replace('{number}', orderNumber);
+  const fallbackOrderNumber = thermalSafeMetadataValue(orderNumber, language, arabicShaping);
+  return thermalSafeText(localized, `Order: ${fallbackOrderNumber}`, language, arabicShaping);
 }
 
 function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
@@ -126,17 +157,44 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
 
   lines.push('{INIT}');
-  lines.push('{CENTER}{BOLD}' + truncateShapedLine(labelOf(header.banner), cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
+  const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping);
+  const station = thermalSafeText(
+    `${labelOf(header.stationLabel)}: ${header.stationName.text}`,
+    `Station: ${thermalSafeMetadataValue(header.stationName.text, options.language, options.arabicShaping)}`,
+    options.language,
+    options.arabicShaping,
+  );
+  const table = header.table
+    ? thermalSafeText(
+      formatTableLabel(header.table.label, header.table.name.text),
+      `Table: ${thermalSafeMetadataValue(header.table.name.text, options.language, options.arabicShaping)}`,
+      options.language,
+      options.arabicShaping,
+    )
+    : null;
+  const orderType = header.orderType
+    ? thermalSafeText(
+      `${labelOf(header.orderType.label)}: ${header.orderType.value.text}`,
+      `Type: ${header.orderType.code.replace(/_/g, ' ').trim().toUpperCase()}`,
+      options.language,
+      options.arabicShaping,
+    )
+    : null;
+  const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions);
+  const timeLine = thermalSafeText(
+    `${labelOf(header.timeLabel)}: ${time}`,
+    `Time: ${parseDbTimestamp(header.timestamp.text).toLocaleTimeString('en-US-u-nu-latn', tzOptions)}`,
+    options.language,
+    options.arabicShaping,
+  );
+
+  lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
   lines.push('');
-  lines.push(truncateShapedLine(labelOf(header.stationLabel) + ': ' + header.stationName.text, cols, options.arabicShaping, options.language));
-  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language), cols, options.arabicShaping, options.language));
-  if (header.table) {
-    lines.push(truncateShapedLine(formatTableLabel(header.table.label, header.table.name.text), cols, options.arabicShaping, options.language));
-  }
-  if (header.orderType) {
-    lines.push(truncateShapedLine(labelOf(header.orderType.label) + ': ' + header.orderType.value.text, cols, options.arabicShaping, options.language));
-  }
-  lines.push(truncateShapedLine(labelOf(header.timeLabel) + ': ' + parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions), cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping), cols, options.arabicShaping, options.language));
+  if (table) lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language));
+  if (orderType) lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language));
   return lines;
 }
 

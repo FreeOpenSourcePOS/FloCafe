@@ -32,6 +32,8 @@ export interface KotWebPrintOptions {
   paperWidth?: 58 | 80;
   /** UI/receipt language (defaults to the client KOT language policy). */
   language?: Language;
+  /** Kitchen station name to print on the ticket. */
+  stationName?: string;
   /** Store timezone used for business-local time formatting. */
   timezone?: string;
 }
@@ -102,11 +104,9 @@ function resolveOrderType(type: unknown, language: Language, tr: (key: string) =
     takeaway: 'pos.orderTypeTakeaway',
   };
   const normalized = String(type ?? '').trim();
-  if (language !== 'de') return normalized.replace(/_/g, ' ').toUpperCase();
   const key = keys[normalized];
   if (!key) return normalized.replace(/_/g, ' ').toUpperCase();
-  const resolved = tr(key);
-  return resolved;
+  return tr(key);
 }
 
 /**
@@ -129,6 +129,7 @@ export function generateKotHtml(
   // Header facts annotated by the direction kernel.
   const orderNumber = directionalText(String(order.order_number ?? ''), base);
   const createdAt = String(order.created_at ?? '');
+  const stationName = String(opts.stationName ?? '');
 
   const orderType = resolveOrderType(order.type, lang, tr);
 
@@ -160,6 +161,7 @@ export function generateKotHtml(
   return `
     <div class="kot-container" dir="${base}" style="text-align:start;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
       <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(tr('print.kot.banner'))}</h2>
+      ${stationName ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.station'))}: ${directionalValue(directionalText(stationName, base), base)}</p>` : ''}
       <p style="margin:2px 0;font-weight:bold;">${formatOrderNumberLabel(tr('pos.orderNumber'), orderNumber, base)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(labelWithoutPlaceholder(tr('pos.tableLabel')))}: ${directionalValue(directionalText(String(order.table.name), base), base)}</p>` : ''}
       ${orderType ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.type'))}: ${escapeHtml(orderType)}</p>` : ''}

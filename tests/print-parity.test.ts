@@ -613,7 +613,7 @@ function run(): void {
     if (cols >= 42) warn(!kotText.includes(PERSIAN_ITEM), `${label}: unsupported-script item skipped with warning only`);
   }
   const typedKotText = escPosToText(formatKOT(typedKotOrder, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en'));
-  warn(typedKotText.includes('Type: DINE IN'), 'kot-document/order-type: order type rendered when present');
+  warn(typedKotText.includes('Type: Dine in'), 'kot-document/order-type: localized order type rendered when present');
 
   // ------------------------------------------------------------------
   // 5. Receipt/KOT language routing (#443): fa/es/fr tenants get localized

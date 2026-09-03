@@ -145,6 +145,9 @@ Receipt block vocabulary v1 ([`shared/print/document.ts`](../shared/print/docume
 
 Kitchen tickets use a separate smaller vocabulary, `KotDocument` v1
 (`kot-header`, `kot-items`; [#443](https://github.com/FreeOpenSourcePOS/FloCafe/issues/443)). The KOT policy is single-primary in v1.
+KOT normalizers, the browser HTML renderer, and the legacy WebUSB encoder omit
+items whose status is `served` or `ready`, so completed kitchen work does not
+reach the ticket.
 
 Invariants every consumer may rely on:
 
@@ -236,12 +239,12 @@ Three decoupled domains (see also [i18n.md](i18n.md)):
   [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) is a legacy exception: its raw `buildKotBytes` path accepts the resolved
   KOT language for catalog labels while retaining its historical raw-data layout.
 
-Thermal receipt paths resolve the receipt policy before building the document.
-The browser receipt path is an active exception: [`frontend/src/hooks/usePrinter.ts`](../frontend/src/hooks/usePrinter.ts) calls
-`printWebBill` without a policy-derived `language`, and [`frontend/src/lib/printer/web-print.ts`](../frontend/src/lib/printer/web-print.ts) defaults
-to the active UI language before building a single-language document. A fixed
-receipt primary therefore does not currently change browser receipt labels;
-this is separate from the model-only/future bilingual renderer work above.
+Thermal and browser receipt paths resolve the receipt policy before building the
+document. Browser HTML remains a single-language surface, using the primary
+language from the resolved list; a fixed receipt primary therefore changes
+browser receipt labels as well as thermal labels. An additional receipt
+language may still be loaded and carried by the document for the future
+bilingual renderer work above.
 
 Policy payloads are untrusted input: `parsePrintLanguagePolicy` /
 `parseKotLanguagePolicy` reject unknown top-level keys and validate the relevant
@@ -285,15 +288,16 @@ The canonical flow is enforced by [`frontend/src/lib/i18n/messages/`](../fronten
 [`main/print/print-labels.generated.ts`](../main/print/print-labels.generated.ts),
 and [`main/lib/print-language-settings.ts`](../main/lib/print-language-settings.ts).
 
-Browser receipt label exception (legacy, follow-up alignment):
+Browser receipt label implementation (legacy surface):
 [`generateBillHtml` in `web-print.ts`](../frontend/src/lib/printer/web-print.ts) builds the document for business values, but its visible
 receipt labels still come directly from that file's `t()` catalog lookups
 for `receipt.*` and `pos.*` keys. For example, the browser uses
 `receipt.billNumber` and `receipt.grandTotal` instead of the corresponding
-document concepts used by the migrated renderers. This path remains on the
-canonical locale catalog but is not yet aligned to the document label slots;
-future work should converge the browser label surface without changing the
-merchant/compliance format boundaries.
+document concepts used by the migrated renderers. The caller supplies the
+policy-resolved primary language, so fixed receipt language settings apply to
+these labels. This path remains on the canonical locale catalog but is not yet
+aligned to the document label slots; future work should converge the browser
+label surface without changing the merchant/compliance format boundaries.
 
 Rules:
 
@@ -401,7 +405,7 @@ reorders bidi (evidence in [printing-nonlatin-capabilities.md](printing-nonlatin
 
 Renderers consume capabilities, they never guess them:
 
-- Desktop ESC/POS: unsupported non-financial lines are skipped with an explicit warning unless the profile's shaping flag (or a request-level override) admits strict ASCII+Arabic lines (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)). On document-driven and signed country-pack receipt paths, unsupported item or financial rows are also warned, but the backend refuses the receipt before transport so no partial financial receipt is emitted.
+- Desktop ESC/POS: unsupported non-financial lines are skipped with an explicit warning unless the profile's shaping flag (or a request-level override) admits strict ASCII+Arabic lines (`buildEscPos` guard in [`main/printers/thermal.ts`](../main/printers/thermal.ts)). KOT header metadata uses an explicit ASCII-safe `[UNSUPPORTED]` placeholder when a generic printer cannot represent its localized text, while unsupported KOT item/instruction text remains subject to the warning path. On document-driven and signed country-pack receipt paths, unsupported item or financial rows are also warned, but the backend refuses the receipt before transport so no partial financial receipt is emitted.
 - The migrated WebUSB receipt path uses `safePrinterText` for renderer-managed
   text and its warning behavior ([`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts),
   [`frontend/src/lib/printer/warnings.ts`](../frontend/src/lib/printer/warnings.ts)). Unsupported item or financial rows are refused before `PrinterService` sends bytes; other unsupported lines retain the explicit skip warning. `buildClassicReceiptBytes` still
@@ -427,7 +431,10 @@ warnings use `kind: 'financial'`. A valid merchant template may intentionally
 reorder, hide, or omit blocks — including `totals` — through explicit block
 selection and `visible` settings; that is merchant configuration, not a silent
 renderer omission. The legacy raw WebUSB encoders described above retain their
-own warning behavior and do not inherit the `PrintDocument` guarantees.
+own warning behavior and do not inherit the `PrintDocument` guarantees. The
+tax-bill path still refuses before WebUSB transport when a financial row is
+unsupported; its raw date uses the configured country locale when
+representable and an ASCII-safe fallback otherwise.
 Warnings surface to the user through print results and toast notifications
 ([`frontend/src/lib/printer/warnings-toast.ts`](../frontend/src/lib/printer/warnings-toast.ts)); financial refusal warnings are shown before transport. Dispatch results use
 `classifyPrintFailure` in [`main/printers/thermal.ts`](../main/printers/thermal.ts) for stable, privacy-safe failure
@@ -462,7 +469,7 @@ directly and [`main/printers/thermal.ts`](../main/printers/thermal.ts) owns that
 | Suite | Command | What it locks down |
 | --- | --- | --- |
 | Kernel units | `npm run test:print-kernel` | policy resolution/validation, direction, bilingual fit, settings glue ([`tests/print-kernel.test.ts`](../tests/print-kernel.test.ts), [`tests/kernel-purity.test.ts`](../tests/kernel-purity.test.ts), [`tests/print-language-settings.test.ts`](../tests/print-language-settings.test.ts)) |
-| Labels | `npm run test:print-labels` | generated-table selection, English fallback, generator drift (`--check`) ([`tests/print-labels.test.ts`](../tests/print-labels.test.ts), [`scripts/generate-print-labels.cjs`](../scripts/generate-print-labels.cjs)) |
+| Labels | `npm run test:print-labels` | generated-table selection, English fallback, all eight locale Phase 3 cross-path print regressions, generator drift (`--check`) ([`tests/print-labels.test.ts`](../tests/print-labels.test.ts), [`tests/phase3-print-regressions.test.ts`](../tests/phase3-print-regressions.test.ts), [`scripts/generate-print-labels.cjs`](../scripts/generate-print-labels.cjs)) |
 | Document model | `npm run test:print-document` | block construction, document builders, bilingual pairs, direction annotations, purity ([`tests/print-document.test.ts`](../tests/print-document.test.ts)) |
 | Parity harness | `npm run test:print-parity` | cross-renderer semantic parity + byte-exact migration oracle ([`tests/print-parity.test.ts`](../tests/print-parity.test.ts)) |
 | Merchant templates | `npm run test:merchant-print-templates` | kernel validation, apply semantics, CRUD lifecycle, render path ([`tests/merchant-print-templates.test.ts`](../tests/merchant-print-templates.test.ts)) |

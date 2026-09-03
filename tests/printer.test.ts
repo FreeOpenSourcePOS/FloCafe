@@ -860,7 +860,7 @@ console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
   assert('renders station name', text.includes('Main Kitchen'));
   assert('renders order number', text.includes('ORD-20260421-0001'));
   assert('renders table number', text.includes('T3'));
-  assert('renders order type', text.includes('Type: DINE IN'));
+  assert('renders localized order type', text.includes('Type: Dine in'));
   assert('renders each item with qty prefix', text.includes('2x  Cheeseburger'));
   assert('renders addon "Extra Cheese"', text.includes('+ Extra Cheese'));
   assert('renders addon "Bacon"', text.includes('+ Bacon'));

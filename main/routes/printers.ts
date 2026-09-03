@@ -427,9 +427,9 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       ).get(bill.id) as { total: number };
       pointsRedeemed = redeemed.total;
 
-      if (settings.loyalty_enabled === 'true') {
+      if (['true', '1'].includes(settings.loyalty_enabled || '')) {
         const credits = db.prepare(
-          `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'credit' AND (expires_at IS NULL OR expires_at > datetime('now'))`
+          `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'credit'`
         ).get(bill.customer_id) as { total: number };
         const debits = db.prepare(
           `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'debit'`

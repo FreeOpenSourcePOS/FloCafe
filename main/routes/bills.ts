@@ -51,11 +51,11 @@ export function addBillLoyaltyFields(db: ReturnType<typeof getDatabase>, bill: a
   const redeemed = db.prepare(
     `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE bill_id = ? AND type = 'debit'`,
   ).get(bill.id) as { total: number };
-  const loyaltyEnabled = getSettingValue('loyalty_enabled') === 'true';
+  const loyaltyEnabled = ['true', '1'].includes(getSettingValue('loyalty_enabled') || '');
   let pointsBalance: number | null = null;
   if (loyaltyEnabled) {
     const credits = db.prepare(
-      `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'credit' AND (expires_at IS NULL OR expires_at > datetime('now'))`,
+      `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'credit'`,
     ).get(bill.customer_id) as { total: number };
     const debits = db.prepare(
       `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = ? AND type = 'debit'`,

@@ -339,7 +339,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
       loyaltyByBillId.set(r.bill_id, current);
     }
   }
-  const loyaltyEnabled = getSettingValue('loyalty_enabled') === 'true';
+  const loyaltyEnabled = ['true', '1'].includes(getSettingValue('loyalty_enabled') || '');
   const loyaltyByCustomerId = new Map<string, { credits: number; debits: number }>();
   const billCustomerIds = Array.from(new Set(Array.from(billsById.values()).map((bill) => bill.customer_id).filter(Boolean)));
   if (loyaltyEnabled && billCustomerIds.length > 0) {
@@ -348,7 +348,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
       SELECT customer_id, type, COALESCE(SUM(amount), 0) as total
       FROM loyalty_ledger
       WHERE customer_id IN (${ph})
-        AND ((type = 'credit' AND (expires_at IS NULL OR expires_at > datetime('now'))) OR type = 'debit')
+        AND type IN ('credit', 'debit')
       GROUP BY customer_id, type
     `).all(...billCustomerIds) as { customer_id: string | number; type: 'credit' | 'debit'; total: number }[];
     for (const r of rows) {

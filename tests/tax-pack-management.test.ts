@@ -897,9 +897,13 @@ async function main() {
     assert(pluginReceipt.includes('ITEM'), 'installed GST plugin template renders the plugin item-table layout');
     assert(pluginReceipt.includes('GSTIN: 27ABCDE1234F1Z5'), 'installed GST plugin template renders GSTIN');
     assert(pluginReceipt.includes('CGST @2.5%'), 'installed GST plugin template renders tax components');
-    assert(pluginReceipt.includes('Service Charge') && pluginReceipt.includes('₹20.00'), 'declared plugin service charge row renders its persisted amount');
-    assert(pluginReceipt.includes('Delivery') && pluginReceipt.includes('₹30.00'), 'declared plugin delivery charge row renders its persisted amount');
-    assert(pluginReceipt.includes('Packaging') && pluginReceipt.includes('₹5.00'), 'declared plugin packaging charge row renders its persisted amount');
+    const pluginRows = pluginReceipt.split(/\r?\n/);
+    const serviceChargeRow = pluginRows.find((row) => row.includes('Service Charge'));
+    const deliveryChargeRow = pluginRows.find((row) => row.includes('Delivery'));
+    const packagingChargeRow = pluginRows.find((row) => row.includes('Packaging'));
+    assert(serviceChargeRow != null && serviceChargeRow.includes('₹20.00'), 'declared plugin service charge row renders its persisted amount');
+    assert(deliveryChargeRow != null && deliveryChargeRow.includes('₹30.00'), 'declared plugin delivery charge row renders its persisted amount');
+    assert(packagingChargeRow != null && packagingChargeRow.includes('₹5.00'), 'declared plugin packaging charge row renders its persisted amount');
     assert(
       pluginReceipt.indexOf('Service Charge') < pluginReceipt.indexOf('Delivery')
         && pluginReceipt.indexOf('Delivery') < pluginReceipt.indexOf('Packaging')

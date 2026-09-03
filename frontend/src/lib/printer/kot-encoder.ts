@@ -72,6 +72,7 @@ export function buildKotBytes(
   const locale = opts.locale ?? LANGUAGES[language as Language]?.locale ?? 'en-US';
   const safePrinterText = safePrinterTextForLanguage(language, cols, opts.capabilities);
   const truncateText = (text: string, max: number): string => truncate(text, max, language, opts.capabilities);
+  const thermalCapabilities = mergeThermalCapabilities(opts.capabilities, arabicShaping);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -110,7 +111,7 @@ export function buildKotBytes(
   const time = formatTime(order.created_at, locale, opts.timezone ? { timeZone: opts.timezone } : undefined);
   const fallbackTime = formatTime(order.created_at, 'en-US', opts.timezone ? { timeZone: opts.timezone } : undefined);
   safePrinterText(enc, thermalSafeHeaderText(`${label('print.time')}: ${time}`, `Time: ${fallbackTime}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
-  enc.rule({ style: 'double' });
+  thermalRule(enc, 'double', cols, thermalCapabilities);
 
   // ── Items ────────────────────────────────────────────────────────────────────
   const items = order.items ?? [];
@@ -157,13 +158,27 @@ export function buildKotBytes(
   }
 
   // ── Footer ─────────────────────────────────────────────────────────────────
-  enc.rule({ style: 'single' });
+  thermalRule(enc, 'single', cols, thermalCapabilities);
   enc.align('center');
   safePrinterText(enc, `--- ${label('print.kot.end')} ---`, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   enc.newline().newline().newline().cut();
 
   return enc.encode();
+}
+
+function thermalRule(
+  enc: ReceiptPrinterEncoder,
+  style: 'single' | 'double',
+  columns: number,
+  capabilities: ThermalPrinterCapabilities,
+): void {
+  const character = style === 'double' ? '═' : '─';
+  if (capabilities.shaping.arabic && capabilities.encoding.codePages.every((codePage) => codePage === 'ascii')) {
+    enc.raw(new TextEncoder().encode(character.repeat(columns))).newline();
+    return;
+  }
+  enc.rule({ style });
 }
 
 // ---------------------------------------------------------------------------

@@ -196,6 +196,14 @@ export function safePrinterText<T extends { text(value: string): T }>(
     }
   }
   const codePage = selectThermalCodePage(printerValue, thermalCapabilities);
+  if (
+    thermalCapabilities.shaping.arabic
+    && !hasNativeCodePage
+    && 'raw' in enc
+    && typeof (enc as { raw?: (data: Uint8Array) => T }).raw === 'function'
+  ) {
+    return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(printerValue));
+  }
   if (codePage && codePage !== 'ascii' && 'codepage' in enc && typeof (enc as { codepage?: (value: string) => T }).codepage === 'function') {
     (enc as { codepage: (value: string) => T }).codepage(codePage);
   }

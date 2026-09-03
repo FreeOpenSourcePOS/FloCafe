@@ -153,8 +153,12 @@ export function safePrinterText<T extends { text(value: string): T }>(
 ): T {
   if (!value) return enc;
   const thermalCapabilities = mergeThermalCapabilities(capabilities, arabicShaping);
+  const useLegacyUnicode = capabilities === undefined && useUnicode;
   const printableValue = normalizeThermalText(value, thermalCapabilities);
-  const printerValue = useUnicode ? printableValue : normalizeCurrencyToAscii(printableValue);
+  const hasNativeCodePage = thermalCapabilities.encoding.codePages.some((codePage) => codePage !== 'ascii');
+  const printerValue = !useLegacyUnicode && !hasNativeCodePage
+    ? normalizeCurrencyToAscii(printableValue)
+    : printableValue;
   const hasUnsupported = hasUnsupportedPrinterChars(printerValue);
   const shapingSafe = thermalCapabilities.shaping.arabic && isCapabilityArabicShapingSafeLine(printerValue);
   const representable = !hasUnsupported || (isThermalTextRepresentable(printerValue, thermalCapabilities) && !shapingSafe);

@@ -50,14 +50,14 @@ const shapingCapabilities: ThermalPrinterCapabilities = {
   shaping: { arabic: true },
 };
 
-function outputPair(capabilities: ThermalPrinterCapabilities, arabicShaping: boolean): { backend: string; webusb: string; backendWarnings: any[]; webusbWarnings: any[] } {
+function outputPair(capabilities: ThermalPrinterCapabilities, arabicShaping: boolean, kotOrder = order, useUnicode = false): { backend: string; webusb: string; backendWarnings: any[]; webusbWarnings: any[] } {
   const backendWarnings: any[] = [];
   const backend = escPosToText(formatKOT(
-    order,
-    order.items,
+    kotOrder,
+    kotOrder.items,
     'Kitchen',
     42,
-    false,
+    useUnicode,
     'full',
     'en-US',
     { timeZone: 'UTC' },
@@ -68,7 +68,7 @@ function outputPair(capabilities: ThermalPrinterCapabilities, arabicShaping: boo
   ));
   const webusbWarnings: any[] = [];
   const encoder = loadFrontendKotEncoder();
-  const webusb = Buffer.from(encoder.buildKotBytes(order as any, {
+  const webusb = escPosToText(Buffer.from(encoder.buildKotBytes(kotOrder as any, {
     paperWidth: 58,
     language: 'en',
     stationName: 'Kitchen',
@@ -76,7 +76,7 @@ function outputPair(capabilities: ThermalPrinterCapabilities, arabicShaping: boo
     timezone: 'UTC',
     arabicShaping,
     capabilities,
-  }, webusbWarnings)).toString('utf8');
+  }, webusbWarnings)));
   return { backend, webusb, backendWarnings, webusbWarnings };
 }
 
@@ -128,6 +128,11 @@ function run(): void {
   assert.equal(Buffer.from(latinWebUsbBytes).includes(cp850Command), true);
   assert.deepEqual(latinBackendWarnings, []);
   assert.deepEqual(latinWebUsbWarnings, []);
+  const latinPair = outputPair(latinCodePageCapabilities, true, latinOrder, true);
+  assert.match(latinPair.backend, /Smørrebrød/);
+  assert.match(latinPair.webusb, /Smørrebrød/);
+  assert.deepEqual(latinPair.backendWarnings, []);
+  assert.deepEqual(latinPair.webusbWarnings, []);
 
   const genericPair = outputPair(GENERIC_THERMAL_CAPABILITIES, false);
   assert.match(genericPair.backend, /Type: DINE IN|Type: Dine in/);

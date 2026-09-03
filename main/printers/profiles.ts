@@ -47,13 +47,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontBColumns: 64,
     printWidthMm: 72,
     cutMode: 'partial',
-    capabilities: {
-      encoding: { codePages: ['cp437', 'cp850', 'cp858'], preferredCodePage: 'cp437' },
-      shaping: { arabic: false },
-      representability: { scripts: ['ascii', 'latin'] },
-      transliteration: { enabled: true },
-      warnings: { unsupportedText: 'skip', financialText: 'refuse', orderTypeFallback: 'ascii' },
-    },
+    capabilities: GENERIC_THERMAL_CAPABILITIES,
     notes: '80mm ESC/POS receipt printer. Vendor specs list 72mm print width, 576 dots/line, Font A 42/48 columns, Font B 56/64 columns.',
   },
   {
@@ -67,13 +61,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 48,
     fontBColumns: 64,
     cutMode: 'partial',
-    capabilities: {
-      encoding: { codePages: ['cp437', 'cp850', 'cp858'], preferredCodePage: 'cp437' },
-      shaping: { arabic: false },
-      representability: { scripts: ['ascii', 'latin'] },
-      transliteration: { enabled: true },
-      warnings: { unsupportedText: 'skip', financialText: 'refuse', orderTypeFallback: 'ascii' },
-    },
+    capabilities: GENERIC_THERMAL_CAPABILITIES,
   },
   {
     id: 'generic-escpos-80',

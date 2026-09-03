@@ -97,10 +97,8 @@ export const usePrinterStore = create<PrinterState>()(
             list.find((p) => p.is_default === 1 && p.connection_type !== 'webusb') ||
             list.find((p) => p.connection_type !== 'webusb') ||
             null;
-          const webusbPrinter =
-            list.find((p) => p.is_default === 1 && p.connection_type === 'webusb') ||
-            list.find((p) => p.connection_type === 'webusb') ||
-            null;
+          const webusbPrinters = list.filter((p) => p.connection_type === 'webusb');
+          const webusbPrinter = webusbPrinters.length === 1 ? webusbPrinters[0] : null;
           set({ hardwarePrinter: defaultPrinter, webusbPrinter });
         } catch {
           set({ hardwarePrinter: null, webusbPrinter: null });

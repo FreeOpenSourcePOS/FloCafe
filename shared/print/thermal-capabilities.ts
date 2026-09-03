@@ -56,6 +56,7 @@ const CODE_PAGE_CHARACTERS: Record<Exclude<ThermalCodePage, 'ascii'>, string> = 
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
 const SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
+const THERMAL_CURRENCY_TOKEN_RE = /(?:د\.إ|ریال|E£|₹|₨|€|£|¥|₩|₺|₫|₪|₽|฿|₱|₴|₦|₵|₡|₲|﷼|৳)/g;
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities): string {
   if (!capabilities.transliteration.enabled) return text;
@@ -68,8 +69,9 @@ export function hasArabicScript(text: string): boolean {
 
 export function isArabicShapingSafeLine(text: string): boolean {
   if (!hasArabicScript(text)) return false;
+  const textWithoutCurrency = text.replace(THERMAL_CURRENCY_TOKEN_RE, '');
   return !/[^\x00-\x7F]/.test(
-    text.replace(ARABIC_SCRIPT_GLOBAL_RE, '').replace(SHAPING_ALLOWED_GLOBAL_RE, ''),
+    textWithoutCurrency.replace(ARABIC_SCRIPT_GLOBAL_RE, '').replace(SHAPING_ALLOWED_GLOBAL_RE, ''),
   );
 }
 

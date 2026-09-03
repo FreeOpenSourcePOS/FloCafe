@@ -1629,7 +1629,9 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
  */
 export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
+  const useLegacyUnicode = options.capabilities === undefined && _useUnicode;
   const capabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
+  const hasNativeCodePage = capabilities.encoding.codePages.some((codePage) => codePage !== 'ascii');
   let activeCodePage = capabilities.encoding.preferredCodePage;
 
   const resetAllStyles = () => {
@@ -1642,7 +1644,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     if (line.includes('{INIT}')) {
       buf.push(0x1B, 0x40);
       resetAllStyles();
-      if (!_useUnicode && activeCodePage !== 'ascii') {
+      if (!useLegacyUnicode && activeCodePage !== 'ascii') {
         buf.push(0x1B, 0x74, escPosCodePageId(activeCodePage));
       }
       continue;
@@ -1663,7 +1665,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       continue;
     }
 
-    if (!_useUnicode) line = normalizeCurrencyToAscii(line);
+    if (!useLegacyUnicode && !hasNativeCodePage) line = normalizeCurrencyToAscii(line);
     line = normalizeThermalTextByCapabilities(line, capabilities);
 
     const isStoreName = line.includes('{STORE_NAME}');
@@ -1728,7 +1730,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     if (lineBold) mode |= 0x08;
     if (lineFontB) mode |= 0x01;
     buf.push(0x1B, 0x21, mode);
-    if (selectedCodePage && selectedCodePage !== activeCodePage && !_useUnicode) {
+    if (selectedCodePage && selectedCodePage !== activeCodePage && !useLegacyUnicode) {
       buf.push(0x1B, 0x74, escPosCodePageId(selectedCodePage));
       activeCodePage = selectedCodePage;
     }
@@ -1737,7 +1739,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       buf.push(0x1B, 0x45, 0x01);
     }
 
-    const encodedText = !_useUnicode && selectedCodePage
+    const encodedText = !useLegacyUnicode && selectedCodePage
       ? CodepageEncoder.encode(line, selectedCodePage)
       : Buffer.from(line, 'utf8');
     buf.push(...encodedText);

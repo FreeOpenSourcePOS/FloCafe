@@ -41,7 +41,20 @@ export function preferChildScopedBill(bill: Bill, fallbackOrder?: Order): Bill {
     && fallbackBill.points_balance !== undefined) {
     merged.points_balance = fallbackBill.points_balance;
   }
-  if (!merged.order) merged.order = fallbackOrder;
+  if (!merged.order) {
+    merged.order = fallbackOrder;
+  } else if (fallbackOrder.table || fallbackOrder.customer) {
+    const order = merged.order;
+    const table = order.table ?? fallbackOrder.table;
+    const customer = order.customer ?? fallbackOrder.customer;
+    if (table !== order.table || customer !== order.customer) {
+      merged.order = {
+        ...order,
+        ...(table ? { table } : {}),
+        ...(customer ? { customer } : {}),
+      };
+    }
+  }
   return merged;
 }
 

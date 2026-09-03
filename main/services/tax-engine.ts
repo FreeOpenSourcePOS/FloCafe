@@ -6,7 +6,7 @@ import type {
   TaxLineKind,
   TaxRule,
 } from '../tax-packs/types';
-import { getCurrencyFractionDigits } from '../countries';
+import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 
 const TaxDecimal = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
 
@@ -141,6 +141,19 @@ function roundIncrement(value: Decimal, incrementValue: string, method: Rounding
   const increment = decimal(incrementValue);
   if (increment.lte(0)) throw new Error('payableRounding.increment must be greater than zero');
   return value.div(increment).toDecimalPlaces(0, ROUNDING[method]).mul(increment);
+}
+
+function resolvePayableIncrement(pack: CountryPack, currency?: string): string {
+  const configuredIncrement = new TaxDecimal(pack.payableRounding.increment);
+  const configuredDecimals = configuredIncrement.decimalPlaces() ?? 0;
+  if (
+    currency !== undefined
+    && pack.currency === 'XXX'
+    && getCurrencyFractionDigits(currency) > configuredDecimals
+  ) {
+    return new TaxDecimal(1).div(getCurrencyMinorUnitFactor(currency)).toString();
+  }
+  return pack.payableRounding.increment;
 }
 
 export function resolveTaxCategory(pack: CountryPack, line: TaxEngineLine): CategoryResolution {
@@ -460,7 +473,7 @@ export class TaxEngine {
     }, new TaxDecimal('0'));
     const payableTotal = roundIncrement(
       totalBeforePayableRounding,
-      input.pack.payableRounding.increment,
+      resolvePayableIncrement(input.pack, input.currency),
       input.pack.payableRounding.method,
     );
     const appliedRuleIds = [...new Set(
@@ -497,7 +510,7 @@ export function applyPayableRounding(
 ): { total: number; adjustment: number } {
   const places = currency !== undefined ? getCurrencyFractionDigits(currency) : pack.taxRounding.decimalPlaces;
   const cleaned = new TaxDecimal(exactTotal).toDecimalPlaces(places, Decimal.ROUND_HALF_UP);
-  const rounded = roundIncrement(cleaned, pack.payableRounding.increment, pack.payableRounding.method);
+  const rounded = roundIncrement(cleaned, resolvePayableIncrement(pack, currency), pack.payableRounding.method);
   return {
     total: rounded.toNumber(),
     adjustment: rounded.minus(cleaned).toNumber(),

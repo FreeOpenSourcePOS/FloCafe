@@ -11,7 +11,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const {
   initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct,
-  api, assert, assertEqual, now,
+  api, assert, assertEqual, getResults, now,
 } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes, paymentAmountMinorUnits, getTenantCurrency } = require('../main/routes/bills');
@@ -277,6 +277,10 @@ async function main() {
     assertEqual(usdBalanceBefore.refundableCents, 1050, 'USD refundable minor units is 1050 cents');
 
     console.log('\n✓ All currency payment and refund minor-unit tests passed successfully!');
+    const results = getResults();
+    if (results.failed > 0) {
+      throw new Error(`${results.failed} assertion(s) failed`);
+    }
   } finally {
     server.close();
   }

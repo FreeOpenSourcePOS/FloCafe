@@ -13,6 +13,7 @@ import { normalizeThermalText } from './unicode';
 import {
   GENERIC_THERMAL_CAPABILITIES,
   mergeThermalCapabilities,
+  shouldUseOrderTypeFallback,
   thermalTextFallback,
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
@@ -100,7 +101,12 @@ export function buildKotBytes(
   }
 
   const orderType = resolveOrderType(order.type, language);
-  safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.type')}: ${orderType}`, `Type: ${String(order.type).replace(/_/g, ' ').toUpperCase()}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
+  const localizedOrderType = `${label('print.kot.type')}: ${orderType}`;
+  const fallbackOrderType = `Type: ${String(order.type).replace(/_/g, ' ').toUpperCase()}`;
+  const thermalOrderType = shouldUseOrderTypeFallback(localizedOrderType, thermalCapabilities)
+    ? fallbackOrderType
+    : thermalSafeHeaderText(localizedOrderType, fallbackOrderType, language, arabicShaping, opts.capabilities);
+  safePrinterText(enc, thermalOrderType, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.customer) {
     const customerName = String(order.customer.name);
@@ -175,7 +181,8 @@ function thermalRule(
 ): void {
   const character = style === 'double' ? '═' : '─';
   if (capabilities.shaping.arabic && capabilities.encoding.codePages.every((codePage) => codePage === 'ascii')) {
-    enc.raw(new TextEncoder().encode(character.repeat(columns))).newline();
+    (enc as ReceiptPrinterEncoder & { raw: (data: Uint8Array) => ReceiptPrinterEncoder })
+      .raw(new TextEncoder().encode(character.repeat(columns))).newline();
     return;
   }
   enc.rule({ style });

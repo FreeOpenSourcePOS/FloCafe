@@ -202,7 +202,8 @@ export function safePrinterText<T extends { text(value: string): T }>(
     && 'raw' in enc
     && typeof (enc as { raw?: (data: Uint8Array) => T }).raw === 'function'
   ) {
-    return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(printerValue));
+    const sanitized = printerValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
+    return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(sanitized));
   }
   if (codePage && codePage !== 'ascii' && 'codepage' in enc && typeof (enc as { codepage?: (value: string) => T }).codepage === 'function') {
     (enc as { codepage: (value: string) => T }).codepage(codePage);

@@ -104,7 +104,11 @@ export function thermalTextFallback(value: string, fallback: string, capabilitie
 }
 
 export function shouldUseOrderTypeFallback(localizedText: string, capabilities: ThermalPrinterCapabilities): boolean {
-  return capabilities.warnings.orderTypeFallback === 'ascii' && !isThermalTextRepresentable(localizedText, capabilities);
+  if (capabilities.warnings.orderTypeFallback !== 'ascii') return false;
+  const nativeCapabilities = capabilities.transliteration.enabled
+    ? { ...capabilities, transliteration: { enabled: false } }
+    : capabilities;
+  return !isThermalTextRepresentable(localizedText, nativeCapabilities);
 }
 
 export function escPosCodePageId(codePage: ThermalCodePage): number {

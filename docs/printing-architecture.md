@@ -525,10 +525,8 @@ Parity harness usage and fixture matrix ([`tests/print-parity.test.ts`](../tests
   bilingual fit strategies evaluated across 32–48 columns
   ([`shared/print/bilingual.ts`](../shared/print/bilingual.ts)). New print features must state their width
   behavior at these widths.
-- **Timezone determinism**: tests that query a tenant-local current day must set
-  the tenant timezone explicitly and derive fixture timestamps from that same
-  timezone. Never use a fixed UTC wall-clock time as a proxy for “today” in a
-  different tenant timezone.
+- **Timezone determinism**: follow the repository-wide
+  [timezone-test determinism rule](../AGENTS.md#working-conventions--safety-rules).
 - **Merchant-template mode**: the golden fixture
   ([`tests/fixtures/merchant-templates/golden-receipt-v1.json`](../tests/fixtures/merchant-templates/golden-receipt-v1.json), all blocks,
   canonical order) must be an identity transform on rendered bytes for the

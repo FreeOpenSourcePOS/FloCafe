@@ -6,7 +6,7 @@
  */
 
 import type { Bill, Tenant, Customer } from '@/lib/types';
-import { getCountryByCode } from '@/lib/countries';
+import { getCountryByCode, getCurrencyFractionDigits } from '@/lib/countries';
 import { formatDate } from './printer/format-date';
 import api from './api';
 import toast from 'react-hot-toast';
@@ -138,11 +138,12 @@ export function getWhatsAppMessage(
 
 function formatAmount(value: number | string, currencyCode: string, locale: string): string {
   const amount = Number(value);
+  const decimals = getCurrencyFractionDigits(currencyCode);
   return new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: currencyCode,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   }).format(Number.isFinite(amount) ? amount : 0);
 }
 

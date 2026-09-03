@@ -8,9 +8,10 @@
  * blocks. Inventory is deliberately not restored — it was already consumed
  * when the item was prepared, same rule as the existing void path.
  */
-import { getDatabase, now, parseDbTimestamp, verifyPin } from '../db';
+import { getDatabase, getSettingValue, now, parseDbTimestamp, verifyPin } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { getCountryByCode, getCurrencyMinorUnitFactor } from '../countries';
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -22,6 +23,13 @@ const REFUND_WINDOW_MS = 60 * 60 * 1000;
 // main/routes/orders.ts — 'refunded' is the new terminal item status this
 // feature introduces and must be excluded everywhere those are.
 export const TERMINAL_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
+
+export function getTenantCurrency(db?: Database): string {
+  const explicit = db ? (db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as any)?.value : getSettingValue('currency');
+  if (explicit && typeof explicit === 'string' && /^[A-Z]{3}$/.test(explicit)) return explicit;
+  const country = (db ? (db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any)?.value : getSettingValue('country')) || 'IN';
+  return getCountryByCode(country)?.currency || 'INR';
+}
 
 export interface RefundRequest {
   billId: string | number;
@@ -48,13 +56,21 @@ function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
 }
 
-export function getRefundableBalance(db: Database, billId: string | number): {
+/**
+ * Returns the refundable balance for a bill in integer minor units.
+ * `refunds.amount_cents` stores integer minor units scaled by `minorFactor`
+ * (e.g. factor 1 for JPY, 100 for USD/INR, 1000 for KWD). Historical rows
+ * originated exclusively under 2-decimal currencies where cents = minor units.
+ */
+export function getRefundableBalance(db: Database, billId: string | number, currency?: string): {
   paidCents: number;
   refundedCents: number;
   refundableCents: number;
 } {
+  const effectiveCurrency = currency || getTenantCurrency(db);
+  const minorFactor = getCurrencyMinorUnitFactor(effectiveCurrency);
   const bill = db.prepare('SELECT paid_amount FROM bills WHERE id = ?').get(billId) as { paid_amount: number } | undefined;
-  const paidCents = Math.round(Number(bill?.paid_amount || 0) * 100);
+  const paidCents = Math.round(Number(bill?.paid_amount || 0) * minorFactor);
   const refundedRow = db.prepare('SELECT COALESCE(SUM(amount_cents), 0) AS total FROM refunds WHERE bill_id = ?').get(billId) as { total: number };
   const refundedCents = Number(refundedRow.total || 0);
   return { paidCents, refundedCents, refundableCents: paidCents - refundedCents };
@@ -106,6 +122,9 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     throw httpError('Refund window has expired. Refunds are allowed within 1 hour of order creation.', 409);
   }
 
+  const currency = getTenantCurrency(db);
+  const minorFactor = getCurrencyMinorUnitFactor(currency);
+
   let amountCents = req.amountCents;
   let item: any = null;
   if (req.orderItemId != null) {
@@ -128,7 +147,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     if (!REFUND_ITEM_ELIGIBLE_STATUSES.includes(item.status)) {
       throw httpError('Item is not eligible for refund', 409);
     }
-    const itemAmountCents = Math.round(Number(item.total) * 100);
+    const itemAmountCents = Math.round(Number(item.total) * minorFactor);
     if (amountCents !== undefined && amountCents !== itemAmountCents) {
       throw httpError("Refund amount does not match the item's refundable total", 400);
     }
@@ -142,7 +161,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
     throw httpError('Refund method is required', 400);
   }
 
-  const { paidCents, refundedCents, refundableCents } = getRefundableBalance(db, req.billId);
+  const { paidCents, refundedCents, refundableCents } = getRefundableBalance(db, req.billId, currency);
   if (refundableCents <= 0) throw httpError('Bill has nothing left to refund', 400);
   if (amountCents > refundableCents) throw httpError('Refund amount exceeds the refundable balance', 400);
 

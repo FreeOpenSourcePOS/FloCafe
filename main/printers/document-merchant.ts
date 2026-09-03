@@ -73,6 +73,7 @@ export function renderMerchantReceiptViaDocument(
     locale: printContext.locale,
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
     currencySymbol: printContext.currencySymbol,
+    currency: String(business?.currency || 'INR'),
     trimDecimals: printContext.trimDecimals,
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,

@@ -4,7 +4,8 @@ import { getDatabase, now, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { checkPinRateLimit } from './orders';
-import { createRefund, RefundRequest } from '../services/refund';
+import { createRefund, getTenantCurrency, RefundRequest } from '../services/refund';
+import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 
 const router = Router();
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
@@ -30,20 +31,24 @@ function refundRequestHash(billId: string, body: any): string {
   })).digest('hex');
 }
 
-function refundAmountCents(value: unknown): number {
+function refundAmountMinorUnits(value: unknown, currency: string): number {
   if (typeof value !== 'number' && typeof value !== 'string') {
     throw Object.assign(new Error('Refund amount must be a finite number greater than zero'), { statusCode: 400 });
   }
+  const decimals = getCurrencyFractionDigits(currency);
+  const factor = getCurrencyMinorUnitFactor(currency);
   const text = String(value).trim();
-  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) {
-    throw Object.assign(new Error('Refund amount must be a finite number greater than zero with at most 2 decimal places'), { statusCode: 400 });
+  const pattern = decimals === 0 ? /^\d+$/ : new RegExp(`^\\d+(?:\\.\\d{1,${decimals}})?$`);
+  if (!pattern.test(text)) {
+    const decDesc = decimals === 0 ? 'without decimals' : `with at most ${decimals} decimal places`;
+    throw Object.assign(new Error(`Refund amount must be a finite number greater than zero ${decDesc}`), { statusCode: 400 });
   }
   const parsed = Number(text);
-  const cents = Math.round(parsed * 100);
-  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isSafeInteger(cents)) {
+  const minorUnits = Math.round(parsed * factor);
+  if (!Number.isFinite(parsed) || parsed <= 0 || !Number.isSafeInteger(minorUnits)) {
     throw Object.assign(new Error('Refund amount must be a finite number greater than zero'), { statusCode: 400 });
   }
-  return cents;
+  return minorUnits;
 }
 
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
@@ -57,9 +62,11 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     if (orderItemId !== null && !Number.isSafeInteger(orderItemId)) {
       return res.status(400).json({ error: 'order_item_id must be an integer' });
     }
+    const db = getDatabase();
+    const currency = getTenantCurrency(db);
     let amountCents: number | undefined;
     if (body.amount !== undefined && body.amount !== null) {
-      amountCents = refundAmountCents(body.amount);
+      amountCents = refundAmountMinorUnits(body.amount, currency);
     } else if (orderItemId === null) {
       return res.status(400).json({ error: 'amount is required unless order_item_id is given' });
     }
@@ -70,7 +77,6 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     const idempotencyKey = refundIdempotencyKey(req);
     const requestHash = idempotencyKey ? refundRequestHash(String(billId), body) : undefined;
 
-    const db = getDatabase();
     const userId = String((req as any).user.userId);
     const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 

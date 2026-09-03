@@ -5,6 +5,8 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
+import { getTenantCurrency } from '../services/refund';
+import { getCurrencyMinorUnitFactor } from '../countries';
 
 const router = Router();
 
@@ -59,6 +61,7 @@ function paymentMethodBreakdown(
 ) {
   const start = utcDayBounds(startDate)[0];
   const end = utcDayBounds(endDate)[1];
+  const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
   return db.prepare(`
     WITH payment_lines AS (
       SELECT b.paid_at, b.created_at, je.value AS line
@@ -87,7 +90,7 @@ function paymentMethodBreakdown(
         ) AS payment_time
       FROM payment_lines
       UNION ALL
-      SELECT r.method, NULL, -(r.amount_cents / 100.0),
+      SELECT r.method, NULL, -(CAST(r.amount_cents AS REAL) / ?),
         datetime(CASE WHEN ? = 1 THEN b.paid_at ELSE r.created_at END)
       FROM refunds r
       JOIN bills b ON b.id = r.bill_id
@@ -98,7 +101,7 @@ function paymentMethodBreakdown(
     WHERE payment_time >= datetime(?) AND payment_time < datetime(?)
     GROUP BY COALESCE(pm.name, normalized.method)
     ORDER BY total DESC
-  `).all(end, start, paidOnly ? 1 : 0, attributeRefundsToBillDate ? 1 : 0, start, end);
+  `).all(end, start, paidOnly ? 1 : 0, minorFactor, attributeRefundsToBillDate ? 1 : 0, start, end);
 }
 
 /** argmax/argmin over counts, restricted to indices where include(count) is true. Returns null if nothing qualifies. */
@@ -116,13 +119,14 @@ function pickExtreme(counts: number[], mode: 'max' | 'min', include: (count: num
 router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const today = utcTodayDate();
     const [start, end] = utcDayBounds(today);
     const salesToday = db.prepare(`
       SELECT
         COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
-        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) AS sales
-    `).get(start, end, start, end) as { sales: number };
+        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) AS sales
+    `).get(start, end, minorFactor, start, end) as { sales: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, today) as { total: number }[];
 
     const runningOrders = db.prepare(`
@@ -174,6 +178,7 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
 router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     // #208: an explicit date param is a UTC `YYYY-MM-DD`; resolve to the
     // half-open UTC range. `reportDate` validates the param shape.
     const date = reportDate(req.query.date, utcTodayDate());
@@ -187,9 +192,9 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
     const billsToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total,
         COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
-        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
+        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
       FROM bills WHERE created_at >= ? AND created_at < ?
-    `).get(start, end, start, end, start, end) as { count: number; total: number; collected: number };
+    `).get(start, end, minorFactor, start, end, start, end) as { count: number; total: number; collected: number };
     const paymentMethodsToday = paymentMethodBreakdown(db, date);
 
     const customersToday = db.prepare(`
@@ -231,17 +236,18 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
     const [start] = utcDayBounds(startDate);
     const [, end] = utcDayBounds(endDate);
     const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const collections = db.prepare(`
       SELECT COUNT(*) AS bill_count, COALESCE(SUM(paid_amount), 0) AS gross_collected
       FROM bills WHERE paid_at >= ? AND paid_at < ?
     `).get(start, end) as { bill_count: number; gross_collected: number };
     const refundTotals = db.prepare(`
-      SELECT COUNT(*) AS refund_count, COALESCE(SUM(r.amount_cents) / 100.0, 0) AS refunded
+      SELECT COUNT(*) AS refund_count, COALESCE(SUM(CAST(r.amount_cents AS REAL)) / ?, 0) AS refunded
       FROM refunds r JOIN bills b ON b.id = r.bill_id
       WHERE b.paid_at >= ? AND b.paid_at < ?
-    `).get(start, end) as { refund_count: number; refunded: number };
+    `).get(minorFactor, start, end) as { refund_count: number; refunded: number };
     const refunds = db.prepare(`
-      SELECT r.id, r.amount_cents / 100.0 AS amount, r.method, r.reason,
+      SELECT r.id, CAST(r.amount_cents AS REAL) / ? AS amount, r.method, r.reason,
         r.created_at, b.bill_number, b.paid_at, o.order_number,
         COALESCE(approver.name, creator.name, 'Unknown') AS approved_by_name
       FROM refunds r
@@ -252,7 +258,7 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
       WHERE b.paid_at >= ? AND b.paid_at < ?
       ORDER BY r.created_at DESC, r.id DESC
       LIMIT 50
-    `).all(start, end);
+    `).all(minorFactor, start, end);
     const grossCollected = Number(collections.gross_collected || 0);
     const refunded = Number(refundTotals.refunded || 0);
 
@@ -526,6 +532,7 @@ router.get('/tables', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
 router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const days = Math.min(Math.max(parseInt(req.query.days as string) || 30, 1), 365);
     // #208: "N days back" in UTC, with the UTC day range so the window
     // filters on the index. Day boundaries are UTC; the tenant timezone only
@@ -538,10 +545,10 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     const revenue = db.prepare(`
       SELECT COUNT(*) as billCount,
         COALESCE(SUM(paid_amount), 0)
-        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ?), 0) as total
+        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ?), 0) as total
       FROM bills
       WHERE paid_at >= ?
-    `).get(windowStart, windowStart) as { billCount: number; total: number };
+    `).get(minorFactor, windowStart, windowStart) as { billCount: number; total: number };
     const aov = revenue.billCount > 0 ? revenue.total / revenue.billCount : 0;
 
     // Kitchen velocity — substitutes for "best cook", which isn't derivable:

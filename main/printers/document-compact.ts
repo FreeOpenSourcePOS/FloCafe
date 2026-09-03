@@ -13,6 +13,7 @@
  */
 
 import { parseDbTimestamp } from '../db';
+import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
 import type { PrintWarning } from './thermal';
 import {
@@ -59,6 +60,7 @@ export interface CompactDocumentRenderOptions {
   readonly timezone?: string;
   /** Currency prefix preference (symbol + unicode mode). */
   readonly currencySymbol: string;
+  readonly currency?: string;
   readonly trimDecimals: boolean;
   readonly useUnicode: boolean;
   readonly arabicShaping: boolean;
@@ -111,6 +113,7 @@ export function renderBillDocumentToCompactLines(
   const messages = getBlock(document, 'message') as MessageBlock | undefined;
 
   const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode);
+  const fractionDigits = getCurrencyFractionDigits(options.currency || 'INR');
   const trimDecimals = options.trimDecimals === true;
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const bar = '='.repeat(cols);
@@ -157,6 +160,7 @@ export function renderBillDocumentToCompactLines(
       options.locale,
       trimDecimals,
       cols,
+      fractionDigits,
     );
     const nameLen = itemNameWidth(cols, amtLen);
     lines.push(compactItemHeader(items, nameLen, amtLen, options.language));
@@ -172,9 +176,10 @@ export function renderBillDocumentToCompactLines(
         options.locale,
         trimDecimals,
         options.language,
+        fractionDigits,
       ));
       for (const addon of row.addons) {
-        lines.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language));
+        lines.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits));
       }
       if (row.specialInstructions) {
         lines.push(normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language)));
@@ -186,29 +191,29 @@ export function renderBillDocumentToCompactLines(
 
   // Totals (compact has no loyalty points section).
   if (totals) {
-    lines.push(...financialRows(labelOf(totals.subtotal.label), formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals), cols, options.language));
+    lines.push(...financialRows(labelOf(totals.subtotal.label), formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language));
     if (totals.discount) {
-      lines.push(...financialRows(labelOf(totals.discount.label), '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals), cols, options.language));
+      lines.push(...financialRows(labelOf(totals.discount.label), '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language));
     }
     if (breakdown && breakdown.lines.length > 0) {
       for (const line of breakdown.lines) {
         const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
         const label = truncate(labelOf(line.label) + rateSuffix, cols - 12, options.language);
-        lines.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols, options.language));
+        lines.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language));
       }
     } else if (totals.tax) {
-      lines.push(...financialRows(labelOf(totals.tax.label), formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals), cols, options.language));
+      lines.push(...financialRows(labelOf(totals.tax.label), formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language));
     }
     if (totals.serviceCharge) {
-      lines.push(...financialRows(labelOf(totals.serviceCharge.label), formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+      lines.push(...financialRows(labelOf(totals.serviceCharge.label), formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language));
     }
     if (totals.deliveryCharge) {
-      lines.push(...financialRows(labelOf(totals.deliveryCharge.label), formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+      lines.push(...financialRows(labelOf(totals.deliveryCharge.label), formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language));
     }
     if (totals.packagingCharge) {
-      lines.push(...financialRows(labelOf(totals.packagingCharge.label), formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals), cols, options.language));
+      lines.push(...financialRows(labelOf(totals.packagingCharge.label), formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language));
     }
-    lines.push(...financialRows(labelOf(totals.grandTotal.label), formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals), cols, options.language).map((line) => `{BOLD}${line}{/BOLD}`));
+    lines.push(...financialRows(labelOf(totals.grandTotal.label), formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language).map((line) => `{BOLD}${line}{/BOLD}`));
   }
 
   // Payments.
@@ -216,7 +221,7 @@ export function renderBillDocumentToCompactLines(
     lines.push(dash);
     for (const line of payments.lines) {
       const methodLabel = truncate(paymentLabel(line.label), cols - 12, options.language);
-      lines.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols, options.language));
+      lines.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language));
     }
   }
 
@@ -277,6 +282,7 @@ export function renderCompactReceiptViaDocument(
     locale: printContext.locale,
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
     currencySymbol: printContext.currencySymbol,
+    currency: String(business?.currency || 'INR'),
     trimDecimals: printContext.trimDecimals,
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,

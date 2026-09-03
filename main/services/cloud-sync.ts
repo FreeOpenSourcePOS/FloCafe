@@ -12,6 +12,8 @@ import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
 import { readCountryProvenance } from './country-provenance';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
+import { getTenantCurrency } from './refund';
+import { getCurrencyMinorUnitFactor } from '../countries';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
@@ -1064,6 +1066,7 @@ export class CloudSyncService {
 
   private buildHeartbeatPayload(cfg: CloudSettings) {
     const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const activeOrders = db.prepare(`
       SELECT COUNT(*) as count FROM orders
       WHERE status IN ('pending', 'preparing', 'ready', 'served')
@@ -1074,9 +1077,9 @@ export class CloudSyncService {
     const todaySales = db.prepare(`
       SELECT
         COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
-        - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as total,
+        - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as total,
         (SELECT COUNT(*) FROM bills WHERE paid_at >= ? AND paid_at < ?) as count
-    `).get(ts, te, ts, te, ts, te) as { total: number; count: number };
+    `).get(ts, te, minorFactor, ts, te, ts, te) as { total: number; count: number };
     return {
       pos_hash: cfg.pos_hash,
       pos_id: cfg.pos_id || null,
@@ -1618,6 +1621,7 @@ export class CloudSyncService {
 
   private salesReport(payload?: Record<string, unknown>) {
     const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const range = dateRange(payload);
     const totals = db.prepare(`
       SELECT
@@ -1627,24 +1631,24 @@ export class CloudSyncService {
         COALESCE(SUM(tax_amount), 0) as tax_amount,
         COALESCE(SUM(discount_amount), 0) as discount_amount,
         COALESCE(SUM(paid_amount), 0)
-          - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE created_at >= ? AND created_at <= ?), 0) as paid_amount
+          - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at <= ?), 0) as paid_amount
       FROM bills
       WHERE paid_at >= ? AND paid_at <= ?
-    `).get(range.from, range.to, range.from, range.to);
+    `).get(minorFactor, range.from, range.to, range.from, range.to);
 
     const byDay = db.prepare(`
       WITH events AS (
         SELECT date(paid_at) as date, 1 as bill_count, paid_amount as gross_sales
         FROM bills WHERE paid_at >= ? AND paid_at <= ?
         UNION ALL
-        SELECT date(created_at), 0, -(amount_cents / 100.0)
+        SELECT date(created_at), 0, -(CAST(amount_cents AS REAL) / ?)
         FROM refunds WHERE created_at >= ? AND created_at <= ?
       )
       SELECT date, SUM(bill_count) as bill_count, COALESCE(SUM(gross_sales), 0) as gross_sales
       FROM events
       GROUP BY date
       ORDER BY date ASC
-    `).all(range.from, range.to, range.from, range.to);
+    `).all(range.from, range.to, minorFactor, range.from, range.to);
 
     const topItems = db.prepare(`
       SELECT oi.product_id, oi.product_name,
@@ -1672,14 +1676,15 @@ export class CloudSyncService {
   private dashboardReport(payload?: Record<string, unknown>) {
     const range = dateRange({ from: payload?.date, to: payload?.date });
     const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const totals = db.prepare(`
       SELECT COUNT(*) AS bill_count, COALESCE(SUM(paid_amount), 0)
-             - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)), 0) AS total_sales,
+             - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)), 0) AS total_sales,
              COALESCE(SUM(tax_amount), 0) AS total_tax,
              COALESCE(SUM(discount_amount), 0) AS total_discount
         FROM bills
        WHERE paid_at IS NOT NULL AND date(paid_at) BETWEEN date(?) AND date(?)
-    `).get(range.from, range.to, range.from, range.to) as any;
+    `).get(minorFactor, range.from, range.to, range.from, range.to) as any;
     const topItems = db.prepare(`
       SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) AS qty,
              COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) AS revenue,
@@ -1702,17 +1707,19 @@ export class CloudSyncService {
 
   private hourlyReport(payload?: Record<string, unknown>) {
     const range = dateRange({ from: payload?.date, to: payload?.date });
-    const rows = getDatabase().prepare(`
+    const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+    const rows = db.prepare(`
       WITH events AS (
         SELECT strftime('%H', paid_at) AS hour, paid_amount AS sales, 1 AS bills
         FROM bills WHERE paid_at IS NOT NULL AND date(paid_at) BETWEEN date(?) AND date(?)
         UNION ALL
-        SELECT strftime('%H', created_at), -(amount_cents / 100.0), 0
+        SELECT strftime('%H', created_at), -(CAST(amount_cents AS REAL) / ?), 0
         FROM refunds WHERE date(created_at) BETWEEN date(?) AND date(?)
       )
       SELECT hour, COALESCE(SUM(sales), 0) AS sales, SUM(bills) AS bills
       FROM events GROUP BY hour ORDER BY hour
-    `).all(range.from, range.to, range.from, range.to) as any[];
+    `).all(range.from, range.to, minorFactor, range.from, range.to) as any[];
     const byHour = new Map(rows.map((row) => [String(row.hour).padStart(2, '0'), row]));
     return { hours: Array.from({ length: 24 }, (_, hour) => {
       const row = byHour.get(String(hour).padStart(2, '0'));
@@ -1747,7 +1754,9 @@ export class CloudSyncService {
   }
 
   private paymentBreakdown(range: DateRange) {
-    return getDatabase().prepare(`
+    const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+    return db.prepare(`
       WITH entries AS (
         SELECT COALESCE(pm.name, json_extract(je.value, '$.method')) AS method,
                json_extract(je.value, '$.amount') AS amount,
@@ -1756,13 +1765,13 @@ export class CloudSyncService {
           LEFT JOIN payment_methods pm ON pm.id = CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER)
          WHERE b.payment_details IS NOT NULL
         UNION ALL
-        SELECT method, -(amount_cents / 100.0), created_at FROM refunds
+        SELECT method, -(CAST(amount_cents AS REAL) / ?), created_at FROM refunds
       )
       SELECT method, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS amount
         FROM entries
        WHERE date(occurred_at) BETWEEN date(?) AND date(?)
        GROUP BY method ORDER BY amount DESC
-    `).all(range.from, range.to);
+    `).all(minorFactor, range.from, range.to);
   }
 
   private buildOrderSnapshot(orderId: number | string) {

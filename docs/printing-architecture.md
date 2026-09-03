@@ -433,8 +433,10 @@ selection and `visible` settings; that is merchant configuration, not a silent
 renderer omission. The legacy raw WebUSB encoders described above retain their
 own warning behavior and do not inherit the `PrintDocument` guarantees. The
 tax-bill path still refuses before WebUSB transport when a financial row is
-unsupported; its raw date uses the configured country locale when
-representable and an ASCII-safe fallback otherwise.
+unsupported; its raw date uses the configured country locale and tenant
+timezone when representable, with an ASCII-safe fallback otherwise. Receipt,
+KOT, compliance, and print-test timestamps use the tenant timezone rather than
+the host machine timezone.
 Warnings surface to the user through print results and toast notifications
 ([`frontend/src/lib/printer/warnings-toast.ts`](../frontend/src/lib/printer/warnings-toast.ts)); financial refusal warnings are shown before transport. Dispatch results use
 `classifyPrintFailure` in [`main/printers/thermal.ts`](../main/printers/thermal.ts) for stable, privacy-safe failure

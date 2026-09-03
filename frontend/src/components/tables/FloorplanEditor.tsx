@@ -210,6 +210,15 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
   const [floorForm, setFloorForm] = useState({ name: '', tableName: '', capacity: '4' });
   const [floorFormSaving, setFloorFormSaving] = useState(false);
   const [actionTable, setActionTable] = useState<Table | null>(null);
+
+  // Drop a stale action-sheet selection when entering edit mode so it never
+  // pops up unexpectedly on the way back to service mode (render-time
+  // adjustment, same pattern as prevFloor below).
+  const [wasEdit, setWasEdit] = useState(edit);
+  if (wasEdit !== edit) {
+    setWasEdit(edit);
+    if (edit) setActionTable(null);
+  }
   const [newFloorMode, setNewFloorMode] = useState(false);
   const [newFloorName, setNewFloorName] = useState('');
   const [canvasMode, setCanvasMode] = useState<'auto' | 'custom'>(() => loadSavedCanvasSize('').mode);
@@ -448,6 +457,8 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
             canvas.querySelector<HTMLElement>(`[data-testid="floorplan-chip-${CSS.escape(tb.name)}"]`)?.focus();
           });
         }
+      } else if (edit) {
+        openEdit(tb);
       } else {
         setActionTable(tb);
       }

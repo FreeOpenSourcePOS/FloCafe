@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
-import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass } from 'lucide-react';
+import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass, CalendarDays } from 'lucide-react';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import toast from 'react-hot-toast';
@@ -189,10 +189,24 @@ export default function DashboardPage() {
   const [selectedDate, setSelectedDate] = useState(todayLocal);
   const [selectedMonth, setSelectedMonth] = useState(todayLocal.slice(0, 7));
   const [periodMode, setPeriodMode] = useState<'day' | 'month'>('day');
+  const dayInputRef = useRef<HTMLInputElement>(null);
+  const monthInputRef = useRef<HTMLInputElement>(null);
   const isToday = periodMode === 'day' && selectedDate === todayLocal;
   const range = periodMode === 'month'
     ? getMonthRange(selectedMonth)
     : { startDate: selectedDate, endDate: selectedDate };
+
+  /** Opens Chromium's native calendar UI while preserving keyboard fallback. */
+  const openPicker = (input: HTMLInputElement | null) => {
+    if (!input) return;
+    try {
+      input.showPicker();
+    } catch {
+      // Older embedded Chromium builds may not expose showPicker. Focusing the
+      // native input still leaves keyboard date entry available.
+      input.focus();
+    }
+  };
 
   useEffect(() => {
     if (currentTenant && !isOwner) {
@@ -404,23 +418,45 @@ export default function DashboardPage() {
             ))}
           </div>
           {periodMode === 'day' ? (
-            <input
-              type="date"
-              value={selectedDate}
-              max={todayLocal}
-              onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
-              className="h-9 px-3 text-sm border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30"
-              aria-label={t('selectDate')}
-            />
+            <div className="relative">
+              <input
+                ref={dayInputRef}
+                type="date"
+                value={selectedDate}
+                max={todayLocal}
+                onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+                className="h-9 ps-3 pe-10 text-sm border border-border rounded-lg bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30"
+                aria-label={t('selectDate')}
+              />
+              <button
+                type="button"
+                onClick={() => openPicker(dayInputRef.current)}
+                className="absolute inset-y-0 end-0 z-10 flex w-9 items-center justify-center rounded-e-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={t('openDatePicker')}
+              >
+                <CalendarDays size={16} />
+              </button>
+            </div>
           ) : (
-            <input
-              type="month"
-              value={selectedMonth}
-              max={todayLocal.slice(0, 7)}
-              onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
-              className="h-9 px-3 text-sm border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30"
-              aria-label={t('selectMonth')}
-            />
+            <div className="relative">
+              <input
+                ref={monthInputRef}
+                type="month"
+                value={selectedMonth}
+                max={todayLocal.slice(0, 7)}
+                onChange={(e) => e.target.value && setSelectedMonth(e.target.value)}
+                className="h-9 ps-3 pe-10 text-sm border border-border rounded-lg bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-brand/30"
+                aria-label={t('selectMonth')}
+              />
+              <button
+                type="button"
+                onClick={() => openPicker(monthInputRef.current)}
+                className="absolute inset-y-0 end-0 z-10 flex w-9 items-center justify-center rounded-e-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={t('openMonthPicker')}
+              >
+                <CalendarDays size={16} />
+              </button>
+            </div>
           )}
         </div>
       </div>

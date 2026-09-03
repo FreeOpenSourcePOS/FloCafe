@@ -40,4 +40,20 @@ assert.match(payment, /lg:grid lg:grid-cols-2/, 'desktop payment content stays s
 assert.match(payment, /max-h-\[75vh\] overflow-y-auto.*lg:grid lg:grid-cols-2/, 'desktop payment stays two-column with bounded overflow fallback');
 assert.doesNotMatch(payment, /lg:overflow-visible/, 'desktop payment does not clip controls outside its bounded container');
 
-console.log('✓ UI regression guards for issues #621, #623, and #626 passed');
+const dashboard = source('frontend/src/app/(dashboard)/dashboard/page.tsx');
+assert.match(dashboard, /dayInputRef.*monthInputRef/s, 'dashboard retains explicit date and month picker controls');
+assert.match(dashboard, /input\.showPicker\(\)/, 'dashboard calendar buttons invoke the native Chromium picker');
+assert.match(dashboard, /aria-label=\{t\('openDatePicker'\)\}/, 'dashboard date picker trigger stays accessible');
+
+const prepaidCheckout = source('frontend/src/components/pos/PrepaidCheckoutModal.tsx');
+assert.doesNotMatch(prepaidCheckout, /bg-gradient-to-br from-slate-800 to-slate-900/, 'prepaid checkout does not restore the oversized total card');
+assert.match(prepaidCheckout, /preview\.discountedSubtotal/, 'prepaid checkout shows the post-discount subtotal');
+assert.match(prepaidCheckout, /t\('discounts'\)/, 'prepaid checkout retains the compact cart-level discounts control');
+const numberPadIndex = prepaidCheckout.indexOf('<CurrencyTouchNumberPad');
+const changeReturnedIndex = prepaidCheckout.indexOf("t('changeReturned')");
+assert.ok(
+  numberPadIndex >= 0 && changeReturnedIndex > numberPadIndex,
+  'change returned stays below the payment controls',
+);
+
+console.log('✓ UI regression guards for issues #621, #623, #625, and #626 passed');

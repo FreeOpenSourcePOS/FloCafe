@@ -81,14 +81,13 @@ export function fitTemplateLabel(text: string, columns: number): string {
 }
 
 /**
- * Validate the optional payload-root `labels` map of an
- * `escpos-line-template-v1` payload at install time (#445).
+ * Validate the optional `totals.chargeRows` capability declaration of an
+ * `escpos-line-template-v1` payload at install time.
  *
- * Absent/null maps pass (the field is additive and optional). Structural
- * misuse — non-object maps, unknown semantic ids, more than
- * TEMPLATE_LABELS_MAX_ENTRIES entries, or non-string/empty/oversized values —
- * throws with a clear rejection message that surfaces through pack install.
- * The renderer version stays 1: this is validation only, never a schema bump.
+ * Absent/null declarations pass (the field is additive and optional).
+ * Structural misuse — non-array values, unsupported or duplicate ids — throws
+ * with a clear rejection message that surfaces through pack install. The
+ * renderer version stays 1: this is validation only, never a schema bump.
  */
 export function validateTemplateChargeRows(rows: unknown): void {
   if (rows === undefined || rows === null) return;
@@ -117,6 +116,16 @@ export function declaredTemplateChargeRows(rows: unknown): TemplateChargeRowId[]
   return TEMPLATE_CHARGE_ROW_IDS.filter((row) => declared.has(row));
 }
 
+/**
+ * Validate the optional payload-root `labels` map of an
+ * `escpos-line-template-v1` payload at install time (#445).
+ *
+ * Absent/null maps pass (the field is additive and optional). Structural
+ * misuse — non-object maps, unknown semantic ids, more than
+ * TEMPLATE_LABELS_MAX_ENTRIES entries, or non-string/empty/oversized values —
+ * throws with a clear rejection message that surfaces through pack install.
+ * The renderer version stays 1: this is validation only, never a schema bump.
+ */
 export function validateTemplateLabelsMap(labels: unknown): void {
   if (labels === undefined || labels === null) return;
   if (!labels || typeof labels !== 'object' || Array.isArray(labels)) {

@@ -33,6 +33,7 @@ import {
   selectThermalCodePage,
   escPosCodePageId,
   mergeThermalCapabilities,
+  type ThermalCodePage,
   type ThermalPrinterCapabilities,
 } from '../../shared/print/thermal-capabilities';
 
@@ -1344,10 +1345,10 @@ export function itemAmountWidth(
   return Math.min(width, Math.max(1, cols - 5));
 }
 
-export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2): string[] {
+export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
   const qtyW = 4;
-  const productName = normalizeThermalText(item.product_name);
-  const name = truncate(productName, nameLen).padEnd(nameLen);
+  const productName = normalizeThermalText(item.product_name, capabilities);
+  const name = truncate(productName, nameLen, language, capabilities).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
   const label = name + qty;
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
@@ -1356,10 +1357,10 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
   return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(amount, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
-export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2): string[] {
-  const addonName = normalizeThermalText(addon.name);
+export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
+  const addonName = normalizeThermalText(addon.name, capabilities);
   const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
-  const label = truncate('  + ' + addonName + quantity, nameLen).padEnd(nameLen);
+  const label = truncate('  + ' + addonName + quantity, nameLen, language, capabilities).padEnd(nameLen);
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits);
   const inlineWidth = Math.max(1, cols - label.length - 1);
@@ -1367,8 +1368,8 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
   return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(price, cols).map((line) => '{FINANCIAL}' + line)];
 }
 
-export function financialRows(label: string, value: string, cols: number, language: string = 'en'): string[] {
-  const normalizedLabel = normalizeThermalText(label);
+export function financialRows(label: string, value: string, cols: number, language: string = 'en', capabilities?: ThermalPrinterCapabilities): string[] {
+  const normalizedLabel = normalizeThermalText(label, capabilities);
   const safeLabel = normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
@@ -1417,14 +1418,14 @@ export function rightAlign(text: string, width: number = 24): string {
   return ' '.repeat(Math.max(1, width - text.length)) + text;
 }
 
-export function truncate(text: string, length: number, language: string = 'en'): string {
-  const normalizedText = normalizeThermalText(text);
+export function truncate(text: string, length: number, language: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
+  const normalizedText = normalizeThermalText(text, capabilities);
   return normalizedText.length > length ? normalizedText.substring(0, length - 2) + '..' : normalizedText;
 }
 
-export function truncateShapedLine(text: string, length: number, arabicShaping: boolean, language: string = 'en'): string {
-  const normalizedText = normalizeThermalText(text);
-  return arabicShaping && hasArabicScript(normalizedText) ? truncate(normalizedText, Math.max(1, length)) : normalizedText;
+export function truncateShapedLine(text: string, length: number, arabicShaping: boolean, language: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
+  const normalizedText = normalizeThermalText(text, capabilities);
+  return arabicShaping && hasArabicScript(normalizedText) ? truncate(normalizedText, Math.max(1, length), language, capabilities) : normalizedText;
 }
 
 /**
@@ -1487,13 +1488,13 @@ export function wrapText(text: string, cols: number): string[] {
   return lines.length > 0 ? lines : [''];
 }
 
-export function pushWrapped(lines: string[], text: string, cols: number, language: string = 'en'): void {
-  const normalized = normalizeThermalText(text);
+export function pushWrapped(lines: string[], text: string, cols: number, language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
+  const normalized = normalizeThermalText(text, capabilities);
   for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
-export function pushCenteredWrapped(lines: string[], text: string, cols: number, language: string = 'en'): void {
-  const normalized = normalizeThermalText(text);
+export function pushCenteredWrapped(lines: string[], text: string, cols: number, language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
+  const normalized = normalizeThermalText(text, capabilities);
   for (const line of wrapText(normalized, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
@@ -1566,8 +1567,8 @@ const CURRENCY_TOKEN_RE = new RegExp(
   'g',
 );
 
-export function normalizeThermalText(text: string): string {
-  return normalizeThermalTextByCapabilities(text, GENERIC_THERMAL_CAPABILITIES);
+export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
+  return normalizeThermalTextByCapabilities(text, capabilities);
 }
 
 function normalizeCurrencyToAscii(text: string): string {
@@ -1641,6 +1642,9 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     if (line.includes('{INIT}')) {
       buf.push(0x1B, 0x40);
       resetAllStyles();
+      if (!_useUnicode && activeCodePage !== 'ascii') {
+        buf.push(0x1B, 0x74, escPosCodePageId(activeCodePage));
+      }
       continue;
     }
 
@@ -1746,19 +1750,34 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
 /** Convert the command subset emitted by buildEscPos() into a paperless text preview. */
 export function escPosToText(data: Buffer | Uint8Array): string {
   const bytes = Buffer.from(data);
-  const text: number[] = [];
+  const text: string[] = [];
+  const lineBytes: number[] = [];
+  let activeCodePage: ThermalCodePage | 'utf8' = 'utf8';
+
+  const flushLine = (): void => {
+    if (lineBytes.length === 0) return;
+    text.push(decodeThermalPreviewBytes(lineBytes, activeCodePage));
+    lineBytes.length = 0;
+  };
 
   for (let i = 0; i < bytes.length;) {
     const byte = bytes[i];
     if (byte === 0x1B) {
       const command = bytes[i + 1];
       if (command === 0x40) {
+        flushLine();
+        activeCodePage = 'utf8';
         i += 2;
+      } else if (command === 0x74) {
+        flushLine();
+        activeCodePage = THERMAL_CODE_PAGE_BY_ID[bytes[i + 2]] ?? 'utf8';
+        i += 3;
       } else if (command === 0x21 || command === 0x45 || command === 0x61) {
         i += 3;
       } else if (command === 0x64) {
+        flushLine();
         const feedLines = bytes[i + 2] || 0;
-        for (let line = 0; line < feedLines; line++) text.push(0x0A);
+        for (let line = 0; line < feedLines; line++) text.push('\n');
         i += 3;
       } else {
         i += Math.min(2, bytes.length - i);
@@ -1766,19 +1785,47 @@ export function escPosToText(data: Buffer | Uint8Array): string {
       continue;
     }
     if (byte === 0x1D && bytes[i + 1] === 0x56) {
+      flushLine();
       const mode = bytes[i + 2];
       i += mode === 0x41 || mode === 0x42 ? 4 : 3;
+      continue;
+    }
+    if (byte === 0x0A) {
+      flushLine();
+      text.push('\n');
+      i += 1;
       continue;
     }
     if (byte === 0x0D) {
       i += 1;
       continue;
     }
-    text.push(byte);
+    lineBytes.push(byte);
     i += 1;
   }
 
-  return Buffer.from(text).toString('utf8').replace(/\n+$/, '');
+  flushLine();
+  return text.join('').replace(/\n+$/, '');
+}
+
+const THERMAL_CODE_PAGE_HIGH_HALVES: Record<Exclude<ThermalCodePage, 'ascii'>, string> = {
+  cp437: "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ",
+  cp850: "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤ÁÂÀ©╣║╗╝¢¥┐└┴┬├─┼ãÃ╚╔╩╦╠═╬¤ðÐÊËÈıÍÎÏ┘┌█▄¦Ì▀ÓßÔÒõÕµþÞÚÛÙýÝ¯´­±‗¾¶§÷¸°¨·¹³²■ ",
+  cp858: "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜø£Ø×ƒáíóúñÑªº¿®¬½¼¡«»░▒▓│┤ÁÂÀ©╣║╗╝¢¥┐└┴┬├─┼ãÃ╚╔╩╦╠═╬¤ðÐÊËÈ€ÍÎÏ┘┌█▄¦Ì▀ÓßÔÒõÕµþÞÚÛÙýÝ¯´­±‗¾¶§÷¸°¨·¹³²■ ",
+  windows1252: "€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜š›œžŸÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ",
+};
+const THERMAL_CODE_PAGE_BY_ID: Record<number, ThermalCodePage> = {
+  0: 'cp437',
+  2: 'cp850',
+  16: 'windows1252',
+  19: 'cp858',
+};
+
+function decodeThermalPreviewBytes(bytes: number[], codePage: ThermalCodePage | 'utf8'): string {
+  if (codePage === 'utf8') return Buffer.from(bytes).toString('utf8');
+  if (codePage === 'ascii') return bytes.map((byte) => String.fromCharCode(byte)).join('');
+  const highHalf = THERMAL_CODE_PAGE_HIGH_HALVES[codePage];
+  return bytes.map((byte) => byte < 0x80 ? String.fromCharCode(byte) : highHalf[byte - 0x80] ?? '\uFFFD').join('');
 }
 
 export async function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {

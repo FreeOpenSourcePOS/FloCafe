@@ -87,6 +87,7 @@ function printerShape(printer: any) {
     updated_at: printer.updated_at,
     profile_id: profile.id,
     profile_name: `${profile.make} ${profile.model}`,
+    capabilities: profile.capabilities,
   };
 }
 

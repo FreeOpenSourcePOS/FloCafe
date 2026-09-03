@@ -27,6 +27,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 import type { Language } from '@/lib/i18n/languages';
+import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
 
@@ -47,6 +48,8 @@ export interface HardwarePrinter {
   port?: number | null;
   paper_width?: string | null;
   is_default: number;
+  profile_id?: string;
+  capabilities?: ThermalPrinterCapabilities;
 }
 
 interface PrinterState {
@@ -58,6 +61,7 @@ interface PrinterState {
   paperWidth: PaperWidth;
   printMethod: PrintMode;
   hardwarePrinter: HardwarePrinter | null;
+  webusbPrinter: HardwarePrinter | null;
   refreshHardwarePrinter: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
@@ -83,6 +87,7 @@ export const usePrinterStore = create<PrinterState>()(
       paperWidth: 58,
       printMethod: 'escpos',
       hardwarePrinter: null,
+      webusbPrinter: null,
 
       refreshHardwarePrinter: async () => {
         try {
@@ -92,9 +97,13 @@ export const usePrinterStore = create<PrinterState>()(
             list.find((p) => p.is_default === 1 && p.connection_type !== 'webusb') ||
             list.find((p) => p.connection_type !== 'webusb') ||
             null;
-          set({ hardwarePrinter: defaultPrinter });
+          const webusbPrinter =
+            list.find((p) => p.is_default === 1 && p.connection_type === 'webusb') ||
+            list.find((p) => p.connection_type === 'webusb') ||
+            null;
+          set({ hardwarePrinter: defaultPrinter, webusbPrinter });
         } catch {
-          set({ hardwarePrinter: null });
+          set({ hardwarePrinter: null, webusbPrinter: null });
         }
       },
 
@@ -213,6 +222,7 @@ export const usePrinterStore = create<PrinterState>()(
             isReprint,
             trimDecimals: printerTrimDecimals,
             languages,
+            capabilities: get().webusbPrinter?.capabilities,
           };
 
           let bytes: Uint8Array;
@@ -315,6 +325,7 @@ export const usePrinterStore = create<PrinterState>()(
             trimDecimals: printerTrimDecimals,
             rawEscPos: true,
             language: languages[0],
+            capabilities: get().webusbPrinter?.capabilities,
           }, warnings);
           if (hasFinancialPrintWarning(warnings)) {
             const refusal = makeFinancialPrintRefusalMessage(warnings);
@@ -369,7 +380,7 @@ export const usePrinterStore = create<PrinterState>()(
             const warnings: PrintWarning[] = [];
             const bytes = buildKotBytes(
               orderForPrint,
-              { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone },
+              { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: get().webusbPrinter?.capabilities },
               warnings,
             );
             set({ lastPrintedBytes: bytes });

@@ -79,14 +79,14 @@ export function buildKotBytes(
   enc.align('left').bold(true);
   if (opts.stationName) {
     const stationName = String(opts.stationName);
-    safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.station')}: ${stationName}`, `Station: ${stationName}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.station')}: ${stationName}`, `Station: ${thermalSafeMetadataValue(stationName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
   const orderNumber = String(order.order_number);
-  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order: ${orderNumber}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order: ${thermalSafeMetadataValue(orderNumber, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.table) {
     const tableName = String(order.table.name);
-    safePrinterText(enc, thermalSafeHeaderText(label('pos.tableLabel').replace('{name}', tableName), `Table: ${tableName}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, thermalSafeHeaderText(label('pos.tableLabel').replace('{name}', tableName), `Table: ${thermalSafeMetadataValue(tableName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   const orderType = resolveOrderType(order.type, language);
@@ -94,7 +94,7 @@ export function buildKotBytes(
 
   if (order.customer) {
     const customerName = String(order.customer.name);
-    safePrinterText(enc, thermalSafeHeaderText(`${label('pos.customer')}: ${customerName}`, `Customer: ${customerName}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, thermalSafeHeaderText(`${label('pos.customer')}: ${customerName}`, `Customer: ${thermalSafeMetadataValue(customerName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   enc.bold(false);
@@ -167,6 +167,12 @@ function truncate(str: string, max: number, language: string = 'en'): string {
 
 // Keep nonfinancial KOT identity visible when generic ESC/POS cannot
 // represent a localized header label; item text still follows safePrinterText.
+const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
+
+function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean): string {
+  return thermalSafeHeaderText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping);
+}
+
 function thermalSafeHeaderText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
   const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
   return !arabicShaping && hasUnsupportedPrinterChars(normalized) ? fallback : normalized;

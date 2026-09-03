@@ -141,6 +141,43 @@ async function run(): Promise<void> {
     }
   }
 
+  const nonAsciiMetadataOrder = {
+    ...order,
+    order_number: 'شماره-001',
+    table: { name: 'میز ۱' },
+    customer: { name: 'مشتری' },
+  };
+  const metadataThermalWarnings: any[] = [];
+  const metadataThermalText = escPosToText(formatKOT(
+    nonAsciiMetadataOrder,
+    nonAsciiMetadataOrder.items,
+    'آشپزخانه',
+    42,
+    false,
+    'full',
+    'fa-IR',
+    { timeZone: 'UTC' },
+    metadataThermalWarnings,
+    false,
+    'fa',
+  ));
+  assert.match(metadataThermalText, /Station: \[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII station visibility with an explicit placeholder');
+  assert.match(metadataThermalText, /Order: \[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII order-number visibility with an explicit placeholder');
+  assert.match(metadataThermalText, /Table: \[UNSUPPORTED\]/, 'thermal KOT preserves non-ASCII table visibility with an explicit placeholder');
+
+  const metadataWebUsbWarnings: any[] = [];
+  const metadataWebUsbText = Buffer.from(frontend.kotEncoder.buildKotBytes(nonAsciiMetadataOrder as any, {
+    paperWidth: 58,
+    language: 'fa',
+    stationName: 'آشپزخانه',
+    locale: 'fa-IR',
+    timezone: 'UTC',
+  }, metadataWebUsbWarnings)).toString('utf8');
+  assert.match(metadataWebUsbText, /Station: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII station visibility with an explicit placeholder');
+  assert.match(metadataWebUsbText, /Order: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII order-number visibility with an explicit placeholder');
+  assert.match(metadataWebUsbText, /Table: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII table visibility with an explicit placeholder');
+  assert.match(metadataWebUsbText, /Customer: \[UNSUPPORTED\]/, 'WebUSB KOT preserves non-ASCII customer visibility with an explicit placeholder');
+
   const taxWarnings: any[] = [];
   const taxBillText = Buffer.from(frontend.taxBillEncoder.buildTaxBillBytes({
     bill_number: 'INV-PHASE3-001',

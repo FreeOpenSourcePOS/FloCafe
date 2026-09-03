@@ -121,16 +121,23 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
 // Header metadata must stay visible on generic ESC/POS. Keep the localized
 // value when the selected capability can represent it; otherwise use the
 // existing ASCII labels rather than silently losing ticket identity.
+const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
+
 function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
   const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
   return !arabicShaping && /[^\x00-\x7F]/.test(normalized) ? fallback : normalized;
+}
+
+function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean): string {
+  return thermalSafeText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping);
 }
 
 function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string, arabicShaping: boolean): string {
   const localized = language === 'en'
     ? `Order: ${orderNumber}`
     : labelOf(label).replace('{number}', orderNumber);
-  return thermalSafeText(localized, `Order: ${orderNumber}`, language, arabicShaping);
+  const fallbackOrderNumber = thermalSafeMetadataValue(orderNumber, language, arabicShaping);
+  return thermalSafeText(localized, `Order: ${fallbackOrderNumber}`, language, arabicShaping);
 }
 
 function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
@@ -142,14 +149,14 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping);
   const station = thermalSafeText(
     `${labelOf(header.stationLabel)}: ${header.stationName.text}`,
-    `Station: ${header.stationName.text}`,
+    `Station: ${thermalSafeMetadataValue(header.stationName.text, options.language, options.arabicShaping)}`,
     options.language,
     options.arabicShaping,
   );
   const table = header.table
     ? thermalSafeText(
       formatTableLabel(header.table.label, header.table.name.text),
-      `Table: ${header.table.name.text}`,
+      `Table: ${thermalSafeMetadataValue(header.table.name.text, options.language, options.arabicShaping)}`,
       options.language,
       options.arabicShaping,
     )

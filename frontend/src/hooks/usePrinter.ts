@@ -128,9 +128,9 @@ export const usePrinterStore = create<PrinterState>()(
           const isReprint = opts?.isReprint ?? false;
           const billTemplateWarning = makeBillTemplateFallbackWarning(billTemplate);
 
-          const executeBrowserPrint = async () => {
+          const executeBrowserPrint = async (): Promise<PrintWarning[]> => {
             const { printWebBill } = await import('@/lib/printer/web-print');
-            await printWebBill(bill, tenant, {
+            const browserWarnings = await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
               languages: opts?.languages ?? resolveBillPrintLanguages(),
               includeTaxId: billShowTaxId,
@@ -148,7 +148,7 @@ export const usePrinterStore = create<PrinterState>()(
               isReprint,
               trimDecimals: printerTrimDecimals,
             });
-            return billTemplateWarning ? [billTemplateWarning] : [];
+            return billTemplateWarning ? [...browserWarnings, billTemplateWarning] : browserWarnings;
           };
 
           const hw = get().hardwarePrinter;
@@ -267,7 +267,7 @@ export const usePrinterStore = create<PrinterState>()(
             // raw ESC/POS bytes (which would strip Persian digits/ریال to
             // printer ASCII). Mirrors the printBill browser path.
             const { printWebBill } = await import('@/lib/printer/web-print');
-            await printWebBill(bill, tenant, {
+            const browserWarnings = await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
               languages,
               includeTaxId: billShowTaxId,
@@ -286,7 +286,7 @@ export const usePrinterStore = create<PrinterState>()(
               useUnicode: printerUseUnicode,
               trimDecimals: printerTrimDecimals,
             });
-            return [];
+            return browserWarnings;
           }
 
           const failedLanguages = await ensurePrintLanguagesLoaded(languages);

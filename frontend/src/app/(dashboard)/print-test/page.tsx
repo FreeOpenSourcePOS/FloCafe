@@ -47,10 +47,11 @@ export default function PrintTestPage() {
           if (printMethod === 'browser') {
             // Browser test surface runs through the real document-driven
             // web-print path (#444).
-            await printWebBill(testBill, testTenant, {
+            const printWarnings = await printWebBill(testBill, testTenant, {
               paperSize: paperWidth === 80 ? 'thermal80' : 'thermal58',
             });
             toast.success(t('browserDialogOpened'));
+            showPrintWarningsToast(printWarnings);
           } else {
             const printWarnings = await printBill(testBill, testTenant, { paperWidth });
             toast.success(t('receiptPrinted'));
@@ -59,7 +60,7 @@ export default function PrintTestPage() {
           break;
         case 'tax':
           if (printMethod === 'browser') {
-            await printWebBill(testBill, testTenant, {
+            const printWarnings = await printWebBill(testBill, testTenant, {
               paperSize: paperWidth === 80 ? 'thermal80' : 'thermal58',
               includeTaxId: true,
               taxRegistrationNumber: 'TAXID-0001',
@@ -67,6 +68,7 @@ export default function PrintTestPage() {
               phone: '+91 9876543210',
             });
             toast.success(t('browserDialogOpened'));
+            showPrintWarningsToast(printWarnings);
           } else {
             const printWarnings = await printTaxBill(testBill, testTenant, {
               paperWidth,
@@ -92,10 +94,15 @@ export default function PrintTestPage() {
             // ticket locale so a fixed KOT language ≠ UI language still
             // renders translated labels on cold start (mirrors usePrinter).
             const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
-            await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
+            const failedLanguages = await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
             const html = generateKotHtml(testOrder, { paperWidth, stationName: 'Kitchen', timezone: testTenant.timezone });
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));
+            showPrintWarningsToast(failedLanguages.map((language) => ({
+              field: 'kot language',
+              text: language,
+              message: `KOT language "${language}" could not be loaded, so English labels were used. Check the locale bundle and retry.`,
+            })));
           } else {
             const printWarnings = await printKot(testOrder, { paperWidth, stationName: 'Kitchen' });
             toast.success(t('kotPrinted'));
@@ -103,8 +110,9 @@ export default function PrintTestPage() {
           }
           break;
         case 'web-print':
-          await printWebBill(testBill, testTenant, { paperSize: printerPaperSize, includeTaxId: true });
+          const printWarnings = await printWebBill(testBill, testTenant, { paperSize: printerPaperSize, includeTaxId: true });
           toast.success(t('webPrintDialogOpened'));
+          showPrintWarningsToast(printWarnings);
           break;
         case 'whatsapp':
           shareBillViaWhatsApp(testBill, testCustomer, testTenant, {

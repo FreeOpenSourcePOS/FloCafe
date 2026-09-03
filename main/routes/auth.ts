@@ -98,6 +98,11 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
     currency_symbol: getCurrencySymbol(s.currency || 'INR', getCountryByCode(s.country)?.locale) || '₹',
     timezone: s.timezone || 'Asia/Kolkata',
     language: s.language || 'en',
+    // Include print policies in the authenticated tenant snapshot so the
+    // renderer can bootstrap them before the first print, without requiring a
+    // visit to Settings.
+    bill_language_policy: s.bill_language_policy || null,
+    kot_language_policy: s.kot_language_policy || null,
     service_model: s.service_model || 'finedine',
     currency_display: s.currency_display || 'rial',
     number_digits: s.number_digits || 'locale',

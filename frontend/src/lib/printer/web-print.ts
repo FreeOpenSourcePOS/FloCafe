@@ -21,6 +21,7 @@
 
 import type { Bill, Tenant } from '@/lib/types';
 import toast from 'react-hot-toast';
+import type { PrintWarning } from './warnings';
 import {
   getCountryByCode,
   getCurrencyFractionDigits,
@@ -122,8 +123,13 @@ function resolveTaxIdLabel(country: string | undefined, lang: Language): string 
 /**
  * Ensure the requested receipt language messages are loaded in memory (#377).
  */
-export async function ensureReceiptMessagesLoaded(lang: Language): Promise<void> {
-  await loadLocaleMessages(lang).catch(() => {});
+export async function ensureReceiptMessagesLoaded(lang: Language): Promise<Language[]> {
+  try {
+    await loadLocaleMessages(lang);
+    return [];
+  } catch {
+    return [lang];
+  }
 }
 
 /**
@@ -137,7 +143,7 @@ export async function printWebBill(
   bill: Bill,
   tenant: ReceiptTenant,
   opts: WebPrintOptions = {}
-): Promise<void> {
+): Promise<PrintWarning[]> {
   const languages = resolvePrintLanguages(opts);
 
   // 1. Open popup window synchronously to maintain transient user activation
@@ -150,7 +156,12 @@ export async function printWebBill(
   // 2. Ensure every language selected by the canonical print policy is
   //    available before the synchronous document build. The document uses
   //    the primary language for this single-language HTML surface.
-  await ensurePrintLanguagesLoaded(languages);
+  const failedLanguages = await ensurePrintLanguagesLoaded(languages);
+  const warnings: PrintWarning[] = failedLanguages.map((language) => ({
+    field: 'receipt language',
+    text: language,
+    message: `Receipt language "${language}" could not be loaded, so English labels were used. Check the locale bundle and retry.`,
+  }));
   const html = generateBillHtml(bill, tenant, { ...opts, languages });
 
   // 3. Write HTML and trigger print
@@ -223,7 +234,7 @@ export async function printWebBill(
       toast.error('Failed to open print dialog');
       settle(err instanceof Error ? err : new Error(String(err)));
     }
-  });
+  }).then(() => warnings);
 }
 
 // ---------------------------------------------------------------------------

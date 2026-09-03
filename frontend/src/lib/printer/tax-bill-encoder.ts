@@ -16,7 +16,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeGermanThermalText, padCurrencyPrefix } from './unicode';
-import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
@@ -330,10 +330,12 @@ function truncateForLanguage(str: string, max: number, language?: string): strin
 function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false, rawEscPos: boolean = true): string {
   const amount = Number(value);
   const numeric = Number.isFinite(amount) ? amount : 0;
-  const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
+  const decimals = getCurrencyFractionDigits(currency);
+  const factor = 10 ** decimals;
+  const hasDecimals = decimals > 0 && Math.round(numeric * factor) % factor !== 0;
   const formattedNum = numeric.toLocaleString(locale, {
-    minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : decimals,
+    maximumFractionDigits: decimals,
   });
   const normalizedNum = rawEscPos ? formattedNum.replace(/[\u00A0\u202F]/g, ' ') : formattedNum;
   return `${currency}${normalizedNum}`;

@@ -17,6 +17,8 @@ import {
   registerRendererDocument,
 } from './window-readiness';
 import { isThemeMode, appendThemeQueryParam } from './title-bar-theme';
+import { getTenantCurrency } from './services/refund';
+import { getCurrencyMinorUnitFactor } from './countries';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -516,13 +518,14 @@ export function registerIpcHandlers(
     try {
       const db = getDatabase();
       const today = new Date().toISOString().slice(0, 10);
+      const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
 
       const bills = db.prepare(`
         SELECT
           (SELECT COUNT(*) FROM bills WHERE date(paid_at) = date(?)) as bill_count,
           COALESCE((SELECT SUM(paid_amount) FROM bills WHERE date(paid_at) = date(?)), 0)
-          - COALESCE((SELECT SUM(amount_cents) / 100.0 FROM refunds WHERE date(created_at) = date(?)), 0) as revenue
-      `).get(today, today, today) as { bill_count: number; revenue: number };
+          - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE date(created_at) = date(?)), 0) as revenue
+      `).get(today, today, minorFactor, today) as { bill_count: number; revenue: number };
 
       const covers = db.prepare(`
         SELECT COALESCE(SUM(guest_count), 0) as covers FROM orders

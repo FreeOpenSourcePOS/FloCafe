@@ -132,15 +132,18 @@ async function main() {
       db.prepare(`INSERT INTO tables (id, number, capacity, status, created_at, updated_at) VALUES (?, ?, ?, 'available', ?, ?)`)
         .run('tbl-turn-1', 'TT1', 4, now(), now());
 
-      const order1CreatedAt = minutesAgo(40);
-      const order1CompletedAt = minutesAgo(30); // 10 minutes
+      // Anchor timestamps to 01:00 UTC today to guarantee they fall within today's UTC bounds
+      const todayBase = new Date();
+      todayBase.setUTCHours(1, 0, 0, 0);
+      const order1CreatedAt = new Date(todayBase.getTime()).toISOString();
+      const order1CompletedAt = new Date(todayBase.getTime() + 10 * 60 * 1000).toISOString(); // 10 minutes
       db.prepare(`
         INSERT INTO orders (order_number, table_id, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
         VALUES (?, ?, ?, 'dine_in', 'completed', 100, 100, ?, ?, ?)
       `).run('ORD-TURN-1', 'tbl-turn-1', ownerId, order1CreatedAt, order1CompletedAt, order1CompletedAt);
 
-      const order2CreatedAt = minutesAgo(25);
-      const order2CompletedAt = minutesAgo(5); // 20 minutes
+      const order2CreatedAt = new Date(todayBase.getTime() + 20 * 60 * 1000).toISOString();
+      const order2CompletedAt = new Date(todayBase.getTime() + 40 * 60 * 1000).toISOString(); // 20 minutes
       db.prepare(`
         INSERT INTO orders (order_number, table_id, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
         VALUES (?, ?, ?, 'dine_in', 'completed', 100, 100, ?, ?, ?)
@@ -150,11 +153,11 @@ async function main() {
       db.prepare(`
         INSERT INTO orders (order_number, table_id, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
         VALUES (?, NULL, ?, 'takeaway', 'completed', 100, 100, ?, ?, ?)
-      `).run('ORD-TURN-TAKEAWAY', ownerId, minutesAgo(10), minutesAgo(1), minutesAgo(1));
+      `).run('ORD-TURN-TAKEAWAY', ownerId, new Date(todayBase.getTime() + 50 * 60 * 1000).toISOString(), new Date(todayBase.getTime() + 55 * 60 * 1000).toISOString(), new Date(todayBase.getTime() + 55 * 60 * 1000).toISOString());
       db.prepare(`
         INSERT INTO orders (order_number, table_id, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
         VALUES (?, ?, ?, 'dine_in', 'cancelled', 100, 100, ?, ?, ?)
-      `).run('ORD-TURN-CANCELLED', 'tbl-turn-1', ownerId, minutesAgo(60), minutesAgo(1), minutesAgo(1));
+      `).run('ORD-TURN-CANCELLED', 'tbl-turn-1', ownerId, new Date(todayBase.getTime()).toISOString(), new Date(todayBase.getTime() + 55 * 60 * 1000).toISOString(), new Date(todayBase.getTime() + 55 * 60 * 1000).toISOString());
 
       const res = await request(app).get('/api/reports/daily-stats').set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(res.status, 200, `owner gets 200 (got ${res.status})`);

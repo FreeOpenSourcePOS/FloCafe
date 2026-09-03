@@ -23,6 +23,7 @@ import type { Bill, Tenant } from '@/lib/types';
 import toast from 'react-hot-toast';
 import {
   getCountryByCode,
+  getCurrencyFractionDigits,
   formatCurrencyForTenant,
   formatNumberForTenant,
   formatDateForTenant,
@@ -551,7 +552,9 @@ function getPaperStyles(size: PaperSize): string {
 function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false): string {
   const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
   const prefs = { currencyDisplay: tenant.currency_display, digits: tenant.number_digits };
-  const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
+  const fractionDigits = getCurrencyFractionDigits(tenant.currency ?? 'INR');
+  const factor = 10 ** fractionDigits;
+  const hasDecimals = fractionDigits > 0 && Math.round(numeric * factor) % factor !== 0;
   const isToman =
     (tenant.currency === 'IRR' || (!tenant.currency && tenant.country === 'IR')) &&
     (tenant.currency_display === 'toman' || tenant.currency_display === 'toman_short');

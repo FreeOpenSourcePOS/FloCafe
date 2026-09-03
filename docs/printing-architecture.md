@@ -62,9 +62,9 @@ The document-block renderer rule has explicit active raw-path exceptions:
 
 - Signed [#445](https://github.com/FreeOpenSourcePOS/FloCafe/issues/445) compliance packs use [`main/printers/thermal.ts`](../main/printers/thermal.ts) to render raw
   `Order`/`Bill`/business rows with the signed [`escpos-line-template-v1`](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1)
-  payload. This remains a separate compliance format, but its amount-bearing
-  item, add-on, total, and payment lines use the shared ESC/POS financial-warning guard
-  before dispatch; see [the compliance template contract in printers.md](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1).
+  payload. This remains a separate compliance format, but all of its
+  amount-bearing lines use the shared ESC/POS financial-warning guard before
+  dispatch; see [the compliance template contract in printers.md](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1).
 - [`frontend/src/lib/printer/kot-web-print.ts`](../frontend/src/lib/printer/kot-web-print.ts) renders browser KOT HTML from a
   raw `Order`; it uses the shared catalog and direction helpers but is not a
   `KotDocument` v1 consumer.

@@ -1,7 +1,7 @@
 import { createHash, verify, type KeyLike } from 'crypto';
 import type { CountryPack, CountryTaxPackPluginArtifact, PluginPrintTemplate } from './types';
 import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from './trusted-signing-key';
-import { validateTemplateLabelsMap } from '../print/template-labels';
+import { validateTemplateChargeRows, validateTemplateLabelsMap } from '../print/template-labels';
 
 const RELEASES_API_URL = 'https://api.github.com/repos/FreeOpenSourcePOS/FloCafe-Plugins/releases';
 const RELEASE_DOWNLOAD_PATH_PREFIX = '/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/';
@@ -284,6 +284,14 @@ function validPluginPrintTemplate(value: unknown): value is PluginPrintTemplate 
   // time. A malformed map throws with a clear rejection message instead of
   // failing silently; templates without labels behave exactly as before.
   validateTemplateLabelsMap(payloadObject.labels);
+  // Charge rows are an additive v1 capability declaration. Validate only when
+  // present so older signed templates retain their existing contract.
+  if (payloadObject.format === 'escpos-line-template-v1') {
+    const totals = payloadObject.totals && typeof payloadObject.totals === 'object' && !Array.isArray(payloadObject.totals)
+      ? payloadObject.totals as Record<string, unknown>
+      : {};
+    validateTemplateChargeRows(totals.chargeRows);
+  }
   const payloadProfiles = Array.isArray(payloadObject.widthProfiles) ? payloadObject.widthProfiles : [];
   const hasMatchingProfiles = payloadObject.format === 'escpos-line-template-v1'
     && payloadProfiles.length > 0

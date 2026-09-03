@@ -107,6 +107,7 @@ Signed country tax packs can ship compliance receipt templates that render throu
 | `header` | object | no | Optional author strings: `businessNameTransform` (`uppercase`), `taxTitleWhenTaxPresent`, `titleWhenTaxAbsent` |
 | `fields.taxRegistrationNumberLabel` | string | no | Author label for the tax registration line |
 | `totals.grandTotalLabel` | string | no | Author label for the bold grand-total row |
+| `totals.chargeRows` | array of `serviceCharge`, `deliveryCharge`, `packagingCharge` | no | Explicitly opts into persisted nonzero charge rows; output remains in service, delivery, packaging order and zero values stay absent |
 | `totals.showSubtotal`, `totals.showDiscount` | boolean | no | Toggle subtotal/discount rows (default on) |
 | `totals.showTaxRegistrationNumber` | string | no | `when_tax_present_or_enabled` or default visibility rule |
 | `footer.defaultMessage` | string | no | Author footer message used when no configured footer note applies |
@@ -131,7 +132,7 @@ Packs may ship a payload-root `labels` map to override built-in fallback labels 
 }
 ```
 
-Supported semantic ids (stable public identifiers — never internal i18n keys): `invoice`, `taxInvoice`, `subtotal`, `discount`, `tax`, `total`, `taxIncluded`, `footerThanks`. Once shipped, an id never changes meaning.
+Supported semantic ids (stable public identifiers — never internal i18n keys): `invoice`, `taxInvoice`, `subtotal`, `discount`, `tax`, `total`, `serviceCharge`, `deliveryCharge`, `packagingCharge`, `taxIncluded`, `footerThanks`. Once shipped, an id never changes meaning.
 
 Resolution order for each label: the pack's structural author string (for example `totals.grandTotalLabel`) wins first, then the matching `labels` entry, then the built-in default localized through the canonical print-labels catalog using the receipt language. English defaults are byte-identical to the pre-#445 hardcoded strings.
 

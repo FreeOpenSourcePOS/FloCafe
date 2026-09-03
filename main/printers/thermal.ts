@@ -16,7 +16,13 @@ import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
 import { printLabel, isGeneratedPrintLanguage } from '../print/print-labels.generated';
 import type { PrintConceptId } from '../print/print-labels.generated';
-import { fitTemplateLabel, resolveTemplateLabel, sanitizeTemplateLabelText } from '../print/template-labels';
+import {
+  declaredTemplateChargeRows,
+  fitTemplateLabel,
+  resolveTemplateLabel,
+  sanitizeTemplateLabelText,
+  type TemplateChargeRowId,
+} from '../print/template-labels';
 import { renderClassicReceiptViaDocument } from './document-classic';
 import { renderCompactReceiptViaDocument } from './document-compact';
 import { renderKotViaDocument } from './document-kot';
@@ -1044,6 +1050,20 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   } else if (Number(bill.tax_amount) !== 0) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)), rowLabelWidth);
     lines.push(...financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang));
+  }
+  // `chargeRows` is an explicit capability declaration. Its order is not
+  // presentation authority: country/legal rows remain in this stable order,
+  // and zero-valued persisted charges stay absent.
+  const chargeAmounts: Record<TemplateChargeRowId, number> = {
+    serviceCharge: Number(bill.service_charge) || 0,
+    deliveryCharge: Number(bill.delivery_charge) || 0,
+    packagingCharge: Number(bill.packaging_charge) || 0,
+  };
+  for (const row of declaredTemplateChargeRows(payload?.totals?.chargeRows)) {
+    const amount = chargeAmounts[row];
+    if (amount === 0) continue;
+    const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, row, lang)), rowLabelWidth);
+    lines.push(...financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang));
   }
   lines.push(bar);
   // Label precedence (#445): the author's structural literal (e.g.

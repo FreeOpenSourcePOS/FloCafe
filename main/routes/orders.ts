@@ -327,12 +327,37 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     billsByOrderId.set(parsed.order_id, siblings);
     billsById.set(parsed.id, parsed);
   }
-  const ledgerByBillId = new Map<number, number>();
+  const loyaltyByBillId = new Map<number, { earned: number; redeemed: number }>();
   if (billsById.size > 0) {
     const billIds = Array.from(billsById.keys());
     const ph = billIds.map(() => '?').join(',');
-    const rows = db.prepare(`SELECT bill_id, COALESCE(SUM(amount),0) as total FROM loyalty_ledger WHERE bill_id IN (${ph}) AND type = 'credit' GROUP BY bill_id`).all(...billIds) as { bill_id: number; total: number }[];
-    for (const r of rows) ledgerByBillId.set(r.bill_id, r.total);
+    const rows = db.prepare(`SELECT bill_id, type, COALESCE(SUM(amount),0) as total FROM loyalty_ledger WHERE bill_id IN (${ph}) AND type IN ('credit', 'debit') GROUP BY bill_id, type`).all(...billIds) as { bill_id: number; type: 'credit' | 'debit'; total: number }[];
+    for (const r of rows) {
+      const current = loyaltyByBillId.get(r.bill_id) || { earned: 0, redeemed: 0 };
+      if (r.type === 'credit') current.earned = Number(r.total) || 0;
+      if (r.type === 'debit') current.redeemed = Number(r.total) || 0;
+      loyaltyByBillId.set(r.bill_id, current);
+    }
+  }
+  const loyaltyEnabled = getSettingValue('loyalty_enabled') === 'true';
+  const loyaltyByCustomerId = new Map<string, { credits: number; debits: number }>();
+  const billCustomerIds = Array.from(new Set(Array.from(billsById.values()).map((bill) => bill.customer_id).filter(Boolean)));
+  if (loyaltyEnabled && billCustomerIds.length > 0) {
+    const ph = billCustomerIds.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT customer_id, type, COALESCE(SUM(amount), 0) as total
+      FROM loyalty_ledger
+      WHERE customer_id IN (${ph})
+        AND ((type = 'credit' AND (expires_at IS NULL OR expires_at > datetime('now'))) OR type = 'debit')
+      GROUP BY customer_id, type
+    `).all(...billCustomerIds) as { customer_id: string | number; type: 'credit' | 'debit'; total: number }[];
+    for (const r of rows) {
+      const key = String(r.customer_id);
+      const current = loyaltyByCustomerId.get(key) || { credits: 0, debits: 0 };
+      if (r.type === 'credit') current.credits = Number(r.total) || 0;
+      if (r.type === 'debit') current.debits = Number(r.total) || 0;
+      loyaltyByCustomerId.set(key, current);
+    }
   }
 
   return parsedOrders.map((order) => {
@@ -342,7 +367,15 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     const customer = order.customer_id ? customersById.get(order.customer_id) : null;
     const bills = billsByOrderId.get(order.id) || [];
     for (const billRow of bills) {
-      if (billRow.customer_id) billRow.points_earned = ledgerByBillId.get(billRow.id) || 0;
+      if (billRow.customer_id) {
+        const billLoyalty = loyaltyByBillId.get(billRow.id) || { earned: 0, redeemed: 0 };
+        const customerLoyalty = loyaltyByCustomerId.get(String(billRow.customer_id));
+        billRow.points_earned = billLoyalty.earned;
+        billRow.points_redeemed = billLoyalty.redeemed;
+        billRow.points_balance = loyaltyEnabled && customerLoyalty
+          ? Math.max(0, customerLoyalty.credits - customerLoyalty.debits)
+          : null;
+      }
     }
     const bill = bills.find((row) => row.payment_status !== 'paid') || bills[0] || null;
     return { ...order, items: itemList, table, customer, bill, bills };

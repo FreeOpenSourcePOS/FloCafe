@@ -83,7 +83,7 @@ export function buildKotBytes(
     safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.station')}: ${stationName}`, `Station: ${thermalSafeMetadataValue(stationName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
   const orderNumber = String(order.order_number);
-  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order: ${thermalSafeMetadataValue(orderNumber, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order #${thermalSafeMetadataValue(orderNumber, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.table) {
     const tableName = String(order.table.name);
@@ -129,8 +129,9 @@ export function buildKotBytes(
       for (const addon of addons) {
         if (addon.name) {
           const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
-          const addonText = `${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
-          safePrinterText(enc, `   + ${truncateText(addonText, cols - 5)}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
+          const quantitySuffix = qty > 1 ? ` x${qty}` : '';
+          const addonName = truncateText(addon.name, Math.max(1, cols - 5 - quantitySuffix.length));
+          safePrinterText(enc, `   + ${addonName}${quantitySuffix}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
         }
       }
     }

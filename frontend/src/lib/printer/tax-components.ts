@@ -20,8 +20,16 @@ interface TaxDocument extends TaxSource {
 const SPLIT_TAX_SNAPSHOT_VERSION = 'minor-unit-v1';
 
 export function preferChildScopedBill(bill: Bill, fallbackOrder?: Order): Bill {
-  if (bill.order || !fallbackOrder) return bill;
-  return { ...bill, order: fallbackOrder };
+  if (!fallbackOrder) return bill;
+  const fallbackBill = fallbackOrder.bill;
+  const merged = { ...bill };
+  for (const field of ['points_earned', 'points_redeemed', 'points_balance'] as const) {
+    if (!Object.prototype.hasOwnProperty.call(merged, field) && fallbackBill && Object.prototype.hasOwnProperty.call(fallbackBill, field)) {
+      merged[field] = fallbackBill[field];
+    }
+  }
+  if (!merged.order) merged.order = fallbackOrder;
+  return merged;
 }
 
 function parseJson(value: unknown): unknown {

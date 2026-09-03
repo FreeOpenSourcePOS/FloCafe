@@ -152,11 +152,9 @@ function thermalSafeMetadataValue(value: string, language: string, arabicShaping
 }
 
 function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string, arabicShaping: boolean): string {
-  const localized = language === 'en'
-    ? `Order: ${orderNumber}`
-    : labelOf(label).replace('{number}', orderNumber);
+  const localized = labelOf(label).replace('{number}', orderNumber);
   const fallbackOrderNumber = thermalSafeMetadataValue(orderNumber, language, arabicShaping);
-  return thermalSafeText(localized, `Order: ${fallbackOrderNumber}`, language, arabicShaping);
+  return thermalSafeText(localized, `Order #${fallbackOrderNumber}`, language, arabicShaping);
 }
 
 function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
@@ -222,10 +220,11 @@ function kotItemLines(row: KotItemsBlock['rows'][number], cols: number, arabicSh
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
     const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';
-    lines.push('  + ' + truncate(addonName(addon) + quantitySuffix, cols - 4, language));
+    const name = truncate(addonName(addon), Math.max(1, cols - 4 - quantitySuffix.length), language);
+    lines.push('  + ' + name + quantitySuffix);
   }
   if (row.specialInstructions) {
-    lines.push('  ** ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language) + ' **');
+    lines.push('  >> ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language));
   }
   return lines;
 }

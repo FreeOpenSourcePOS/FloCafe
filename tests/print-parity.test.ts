@@ -35,7 +35,6 @@ import { renderClassicReceiptViaDocument } from '../main/printers/document-class
 import {
   formatClassicReceiptLegacy,
   formatCompactReceiptLegacy,
-  formatKOTLegacy,
 } from './helpers/legacy-thermal-oracle';
 import { printLabel } from '../main/print/print-labels.generated';
 import {
@@ -660,15 +659,13 @@ function run(): void {
   for (const cols of [32, 42, 48]) {
     const label = `kot-document/${cols}`;
     section(label);
-    const legacyWarnings: Warnings = [];
-    const legacyBuf = formatKOTLegacy(kotOrder, order.items, 'Main Kitchen', cols, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, legacyWarnings, false, 'en');
     const migratedBuf = formatKOT(kotOrder, order.items, 'Main Kitchen', cols, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en');
-    warn(legacyBuf.equals(migratedBuf), `${label}: byte-identical output to legacy KOT`);
     const kotText = escPosToText(migratedBuf);
     warn(kotText.includes('Main Kitchen'), `${label}: station block rendered`);
+    warn(kotText.includes('Order #ORD-PARITY-001'), `${label}: shared order-number format rendered`);
     warn(kotText.includes('2x  Espresso Doppio'), `${label}: item rows with quantity prefix`);
     warn(kotText.includes('+ Oat milk'), `${label}: addon lines rendered`);
-    warn(kotText.includes('** Less sugar **'), `${label}: instruction lines rendered`);
+    warn(kotText.includes('>> Less sugar'), `${label}: instruction lines rendered`);
     if (cols >= 42) warn(!kotText.includes(PERSIAN_ITEM), `${label}: unsupported-script item skipped with warning only`);
   }
   const typedKotText = escPosToText(formatKOT(typedKotOrder, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en'));

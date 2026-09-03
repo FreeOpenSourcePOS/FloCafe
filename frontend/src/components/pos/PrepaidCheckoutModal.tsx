@@ -5,6 +5,7 @@ import { X, Sparkles, ArrowLeftRight, CheckCircle2, User, Percent, Wallet, Chevr
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
+import { useAuthStore } from '@/store/auth';
 import { useTaxPreview } from '@/hooks/use-tax-preview';
 import { useTranslations, type AppConfig } from 'use-intl';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
@@ -85,7 +86,9 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const fmtNum = useFormatNumber();
   const unitAdapter = useCurrencyUnitAdapter();
   const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, formatInput } = unitAdapter;
-  const minorFactor = getCurrencyMinorUnitFactor(currency);
+  const { currentTenant } = useAuthStore();
+  const currencyCode = currentTenant?.currency || 'INR';
+  const minorFactor = getCurrencyMinorUnitFactor(currencyCode);
   const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
 
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null);

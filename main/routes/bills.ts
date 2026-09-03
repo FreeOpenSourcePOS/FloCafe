@@ -2071,8 +2071,8 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
       return res.status(404).json({ error: 'Bill not found' });
     }
 
-    if (bill.payment_status === 'paid') {
-      return res.status(400).json({ error: 'Cannot apply discount to a paid bill' });
+    if (bill.payment_status === 'paid' || bill.payment_status === 'refunded') {
+      return res.status(400).json({ error: 'Cannot apply discount to a paid or refunded bill' });
     }
     if (bill.split_group_id) {
       return res.status(409).json({ error: 'Apply discounts before splitting a bill' });
@@ -2153,7 +2153,7 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
     // bill.tax_amount here compounds the previous discount whenever a manager
     // edits 10% to 20%. Keep inclusive tax out of the payable total.
     const activeItems = db.prepare(
-      "SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'"
+      "SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'refunded')"
     ).all(bill.order_id) as any[];
     let itemTaxAmount = 0;
     let itemExclusiveTax = 0;

@@ -85,7 +85,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const isWhatsAppReady = useWhatsAppReady();
   const unitAdapter = useCurrencyUnitAdapter();
   const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, formatInput } = unitAdapter;
-  const minorFactor = getCurrencyMinorUnitFactor(currency);
+  const currencyCode = currentTenant?.currency || 'INR';
+  const minorFactor = getCurrencyMinorUnitFactor(currencyCode);
   const toMinorUnits = (amount: number) => Math.round(amount * minorFactor);
 
   const idempotencyKeyRef = useRef<string | null>(null);

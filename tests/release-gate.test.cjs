@@ -32,6 +32,7 @@ const { assertMatrixContract, buildDispatchInputs, createDispatchId } = require(
 const { assertCorrelatedRun } = require('../scripts/release-gate/matrix-dispatch.cjs');
 const { ensureReleaseAssets } = require('../scripts/release-gate/ensure-release-assets.cjs');
 const { verifyStablePromotion } = require('../scripts/release-gate/verify-stable-promotion.cjs');
+const { validateReleaseRef } = require('../scripts/release-gate/validate-release-ref.cjs');
 const { expectedArtifactNames, expectedManifestNames } = require('../scripts/verify-release-assets.cjs');
 
 const payloads = new Map();
@@ -59,6 +60,42 @@ const releaseAssets = [
 ];
 const release = { draft: true, tag_name: '3.3.1-beta.1', assets: releaseAssets };
 const requestAsset = async (entry) => payloads.get(entry.name);
+
+function releaseRefRequest({
+  tag = '3.4.0',
+  mainVersion = tag,
+  behindBy = 0,
+  tagType = 'tag',
+  tagVerified = true,
+  commitVerified = true,
+} = {}) {
+  const apiBase = 'https://api.github.com/repos/example/repo';
+  const commit = 'a'.repeat(40);
+  const tagObject = 'b'.repeat(40);
+  const mainCommit = 'c'.repeat(40);
+  const file = (version) => ({
+    encoding: 'base64',
+    content: Buffer.from(JSON.stringify({ version })).toString('base64'),
+  });
+  const fixtures = new Map([
+    [`${apiBase}/git/ref/tags/${tag}`, { object: { type: tagType, sha: tagObject } }],
+    [`${apiBase}/git/tags/${tagObject}`, {
+      object: { type: 'commit', sha: commit },
+      verification: { verified: tagVerified, reason: tagVerified ? 'valid' : 'unsigned' },
+    }],
+    [`${apiBase}/commits/${commit}`, {
+      commit: { verification: { verified: commitVerified, reason: commitVerified ? 'valid' : 'unsigned' } },
+    }],
+    [`${apiBase}/contents/package.json?ref=${tag}`, file(tag)],
+    [`${apiBase}/git/ref/heads/main`, { object: { type: 'commit', sha: mainCommit } }],
+    [`${apiBase}/compare/${commit}...${mainCommit}`, { behind_by: behindBy }],
+    [`${apiBase}/contents/package.json?ref=main`, file(mainVersion)],
+  ]);
+  return async (url) => {
+    if (!fixtures.has(url)) throw new Error(`unexpected fixture request ${url}`);
+    return fixtures.get(url);
+  };
+}
 
 (async () => {
   const manifest = await createCandidateManifest({
@@ -438,6 +475,70 @@ jobs:
     if (originalGhToken === undefined) delete process.env.GH_TOKEN;
     else process.env.GH_TOKEN = originalGhToken;
   }
+
+  await assert.doesNotReject(() => validateReleaseRef({
+    repo: 'example/repo',
+    tag: '3.4.0',
+    commit: 'a'.repeat(40),
+    request: releaseRefRequest(),
+  }));
+  await assert.doesNotReject(() => validateReleaseRef({
+    repo: 'example/repo',
+    tag: '3.4.0',
+    commit: 'a'.repeat(40),
+    requireMain: false,
+    request: releaseRefRequest({ behindBy: 1, mainVersion: '3.3.9' }),
+  }), 'promotion validation must allow an older signed release outside current main');
+  await assert.rejects(
+    () => validateReleaseRef({
+      repo: 'example/repo',
+      tag: '3.4.0',
+      commit: 'a'.repeat(40),
+      request: releaseRefRequest({ behindBy: 1 }),
+    }),
+    /not in main history/,
+    'release tags not reachable from main must be rejected',
+  );
+  await assert.rejects(
+    () => validateReleaseRef({
+      repo: 'example/repo',
+      tag: '3.4.0',
+      commit: 'a'.repeat(40),
+      request: releaseRefRequest({ mainVersion: '3.3.9' }),
+    }),
+    /package\.json at main reports version 3\.3\.9/,
+    'release tags with a different main package version must be rejected',
+  );
+  await assert.rejects(
+    () => validateReleaseRef({
+      repo: 'example/repo',
+      tag: '3.4.0',
+      commit: 'a'.repeat(40),
+      request: releaseRefRequest({ commitVerified: false }),
+    }),
+    /release commit .* is not cryptographically verified/,
+    'unsigned release commits must be rejected',
+  );
+  await assert.rejects(
+    () => validateReleaseRef({
+      repo: 'example/repo',
+      tag: '3.4.0',
+      commit: 'a'.repeat(40),
+      request: releaseRefRequest({ tagVerified: false }),
+    }),
+    /release tag .* is not cryptographically verified/,
+    'unsigned release tags must be rejected',
+  );
+  await assert.rejects(
+    () => validateReleaseRef({
+      repo: 'example/repo',
+      tag: '3.4.0',
+      commit: 'a'.repeat(40),
+      request: releaseRefRequest({ tagType: 'commit' }),
+    }),
+    /annotated signed tag/,
+    'lightweight release tags must be rejected',
+  );
 
   console.log('✅ Release candidate manifest, channel, stable-Snap, retention, ordering, and #512-boundary contracts passed');
 })().catch((error) => {

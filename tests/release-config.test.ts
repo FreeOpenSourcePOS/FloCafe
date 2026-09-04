@@ -221,11 +221,20 @@ function run() {
   const createRelease = jobs['create-release'];
   const metadata = findStep(createRelease, 'Determine release metadata');
   const validateTag = findStep(createRelease, 'Validate release tag');
+  const validateProvenance = findStep(createRelease, 'Validate release provenance');
+  assert.ok(fs.existsSync(path.join(__dirname, '../scripts/release-gate/validate-release-ref.cjs')), 'release provenance verifier must exist');
   assertShellStep(createRelease, 'Determine release metadata');
   assertShellStep(createRelease, 'Validate release tag');
+  assertShellStep(createRelease, 'Validate release provenance');
   assertShellStep(createRelease, 'Create GitHub draft release (if not exists)');
   assert.equal(metadata.env.RELEASE_REF_NAME, '${{ github.ref_name }}');
   assert.equal(validateTag.env.RELEASE_TAG, '${{ steps.release-metadata.outputs.tag }}');
+  assert.equal(validateProvenance.if, "steps.release-metadata.outputs.promotion_only != 'true'");
+  assert.equal(validateProvenance.env.GH_TOKEN, '${{ github.token }}');
+  assert.equal(validateProvenance.env.RELEASE_TAG, '${{ steps.release-metadata.outputs.tag }}');
+  assert.match(validateProvenance.run, /validate-release-ref\.cjs/);
+  assert.match(validateProvenance.run, /--commit \"\$\{\{ github\.sha \}\}\"/);
+  assert.match(validateProvenance.run, /--main-ref main/);
   assert.deepEqual(Object.keys(createRelease.outputs).sort(), ['channel', 'make_latest', 'manifest_prefix', 'prerelease', 'promotion_only', 'version']);
   assert.deepEqual(triggers.workflow_dispatch.inputs.channel.options, ['stable', 'beta'],
     'nightly releases are rejected (#503): stable and beta are the only channels');
@@ -326,6 +335,11 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   const promoteJob = jobs['promote-release'];
   assert.equal(promoteJob.needs, 'create-release');
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
+  const validatePromotedProvenance = findStep(promoteJob, 'Validate promoted release provenance');
+  assertShellStep(promoteJob, 'Validate promoted release provenance');
+  assert.equal(validatePromotedProvenance.env.GH_TOKEN, '${{ github.token }}');
+  assert.equal(validatePromotedProvenance.env.RELEASE_TAG, '${{ needs.create-release.outputs.version }}');
+  assert.match(validatePromotedProvenance.run, /--allow-off-main/);
   const promoteVerifierDependencies = findStep(promoteJob, 'Install verifier dependencies');
   const promoteVerifier = findStep(promoteJob, 'Verify stable Snap publication and permanent evidence');
   const promoteBoundaryRun = promoteJob.steps

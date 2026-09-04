@@ -251,7 +251,7 @@ export const usePrinterStore = create<PrinterState>()(
           let bytes: Uint8Array;
           const encoderWarnings: PrintWarning[] = [];
           const nativeBillTemplate = rasterBillTemplate
-            ?? (billTemplateSource === null && (billTemplate === 'compact' || billTemplate === 'classic') ? billTemplate : 'classic');
+            ?? (billTemplate === 'compact' || billTemplate === 'classic' ? billTemplate : 'classic');
           if (nativeBillTemplate === 'compact') {
             bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, encoderWarnings);
           } else {

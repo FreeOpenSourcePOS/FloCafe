@@ -203,8 +203,8 @@ export function encodeRasterFeedAndCut(cutMode: 'full' | 'partial', feedLines = 
   ]);
 }
 
-export function isBundledFontDataUrl(dataUrl: string): boolean {
-  return dataUrl.length <= 4_000_000
+export function isBundledFontDataUrl(dataUrl: unknown): boolean {
+  return typeof dataUrl === 'string' && dataUrl.length <= 4_000_000
     && /^data:font\/(?:woff2?|truetype|opentype);base64,[A-Za-z0-9+/]+={0,2}$/.test(dataUrl);
 }
 

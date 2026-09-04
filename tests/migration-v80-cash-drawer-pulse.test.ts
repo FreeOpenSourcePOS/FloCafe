@@ -103,7 +103,8 @@ function main() {
   closeDatabase();
 
   // ── Store B: never enabled cash-drawer pulse ───────────────────────────
-  activeTestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-migration-v80-b-'));
+  const testDirB = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-migration-v80-b-'));
+  activeTestDir = testDirB;
   MIGRATIONS.length = 0;
   MIGRATIONS.push(...originalMigrations.filter((migration: any) => migration.version <= 79));
   initDatabase();
@@ -121,8 +122,37 @@ function main() {
   assert(settingValue(db, 'cash_drawer_pulse_methods') === undefined, 'store B: no legacy flag means no methods sentinel is seeded either');
 
   closeDatabase();
+
+  // ── Store C: flag enabled on a non-default printer only ────────────────
+  // printReceipt only ever dispatches to getPrinterConfig()'s pick (the
+  // default printer), so a flag left on some other printer never actually
+  // pulsed a drawer — migrating it would incorrectly enable the drawer for
+  // whichever printer is the receipt printer instead.
+  const testDirC = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-migration-v80-c-'));
+  activeTestDir = testDirC;
+  MIGRATIONS.length = 0;
+  MIGRATIONS.push(...originalMigrations.filter((migration: any) => migration.version <= 79));
+  initDatabase();
+  db = getDatabase();
+  db.prepare(`
+    INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled, created_at, updated_at)
+    VALUES ('default-no-drawer', 'Default Printer', 'network', '192.168.1.52', 9100, 'cols-42', 1, 0, ?, ?)
+  `).run(now(), now());
+  db.prepare(`
+    INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled, created_at, updated_at)
+    VALUES ('secondary-drawer', 'Secondary Printer', 'network', '192.168.1.53', 9100, 'cols-42', 0, 1, ?, ?)
+  `).run(now(), now());
+
+  MIGRATIONS.length = 0;
+  MIGRATIONS.push(...originalMigrations);
+  runPendingMigrations();
+
+  assert(settingValue(db, 'cash_drawer_pulse_enabled') === undefined, "store C: a non-default printer's legacy flag does not migrate — only the receipt printer's flag matters");
+
+  closeDatabase();
   fs.rmSync(testDirA, { recursive: true, force: true });
-  fs.rmSync(activeTestDir, { recursive: true, force: true });
+  fs.rmSync(testDirB, { recursive: true, force: true });
+  fs.rmSync(testDirC, { recursive: true, force: true });
   console.log(`\n${passed}/${total} passed`);
   process.exit(failed > 0 ? 1 : 0);
 }

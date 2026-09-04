@@ -4243,7 +4243,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     name: 'migrate_cash_drawer_pulse_to_global_setting',
     up: () => {
       // Cash-drawer pulse moved from a per-printer flag (v75) to a global
-      // setting. A store that already had it enabled on any printer must
+      // setting. A store whose receipt printer already had it enabled must
       // keep pulsing after the upgrade — printReceipt only reads the legacy
       // column while the global setting is unset (main/printers/thermal.ts),
       // and the settings UI writes 'false' to it the first time the printing
@@ -4257,10 +4257,18 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       // would silently stop pulsing for UPI and custom payment methods.
       const columns = getColumns(db, 'printers');
       if (!columns.includes('cash_drawer_pulse_enabled')) return;
-      const anyEnabled = db.prepare(
-        `SELECT 1 FROM printers WHERE cash_drawer_pulse_enabled = 1 LIMIT 1`,
-      ).get();
-      if (anyEnabled) {
+      // Only the printer printReceipt would actually have dispatched to
+      // (getPrinterConfig's own selection, mirrored here) matters — a flag
+      // left enabled on some other, non-default printer never pulsed a
+      // drawer at print time and migrating it would enable the drawer for
+      // whichever printer happens to be the receipt printer instead.
+      const receiptPrinter = db.prepare(`
+        SELECT cash_drawer_pulse_enabled FROM printers
+        WHERE connection_type != 'webusb'
+        ORDER BY is_default DESC, name
+        LIMIT 1
+      `).get() as { cash_drawer_pulse_enabled?: number } | undefined;
+      if (receiptPrinter?.cash_drawer_pulse_enabled === 1) {
         db.prepare(`
           INSERT OR IGNORE INTO settings (key, value, updated_at)
           VALUES ('cash_drawer_pulse_enabled', 'true', ?)

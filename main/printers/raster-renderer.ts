@@ -48,7 +48,7 @@ export function rasterRendererHtml(): string {
       const styles = Array.isArray(request.styles) ? request.styles : [request.style];
       const scaleX = styles.includes('double-width') ? 2 : 1;
       const scaleY = styles.includes('double-height') ? 2 : 1;
-      const logicalLineHeight = 20;
+      const logicalLineHeight = 24;
       const lineHeight = logicalLineHeight * scaleY;
       const fontSize = 16;
       const weight = styles.includes('bold') ? '700' : '400';
@@ -336,7 +336,9 @@ function requestForRasterLine(
     maxBandHeight: capabilities.raster.maxBandHeight,
     direction: /[\u0590-\u08FF]/.test(text) ? 'rtl' : 'ltr',
     align: line.includes('{CENTER}') && line.includes('{/CENTER}') ? 'center' : 'left',
-    style: styles[0] ?? 'normal',
+    style: line.includes('{DOUBLE_HEIGHT}') ? 'double-height'
+      : line.includes('{DOUBLE_WIDTH}') ? 'double-width'
+        : line.includes('{BOLD}') ? 'bold' : 'normal',
     ...(styles.length > 0 ? { styles } : {}),
     maxLines: 256,
     bundledFont: capabilities.raster.font!,

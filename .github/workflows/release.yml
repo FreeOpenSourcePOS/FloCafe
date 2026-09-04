@@ -59,6 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0 # full tag history — needed for the "Full Changelog" compare link below
 
       - name: Determine release metadata
@@ -153,6 +154,18 @@ jobs:
           RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
           RELEASE_VERSION: ${{ steps.release-metadata.outputs.version }}
           RELEASE_EVENT_NAME: ${{ github.event_name }}
+
+      - name: Validate release provenance
+        if: steps.release-metadata.outputs.promotion_only != 'true'
+        run: |
+          node scripts/release-gate/validate-release-ref.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$RELEASE_TAG" \
+            --commit "${{ github.sha }}" \
+            --main-ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
 
       - name: Create GitHub draft release (if not exists)
         # Release notes are extracted from an existing draft release body if present,
@@ -307,6 +320,8 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -470,6 +485,8 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -639,6 +656,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -791,6 +810,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -885,6 +906,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -931,10 +954,24 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+
+      - name: Validate historical promotion binding
+        run: |
+          node scripts/release-gate/validate-release-ref.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$RELEASE_TAG" \
+            --commit "${{ github.sha }}" \
+            --allow-off-main \
+            --allow-historical-promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
 
       - name: Install verifier dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund

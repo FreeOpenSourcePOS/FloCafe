@@ -82,21 +82,35 @@ or newer stable release without database rollbacks.
 
 ## Release gates
 
-1. The tag and `package.json` version must match (`X.Y.Z` or `X.Y.Z-beta.N`).
-2. Each platform builds with `--publish never` and passes
+1. New tag-triggered builds check release provenance before any platform build:
+   the annotated tag must be cryptographically verified, resolve to the workflow
+   commit, the commit must be cryptographically verified, and the tagged commit
+   must be in `main` history with the same `package.json` version as `main`.
+   Promotion-only runs use the explicit `--allow-historical-promotion` binding
+   path for an already-published release: cryptographic annotated-tag and
+   commit-signature verification are skipped because those historical releases
+   predate the current signing policy. They retain the tag-to-workflow-commit
+   and tagged-package-version checks, then rely on the immutable candidate
+   manifest, release summary, published assets, and Snap evidence as
+   compensating controls before promotion. The promotion job checks out
+   current `main` for its verifier code, while binding validation still uses
+   the historical release tag and workflow commit. They do not build or
+   publish artifacts.
+2. The tag and `package.json` version must match (`X.Y.Z` or `X.Y.Z-beta.N`).
+3. Each platform builds with `--publish never` and passes
    `scripts/assert-release-artifact-names.cjs`. Produced filenames must match
    `[a-z0-9.-]+`. electron-builder's generic `${arch}` macro uses target
    spellings such as `x86_64`, `amd64`, and `aarch64`, so the Linux release
    command explicitly uses the safe matrix labels `x64` and `arm64` for every
    artifact (including AppImage); artifacts are not renamed after creation.
-3. Each self-updating platform job asserts that its local updater manifest
+4. Each self-updating platform job asserts that its local updater manifest
    and representative installer exist before upload. Platform jobs upload
    installers, update manifests, blockmaps, and required store packages to the
    draft release. Microsoft Store and Mac App Store submission are not part of
    the automatic tag release. Beta AppX packages remain outside the Store
    submission path because their four-part MSIX versions would otherwise
    collide with stable and with later prereleases.
-4. `scripts/verify-release-assets.cjs` fetches the draft release metadata, then
+5. `scripts/verify-release-assets.cjs` fetches the draft release metadata, then
    downloads manifests and every referenced asset back through the GitHub API.
    It parses each manifest as YAML, requires every referenced asset to resolve
    to HTTP 200 in that same release, and recomputes the manifest SHA-512 for
@@ -107,19 +121,19 @@ or newer stable release without database rollbacks.
 non-manifest assets are checked for positive size and HTTP availability; their
 SHA-512 is not independently recomputed because GitHub/electron-builder does
 not publish a second expected SHA-512 for them.
-5. The dedicated publish job changes `draft` to false. It sets `make_latest`
+6. The dedicated publish job changes `draft` to false. It sets `make_latest`
    false for every normal release. A separate explicit stable-promotion dispatch
    is the only path that changes GitHub's `Latest` pointer.
-6. After all platform uploads, the workflow creates and attaches the immutable
+7. After all platform uploads, the workflow creates and attaches the immutable
    candidate manifest and sanitized release summary defined in the [release
    evidence index](release-evidence-index.md). The candidate manifest is made
    from bytes fetched back from the draft, and a rerun refuses to overwrite
    different manifest or summary bytes.
-7. Each Linux job uploads a per-architecture Snap marker only after
+8. Each Linux job uploads a per-architecture Snap marker only after
    `snapcraft upload` succeeds. The [release evidence index](release-evidence-index.md)
    defines the stable and beta Snap evidence boundaries; stable draft
    verification and promotion both fail closed on missing or invalid markers.
-8. `release-candidate-gate.yml` consumes only a published beta with the exact
+9. `release-candidate-gate.yml` consumes only a published beta with the exact
    candidate manifest asset ID and SHA-256. It verifies propagation and that
    Stable Latest is unchanged, then retains the sanitized JSON evidence defined
    by the [release evidence index](release-evidence-index.md) for 90 days. It
@@ -130,11 +144,18 @@ For a beta release, use the exact `X.Y.Z-beta.N` prerelease tag, set
 `promote_stable=false`; use a second dispatch with `promote_stable=true` only
 when the already verified release should become the default update target.
 
+Repository administrators must additionally protect numeric release tags from
+arbitrary creation, deletion, and force-updates, and require signed commits and
+tags for the release actors. The workflow gate is the repository-code control;
+these GitHub rules are the platform-level control that prevents an unauthorized
+tag push from reaching the workflow at all.
+
 ## Branch and tag lifecycle
 
 Beta-prep branches are temporary working branches; release tags and GitHub
-Releases are the authoritative history. Cut each future beta from `main` with
-an exact `X.Y.Z-beta.N` tag. Stable promotion creates a new `X.Y.Z` stable
+Releases are the authoritative history. Commit the version bump to `main`,
+create an annotated signed tag from that `main` history, and push the exact
+`X.Y.Z-beta.N` or `X.Y.Z` tag. Stable promotion creates a new `X.Y.Z` stable
 release and uses the explicit `promote_stable` step. A beta is never moved
 directly to GitHub `Latest`.
 
@@ -184,11 +205,12 @@ stable release:
 3. To make it the default update target, dispatch **Release** once more from
    that exact tag with `release_tag=X.Y.Z`, `channel=stable`,
    `promote_stable=true`, plus the candidate-manifest asset ID and SHA-256. The
-   promotion-only job revalidates that immutable manifest against every current
-   release asset and first requires the permanent candidate summary and both
-   stable Snap publication markers, then refuses anything unpublished or
-   prerelease-flagged before selecting it as
-   GitHub Latest. Stable installs see it on their next update check.
+   promotion-only job uses the historical-promotion binding path for this
+   already-published release from current `main`, then revalidates the immutable
+   manifest against every current release asset and requires the permanent
+   candidate summary and both stable Snap publication markers. It refuses
+   anything unpublished or prerelease-flagged before selecting it as GitHub
+   Latest. Stable installs see it on their next update check.
 
 Betas also act as the N+1 update source for runtime upgrade matrix testing
 (#468): a client pinned to a given Electron runtime validates the next

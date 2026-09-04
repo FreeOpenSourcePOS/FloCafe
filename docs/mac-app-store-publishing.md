@@ -3,10 +3,13 @@
 The `Publish Mac App Store` GitHub Actions workflow replaces the manual
 Transporter and App Store Connect handoff for the MAS build.
 
-Run it from **Actions > Publish Mac App Store > Run workflow** on the release
-ref you want to publish. Leave `release_notes` blank to use the matching
-`CHANGELOG.md` entry for the current `package.json` version, or paste custom
-"What's New" text into the workflow input.
+Run it from **Actions > Publish Mac App Store > Run workflow** on the exact
+release tag you want to publish, and set `release_tag` to that same tag. The
+workflow rejects branch refs, mismatched tags, unsigned or unverified tags and
+commits, tags outside `main` history, and package-version mismatches. Leave
+`release_notes` blank to use the matching `CHANGELOG.md` entry for the current
+`package.json` version, or paste custom "What's New" text into the workflow
+input.
 
 ## Required runner
 
@@ -41,11 +44,13 @@ format.
 
 ## What the workflow does
 
-1. Installs Node and Ruby dependencies.
-2. Generates App Store release notes.
-3. Runs `npm run build:mas`.
-4. Uploads the newest `release/*.pkg` through Fastlane/Transporter.
-5. Sets "What's New" in App Store Connect.
-6. Submits the version for App Review when `submit_for_review` is enabled.
-7. Sets the version to release automatically after approval when
+1. Checks release provenance using the current `main` verifier code.
+2. Checks out the selected release tag for the build.
+3. Installs Node and Ruby dependencies.
+4. Generates App Store release notes.
+5. Runs `npm run build:mas`.
+6. Uploads the newest `release/*.pkg` through Fastlane/Transporter.
+7. Sets "What's New" in App Store Connect.
+8. Submits the version for App Review when `submit_for_review` is enabled.
+9. Sets the version to release automatically after approval when
    `automatic_release` is enabled.

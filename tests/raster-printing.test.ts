@@ -301,6 +301,18 @@ async function run(): Promise<void> {
   assert.equal(groupedCustomer.units[0]?.lineCount, 2);
   assert.equal(renderRequests.at(-2)?.text, 'فارسی');
   assert.equal(renderRequests.at(-1)?.text, '555-0100');
+  const controlCollisionRequests: any[] = [];
+  const controlCollision = await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      controlCollisionRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+    },
+  }, ['{CENTER}فارسی {CUT}{/CENTER}', '{CENTER}ASCII{/CENTER}'], caps, 'control-collision', [
+    { groupId: 'item', lineIndex: 0, lineCount: 2, sourceLines: ['فارسی {CUT}', 'ASCII'] },
+  ]);
+  assert.equal(controlCollision.failures.length, 0);
+  assert.equal(controlCollisionRequests[0].text, 'فارسی {CUT}');
+  assert.equal(controlCollision.units[0]?.lineCount, 2);
   const splitHeaderRequests: any[] = [];
   const splitHeader = await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {
@@ -340,6 +352,32 @@ async function run(): Promise<void> {
     },
   }, ['\uFB50'], caps, 'presentation-form');
   assert.equal(presentationFormRequests[0].direction, 'rtl');
+  const kotHeaderGroups: any[] = [];
+  const longKotDocument = buildKotDocument({
+    stationName: 'ایستگاه',
+    order: { orderNumber: 'ORDER-123456789012345678901234567890', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },
+    items: [],
+  }, {
+    columns: 42,
+    languages: ['fa'],
+    baseDirection: 'rtl',
+    locale: 'fa-IR',
+    currencySymbol: '',
+    trimDecimals: false,
+    resolveLabel: (conceptId) => ({ conceptId, primary: conceptId }),
+  });
+  renderKotDocumentToLines(longKotDocument, {
+    columns: 42,
+    language: 'fa',
+    locale: 'fa-IR',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    rasterGroups: kotHeaderGroups,
+  });
+  assert.equal(kotHeaderGroups[0].sourceLines.some((line: string) => line.includes('ایستگاه')), true);
+  assert.equal(kotHeaderGroups[0].sourceLines.some((line: string) => line.includes('ORDER-123456789012345678901234567890')), true);
   const styledBanner = await renderUnsupportedRasterLines({
     render: async (rasterRequest) => ({
       version: 1 as const,

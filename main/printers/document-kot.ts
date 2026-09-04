@@ -154,7 +154,7 @@ function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, langu
   return thermalSafeText(localized, `Order #${fallbackOrderNumber}`, language, arabicShaping, capabilities);
 }
 
-function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
+function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions, sourceLines?: string[]): string[] {
   const cols = options.columns;
   const lines: string[] = [];
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
@@ -192,11 +192,21 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   );
 
   lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
+  sourceLines?.push(labelOf(header.banner));
   lines.push('');
+  sourceLines?.push('');
   lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language, options.capabilities));
+  sourceLines?.push(`${labelOf(header.stationLabel)}: ${header.stationName.text}`);
   lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping, options.capabilities), cols, options.arabicShaping, options.language, options.capabilities));
-  if (table) lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language, options.capabilities));
-  if (orderType) lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language, options.capabilities));
+  sourceLines?.push(labelOf(header.orderNumberLabel).replace('{number}', header.orderNumber.text));
+  if (table) {
+    lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language, options.capabilities));
+    sourceLines?.push(formatTableLabel(header.table!.label, header.table!.name.text));
+  }
+  if (orderType) {
+    lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language, options.capabilities));
+    sourceLines?.push(`${labelOf(header.orderType!.label)}: ${header.orderType!.value.text}`);
+  }
   if (header.customer) {
     const customer = thermalSafeText(
       `${labelOf(header.customer.label)}: ${header.customer.name.text}`,
@@ -206,8 +216,10 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
       options.capabilities,
     );
     lines.push(truncateShapedLine(customer, cols, options.arabicShaping, options.language, options.capabilities));
+    sourceLines?.push(`${labelOf(header.customer.label)}: ${header.customer.name.text}`);
   }
   lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language, options.capabilities));
+  sourceLines?.push(`${labelOf(header.timeLabel)}: ${time}`);
   return lines;
 }
 
@@ -246,8 +258,9 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
   lines.push('{INIT}');
   if (header) {
     const headerStart = lines.length;
-    lines.push(...kotHeaderLines(header, options));
-    options.rasterGroups?.push({ groupId: 'kot-header', lineIndex: headerStart, lineCount: lines.length - headerStart });
+    const headerSourceLines: string[] = [];
+    lines.push(...kotHeaderLines(header, options, headerSourceLines));
+    options.rasterGroups?.push({ groupId: 'kot-header', lineIndex: headerStart, lineCount: lines.length - headerStart, sourceLines: headerSourceLines });
   }
   lines.push(bar);
   lines.push('');

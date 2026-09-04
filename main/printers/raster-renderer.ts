@@ -330,6 +330,18 @@ function stripRasterControlTokens(line: string): string {
   return line.replace(RASTER_CONTROL_TOKEN_RE, '');
 }
 
+function controlMetadataLine(line: string, sourceText?: string): string {
+  if (sourceText === undefined) return line;
+  const sourceIndex = line.indexOf(sourceText);
+  if (sourceIndex >= 0) return line.slice(0, sourceIndex) + line.slice(sourceIndex + sourceText.length);
+  let metadataLine = line;
+  for (const token of sourceText.match(RASTER_CONTROL_TOKEN_RE) ?? []) {
+    const tokenIndex = metadataLine.lastIndexOf(token);
+    if (tokenIndex >= 0) metadataLine = metadataLine.slice(0, tokenIndex) + metadataLine.slice(tokenIndex + token.length);
+  }
+  return metadataLine;
+}
+
 function requestForRasterLine(
   line: string,
   lineIndex: number,
@@ -338,13 +350,14 @@ function requestForRasterLine(
   financial: boolean,
   sourceText?: string,
 ): RasterRenderRequest | null {
-  if (line.includes('{INIT}') || line.includes('{CUT}') || line.includes('{FEED}')) return null;
-  const text = sourceText ?? (stripRasterControlTokens(line) || ' ');
+  const metadataLine = controlMetadataLine(line, sourceText);
+  if (metadataLine.includes('{INIT}') || metadataLine.includes('{CUT}') || metadataLine.includes('{FEED}')) return null;
+  const text = sourceText !== undefined ? (sourceText || ' ') : (stripRasterControlTokens(line) || ' ');
   const styles: RasterStyle[] = [
-    line.includes('{BOLD}') ? 'bold' : null,
-    line.includes('{DOUBLE_HEIGHT}') ? 'double-height' : null,
-    line.includes('{DOUBLE_WIDTH}') ? 'double-width' : null,
-    line.includes('{FONT_B}') ? 'font-b' : null,
+    metadataLine.includes('{BOLD}') ? 'bold' : null,
+    metadataLine.includes('{DOUBLE_HEIGHT}') ? 'double-height' : null,
+    metadataLine.includes('{DOUBLE_WIDTH}') ? 'double-width' : null,
+    metadataLine.includes('{FONT_B}') ? 'font-b' : null,
   ].filter((style): style is RasterStyle => style !== null);
   return {
     version: 1,
@@ -353,11 +366,11 @@ function requestForRasterLine(
     widthDots: capabilities.raster.widthDots,
     maxBandHeight: capabilities.raster.maxBandHeight,
     direction: /[\u0590-\u08FF\uFB50-\uFEFF]/.test(text) ? 'rtl' : 'ltr',
-    align: line.includes('{CENTER}') && line.includes('{/CENTER}') ? 'center' : 'left',
-    style: line.includes('{DOUBLE_HEIGHT}') ? 'double-height'
-      : line.includes('{DOUBLE_WIDTH}') ? 'double-width'
-        : line.includes('{FONT_B}') ? 'font-b'
-          : line.includes('{BOLD}') ? 'bold' : 'normal',
+    align: metadataLine.includes('{CENTER}') && metadataLine.includes('{/CENTER}') ? 'center' : 'left',
+    style: metadataLine.includes('{DOUBLE_HEIGHT}') ? 'double-height'
+      : metadataLine.includes('{DOUBLE_WIDTH}') ? 'double-width'
+        : metadataLine.includes('{FONT_B}') ? 'font-b'
+          : metadataLine.includes('{BOLD}') ? 'bold' : 'normal',
     ...(styles.length > 0 ? { styles } : {}),
     financial,
     maxLines: 256,
@@ -397,14 +410,17 @@ export async function renderUnsupportedRasterLines(
   ).map(([, ranges]) => ranges).sort((left, right) => left[0].lineIndex - right[0].lineIndex);
   for (const ranges of semanticGroups) {
     const group = ranges[0];
-    const groupText = ranges.flatMap((range) => range.sourceLines ?? range.lines)
-      .map(stripRasterControlTokens).filter(Boolean).join('\n');
+    const groupText = ranges.flatMap((range) => range.sourceLines
+      ? Array.from(range.sourceLines)
+      : range.lines.map(stripRasterControlTokens))
+      .filter(Boolean).join('\n');
     const needsRaster = ranges.some((range) => (range.sourceLines ?? range.lines).some((line) => {
-      const text = stripRasterControlTokens(line);
+      const text = range.sourceLines ? line : stripRasterControlTokens(line);
       return text.length > 0 && !isThermalTextRepresentable(text, capabilities);
     }));
     if (!needsRaster) continue;
-    const financial = ranges.some((range) => range.lines.some((line) => line.includes('{FINANCIAL}')));
+    const financial = ranges.some((range) => range.lines.some((line, offset) => line.includes('{FINANCIAL}')
+      && !range.sourceLines?.[offset]?.includes('{FINANCIAL}')));
     const renderedRanges: Array<{ lineIndex: number; lineCount: number; bands: RasterSemanticUnit['bands'] }> = [];
     let failure: RasterLineRenderFailure | null = null;
     if (!capabilities.raster.font) {

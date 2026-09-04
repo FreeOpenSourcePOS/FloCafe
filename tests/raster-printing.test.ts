@@ -191,6 +191,34 @@ async function run(): Promise<void> {
   const addressRequest = classicHeaderRequests.find((request) => request.text.includes('آدرس فارسی'));
   assert.equal(addressRequest?.align, 'center');
   assert.equal(classicHeaderRequests.some((request) => request.text.startsWith('** ') && request.text.endsWith(' **')), true);
+  const longFinancialLabel = 'برچسب مالی بسیار طولانی';
+  const longFinancialDocument = {
+    ...compactDocument,
+    blocks: compactDocument.blocks.map((block) => block.kind === 'totals'
+      ? { ...block, subtotal: { ...block.subtotal, amount: 1.23, label: { ...block.subtotal.label, primary: longFinancialLabel } } }
+      : block),
+  };
+  const longFinancialGroups: any[] = [];
+  const longFinancialLines = renderBillDocumentToClassicLines(longFinancialDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currencySymbol: '$',
+    trimDecimals: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    rasterGroups: longFinancialGroups,
+  });
+  const longFinancialRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      longFinancialRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { unitId: (rasterRequest as any).requestId, financial: true, complete: true, bands: [twoRows] } };
+    },
+  }, longFinancialLines, caps, 'long-financial-source', longFinancialGroups);
+  assert.equal(longFinancialRequests.some((request) => request.text.includes(longFinancialLabel) && request.text.includes('$1.23')), true);
   const emptyClassicDocument = {
     ...compactDocument,
     blocks: compactDocument.blocks.map((block) => block.kind === 'item-table'
@@ -563,7 +591,7 @@ async function run(): Promise<void> {
   const jpyReceipt = renderCompactReceiptViaDocument(
     { items: [] },
     { total: 12.34, subtotal: 12.34, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
-    { country: 'JP', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
+    { country: 'JP', currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
     { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
   );
   assert.equal(jpyReceipt.lines.some((line) => line.includes('12.34')), false);

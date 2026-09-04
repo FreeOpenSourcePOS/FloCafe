@@ -19,6 +19,7 @@ import { getSupportedPrinterProfiles } from '../main/printers/profiles';
 import { buildEscPos, financialRows, itemRows, normalizeThermalText } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { renderKotDocumentToLines } from '../main/printers/document-kot';
+import { renderBillDocumentToClassicLines } from '../main/printers/document-classic';
 import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
 
 function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer/raster-encoder') {
@@ -88,6 +89,36 @@ async function run(): Promise<void> {
   assert.equal(isPrintDocument(printDocument), true);
   assert.equal(isPrintDocument({ ...printDocument, blocks: printDocument.blocks.slice(0, -1) }), false);
   assert.equal(isPrintDocument({ ...printDocument, blocks: [...printDocument.blocks, printDocument.blocks[0]] }), false);
+  const longAddon = 'ASCII addon content that must remain available to pixel wrapping';
+  const longInstruction = 'ASCII instruction content that must remain available to pixel wrapping';
+  const sourceDocument = buildBillDocument({
+    isReprint: false,
+    order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', items: [{ productName: 'فارسی محصول', quantity: 1, unitPrice: 1, total: 1, addons: [{ name: longAddon, price: 1, quantity: 1 }], specialInstructions: longInstruction }] },
+    bill: { billNumber: '', subtotal: 1, discountAmount: 0, taxAmount: 0, total: 1, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
+    business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
+  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  const sourceGroups: any[] = [];
+  const sourceLines = renderBillDocumentToClassicLines(sourceDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currencySymbol: '$',
+    trimDecimals: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    rasterGroups: sourceGroups,
+  });
+  const sourceRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      sourceRequests.push(rasterRequest);
+      return { version: 1, requestId: (rasterRequest as any).requestId, ok: true, unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+    },
+  }, sourceLines, caps, 'source-siblings', sourceGroups);
+  assert.equal(sourceRequests.some((request) => request.text.includes(longAddon)), true);
+  assert.equal(sourceRequests.some((request) => request.text.includes(longInstruction)), true);
   const kotDocument = buildKotDocument({
     stationName: 'ایستگاه',
     order: { orderNumber: 'K-1', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },

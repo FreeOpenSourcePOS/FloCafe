@@ -389,7 +389,7 @@ export function renderBillDocumentToClassicLines(
         segment.main.push(dash);
         for (const [rowIndex, row] of block.rows.entries()) {
           const start = segment.main.length;
-          segment.main.push(...itemRows(
+          const rowLines = itemRows(
             { product_name: row.name.text, quantity: row.quantity, total: row.amount },
             nameLen,
             amtLen,
@@ -400,14 +400,23 @@ export function renderBillDocumentToClassicLines(
             options.language,
             fractionDigits,
             options.capabilities,
-          ));
+          );
+          segment.main.push(...rowLines);
+          const sourceLines = [`${row.name.text} ${row.quantity} ${formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits)}`];
           for (const addon of row.addons) {
-            segment.main.push(...addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities));
+            const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
+            segment.main.push(...addonLines);
+            const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
+            sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
           }
           if (row.specialInstructions) {
             segment.main.push(normalize('  ' + labelOf(block.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language, options.capabilities)));
+            sourceLines.push('  ' + labelOf(block.noteLabel) + ': ' + row.specialInstructions.text);
           }
-          if (segment.main.length > start) segment.groups.push({ groupId: `item-table-row-${rowIndex}`, start, count: segment.main.length - start });
+          if (segment.main.length > start) {
+            const group = { groupId: `item-table-row-${rowIndex}`, start, count: segment.main.length - start };
+            segment.groups.push(sourceLines.length === group.count ? { ...group, sourceLines } : group);
+          }
         }
         segment.main.push(dash);
         break;

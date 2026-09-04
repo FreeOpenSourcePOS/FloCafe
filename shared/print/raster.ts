@@ -34,6 +34,7 @@ export interface RasterSemanticLineGroup {
   readonly groupId: string;
   readonly lineIndex: number;
   readonly lineCount: number;
+  readonly sourceLines?: readonly string[];
 }
 
 export interface RasterRenderRequest {

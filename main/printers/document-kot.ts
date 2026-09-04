@@ -255,8 +255,18 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
   if (items) {
     for (const [rowIndex, row] of items.rows.entries()) {
       const rowStart = lines.length;
-      lines.push(...kotItemLines(row, cols, options.arabicShaping, options.language, options.capabilities));
-      options.rasterGroups?.push({ groupId: `kot-items-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart });
+      const rowLines = kotItemLines(row, cols, options.arabicShaping, options.language, options.capabilities);
+      lines.push(...rowLines);
+      const sourceLines = [`${row.quantity}x  ${row.name.text}`];
+      for (const addon of row.addons) {
+        const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
+        sourceLines.push(`  + ${addon.name.text}${quantitySuffix}`);
+      }
+      if (row.specialInstructions) sourceLines.push('  >> ' + row.specialInstructions.text);
+      if (options.rasterGroups) {
+        const group = { groupId: `kot-items-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
+        options.rasterGroups.push(sourceLines.length === group.lineCount ? { ...group, sourceLines } : group);
+      }
     }
   }
 

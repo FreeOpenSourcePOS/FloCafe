@@ -336,9 +336,10 @@ function requestForRasterLine(
   capabilities: ThermalPrinterCapabilities,
   requestId: string,
   financial: boolean,
+  sourceText?: string,
 ): RasterRenderRequest | null {
   if (line.includes('{INIT}') || line.includes('{CUT}') || line.includes('{FEED}')) return null;
-  const text = stripRasterControlTokens(line) || ' ';
+  const text = sourceText ?? (stripRasterControlTokens(line) || ' ');
   const styles: RasterStyle[] = [
     line.includes('{BOLD}') ? 'bold' : null,
     line.includes('{DOUBLE_HEIGHT}') ? 'double-height' : null,
@@ -396,7 +397,8 @@ export async function renderUnsupportedRasterLines(
   ).map(([, ranges]) => ranges).sort((left, right) => left[0].lineIndex - right[0].lineIndex);
   for (const ranges of semanticGroups) {
     const group = ranges[0];
-    const groupText = ranges.flatMap((range) => range.lines).map(stripRasterControlTokens).filter(Boolean).join('\n');
+    const groupText = ranges.flatMap((range) => range.sourceLines?.length === range.lines.length ? range.sourceLines : range.lines)
+      .map(stripRasterControlTokens).filter(Boolean).join('\n');
     const needsRaster = ranges.some((range) => range.lines.some((line) => {
       const text = stripRasterControlTokens(line);
       return text.length > 0 && !isThermalTextRepresentable(text, capabilities);
@@ -411,7 +413,8 @@ export async function renderUnsupportedRasterLines(
       for (const range of ranges) {
         const renderedUnits: RasterSemanticUnit[] = [];
         for (let offset = 0; offset < range.lines.length; offset += 1) {
-          const request = requestForRasterLine(range.lines[offset], range.lineIndex + offset, capabilities, requestPrefix, financial);
+          const sourceText = range.sourceLines?.length === range.lines.length ? range.sourceLines[offset] : undefined;
+          const request = requestForRasterLine(range.lines[offset], range.lineIndex + offset, capabilities, requestPrefix, financial, sourceText);
           if (!request) continue;
           const result = await renderRasterSemanticUnit(renderer, request, financial);
           if (!result.ok) {

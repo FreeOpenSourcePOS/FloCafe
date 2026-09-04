@@ -188,7 +188,7 @@ export function renderBillDocumentToCompactLines(
 
     for (const [rowIndex, row] of items.rows.entries()) {
       const rowStart = lines.length;
-      lines.push(...itemRows(
+      const rowLines = itemRows(
         { product_name: row.name.text, quantity: row.quantity, total: row.amount },
         nameLen,
         amtLen,
@@ -199,14 +199,23 @@ export function renderBillDocumentToCompactLines(
         options.language,
         fractionDigits,
         options.capabilities,
-      ));
+      );
+      lines.push(...rowLines);
+      const sourceLines = [`${row.name.text} ${row.quantity} ${formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits)}`];
       for (const addon of row.addons) {
-        lines.push(...addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities));
+        const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
+        lines.push(...addonLines);
+        const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
+        sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
       }
       if (row.specialInstructions) {
         lines.push(normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language, options.capabilities)));
+        sourceLines.push('  ' + labelOf(items.noteLabel) + ': ' + row.specialInstructions.text);
       }
-      if (options.rasterGroups && lines.length > rowStart) options.rasterGroups.push({ groupId: `item-table-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart });
+      if (options.rasterGroups && lines.length > rowStart) {
+        const group = { groupId: `item-table-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
+        options.rasterGroups.push(sourceLines.length === group.lineCount ? { ...group, sourceLines } : group);
+      }
     }
   }
 

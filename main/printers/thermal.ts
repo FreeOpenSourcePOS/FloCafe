@@ -1966,7 +1966,7 @@ const CURRENCY_TOKEN_RE = new RegExp(
   'g',
 );
 
-const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME)\}/g;
+const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
   if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) return text;
@@ -2155,7 +2155,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     line = normalizeThermalTextByCapabilities(line, capabilities);
 
     const isStoreName = line.includes('{STORE_NAME}');
-    const isFinancial = financialLineRanges.some((range) => Number.isSafeInteger(range.lineIndex)
+    const isFinancial = line.includes('{FINANCIAL}') || financialLineRanges.some((range) => Number.isSafeInteger(range.lineIndex)
       && Number.isSafeInteger(range.lineCount)
       && range.lineIndex <= lineIndex
       && lineIndex < range.lineIndex + range.lineCount);

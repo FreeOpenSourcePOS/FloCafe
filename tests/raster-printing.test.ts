@@ -428,7 +428,11 @@ async function run(): Promise<void> {
   }, nativeFinancialWarnings);
   assert.equal(nativeFinancialWarnings[0]?.kind, 'financial');
   const literalMarker = buildEscPos(['{FINANCIAL}raster'], false);
-  assert.equal(escPosToText(literalMarker).includes('{FINANCIAL}raster'), true);
+  assert.equal(escPosToText(literalMarker).includes('{FINANCIAL}'), false);
+  assert.equal(escPosToText(literalMarker).includes('raster'), true);
+  const legacyFinancialWarnings: any[] = [];
+  assert.equal(buildEscPos(['{FINANCIAL}فارسی'], false, { capabilities: caps }, legacyFinancialWarnings).length, 0);
+  assert.equal(legacyFinancialWarnings[0]?.kind, 'financial');
   assert.equal(buildEscPos(['raster'], false, {
     capabilities: caps,
     rasterUnits: [{ lineIndex: 9, unit: { ...unit, financial: true } }],

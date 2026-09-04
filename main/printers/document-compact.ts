@@ -254,44 +254,44 @@ export function renderBillDocumentToCompactLines(
   const totalsStart = lines.length;
   const totalsSourceLines: string[] = [];
   const totalsSourceControlLines: string[] = [];
-  const pushTotalRow = (rendered: string[], source: string, bold = false): void => {
+  const pushTotalRow = (rendered: string[], bold = false): void => {
     const tokenLines = bold ? rendered.map((line) => `{BOLD}${line}{/BOLD}`) : rendered;
     lines.push(...tokenLines);
-    totalsSourceLines.push(source);
-    totalsSourceControlLines.push(tokenLines[0] ?? '');
+    totalsSourceLines.push(...rendered);
+    totalsSourceControlLines.push(...tokenLines);
   };
   if (totals) {
     const subtotalValue = formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    pushTotalRow(financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities), `${labelOf(totals.subtotal.label)}: ${subtotalValue}`);
+    pushTotalRow(financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities));
     if (totals.discount) {
       const discountValue = '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities), `${labelOf(totals.discount.label)}: ${discountValue}`);
+      pushTotalRow(financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities));
     }
     if (breakdown && breakdown.lines.length > 0) {
       for (const line of breakdown.lines) {
         const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
         const label = truncate(labelOf(line.label) + rateSuffix, cols - 12, options.language, options.capabilities);
         const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
-        pushTotalRow(financialRows(label, value, cols, options.language, options.capabilities), `${labelOf(line.label)}${rateSuffix}: ${value}`);
+        pushTotalRow(financialRows(label, value, cols, options.language, options.capabilities));
       }
     } else if (totals.tax) {
       const value = formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities), `${labelOf(totals.tax.label)}: ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities));
     }
     if (totals.serviceCharge) {
       const value = formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities), `${labelOf(totals.serviceCharge.label)}: ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities));
     }
     if (totals.deliveryCharge) {
       const value = formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities), `${labelOf(totals.deliveryCharge.label)}: ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities));
     }
     if (totals.packagingCharge) {
       const value = formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities), `${labelOf(totals.packagingCharge.label)}: ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities));
     }
     const grandTotalValue = formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    pushTotalRow(financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities), `${labelOf(totals.grandTotal.label)}: ${grandTotalValue}`, true);
+    pushTotalRow(financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities), true);
   }
   markGroup('totals', totalsStart, totalsSourceLines, totalsSourceControlLines, true);
 

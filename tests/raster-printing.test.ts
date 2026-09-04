@@ -191,6 +191,37 @@ async function run(): Promise<void> {
   const addressRequest = classicHeaderRequests.find((request) => request.text.includes('آدرس فارسی'));
   assert.equal(addressRequest?.align, 'center');
   assert.equal(classicHeaderRequests.some((request) => request.text.startsWith('** ') && request.text.endsWith(' **')), true);
+  const financialDocument = {
+    ...compactDocument,
+    blocks: compactDocument.blocks.map((block) => block.kind === 'totals'
+      ? { ...block, grandTotal: { ...block.grandTotal, label: { ...block.grandTotal.label, primary: 'جمع کل' } } }
+      : block),
+  };
+  const financialGroups: any[] = [];
+  const financialLines = renderBillDocumentToClassicLines(financialDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currencySymbol: '$',
+    currency: 'INR',
+    trimDecimals: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    rasterGroups: financialGroups,
+  });
+  const financialRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      financialRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+    },
+  }, financialLines, caps, 'financial-source', [financialGroups.find((group) => group.groupId === 'totals')]);
+  const grandTotalRequests = financialRequests.filter((request) => request.text === 'جمع کل');
+  assert.equal(grandTotalRequests.length, 1);
+  assert.equal(grandTotalRequests[0].style, 'bold');
+  assert.equal(financialRequests.some((request) => request.text.includes(':')), false);
   const kotDocument = buildKotDocument({
     stationName: 'ایستگاه',
     order: { orderNumber: 'K-1', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },

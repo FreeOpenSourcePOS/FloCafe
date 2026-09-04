@@ -157,10 +157,6 @@ function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-// Must match thermal.ts's CASH_DRAWER_PULSE_ALL_METHODS exactly — it's
-// compared as a raw settings value, not JSON-decoded.
-const CASH_DRAWER_PULSE_ALL_METHODS = 'all';
-const KNOWN_CASH_DRAWER_METHODS = ['cash', 'card', 'upi'];
 
 function SettingsNavItem({
   label, value, active, onClick, indent, attention,
@@ -1212,13 +1208,13 @@ export default function SettingsPage() {
   // Printing local state (buffered — saved only on explicit Save)
   type PrintingForm = {
     printerEnabled: boolean; printerPaperSize: PaperSize;
-    cashDrawerPulseEnabled: boolean;
-    // 'all' mirrors thermal.ts's CASH_DRAWER_PULSE_ALL_METHODS sentinel —
-    // written only by the v80 migration to preserve a legacy printer flag's
-    // unconditional pulse. Kept distinct from a concrete array so it isn't
-    // silently narrowed to ['cash','card'] the first time this tab is saved
-    // for any unrelated reason.
-    cashDrawerPulseMethods: string[] | 'all';
+    // undefined until loaded or explicitly toggled — see the load effect and
+    // savePrinting below. FloCafe has under 100 active installs, so a v80
+    // migration losing the legacy per-printer flag on upgrade (the original
+    // bug) is worth guarding against; the exact scenario of a save racing
+    // that one-time load, on a product this size, is not.
+    cashDrawerPulseEnabled: boolean | undefined;
+    cashDrawerPulseMethods: string[];
     printMethod: 'escpos' | 'browser';
     autoPrintKot: boolean; autoPrintBill: boolean;
     whatsappShareEnabled: boolean;
@@ -1235,7 +1231,7 @@ export default function SettingsPage() {
   const initPrinting = (): PrintingForm => ({
     printerEnabled: posSettings.printerEnabled,
     printerPaperSize: posSettings.printerPaperSize,
-    cashDrawerPulseEnabled: false,
+    cashDrawerPulseEnabled: undefined,
     cashDrawerPulseMethods: ['cash', 'card'],
     printMethod: printMethod as 'escpos' | 'browser',
     autoPrintKot: posSettings.autoPrintKot,
@@ -1263,16 +1259,6 @@ export default function SettingsPage() {
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
   const [cashDrawerMethodsOpen, setCashDrawerMethodsOpen] = useState(false);
-  // Guards savePrinting from sending cash_drawer_pulse_enabled/_methods
-  // before their real values have loaded — see the load effect below.
-  const [cashDrawerPulseSettingsLoaded, setCashDrawerPulseSettingsLoaded] = useState(false);
-  // A deliberate toggle/checkbox change must always be saveable — even
-  // before the load above resolves, or if it fails outright — and must
-  // survive that load resolving afterwards instead of being overwritten by
-  // whatever was already stored. A ref (not state) so the load promise's
-  // .then(), set up once on mount, reads whatever this holds when it
-  // actually resolves rather than a value captured at effect-setup time.
-  const cashDrawerPulseUserEdited = useRef(false);
   const savePrinting = async (silent: boolean = false) => {
     // Build typed policies from the form and mirror them into the store for
     // renderer-side reads (renderers adopt them in #442+).
@@ -1310,18 +1296,12 @@ export default function SettingsPage() {
     posSettings.setBillShowCustomerPhone(printingForm.billShowCustomerPhone);
     posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
     await Promise.all([
-      // Skip these two only while the real values are still unknown AND the
-      // user hasn't touched the controls — saving the untouched defaults
-      // before the load resolves (or after it fails) would silently narrow
-      // a migrated store's settings (see the load effect above). A genuine
-      // edit is always saveable, loaded or not.
-      ...(cashDrawerPulseSettingsLoaded || cashDrawerPulseUserEdited.current ? [
+      // Skipped while still undefined — not yet loaded and never explicitly
+      // toggled — so a save can't send a guessed value over whatever a v80
+      // migration (or the user, on another device) already set.
+      ...(printingForm.cashDrawerPulseEnabled !== undefined ? [
         api.put('/settings/cash_drawer_pulse_enabled', { value: printingForm.cashDrawerPulseEnabled ? 'true' : 'false' }),
-        api.put('/settings/cash_drawer_pulse_methods', {
-          value: printingForm.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS
-            ? CASH_DRAWER_PULSE_ALL_METHODS
-            : JSON.stringify(printingForm.cashDrawerPulseMethods),
-        }),
+        api.put('/settings/cash_drawer_pulse_methods', { value: JSON.stringify(printingForm.cashDrawerPulseMethods) }),
       ] : []),
       api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' }),
       api.put('/settings/bill_language_policy', { value: JSON.stringify(billLanguagePolicy) }),
@@ -1764,41 +1744,25 @@ export default function SettingsPage() {
       setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
       setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
     }).catch(() => {});
-    // Loaded together, gated on both succeeding: savePrinting always
-    // re-sends whatever is in form state, and the initial defaults here
-    // (false / ['cash','card']) are exactly the values that would silently
-    // narrow a migrated store's settings if a save raced ahead of this load
-    // — or ran after it failed. cashDrawerPulseSettingsLoaded blocks that.
-    Promise.all([
-      api.get('/settings/cash_drawer_pulse_enabled'),
-      api.get('/settings/cash_drawer_pulse_methods'),
-    ]).then(([enabledRes, methodsRes]) => {
-      const enabled = enabledRes.data.setting?.value === 'true';
-      const raw = methodsRes.data.setting?.value;
-      let methods: string[] | 'all' = ['cash', 'card'];
-      if (raw === CASH_DRAWER_PULSE_ALL_METHODS) {
-        methods = CASH_DRAWER_PULSE_ALL_METHODS;
-      } else {
-        try {
-          const parsed = JSON.parse(raw || '[]');
-          if (Array.isArray(parsed)) {
-            const valid = parsed.filter((method: unknown): method is string => typeof method === 'string');
-            // A non-empty array that contains no valid strings (corrupt/legacy
-            // value) restores the safe defaults; an intentionally empty array —
-            // every method deselected — stays empty.
-            methods = parsed.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
-          }
-        } catch { /* Use the safe defaults. */ }
-      }
-      // savedPrinting always adopts the true stored baseline. printingForm —
-      // the live edit buffer — only does if the user hasn't already changed
-      // it while this was in flight; otherwise this load would silently
-      // discard a real, visible edit the moment it resolved.
-      setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled, cashDrawerPulseMethods: methods }));
-      if (!cashDrawerPulseUserEdited.current) {
-        setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: enabled, cashDrawerPulseMethods: methods }));
-      }
-      setCashDrawerPulseSettingsLoaded(true);
+    api.get('/settings/cash_drawer_pulse_enabled').then((res) => {
+      const enabled = res.data.setting?.value === 'true';
+      setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
+      // Only applies while still undefined (untouched) — once the user
+      // toggles it, this load resolving afterwards must not revert them.
+      setPrintingForm((p) => (p.cashDrawerPulseEnabled === undefined ? { ...p, cashDrawerPulseEnabled: enabled } : p));
+    }).catch(() => {});
+    api.get('/settings/cash_drawer_pulse_methods').then((res) => {
+      try {
+        const methods = JSON.parse(res.data.setting?.value || '[]');
+        if (!Array.isArray(methods)) return;
+        const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
+        // A non-empty array that contains no valid strings (corrupt/legacy
+        // value) restores the safe defaults; an intentionally empty array —
+        // every method deselected — stays empty.
+        const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
+        setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
+        setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
+      } catch { /* Use the safe defaults. */ }
     }).catch(() => {});
     api.get('/settings/bill_language_policy').then((res) => {
       const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
@@ -4137,10 +4101,7 @@ export default function SettingsPage() {
                       <p className="font-medium text-foreground">{t('sendPulseToCashDrawer')}</p>
                       <p className="text-sm text-muted-foreground">{t('sendPulseToCashDrawerHint')}</p>
                     </div>
-                    <Toggle value={printingForm.cashDrawerPulseEnabled} onChange={(v) => {
-                      cashDrawerPulseUserEdited.current = true;
-                      setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }));
-                    }} />
+                    <Toggle value={!!printingForm.cashDrawerPulseEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }))} />
                   </div>
                   {printingForm.cashDrawerPulseEnabled && (
                     <div className="mt-3 rounded-lg border border-border overflow-hidden">
@@ -4158,24 +4119,13 @@ export default function SettingsPage() {
                             <label key={value} className="flex items-center gap-2 text-sm text-foreground">
                               <input
                                 type="checkbox"
-                                checked={printingForm.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS || printingForm.cashDrawerPulseMethods.includes(value)}
-                                onChange={(e) => {
-                                  cashDrawerPulseUserEdited.current = true;
-                                  setPrintingForm((p) => {
-                                    // Materialize the "all methods" sentinel into a concrete
-                                    // list on first interaction, so toggling one checkbox
-                                    // doesn't silently keep the raw 'all' string alongside it.
-                                    const current = p.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS
-                                      ? KNOWN_CASH_DRAWER_METHODS
-                                      : p.cashDrawerPulseMethods;
-                                    return {
-                                      ...p,
-                                      cashDrawerPulseMethods: e.target.checked
-                                        ? [...current, value]
-                                        : current.filter((method) => method !== value),
-                                    };
-                                  });
-                                }}
+                                checked={printingForm.cashDrawerPulseMethods.includes(value)}
+                                onChange={(e) => setPrintingForm((p) => ({
+                                  ...p,
+                                  cashDrawerPulseMethods: e.target.checked
+                                    ? [...p.cashDrawerPulseMethods, value]
+                                    : p.cashDrawerPulseMethods.filter((method) => method !== value),
+                                }))}
                                 className="h-4 w-4 rounded border-border text-brand focus:ring-brand"
                               />
                               {label}

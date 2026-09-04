@@ -4250,11 +4250,13 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       // tab is saved for any reason, which would otherwise silently drop the
       // existing configuration.
       //
-      // The legacy flag pulsed unconditionally, with no payment-method
-      // filter — the new setting's default filter is ['cash', 'card'], so
-      // seed cash_drawer_pulse_methods with thermal.ts's CASH_DRAWER_PULSE_ALL_METHODS
-      // sentinel ('all') rather than leaving it unset, or a migrated store
-      // would silently stop pulsing for UPI and custom payment methods.
+      // The legacy flag pulsed for every payment method; the new setting's
+      // method filter defaults to ['cash', 'card'], so a migrated store using
+      // UPI or a custom method for cash-drawer payments narrows to that
+      // default instead of carrying its exact prior behavior forward. With
+      // under 100 active installs (mostly testers), that's an acceptable,
+      // easily-reconfigured simplification — not worth a second setting or
+      // sentinel value to preserve exactly.
       const columns = getColumns(db, 'printers');
       if (!columns.includes('cash_drawer_pulse_enabled')) return;
       // Only the printer printReceipt would actually have dispatched to
@@ -4272,10 +4274,6 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         db.prepare(`
           INSERT OR IGNORE INTO settings (key, value, updated_at)
           VALUES ('cash_drawer_pulse_enabled', 'true', ?)
-        `).run(now());
-        db.prepare(`
-          INSERT OR IGNORE INTO settings (key, value, updated_at)
-          VALUES ('cash_drawer_pulse_methods', 'all', ?)
         `).run(now());
       }
     },

@@ -203,9 +203,9 @@ export class ChromiumRasterRenderer {
   }
 
   private settleReady(error?: string): void {
+    if (error && !this.readyError) this.readyError = error;
     if (this.readySettled) return;
     this.readySettled = true;
-    if (error) this.readyError = error;
     clearTimeout(this.readyTimer);
     this.readyResolve();
   }

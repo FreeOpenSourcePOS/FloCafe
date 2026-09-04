@@ -93,6 +93,15 @@ async function run() {
     });
     assert.equal(financialOverflow.ok, false);
     assert.equal(financialOverflow.code, 'render-failed');
+    surface.webContents.emit('render-process-gone');
+    const processFailure = await renderer.render({ ...base, requestId: 'electron-process-failure' });
+    assert.deepEqual(processFailure, {
+      version: 1,
+      requestId: 'electron-process-failure',
+      ok: false,
+      code: 'render-failed',
+      detail: 'Raster renderer process exited',
+    });
     console.log('Chromium raster surface rendered styled RTL output.');
   } finally {
     renderer.destroy();

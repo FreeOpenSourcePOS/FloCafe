@@ -50,6 +50,8 @@ async function run(): Promise<void> {
   assert.throws(() => encodeGsV0Band({ ...twoRows, heightDots: 3, pixels: new Uint8Array(27) }, 2), /maximum height/);
   assert.throws(() => encodeGsV0Band({ ...twoRows, pixels: new Uint8Array(1) }, 2), /one value per pixel/);
   assert.throws(() => encodeGsV0Band({ widthDots: 524288, heightDots: 1, pixels: new Uint8Array(524288) }), /GS v 0 limit/);
+  assert.throws(() => encodeGsV0Band({ widthDots: 8, heightDots: 65536, pixels: new Uint8Array(8 * 65536) }, 0xFFFF), /GS v 0 limit/);
+  assert.throws(() => encodeGsV0Band(twoRows, 0x10000), /maximum raster band height/);
 
   const caps = capability();
   assert.equal(rasterCapabilityEnabled(caps), true);

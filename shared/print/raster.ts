@@ -70,8 +70,10 @@ export function rasterCapabilityEnabled(
 }
 
 export function validateRasterBand(band: RasterBand, maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT): void {
+  if (!Number.isSafeInteger(maxBandHeight) || maxBandHeight <= 0 || maxBandHeight > 0xFFFF) throw new Error('Invalid maximum raster band height');
   if (!Number.isSafeInteger(band.widthDots) || band.widthDots <= 0) throw new Error('Raster width must be a positive integer');
   if (!Number.isSafeInteger(band.heightDots) || band.heightDots <= 0) throw new Error('Raster height must be a positive integer');
+  if (band.heightDots > 0xFFFF) throw new Error('Raster height exceeds GS v 0 limit');
   if (band.heightDots > maxBandHeight) throw new Error(`Raster band exceeds maximum height of ${maxBandHeight}`);
   const widthBytes = Math.ceil(band.widthDots / 8);
   if (widthBytes > 0xFFFF) throw new Error('Raster width exceeds GS v 0 limit');

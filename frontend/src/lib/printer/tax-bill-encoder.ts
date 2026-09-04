@@ -173,7 +173,10 @@ export function buildTaxBillBytes(
   const labelFor = (key: string): string => printLabelResolver(key, language);
   const cols = CHARS[paperWidth];
   const safePrinterText = safePrinterTextForLanguage(language, useUnicode, opts.capabilities);
-  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, language, opts.capabilities);
+  const padRow = (left: string, right: string, _columns?: number): string => {
+    void _columns;
+    return padRowForLanguage(left, right, cols, language, opts.capabilities);
+  };
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, language, opts.capabilities);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode, rawEscPos, opts.capabilities);

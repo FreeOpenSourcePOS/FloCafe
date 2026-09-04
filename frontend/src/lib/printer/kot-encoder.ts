@@ -55,7 +55,10 @@ function safePrinterTextForLanguage(language: string, columns: number, capabilit
     centerCols?: number,
     maxCols?: number,
     _language?: string,
-  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language, false, true, capabilities);
+  ): T => {
+    void _language;
+    return writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language, false, true, capabilities);
+  };
 }
 
 /**

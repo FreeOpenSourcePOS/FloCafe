@@ -426,7 +426,10 @@ export function buildClassicReceiptBytes(
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
   const safePrinterText = safePrinterTextForLanguage(primaryLang, useUnicode, opts.capabilities);
-  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang, opts.capabilities);
+  const padRow = (left: string, right: string, _columns?: number): string => {
+    void _columns;
+    return padRowForLanguage(left, right, cols, primaryLang, opts.capabilities);
+  };
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang, opts.capabilities);
 
   const col4Layout = resolveCol4Widths(
@@ -664,7 +667,10 @@ export function buildCompactReceiptBytes(
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
   const safePrinterText = safePrinterTextForLanguage(primaryLang, useUnicode, opts.capabilities);
-  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang, opts.capabilities);
+  const padRow = (left: string, right: string, _columns?: number): string => {
+    void _columns;
+    return padRowForLanguage(left, right, cols, primaryLang, opts.capabilities);
+  };
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang, opts.capabilities);
   const trim = opts.trimDecimals === true;
 
@@ -848,7 +854,10 @@ export function buildDetailedReceiptBytes(
   const cols = CHARS[paperWidth];
   const primaryLang = opts.languages?.[0] ?? 'en';
   const safePrinterText = safePrinterTextForLanguage(primaryLang, useUnicode, opts.capabilities);
-  const padRow = (left: string, right: string, _columns?: number): string => padRowForLanguage(left, right, cols, primaryLang, opts.capabilities);
+  const padRow = (left: string, right: string, _columns?: number): string => {
+    void _columns;
+    return padRowForLanguage(left, right, cols, primaryLang, opts.capabilities);
+  };
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang, opts.capabilities);
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode, opts.capabilities);

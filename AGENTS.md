@@ -44,6 +44,14 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 6. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
 7. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
 
+## Lessons from past mistakes
+
+FloCafe currently has fewer than 100 active installs, almost all of them testers rather than production merchants. The guidance below is calibrated to that scale — revisit it if that changes.
+
+- **Match migration/compatibility effort to actual usage, not worst-case fidelity.** Preserving one upgraded store's *exact* prior behavior (PR #640: carrying a per-printer cash-drawer-pulse flag's unconditional, every-payment-method behavior across a settings redesign, including UPI and custom methods) grew into a sentinel value, a union type, and load-vs-save race tracking spanning both the backend and the settings page — and still needed three follow-up fixes for edge cases that mechanism itself introduced, before it was reverted in favor of a plain default. For a product this size, a simple, slightly-narrowed default that's reconfigurable in the UI beats a stateful mechanism whose only job is protecting a handful of testers from a minor, one-time behavior change.
+- **After a second automated-review finding on code you just patched, stop and reconsider the design before patching again.** Each fix in that same episode closed one finding and opened another (parse failure on the sentinel → a load-vs-save race guarding against it → that guard dropping a genuine user edit). The second recurrence on the same few lines is the signal to ask "is this mechanism worth its complexity," not to patch a third time.
+- **Do not enable PR auto-merge unless the user clearly asks for it.** Treating "on success will merge to main" as authorization for `gh pr merge --auto` skipped a human review checkpoint the phrasing didn't unambiguously grant. Default to leaving merge timing to the user; ask if a merge instruction is ambiguous rather than assuming the more automated reading.
+
 ## Working conventions & safety rules
 
 - **Secrets & data protection:** Never commit credentials, API keys, `.env` files, customer data, backups, internal URLs, or private tokens.

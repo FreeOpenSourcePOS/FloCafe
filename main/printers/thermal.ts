@@ -1261,11 +1261,14 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   // keep their compliance renderer; unknown values fall through to the core
   // classic/compact name matching below (unchanged behavior).
   const selection = parseBillTemplateSelection(template);
+  const templateCapabilities = selection?.source === 'pack' || selection?.source === 'merchant'
+    ? capabilities && { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
+    : capabilities;
   if (selection?.source === 'pack') {
     return renderPluginReceipt(
       loadInstalledPrintTemplate(selection.id),
       order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang,
-      capabilities,
+      templateCapabilities,
     );
   }
   if (selection?.source === 'merchant') {
@@ -1277,7 +1280,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
       useUnicode,
       arabicShaping,
       cutMode,
-      capabilities,
+      capabilities: templateCapabilities,
     });
     if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
     return result.data;

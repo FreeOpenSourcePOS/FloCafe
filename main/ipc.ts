@@ -56,6 +56,16 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+const MIN_RASTER_COLUMNS = 32;
+const MAX_RASTER_COLUMNS = 48;
+
+function isValidRasterColumns(value: unknown): value is number {
+  return typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value >= MIN_RASTER_COLUMNS
+    && value <= MAX_RASTER_COLUMNS;
+}
+
 /**
  * The only window permitted to invoke privileged IPC is the main POS renderer,
  * which the embedded server serves from localhost/127.0.0.1. The KDS window is
@@ -529,7 +539,7 @@ export function registerIpcHandlers(
       return { ok: false, error: 'Invalid raster document request' };
     }
     const options = request.options as Record<string, unknown>;
-    if (!Number.isSafeInteger(options.columns) || (options.columns as number) <= 0
+    if (!isValidRasterColumns(options.columns)
       || typeof options.language !== 'string' || typeof options.locale !== 'string'
       || typeof options.currency !== 'string' || typeof options.currencySymbol !== 'string'
       || typeof options.trimDecimals !== 'boolean' || typeof options.useUnicode !== 'boolean'
@@ -562,7 +572,7 @@ export function registerIpcHandlers(
       return { ok: false, error: 'Invalid raster KOT request' };
     }
     const options = request.options as Record<string, unknown>;
-    if (!Number.isSafeInteger(options.columns) || (options.columns as number) <= 0
+    if (!isValidRasterColumns(options.columns)
       || typeof options.language !== 'string' || typeof options.locale !== 'string'
       || (options.timezone !== undefined && typeof options.timezone !== 'string')
       || typeof options.useUnicode !== 'boolean' || typeof options.arabicShaping !== 'boolean') {

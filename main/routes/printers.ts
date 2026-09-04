@@ -314,6 +314,7 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
       profile.cutMode,
       tenantLanguage(db),
       tenantSettingValue(db, 'timezone') || 'Asia/Kolkata',
+      req.body?.rasterProbe === true ? profile.capabilities : undefined,
     );
     let result: { ok: boolean; detail?: string } = { ok: false };
 

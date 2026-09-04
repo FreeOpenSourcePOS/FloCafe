@@ -38,6 +38,7 @@ import {
   type ThermalPrinterCapabilities,
 } from '../../shared/print/thermal-capabilities';
 import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippPrintRaw } from './ipp-client';
+import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled, type RasterSemanticUnit } from '../../shared/print/raster';
 
 export type PrintResult = {
   ok: boolean;
@@ -1632,7 +1633,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   return result.data;
 }
 
-export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', language?: string, timezone?: string): Buffer {
+export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', language?: string, timezone?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
   const width = columnsForPaperWidth(paperWidth) || 48;
   const lang = normalizePrintLanguage(language);
   const label = (concept: PrintConceptId): string => normalizeThermalText(printLabel(lang, concept));
@@ -1659,7 +1660,15 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     bar,
     '{CUT}',
   ];
-  return buildEscPos(lines, false, { cutMode, language: lang });
+  if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang });
+  const textData = buildEscPos(lines.slice(0, -1), false, { cutMode, language: lang, capabilities });
+  const rasterData = encodeRasterUnits([{
+    unitId: 'diagnostic-test-page',
+    financial: false,
+    complete: true,
+    bands: buildRasterDiagnosticBands(capabilities.raster.widthDots, capabilities.raster.maxBandHeight),
+  }], capabilities);
+  return Buffer.concat([textData, Buffer.from(rasterData), Buffer.from(encodeRasterFeedAndCut(cutMode))]);
 }
 
 // Every ASCII fallback is no wider than 3 characters, so currency labels such
@@ -1747,12 +1756,35 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
  * transport guard. Receipt renderers mark amount-bearing lines with the
  * internal {FINANCIAL} token; it is stripped before bytes are emitted.
  */
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities } = {}, warnings?: PrintWarning[]): Buffer {
+export interface RasterLineUnit {
+  readonly lineIndex: number;
+  readonly unit: RasterSemanticUnit;
+}
+
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[] } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
   const useLegacyUnicode = options.capabilities === undefined && _useUnicode;
   const capabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
   const hasNativeCodePage = capabilities.encoding.codePages.some((codePage) => codePage !== 'ascii');
   let activeCodePage = capabilities.encoding.preferredCodePage;
+  const rasterByLine = new Map((options.rasterUnits ?? []).map((entry) => [entry.lineIndex, entry.unit]));
+  const encodedRasterByLine = new Map<number, Uint8Array>();
+  for (const entry of options.rasterUnits ?? []) {
+    try {
+      if (!rasterCapabilityEnabled(capabilities)) throw new Error('Raster output is not enabled for this printer profile');
+      encodedRasterByLine.set(entry.lineIndex, encodeRasterUnits([entry.unit], capabilities));
+    } catch (error) {
+      if (warnings) warnings.push({
+        field: entry.unit.financial ? 'financial row' : 'receipt line',
+        text: entry.unit.unitId,
+        message: error instanceof Error ? error.message : String(error),
+        kind: entry.unit.financial ? 'financial' : 'line',
+      });
+    }
+  }
+  if (warnings?.some((warning) => warning.kind === 'financial' && (options.rasterUnits ?? []).some((entry) => entry.unit.financial && entry.unit.unitId === warning.text))) {
+    return Buffer.alloc(0);
+  }
 
   const resetAllStyles = () => {
     buf.push(0x1B, 0x45, 0x00);
@@ -1760,7 +1792,18 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     buf.push(0x1B, 0x61, 0x00);
   };
 
-  for (let line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    let line = lines[lineIndex];
+    const rasterUnit = rasterByLine.get(lineIndex);
+    if (rasterUnit) {
+      const rasterBytes = encodedRasterByLine.get(lineIndex);
+      if (rasterBytes) {
+        resetAllStyles();
+        buf.push(...rasterBytes);
+        resetAllStyles();
+      }
+      continue;
+    }
     if (line.includes('{INIT}')) {
       buf.push(0x1B, 0x40);
       resetAllStyles();

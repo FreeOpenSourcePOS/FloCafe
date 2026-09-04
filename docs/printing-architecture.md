@@ -466,14 +466,18 @@ Warnings surface to the user through print results and toast notifications
 `classifyPrintFailure` in [`main/printers/thermal.ts`](../main/printers/thermal.ts) for stable, privacy-safe failure
 classes for fleet telemetry. The end-state contract from [epic #438](https://github.com/FreeOpenSourcePOS/FloCafe/issues/438) for the
 shared paths is native render, explicitly supported fallback, or an explicit
-warning/error for unsupported content or configuration. The recommended
-capability-tiered raster fallback for broader script coverage remains future
-work and is explicitly not part of this boundary change
-([printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md)).
-Native code pages are intentionally limited to declared text representability;
-this change does not claim Arabic shaping, broad non-Latin support, raster
-output, or new hardware coverage. Those alternatives remain deferred pending
-hardware evidence and a separate architecture decision.
+warning/error for unsupported content or configuration. Raster is now an
+additive, profile-owned capability, but remains disabled for all shipped
+profiles until the diagnostic probe and real-printer evidence are complete.
+When enabled, the dedicated hidden Chromium surface accepts only typed
+requests with bundled local font data URLs; the shared `GS v 0` encoder emits
+bounded bands and preserves the semantic unit boundary. Mixed mode is the
+primary path, while whole-receipt raster is a tested per-printer compatibility
+mode and not a default. Unsupported financial units still refuse before any
+transport write. See [`shared/print/raster.ts`](../shared/print/raster.ts) and
+[printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md).
+Native code pages remain limited to declared text representability; no shipped
+profile claims broad non-Latin support without hardware evidence.
 
 ## 7. Renderer/transport map
 
@@ -505,6 +509,7 @@ directly and [`main/printers/thermal.ts`](../main/printers/thermal.ts) owns that
 | Document model | `npm run test:print-document` | block construction, document builders, bilingual pairs, direction annotations, purity ([`tests/print-document.test.ts`](../tests/print-document.test.ts)) |
 | Parity harness | `npm run test:print-parity` | cross-renderer semantic parity + byte-exact migration oracle ([`tests/print-parity.test.ts`](../tests/print-parity.test.ts)) |
 | Thermal capabilities | `npm run test:thermal-capabilities` | profile-owned encoding/shaping/representability/transliteration policy, code-page choice, backend/WebUSB normalized fixtures, unsupported-text and order-type safety ([`tests/thermal-capabilities.test.ts`](../tests/thermal-capabilities.test.ts)) |
+| Raster contract | `npm run test:raster` | deterministic GS v 0 packing, bounded profile geometry, renderer request validation, complete-unit refusal, and feed/cut semantics ([`shared/print/raster.ts`](../shared/print/raster.ts)) |
 | Merchant templates | `npm run test:merchant-print-templates` | kernel validation, apply semantics, CRUD lifecycle, render path ([`tests/merchant-print-templates.test.ts`](../tests/merchant-print-templates.test.ts)) |
 | Transfer envelope | `npm run test:merchant-template-transfer` | import/export contract, tampered-checksum rejection ([`tests/merchant-template-import-export.test.ts`](../tests/merchant-template-import-export.test.ts)) |
 

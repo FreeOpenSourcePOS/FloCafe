@@ -1047,9 +1047,11 @@ function receiptDocumentLines(
   capabilities: ThermalPrinterCapabilities,
 ): RasterDocumentLines | null {
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
-  const rasterBiz = biz.raster_currency
-    ? { ...biz, currency: biz.raster_currency, currency_symbol: biz.raster_currency_symbol || biz.currency_symbol }
-    : biz;
+  const rasterBiz = {
+    ...biz,
+    ...(biz.raster_currency ? { currency: biz.raster_currency, currency_symbol: biz.raster_currency_symbol || biz.currency_symbol } : {}),
+    ...(biz.customer_phone ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) } : {}),
+  };
   const selection = parseBillTemplateSelection(template);
   if (selection?.source === 'pack' || selection?.source === 'merchant') return null;
   const normalizedTemplate = normalizeReceiptTemplate(selection?.source === 'core' ? selection.id : template);
@@ -1063,7 +1065,7 @@ function receiptDocumentLines(
       arabicShaping,
       cutMode,
       capabilities,
-      maskCustomerPhone: true,
+      maskCustomerPhone: false,
     })
     : renderClassicReceiptViaDocument(order, bill, rasterBiz, {
       columns,
@@ -1074,7 +1076,7 @@ function receiptDocumentLines(
       arabicShaping,
       cutMode,
       capabilities,
-      maskCustomerPhone: true,
+      maskCustomerPhone: false,
     });
   return result;
 }
@@ -1146,14 +1148,14 @@ export async function rasterizePrintDocumentForWebUsb(
       ...options,
       cutMode: profile.cutMode,
       capabilities,
-      maskCustomerPhone: true,
+      maskCustomerPhone: false,
       rasterGroups,
     })
     : renderBillDocumentToClassicLines(document, {
       ...options,
       cutMode: profile.cutMode,
       capabilities,
-      maskCustomerPhone: true,
+      maskCustomerPhone: false,
       rasterGroups,
     });
   const result = await rasterizeDocumentLines(lines, [], {

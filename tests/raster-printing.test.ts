@@ -526,6 +526,7 @@ async function run(): Promise<void> {
   const backendCustomer = backendParity.document.blocks.find((block) => block.kind === 'customer') as any;
   assert.equal(frontendCustomer.name.text, backendCustomer.name.text);
   assert.equal(frontendCustomer.phone.text, 'xxxxxxxxxxxx5678');
+  assert.equal(backendCustomer.phone.text, frontendCustomer.phone.text);
   assert.equal(backendParity.lines.some((line) => line.includes('xxxxxxxxxxxx5678')), true);
   const frontendTax = frontendParityDocument.blocks.find((block) => block.kind === 'tax-breakdown') as any;
   const backendTax = backendParity.document.blocks.find((block) => block.kind === 'tax-breakdown') as any;

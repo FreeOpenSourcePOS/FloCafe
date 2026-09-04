@@ -380,12 +380,15 @@ export function renderCompactReceiptViaDocument(
     maskCustomerPhone?: boolean;
   },
 ): CompactDocumentRenderResult {
-  const printData = buildBillPrintData(order, bill, business, opts.isReprint);
+  const semanticBusiness = opts.maskCustomerPhone
+    ? { ...(business || {}), customer_phone: maskPhoneOnReceipt(String(business?.customer_phone ?? '')) }
+    : business;
+  const printData = buildBillPrintData(order, bill, semanticBusiness, opts.isReprint);
   const printContext = buildBillPrintContext({
     columns: opts.columns,
     language: opts.language,
     ...(opts.additionalLanguage !== undefined ? { additionalLanguage: opts.additionalLanguage } : {}),
-    business,
+    business: semanticBusiness,
   });
   const document = buildBillDocument(printData, printContext);
   const warnings: PrintWarning[] = [];
@@ -402,7 +405,7 @@ export function renderCompactReceiptViaDocument(
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
-    maskCustomerPhone: opts.maskCustomerPhone,
+    maskCustomerPhone: false,
     rasterGroups,
   });
   const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges: rasterGroups.filter((group) => group.financial === true).map(({ lineIndex, lineCount }) => ({ lineIndex, lineCount })) }, warnings);

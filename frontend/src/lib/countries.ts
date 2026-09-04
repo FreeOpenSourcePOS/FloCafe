@@ -16,6 +16,7 @@ export {
   getCurrencyFractionDigits,
   getCurrencyMinorUnitFactor,
   getCurrencyUnitAdapter,
+  resolveTenantCurrency,
   countryName,
   type Country,
   type CountryLocaleOptions,

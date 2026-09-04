@@ -2051,7 +2051,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const lineCount = entry.lineCount ?? 1;
     const lineIndexValid = Number.isSafeInteger(entry.lineIndex) && entry.lineIndex >= 0
       && Number.isSafeInteger(lineCount) && lineCount > 0 && entry.lineIndex + lineCount <= lines.length;
-    const financial = entry.unit.financial || (lineIndexValid && lines[entry.lineIndex].includes('{FINANCIAL}'));
+    const financial = entry.unit.financial === true;
     const overlaps = lineIndexValid && rasterRanges.some((range) => entry.lineIndex < range.end && entry.lineIndex + lineCount > range.start);
     const bindingError = !lineIndexValid
       ? 'Raster unit line range is outside the print document'

@@ -235,6 +235,11 @@ export const getCountryByCode = (code: string): Country | undefined => {
   return COUNTRIES.find((c) => c.code === code.toUpperCase());
 };
 
+export function resolveTenantCurrency(currency: unknown, countryCode: unknown): string {
+  if (typeof currency === 'string' && /^[A-Z]{3}$/.test(currency)) return currency;
+  return getCountryByCode(String(countryCode || ''))?.currency || 'INR';
+}
+
 export const getCurrencySymbol = (currency: string, locale = 'en-US'): string => {
   if (!currency) return currency;
   try {

@@ -14,7 +14,7 @@ import {
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
-import { getCountryByCode, getCurrencySymbol } from '../countries';
+import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
 
@@ -440,14 +440,16 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       }
     }
 
+    const country = settings.country || 'IN';
+    const currency = resolveTenantCurrency(settings.currency, country);
     const business = {
       name: settings.business_name || '',
       address: settings.business_address || '',
       phone: settings.business_phone || '',
       taxRegistrationNumber: settings.tax_registration_number || '',
-      currency: settings.currency || getCountryByCode(settings.country || 'IN')?.currency || 'INR',
-      currency_symbol: getCurrencySymbol(settings.currency || 'INR', getCountryByCode(settings.country || 'IN')?.locale) || settings.currency_symbol || '₹',
-      country: settings.country || 'IN',
+      currency,
+      currency_symbol: getCurrencySymbol(currency, getCountryByCode(country)?.locale) || settings.currency_symbol || '₹',
+      country,
       instagram_handle: settings.instagram_handle || '',
       customer_name: customer?.name || '',
       customer_phone: customer?.phone

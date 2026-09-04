@@ -31,7 +31,7 @@ import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 import { type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterWebUsbPathEnabled } from '@print/raster';
-import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
+import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 
 type CoreBillTemplate = 'classic' | 'compact';
 
@@ -260,6 +260,7 @@ export const usePrinterStore = create<PrinterState>()(
           const webusbPrinter = get().webusbPrinter;
           const webusbCapabilities = webusbPrinter?.capabilities;
           if (rasterBillTemplate && rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizePrintDocument), webusbPrinter?.profile_id)) {
+            const currency = resolveTenantCurrency(tenant.currency, tenant.country);
             const rasterResult = await window.electronAPI.rasterizePrintDocument({
               document: buildFrontendBillDocument(bill, tenant, {
                 ...builderOpts,
@@ -276,8 +277,8 @@ export const usePrinterStore = create<PrinterState>()(
                 columns: configuredPaperWidth === 80 ? 48 : 42,
                 language: languages[0],
                 locale: getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US',
-                currency: tenant.currency ?? 'INR',
-                currencySymbol: getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale),
+                currency,
+                currencySymbol: getCurrencySymbol(currency, getCountryByCode(tenant.country ?? 'IN')?.locale),
                 trimDecimals: printerTrimDecimals,
                 useUnicode: printerUseUnicode,
                 arabicShaping: printerArabicShaping,

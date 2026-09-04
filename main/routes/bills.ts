@@ -27,19 +27,16 @@ import {
 import { applyPayableRounding } from '../services/tax-engine';
 import { sendEvent } from '../services/telemetry';
 import {
-  getCountryByCode,
   getCurrencyFractionDigits,
   getCurrencyMinorUnitFactor,
+  resolveTenantCurrency,
 } from '../countries';
 
 const router = Router();
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 
 export function getTenantCurrency(): string {
-  const explicit = getSettingValue('currency');
-  if (explicit && typeof explicit === 'string' && /^[A-Z]{3}$/.test(explicit)) return explicit;
-  const country = getSettingValue('country') || 'IN';
-  return getCountryByCode(country)?.currency || 'INR';
+  return resolveTenantCurrency(getSettingValue('currency'), getSettingValue('country'));
 }
 
 type BillLoyaltyRow = {

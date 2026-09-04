@@ -29,7 +29,7 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
 import { selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
-import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol } from '@/lib/countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -418,9 +418,10 @@ export function buildClassicReceiptBytes(
     arabicShaping = false,
   } = opts;
   const cols = CHARS[paperWidth];
-  const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const resolvedCurrency = resolveTenantCurrency(tenant.currency, tenant.country);
+  const rawCurrency = getCurrencySymbol(resolvedCurrency, getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode, opts.capabilities);
-  const fractionDigits = getCurrencyFractionDigits(tenant.currency ?? 'INR');
+  const fractionDigits = getCurrencyFractionDigits(resolvedCurrency);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
@@ -657,9 +658,10 @@ export function buildCompactReceiptBytes(
     arabicShaping = false,
   } = opts;
   const cols = CHARS[paperWidth];
-  const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const resolvedCurrency = resolveTenantCurrency(tenant.currency, tenant.country);
+  const rawCurrency = getCurrencySymbol(resolvedCurrency, getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode, opts.capabilities);
-  const fractionDigits = getCurrencyFractionDigits(tenant.currency ?? 'INR');
+  const fractionDigits = getCurrencyFractionDigits(resolvedCurrency);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   // Business/show flags flow into the document via `opts`; the renderer only
   // sees resolved blocks.
@@ -859,9 +861,10 @@ export function buildDetailedReceiptBytes(
     return padRowForLanguage(left, right, cols, primaryLang, opts.capabilities);
   };
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang, opts.capabilities);
-  const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const resolvedCurrency = resolveTenantCurrency(tenant.currency, tenant.country);
+  const rawCurrency = getCurrencySymbol(resolvedCurrency, getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, useUnicode, opts.capabilities);
-  const fractionDigits = getCurrencyFractionDigits(tenant.currency ?? 'INR');
+  const fractionDigits = getCurrencyFractionDigits(resolvedCurrency);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;

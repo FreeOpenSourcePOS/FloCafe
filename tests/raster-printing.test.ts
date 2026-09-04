@@ -14,12 +14,13 @@ import {
 } from '../shared/print/raster';
 import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '../shared/print/thermal-capabilities';
 import { buildBillDocument, buildKotDocument, isKotDocument, isPrintDocument } from '../shared/print/document';
+import { resolveTenantCurrency } from '../main/countries';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
 import { buildEscPos, financialRows, itemRows, normalizeThermalText } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
-import { renderBillDocumentToClassicLines } from '../main/printers/document-classic';
+import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from '../main/printers/document-classic';
 import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from '../main/printers/document-compact';
 import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
 
@@ -245,7 +246,7 @@ async function run(): Promise<void> {
     capabilities: caps,
     rasterUnits: [{ lineIndex: 0, unit: { ...unit, complete: false } }],
   }, metadataWarnings).length, 0);
-  assert.equal(metadataWarnings[0]?.kind, 'financial');
+  assert.equal(metadataWarnings[0]?.kind, 'line');
   assert.equal(buildEscPos(['raster'], false, {
     capabilities: caps,
     rasterUnits: [{ lineIndex: 9, unit: { ...unit, financial: true } }],
@@ -414,6 +415,95 @@ async function run(): Promise<void> {
     { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
   );
   assert.equal(jpyReceipt.lines.some((line) => line.includes('12.34')), false);
+  assert.equal(resolveTenantCurrency(undefined, 'JP'), 'JPY');
+  const frontendPrintDocument = loadFrontendPrintDocument();
+  const parityOrder = {
+    order_number: 'JP-1',
+    created_at: '2026-01-01T12:00:00.000Z',
+    items: [{ product_name: 'Tea', quantity: 1, unit_price: 1000, total: 1000, addons: [], special_instructions: null, status: 'pending' }],
+  };
+  const parityBill = {
+    bill_number: 'B-1',
+    subtotal: 1000,
+    discount_amount: 0,
+    tax_amount: 100,
+    service_charge: 0,
+    delivery_charge: 0,
+    packaging_charge: 0,
+    total: 1100,
+    payment_details: [],
+    tax_breakdown: [{ title: 'Consumption tax', rate: 10, amount: 100 }],
+    order: parityOrder,
+    customer: { name: 'Alice', phone: '+81 90 1234 5678', country_code: '+81' },
+  };
+  const parityTenant = { country: 'JP', currency: 'JPY', timezone: 'Asia/Tokyo' };
+  const frontendParityDocument = frontendPrintDocument.buildFrontendBillDocument(parityBill as any, parityTenant, {
+    languages: ['en'],
+    businessName: 'Cafe',
+    address: 'Main Street',
+    phone: '000',
+    taxRegistrationNumber: 'JP-123',
+    includeTaxId: true,
+    taxIdLabel: 'Tax ID',
+    maskCustomerPhone: true,
+    useBillCustomer: true,
+    showTaxBreakdown: true,
+    showCustomerName: true,
+    showCustomerPhone: true,
+  });
+  const backendParity = renderClassicReceiptViaDocument(parityOrder, parityBill, {
+    name: 'Cafe',
+    address: 'Main Street',
+    phone: '000',
+    taxRegistrationNumber: 'JP-123',
+    currency: 'JPY',
+    currency_symbol: '¥',
+    country: 'JP',
+    customer_name: 'Alice',
+    customer_phone: '+81 90 1234 5678',
+    show_name: true,
+    show_address: true,
+    show_phone: true,
+    show_tax_id: true,
+    show_tax_breakdown: true,
+    show_customer_name: true,
+    show_customer_phone: true,
+    show_table_number: false,
+  }, {
+    columns: 42,
+    language: 'en',
+    isReprint: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    maskCustomerPhone: true,
+  });
+  const frontendCustomer = frontendParityDocument.blocks.find((block) => block.kind === 'customer') as any;
+  const backendCustomer = backendParity.document.blocks.find((block) => block.kind === 'customer') as any;
+  assert.equal(frontendCustomer.name.text, backendCustomer.name.text);
+  assert.equal(frontendCustomer.phone.text, 'xxxxxxxxxxxx5678');
+  assert.equal(backendParity.lines.some((line) => line.includes('xxxxxxxxxxxx5678')), true);
+  const frontendTax = frontendParityDocument.blocks.find((block) => block.kind === 'tax-breakdown') as any;
+  const backendTax = backendParity.document.blocks.find((block) => block.kind === 'tax-breakdown') as any;
+  assert.deepEqual(frontendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })), backendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })));
+  const frontendParityLines = renderBillDocumentToClassicLines(frontendParityDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'ja-JP',
+    currencySymbol: '¥',
+    currency: 'JPY',
+    trimDecimals: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    maskCustomerPhone: true,
+  });
+  assert.equal(frontendParityLines.some((line) => line.includes('1,100')), true);
+  assert.equal(backendParity.lines.some((line) => line.includes('1,100')), true);
+  assert.equal(frontendParityLines.filter((line) => line.includes('{FONT_B}')).length, backendParity.lines.filter((line) => line.includes('{FONT_B}')).length);
+  assert.equal(frontendParityLines.filter((line) => line.includes('{BOLD}')).length, backendParity.lines.filter((line) => line.includes('{BOLD}')).length);
   const backendKotData = buildKotPrintData(
     { order_number: 'K-2', created_at: '2026-01-01T12:00:00.000Z' },
     [{ status: 'pending', product_name: 'Tea', quantity: 1, addons: '[{"name":"Extra sauce","quantity":2}]' }],

@@ -220,7 +220,19 @@ export class ChromiumRasterRenderer {
         resolve({ version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: 'Raster rendering timed out' });
       }, this.timeoutMs);
       this.pending.set(request.requestId, { resolve, timer });
-      this.surface.webContents.send('flo:raster-request', { version: 1, request });
+      try {
+        this.surface.webContents.send('flo:raster-request', { version: 1, request });
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(request.requestId);
+        resolve({
+          version: 1,
+          requestId: request.requestId,
+          ok: false,
+          code: 'render-failed',
+          detail: error instanceof Error ? error.message : 'Raster surface is unavailable',
+        });
+      }
     });
   }
 

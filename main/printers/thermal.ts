@@ -1742,7 +1742,9 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
 
 export function financialRows(label: string, value: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): string[] {
   const normalizedLabel = normalizeThermalText(label, capabilities);
-  const safeLabel = normalizedLabel.slice(0, Math.max(1, cols - 1));
+  const safeLabel = capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalizedLabel, capabilities)
+    ? normalizedLabel
+    : normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
     return ['{FINANCIAL}' + safeLabel + rightAlign(value, cols - safeLabel.length)];

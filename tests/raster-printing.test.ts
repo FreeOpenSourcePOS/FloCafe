@@ -16,7 +16,7 @@ import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '.
 import { buildKotDocument, isKotDocument, isPrintDocument } from '../shared/print/document';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
-import { buildEscPos, itemRows } from '../main/printers/thermal';
+import { buildEscPos, financialRows, itemRows } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { renderKotDocumentToLines } from '../main/printers/document-kot';
 import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
@@ -93,6 +93,8 @@ async function run(): Promise<void> {
     resolveLabel: (conceptId) => ({ conceptId, primary: conceptId }),
   });
   assert.equal(isKotDocument(kotDocument), true);
+  assert.equal(isKotDocument({ ...kotDocument, blocks: [...kotDocument.blocks, kotDocument.blocks[1]] }), false);
+  assert.equal(isKotDocument({ ...kotDocument, blocks: [kotDocument.blocks[0]] }), false);
   const kotLines = renderKotDocumentToLines(kotDocument, {
     columns: 42,
     language: 'fa',
@@ -105,6 +107,7 @@ async function run(): Promise<void> {
   assert.equal(kotLines.some((line) => line.includes('ایستگاه')), true);
   const longUnsupportedName = 'فارسی خیلی طولانی برای اندازه‌گیری';
   assert.equal(itemRows({ product_name: longUnsupportedName, quantity: 1, total: 1 }, 4, 4, 12, '₹', 'en-US', false, 'fa', 2, caps)[0].includes('..'), false);
+  assert.equal(financialRows('برچسب مالی بسیار طولانی', '1', 12, 'fa', caps)[0].includes('..'), false);
   const unit = { unitId: 'row-1', financial: false, complete: true, bands: [twoRows] } as const;
   const native = Uint8Array.from([0x1B, 0x40, 0x41, 0x0A]);
   const mixed = encodeMixedPrintParts([{ kind: 'native', bytes: native }, { kind: 'raster', unit }], caps, 'partial');
@@ -219,6 +222,17 @@ async function run(): Promise<void> {
   assert.equal(styledBanner.failures.length, 0);
   assert.equal(styledBanner.units.length, 1);
   assert.equal(renderedLines.failures.length, 0);
+
+  const blankLineRequests: any[] = [];
+  const groupedHeader = await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      blankLineRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+    },
+  }, ['فارسی', '', '555-0100'], caps, 'header', [{ groupId: 'header', lineIndex: 0, lineCount: 3 }]);
+  assert.equal(blankLineRequests.length, 3);
+  assert.equal(blankLineRequests[1].text, ' ');
+  assert.equal(groupedHeader.units[0]?.lineCount, 3);
 
   const failedGroup = await renderUnsupportedRasterLines({
     render: async () => ({ version: 1 as const, requestId: 'failed', ok: false as const, code: 'font-unavailable' as const, detail: 'missing' }),

@@ -244,7 +244,7 @@ export const usePrinterStore = create<PrinterState>()(
                 columns: configuredPaperWidth === 80 ? 48 : 42,
                 businessName: tenant.business_name,
                 includeTaxId: billShowTaxId,
-                taxIdLabel: 'Tax ID',
+                taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel ?? 'Tax ID',
               }),
               template: billTemplate === 'compact' ? 'compact' : 'classic',
               profileId: webusbPrinter.profile_id,

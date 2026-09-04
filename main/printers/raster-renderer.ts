@@ -324,8 +324,7 @@ function requestForRasterLine(
   requestId: string,
 ): RasterRenderRequest | null {
   if (line.includes('{INIT}') || line.includes('{CUT}') || line.includes('{FEED}')) return null;
-  const text = line.replace(/\{[A-Z_/]+\}/g, '');
-  if (!text) return null;
+  const text = line.replace(/\{[A-Z_/]+\}/g, '') || ' ';
   const styles: RasterStyle[] = [
     line.includes('{BOLD}') ? 'bold' : null,
     line.includes('{DOUBLE_HEIGHT}') ? 'double-height' : null,

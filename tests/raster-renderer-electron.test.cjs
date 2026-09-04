@@ -53,8 +53,8 @@ async function run() {
       detail: 'bundled font unavailable',
     });
     await surface.webContents.executeJavaScript(`
-      window.FontFace = class {
-        constructor(family) { this.family = family; }
+      const NativeFontFace = window.FontFace;
+      window.FontFace = class extends NativeFontFace {
         load() { return Promise.resolve(this); }
       };
     `);

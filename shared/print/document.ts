@@ -934,7 +934,9 @@ export function isKotDocument(value: unknown): value is KotDocument {
     && isLanguages(value.languages)
     && value.languages.length === 1
     && Array.isArray(value.blocks)
-    && value.blocks.length > 0
+    && value.blocks.length === 2
+    && value.blocks.filter((block) => isRecord(block) && block.kind === 'kot-header').length === 1
+    && value.blocks.filter((block) => isRecord(block) && block.kind === 'kot-items').length === 1
     && value.blocks.every(isKotDocumentBlock);
 }
 

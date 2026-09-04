@@ -15,7 +15,7 @@
 import { parseDbTimestamp } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
-import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
@@ -90,10 +90,13 @@ function compactItemHeader(block: ItemTableBlock, nameLen: number, amtLen: numbe
   const itemLabel = normalizeThermalText(labelOf(block.header.item), capabilities);
   const qtyLabel = normalizeThermalText(labelOf(block.header.quantity), capabilities);
   const amountLabel = normalizeThermalText(labelOf(block.header.amount), capabilities);
-  const item = itemLabel.slice(0, nameLen).padEnd(nameLen);
-  const qty = qtyLabel.slice(0, qtyW).padEnd(qtyW);
-  const amount = amountLabel.slice(0, Math.max(1, amtLen - 1));
-  return item + qty + ' '.repeat(amtLen - amount.length) + amount;
+  const fit = (value: string, length: number): string => capabilities?.raster.enabled === true && !isThermalTextRepresentable(value, capabilities)
+    ? value
+    : value.slice(0, length);
+  const item = fit(itemLabel, nameLen).padEnd(nameLen);
+  const qty = fit(qtyLabel, qtyW).padEnd(qtyW);
+  const amount = fit(amountLabel, Math.max(1, amtLen - 1));
+  return item + qty + ' '.repeat(Math.max(0, amtLen - amount.length)) + amount;
 }
 
 /**

@@ -56,7 +56,7 @@ export function rasterRendererHtml(): string {
       context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
       context.textBaseline = 'top';
       context.direction = request.direction;
-      context.textAlign = request.align === 'center' ? 'center' : request.direction === 'rtl' ? 'right' : 'left';
+      context.textAlign = request.align === 'center' ? 'center' : 'left';
       const measure = (value) => context.measureText(value).width * scaleX;
       if (typeof Intl.Segmenter !== 'function') return makeFailure(request, 'render-failed', 'Grapheme segmentation is unavailable');
       const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
@@ -95,14 +95,14 @@ export function rasterRendererHtml(): string {
       context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
       context.textBaseline = 'top';
       context.direction = request.direction;
-      context.textAlign = request.align === 'center' ? 'center' : request.direction === 'rtl' ? 'right' : 'left';
+      context.textAlign = request.align === 'center' ? 'center' : 'left';
       context.setTransform(scaleX, 0, 0, scaleY, 0, 0);
       context.fillStyle = '#fff';
       context.fillRect(0, 0, width, canvas.height);
       context.fillStyle = '#000';
       bounded.forEach((line, index) => context.fillText(
         line,
-        request.align === 'center' ? width / (2 * scaleX) : request.direction === 'rtl' ? width / scaleX : 0,
+        request.align === 'center' ? width / (2 * scaleX) : 0,
         index * logicalLineHeight,
       ));
       const image = context.getImageData(0, 0, width, canvas.height).data;

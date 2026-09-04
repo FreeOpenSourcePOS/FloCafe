@@ -231,6 +231,13 @@ async function run(): Promise<void> {
   assert.equal(mixedWarnings.length, 0);
   assert.equal(mixedEscPos.includes(0x41), true);
   assert.equal(mixedEscPos.includes(0x1D) && mixedEscPos.includes(0x76), true);
+  const invalidRasterWarnings: any[] = [];
+  const invalidRasterEscPos = buildEscPos(['fallback'], false, {
+    capabilities: caps,
+    rasterUnits: [{ lineIndex: 0, unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }],
+  }, invalidRasterWarnings);
+  assert.equal(invalidRasterEscPos.length > 0, true);
+  assert.equal(invalidRasterWarnings[0]?.kind, 'line');
   const financialWarnings: any[] = [];
   const refused = buildEscPos(['raster'], false, {
     capabilities: caps,

@@ -2041,7 +2041,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   let activeCodePage = capabilities.encoding.preferredCodePage;
   const rasterEntries = options.rasterUnits ?? [];
   const rasterFailures = options.rasterFailures ?? [];
-  const rasterByLine = new Map(rasterEntries.map((entry) => [entry.lineIndex, entry.unit]));
+  const rasterByLine = new Map<number, typeof rasterEntries[number]['unit']>();
   const rasterLineCounts = new Map<number, number>();
   const rasterRanges: Array<{ start: number; end: number }> = [];
   for (const entry of rasterEntries) rasterLineCounts.set(entry.lineIndex, (rasterLineCounts.get(entry.lineIndex) ?? 0) + 1);
@@ -2071,6 +2071,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     try {
       if (!rasterCapabilityEnabled(capabilities)) throw new Error('Raster output is not enabled for this printer profile');
       encodedRasterByLine.set(entry.lineIndex, encodeRasterUnits([entry.unit], capabilities));
+      rasterByLine.set(entry.lineIndex, entry.unit);
       rasterRanges.push({ start: entry.lineIndex, end: entry.lineIndex + lineCount });
     } catch (error) {
       if (financial) financialRasterFailure = true;
@@ -2106,10 +2107,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       }
       continue;
     }
-    if (rasterEntries.some((entry) => {
-      const lineCount = entry.lineCount ?? 1;
-      return entry.lineIndex < lineIndex && lineIndex < entry.lineIndex + lineCount;
-    })) continue;
+    if (rasterRanges.some((range) => range.start < lineIndex && lineIndex < range.end)) continue;
     if (line.includes('{INIT}')) {
       buf.push(0x1B, 0x40);
       resetAllStyles();

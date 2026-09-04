@@ -1070,6 +1070,7 @@ function receiptDocumentLines(
       arabicShaping,
       cutMode,
       capabilities,
+      maskCustomerPhone: true,
     })
     : renderClassicReceiptViaDocument(order, bill, biz, {
       columns,
@@ -1080,6 +1081,7 @@ function receiptDocumentLines(
       arabicShaping,
       cutMode,
       capabilities,
+      maskCustomerPhone: true,
     });
   return result;
 }
@@ -1151,12 +1153,14 @@ export async function rasterizePrintDocumentForWebUsb(
       ...options,
       cutMode: profile.cutMode,
       capabilities,
+      maskCustomerPhone: true,
       rasterGroups,
     })
     : renderBillDocumentToClassicLines(document, {
       ...options,
       cutMode: profile.cutMode,
       capabilities,
+      maskCustomerPhone: true,
       rasterGroups,
     });
   const result = await rasterizeDocumentLines(lines, [], {
@@ -1959,7 +1963,13 @@ const CURRENCY_TOKEN_RE = new RegExp(
 );
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
+  if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) return text;
   return normalizeThermalTextByCapabilities(text, capabilities);
+}
+
+export function maskPhoneOnReceipt(phone: string): string {
+  if (!phone || phone.length < 4) return phone;
+  return 'x'.repeat(phone.length - 4) + phone.slice(-4);
 }
 
 function normalizeCurrencyToAscii(text: string): string {

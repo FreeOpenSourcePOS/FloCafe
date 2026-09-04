@@ -28,6 +28,7 @@ import {
   itemRows,
   itemNameWidth,
   normalizeThermalText,
+  maskPhoneOnReceipt,
   pushCenteredWrapped,
   pushWrapped,
   resolveCurrencyPrefix,
@@ -68,6 +69,7 @@ export interface CompactDocumentRenderOptions {
   readonly arabicShaping: boolean;
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
+  readonly maskCustomerPhone?: boolean;
   readonly rasterGroups?: RasterSemanticLineGroup[];
 }
 
@@ -166,7 +168,7 @@ export function renderBillDocumentToCompactLines(
   markGroup('document-meta', metaStart);
   const customerStart = lines.length;
   if (customer?.name) lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language, options.capabilities));
-  if (customer?.phone) lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + customer.phone.text));
+  if (customer?.phone) lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + (options.maskCustomerPhone ? maskPhoneOnReceipt(customer.phone.text) : customer.phone.text)));
   if (options.rasterGroups && lines.length > customerStart) options.rasterGroups.push({ groupId: 'customer', lineIndex: customerStart, lineCount: lines.length - customerStart });
   lines.push(dash);
 

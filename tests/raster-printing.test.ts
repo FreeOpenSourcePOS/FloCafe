@@ -16,7 +16,7 @@ import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '.
 import { buildBillDocument, buildKotDocument, isKotDocument, isPrintDocument } from '../shared/print/document';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
-import { buildEscPos, financialRows, itemRows } from '../main/printers/thermal';
+import { buildEscPos, financialRows, itemRows, normalizeThermalText } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { renderKotDocumentToLines } from '../main/printers/document-kot';
 import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
@@ -114,6 +114,7 @@ async function run(): Promise<void> {
   });
   assert.equal(kotLines.some((line) => line.includes('ایستگاه')), true);
   const longUnsupportedName = 'فارسی خیلی طولانی برای اندازه‌گیری';
+  assert.equal(normalizeThermalText('Müsli فارسی', caps), 'Müsli فارسی');
   assert.equal(itemRows({ product_name: longUnsupportedName, quantity: 1, total: 1 }, 4, 4, 12, '₹', 'en-US', false, 'fa', 2, caps)[0].includes('..'), false);
   assert.equal(financialRows('برچسب مالی بسیار طولانی', '1', 12, 'fa', caps)[0].includes('..'), false);
   const unit = { unitId: 'row-1', financial: false, complete: true, bands: [twoRows] } as const;

@@ -245,6 +245,7 @@ export const usePrinterStore = create<PrinterState>()(
                 businessName: tenant.business_name,
                 includeTaxId: billShowTaxId,
                 taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel ?? 'Tax ID',
+                maskCustomerPhone: true,
               }),
               template: billTemplate === 'compact' ? 'compact' : 'classic',
               profileId: webusbPrinter.profile_id,

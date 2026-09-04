@@ -38,6 +38,7 @@ import {
   itemNameWidth,
   normalizeThermalText,
   normalizePrintLanguage,
+  maskPhoneOnReceipt,
   pushCenteredWrapped,
   resolveCurrencyPrefix,
   truncate,
@@ -226,6 +227,7 @@ export interface ClassicDocumentRenderOptions {
   readonly arabicShaping: boolean;
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
+  readonly maskCustomerPhone?: boolean;
   readonly rasterGroups?: RasterSemanticLineGroup[];
 }
 
@@ -352,7 +354,7 @@ export function renderBillDocumentToClassicLines(
         const segment = segmentOf('customer');
         const start = segment.main.length;
         if (block.name) segment.main.push('{CENTER}{FONT_B}' + truncateShapedLine(block.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/FONT_B}{/CENTER}');
-        if (block.phone) segment.main.push('{CENTER}' + block.phone.text + '{/CENTER}');
+        if (block.phone) segment.main.push('{CENTER}' + (options.maskCustomerPhone ? maskPhoneOnReceipt(block.phone.text) : block.phone.text) + '{/CENTER}');
         if (segment.main.length > start) segment.groups.push({ groupId: 'customer', start, count: segment.main.length - start });
         break;
       }

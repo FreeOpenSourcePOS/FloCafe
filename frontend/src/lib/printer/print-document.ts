@@ -51,6 +51,7 @@ export interface BillBusinessOptions {
   includeTaxId?: boolean;
   /** Pre-resolved country-profile tax-id label (GSTIN, کد اقتصادی, …). */
   taxIdLabel?: string;
+  maskCustomerPhone?: boolean;
   showTaxBreakdown?: boolean;
   showBusinessName?: boolean;
   showCustomerName?: boolean;
@@ -220,7 +221,9 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       instagramHandle: String(opts.instagramHandle ?? ''),
       footerNote: String(opts.footerNote ?? ''),
       customerName: String(order?.customer?.name ?? ''),
-      customerPhone: maskPhoneOnReceipt(String(order?.customer?.phone ?? '')),
+      customerPhone: opts.maskCustomerPhone === true
+        ? maskPhoneOnReceipt(String(order?.customer?.phone ?? ''))
+        : String(order?.customer?.phone ?? ''),
       showName: opts.showBusinessName !== false,
       showAddress: !!opts.address,
       showPhone: !!opts.phone,

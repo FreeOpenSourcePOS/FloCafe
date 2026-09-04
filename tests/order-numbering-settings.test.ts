@@ -77,6 +77,10 @@ async function main() {
     console.log('\n3. PUT /settings/order-numbering rejects invalid invoice values');
     const badPrefix = await request(app).put('/api/settings/order-numbering').send({ invoice_number_prefix: 'TOO LONG PREFIX' });
     assertEqual(badPrefix.status, 400, 'rejects invalid invoice prefix');
+    const dashPrefix = await request(app).put('/api/settings/order-numbering').send({ invoice_number_prefix: 'FAC-' });
+    assertEqual(dashPrefix.status, 400, 'rejects invoice prefix containing a dash');
+    const underscorePrefix = await request(app).put('/api/settings/order-numbering').send({ order_number_prefix: 'ORD_' });
+    assertEqual(underscorePrefix.status, 400, 'rejects order prefix containing an underscore');
     const badPeriod = await request(app).put('/api/settings/order-numbering').send({ invoice_number_reset_period: 'quarterly' });
     assertEqual(badPeriod.status, 400, 'rejects invalid reset period');
     const badMonth = await request(app).put('/api/settings/order-numbering').send({ invoice_financial_year_start_month: 13 });

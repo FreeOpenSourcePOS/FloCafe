@@ -131,6 +131,16 @@ async function main() {
     const noResetRow = db.prepare("SELECT date FROM sequences WHERE name = 'bills'").get() as any;
     assertEqual(noResetRow?.date, 'ALL', 'No-reset sequence bucket is ALL');
 
+    // ── Test 13: A pre-existing prefix saved with a trailing dash is ──
+    // ── sanitized so it doesn't double up with the auto separator ─────
+    console.log('\n13. Bill number sanitizes a pre-existing "FAC-" prefix (no double dash)');
+    db.prepare("UPDATE settings SET value = 'daily' WHERE key = 'invoice_number_reset_period'").run();
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'invoice_number_include_period'").run();
+    db.prepare("UPDATE settings SET value = 'FAC-' WHERE key = 'invoice_number_prefix'").run();
+    db.prepare('DELETE FROM sequences WHERE name = ?').run('bills');
+    const facDash = generateBillNumber();
+    assertEqual(facDash, `FAC-${orderToday}-0001`, 'Trailing dash in stored prefix is stripped, not doubled');
+
     // ── Summary ───────────────────────────────────────────────────────
     console.log('\n' + '='.repeat(50));
     const results = getResults();

@@ -5154,8 +5154,15 @@ function invoicePeriodSegment(period: InvoiceResetPeriod, timezone: string, star
   return date;
 }
 
+// Settings validation only accepts letters/numbers going forward, but a
+// value saved before that restriction (e.g. "FAC-") would otherwise collide
+// with the "-" separator inserted below and print as "FAC--20260101-0001".
+function sanitizedNumberPrefix(value: string | null | undefined, fallback: string): string {
+  return (value ?? fallback).replace(/[^A-Za-z0-9]/g, '');
+}
+
 export function generateOrderNumber(): string {
-  const prefix = getSettingValue('order_number_prefix') ?? 'ORD';
+  const prefix = sanitizedNumberPrefix(getSettingValue('order_number_prefix'), 'ORD');
   const includeDate = getSettingValue('order_number_include_date') !== 'false';
   const resetDaily = getSettingValue('order_number_reset_daily') !== 'false';
   const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
@@ -5171,7 +5178,7 @@ export function generateOrderNumber(): string {
 }
 
 export function generateBillNumber(): string {
-  const prefix = getSettingValue('invoice_number_prefix') ?? 'INV';
+  const prefix = sanitizedNumberPrefix(getSettingValue('invoice_number_prefix'), 'INV');
   const includePeriod = getSettingValue('invoice_number_include_period') !== 'false';
   const configuredPeriod = getSettingValue('invoice_number_reset_period') || 'daily';
   const resetPeriod: InvoiceResetPeriod = ['never', 'daily', 'monthly', 'financial_year'].includes(configuredPeriod)

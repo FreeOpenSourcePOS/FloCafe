@@ -324,6 +324,12 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWi
   return groups;
 }
 
+const RASTER_CONTROL_TOKEN_RE = /\{(?:\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)|INIT|CUT|FEED|FINANCIAL|STORE_NAME)\}/g;
+
+function stripRasterControlTokens(line: string): string {
+  return line.replace(RASTER_CONTROL_TOKEN_RE, '');
+}
+
 function requestForRasterLine(
   line: string,
   lineIndex: number,
@@ -332,7 +338,7 @@ function requestForRasterLine(
   financial: boolean,
 ): RasterRenderRequest | null {
   if (line.includes('{INIT}') || line.includes('{CUT}') || line.includes('{FEED}')) return null;
-  const text = line.replace(/\{[A-Z_/]+\}/g, '') || ' ';
+  const text = stripRasterControlTokens(line) || ' ';
   const styles: RasterStyle[] = [
     line.includes('{BOLD}') ? 'bold' : null,
     line.includes('{DOUBLE_HEIGHT}') ? 'double-height' : null,
@@ -381,9 +387,9 @@ export async function renderUnsupportedRasterLines(
   }
   completeGroups.sort((left, right) => left.lineIndex - right.lineIndex);
   for (const group of completeGroups) {
-    const groupText = group.lines.map((line) => line.replace(/\{[A-Z_/]+\}/g, '')).filter(Boolean).join('\n');
+    const groupText = group.lines.map(stripRasterControlTokens).filter(Boolean).join('\n');
     const needsRaster = group.lines.some((line) => {
-      const text = line.replace(/\{[A-Z_/]+\}/g, '');
+      const text = stripRasterControlTokens(line);
       return text.length > 0 && !isThermalTextRepresentable(text, capabilities);
     });
     if (!needsRaster) continue;

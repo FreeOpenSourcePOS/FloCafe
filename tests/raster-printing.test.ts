@@ -210,6 +210,14 @@ async function run(): Promise<void> {
   assert.equal(groupedCustomer.units[0]?.lineCount, 2);
   assert.equal(renderRequests.at(-2)?.text, 'فارسی');
   assert.equal(renderRequests.at(-1)?.text, '555-0100');
+  const sourceTextRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      sourceTextRequests.push(rasterRequest);
+      return { version: 1, requestId: (rasterRequest as any).requestId, ok: true, unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+    },
+  }, ['فارسی {L}'], caps, 'source-text');
+  assert.equal(sourceTextRequests[0].text, 'فارسی {L}');
   const fontBRequests: any[] = [];
   await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {

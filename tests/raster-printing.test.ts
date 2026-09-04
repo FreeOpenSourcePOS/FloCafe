@@ -261,6 +261,10 @@ async function run(): Promise<void> {
   }, invalidRasterWarnings);
   assert.equal(invalidRasterEscPos.length > 0, true);
   assert.equal(invalidRasterWarnings[0]?.kind, 'line');
+  assert.throws(() => buildEscPos(['fallback'], false, {
+    capabilities: caps,
+    rasterUnits: [{ lineIndex: 0, unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }],
+  }), /does not match/);
   const financialWarnings: any[] = [];
   const refused = buildEscPos(['raster'], false, {
     capabilities: caps,

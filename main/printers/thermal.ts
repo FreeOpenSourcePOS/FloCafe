@@ -2087,10 +2087,12 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       rasterRanges.push({ start: entry.lineIndex, end: entry.lineIndex + lineCount });
     } catch (error) {
       if (financial) financialRasterFailure = true;
-      if (warnings) warnings.push({
+      const message = error instanceof Error ? error.message : String(error);
+      if (!warnings) throw new Error(message);
+      warnings.push({
         field: financial ? 'financial row' : 'receipt line',
         text: entry.unit.unitId,
-        message: error instanceof Error ? error.message : String(error),
+        message,
         kind: financial ? 'financial' : 'line',
       });
     }

@@ -49,6 +49,8 @@ async function login(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Sign In' }).click();
   await page.goto(`${BASE}/tables`);
   await expect(page.getByRole('heading', { name: 'Tables' })).toBeVisible();
+  // List is the default view — switch to the floor plan second view first.
+  await page.getByRole('button', { name: 'Floor plan' }).click();
 }
 
 test('floorplan editor: drag table onto map, save, persist after reload', async ({ page }) => {
@@ -89,6 +91,7 @@ test('floorplan editor: drag table onto map, save, persist after reload', async 
   // Reload: T1 is now on the map (not in the tray) — position persisted
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Tables' })).toBeVisible();
+  await page.getByRole('button', { name: 'Floor plan' }).click();
   await page.getByRole('button', { name: 'Edit layout' }).click();
   await expect(canvas).toBeVisible();
   const chipT1 = page.getByTestId('floorplan-chip-T1');
@@ -152,6 +155,7 @@ test('floorplan editor: drag table back to tray unplaces it', async ({ page, req
   // Reload: T1 stays unplaced — the null positions persisted
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Tables' })).toBeVisible();
+  await page.getByRole('button', { name: 'Floor plan' }).click();
   await page.getByRole('button', { name: 'Edit layout' }).click();
   await expect(page.getByTestId('floorplan-tray-T1')).toBeVisible();
   await expect(page.getByTestId('floorplan-chip-T1')).toBeHidden();

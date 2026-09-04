@@ -212,10 +212,9 @@ export default function TablesPage() {
   const [editingTable, setEditingTable] = useState<Table | null>(null);
   const [selectedFloor, setSelectedFloor] = useState('all');
   const [reservingTable, setReservingTable] = useState<Table | null>(null);
-  // Plan / List view toggle. Floor plan is the default so the new editor
-  // is visible immediately; List view keeps the legacy card grid and floor
-  // filter from main for staff who prefer it.
-  const [view, setView] = useState<'plan' | 'list'>('plan');
+  // List is the default view (table management + Add table); the floor
+  // plan editor is the second view for visual layout work.
+  const [view, setView] = useState<'plan' | 'list'>('list');
   const [layoutMode, setLayoutMode] = useState(false);
   const [form, setForm] = useState({ name: '', capacity: '4', floor: 'Ground', section: '' });
   const [showDetails, setShowDetails] = useState(() => {
@@ -404,20 +403,20 @@ export default function TablesPage() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 rounded-xl bg-muted p-1">
             <button
-              onClick={() => { setView('plan'); setLayoutMode(false); }}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-                view === 'plan' ? 'bg-card text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <MapPinned size={14} /> {tTables('floorplanViewPlan')}
-            </button>
-            <button
               onClick={() => { setView('list'); setLayoutMode(false); }}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
                 view === 'list' ? 'bg-card text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
               }`}
             >
               <List size={14} /> {tTables('floorplanViewList')}
+            </button>
+            <button
+              onClick={() => { setView('plan'); setLayoutMode(false); }}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                view === 'plan' ? 'bg-card text-foreground shadow' : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <MapPinned size={14} /> {tTables('floorplanViewPlan')}
             </button>
           </div>
           {view === 'plan' && !layoutMode && canManageTables && (

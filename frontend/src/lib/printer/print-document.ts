@@ -167,8 +167,13 @@ function parsePaymentDetails(raw: Bill['payment_details']): Array<{ method: stri
  */
 export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): PrintData {
   const order = bill.order;
-  const billCustomer = (bill as Bill & { customer?: { name?: unknown; phone?: unknown } }).customer;
+  const billCustomer = (bill as Bill & { customer?: { name?: unknown; phone?: unknown; country_code?: unknown } }).customer;
   const customer = opts.useBillCustomer === true ? billCustomer ?? order?.customer : order?.customer;
+  const customerPhone = String(customer?.phone ?? '');
+  const customerCountryCode = String(customer?.country_code ?? '');
+  const rasterCustomerPhone = customerCountryCode && customerPhone && !customerPhone.startsWith(customerCountryCode)
+    ? `${customerCountryCode} ${customerPhone}`
+    : customerPhone;
   const items = order?.items ?? [];
 
   const showTaxId = opts.includeTaxId === true && !!opts.taxRegistrationNumber;
@@ -225,8 +230,8 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       footerNote: String(opts.footerNote ?? ''),
       customerName: String(customer?.name ?? ''),
       customerPhone: opts.maskCustomerPhone === true
-        ? maskPhoneOnReceipt(String(customer?.phone ?? ''))
-        : String(customer?.phone ?? ''),
+        ? maskPhoneOnReceipt(rasterCustomerPhone)
+        : customerPhone,
       showName: opts.showBusinessName !== false,
       showAddress: !!opts.address,
       showPhone: !!opts.phone,

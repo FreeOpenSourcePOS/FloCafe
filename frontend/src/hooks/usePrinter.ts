@@ -28,7 +28,7 @@ import {
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
-import { LANGUAGES, type Language } from '@/lib/i18n/languages';
+import { type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterWebUsbPathEnabled } from '@print/raster';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
@@ -403,7 +403,9 @@ export const usePrinterStore = create<PrinterState>()(
         // (issue #133) — coarser than auto_print_kot, which only gates
         // automatic printing on order placement.
         const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
-        const tenantTimezone = useAuthStore.getState().currentTenant?.timezone;
+        const tenant = useAuthStore.getState().currentTenant;
+        const tenantTimezone = tenant?.timezone;
+        const tenantLocale = getCountryByCode(tenant?.country ?? 'IN')?.locale ?? 'en-US';
         if (!kotPrintingEnabled) {
           const err = new Error('KOT printing is disabled for this business');
           set({ lastError: err.message });
@@ -455,7 +457,7 @@ export const usePrinterStore = create<PrinterState>()(
                 options: {
                   columns: paperWidth === 80 ? 48 : 42,
                   language: kotLanguage,
-                  locale: LANGUAGES[kotLanguage as Language]?.locale ?? 'en-US',
+                  locale: tenantLocale,
                   ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
                   useUnicode: printerUseUnicode,
                   arabicShaping: printerArabicShaping,

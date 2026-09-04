@@ -87,12 +87,15 @@ or newer stable release without database rollbacks.
    commit, the commit must be cryptographically verified, and the tagged commit
    must be in `main` history with the same `package.json` version as `main`.
    Promotion-only runs use the explicit `--allow-historical-promotion` binding
-   path for an already-published release: they retain annotated-tag, workflow-
-   commit, and tagged-package-version checks, then rely on the immutable
-   candidate manifest, release summary, artifacts, and Snap evidence checks
-   before promotion. The promotion job checks out current `main` for its
-   verifier code, while binding validation still uses the historical release
-   tag and workflow commit. They do not build or publish artifacts.
+   path for an already-published release: cryptographic annotated-tag and
+   commit-signature verification are skipped because those historical releases
+   predate the current signing policy. They retain the tag-to-workflow-commit
+   and tagged-package-version checks, then rely on the immutable candidate
+   manifest, release summary, published assets, and Snap evidence as
+   compensating controls before promotion. The promotion job checks out
+   current `main` for its verifier code, while binding validation still uses
+   the historical release tag and workflow commit. They do not build or
+   publish artifacts.
 2. The tag and `package.json` version must match (`X.Y.Z` or `X.Y.Z-beta.N`).
 3. Each platform builds with `--publish never` and passes
    `scripts/assert-release-artifact-names.cjs`. Produced filenames must match

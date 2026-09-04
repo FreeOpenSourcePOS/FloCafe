@@ -230,6 +230,8 @@ function run() {
   const masCheckouts = masJob.steps.filter((step: any) => step.uses?.startsWith('actions/checkout@'));
   assert.equal(masCheckouts[0]?.with?.ref, 'main', 'MAS provenance must use current main verifier code');
   assert.equal(masCheckouts[1]?.with?.ref, '${{ github.sha }}', 'MAS build must use the validated event commit');
+  assert.equal(masCheckouts[0]?.with?.['persist-credentials'], false, 'MAS verifier checkout must not persist credentials');
+  assert.equal(masCheckouts[1]?.with?.['persist-credentials'], false, 'MAS build checkout must not persist credentials');
   const masProvenance = findStep(masJob, 'Validate MAS release provenance');
   assertShellStep(masJob, 'Validate MAS release provenance');
   assert.equal(masProvenance.env.GH_TOKEN, '${{ github.token }}');

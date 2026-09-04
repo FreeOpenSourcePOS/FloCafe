@@ -279,6 +279,20 @@ async function run(): Promise<void> {
   });
   const frontendKotItems = frontendKotDocument.blocks.find((block) => block.kind === 'kot-items') as any;
   assert.deepEqual(frontendKotItems.rows[0].addons.map((addon: any) => ({ text: addon.text, quantity: addon.quantity })), [{ text: 'Extra sauce', quantity: 2 }]);
+  const frontendKotHydratedFields = loadFrontendPrintDocument().buildFrontendKotDocument({
+    order_number: 'K-3',
+    created_at: '2026-01-01T12:00:00.000Z',
+    table_name: 'T-7',
+    customer_name: 'Asha',
+    items: [],
+  } as any, {
+    stationName: 'Main Kitchen',
+    columns: 42,
+    language: 'en',
+  });
+  const frontendKotHeader = frontendKotHydratedFields.blocks.find((block) => block.kind === 'kot-header') as any;
+  assert.equal(frontendKotHeader.table.name.text, 'T-7');
+  assert.equal(frontendKotHeader.customer.name.text, 'Asha');
   const kotLines = renderKotDocumentToLines(kotDocument, {
     columns: 42,
     language: 'fa',

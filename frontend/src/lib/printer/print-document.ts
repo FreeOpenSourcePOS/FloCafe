@@ -304,6 +304,18 @@ export function buildFrontendKotDocument(
     timezone?: string;
   },
 ): KotDocument {
+  const orderShape = order as Order & {
+    table_name?: unknown;
+    tableName?: unknown;
+    customer_name?: unknown;
+    customerName?: unknown;
+  };
+  const firstText = (...values: unknown[]): string => {
+    for (const value of values) {
+      if (typeof value === 'string' && value.trim().length > 0) return value;
+    }
+    return '';
+  };
   const parseKotAddons = (value: unknown): Array<{ name: string; quantity?: number }> => {
     let candidates = value;
     if (typeof value === 'string') {
@@ -325,9 +337,9 @@ export function buildFrontendKotDocument(
     order: {
       orderNumber: String(order.order_number ?? ''),
       createdAt: String(order.created_at ?? ''),
-      tableName: String(order.table?.name ?? ''),
+      tableName: firstText(order.table?.name, orderShape.table_name, orderShape.tableName),
       orderType: String(order.type ?? '').trim(),
-      customerName: String(order.customer?.name ?? '').trim(),
+      customerName: firstText(order.customer?.name, orderShape.customer_name, orderShape.customerName),
     },
     items: items.filter((item) => isKotItemPending(item.status)).map((item) => ({
       productName: String(item.product_name ?? ''),

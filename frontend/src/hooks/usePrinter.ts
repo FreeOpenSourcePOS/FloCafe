@@ -455,9 +455,17 @@ export const usePrinterStore = create<PrinterState>()(
             const webusbCapabilities = webusbPrinter?.capabilities;
             let output = bytes;
             if (rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizeKotDocument), webusbPrinter?.profile_id)) {
+              let rasterOrder = orderForPrint;
+              if ((orderForPrint.table_id && !orderForPrint.table?.name)
+                || (orderForPrint.customer_id && !orderForPrint.customer?.name)) {
+                const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
+                rasterOrder = orderForPrint.items
+                  ? { ...response.data.order, items: orderForPrint.items }
+                  : response.data.order;
+              }
               const rasterResult = await window.electronAPI.rasterizeKotDocument({
-                document: buildFrontendKotDocument(orderForPrint, {
-                  items: orderForPrint.items,
+                document: buildFrontendKotDocument(rasterOrder, {
+                  items: rasterOrder.items,
                   stationName: opts?.stationName ?? 'Kitchen',
                   columns: paperWidth === 80 ? 48 : 42,
                   language: kotLanguage,

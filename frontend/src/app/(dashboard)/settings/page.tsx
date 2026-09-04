@@ -148,6 +148,15 @@ function invoicePreviewSegment(period: InvoiceResetPeriod, month: number, day: n
   return `${yyyy}${mm}${dd}`;
 }
 
+// A prefix stored before the letters/numbers-only rule existed (e.g. "FAC-")
+// would otherwise round-trip unchanged into the form and then fail this same
+// page's own save-time validation the next time ANY order-numbering field is
+// saved — blocking unrelated changes until the user also happens to fix the
+// prefix. Sanitize on load so a legacy value never re-enters the form dirty.
+function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
+  return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
 function SettingsNavItem({
   label, value, active, onClick, indent, attention,
 }: {
@@ -1593,10 +1602,10 @@ export default function SettingsPage() {
       if (discountRes.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); }
 
       const loadedOrderNumbering: OrderNumberForm = {
-        prefix: orderNumberingRes.data.order_number_prefix ?? 'ORD',
+        prefix: orderNumberingRes.data.order_number_prefix == null ? 'ORD' : sanitizeStoredNumberPrefix(orderNumberingRes.data.order_number_prefix),
         includeDate: orderNumberingRes.data.order_number_include_date !== false,
         resetDaily: orderNumberingRes.data.order_number_reset_daily !== false,
-        invoicePrefix: orderNumberingRes.data.invoice_number_prefix ?? 'INV',
+        invoicePrefix: orderNumberingRes.data.invoice_number_prefix == null ? 'INV' : sanitizeStoredNumberPrefix(orderNumberingRes.data.invoice_number_prefix),
         invoiceIncludePeriod: orderNumberingRes.data.invoice_number_include_period !== false,
         invoiceResetPeriod: (orderNumberingRes.data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
         invoiceFinancialYearStartMonth: Number(orderNumberingRes.data.invoice_financial_year_start_month) || 4,
@@ -1734,8 +1743,12 @@ export default function SettingsPage() {
         const methods = JSON.parse(res.data.setting?.value || '[]');
         if (!Array.isArray(methods)) return;
         const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
-        setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: valid }));
-        setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: valid }));
+        // A non-empty array that contains no valid strings (corrupt/legacy
+        // value) restores the safe defaults; an intentionally empty array —
+        // every method deselected — stays empty.
+        const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
+        setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
+        setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
       } catch { /* Use the safe defaults. */ }
     }).catch(() => {});
     api.get('/settings/bill_language_policy').then((res) => {
@@ -1842,10 +1855,10 @@ export default function SettingsPage() {
 
     api.get('/settings/order-numbering').then((res) => {
       const loaded: OrderNumberForm = {
-        prefix: res.data.order_number_prefix ?? 'ORD',
+        prefix: res.data.order_number_prefix == null ? 'ORD' : sanitizeStoredNumberPrefix(res.data.order_number_prefix),
         includeDate: res.data.order_number_include_date !== false,
         resetDaily: res.data.order_number_reset_daily !== false,
-        invoicePrefix: res.data.invoice_number_prefix ?? 'INV',
+        invoicePrefix: res.data.invoice_number_prefix == null ? 'INV' : sanitizeStoredNumberPrefix(res.data.invoice_number_prefix),
         invoiceIncludePeriod: res.data.invoice_number_include_period !== false,
         invoiceResetPeriod: (res.data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
         invoiceFinancialYearStartMonth: Number(res.data.invoice_financial_year_start_month) || 4,
@@ -4086,9 +4099,9 @@ export default function SettingsPage() {
                       {cashDrawerMethodsOpen && (
                         <div className="border-t border-border bg-muted/30 px-3 py-2 space-y-2">
                           {[
-                            ['cash', 'Cash'],
-                            ['card', 'Card'],
-                            ['upi', 'UPI'],
+                            ['cash', t('paymentMethodCash')],
+                            ['card', t('paymentMethodCard')],
+                            ['upi', t('paymentMethodUpi')],
                           ].map(([value, label]) => (
                             <label key={value} className="flex items-center gap-2 text-sm text-foreground">
                               <input

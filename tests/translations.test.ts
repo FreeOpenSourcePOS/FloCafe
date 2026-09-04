@@ -391,6 +391,7 @@ const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'setup.ownerEmailPlaceholder', // example email
   'settings.apiKeyInputPlaceholder', // example API key
   'settings.connectionUsb', // technical acronym
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.instagramPlaceholder', // example handle
   'settings.ipAddressPlaceholder', // example IP
   'settings.kds', // technical acronym
@@ -479,6 +480,7 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'serverApp.tables', // same word in French
   'settings.apiKeyInputPlaceholder', // example API key
   'settings.connectionUsb', // technical acronym
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.instagramPlaceholder', // example handle
   'settings.ipAddressPlaceholder', // example IP
   'settings.iranCurrencyDisplayRial', // currency name and native script
@@ -529,6 +531,7 @@ function frFallbackErrors(frFlat: Record<string, string>, enFlat: Record<string,
 }
 
 const TR_INTENTIONAL_IDENTICAL = new Set<string>([
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'common.appTitle', // brand name "Flo"
   'common.brandName', // brand name "Flo Cafe"
   'common.logoAlt', // brand name "Flo Cafe"
@@ -627,6 +630,8 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'pos.methodCard',
   'pos.methodCash',
   'pos.methodWallet',
+  'settings.paymentMethodCard',
+  'settings.paymentMethodCash',
   'pos.orderNumber',
   'pos.orderTypeDelivery',
   'pos.orderTypeOnline',
@@ -704,6 +709,7 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'settings.browserWebusb',
   'settings.connectionNetwork',
   'settings.connectionUsb',
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.cashDrawerPulseEnabledShort',
   'settings.currency',
   'settings.default',
@@ -877,6 +883,7 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'serverApp.emailPlaceholder',
   'settings.apiKeyInputPlaceholder',
   'settings.connectionUsb',
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.errorDetails',
   'settings.ipAddressPlaceholder',
   'settings.iranCurrencyDisplayRial',

@@ -212,6 +212,11 @@ async function ippRequestOnce(path: string, operationId: number, operationAttrib
       const chunks: Buffer[] = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
+        const status = res.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          reject(new Error(`local CUPS returned HTTP ${status} for ${path}`));
+          return;
+        }
         try {
           resolve(parseResponse(Buffer.concat(chunks)));
         } catch (err) {
@@ -274,7 +279,7 @@ export interface IppPrinterAttributes {
 /** Pre-flight check mirroring thermal.ts's describeCupsQueueProblem for the lp path. */
 export async function ippGetPrinterAttributes(printerName: string, signal?: AbortSignal): Promise<IppPrinterAttributes> {
   const response = await ippRequest(`/printers/${encodeURIComponent(printerName)}`, OP_GET_PRINTER_ATTRIBUTES, [
-    { tag: VALUE_TAG.uri, name: 'printer-uri', values: [`ipp://localhost/printers/${printerName}`] },
+    { tag: VALUE_TAG.uri, name: 'printer-uri', values: [`ipp://localhost/printers/${encodeURIComponent(printerName)}`] },
     { tag: VALUE_TAG.nameWithoutLanguage, name: 'requesting-user-name', values: ['flocafe'] },
     { tag: VALUE_TAG.keyword, name: 'requested-attributes', values: ['printer-state', 'printer-is-accepting-jobs'] },
   ], undefined, signal);
@@ -297,7 +302,7 @@ export interface IppPrintResult {
 /** Submits raw bytes (ESC/POS) as a Print-Job with document-format application/octet-stream — the IPP equivalent of `lp -o raw`. */
 export async function ippPrintRaw(printerName: string, data: Buffer, signal?: AbortSignal): Promise<IppPrintResult> {
   const response = await ippRequest(`/printers/${encodeURIComponent(printerName)}`, OP_PRINT_JOB, [
-    { tag: VALUE_TAG.uri, name: 'printer-uri', values: [`ipp://localhost/printers/${printerName}`] },
+    { tag: VALUE_TAG.uri, name: 'printer-uri', values: [`ipp://localhost/printers/${encodeURIComponent(printerName)}`] },
     { tag: VALUE_TAG.nameWithoutLanguage, name: 'requesting-user-name', values: ['flocafe'] },
     { tag: VALUE_TAG.nameWithoutLanguage, name: 'job-name', values: ['FloCafe receipt'] },
     { tag: VALUE_TAG.mimeMediaType, name: 'document-format', values: ['application/octet-stream'] },

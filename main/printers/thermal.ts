@@ -728,7 +728,14 @@ function shouldPulseForPayment(bill: any): boolean {
   let methods: string[] = ['cash', 'card'];
   try {
     const parsed = configured ? JSON.parse(configured) : methods;
-    if (Array.isArray(parsed)) methods = parsed.filter((value): value is string => typeof value === 'string');
+    if (Array.isArray(parsed)) {
+      const valid = parsed.filter((value): value is string => typeof value === 'string');
+      // A non-empty array that contains no valid strings (corrupt/legacy
+      // value) restores the safe defaults; an intentionally empty array —
+      // every method deselected — stays empty. Mirrors the settings page's
+      // hydration of the same setting.
+      methods = parsed.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
+    }
   } catch { /* Keep the safe cash/card defaults. */ }
   if (!bill?.payment_details) return false;
   try {
@@ -2011,6 +2018,7 @@ async function printViaLocalIpp(data: Buffer, printerName?: string, signal?: Abo
       return { ok: false, detail: 'print queue is not accepting jobs' };
     }
   } catch (err) {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     // Mirrors describeCupsQueueProblem: an unreachable/unknown queue check
     // should not itself block the print — let Print-Job below surface the
     // real failure if there is one.

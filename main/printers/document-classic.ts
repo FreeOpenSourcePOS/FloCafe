@@ -229,6 +229,7 @@ export interface ClassicDocumentRenderOptions {
   readonly capabilities?: ThermalPrinterCapabilities;
   readonly maskCustomerPhone?: boolean;
   readonly rasterGroups?: RasterSemanticLineGroup[];
+  readonly financialLineRanges?: Array<{ lineIndex: number; lineCount: number }>;
 }
 
 function labelOf(label: SemanticLabel): string {
@@ -641,14 +642,22 @@ export function renderBillDocumentToClassicLines(
     if (!segment) return;
     const start = lines.length;
     lines.push(...segment[part]);
-    if (options.rasterGroups && segment[part].length > 0) {
+    const recordFinancialLines = (lineStart: number, rendered: readonly string[], financial: boolean): void => {
+      if (!options.financialLineRanges || !financial) return;
+      rendered.forEach((line, offset) => {
+        if (line.startsWith('{FINANCIAL}')) options.financialLineRanges!.push({ lineIndex: lineStart + offset, lineCount: 1 });
+      });
+    };
+    if ((options.rasterGroups || options.financialLineRanges) && segment[part].length > 0) {
       if (part === 'main' && segment.groups.length > 0) {
         for (const group of segment.groups) {
-          options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count, ...(group.sourceLines ? { sourceLines: group.sourceLines } : {}), ...(group.sourceControlLines ? { sourceControlLines: group.sourceControlLines } : {}), ...(group.financial ? { financial: true } : {}) });
+          if (options.rasterGroups) options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count, ...(group.sourceLines ? { sourceLines: group.sourceLines } : {}), ...(group.sourceControlLines ? { sourceControlLines: group.sourceControlLines } : {}), ...(group.financial ? { financial: true } : {}) });
+          recordFinancialLines(start + group.start, segment[part].slice(group.start, group.start + group.count), group.financial === true);
         }
       } else {
         const financial = kind === 'totals' || kind === 'tax-breakdown' || kind === 'payments';
-        options.rasterGroups.push({ groupId: kind, lineIndex: start, lineCount: segment[part].length, sourceLines: segment.sourceLines[part], sourceControlLines: segment.sourceControlLines[part], ...(financial ? { financial: true } : {}) });
+        if (options.rasterGroups) options.rasterGroups.push({ groupId: kind, lineIndex: start, lineCount: segment[part].length, sourceLines: segment.sourceLines[part], sourceControlLines: segment.sourceControlLines[part], ...(financial ? { financial: true } : {}) });
+        recordFinancialLines(start, segment[part], financial);
       }
     }
   };
@@ -734,6 +743,7 @@ export function renderClassicReceiptViaDocument(
   const document = buildBillDocument(printData, printContext);
   const warnings: PrintWarning[] = [];
   const rasterGroups: RasterSemanticLineGroup[] = [];
+  const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
   const lines = renderBillDocumentToClassicLines(document, {
     columns: opts.columns,
     language: printContext.languages[0],
@@ -748,7 +758,8 @@ export function renderClassicReceiptViaDocument(
     capabilities: opts.capabilities,
     maskCustomerPhone: false,
     rasterGroups,
+    financialLineRanges,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges: rasterGroups.filter((group) => group.financial === true).map(({ lineIndex, lineCount }) => ({ lineIndex, lineCount })) }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges }, warnings);
   return { document, lines, data, warnings, rasterGroups };
 }

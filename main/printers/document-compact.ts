@@ -71,6 +71,7 @@ export interface CompactDocumentRenderOptions {
   readonly capabilities?: ThermalPrinterCapabilities;
   readonly maskCustomerPhone?: boolean;
   readonly rasterGroups?: RasterSemanticLineGroup[];
+  readonly financialLineRanges?: Array<{ lineIndex: number; lineCount: number }>;
 }
 
 function labelOf(label: SemanticLabel): string {
@@ -130,6 +131,12 @@ export function renderBillDocumentToCompactLines(
   const normalize = (text: string): string => normalizeThermalText(text, options.capabilities);
   const markGroup = (groupId: string, start: number, sourceLines?: readonly string[], sourceControlLines?: readonly string[], financial = false): void => {
     if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start, ...(sourceLines ? { sourceLines } : {}), ...(sourceControlLines ? { sourceControlLines } : {}), ...(financial ? { financial: true } : {}) });
+  };
+  const recordFinancialLines = (start: number, rendered: readonly string[]): void => {
+    if (!options.financialLineRanges) return;
+    rendered.forEach((line, offset) => {
+      if (line.startsWith('{FINANCIAL}')) options.financialLineRanges!.push({ lineIndex: start + offset, lineCount: 1 });
+    });
   };
 
   lines.push('{INIT}');
@@ -226,11 +233,14 @@ export function renderBillDocumentToCompactLines(
         options.capabilities,
       );
       lines.push(...rowLines);
+      recordFinancialLines(rowStart, rowLines);
       const sourceLines = [`${row.name.text} ${row.quantity} ${formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits)}`];
       const sourceControlLines = [rowLines[0] ?? ''];
       for (const addon of row.addons) {
         const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
+        const addonStart = lines.length;
         lines.push(...addonLines);
+        recordFinancialLines(addonStart, addonLines);
         const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
         sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
         sourceControlLines.push(addonLines[0] ?? '');
@@ -255,8 +265,10 @@ export function renderBillDocumentToCompactLines(
   const totalsSourceLines: string[] = [];
   const totalsSourceControlLines: string[] = [];
   const pushTotalRow = (rendered: string[], bold = false): void => {
+    const start = lines.length;
     const tokenLines = bold ? rendered.map((line) => `{BOLD}${line}{/BOLD}`) : rendered;
     lines.push(...tokenLines);
+    recordFinancialLines(start, tokenLines);
     totalsSourceLines.push(...rendered);
     totalsSourceControlLines.push(...tokenLines);
   };
@@ -307,6 +319,7 @@ export function renderBillDocumentToCompactLines(
       const methodLabel = truncate(paymentLabel(line.label), cols - 12, options.language, options.capabilities);
       const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
       const rendered = financialRows(methodLabel, value, cols, options.language, options.capabilities);
+      recordFinancialLines(lines.length, rendered);
       lines.push(...rendered);
       paymentSourceLines.push(...rendered);
       paymentSourceControlLines.push(...rendered);
@@ -393,6 +406,7 @@ export function renderCompactReceiptViaDocument(
   const document = buildBillDocument(printData, printContext);
   const warnings: PrintWarning[] = [];
   const rasterGroups: RasterSemanticLineGroup[] = [];
+  const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
   const lines = renderBillDocumentToCompactLines(document, {
     columns: opts.columns,
     language: printContext.languages[0],
@@ -407,7 +421,8 @@ export function renderCompactReceiptViaDocument(
     capabilities: opts.capabilities,
     maskCustomerPhone: false,
     rasterGroups,
+    financialLineRanges,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges: rasterGroups.filter((group) => group.financial === true).map(({ lineIndex, lineCount }) => ({ lineIndex, lineCount })) }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges }, warnings);
   return { document, lines, data, warnings, rasterGroups };
 }

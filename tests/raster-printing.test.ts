@@ -591,6 +591,39 @@ async function run(): Promise<void> {
   assert.equal(frontendCustomer.phone.text, 'xxxxxxxxxxxx5678');
   assert.equal(backendCustomer.phone.text, frontendCustomer.phone.text);
   assert.equal(backendParity.lines.some((line) => line.includes('xxxxxxxxxxxx5678')), true);
+  const nativeInstructionResult = renderClassicReceiptViaDocument({
+    ...parityOrder,
+    items: [{ ...parityOrder.items[0], product_name: 'Tea', special_instructions: 'فارسی توضیح' }],
+  }, parityBill, {
+    name: 'Cafe',
+    address: 'Main Street',
+    phone: '000',
+    taxRegistrationNumber: 'JP-123',
+    currency: 'JPY',
+    currency_symbol: '¥',
+    country: 'JP',
+    customer_name: 'Alice',
+    customer_phone: '+81 90 1234 5678',
+    show_name: true,
+    show_address: true,
+    show_phone: true,
+    show_tax_id: true,
+    show_tax_breakdown: true,
+    show_customer_name: true,
+    show_customer_phone: true,
+    show_table_number: false,
+  }, {
+    columns: 42,
+    language: 'en',
+    isReprint: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: GENERIC_THERMAL_CAPABILITIES,
+  });
+  assert.equal(nativeInstructionResult.data.length > 0, true);
+  assert.equal(nativeInstructionResult.warnings.some((warning) => warning.kind === 'financial'), false);
+  assert.equal(nativeInstructionResult.warnings.some((warning) => warning.kind === 'line'), true);
   const frontendTax = frontendParityDocument.blocks.find((block) => block.kind === 'tax-breakdown') as any;
   const backendTax = backendParity.document.blocks.find((block) => block.kind === 'tax-breakdown') as any;
   assert.deepEqual(frontendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })), backendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })));

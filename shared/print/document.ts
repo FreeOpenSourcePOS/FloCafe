@@ -894,13 +894,15 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
 }
 
 export function isPrintDocument(value: unknown): value is PrintDocument {
+  const blockKinds = new Set(['business-header', 'document-meta', 'customer', 'item-table', 'tax-breakdown', 'totals', 'payments', 'message']);
   return isRecord(value)
     && value.version === 1
     && isDirectionSpec(value.direction)
     && isLanguages(value.languages)
     && Array.isArray(value.blocks)
-    && value.blocks.length > 0
+    && value.blocks.length === blockKinds.size
     && value.blocks.every(isPrintDocumentBlock)
+    && value.blocks.every((block) => isRecord(block) && blockKinds.has(block.kind))
     && new Set(value.blocks.map((block) => isRecord(block) ? block.kind : undefined)).size === value.blocks.length;
 }
 

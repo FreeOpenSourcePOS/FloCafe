@@ -1087,7 +1087,7 @@ async function rasterizeDocumentLines(
     requestPrefix: string;
   },
   rasterGroups?: readonly RasterSemanticLineGroup[],
-): Promise<{ data: Buffer; warnings: PrintWarning[] }> {
+): Promise<{ data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean }> {
   const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
   const renderer = new ChromiumRasterRenderer();
   try {
@@ -1110,7 +1110,7 @@ async function rasterizeDocumentLines(
         kind: failure.financial ? 'financial' : 'line',
       });
     }
-    return { data, warnings };
+    return { data, warnings, rasterSelected: raster.units.length > 0 };
   } finally {
     renderer.destroy();
   }
@@ -1236,7 +1236,9 @@ async function rasterizeReceiptIfEnabled(
     capabilities,
     requestPrefix: 'receipt',
   }, document.rasterGroups);
-  return { ...prepared, data: result.data, warnings: result.warnings };
+  return result.rasterSelected || result.warnings.length > 0
+    ? { ...prepared, data: result.data, warnings: result.warnings }
+    : prepared;
 }
 
 export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {

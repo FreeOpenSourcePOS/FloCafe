@@ -86,6 +86,7 @@ async function run(): Promise<void> {
     business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
   }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
   assert.equal(isPrintDocument(printDocument), true);
+  assert.equal(isPrintDocument({ ...printDocument, blocks: printDocument.blocks.slice(0, -1) }), false);
   assert.equal(isPrintDocument({ ...printDocument, blocks: [...printDocument.blocks, printDocument.blocks[0]] }), false);
   const kotDocument = buildKotDocument({
     stationName: 'ایستگاه',
@@ -210,6 +211,19 @@ async function run(): Promise<void> {
   assert.equal(groupedCustomer.units[0]?.lineCount, 2);
   assert.equal(renderRequests.at(-2)?.text, 'فارسی');
   assert.equal(renderRequests.at(-1)?.text, '555-0100');
+  const splitHeaderRequests: any[] = [];
+  const splitHeader = await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      splitHeaderRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+    },
+  }, ['فارسی', 'native body', 'Address'], caps, 'split-header', [
+    { groupId: 'business-header', lineIndex: 0, lineCount: 1 },
+    { groupId: 'business-header', lineIndex: 2, lineCount: 1 },
+  ]);
+  assert.equal(splitHeaderRequests.length, 2);
+  assert.equal(splitHeader.units.length, 2);
+  assert.equal(splitHeader.units.every((entry) => entry.unit.unitId.startsWith('business-header-')), true);
   const sourceTextRequests: any[] = [];
   await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {

@@ -536,7 +536,7 @@ export function renderBillDocumentToClassicLines(
           options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count });
         }
       } else {
-        options.rasterGroups.push({ groupId: `${kind}-${part}`, lineIndex: start, lineCount: segment[part].length });
+        options.rasterGroups.push({ groupId: kind, lineIndex: start, lineCount: segment[part].length });
       }
     }
   };

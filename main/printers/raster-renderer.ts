@@ -386,44 +386,58 @@ export async function renderUnsupportedRasterLines(
     if (!covered.has(lineIndex)) completeGroups.push({ groupId: `line-${lineIndex}`, lineIndex, lineCount: 1, lines: [lines[lineIndex]] });
   }
   completeGroups.sort((left, right) => left.lineIndex - right.lineIndex);
-  for (const group of completeGroups) {
-    const groupText = group.lines.map(stripRasterControlTokens).filter(Boolean).join('\n');
-    const needsRaster = group.lines.some((line) => {
+  const semanticGroups = Array.from(
+    completeGroups.reduce((groups, group) => {
+      const ranges = groups.get(group.groupId) ?? [];
+      ranges.push(group);
+      groups.set(group.groupId, ranges);
+      return groups;
+    }, new Map<string, RasterSemanticLineGroupWithLines[]>()),
+  ).map(([, ranges]) => ranges).sort((left, right) => left[0].lineIndex - right[0].lineIndex);
+  for (const ranges of semanticGroups) {
+    const group = ranges[0];
+    const groupText = ranges.flatMap((range) => range.lines).map(stripRasterControlTokens).filter(Boolean).join('\n');
+    const needsRaster = ranges.some((range) => range.lines.some((line) => {
       const text = stripRasterControlTokens(line);
       return text.length > 0 && !isThermalTextRepresentable(text, capabilities);
-    });
+    }));
     if (!needsRaster) continue;
-    const financial = group.lines.some((line) => line.includes('{FINANCIAL}'));
-    const renderedUnits: RasterSemanticUnit[] = [];
+    const financial = ranges.some((range) => range.lines.some((line) => line.includes('{FINANCIAL}')));
+    const renderedRanges: Array<{ lineIndex: number; lineCount: number; bands: RasterSemanticUnit['bands'] }> = [];
     let failure: RasterLineRenderFailure | null = null;
     if (!capabilities.raster.font) {
       failure = { lineIndex: group.lineIndex, lineCount: group.lines.length, text: groupText, financial, code: 'font-unavailable', detail: 'No bundled raster font is configured' };
     } else {
-      for (let offset = 0; offset < group.lines.length; offset += 1) {
-        const request = requestForRasterLine(group.lines[offset], group.lineIndex + offset, capabilities, requestPrefix, financial);
-        if (!request) continue;
-        const result = await renderRasterSemanticUnit(renderer, request, financial);
-        if (!result.ok) {
-          failure = { lineIndex: group.lineIndex, lineCount: group.lines.length, text: groupText, financial, code: result.code, detail: result.detail };
-          break;
+      for (const range of ranges) {
+        const renderedUnits: RasterSemanticUnit[] = [];
+        for (let offset = 0; offset < range.lines.length; offset += 1) {
+          const request = requestForRasterLine(range.lines[offset], range.lineIndex + offset, capabilities, requestPrefix, financial);
+          if (!request) continue;
+          const result = await renderRasterSemanticUnit(renderer, request, financial);
+          if (!result.ok) {
+            failure = { lineIndex: range.lineIndex, lineCount: range.lines.length, text: groupText, financial, code: result.code, detail: result.detail };
+            break;
+          }
+          renderedUnits.push(result.unit);
         }
-        renderedUnits.push(result.unit);
+        if (failure) break;
+        renderedRanges.push({ lineIndex: range.lineIndex, lineCount: range.lines.length, bands: renderedUnits.flatMap((unit) => unit.bands) });
       }
     }
     if (failure) {
-      failures.push(failure);
+      failures.push(...ranges.map((range) => ({ ...failure, lineIndex: range.lineIndex, lineCount: range.lines.length })));
       continue;
     }
-    units.push({
-      lineIndex: group.lineIndex,
-      lineCount: group.lines.length,
+    units.push(...renderedRanges.map((range) => ({
+      lineIndex: range.lineIndex,
+      lineCount: range.lineCount,
       unit: {
-        unitId: group.groupId,
+        unitId: ranges.length === 1 ? group.groupId : `${group.groupId}-${range.lineIndex}`,
         financial,
         complete: true,
-        bands: renderedUnits.flatMap((unit) => unit.bands),
+        bands: range.bands,
       },
-    });
+    })));
   }
   return { units, failures };
 }

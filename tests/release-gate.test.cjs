@@ -68,9 +68,10 @@ function releaseRefRequest({
   tagType = 'tag',
   tagVerified = true,
   commitVerified = true,
+  tagCommit = 'a'.repeat(40),
+  taggedVersion = tag,
 } = {}) {
   const apiBase = 'https://api.github.com/repos/example/repo';
-  const commit = 'a'.repeat(40);
   const tagObject = 'b'.repeat(40);
   const mainCommit = 'c'.repeat(40);
   const file = (version) => ({
@@ -80,15 +81,15 @@ function releaseRefRequest({
   const fixtures = new Map([
     [`${apiBase}/git/ref/tags/${tag}`, { object: { type: tagType, sha: tagObject } }],
     [`${apiBase}/git/tags/${tagObject}`, {
-      object: { type: 'commit', sha: commit },
+      object: { type: 'commit', sha: tagCommit },
       verification: { verified: tagVerified, reason: tagVerified ? 'valid' : 'unsigned' },
     }],
-    [`${apiBase}/commits/${commit}`, {
+    [`${apiBase}/commits/${tagCommit}`, {
       commit: { verification: { verified: commitVerified, reason: commitVerified ? 'valid' : 'unsigned' } },
     }],
-    [`${apiBase}/contents/package.json?ref=${tag}`, file(tag)],
+    [`${apiBase}/contents/package.json?ref=${tag}`, file(taggedVersion)],
     [`${apiBase}/git/ref/heads/main`, { object: { type: 'commit', sha: mainCommit } }],
-    [`${apiBase}/compare/${commit}...${mainCommit}`, { behind_by: behindBy }],
+    [`${apiBase}/compare/${tagCommit}...${mainCommit}`, { behind_by: behindBy }],
     [`${apiBase}/contents/package.json?ref=main`, file(mainVersion)],
   ]);
   return async (url) => {
@@ -489,6 +490,26 @@ jobs:
     requireMain: false,
     request: releaseRefRequest({ behindBy: 1, mainVersion: '3.3.9' }),
   }), 'promotion validation must allow an older signed release outside current main');
+  await assert.rejects(
+    () => validateReleaseRef({
+      repo: 'example/repo',
+      tag: '3.4.0',
+      commit: 'a'.repeat(40),
+      request: releaseRefRequest({ tagCommit: 'd'.repeat(40) }),
+    }),
+    /not the workflow commit/,
+    'release tags resolving to a different commit must be rejected',
+  );
+  await assert.rejects(
+    () => validateReleaseRef({
+      repo: 'example/repo',
+      tag: '3.4.0',
+      commit: 'a'.repeat(40),
+      request: releaseRefRequest({ taggedVersion: '3.3.9' }),
+    }),
+    /package\.json at tag 3\.4\.0 reports version 3\.3\.9/,
+    'release tags with a mismatched tagged package version must be rejected',
+  );
   await assert.rejects(
     () => validateReleaseRef({
       repo: 'example/repo',

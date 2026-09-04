@@ -141,6 +141,10 @@ case "$*" in
 esac
 `;
 
+const captureNodeArgs = `#!/bin/sh
+printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
+`;
+
 const fakeGit = `#!/bin/sh
 if [ "$1" = "tag" ]; then
   printf '2.8.0\\n3.2.0\\n3.2.3\\n3.3.0\\ntax-pack-1.0.0\\n'
@@ -222,7 +226,6 @@ function run() {
   const metadata = findStep(createRelease, 'Determine release metadata');
   const validateTag = findStep(createRelease, 'Validate release tag');
   const validateProvenance = findStep(createRelease, 'Validate release provenance');
-  assert.ok(fs.existsSync(path.join(__dirname, '../scripts/release-gate/validate-release-ref.cjs')), 'release provenance verifier must exist');
   assertShellStep(createRelease, 'Determine release metadata');
   assertShellStep(createRelease, 'Validate release tag');
   assertShellStep(createRelease, 'Validate release provenance');
@@ -232,9 +235,16 @@ function run() {
   assert.equal(validateProvenance.if, "steps.release-metadata.outputs.promotion_only != 'true'");
   assert.equal(validateProvenance.env.GH_TOKEN, '${{ github.token }}');
   assert.equal(validateProvenance.env.RELEASE_TAG, '${{ steps.release-metadata.outputs.tag }}');
-  assert.match(validateProvenance.run, /validate-release-ref\.cjs/);
-  assert.match(validateProvenance.run, /--commit \"\$\{\{ github\.sha \}\}\"/);
-  assert.match(validateProvenance.run, /--main-ref main/);
+  const validateProvenanceExecution = executeWorkflowStep(validateProvenance, {
+    env: { RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'github.sha': 'a'.repeat(40) },
+    fakeCommands: { node: captureNodeArgs },
+  });
+  assert.equal(validateProvenanceExecution.status, 0, validateProvenanceExecution.stderr);
+  assert.equal(
+    validateProvenanceExecution.log.trim(),
+    `node scripts/release-gate/validate-release-ref.cjs --repo FreeOpenSourcePOS/FloCafe --tag 3.4.0 --commit ${'a'.repeat(40)} --main-ref main`,
+  );
   assert.deepEqual(Object.keys(createRelease.outputs).sort(), ['channel', 'make_latest', 'manifest_prefix', 'prerelease', 'promotion_only', 'version']);
   assert.deepEqual(triggers.workflow_dispatch.inputs.channel.options, ['stable', 'beta'],
     'nightly releases are rejected (#503): stable and beta are the only channels');
@@ -297,9 +307,6 @@ function run() {
   assertShellStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
   const verifyAssetsStep = findStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
   assert.equal(verifyAssetsStep.env.GH_TOKEN, '${{ github.token }}');
-  const captureNodeArgs = `#!/bin/sh
-printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
-`;
   const betaVerify = executeWorkflowStep(verifyAssetsStep, {
     env: {
       RELEASE_TAG: '3.3.1-beta.1',
@@ -339,7 +346,16 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   assertShellStep(promoteJob, 'Validate promoted release provenance');
   assert.equal(validatePromotedProvenance.env.GH_TOKEN, '${{ github.token }}');
   assert.equal(validatePromotedProvenance.env.RELEASE_TAG, '${{ needs.create-release.outputs.version }}');
-  assert.match(validatePromotedProvenance.run, /--allow-off-main/);
+  const validatePromotedProvenanceExecution = executeWorkflowStep(validatePromotedProvenance, {
+    env: { RELEASE_TAG: '3.3.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'github.sha': 'b'.repeat(40) },
+    fakeCommands: { node: captureNodeArgs },
+  });
+  assert.equal(validatePromotedProvenanceExecution.status, 0, validatePromotedProvenanceExecution.stderr);
+  assert.equal(
+    validatePromotedProvenanceExecution.log.trim(),
+    `node scripts/release-gate/validate-release-ref.cjs --repo FreeOpenSourcePOS/FloCafe --tag 3.3.0 --commit ${'b'.repeat(40)} --allow-off-main`,
+  );
   const promoteVerifierDependencies = findStep(promoteJob, 'Install verifier dependencies');
   const promoteVerifier = findStep(promoteJob, 'Verify stable Snap publication and permanent evidence');
   const promoteBoundaryRun = promoteJob.steps

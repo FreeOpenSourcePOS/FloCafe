@@ -624,6 +624,34 @@ async function run(): Promise<void> {
   assert.equal(nativeInstructionResult.data.length > 0, true);
   assert.equal(nativeInstructionResult.warnings.some((warning) => warning.kind === 'financial'), false);
   assert.equal(nativeInstructionResult.warnings.some((warning) => warning.kind === 'line'), true);
+  const unsupportedFinancialDocument = {
+    ...backendParity.document,
+    blocks: backendParity.document.blocks.map((block: any) => block.kind === 'tax-breakdown'
+      ? { ...block, lines: block.lines.map((line: any) => ({ ...line, label: { ...line.label, primary: 'مالیات' } })) }
+      : block),
+  };
+  const unsupportedFinancialRanges: Array<{ lineIndex: number; lineCount: number }> = [];
+  const unsupportedFinancialLines = renderBillDocumentToClassicLines(unsupportedFinancialDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'ja-JP',
+    currencySymbol: '¥',
+    currency: 'JPY',
+    trimDecimals: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: GENERIC_THERMAL_CAPABILITIES,
+    financialLineRanges: unsupportedFinancialRanges,
+  });
+  const unsupportedFinancialWarnings: any[] = [];
+  const unsupportedFinancialData = buildEscPos(unsupportedFinancialLines, false, {
+    cutMode: 'full',
+    capabilities: GENERIC_THERMAL_CAPABILITIES,
+    financialLineRanges: unsupportedFinancialRanges,
+  }, unsupportedFinancialWarnings);
+  assert.equal(unsupportedFinancialData.length, 0);
+  assert.equal(unsupportedFinancialWarnings.some((warning) => warning.kind === 'financial'), true);
   const frontendTax = frontendParityDocument.blocks.find((block) => block.kind === 'tax-breakdown') as any;
   const backendTax = backendParity.document.blocks.find((block) => block.kind === 'tax-breakdown') as any;
   assert.deepEqual(frontendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })), backendTax.lines.map((line: any) => ({ amount: line.amount, rate: line.rate })));

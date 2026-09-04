@@ -308,12 +308,13 @@ export function renderBillDocumentToClassicLines(
     sourceLines: { pre: string[]; main: string[]; post: string[] };
     sourceControlLines: { pre: string[]; main: string[]; post: string[] };
     groups: Array<{ groupId: string; start: number; count: number; sourceLines?: readonly string[]; sourceControlLines?: readonly string[]; financial?: boolean }>;
+    financialRanges: { pre: Array<{ start: number; count: number }>; main: Array<{ start: number; count: number }>; post: Array<{ start: number; count: number }> };
   }
   const segments = new Map<PrintDocumentBlock['kind'], BlockSegments>();
   const segmentOf = (kind: PrintDocumentBlock['kind']): BlockSegments => {
     let segment = segments.get(kind);
     if (!segment) {
-      segment = { pre: [], main: [], post: [], sourceLines: { pre: [], main: [], post: [] }, sourceControlLines: { pre: [], main: [], post: [] }, groups: [] };
+      segment = { pre: [], main: [], post: [], sourceLines: { pre: [], main: [], post: [] }, sourceControlLines: { pre: [], main: [], post: [] }, groups: [], financialRanges: { pre: [], main: [], post: [] } };
       segments.set(kind, segment);
     }
     return segment;
@@ -321,7 +322,9 @@ export function renderBillDocumentToClassicLines(
 
   const appendFinancial = (target: BlockSegments, rendered: string[], bold = false): void => {
     const tokenLines = bold ? rendered.map((line) => `{BOLD}${line}{/BOLD}`) : rendered;
+    const start = target.main.length;
     target.main.push(...tokenLines);
+    target.financialRanges.main.push({ start, count: tokenLines.length });
     target.sourceLines.main.push(...rendered);
     target.sourceControlLines.main.push(...tokenLines);
   };
@@ -463,12 +466,15 @@ export function renderBillDocumentToClassicLines(
             fractionDigits,
             options.capabilities,
           );
+          segment.financialRanges.main.push({ start, count: rowLines.length });
           segment.main.push(...rowLines);
           const sourceLines = [`${row.name.text} ${row.quantity} ${formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits)}`];
           const sourceControlLines = [rowLines[0] ?? ''];
           for (const addon of row.addons) {
+            const addonStart = segment.main.length;
             const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
             segment.main.push(...addonLines);
+            if (addon.price) segment.financialRanges.main.push({ start: addonStart, count: addonLines.length });
             const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
             sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
             sourceControlLines.push(addonLines[0] ?? '');
@@ -553,7 +559,9 @@ export function renderBillDocumentToClassicLines(
             const label = labelOf(block.pointsEarned.label);
             const value = String(block.pointsEarned.points);
             const rendered = financialRows(label, value, cols, options.language, options.capabilities);
+            const start = segment.post.length;
             segment.post.push(...rendered);
+            segment.financialRanges.post.push({ start, count: rendered.length });
             segment.sourceLines.post.push(...rendered);
             segment.sourceControlLines.post.push(...rendered);
           }
@@ -561,7 +569,9 @@ export function renderBillDocumentToClassicLines(
             const label = labelOf(block.pointsBalance.label);
             const value = String(block.pointsBalance.points);
             const rendered = financialRows(label, value, cols, options.language, options.capabilities);
+            const start = segment.post.length;
             segment.post.push(...rendered);
+            segment.financialRanges.post.push({ start, count: rendered.length });
             segment.sourceLines.post.push(...rendered);
             segment.sourceControlLines.post.push(...rendered);
           }
@@ -574,7 +584,9 @@ export function renderBillDocumentToClassicLines(
           const methodLabel = truncate(paymentLabel(line.label), cols - 12, options.language, options.capabilities);
           const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
           const rendered = financialRows(methodLabel, value, cols, options.language, options.capabilities);
+          const start = segment.main.length;
           segment.main.push(...rendered);
+          segment.financialRanges.main.push({ start, count: rendered.length });
           segment.sourceLines.main.push(...rendered);
           segment.sourceControlLines.main.push(...rendered);
         }
@@ -642,22 +654,17 @@ export function renderBillDocumentToClassicLines(
     if (!segment) return;
     const start = lines.length;
     lines.push(...segment[part]);
-    const recordFinancialLines = (lineStart: number, rendered: readonly string[], financial: boolean): void => {
-      if (!options.financialLineRanges || !financial) return;
-      rendered.forEach((line, offset) => {
-        if (line.startsWith('{FINANCIAL}')) options.financialLineRanges!.push({ lineIndex: lineStart + offset, lineCount: 1 });
-      });
-    };
-    if ((options.rasterGroups || options.financialLineRanges) && segment[part].length > 0) {
+    if (options.financialLineRanges) {
+      for (const range of segment.financialRanges[part]) options.financialLineRanges.push({ lineIndex: start + range.start, lineCount: range.count });
+    }
+    if (options.rasterGroups && segment[part].length > 0) {
       if (part === 'main' && segment.groups.length > 0) {
         for (const group of segment.groups) {
-          if (options.rasterGroups) options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count, ...(group.sourceLines ? { sourceLines: group.sourceLines } : {}), ...(group.sourceControlLines ? { sourceControlLines: group.sourceControlLines } : {}), ...(group.financial ? { financial: true } : {}) });
-          recordFinancialLines(start + group.start, segment[part].slice(group.start, group.start + group.count), group.financial === true);
+          options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count, ...(group.sourceLines ? { sourceLines: group.sourceLines } : {}), ...(group.sourceControlLines ? { sourceControlLines: group.sourceControlLines } : {}), ...(group.financial ? { financial: true } : {}) });
         }
       } else {
         const financial = kind === 'totals' || kind === 'tax-breakdown' || kind === 'payments';
-        if (options.rasterGroups) options.rasterGroups.push({ groupId: kind, lineIndex: start, lineCount: segment[part].length, sourceLines: segment.sourceLines[part], sourceControlLines: segment.sourceControlLines[part], ...(financial ? { financial: true } : {}) });
-        recordFinancialLines(start, segment[part], financial);
+        options.rasterGroups.push({ groupId: kind, lineIndex: start, lineCount: segment[part].length, sourceLines: segment.sourceLines[part], sourceControlLines: segment.sourceControlLines[part], ...(financial ? { financial: true } : {}) });
       }
     }
   };

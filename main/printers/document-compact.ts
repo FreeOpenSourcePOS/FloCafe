@@ -135,7 +135,7 @@ export function renderBillDocumentToCompactLines(
   const recordFinancialLines = (start: number, rendered: readonly string[]): void => {
     if (!options.financialLineRanges) return;
     rendered.forEach((line, offset) => {
-      if (line.startsWith('{FINANCIAL}')) options.financialLineRanges!.push({ lineIndex: start + offset, lineCount: 1 });
+      options.financialLineRanges!.push({ lineIndex: start + offset, lineCount: 1 });
     });
   };
 

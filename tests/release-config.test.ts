@@ -222,6 +222,35 @@ function run() {
   const workflow = loadWorkflow('release.yml');
   const jobs = workflow.jobs;
   const triggers = workflow.on || workflow['true'];
+  const masWorkflow = loadWorkflow('publish-mas.yml');
+  const masTriggers = masWorkflow.on || masWorkflow['true'];
+  const masJob = masWorkflow.jobs['publish-mas'];
+  assert.equal(masTriggers.workflow_dispatch.inputs.release_tag.required, true);
+  assert.equal(masTriggers.workflow_dispatch.inputs.release_tag.type, 'string');
+  const masCheckouts = masJob.steps.filter((step: any) => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(masCheckouts[0]?.with?.ref, 'main', 'MAS provenance must use current main verifier code');
+  assert.equal(masCheckouts[1]?.with?.ref, '${{ github.ref }}', 'MAS build must use the selected release ref');
+  const masProvenance = findStep(masJob, 'Validate MAS release provenance');
+  assertShellStep(masJob, 'Validate MAS release provenance');
+  assert.equal(masProvenance.env.GH_TOKEN, '${{ github.token }}');
+  assert.equal(masProvenance.env.RELEASE_TAG, '${{ inputs.release_tag }}');
+  const masProvenanceExecution = executeWorkflowStep(masProvenance, {
+    env: { RELEASE_REF_NAME: '3.4.0', RELEASE_REF_TYPE: 'tag', RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'github.sha': 'a'.repeat(40) },
+    fakeCommands: { node: captureNodeArgs },
+  });
+  assert.equal(masProvenanceExecution.status, 0, masProvenanceExecution.stderr);
+  assert.equal(
+    masProvenanceExecution.log.trim(),
+    `node scripts/release-gate/validate-release-ref.cjs --repo FreeOpenSourcePOS/FloCafe --tag 3.4.0 --commit ${'a'.repeat(40)} --main-ref main`,
+  );
+  const masBranchExecution = executeWorkflowStep(masProvenance, {
+    env: { RELEASE_REF_NAME: 'main', RELEASE_REF_TYPE: 'branch', RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe', 'github.sha': 'a'.repeat(40) },
+    fakeCommands: { node: captureNodeArgs },
+  });
+  assert.notEqual(masBranchExecution.status, 0, 'MAS publishing must reject non-tag workflow refs');
+  assert.match(masBranchExecution.stdout, /must run from the selected release tag/);
   const createRelease = jobs['create-release'];
   const metadata = findStep(createRelease, 'Determine release metadata');
   const validateTag = findStep(createRelease, 'Validate release tag');

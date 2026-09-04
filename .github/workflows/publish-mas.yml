@@ -13,6 +13,10 @@ on:
         required: true
         type: boolean
         default: true
+      release_tag:
+        description: Exact signed release tag to publish
+        required: true
+        type: string
       release_notes:
         description: Optional App Store "What's New" text. Blank uses CHANGELOG.md for package.json version.
         required: false
@@ -31,10 +35,33 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+
+      - name: Validate MAS release provenance
+        run: |
+          if [ "$RELEASE_REF_TYPE" != "tag" ] || [ "$RELEASE_REF_NAME" != "$RELEASE_TAG" ]; then
+            echo "::error::Mac App Store publishing must run from the selected release tag '$RELEASE_TAG'."
+            exit 1
+          fi
+          node scripts/release-gate/validate-release-ref.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$RELEASE_TAG" \
+            --commit "${{ github.sha }}" \
+            --main-ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
 
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:

@@ -191,6 +191,38 @@ async function run(): Promise<void> {
   const addressRequest = classicHeaderRequests.find((request) => request.text.includes('آدرس فارسی'));
   assert.equal(addressRequest?.align, 'center');
   assert.equal(classicHeaderRequests.some((request) => request.text.startsWith('** ') && request.text.endsWith(' **')), true);
+  const emptyClassicDocument = {
+    ...compactDocument,
+    blocks: compactDocument.blocks.map((block) => block.kind === 'item-table'
+      ? { ...block, header: {
+        ...block.header,
+        item: { ...block.header.item, primary: 'مورد' },
+        quantity: { ...block.header.quantity, primary: 'تعداد' },
+        amount: { ...block.header.amount, primary: 'مبلغ' },
+      } }
+      : block),
+  };
+  const emptyClassicGroups: any[] = [];
+  const emptyClassicLines = renderBillDocumentToClassicLines(emptyClassicDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currencySymbol: '$',
+    trimDecimals: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    rasterGroups: emptyClassicGroups,
+  });
+  const emptyClassicRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      emptyClassicRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+    },
+  }, emptyClassicLines, caps, 'empty-classic-header', emptyClassicGroups);
+  assert.equal(emptyClassicRequests.some((request) => request.text.includes('مورد')), true);
   const compactPaymentDocument = {
     ...compactDocument,
     blocks: compactDocument.blocks.map((block) => block.kind === 'payments'

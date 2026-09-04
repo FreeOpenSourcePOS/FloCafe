@@ -449,8 +449,10 @@ export function renderBillDocumentToClassicLines(
         );
         const nameLen = itemNameWidth(cols, amtLen);
         segment.main.push(classicItemHeader(block, nameLen, amtLen, options.language, options.capabilities));
+        segment.sourceLines.main.push([labelOf(block.header.item), labelOf(block.header.quantity), labelOf(block.header.amount)].join(' '));
         segment.sourceControlLines.main.push(segment.main.at(-1) ?? '');
         segment.main.push(dash);
+        segment.sourceLines.main.push(dash);
         segment.sourceControlLines.main.push(dash);
         for (const [rowIndex, row] of block.rows.entries()) {
           const start = segment.main.length;

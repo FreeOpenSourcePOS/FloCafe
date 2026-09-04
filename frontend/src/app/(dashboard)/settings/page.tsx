@@ -157,6 +157,11 @@ function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+// Must match thermal.ts's CASH_DRAWER_PULSE_ALL_METHODS exactly — it's
+// compared as a raw settings value, not JSON-decoded.
+const CASH_DRAWER_PULSE_ALL_METHODS = 'all';
+const KNOWN_CASH_DRAWER_METHODS = ['cash', 'card', 'upi'];
+
 function SettingsNavItem({
   label, value, active, onClick, indent, attention,
 }: {
@@ -1208,7 +1213,12 @@ export default function SettingsPage() {
   type PrintingForm = {
     printerEnabled: boolean; printerPaperSize: PaperSize;
     cashDrawerPulseEnabled: boolean;
-    cashDrawerPulseMethods: string[];
+    // 'all' mirrors thermal.ts's CASH_DRAWER_PULSE_ALL_METHODS sentinel —
+    // written only by the v80 migration to preserve a legacy printer flag's
+    // unconditional pulse. Kept distinct from a concrete array so it isn't
+    // silently narrowed to ['cash','card'] the first time this tab is saved
+    // for any unrelated reason.
+    cashDrawerPulseMethods: string[] | 'all';
     printMethod: 'escpos' | 'browser';
     autoPrintKot: boolean; autoPrintBill: boolean;
     whatsappShareEnabled: boolean;
@@ -1291,7 +1301,11 @@ export default function SettingsPage() {
     posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
     await Promise.all([
       api.put('/settings/cash_drawer_pulse_enabled', { value: printingForm.cashDrawerPulseEnabled ? 'true' : 'false' }),
-      api.put('/settings/cash_drawer_pulse_methods', { value: JSON.stringify(printingForm.cashDrawerPulseMethods) }),
+      api.put('/settings/cash_drawer_pulse_methods', {
+        value: printingForm.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS
+          ? CASH_DRAWER_PULSE_ALL_METHODS
+          : JSON.stringify(printingForm.cashDrawerPulseMethods),
+      }),
       api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' }),
       api.put('/settings/bill_language_policy', { value: JSON.stringify(billLanguagePolicy) }),
       api.put('/settings/kot_language_policy', { value: JSON.stringify(kotLanguagePolicy) }),
@@ -1739,8 +1753,14 @@ export default function SettingsPage() {
       setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
     }).catch(() => {});
     api.get('/settings/cash_drawer_pulse_methods').then((res) => {
+      const raw = res.data.setting?.value;
+      if (raw === CASH_DRAWER_PULSE_ALL_METHODS) {
+        setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: CASH_DRAWER_PULSE_ALL_METHODS }));
+        setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: CASH_DRAWER_PULSE_ALL_METHODS }));
+        return;
+      }
       try {
-        const methods = JSON.parse(res.data.setting?.value || '[]');
+        const methods = JSON.parse(raw || '[]');
         if (!Array.isArray(methods)) return;
         const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
         // A non-empty array that contains no valid strings (corrupt/legacy
@@ -4106,13 +4126,21 @@ export default function SettingsPage() {
                             <label key={value} className="flex items-center gap-2 text-sm text-foreground">
                               <input
                                 type="checkbox"
-                                checked={printingForm.cashDrawerPulseMethods.includes(value)}
-                                onChange={(e) => setPrintingForm((p) => ({
-                                  ...p,
-                                  cashDrawerPulseMethods: e.target.checked
-                                    ? [...p.cashDrawerPulseMethods, value]
-                                    : p.cashDrawerPulseMethods.filter((method) => method !== value),
-                                }))}
+                                checked={printingForm.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS || printingForm.cashDrawerPulseMethods.includes(value)}
+                                onChange={(e) => setPrintingForm((p) => {
+                                  // Materialize the "all methods" sentinel into a concrete
+                                  // list on first interaction, so toggling one checkbox
+                                  // doesn't silently keep the raw 'all' string alongside it.
+                                  const current = p.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS
+                                    ? KNOWN_CASH_DRAWER_METHODS
+                                    : p.cashDrawerPulseMethods;
+                                  return {
+                                    ...p,
+                                    cashDrawerPulseMethods: e.target.checked
+                                      ? [...current, value]
+                                      : current.filter((method) => method !== value),
+                                  };
+                                })}
                                 className="h-4 w-4 rounded border-border text-brand focus:ring-brand"
                               />
                               {label}

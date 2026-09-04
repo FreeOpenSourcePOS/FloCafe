@@ -536,6 +536,16 @@ async function run(): Promise<void> {
   );
   assert.equal(jpyReceipt.lines.some((line) => line.includes('12.34')), false);
   assert.equal(resolveTenantCurrency(undefined, 'JP'), 'JPY');
+  const unpricedAddonReceipt = renderCompactReceiptViaDocument(
+    {
+      items: [{ product_name: 'Tea', quantity: 1, total: 10, addons: [{ name: 'فارسی', price: 0, quantity: 1 }], special_instructions: null }],
+    },
+    { total: 10, subtotal: 10, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
+    { country: 'IN', currency_symbol: '₹', name: 'Cafe', customer_name: '', customer_phone: '' },
+    { columns: 42, language: 'en', isReprint: false, useUnicode: false, arabicShaping: false, cutMode: 'full', capabilities: GENERIC_THERMAL_CAPABILITIES },
+  );
+  assert.equal(unpricedAddonReceipt.data.length > 0, true);
+  assert.equal(unpricedAddonReceipt.warnings.some((warning) => warning.kind === 'financial'), false);
   const frontendPrintDocument = loadFrontendPrintDocument();
   const parityOrder = {
     order_number: 'JP-1',

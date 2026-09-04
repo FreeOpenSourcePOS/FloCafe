@@ -240,7 +240,7 @@ export function renderBillDocumentToCompactLines(
         const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
         const addonStart = lines.length;
         lines.push(...addonLines);
-        recordFinancialLines(addonStart, addonLines);
+        if (addon.price) recordFinancialLines(addonStart, addonLines);
         const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
         sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
         sourceControlLines.push(addonLines[0] ?? '');

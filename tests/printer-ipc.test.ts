@@ -141,7 +141,7 @@ async function run(): Promise<void> {
       stationName: 'Kitchen',
       order: { orderNumber: 'K-1', createdAt: '', tableName: '', orderType: '' },
       items: [],
-    }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '', trimDecimals: false, resolveLabel: (conceptId: string) => ({ conceptId, primary: conceptId }) });
+    }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '', trimDecimals: false, resolveLabel: (conceptId: string) => conceptId });
     const rasterPrint = registered.get('rasterize-print-document');
     const rasterKot = registered.get('rasterize-kot-document');
     assert.deepEqual(await rasterPrint!(trustedSender, {

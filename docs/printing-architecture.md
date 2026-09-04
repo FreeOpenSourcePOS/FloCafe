@@ -68,10 +68,12 @@ The document-block renderer rule has explicit active raw-path exceptions:
 - [`frontend/src/lib/printer/kot-web-print.ts`](../frontend/src/lib/printer/kot-web-print.ts) renders browser KOT HTML from a
   raw `Order`; it uses the shared catalog and direction helpers but is not a
   `KotDocument` v1 consumer.
-- [`frontend/src/hooks/usePrinter.ts`](../frontend/src/hooks/usePrinter.ts) still calls [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) with raw
-  `Order` data for thermal KOT printing and calls the [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) raw
-  `Bill`/`Tenant` diagnostic path for the print-test page. Its raw layout
-  remains legacy-frozen while its catalog labels follow the resolved language.
+- [`frontend/src/hooks/usePrinter.ts`](../frontend/src/hooks/usePrinter.ts) calls [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) with raw
+  `Order` data for native thermal KOT printing, and uses the typed `KotDocument`
+  raster bridge when a validated raster profile is enabled. It also calls the
+  [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) raw `Bill`/`Tenant` diagnostic path for the
+  print-test page. The native KOT layout remains legacy-frozen while its
+  catalog labels follow the resolved language.
 
 These paths retain their own raw-field and warning behavior outside the shared
 document boundary. New document features must use the migrated paths below;
@@ -237,8 +239,10 @@ Three decoupled domains (see also [i18n.md](i18n.md)):
   tickets in a Persian storefront (asserted in the backend policy section of
   [`tests/print-parity.test.ts`](../tests/print-parity.test.ts) and the browser cold-start regression
   [`tests/kot-locale-cold-start.test.ts`](../tests/kot-locale-cold-start.test.ts)). The frontend WebUSB
-  [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) is a legacy exception: its raw `buildKotBytes` path accepts the resolved
-  KOT language for catalog labels while retaining its historical raw-data layout.
+  [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) is a legacy exception for native output: its raw `buildKotBytes` path
+  accepts the resolved KOT language for catalog labels while retaining its
+  historical raw-data layout. Raster-enabled WebUSB KOT output uses the typed
+  `KotDocument` bridge described in the renderer map below.
 
 Thermal and browser receipt paths resolve the receipt policy before building the
 document. Browser HTML remains a single-language surface, using the primary
@@ -434,10 +438,11 @@ Renderers consume capabilities, they never guess them:
   text and its warning behavior ([`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts),
   [`frontend/src/lib/printer/warnings.ts`](../frontend/src/lib/printer/warnings.ts)). Unsupported item or financial rows are refused before `PrinterService` sends bytes; other unsupported lines retain the explicit skip warning. `buildClassicReceiptBytes` still
   writes the masked customer phone directly with `enc.text`, so that field is a
-  documented warning-contract exception. The raw WebUSB [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) and
-  legacy [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) paths are broader exceptions with their
-  own direct-write and warning behavior; both paths accept the resolved print
-  language for their catalog labels.
+  documented warning-contract exception. The native raw WebUSB [`frontend/src/lib/printer/kot-encoder.ts`](../frontend/src/lib/printer/kot-encoder.ts) and legacy
+  [`frontend/src/lib/printer/tax-bill-encoder.ts`](../frontend/src/lib/printer/tax-bill-encoder.ts) paths are broader exceptions with their own direct-write
+  and warning behavior; both paths accept the resolved print language for
+  their catalog labels. Raster-enabled WebUSB KOT output uses the typed
+  document path and its shared raster warning/refusal contract.
 - Browser HTML printing is the full-Unicode path: nothing is skipped for
   script reasons (asserted in [`tests/print-parity.test.ts`](../tests/print-parity.test.ts)).
 
@@ -486,6 +491,7 @@ profile claims broad non-Latin support without hardware evidence.
 | [`main/printers/document-classic.ts`](../main/printers/document-classic.ts) (`renderClassicReceiptViaDocument`, [#442](https://github.com/FreeOpenSourcePOS/FloCafe/issues/442)) | desktop preview + printing, receipts | PrintDocument v1 | token lines → bytes | socket :9100 / OS queue |
 | [`main/printers/document-compact.ts`](../main/printers/document-compact.ts) ([#443](https://github.com/FreeOpenSourcePOS/FloCafe/issues/443)) | desktop compact receipts | PrintDocument v1 | token lines → bytes | same |
 | [`main/printers/document-kot.ts`](../main/printers/document-kot.ts) ([#443](https://github.com/FreeOpenSourcePOS/FloCafe/issues/443)) | desktop kitchen tickets | KotDocument v1 | token lines → bytes | same |
+| [`main/printers/raster-renderer.ts`](../main/printers/raster-renderer.ts) + [`main/raster-preload.ts`](../main/raster-preload.ts) | hidden Chromium raster surface for validated core receipt/KOT paths | typed raster request with bundled local font data | semantic units → bounded `GS v 0` bands | mixed-mode assembly in [`main/printers/thermal.ts`](../main/printers/thermal.ts) |
 | [`main/printers/document-merchant.ts`](../main/printers/document-merchant.ts) ([#447](https://github.com/FreeOpenSourcePOS/FloCafe/issues/447)/[#448](https://github.com/FreeOpenSourcePOS/FloCafe/issues/448)) | desktop receipts with active merchant template | applied PrintDocument | token lines → bytes (fail-closed fallback to classic) | same |
 | [`main/printers/thermal.ts`](../main/printers/thermal.ts) compliance plugin ([#445](https://github.com/FreeOpenSourcePOS/FloCafe/issues/445)) | desktop receipt with signed country-pack template | raw `Order`/`Bill`/business rows + signed [`escpos-line-template-v1`](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1) payload | ESC/POS bytes | desktop transport |
 | [`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts) ([#444](https://github.com/FreeOpenSourcePOS/FloCafe/issues/444)) | WebUSB thermal receipts | PrintDocument v1 via [`frontend/src/lib/printer/print-document.ts`](../frontend/src/lib/printer/print-document.ts) bridge | ESC/POS bytes | WebUSB device |
@@ -509,7 +515,7 @@ directly and [`main/printers/thermal.ts`](../main/printers/thermal.ts) owns that
 | Document model | `npm run test:print-document` | block construction, document builders, bilingual pairs, direction annotations, purity ([`tests/print-document.test.ts`](../tests/print-document.test.ts)) |
 | Parity harness | `npm run test:print-parity` | cross-renderer semantic parity + byte-exact migration oracle ([`tests/print-parity.test.ts`](../tests/print-parity.test.ts)) |
 | Thermal capabilities | `npm run test:thermal-capabilities` | profile-owned encoding/shaping/representability/transliteration policy, code-page choice, backend/WebUSB normalized fixtures, unsupported-text and order-type safety ([`tests/thermal-capabilities.test.ts`](../tests/thermal-capabilities.test.ts)) |
-| Raster contract | `npm run test:raster` | deterministic GS v 0 packing, bounded profile geometry, renderer request validation, complete-unit refusal, and feed/cut semantics ([`shared/print/raster.ts`](../shared/print/raster.ts)) |
+| Raster contract | `npm run test:raster` | deterministic GS v 0 packing, bounded profile geometry, typed Chromium IPC, bundled-font failure reporting, semantic grouping, complete-unit refusal, and feed/cut semantics ([`shared/print/raster.ts`](../shared/print/raster.ts), [`main/printers/raster-renderer.ts`](../main/printers/raster-renderer.ts)) |
 | Merchant templates | `npm run test:merchant-print-templates` | kernel validation, apply semantics, CRUD lifecycle, render path ([`tests/merchant-print-templates.test.ts`](../tests/merchant-print-templates.test.ts)) |
 | Transfer envelope | `npm run test:merchant-template-transfer` | import/export contract, tampered-checksum rejection ([`tests/merchant-template-import-export.test.ts`](../tests/merchant-template-import-export.test.ts)) |
 

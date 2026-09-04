@@ -722,8 +722,9 @@ export interface ClassicDocumentPreviewResult {
 /**
  * Full document-driven classic preview pipeline:
  * authoritative rows → PrintData/PrintContext → buildBillDocument →
- * classic token lines → buildEscPos. Used by the print-bill preview branch;
- * actual printing keeps the legacy path this issue.
+ * classic token lines → buildEscPos. Used by the print-bill preview branch and
+ * by capability-gated raster printing; native printing retains the legacy
+ * output when raster is not selected.
  */
 export function renderClassicReceiptViaDocument(
   order: any,

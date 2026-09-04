@@ -13,7 +13,7 @@
  */
 
 import { parseDbTimestamp } from '../db';
-import { getCountryByCode, getCurrencyFractionDigits } from '../countries';
+import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';

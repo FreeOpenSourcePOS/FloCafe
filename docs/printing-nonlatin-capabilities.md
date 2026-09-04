@@ -7,7 +7,7 @@
 
 ## 1. Problem
 
-Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — remains limited by printer firmware and font coverage. The current runtime uses the shared profile-owned text capability contract described in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics): shipped profiles remain conservative, generic profiles are ASCII-only, and unsupported item or financial rows are refused before transport so a receipt is never printed with missing financial content. This document covers the deferred raster and broad-script alternatives.
+Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — remains limited by printer firmware and font coverage. The current runtime uses the shared profile-owned text capability contract described in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics): shipped profiles remain conservative, generic profiles are ASCII-only, and unsupported item or financial rows are refused before transport so a receipt is never printed with missing financial content. This document covers the implemented Phase 9 raster boundary and deferred broader script and hardware validation.
 
 Why generic ESC/POS printers fail non-Latin text:
 
@@ -121,22 +121,27 @@ PrintDocument ──► renderer decides per line/block:
    Tier 2  Non-Latin + profile proves
            firmware shaping            → profile-owned `capabilities.shaping.arabic` passthrough
    Tier 3  Everything else             → host-shaped, bidi-correct RASTER band(s) via GS v 0
-                                         [mixed mode; default for non-Latin content]
-   Tier 4  Whole-receipt raster        → opt-in compatibility toggle / fallback if mixed
+                                         [mixed mode when raster is enabled]
+   Tier 4  Whole-receipt raster        → tested compatibility mode / fallback if mixed
                                          mode misbehaves on specific hardware
    Tier 5  Skip-with-warning           → retained last resort; never silent
 ```
 
-Per transport: identical strategy everywhere — TCP 9100, USB RAW, and WebUSB all move the same byte stream. The browser HTML path needs nothing.
+Per transport: backend and WebUSB use equivalent validated semantic inputs and
+the shared raster assembly; native bytes remain available for units that do not
+need raster. The browser HTML path is unchanged.
 
-Migration implications for the legacy skip-with-warning path: once raster is proven on real hardware, tiers shift upward (skipped lines become raster bands); skip-with-warning remains the terminal fallback when raster is disabled or fails, preserving the no-silent-data-loss contract.
+Runtime implication of the legacy skip-with-warning path: when an enabled
+profile selects raster, unsupported lines become complete raster units; when
+raster is disabled or fails, skip-with-warning remains the non-financial
+fallback and financial output is refused before transport.
 
-Integration notes for the future implementation crew (descriptive, no code changed by this document):
+Phase 9 implementation boundary:
 
-- A raster renderer is another consumer of the shared print kernel (`shared/print/document.ts`), like the existing classic/compact/KOT/merchant renderers; it receives semantic blocks, not business truth.
-- The natural seam is the line-emission guard in the backend encoder and its frontend mirror (`safePrinterText`): doomed lines convert to raster bands instead of warnings.
-- Future raster capability flags belong on `SupportedPrinterProfile` alongside the existing text capability block (for example a raster-support flag and dots-per-line derived from paper width), consistent with epic principle 8.
-- Bundled open script fonts (Noto family subsets) satisfy offline-first principle 1 — no remote fonts.
+- The dedicated [`main/printers/raster-renderer.ts`](../main/printers/raster-renderer.ts) surface consumes typed requests derived from semantic `PrintDocument`/`KotDocument` output; it is isolated from the ordinary POS page and accepts bundled local font data URLs only.
+- Backend and WebUSB core receipt/KOT paths group semantic rows or blocks before raster selection, then assemble raster and native output through the shared [`shared/print/raster.ts`](../shared/print/raster.ts) contract.
+- Raster capability flags live on `ThermalPrinterCapabilities.raster` and are supplied by `SupportedPrinterProfile`; shipped profiles remain disabled until profile-specific font and real-printer evidence is recorded.
+- No production rendering dependency or remote font source was added.
 
 Risks and mitigations:
 

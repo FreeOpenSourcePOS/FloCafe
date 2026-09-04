@@ -1048,8 +1048,10 @@ Make a printer the default for regular receipt printing.
 ### POST `/api/printers/:id/test`
 
 Send a test page. The printed timestamp uses the tenant's configured store
-timezone. For WebUSB, the response contains the ESC/POS bytes for the browser
-to send.
+timezone. Pass `{ "rasterProbe": true }` to request the capability-gated
+raster diagnostic bands; profiles without enabled raster capability retain the
+standard test page. For WebUSB, the response contains the ESC/POS bytes for the
+browser to send.
 
 ### POST `/api/printers/print-bill`
 

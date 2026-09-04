@@ -182,6 +182,7 @@ async function run(): Promise<void> {
     resolveLabel: (conceptId) => ({ conceptId, primary: conceptId }),
   });
   assert.equal(isKotDocument(kotDocument), true);
+  assert.equal(isKotDocument({ ...kotDocument, blocks: [kotDocument.blocks[1], kotDocument.blocks[0]] }), false);
   assert.equal(isKotDocument({ ...kotDocument, blocks: [...kotDocument.blocks, kotDocument.blocks[1]] }), false);
   assert.equal(isKotDocument({ ...kotDocument, blocks: [kotDocument.blocks[0]] }), false);
   const frontendKotDocument = loadFrontendPrintDocument().buildFrontendKotDocument({

@@ -264,7 +264,7 @@ export const usePrinterStore = create<PrinterState>()(
             const rasterResult = await window.electronAPI.rasterizePrintDocument({
               document: buildFrontendBillDocument(bill, tenant, {
                 ...builderOpts,
-                columns: configuredPaperWidth === 80 ? 48 : 42,
+                columns: builderOpts.paperWidth === 80 ? 48 : 42,
                 businessName: tenant.business_name,
                 includeTaxId: billShowTaxId,
                 taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel ?? 'Tax ID',
@@ -274,7 +274,7 @@ export const usePrinterStore = create<PrinterState>()(
               template: rasterBillTemplate,
               profileId: webusbPrinter.profile_id,
               options: {
-                columns: configuredPaperWidth === 80 ? 48 : 42,
+                columns: builderOpts.paperWidth === 80 ? 48 : 42,
                 language: languages[0],
                 locale: getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US',
                 currency,

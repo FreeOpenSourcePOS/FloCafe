@@ -14,13 +14,19 @@
 import { parseDbTimestamp } from '../db';
 import { printLabel, type PrintConceptId } from '../print/print-labels.generated';
 import type { PrinterCutMode } from './profiles';
+import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { PrintWarning } from './thermal';
 import {
   buildEscPos,
-  normalizeGermanThermalText,
   truncate,
   truncateShapedLine,
 } from './thermal';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  mergeThermalCapabilities,
+  shouldUseOrderTypeFallback,
+  thermalTextFallback,
+} from '../../shared/print/thermal-capabilities';
 import { detectPrintLanguageDirection } from './document-classic';
 import {
   buildKotDocument,
@@ -106,6 +112,7 @@ export interface KotDocumentRenderOptions {
   readonly useUnicode: boolean;
   readonly arabicShaping: boolean;
   readonly cutMode: PrinterCutMode;
+  readonly capabilities?: ThermalPrinterCapabilities;
 }
 
 /** Typed accessor for one block kind within a KOT document. */
@@ -129,61 +136,52 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
 // value when the selected capability can represent it; otherwise use the
 // existing ASCII labels rather than silently losing ticket identity.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
-const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
-const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
-const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
-
-function isArabicShapingSafeLine(value: string): boolean {
-  if (!ARABIC_SCRIPT_RE.test(value)) return false;
-  return !/[^\x00-\x7F]/.test(
-    value.replace(ARABIC_SCRIPT_GLOBAL_RE, '').replace(ARABIC_SHAPING_ALLOWED_GLOBAL_RE, ''),
-  );
+function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
+  return thermalTextFallback(value, fallback, mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping));
 }
 
-function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
-  const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
-  const shapingSafe = arabicShaping && isArabicShapingSafeLine(normalized);
-  return /[^\x00-\x7F]/.test(normalized) && !shapingSafe ? fallback : normalized;
+function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
+  return thermalSafeText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping, capabilities);
 }
 
-function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean): string {
-  return thermalSafeText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping);
-}
-
-function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string, arabicShaping: boolean): string {
+function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
   const localized = labelOf(label).replace('{number}', orderNumber);
-  const fallbackOrderNumber = thermalSafeMetadataValue(orderNumber, language, arabicShaping);
-  return thermalSafeText(localized, `Order #${fallbackOrderNumber}`, language, arabicShaping);
+  const fallbackOrderNumber = thermalSafeMetadataValue(orderNumber, language, arabicShaping, capabilities);
+  return thermalSafeText(localized, `Order #${fallbackOrderNumber}`, language, arabicShaping, capabilities);
 }
 
 function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions): string[] {
   const cols = options.columns;
   const lines: string[] = [];
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
+  const thermalCapabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
 
   lines.push('{INIT}');
-  const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping);
+  const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping, options.capabilities);
   const station = thermalSafeText(
     `${labelOf(header.stationLabel)}: ${header.stationName.text}`,
-    `Station: ${thermalSafeMetadataValue(header.stationName.text, options.language, options.arabicShaping)}`,
+    `Station: ${thermalSafeMetadataValue(header.stationName.text, options.language, options.arabicShaping, options.capabilities)}`,
     options.language,
     options.arabicShaping,
+    options.capabilities,
   );
   const table = header.table
     ? thermalSafeText(
       formatTableLabel(header.table.label, header.table.name.text),
-      `Table: ${thermalSafeMetadataValue(header.table.name.text, options.language, options.arabicShaping)}`,
+      `Table: ${thermalSafeMetadataValue(header.table.name.text, options.language, options.arabicShaping, options.capabilities)}`,
       options.language,
       options.arabicShaping,
+      options.capabilities,
     )
     : null;
   const orderType = header.orderType
-    ? thermalSafeText(
-      `${labelOf(header.orderType.label)}: ${header.orderType.value.text}`,
-      `Type: ${header.orderType.code.replace(/_/g, ' ').trim().toUpperCase()}`,
-      options.language,
-      options.arabicShaping,
-    )
+    ? (() => {
+      const localized = `${labelOf(header.orderType.label)}: ${header.orderType.value.text}`;
+      const fallback = `Type: ${header.orderType.code.replace(/_/g, ' ').trim().toUpperCase()}`;
+      return shouldUseOrderTypeFallback(localized, thermalCapabilities)
+        ? fallback
+        : thermalSafeText(localized, fallback, options.language, options.arabicShaping, options.capabilities);
+    })()
     : null;
   const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions);
   const timeLine = thermalSafeText(
@@ -191,39 +189,41 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
     `Time: ${parseDbTimestamp(header.timestamp.text).toLocaleTimeString('en-US-u-nu-latn', tzOptions)}`,
     options.language,
     options.arabicShaping,
+    options.capabilities,
   );
 
-  lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language) + '{/BOLD}{/CENTER}');
+  lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
   lines.push('');
-  lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language));
-  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping), cols, options.arabicShaping, options.language));
-  if (table) lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language));
-  if (orderType) lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language, options.capabilities));
+  lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping, options.capabilities), cols, options.arabicShaping, options.language, options.capabilities));
+  if (table) lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language, options.capabilities));
+  if (orderType) lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language, options.capabilities));
   if (header.customer) {
     const customer = thermalSafeText(
       `${labelOf(header.customer.label)}: ${header.customer.name.text}`,
-      `Customer: ${thermalSafeMetadataValue(header.customer.name.text, options.language, options.arabicShaping)}`,
+      `Customer: ${thermalSafeMetadataValue(header.customer.name.text, options.language, options.arabicShaping, options.capabilities)}`,
       options.language,
       options.arabicShaping,
+      options.capabilities,
     );
-    lines.push(truncateShapedLine(customer, cols, options.arabicShaping, options.language));
+    lines.push(truncateShapedLine(customer, cols, options.arabicShaping, options.language, options.capabilities));
   }
-  lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language));
+  lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language, options.capabilities));
   return lines;
 }
 
-function kotItemLines(row: KotItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string): string[] {
+function kotItemLines(row: KotItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string, capabilities?: ThermalPrinterCapabilities): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
-  lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - itemPrefix.length), arabicShaping, language) + '{/BOLD}{/DOUBLE_HEIGHT}');
+  lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - itemPrefix.length), arabicShaping, language, capabilities) + '{/BOLD}{/DOUBLE_HEIGHT}');
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
     const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';
-    const name = truncate(addonName(addon), Math.max(1, cols - 4 - quantitySuffix.length), language);
+    const name = truncate(addonName(addon), Math.max(1, cols - 4 - quantitySuffix.length), language, capabilities);
     lines.push('  + ' + name + quantitySuffix);
   }
   if (row.specialInstructions) {
-    lines.push('  >> ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language));
+    lines.push('  >> ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language, capabilities));
   }
   return lines;
 }
@@ -250,7 +250,7 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
 
   if (items) {
     for (const row of items.rows) {
-      lines.push(...kotItemLines(row, cols, options.arabicShaping, options.language));
+      lines.push(...kotItemLines(row, cols, options.arabicShaping, options.language, options.capabilities));
     }
   }
 
@@ -289,6 +289,7 @@ export function renderKotViaDocument(
     useUnicode: boolean;
     arabicShaping: boolean;
     cutMode: PrinterCutMode;
+    capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities;
   },
 ): KotDocumentRenderResult {
   const printData = buildKotPrintData(order, items, stationName);
@@ -307,7 +308,8 @@ export function renderKotViaDocument(
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
+    capabilities: opts.capabilities,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);
   return { document, lines, data, warnings };
 }

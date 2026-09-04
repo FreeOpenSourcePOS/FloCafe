@@ -1,3 +1,9 @@
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  mergeThermalCapabilities,
+  type ThermalPrinterCapabilities,
+} from '../../shared/print/thermal-capabilities';
+
 export type PrinterCommandSet = 'escpos';
 export type PrinterCutMode = 'full' | 'partial';
 
@@ -14,14 +20,12 @@ export interface SupportedPrinterProfile {
   printWidthMm?: number;
   cutMode: PrinterCutMode;
   /**
-   * Whether the printer's firmware performs Arabic/Persian contextual shaping
-   * and bidirectional ordering. Generic ESC/POS printers do NOT — they render
-   * isolated glyph forms or garbage for Persian — so this defaults to unset
-   * (false), which makes the encoders skip Arabic-script text instead of
-   * printing corrupted output. Only set true after a real print on the
-   * specific hardware proves shaped Persian output.
+   * Legacy stored override for the profile-owned Arabic shaping capability.
+   * @deprecated Use capabilities.shaping.arabic. Kept for stored profile compatibility.
    */
   arabicShaping?: boolean;
+  /** Text encoding, shaping, representability, transliteration, and warning policy. */
+  capabilities: ThermalPrinterCapabilities;
   notes?: string;
 }
 
@@ -38,6 +42,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontBColumns: 64,
     printWidthMm: 72,
     cutMode: 'partial',
+    capabilities: GENERIC_THERMAL_CAPABILITIES,
     notes: '80mm ESC/POS receipt printer. Vendor specs list 72mm print width, 576 dots/line, Font A 42/48 columns, Font B 56/64 columns.',
   },
   {
@@ -51,6 +56,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 48,
     fontBColumns: 64,
     cutMode: 'partial',
+    capabilities: GENERIC_THERMAL_CAPABILITIES,
   },
   {
     id: 'generic-escpos-80',
@@ -63,6 +69,10 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 42,
     fontBColumns: 64,
     cutMode: 'full',
+    capabilities: {
+      ...GENERIC_THERMAL_CAPABILITIES,
+      encoding: { codePages: ['ascii'], preferredCodePage: 'ascii' },
+    },
   },
   {
     id: 'generic-escpos-58',
@@ -75,6 +85,10 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 32,
     fontBColumns: 56,
     cutMode: 'full',
+    capabilities: {
+      ...GENERIC_THERMAL_CAPABILITIES,
+      encoding: { codePages: ['ascii'], preferredCodePage: 'ascii' },
+    },
   },
 ];
 
@@ -113,4 +127,11 @@ export function resolvePrinterProfile(printer: any): SupportedPrinterProfile {
   return String(paperWidth || '').startsWith('58mm')
     ? SUPPORTED_PRINTER_PROFILES.find((p) => p.id === 'generic-escpos-58')!
     : SUPPORTED_PRINTER_PROFILES.find((p) => p.id === 'generic-escpos-80')!;
+}
+
+export function getPrinterCapabilities(
+  profile: SupportedPrinterProfile,
+  arabicShapingOverride?: boolean,
+): ThermalPrinterCapabilities {
+  return mergeThermalCapabilities(profile.capabilities || GENERIC_THERMAL_CAPABILITIES, arabicShapingOverride);
 }

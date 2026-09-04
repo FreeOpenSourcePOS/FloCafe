@@ -26,6 +26,7 @@ import {
 } from './document-classic';
 import { buildEscPos, type PrintWarning } from './thermal';
 import type { PrinterCutMode } from './profiles';
+import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 
 export interface MerchantDocumentRenderResult {
   readonly data: Buffer;
@@ -57,6 +58,7 @@ export function renderMerchantReceiptViaDocument(
     useUnicode: boolean;
     arabicShaping: boolean;
     cutMode: PrinterCutMode;
+    capabilities?: ThermalPrinterCapabilities;
   },
 ): MerchantDocumentRenderResult {
   const warnings: PrintWarning[] = [];
@@ -78,6 +80,7 @@ export function renderMerchantReceiptViaDocument(
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
+    capabilities: opts.capabilities,
   } as const;
 
   const finish = (lines: string[], fellBackToClassic: boolean) => {
@@ -86,6 +89,7 @@ export function renderMerchantReceiptViaDocument(
       arabicShaping: opts.arabicShaping,
       columns: opts.columns,
       language: opts.language,
+      capabilities: opts.capabilities,
     }, warnings);
     return { data, lines, warnings, fellBackToClassic };
   };

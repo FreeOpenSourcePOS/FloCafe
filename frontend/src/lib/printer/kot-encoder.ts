@@ -9,8 +9,15 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { formatTime } from './format-date';
-import { normalizeGermanThermalText } from './unicode';
-import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { normalizeThermalText } from './unicode';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  mergeThermalCapabilities,
+  shouldUseOrderTypeFallback,
+  thermalTextFallback,
+  type ThermalPrinterCapabilities,
+} from '@print/thermal-capabilities';
+import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 import { isKotItemPending } from '@print/document';
 
@@ -31,12 +38,14 @@ export interface KotOptions {
   locale?: string;
   /** Store timezone used for business-local time formatting. */
   timezone?: string;
+  /** Selected thermal text capabilities; defaults to generic ESC/POS safety. */
+  capabilities?: ThermalPrinterCapabilities;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
 const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
 
-function safePrinterTextForLanguage(language: string, columns: number) {
+function safePrinterTextForLanguage(language: string, columns: number, capabilities?: ThermalPrinterCapabilities) {
   return <T extends { text(value: string): T }>(
     enc: T,
     value: string,
@@ -46,7 +55,10 @@ function safePrinterTextForLanguage(language: string, columns: number) {
     centerCols?: number,
     maxCols?: number,
     _language?: string,
-  ): T => writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, language === 'de' ? maxCols ?? centerCols ?? columns : maxCols, language);
+  ): T => {
+    void _language;
+    return writeSafePrinterText(enc, value, warnings, isStoreName, arabicShaping, centerCols, maxCols, language, false, true, capabilities);
+  };
 }
 
 /**
@@ -62,8 +74,9 @@ export function buildKotBytes(
   const cols = CHARS[paperWidth];
   const label = (key: string): string => printLabelResolver(key, language);
   const locale = opts.locale ?? LANGUAGES[language as Language]?.locale ?? 'en-US';
-  const safePrinterText = safePrinterTextForLanguage(language, cols);
-  const truncateText = (text: string, max: number): string => truncate(text, max, language);
+  const safePrinterText = safePrinterTextForLanguage(language, cols, opts.capabilities);
+  const truncateText = (text: string, max: number): string => truncate(text, max, opts.capabilities);
+  const thermalCapabilities = mergeThermalCapabilities(opts.capabilities, arabicShaping);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -71,7 +84,7 @@ export function buildKotBytes(
   enc.initialize();
 
   // KOT Banner
-  const bannerText = thermalSafeHeaderText(label('print.kot.banner'), 'KITCHEN ORDER TICKET', language, arabicShaping);
+  const bannerText = thermalSafeHeaderText(label('print.kot.banner'), 'KITCHEN ORDER TICKET', language, arabicShaping, opts.capabilities);
   const bannerWidth = bannerText.length * 2 <= cols ? 2 : 1;
   enc.align('center').bold(true).width(bannerWidth).height(2);
   safePrinterText(enc, bannerText, warnings, false, arabicShaping, undefined, cols, language).width(1).height(1).bold(false).newline();
@@ -80,29 +93,34 @@ export function buildKotBytes(
   enc.align('left').bold(true);
   if (opts.stationName) {
     const stationName = String(opts.stationName);
-    safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.station')}: ${stationName}`, `Station: ${thermalSafeMetadataValue(stationName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.station')}: ${stationName}`, `Station: ${thermalSafeMetadataValue(stationName, language, arabicShaping, opts.capabilities)}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
   const orderNumber = String(order.order_number);
-  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order #${thermalSafeMetadataValue(orderNumber, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, thermalSafeHeaderText(formatOrderNumber(label('pos.orderNumber'), orderNumber), `Order #${thermalSafeMetadataValue(orderNumber, language, arabicShaping, opts.capabilities)}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.table) {
     const tableName = String(order.table.name);
-    safePrinterText(enc, thermalSafeHeaderText(label('pos.tableLabel').replace('{name}', tableName), `Table: ${thermalSafeMetadataValue(tableName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, thermalSafeHeaderText(label('pos.tableLabel').replace('{name}', tableName), `Table: ${thermalSafeMetadataValue(tableName, language, arabicShaping, opts.capabilities)}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   const orderType = resolveOrderType(order.type, language);
-  safePrinterText(enc, thermalSafeHeaderText(`${label('print.kot.type')}: ${orderType}`, `Type: ${String(order.type).replace(/_/g, ' ').toUpperCase()}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+  const localizedOrderType = `${label('print.kot.type')}: ${orderType}`;
+  const fallbackOrderType = `Type: ${String(order.type).replace(/_/g, ' ').toUpperCase()}`;
+  const thermalOrderType = shouldUseOrderTypeFallback(localizedOrderType, thermalCapabilities)
+    ? fallbackOrderType
+    : thermalSafeHeaderText(localizedOrderType, fallbackOrderType, language, arabicShaping, opts.capabilities);
+  safePrinterText(enc, thermalOrderType, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   if (order.customer) {
     const customerName = String(order.customer.name);
-    safePrinterText(enc, thermalSafeHeaderText(`${label('pos.customer')}: ${customerName}`, `Customer: ${thermalSafeMetadataValue(customerName, language, arabicShaping)}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
+    safePrinterText(enc, thermalSafeHeaderText(`${label('pos.customer')}: ${customerName}`, `Customer: ${thermalSafeMetadataValue(customerName, language, arabicShaping, opts.capabilities)}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   enc.bold(false);
   const time = formatTime(order.created_at, locale, opts.timezone ? { timeZone: opts.timezone } : undefined);
   const fallbackTime = formatTime(order.created_at, 'en-US', opts.timezone ? { timeZone: opts.timezone } : undefined);
-  safePrinterText(enc, thermalSafeHeaderText(`${label('print.time')}: ${time}`, `Time: ${fallbackTime}`, language, arabicShaping), warnings, false, arabicShaping, undefined, cols, language).newline();
-  enc.rule({ style: 'double' });
+  safePrinterText(enc, thermalSafeHeaderText(`${label('print.time')}: ${time}`, `Time: ${fallbackTime}`, language, arabicShaping, opts.capabilities), warnings, false, arabicShaping, undefined, cols, language).newline();
+  thermalRule(enc, 'double', cols, thermalCapabilities);
 
   // ── Items ────────────────────────────────────────────────────────────────────
   const items = order.items ?? [];
@@ -149,7 +167,7 @@ export function buildKotBytes(
   }
 
   // ── Footer ─────────────────────────────────────────────────────────────────
-  enc.rule({ style: 'single' });
+  thermalRule(enc, 'single', cols, thermalCapabilities);
   enc.align('center');
   safePrinterText(enc, `--- ${label('print.kot.end')} ---`, warnings, false, arabicShaping, undefined, cols, language).newline();
 
@@ -158,27 +176,40 @@ export function buildKotBytes(
   return enc.encode();
 }
 
+function thermalRule(
+  enc: ReceiptPrinterEncoder,
+  style: 'single' | 'double',
+  columns: number,
+  capabilities: ThermalPrinterCapabilities,
+): void {
+  const character = style === 'double' ? '═' : '─';
+  if (capabilities.shaping.arabic && capabilities.encoding.codePages.every((codePage) => codePage === 'ascii')) {
+    (enc as ReceiptPrinterEncoder & { raw: (data: Uint8Array) => ReceiptPrinterEncoder })
+      .raw(new TextEncoder().encode(character.repeat(columns))).newline();
+    return;
+  }
+  enc.rule({ style });
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function truncate(str: string, max: number, language: string = 'en'): string {
-  const normalized = language === 'de' ? normalizeGermanThermalText(str) : str;
+function truncate(str: string, max: number, capabilities?: ThermalPrinterCapabilities): string {
+  const normalized = normalizeThermalText(str, capabilities);
   return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 
-// Keep nonfinancial KOT identity visible when generic ESC/POS cannot
+// Keep nonfinancial KOT identity visible when the selected capabilities cannot
 // represent a localized header label; item text still follows safePrinterText.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
 
-function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean): string {
-  return thermalSafeHeaderText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping);
+function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
+  return thermalSafeHeaderText(value, UNSUPPORTED_METADATA_PLACEHOLDER, language, arabicShaping, capabilities);
 }
 
-function thermalSafeHeaderText(value: string, fallback: string, language: string, arabicShaping: boolean): string {
-  const normalized = language === 'de' ? normalizeGermanThermalText(value) : value;
-  const shapingSafe = arabicShaping && isArabicShapingSafeLine(normalized);
-  return hasUnsupportedPrinterChars(normalized) && !shapingSafe ? fallback : normalized;
+function thermalSafeHeaderText(value: string, fallback: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
+  return thermalTextFallback(value, fallback, mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping));
 }
 
 function resolveOrderType(type: string, language: string): string {

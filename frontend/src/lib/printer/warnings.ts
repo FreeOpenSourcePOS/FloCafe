@@ -4,14 +4,21 @@
  * Shared "skip unsupported characters, keep printing" logic for the browser
  * ESC/POS encoders (receipt-encoder.ts, kot-encoder.ts, tax-bill-encoder.ts).
  * Mirrors the equivalent check in the desktop path (main/printers/thermal.ts)
- * so both printing paths degrade the same way: a line with characters a
- * generic thermal printer can't render (Arabic, CJK, emoji, etc.) is skipped
- * rather than sent as garbage bytes, and the caller is told which line and
- * why. Financial rows are marked so receipt callers can refuse before
- * transport instead of sending a partial receipt.
+ * so both printing paths apply the same selected-capability policy: a line
+ * whose characters the thermal profile cannot represent (Arabic, CJK, emoji,
+ * etc.) is skipped rather than sent as garbage bytes, and the caller is told
+ * which line and why. Financial rows are marked so receipt callers can refuse
+ * before transport instead of sending a partial receipt.
  */
 
-import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeGermanThermalText } from './unicode';
+import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeThermalText } from './unicode';
+import {
+  isArabicShapingSafeLine as isCapabilityArabicShapingSafeLine,
+  isThermalTextRepresentable,
+  mergeThermalCapabilities,
+  selectThermalCodePage,
+  type ThermalPrinterCapabilities,
+} from '@print/thermal-capabilities';
 
 export interface PrintWarning {
   field: string;
@@ -34,9 +41,6 @@ export function hasUnsupportedPrinterChars(text: string): boolean {
 
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
-const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
-const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
-
 export function hasArabicScript(text: string): boolean {
   return ARABIC_SCRIPT_RE.test(text);
 }
@@ -47,14 +51,7 @@ export function hasArabicScript(text: string): boolean {
  * backend buildEscPos arabic-only rule: any other non-ASCII script on the
  * same line still blocks it, even with shaping enabled.
  */
-export function isArabicShapingSafeLine(text: string): boolean {
-  if (!hasArabicScript(text)) return false;
-  return !/[^\x00-\x7F]/.test(
-    text.replace(SUPPORTED_CURRENCY_SYMBOLS, '')
-      .replace(ARABIC_SCRIPT_GLOBAL_RE, '')
-      .replace(ARABIC_SHAPING_ALLOWED_GLOBAL_RE, '')
-  );
-}
+export const isArabicShapingSafeLine = isCapabilityArabicShapingSafeLine;
 
 export function makePrintWarning(text: string, isStoreName = false): PrintWarning {
   const field = isStoreName ? 'store name' : 'receipt line';
@@ -128,10 +125,11 @@ function boundShapedText(text: string, maxCols?: number): string {
 }
 
 /**
- * Writes `value` to an ESC/POS encoder only if a generic thermal printer can
- * render every character; otherwise records a warning and skips it entirely
- * so the rest of the receipt/ticket still prints and cuts normally. Callers
- * mark financial rows so the receipt can be refused before transport.
+ * Writes `value` to an ESC/POS encoder only if the selected thermal
+ * capabilities can represent every character; otherwise records a warning
+ * and skips it entirely so the rest of the receipt/ticket still prints and
+ * cuts normally. Callers mark financial rows so the receipt can be refused
+ * before transport.
  *
  * When `arabicShaping` is true (printer firmware shapes Arabic/Persian,
  * #437), pure ASCII+Arabic lines pass through instead of being skipped —
@@ -152,12 +150,21 @@ export function safePrinterText<T extends { text(value: string): T }>(
   language?: string,
   financial = false,
   useUnicode = true,
+  capabilities?: ThermalPrinterCapabilities,
 ): T {
   if (!value) return enc;
-  const printableValue = language === 'de' ? normalizeGermanThermalText(value) : value;
-  const printerValue = useUnicode ? printableValue : normalizeCurrencyToAscii(printableValue);
-  if (hasUnsupportedPrinterChars(printerValue)) {
-    if (arabicShaping && isArabicShapingSafeLine(printerValue)) {
+  const thermalCapabilities = mergeThermalCapabilities(capabilities, arabicShaping);
+  const useLegacyUnicode = capabilities === undefined && useUnicode;
+  const printableValue = normalizeThermalText(value, thermalCapabilities);
+  const hasNativeCodePage = thermalCapabilities.encoding.codePages.some((codePage) => codePage !== 'ascii');
+  const printerValue = !useLegacyUnicode && !hasNativeCodePage
+    ? normalizeCurrencyToAscii(printableValue)
+    : printableValue;
+  const hasUnsupported = hasUnsupportedPrinterChars(printerValue);
+  const shapingSafe = thermalCapabilities.shaping.arabic && isCapabilityArabicShapingSafeLine(printerValue);
+  const representable = !hasUnsupported || (isThermalTextRepresentable(printerValue, thermalCapabilities) && !shapingSafe);
+  if (hasUnsupported) {
+    if (shapingSafe) {
       const sanitized = printerValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
       if (!sanitized) {
         const warning = makePrintWarning(value, isStoreName);
@@ -182,10 +189,25 @@ export function safePrinterText<T extends { text(value: string): T }>(
       }
       return enc.text(boundShapedText(sanitized, maxCols));
     }
-    const warning = makePrintWarning(value, isStoreName);
-    if (financial) warning.kind = 'financial';
-    warnings?.push(warning);
-    return enc;
+    if (!representable) {
+      const warning = makePrintWarning(value, isStoreName);
+      if (financial) warning.kind = 'financial';
+      warnings?.push(warning);
+      return enc;
+    }
+  }
+  const codePage = selectThermalCodePage(printerValue, thermalCapabilities);
+  if (
+    thermalCapabilities.shaping.arabic
+    && !hasNativeCodePage
+    && 'raw' in enc
+    && typeof (enc as { raw?: (data: Uint8Array) => T }).raw === 'function'
+  ) {
+    const sanitized = printerValue.replace(ESCPOS_TEXT_CONTROL_RE, '');
+    return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(sanitized));
+  }
+  if (codePage && codePage !== 'ascii' && 'codepage' in enc && typeof (enc as { codepage?: (value: string) => T }).codepage === 'function') {
+    (enc as { codepage: (value: string) => T }).codepage(codePage);
   }
   return enc.text(printerValue);
 }

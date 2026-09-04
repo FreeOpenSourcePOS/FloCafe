@@ -1,22 +1,13 @@
 # Non-Latin thermal receipt printing — capability study and decision record
 
 **Refs:** #446 (research issue) · epic #438
-**Status of this document:** Study and decision record. It describes a *recommended* target architecture that is **not yet implemented**; thermal production renderers retain text handling with skip-with-warning for non-financial lines, while unsupported item and financial rows are refused before transport. The browser system-print path now shares the semantic label pipeline. Any prototype or dependency adoption requires separate review (see Section 8, *Open decisions*).
+**Status of this document:** Study and decision record. It describes a *recommended* target architecture for raster and broad non-Latin support that is **not yet implemented**. The current profile-owned text capability contract, including conservative code-page selection and shared backend/WebUSB warning behavior, is documented in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics). Any prototype or dependency adoption requires separate review (see Section 8, *Open decisions*).
 
 ---
 
 ## 1. Problem
 
-Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — currently degrades to a stopgap: a per-profile `arabicShaping` passthrough plus skip-with-warning behavior for non-financial lines. Unsupported item and financial rows are refused before transport so a receipt is never printed with missing financial content.
-
-Current code (verified at the time of writing):
-
-| Location | Behavior |
-| --- | --- |
-| `main/printers/profiles.ts` (`SupportedPrinterProfile.arabicShaping`) | Profile flag declaring firmware Arabic shaping; unset/false on all four shipped profiles. |
-| `main/printers/thermal.ts` (`buildEscPos`) | Non-financial lines whose non-currency content is not ASCII are skipped with a warning, unless `arabicShaping` passes the strict Arabic-only rule; financial rows are marked for pre-transport refusal. |
-| `frontend/src/lib/printer/warnings.ts` (`safePrinterText`, `isArabicShapingSafeLine`) | Browser/WebUSB encoders mirror the same guard; financial-row warnings are refused by the migrated receipt caller before transport. |
-| `shared/print/direction.ts` | Direction model: per-document/block/value direction with conservative LTR-island classification (`isLtrIsland`, `containsRtlScript`). |
+Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — remains limited by printer firmware and font coverage. The current runtime uses the shared profile-owned text capability contract described in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics): shipped profiles remain conservative, generic profiles are ASCII-only, and unsupported item or financial rows are refused before transport so a receipt is never printed with missing financial content. This document covers the deferred raster and broad-script alternatives.
 
 Why generic ESC/POS printers fail non-Latin text:
 
@@ -29,22 +20,24 @@ The end-state contract from epic #438 is **no silent data loss**: native render,
 
 ## 2. Method
 
-- Code paths above were read directly; line-level references reflect the state after #443/#473/#474/#472 landed.
+- Runtime behavior claims were checked against the current implementation after #443/#473/#474/#472 landed; the current text-capability contract is owned by [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics).
 - External evidence: Epson's official ESC/POS command reference, the ReceiptPrinterEncoder/escpos-php/python-escpos/node-thermal-printer issue trackers, Odoo's IoT printer driver source, and qzind/tray. Links inline.
 - First-class user requirements come from real reports by @MaMaDTHUG82 (Iran, Meva TP-UN hardware): #437, #241, discussions #239/#326.
 
 ## 3. Approach comparison
 
-### 3.1 Printer-native Arabic/Persian shaping (the `arabicShaping` profile flag)
+### 3.1 Printer-native Arabic/Persian shaping (the profile capability)
 
-The flag means: *this specific printer's firmware performs contextual shaping and bidi ordering*. It must stay default-off and be set true only after a real print on the specific hardware proves shaped output. Reality:
+The `capabilities.shaping.arabic` field means: *this specific printer's firmware performs contextual shaping and bidi ordering*. It must stay default-off and be set true only after a real print on the specific hardware proves shaped output. The legacy `arabicShaping` field is retained only as a compatibility input. Reality:
 
 - Generic ESC/POS firmware does none of this. Even on models that accept Arabic bytes, output is isolated forms printed left-to-right unless the host pre-shapes and pre-reverses.
 - The qzind/tray experience (Epson TM-T88VI + vendor utility + ICU mapping down to IBM864 with byte swapping) shows even best-case native support is model-specific and fragile ([ReceiptPrinterEncoder issue #26](https://github.com/NielsLeenheer/ReceiptPrinterEncoder/issues/26)).
 
 **Verdict:** keep as an opt-in passthrough tier for proven hardware only. Not a general solution.
 
-### 3.2 Printer-native code pages (CP1256 / CP720 / CP864 / kanji modes)
+### 3.2 Printer-native Arabic code pages (CP1256 / CP720 / CP864 / kanji modes)
+
+The current capability model supports only explicitly declared code pages and does not add hardware claims to shipped profiles. The analysis below concerns Arabic code pages and the deferred broad-script problem; Latin code-page handling and representability rules are owned by [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics).
 
 - Epson's reference states the `FS &` kanji mode *"can be used only for the Japanese, Simplified Chinese, Traditional Chinese models, and Korean models"* — regional firmware variants our users do not own ([Epson ESC/POS reference](https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/fs_ampersand.html)).
 - Arabic code pages contain base/isolated glyph forms only → visibly broken letters for native readers; right-to-left ordering is still the host's problem.
@@ -126,7 +119,7 @@ Consensus: host-rendered bitmaps are the universal fallback; code pages are a de
 PrintDocument ──► renderer decides per line/block:
    Tier 1  Pure Latin/ASCII            → native ESC/POS text (unchanged bytes, fastest)
    Tier 2  Non-Latin + profile proves
-           firmware shaping            → existing arabicShaping passthrough (semantics unchanged)
+           firmware shaping            → profile-owned `capabilities.shaping.arabic` passthrough
    Tier 3  Everything else             → host-shaped, bidi-correct RASTER band(s) via GS v 0
                                          [mixed mode; default for non-Latin content]
    Tier 4  Whole-receipt raster        → opt-in compatibility toggle / fallback if mixed
@@ -142,7 +135,7 @@ Integration notes for the future implementation crew (descriptive, no code chang
 
 - A raster renderer is another consumer of the shared print kernel (`shared/print/document.ts`), like the existing classic/compact/KOT/merchant renderers; it receives semantic blocks, not business truth.
 - The natural seam is the line-emission guard in the backend encoder and its frontend mirror (`safePrinterText`): doomed lines convert to raster bands instead of warnings.
-- Capability flags belong on `SupportedPrinterProfile` alongside `arabicShaping` (for example a raster-support flag and dots-per-line derived from paper width), consistent with epic principle 8.
+- Future raster capability flags belong on `SupportedPrinterProfile` alongside the existing text capability block (for example a raster-support flag and dots-per-line derived from paper width), consistent with epic principle 8.
 - Bundled open script fonts (Noto family subsets) satisfy offline-first principle 1 — no remote fonts.
 
 Risks and mitigations:

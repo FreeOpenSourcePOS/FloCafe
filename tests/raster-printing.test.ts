@@ -17,7 +17,7 @@ import { buildBillDocument, buildKotDocument, isKotDocument, isPrintDocument } f
 import { resolveTenantCurrency } from '../main/countries';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
-import { buildEscPos, financialRows, itemRows, normalizeThermalText } from '../main/printers/thermal';
+import { buildEscPos, escPosToText, financialRows, itemRows, normalizeThermalText } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
 import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from '../main/printers/document-classic';
@@ -272,11 +272,13 @@ async function run(): Promise<void> {
     rasterUnits: [{ lineIndex: 0, unit: { ...unit, financial: true, complete: false } }],
   }).length, 0);
   const metadataWarnings: any[] = [];
-  assert.equal(buildEscPos(['{FINANCIAL}raster'], false, {
+  assert.equal(buildEscPos(['raster'], false, {
     capabilities: caps,
     rasterUnits: [{ lineIndex: 0, unit: { ...unit, complete: false } }],
   }, metadataWarnings).length, 0);
   assert.equal(metadataWarnings[0]?.kind, 'line');
+  const literalMarker = buildEscPos(['{FINANCIAL}raster'], false);
+  assert.equal(escPosToText(literalMarker).includes('{FINANCIAL}raster'), true);
   assert.equal(buildEscPos(['raster'], false, {
     capabilities: caps,
     rasterUnits: [{ lineIndex: 9, unit: { ...unit, financial: true } }],

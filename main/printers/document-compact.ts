@@ -396,7 +396,7 @@ export function renderCompactReceiptViaDocument(
     locale: printContext.locale,
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
     currencySymbol: printContext.currencySymbol,
-    currency: String(business?.currency || getCountryByCode(String(business?.country || ''))?.currency || 'INR'),
+    currency: String(business?.currency || 'INR'),
     trimDecimals: printContext.trimDecimals,
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,

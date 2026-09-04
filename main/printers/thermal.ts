@@ -1047,11 +1047,14 @@ function receiptDocumentLines(
   capabilities: ThermalPrinterCapabilities,
 ): RasterDocumentLines | null {
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
+  const rasterBiz = biz.raster_currency
+    ? { ...biz, currency: biz.raster_currency, currency_symbol: biz.raster_currency_symbol || biz.currency_symbol }
+    : biz;
   const selection = parseBillTemplateSelection(template);
   if (selection?.source === 'pack' || selection?.source === 'merchant') return null;
   const normalizedTemplate = normalizeReceiptTemplate(selection?.source === 'core' ? selection.id : template);
   const result = normalizedTemplate === 'compact'
-    ? renderCompactReceiptViaDocument(order, bill, biz, {
+    ? renderCompactReceiptViaDocument(order, bill, rasterBiz, {
       columns,
       language,
       ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
@@ -1062,7 +1065,7 @@ function receiptDocumentLines(
       capabilities,
       maskCustomerPhone: true,
     })
-    : renderClassicReceiptViaDocument(order, bill, biz, {
+    : renderClassicReceiptViaDocument(order, bill, rasterBiz, {
       columns,
       language,
       ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
@@ -1394,7 +1397,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
         for (const addon of parseAddons(item.addons)) {
           const addonLines: string[] = [];
           pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits) : ''), cols, lang, capabilities);
-          lines.push(...addonLines.map((line) => addon.price ? '{FINANCIAL}' + line : line));
+          lines.push(...addonLines);
         }
       }
       if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
@@ -1603,7 +1606,7 @@ function pluginItemRows(item: any, layout: any, cols: number, prefix: string, lo
   const lineCount = Math.max(1, ...wrappedValues.map((value) => value.length));
   const rows: string[] = [];
   for (let index = 0; index < lineCount; index++) {
-    rows.push('{FINANCIAL}' + composePluginColumns(values.map((column, columnIndex) => ({
+    rows.push(composePluginColumns(values.map((column, columnIndex) => ({
       ...column,
       value: wrappedValues[columnIndex][index] || '',
     })), gap, cols));
@@ -1645,13 +1648,13 @@ function pluginSummaryRow(label: string, amount: string, layout: any, cols: numb
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
   if (Number.isInteger(labelWidth) && Number.isInteger(amountWidth) && labelWidth > 0 && amountWidth > 0) {
-    return '{FINANCIAL}' + composePluginColumns([
+    return composePluginColumns([
       { value: normalizedLabel, width: labelWidth, align: 'left', ellipsis: true },
       { value: amount, width: amountWidth, align: 'right', ellipsis: true },
     ], Math.max(0, cols - labelWidth - amountWidth), cols);
   }
   const safeLabel = truncate(normalizedLabel, cols - 12, lang, capabilities);
-  return '{FINANCIAL}' + safeLabel + rightAlign(amount, cols - safeLabel.length);
+  return safeLabel + rightAlign(amount, cols - safeLabel.length);
 }
 
 function composePluginColumns(columns: Array<PluginLineColumn & { value: string }>, gap: number, cols: number): string {
@@ -1721,8 +1724,8 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
   const label = name + qty;
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
   const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (amount.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(amount, cols - label.length)];
-  return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(amount, cols).map((line) => '{FINANCIAL}' + line)];
+  if (amount.length <= inlineWidth) return [label + rightAlign(amount, cols - label.length)];
+  return [label.trimEnd(), ...wrapValue(amount, cols)];
 }
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
@@ -1732,8 +1735,8 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits);
   const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (price.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(price, cols - label.length)];
-  return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(price, cols).map((line) => '{FINANCIAL}' + line)];
+  if (price.length <= inlineWidth) return [label + rightAlign(price, cols - label.length)];
+  return [label.trimEnd(), ...wrapValue(price, cols)];
 }
 
 export function financialRows(label: string, value: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): string[] {
@@ -1743,9 +1746,9 @@ export function financialRows(label: string, value: string, cols: number, _langu
     : normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
-    return ['{FINANCIAL}' + safeLabel + rightAlign(value, cols - safeLabel.length)];
+    return [safeLabel + rightAlign(value, cols - safeLabel.length)];
   }
-  return ['{FINANCIAL}' + safeLabel, ...wrapValue(value, cols).map((line) => '{FINANCIAL}' + line)];
+  return [safeLabel, ...wrapValue(value, cols)];
 }
 
 function wrapValue(value: string, cols: number): string[] {
@@ -1954,6 +1957,8 @@ const CURRENCY_TOKEN_RE = new RegExp(
   'g',
 );
 
+const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME)\}/g;
+
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
   if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) return text;
   return normalizeThermalTextByCapabilities(text, capabilities);
@@ -2025,7 +2030,6 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
 /**
  * Build ESC/POS bytes and classify unsupported financial rows for the receipt
  * transport guard. Receipt renderers mark amount-bearing lines with the
- * internal {FINANCIAL} token; it is stripped before bytes are emitted.
  */
 export interface RasterLineUnit {
   readonly lineIndex: number;
@@ -2136,9 +2140,8 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     line = normalizeThermalTextByCapabilities(line, capabilities);
 
     const isStoreName = line.includes('{STORE_NAME}');
-    const isFinancial = line.includes('{FINANCIAL}');
     line = line.replace(/\{STORE_NAME\}/g, '');
-    let printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
+    let printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
     const lineBold = line.includes('{BOLD}');
     const lineDH = line.includes('{DOUBLE_HEIGHT}');
     const lineDW = line.includes('{DOUBLE_WIDTH}');
@@ -2162,16 +2165,16 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         if (warnings) {
           const text = printableLine.trim();
           warnings.push({
-            field: isFinancial ? 'financial row' : isStoreName ? 'store name' : 'receipt line',
+            field: isStoreName ? 'store name' : 'receipt line',
             text,
             message: makeUnsupportedLineWarning(isStoreName, text),
-            kind: isFinancial ? 'financial' : 'line',
+            kind: 'line',
           });
         }
         continue;
       }
       line = line.replace(ESCPOS_TEXT_CONTROL_RE, '');
-      printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
+      printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
       if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
         const maxCols = lineDW ? Math.floor((options.columns as number) / 2) : (options.columns as number);
         line = truncate(printableLine, Math.max(1, maxCols));
@@ -2181,12 +2184,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     // ESC/POS mode byte bit 0 selects the character font: 0 = Font A (12x24,
     // the default), 1 = Font B (9x17, condensed). No token means Font A.
 
-    line = line.replace(/\{FINANCIAL\}/g, '');
-    line = line.replace(/\{CENTER\}/g, '').replace(/\{\/CENTER\}/g, '');
-    line = line.replace(/\{BOLD\}/g, '').replace(/\{\/BOLD\}/g, '');
-    line = line.replace(/\{DOUBLE_HEIGHT\}/g, '').replace(/\{\/DOUBLE_HEIGHT\}/g, '');
-    line = line.replace(/\{DOUBLE_WIDTH\}/g, '').replace(/\{\/DOUBLE_WIDTH\}/g, '');
-    line = line.replace(/\{FONT_B\}/g, '').replace(/\{\/FONT_B\}/g, '');
+    line = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
 
     buf.push(0x1B, 0x61, center ? 0x01 : 0x00);
 

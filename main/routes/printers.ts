@@ -441,14 +441,17 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
     }
 
     const country = settings.country || 'IN';
-    const currency = resolveTenantCurrency(settings.currency, country);
+    const currency = settings.currency || 'INR';
+    const rasterCurrency = resolveTenantCurrency(settings.currency, country);
     const business = {
       name: settings.business_name || '',
       address: settings.business_address || '',
       phone: settings.business_phone || '',
       taxRegistrationNumber: settings.tax_registration_number || '',
       currency,
+      raster_currency: rasterCurrency,
       currency_symbol: getCurrencySymbol(currency, getCountryByCode(country)?.locale) || settings.currency_symbol || '₹',
+      raster_currency_symbol: getCurrencySymbol(rasterCurrency, getCountryByCode(country)?.locale) || settings.currency_symbol || '₹',
       country,
       instagram_handle: settings.instagram_handle || '',
       customer_name: customer?.name || '',

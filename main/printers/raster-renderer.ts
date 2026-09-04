@@ -304,8 +304,7 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWi
   for (let lineIndex = 0; lineIndex < lines.length;) {
     const line = lines[lineIndex];
     const kotItem = line.includes('{DOUBLE_HEIGHT}') && line.includes('{BOLD}') && !line.includes('{/CENTER}');
-    const financialBlock = line.includes('{FINANCIAL}');
-    if (kotItem || financialBlock) {
+    if (kotItem) {
       const end = lineIndex + 1;
       let next = end;
       while (next < lines.length) {
@@ -314,7 +313,7 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWi
         if (kotItem && candidate.includes('{DOUBLE_HEIGHT}') && candidate.includes('{BOLD}')) break;
         next += 1;
       }
-      groups.push({ groupId: `${kotItem ? 'kot-item' : 'financial'}-${lineIndex}`, lineIndex, lines: lines.slice(lineIndex, next), ...(financialBlock ? { financial: true } : {}) });
+      groups.push({ groupId: `kot-item-${lineIndex}`, lineIndex, lines: lines.slice(lineIndex, next) });
       lineIndex = next;
       continue;
     }
@@ -324,7 +323,7 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWi
   return groups;
 }
 
-const RASTER_CONTROL_TOKEN_RE = /\{(?:\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)|INIT|CUT|FEED|FINANCIAL|STORE_NAME)\}/g;
+const RASTER_CONTROL_TOKEN_RE = /\{(?:\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)|INIT|CUT|FEED|STORE_NAME)\}/g;
 
 function stripRasterControlTokens(line: string): string {
   return line.replace(RASTER_CONTROL_TOKEN_RE, '');

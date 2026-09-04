@@ -270,7 +270,7 @@ export function renderBillDocumentToCompactLines(
     lines.push(...tokenLines);
     recordFinancialLines(start, tokenLines);
     totalsSourceLines.push(sourceLine ?? rendered.join(' '));
-    totalsSourceControlLines.push(...tokenLines);
+    totalsSourceControlLines.push(tokenLines[0] ?? '');
   };
   if (totals) {
     const subtotalValue = formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
@@ -324,7 +324,7 @@ export function renderBillDocumentToCompactLines(
       recordFinancialLines(lines.length, rendered);
       lines.push(...rendered);
       paymentSourceLines.push(`${rawMethodLabel} ${value}`);
-      paymentSourceControlLines.push(...rendered);
+      paymentSourceControlLines.push(rendered[0] ?? '');
     }
   }
   markGroup('payments', paymentsStart, paymentSourceLines, paymentSourceControlLines, true);

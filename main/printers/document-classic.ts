@@ -326,7 +326,7 @@ export function renderBillDocumentToClassicLines(
     target.main.push(...tokenLines);
     target.financialRanges.main.push({ start, count: tokenLines.length });
     target.sourceLines.main.push(sourceLine ?? rendered.join(' '));
-    target.sourceControlLines.main.push(...tokenLines);
+    target.sourceControlLines.main.push(tokenLines[0] ?? '');
   };
 
   const renderGrandTotal = (block: TotalsBlock, target = segmentOf('totals')): void => {
@@ -566,7 +566,7 @@ export function renderBillDocumentToClassicLines(
             segment.post.push(...rendered);
             segment.financialRanges.post.push({ start, count: rendered.length });
             segment.sourceLines.post.push(`${label} ${value}`);
-            segment.sourceControlLines.post.push(...rendered);
+            segment.sourceControlLines.post.push(rendered[0] ?? '');
           }
           if (block.pointsBalance) {
             const label = labelOf(block.pointsBalance.label);
@@ -576,7 +576,7 @@ export function renderBillDocumentToClassicLines(
             segment.post.push(...rendered);
             segment.financialRanges.post.push({ start, count: rendered.length });
             segment.sourceLines.post.push(`${label} ${value}`);
-            segment.sourceControlLines.post.push(...rendered);
+            segment.sourceControlLines.post.push(rendered[0] ?? '');
           }
         }
         break;
@@ -592,7 +592,7 @@ export function renderBillDocumentToClassicLines(
           segment.main.push(...rendered);
           segment.financialRanges.main.push({ start, count: rendered.length });
           segment.sourceLines.main.push(`${rawMethodLabel} ${value}`);
-          segment.sourceControlLines.main.push(...rendered);
+          segment.sourceControlLines.main.push(rendered[0] ?? '');
         }
         break;
       }

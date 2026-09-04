@@ -191,11 +191,15 @@ async function run(): Promise<void> {
   const addressRequest = classicHeaderRequests.find((request) => request.text.includes('آدرس فارسی'));
   assert.equal(addressRequest?.align, 'center');
   assert.equal(classicHeaderRequests.some((request) => request.text.startsWith('** ') && request.text.endsWith(' **')), true);
-  const longFinancialLabel = 'برچسب مالی بسیار طولانی';
+  const longFinancialLabel = 'برچسب مالی بسیار طولانی برای مبلغ نهایی';
   const longFinancialDocument = {
     ...compactDocument,
     blocks: compactDocument.blocks.map((block) => block.kind === 'totals'
-      ? { ...block, subtotal: { ...block.subtotal, amount: 1.23, label: { ...block.subtotal.label, primary: longFinancialLabel } } }
+      ? {
+        ...block,
+        subtotal: { ...block.subtotal, amount: 1.23, label: { ...block.subtotal.label, primary: longFinancialLabel } },
+        grandTotal: { ...block.grandTotal, amount: 2.34, label: { ...block.grandTotal.label, primary: 'جمع کل' } },
+      }
       : block),
   };
   const longFinancialGroups: any[] = [];
@@ -219,6 +223,7 @@ async function run(): Promise<void> {
     },
   }, longFinancialLines, caps, 'long-financial-source', longFinancialGroups);
   assert.equal(longFinancialRequests.some((request) => request.text.includes(longFinancialLabel) && request.text.includes('$1.23')), true);
+  assert.equal(longFinancialRequests.some((request) => request.text === 'جمع کل $2.34' && request.style === 'bold'), true);
   const emptyClassicDocument = {
     ...compactDocument,
     blocks: compactDocument.blocks.map((block) => block.kind === 'item-table'
@@ -799,6 +804,17 @@ async function run(): Promise<void> {
     rasterFailures: [{ lineIndex: 0, lineCount: 2, financial: true }],
   });
   assert.equal(refusedFailedGroup.length, 0);
+  const encodeFailureWarnings: any[] = [];
+  const encodeFailure = buildEscPos(['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], false, {
+    capabilities: caps,
+    rasterUnits: [{
+      lineIndex: 0,
+      lineCount: 2,
+      unit: { ...unit, financial: false, bands: [{ ...twoRows, pixels: new Uint8Array(1) }] },
+    }],
+  }, encodeFailureWarnings);
+  assert.equal(encodeFailureWarnings.some((warning) => warning.kind === 'line'), true);
+  assert.equal(escPosToText(encodeFailure).includes('555-0100'), false);
 
   const request = {
     version: 1 as const,

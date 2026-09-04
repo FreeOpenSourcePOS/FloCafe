@@ -2058,6 +2058,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   const rasterByLine = new Map<number, typeof rasterEntries[number]['unit']>();
   const rasterLineCounts = new Map<number, number>();
   const rasterRanges: Array<{ start: number; end: number }> = [];
+  const failedRasterRanges: Array<{ start: number; end: number }> = [];
   for (const entry of rasterEntries) rasterLineCounts.set(entry.lineIndex, (rasterLineCounts.get(entry.lineIndex) ?? 0) + 1);
   const encodedRasterByLine = new Map<number, Uint8Array>();
   let financialRasterFailure = rasterFailures.some((failure) => failure.financial);
@@ -2088,6 +2089,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       rasterByLine.set(entry.lineIndex, entry.unit);
       rasterRanges.push({ start: entry.lineIndex, end: entry.lineIndex + lineCount });
     } catch (error) {
+      failedRasterRanges.push({ start: entry.lineIndex, end: entry.lineIndex + lineCount });
       if (financial) financialRasterFailure = true;
       const message = error instanceof Error ? error.message : String(error);
       if (!warnings) throw new Error(message);
@@ -2112,6 +2114,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       && Number.isSafeInteger(failure.lineCount)
       && failure.lineIndex <= lineIndex
       && lineIndex < failure.lineIndex + failure.lineCount)) continue;
+    if (failedRasterRanges.some((range) => range.start <= lineIndex && lineIndex < range.end)) continue;
     let line = lines[lineIndex];
     const rasterUnit = rasterByLine.get(lineIndex);
     if (rasterUnit) {

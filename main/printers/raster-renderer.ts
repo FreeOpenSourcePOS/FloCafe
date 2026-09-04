@@ -150,15 +150,18 @@ export class ChromiumRasterRenderer {
   private readonly onResult = (event: Electron.IpcMainEvent, result: unknown): void => {
     if (!this.isSurfaceSender(event.sender) || !result || typeof result !== 'object') return;
     const message = result as Partial<RasterIpcResultMessage>;
-    const candidate = message.result;
-    if (message.version !== 1 || !candidate || candidate.version !== 1 || typeof candidate.requestId !== 'string') return;
-    const entry = this.pending.get(candidate.requestId);
+    const candidate: unknown = message.result;
+    if (!candidate || typeof candidate !== 'object') return;
+    const candidateRecord = candidate as { version?: unknown; requestId?: unknown };
+    if (message.version !== 1 || candidateRecord.version !== 1 || typeof candidateRecord.requestId !== 'string') return;
+    const requestId = candidateRecord.requestId;
+    const entry = this.pending.get(requestId);
     if (!entry) return;
     clearTimeout(entry.timer);
-    this.pending.delete(candidate.requestId);
+    this.pending.delete(requestId);
     entry.resolve(isRasterRenderResult(candidate)
       ? candidate
-      : { version: 1, requestId: candidate.requestId, ok: false, code: 'render-failed', detail: 'Raster renderer returned an invalid result' });
+      : { version: 1, requestId, ok: false, code: 'render-failed', detail: 'Raster renderer returned an invalid result' });
   };
   private readonly onReady = (event: Electron.IpcMainEvent): void => {
     if (this.isSurfaceSender(event.sender)) this.settleReady();
@@ -313,11 +316,11 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWi
         if (kotItem && candidate.includes('{DOUBLE_HEIGHT}') && candidate.includes('{BOLD}')) break;
         next += 1;
       }
-      groups.push({ groupId: `kot-item-${lineIndex}`, lineIndex, lines: lines.slice(lineIndex, next) });
+      groups.push({ groupId: `kot-item-${lineIndex}`, lineIndex, lineCount: next - lineIndex, lines: lines.slice(lineIndex, next) });
       lineIndex = next;
       continue;
     }
-    groups.push({ groupId: `line-${lineIndex}`, lineIndex, lines: [line] });
+    groups.push({ groupId: `line-${lineIndex}`, lineIndex, lineCount: 1, lines: [line] });
     lineIndex += 1;
   }
   return groups;
@@ -439,7 +442,7 @@ export async function renderUnsupportedRasterLines(
           const layoutLine = range.sourceControlLines?.[offset]
             ?? range.lines[Math.min(offset, range.lines.length - 1)]
             ?? '';
-          const request = requestForRasterLine(layoutLine, range.lineIndex + offset, capabilities, requestPrefix, financial, sourceLines[offset]);
+          const request = requestForRasterLine(layoutLine, range.lineIndex + offset, capabilities, requestPrefix, financial, range.sourceLines ? sourceLines[offset] : undefined);
           if (!request) continue;
           const result = await renderRasterSemanticUnit(renderer, request, financial);
           if (!result.ok) {

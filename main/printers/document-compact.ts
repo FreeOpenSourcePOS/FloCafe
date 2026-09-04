@@ -241,7 +241,7 @@ export function renderBillDocumentToCompactLines(
         const addonStart = lines.length;
         lines.push(...addonLines);
         if (addon.price) recordFinancialLines(addonStart, addonLines);
-        const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
+        const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
         sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
         sourceControlLines.push(addonLines[0] ?? '');
       }
@@ -274,10 +274,10 @@ export function renderBillDocumentToCompactLines(
   };
   if (totals) {
     const subtotalValue = formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    pushTotalRow(financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities), false, `${labelOf(totals.subtotal.label)} ${subtotalValue}`);
+    pushTotalRow(financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities), false, `${labelOf(totals.subtotal.label)} ${subtotalValue.trimStart()}`);
     if (totals.discount) {
       const discountValue = '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities), false, `${labelOf(totals.discount.label)} ${discountValue}`);
+      pushTotalRow(financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities), false, `${labelOf(totals.discount.label)} ${discountValue.trimStart()}`);
     }
     if (breakdown && breakdown.lines.length > 0) {
       for (const line of breakdown.lines) {
@@ -285,26 +285,26 @@ export function renderBillDocumentToCompactLines(
         const rawLabel = labelOf(line.label) + rateSuffix;
         const label = truncate(rawLabel, cols - 12, options.language, options.capabilities);
         const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
-        pushTotalRow(financialRows(label, value, cols, options.language, options.capabilities), false, `${rawLabel} ${value}`);
+        pushTotalRow(financialRows(label, value, cols, options.language, options.capabilities), false, `${rawLabel} ${value.trimStart()}`);
       }
     } else if (totals.tax) {
       const value = formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.tax.label)} ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.tax.label)} ${value.trimStart()}`);
     }
     if (totals.serviceCharge) {
       const value = formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.serviceCharge.label)} ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.serviceCharge.label)} ${value.trimStart()}`);
     }
     if (totals.deliveryCharge) {
       const value = formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.deliveryCharge.label)} ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.deliveryCharge.label)} ${value.trimStart()}`);
     }
     if (totals.packagingCharge) {
       const value = formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.packagingCharge.label)} ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.packagingCharge.label)} ${value.trimStart()}`);
     }
     const grandTotalValue = formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    pushTotalRow(financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities), true, `${labelOf(totals.grandTotal.label)} ${grandTotalValue}`);
+    pushTotalRow(financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities), true, `${labelOf(totals.grandTotal.label)} ${grandTotalValue.trimStart()}`);
   }
   markGroup('totals', totalsStart, totalsSourceLines, totalsSourceControlLines, true);
 
@@ -323,7 +323,7 @@ export function renderBillDocumentToCompactLines(
       const rendered = financialRows(methodLabel, value, cols, options.language, options.capabilities);
       recordFinancialLines(lines.length, rendered);
       lines.push(...rendered);
-      paymentSourceLines.push(`${rawMethodLabel} ${value}`);
+      paymentSourceLines.push(`${rawMethodLabel} ${value.trimStart()}`);
       paymentSourceControlLines.push(rendered[0] ?? '');
     }
   }

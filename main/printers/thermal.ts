@@ -24,8 +24,8 @@ import {
   sanitizeTemplateLabelText,
   type TemplateChargeRowId,
 } from '../print/template-labels';
-import { renderClassicReceiptViaDocument } from './document-classic';
-import { renderCompactReceiptViaDocument } from './document-compact';
+import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from './document-classic';
+import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from './document-compact';
 import { renderKotDocumentToLines, renderKotViaDocument } from './document-kot';
 import {
   GENERIC_THERMAL_CAPABILITIES,
@@ -2065,6 +2065,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   for (const entry of rasterEntries) rasterLineCounts.set(entry.lineIndex, (rasterLineCounts.get(entry.lineIndex) ?? 0) + 1);
   const encodedRasterByLine = new Map<number, Uint8Array>();
   let financialRasterFailure = rasterFailures.some((failure) => failure.financial);
+  let financialTextFailure = false;
   for (const entry of rasterEntries) {
     const lineCount = entry.lineCount ?? 1;
     const lineIndexValid = Number.isSafeInteger(entry.lineIndex) && entry.lineIndex >= 0
@@ -2184,6 +2185,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         );
       const codePageRepresentable = isThermalTextRepresentable(textWithoutSupportedCurrency, capabilities);
       if (!arabicOnly && !codePageRepresentable) {
+        if (isFinancial) financialTextFailure = true;
         if (warnings) {
           const text = printableLine.trim();
           warnings.push({
@@ -2232,7 +2234,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     buf.push(0x0A);
   }
 
-  return Buffer.from(buf);
+  return financialTextFailure ? Buffer.alloc(0) : Buffer.from(buf);
 }
 
 /** Convert the command subset emitted by buildEscPos() into a paperless text preview. */

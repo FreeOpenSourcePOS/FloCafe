@@ -111,7 +111,7 @@ export function renderMerchantReceiptViaDocument(
       message: `Merchant template ${templateId} is not active; rendered with the classic layout.`,
     });
     return finish(
-      renderDocument(buildBillDocument(buildBillPrintData(order, bill, business, opts.isReprint), printContext),
+      renderDocument(buildBillDocument(buildBillPrintData(order, bill, business, opts.isReprint), printContext)),
       true,
     );
   }

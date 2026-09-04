@@ -80,6 +80,7 @@ function capability(): ThermalPrinterCapabilities {
 
 async function run(): Promise<void> {
   const twoRows: RasterBand = { widthDots: 9, heightDots: 2, pixels: Uint8Array.from([1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1]) };
+  const unit = { unitId: 'row-1', financial: false, complete: true, bands: [twoRows] } as const;
   assert.deepEqual(Array.from(encodeGsV0Band(twoRows, 2)), [
     0x1D, 0x76, 0x30, 0x00, 0x02, 0x00, 0x02, 0x00,
     0x81, 0x80, 0x40, 0x80,
@@ -283,7 +284,7 @@ async function run(): Promise<void> {
       return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
     },
   }, compactPaymentLines, caps, 'compact-payment-source', [compactPaymentGroups.find((group) => group.groupId === 'payments')]);
-  assert.equal(compactPaymentRequests.some((request) => request.text === 'مدفوع'), true);
+  assert.equal(compactPaymentRequests.some((request) => request.text === 'مدفوع $12.34'), true);
   assert.equal(compactPaymentRequests.some((request) => request.text.includes(':')), false);
   const financialDocument = {
     ...compactDocument,
@@ -312,7 +313,7 @@ async function run(): Promise<void> {
       return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
     },
   }, financialLines, caps, 'financial-source', [financialGroups.find((group) => group.groupId === 'totals')]);
-  const grandTotalRequests = financialRequests.filter((request) => request.text === 'جمع کل');
+  const grandTotalRequests = financialRequests.filter((request) => request.text === 'جمع کل $0.00');
   assert.equal(grandTotalRequests.length, 1);
   assert.equal(grandTotalRequests[0].style, 'bold');
   assert.equal(financialRequests.some((request) => request.text.includes(':')), false);
@@ -327,7 +328,7 @@ async function run(): Promise<void> {
     locale: 'fa-IR',
     currencySymbol: '',
     trimDecimals: false,
-    resolveLabel: (conceptId) => ({ conceptId, primary: conceptId }),
+    resolveLabel: (conceptId) => conceptId,
   });
   assert.equal(isKotDocument(kotDocument), true);
   assert.equal(isKotDocument({ ...kotDocument, blocks: [kotDocument.blocks[1], kotDocument.blocks[0]] }), false);
@@ -372,7 +373,6 @@ async function run(): Promise<void> {
   assert.equal(normalizeThermalText('Müsli فارسی', caps), 'Müsli فارسی');
   assert.equal(itemRows({ product_name: longUnsupportedName, quantity: 1, total: 1 }, 4, 4, 12, '₹', 'en-US', false, 'fa', 2, caps)[0].includes('..'), false);
   assert.equal(financialRows('برچسب مالی بسیار طولانی', '1', 12, 'fa', caps)[0].includes('..'), false);
-  const unit = { unitId: 'row-1', financial: false, complete: true, bands: [twoRows] } as const;
   const native = Uint8Array.from([0x1B, 0x40, 0x41, 0x0A]);
   const mixed = encodeMixedPrintParts([{ kind: 'native', bytes: native }, { kind: 'raster', unit }], caps, 'partial');
   assert.deepEqual(Array.from(mixed.slice(0, native.length)), Array.from(native));
@@ -398,7 +398,7 @@ async function run(): Promise<void> {
     capabilities: caps,
     rasterUnits: [{ lineIndex: 0, unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }],
   }, invalidRasterWarnings);
-  assert.equal(invalidRasterEscPos.length > 0, true);
+  assert.equal(invalidRasterEscPos.length, 0);
   assert.equal(invalidRasterWarnings[0]?.kind, 'line');
   assert.throws(() => buildEscPos(['fallback'], false, {
     capabilities: caps,
@@ -411,10 +411,10 @@ async function run(): Promise<void> {
   }, financialWarnings);
   assert.equal(refused.length, 0);
   assert.equal(financialWarnings[0]?.kind, 'financial');
-  assert.equal(buildEscPos(['raster'], false, {
+  assert.throws(() => buildEscPos(['raster'], false, {
     capabilities: caps,
     rasterUnits: [{ lineIndex: 0, unit: { ...unit, financial: true, complete: false } }],
-  }).length, 0);
+  }), /incomplete/);
   const metadataWarnings: any[] = [];
   assert.equal(buildEscPos(['raster'], false, {
     capabilities: caps,
@@ -472,16 +472,16 @@ async function run(): Promise<void> {
   assert.equal(renderRequests[0].direction, 'rtl');
   assert.equal(renderRequests[0].align, 'left');
   assert.equal(renderRequests.length, 2);
-  const financialRequests: any[] = [];
+  const financialUnitRequests: any[] = [];
   await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {
-      financialRequests.push(rasterRequest);
+      financialUnitRequests.push(rasterRequest);
       return { version: 1, requestId: (rasterRequest as any).requestId, ok: true, unit: { unitId: (rasterRequest as any).requestId, financial: true, complete: true, bands: [twoRows] } };
     },
   }, ['{FINANCIAL}فارسی {FINANCIAL}'], caps, 'financial', [
     { groupId: 'financial', lineIndex: 0, lineCount: 1, sourceLines: ['فارسی {FINANCIAL}'], financial: true },
   ]);
-  assert.equal(financialRequests[0].financial, true);
+  assert.equal(financialUnitRequests[0].financial, true);
   const alignedStyleRequests: any[] = [];
   await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {
@@ -583,7 +583,7 @@ async function run(): Promise<void> {
     locale: 'fa-IR',
     currencySymbol: '',
     trimDecimals: false,
-    resolveLabel: (conceptId) => ({ conceptId, primary: conceptId }),
+    resolveLabel: (conceptId) => conceptId === 'pos.orderNumber' ? 'Order #: {number}' : conceptId,
   });
   renderKotDocumentToLines(longKotDocument, {
     columns: 42,

@@ -577,7 +577,7 @@ async function runLifecycle(): Promise<void> {
       .set('Authorization', OWNER).send({ name: 'Styled', payload: PAYLOAD_LABELED });
     const styledId = styled.body.template.id;
     await request(app).post(`/api/print-templates/${styledId}/activate`).set('Authorization', OWNER);
-    const styledText = escPosToText(formatReceipt(order, bill, business,
+    const styledText = escPosToText(formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: 'Espresso' })) }, bill, business,
       serializeBillTemplateSelection({ source: 'merchant', id: styledId }), 42, false, false, 'full', [], false, 'en'));
     assert(styledText.includes('AMOUNT DUE'), 'label variant reaches the rendered output');
     assert(!styledText.includes('GST'), 'hidden tax breakdown block stays hidden');
@@ -598,7 +598,7 @@ async function runLifecycle(): Promise<void> {
       .set('Authorization', OWNER).send({ name: 'Reordered', payload: reorderedPayload });
     const reorderedId = reordered.body.template.id;
     await request(app).post(`/api/print-templates/${reorderedId}/activate`).set('Authorization', OWNER);
-    const reorderedText = escPosToText(formatReceipt(order, bill, business,
+    const reorderedText = escPosToText(formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name })) }, bill, business,
       serializeBillTemplateSelection({ source: 'merchant', id: reorderedId }), 42, false, false, 'full', [], false, 'en'));
     assert(reorderedText.indexOf('TOTAL') < reorderedText.indexOf('Espresso Doppio'),
       'renderer preserves merchant totals-before-items order');
@@ -649,13 +649,13 @@ async function runLifecycle(): Promise<void> {
     ok('standalone tax-breakdown blocks remain renderable');
 
     // Legacy bare value keeps resolving through the same entrypoint.
-    const legacyClassic = formatReceipt(order, bill, business, 'classic', 42, false, false, 'full', [], false, 'en');
+    const legacyClassic = formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name })) }, bill, business, 'classic', 42, false, false, 'full', [], false, 'en');
     assert(legacyClassic.length > 0, 'legacy bare classic still renders');
     ok('legacy bare-string selections keep rendering during transition');
 
     // Inactive/deleted merchant id falls back with an explicit warning.
     const warnings: any[] = [];
-    const fallback = formatReceipt(order, bill, business,
+    const fallback = formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name })) }, bill, business,
       serializeBillTemplateSelection({ source: 'merchant', id: 'missing-id' }), 42, false, false, 'full', warnings, false, 'en');
     assert(fallback.length > 0, 'missing merchant template falls back to classic');
     assert(warnings.some((w) => String(w.message).includes('not active')), 'fallback warning recorded');

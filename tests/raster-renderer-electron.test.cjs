@@ -32,6 +32,7 @@ async function run() {
       window.FontFace = class extends window.__floNativeFontFace {
         load() { return Promise.reject(new Error('bundled font unavailable')); }
       };
+      true;
     `);
     const fontFailure = await renderer.render({
       version: 1,
@@ -57,6 +58,7 @@ async function run() {
       window.FontFace = class extends window.__floNativeFontFace {
         load() { return Promise.resolve(this); }
       };
+      true;
     `);
     const base = {
       version: 1,
@@ -65,6 +67,7 @@ async function run() {
       maxBandHeight: 200,
       direction: 'rtl',
       align: 'center',
+      style: 'normal',
       financial: false,
       maxLines: 4,
       bundledFont: font,

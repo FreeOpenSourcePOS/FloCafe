@@ -297,8 +297,8 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
       const sourceControlLines = [rowLines[0] ?? ''];
       let rowLineOffset = 1;
       for (const addon of row.addons) {
-        const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
-        sourceLines.push(`  + ${addon.name.text}${quantitySuffix}`);
+        const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
+        sourceLines.push(`  + ${addon.text}${quantitySuffix}`);
         sourceControlLines.push(rowLines[rowLineOffset] ?? '');
         rowLineOffset += 1;
       }

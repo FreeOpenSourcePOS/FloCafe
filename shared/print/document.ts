@@ -925,7 +925,7 @@ function isKotDocumentBlock(value: unknown): value is KotDocumentBlock {
     && isFiniteNumber(row.quantity)
     && isDirectionalText(row.name)
     && Array.isArray(row.addons)
-    && row.addons.every((addon) => isDirectionalText(addon)
+    && row.addons.every((addon) => isRecord(addon) && isDirectionalText(addon)
       && (addon.quantity === undefined || isFiniteNumber(addon.quantity)))
     && isOptionalDirectionalText(row.specialInstructions));
 }

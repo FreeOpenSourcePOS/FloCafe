@@ -223,3 +223,32 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
     && /^[A-Za-z0-9 _-]{1,64}$/.test(request.bundledFont.family)
     && isBundledFontDataUrl(request.bundledFont.dataUrl);
 }
+
+function isRasterBand(value: unknown): value is RasterBand {
+  if (!value || typeof value !== 'object') return false;
+  const band = value as Partial<RasterBand>;
+  return Number.isSafeInteger(band.widthDots) && (band.widthDots as number) > 0
+    && Number.isSafeInteger(band.heightDots) && (band.heightDots as number) > 0
+    && band.pixels instanceof Uint8Array
+    && band.pixels.length === (band.widthDots as number) * (band.heightDots as number);
+}
+
+function isRasterSemanticUnit(value: unknown): value is RasterSemanticUnit {
+  if (!value || typeof value !== 'object') return false;
+  const unit = value as Partial<RasterSemanticUnit>;
+  return typeof unit.unitId === 'string'
+    && typeof unit.financial === 'boolean'
+    && typeof unit.complete === 'boolean'
+    && Array.isArray(unit.bands)
+    && unit.bands.every(isRasterBand);
+}
+
+export function isRasterRenderResult(value: unknown): value is RasterRenderResult {
+  if (!value || typeof value !== 'object') return false;
+  const result = value as Partial<RasterRenderResult>;
+  if (result.version !== 1 || typeof result.requestId !== 'string') return false;
+  if (result.ok === true) return isRasterSemanticUnit(result.unit);
+  return result.ok === false
+    && (result.code === 'invalid-request' || result.code === 'font-unavailable' || result.code === 'render-failed')
+    && typeof result.detail === 'string';
+}

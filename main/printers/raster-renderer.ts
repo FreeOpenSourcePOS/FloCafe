@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron';
 import * as path from 'node:path';
 import {
   isRasterRenderRequest,
+  isRasterRenderResult,
   type RasterIpcResultMessage,
   type RasterRenderRequest,
   type RasterRenderResult,
@@ -135,7 +136,9 @@ export class ChromiumRasterRenderer {
     if (!entry) return;
     clearTimeout(entry.timer);
     this.pending.delete(candidate.requestId);
-    entry.resolve(candidate);
+    entry.resolve(isRasterRenderResult(candidate)
+      ? candidate
+      : { version: 1, requestId: candidate.requestId, ok: false, code: 'render-failed', detail: 'Raster renderer returned an invalid result' });
   };
   private readonly onReady = (event: Electron.IpcMainEvent): void => {
     if (this.isSurfaceSender(event.sender)) this.settleReady();
@@ -208,6 +211,10 @@ export class ChromiumRasterRenderer {
     await this.ready;
     if (this.readyError) return { version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: this.readyError };
     return await new Promise<RasterRenderResult>((resolve) => {
+      if (this.pending.has(request.requestId)) {
+        resolve({ version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: 'Duplicate raster request ID' });
+        return;
+      }
       const timer = setTimeout(() => {
         this.pending.delete(request.requestId);
         resolve({ version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: 'Raster rendering timed out' });

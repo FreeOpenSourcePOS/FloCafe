@@ -1771,16 +1771,17 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   const encodedRasterByLine = new Map<number, Uint8Array>();
   let financialRasterFailure = false;
   for (const entry of options.rasterUnits ?? []) {
+    const financial = entry.unit.financial || lines[entry.lineIndex]?.includes('{FINANCIAL}') === true;
     try {
       if (!rasterCapabilityEnabled(capabilities)) throw new Error('Raster output is not enabled for this printer profile');
       encodedRasterByLine.set(entry.lineIndex, encodeRasterUnits([entry.unit], capabilities));
     } catch (error) {
-      if (entry.unit.financial) financialRasterFailure = true;
+      if (financial) financialRasterFailure = true;
       if (warnings) warnings.push({
-        field: entry.unit.financial ? 'financial row' : 'receipt line',
+        field: financial ? 'financial row' : 'receipt line',
         text: entry.unit.unitId,
         message: error instanceof Error ? error.message : String(error),
-        kind: entry.unit.financial ? 'financial' : 'line',
+        kind: financial ? 'financial' : 'line',
       });
     }
   }

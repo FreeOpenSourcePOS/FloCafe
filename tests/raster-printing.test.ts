@@ -5,6 +5,7 @@ import {
   encodeMixedPrintParts,
   encodeRasterFeedAndCut,
   isRasterRenderRequest,
+  isRasterRenderResult,
   rasterCapabilityEnabled,
   type RasterBand,
 } from '../shared/print/raster';
@@ -82,6 +83,12 @@ async function run(): Promise<void> {
     capabilities: caps,
     rasterUnits: [{ lineIndex: 0, unit: { ...unit, financial: true, complete: false } }],
   }).length, 0);
+  const metadataWarnings: any[] = [];
+  assert.equal(buildEscPos(['{FINANCIAL}raster'], false, {
+    capabilities: caps,
+    rasterUnits: [{ lineIndex: 0, unit: { ...unit, complete: false } }],
+  }, metadataWarnings).length, 0);
+  assert.equal(metadataWarnings[0]?.kind, 'financial');
 
   const diagnostic = buildRasterDiagnosticBands(17, 32);
   assert.deepEqual(diagnostic.map((band) => band.heightDots), [32, 16, 32, 16, 24]);
@@ -105,6 +112,8 @@ async function run(): Promise<void> {
   assert.equal(isRasterRenderRequest(request), true);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: 'https://example.invalid/font.woff2' } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, family: 'bad;url(x)' } }), false);
+  assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: true }), false);
+  assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: false, code: 'render-failed', detail: 'failed' }), true);
 
   console.log('Raster encoder and mixed-mode contract checks passed.');
 }

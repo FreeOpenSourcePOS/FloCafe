@@ -1263,6 +1263,9 @@ export default function SettingsPage() {
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
   const [cashDrawerMethodsOpen, setCashDrawerMethodsOpen] = useState(false);
+  // Guards savePrinting from sending cash_drawer_pulse_enabled/_methods
+  // before their real values have loaded — see the load effect below.
+  const [cashDrawerPulseSettingsLoaded, setCashDrawerPulseSettingsLoaded] = useState(false);
   const savePrinting = async (silent: boolean = false) => {
     // Build typed policies from the form and mirror them into the store for
     // renderer-side reads (renderers adopt them in #442+).
@@ -1300,12 +1303,18 @@ export default function SettingsPage() {
     posSettings.setBillShowCustomerPhone(printingForm.billShowCustomerPhone);
     posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
     await Promise.all([
-      api.put('/settings/cash_drawer_pulse_enabled', { value: printingForm.cashDrawerPulseEnabled ? 'true' : 'false' }),
-      api.put('/settings/cash_drawer_pulse_methods', {
-        value: printingForm.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS
-          ? CASH_DRAWER_PULSE_ALL_METHODS
-          : JSON.stringify(printingForm.cashDrawerPulseMethods),
-      }),
+      // Their current values are only known once cashDrawerPulseSettingsLoaded
+      // is true — saving before that (or after the load failed) would send
+      // the form's initial defaults and silently narrow a migrated store's
+      // settings back down (see the load effect above).
+      ...(cashDrawerPulseSettingsLoaded ? [
+        api.put('/settings/cash_drawer_pulse_enabled', { value: printingForm.cashDrawerPulseEnabled ? 'true' : 'false' }),
+        api.put('/settings/cash_drawer_pulse_methods', {
+          value: printingForm.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS
+            ? CASH_DRAWER_PULSE_ALL_METHODS
+            : JSON.stringify(printingForm.cashDrawerPulseMethods),
+        }),
+      ] : []),
       api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' }),
       api.put('/settings/bill_language_policy', { value: JSON.stringify(billLanguagePolicy) }),
       api.put('/settings/kot_language_policy', { value: JSON.stringify(kotLanguagePolicy) }),
@@ -1747,29 +1756,35 @@ export default function SettingsPage() {
       setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
       setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
     }).catch(() => {});
-    api.get('/settings/cash_drawer_pulse_enabled').then((res) => {
-      const enabled = res.data.setting?.value === 'true';
-      setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
-      setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
-    }).catch(() => {});
-    api.get('/settings/cash_drawer_pulse_methods').then((res) => {
-      const raw = res.data.setting?.value;
+    // Loaded together, gated on both succeeding: savePrinting always
+    // re-sends whatever is in form state, and the initial defaults here
+    // (false / ['cash','card']) are exactly the values that would silently
+    // narrow a migrated store's settings if a save raced ahead of this load
+    // — or ran after it failed. cashDrawerPulseSettingsLoaded blocks that.
+    Promise.all([
+      api.get('/settings/cash_drawer_pulse_enabled'),
+      api.get('/settings/cash_drawer_pulse_methods'),
+    ]).then(([enabledRes, methodsRes]) => {
+      const enabled = enabledRes.data.setting?.value === 'true';
+      const raw = methodsRes.data.setting?.value;
+      let methods: string[] | 'all' = ['cash', 'card'];
       if (raw === CASH_DRAWER_PULSE_ALL_METHODS) {
-        setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: CASH_DRAWER_PULSE_ALL_METHODS }));
-        setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: CASH_DRAWER_PULSE_ALL_METHODS }));
-        return;
+        methods = CASH_DRAWER_PULSE_ALL_METHODS;
+      } else {
+        try {
+          const parsed = JSON.parse(raw || '[]');
+          if (Array.isArray(parsed)) {
+            const valid = parsed.filter((method: unknown): method is string => typeof method === 'string');
+            // A non-empty array that contains no valid strings (corrupt/legacy
+            // value) restores the safe defaults; an intentionally empty array —
+            // every method deselected — stays empty.
+            methods = parsed.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
+          }
+        } catch { /* Use the safe defaults. */ }
       }
-      try {
-        const methods = JSON.parse(raw || '[]');
-        if (!Array.isArray(methods)) return;
-        const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
-        // A non-empty array that contains no valid strings (corrupt/legacy
-        // value) restores the safe defaults; an intentionally empty array —
-        // every method deselected — stays empty.
-        const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
-        setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
-        setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
-      } catch { /* Use the safe defaults. */ }
+      setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: enabled, cashDrawerPulseMethods: methods }));
+      setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled, cashDrawerPulseMethods: methods }));
+      setCashDrawerPulseSettingsLoaded(true);
     }).catch(() => {});
     api.get('/settings/bill_language_policy').then((res) => {
       const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);

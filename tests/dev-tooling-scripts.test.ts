@@ -377,6 +377,12 @@ exit 0
 
   assert.ok(ciConfig?.jobs?.['linux-tests'], 'ci.yml must define a "linux-tests" job');
   const linuxTestsJob = ciConfig.jobs['linux-tests'];
+  for (const jobName of ['dependency-review', 'changes', 'tax-category-invariant', 'linux-baseline', 'linux-tests', 'e2e-playwright', 'native-e2e-playwright']) {
+    assert.strictEqual(ciConfig.jobs[jobName]?.['runs-on'], 'ubuntu-24.04', `${jobName} must use the pinned Ubuntu image`);
+  }
+  assert.strictEqual(ciConfig.jobs['linux-baseline']?.['timeout-minutes'], 25);
+  assert.strictEqual(linuxTestsJob['runs-on'], 'ubuntu-24.04');
+  assert.strictEqual(linuxTestsJob['timeout-minutes'], 25);
   assert.strictEqual(
     linuxTestsJob.name,
     'Core Test Suite (Shard ${{ matrix.shard_number }}/2)',
@@ -400,6 +406,14 @@ exit 0
   assert.ok(
     linuxTestsJob.steps.some((step: any) => step.name === 'Install frontend dependencies' && step['working-directory'] === 'frontend'),
     'linux-tests must include frontend dependencies installation step',
+  );
+
+  const linuxBaselineJob = ciConfig.jobs['linux-baseline'];
+  const baselineBuildStep = linuxBaselineJob.steps.find((step: any) => step.name === 'Build frontend');
+  assert.strictEqual(
+    baselineBuildStep.run.trim(),
+    'cd frontend && npx cross-env NEXT_BUILD_MODE=desktop npm run build',
+    'linux-baseline must reuse its installed frontend dependencies for the build',
   );
 
   console.log('✓ CI workflow linux-tests matrix and sharding configuration verified');

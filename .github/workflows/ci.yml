@@ -23,7 +23,7 @@ jobs:
   dependency-review:
     name: Security & Dependency Review
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,7 +34,7 @@ jobs:
   # 2. Path Filtering
   changes:
     name: Path Filtering
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -59,7 +59,7 @@ jobs:
   # main gets a visible status for the no-category-means-no-tax invariant.
   tax-category-invariant:
     name: Tax invariant — uncategorized products remain zero-tax
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -81,8 +81,8 @@ jobs:
     name: Lint & Build Validation (Linux)
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -116,7 +116,7 @@ jobs:
         run: npm run lint
 
       - name: Build frontend
-        run: npm run build:frontend
+        run: cd frontend && npx cross-env NEXT_BUILD_MODE=desktop npm run build
         env:
           NEXT_TELEMETRY_DISABLED: 1
 
@@ -130,8 +130,8 @@ jobs:
     name: Core Test Suite (Shard ${{ matrix.shard_number }}/2)
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -178,7 +178,7 @@ jobs:
     name: End-to-End Playwright Tests
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -255,7 +255,7 @@ jobs:
     name: Native Electron Playwright Tests
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

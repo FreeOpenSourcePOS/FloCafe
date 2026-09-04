@@ -66,7 +66,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
     items: ticketItems.map((item: any) => ({
       productName: String(item?.product_name ?? ''),
       quantity: Number(item?.quantity) || 0,
-      addons: (Array.isArray(item?.addons) ? item.addons : []).map((addon: any) => ({
+      addons: parseKotAddons(item?.addons).map((addon: any) => ({
         name: String(addon?.name ?? ''),
         ...(typeof addon?.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
           ? { quantity: addon.quantity }
@@ -75,6 +75,20 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
       specialInstructions: String(item?.special_instructions ?? ''),
     })),
   };
+}
+
+function parseKotAddons(value: unknown): Array<{ name: string; quantity?: number }> {
+  let candidates = value;
+  if (typeof value === 'string') {
+    try {
+      candidates = JSON.parse(value);
+    } catch {
+      candidates = null;
+    }
+  }
+  if (!Array.isArray(candidates)) return [];
+  return candidates.filter((addon): addon is { name: string; quantity?: number } =>
+    Boolean(addon) && typeof addon === 'object' && typeof (addon as { name?: unknown }).name === 'string');
 }
 
 /**
@@ -154,7 +168,7 @@ function formatOrderNumberLabel(label: SemanticLabel, orderNumber: string, langu
   return thermalSafeText(localized, `Order #${fallbackOrderNumber}`, language, arabicShaping, capabilities);
 }
 
-function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions, sourceLines?: string[]): string[] {
+function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOptions, sourceLines?: string[], sourceControlLines?: string[]): string[] {
   const cols = options.columns;
   const lines: string[] = [];
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
@@ -193,19 +207,25 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
 
   lines.push('{CENTER}{BOLD}' + truncateShapedLine(banner, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
   sourceLines?.push(labelOf(header.banner));
+  sourceControlLines?.push(lines.at(-1) ?? '');
   lines.push('');
   sourceLines?.push('');
+  sourceControlLines?.push('');
   lines.push(truncateShapedLine(station, cols, options.arabicShaping, options.language, options.capabilities));
   sourceLines?.push(`${labelOf(header.stationLabel)}: ${header.stationName.text}`);
+  sourceControlLines?.push(lines.at(-1) ?? '');
   lines.push(truncateShapedLine(formatOrderNumberLabel(header.orderNumberLabel, header.orderNumber.text, options.language, options.arabicShaping, options.capabilities), cols, options.arabicShaping, options.language, options.capabilities));
   sourceLines?.push(labelOf(header.orderNumberLabel).replace('{number}', header.orderNumber.text));
+  sourceControlLines?.push(lines.at(-1) ?? '');
   if (table) {
     lines.push(truncateShapedLine(table, cols, options.arabicShaping, options.language, options.capabilities));
     sourceLines?.push(formatTableLabel(header.table!.label, header.table!.name.text));
+    sourceControlLines?.push(lines.at(-1) ?? '');
   }
   if (orderType) {
     lines.push(truncateShapedLine(orderType, cols, options.arabicShaping, options.language, options.capabilities));
     sourceLines?.push(`${labelOf(header.orderType!.label)}: ${header.orderType!.value.text}`);
+    sourceControlLines?.push(lines.at(-1) ?? '');
   }
   if (header.customer) {
     const customer = thermalSafeText(
@@ -217,9 +237,11 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
     );
     lines.push(truncateShapedLine(customer, cols, options.arabicShaping, options.language, options.capabilities));
     sourceLines?.push(`${labelOf(header.customer.label)}: ${header.customer.name.text}`);
+    sourceControlLines?.push(lines.at(-1) ?? '');
   }
   lines.push(truncateShapedLine(timeLine, cols, options.arabicShaping, options.language, options.capabilities));
   sourceLines?.push(`${labelOf(header.timeLabel)}: ${time}`);
+  sourceControlLines?.push(lines.at(-1) ?? '');
   return lines;
 }
 
@@ -259,8 +281,9 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
   if (header) {
     const headerStart = lines.length;
     const headerSourceLines: string[] = [];
-    lines.push(...kotHeaderLines(header, options, headerSourceLines));
-    options.rasterGroups?.push({ groupId: 'kot-header', lineIndex: headerStart, lineCount: lines.length - headerStart, sourceLines: headerSourceLines });
+    const headerSourceControlLines: string[] = [];
+    lines.push(...kotHeaderLines(header, options, headerSourceLines, headerSourceControlLines));
+    options.rasterGroups?.push({ groupId: 'kot-header', lineIndex: headerStart, lineCount: lines.length - headerStart, sourceLines: headerSourceLines, sourceControlLines: headerSourceControlLines });
   }
   lines.push(bar);
   lines.push('');
@@ -271,14 +294,21 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
       const rowLines = kotItemLines(row, cols, options.arabicShaping, options.language, options.capabilities);
       lines.push(...rowLines);
       const sourceLines = [`${row.quantity}x  ${row.name.text}`];
+      const sourceControlLines = [rowLines[0] ?? ''];
+      let rowLineOffset = 1;
       for (const addon of row.addons) {
         const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
         sourceLines.push(`  + ${addon.name.text}${quantitySuffix}`);
+        sourceControlLines.push(rowLines[rowLineOffset] ?? '');
+        rowLineOffset += 1;
       }
-      if (row.specialInstructions) sourceLines.push('  >> ' + row.specialInstructions.text);
+      if (row.specialInstructions) {
+        sourceLines.push('  >> ' + row.specialInstructions.text);
+        sourceControlLines.push(rowLines[rowLineOffset] ?? '');
+      }
       if (options.rasterGroups) {
         const group = { groupId: `kot-items-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
-        options.rasterGroups.push({ ...group, sourceLines });
+        options.rasterGroups.push({ ...group, sourceLines, sourceControlLines });
       }
     }
   }

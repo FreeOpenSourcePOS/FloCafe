@@ -18,7 +18,7 @@ import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
 import { buildEscPos, financialRows, itemRows, normalizeThermalText } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
-import { renderKotDocumentToLines } from '../main/printers/document-kot';
+import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
 import { renderBillDocumentToClassicLines } from '../main/printers/document-classic';
 import { renderBillDocumentToCompactLines } from '../main/printers/document-compact';
 import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
@@ -288,8 +288,27 @@ async function run(): Promise<void> {
       financialRequests.push(rasterRequest);
       return { version: 1, requestId: (rasterRequest as any).requestId, ok: true, unit: { unitId: (rasterRequest as any).requestId, financial: true, complete: true, bands: [twoRows] } };
     },
-  }, ['{FINANCIAL}فارسی'], caps, 'financial');
+  }, ['{FINANCIAL}فارسی {FINANCIAL}'], caps, 'financial', [
+    { groupId: 'financial', lineIndex: 0, lineCount: 1, sourceLines: ['فارسی {FINANCIAL}'], financial: true },
+  ]);
   assert.equal(financialRequests[0].financial, true);
+  const alignedStyleRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      alignedStyleRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+    },
+  }, ['{FINANCIAL}فارسی row', '{FINANCIAL}wrapped continuation', '{FINANCIAL}{BOLD}فارسی total{/BOLD}'], caps, 'aligned-style', [
+    {
+      groupId: 'totals',
+      lineIndex: 0,
+      lineCount: 3,
+      sourceLines: ['فارسی row', 'فارسی total'],
+      sourceControlLines: ['{FINANCIAL}فارسی row', '{FINANCIAL}{BOLD}فارسی total{/BOLD}'],
+      financial: true,
+    },
+  ]);
+  assert.equal(alignedStyleRequests[1].style, 'bold');
   const groupedCustomer = await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {
       const typedRequest = rasterRequest as any;
@@ -388,6 +407,12 @@ async function run(): Promise<void> {
   });
   assert.equal(kotHeaderGroups[0].sourceLines.some((line: string) => line.includes('ایستگاه')), true);
   assert.equal(kotHeaderGroups[0].sourceLines.some((line: string) => line.includes('ORDER-123456789012345678901234567890')), true);
+  const backendKotData = buildKotPrintData(
+    { order_number: 'K-2', created_at: '2026-01-01T12:00:00.000Z' },
+    [{ status: 'pending', product_name: 'Tea', quantity: 1, addons: '[{"name":"Extra sauce","quantity":2}]' }],
+    'Kitchen',
+  );
+  assert.deepEqual(backendKotData.items[0]?.addons, [{ name: 'Extra sauce', quantity: 2 }]);
   const styledBanner = await renderUnsupportedRasterLines({
     render: async (rasterRequest) => ({
       version: 1 as const,

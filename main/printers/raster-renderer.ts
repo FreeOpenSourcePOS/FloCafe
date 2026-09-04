@@ -314,7 +314,7 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWi
         if (kotItem && candidate.includes('{DOUBLE_HEIGHT}') && candidate.includes('{BOLD}')) break;
         next += 1;
       }
-      groups.push({ groupId: `${kotItem ? 'kot-item' : 'financial'}-${lineIndex}`, lineIndex, lines: lines.slice(lineIndex, next) });
+      groups.push({ groupId: `${kotItem ? 'kot-item' : 'financial'}-${lineIndex}`, lineIndex, lines: lines.slice(lineIndex, next), ...(financialBlock ? { financial: true } : {}) });
       lineIndex = next;
       continue;
     }
@@ -427,8 +427,7 @@ export async function renderUnsupportedRasterLines(
       return text.length > 0 && !isThermalTextRepresentable(text, capabilities);
     }));
     if (!needsRaster) continue;
-    const financial = ranges.some((range) => range.lines.some((line, offset) => line.includes('{FINANCIAL}')
-      && !range.sourceLines?.[offset]?.includes('{FINANCIAL}')));
+    const financial = ranges.some((range) => range.financial === true);
     const renderedRanges: Array<{ lineIndex: number; lineCount: number; bands: RasterSemanticUnit['bands'] }> = [];
     let failure: RasterLineRenderFailure | null = null;
     if (!capabilities.raster.font) {
@@ -438,7 +437,9 @@ export async function renderUnsupportedRasterLines(
         const renderedUnits: RasterSemanticUnit[] = [];
         const sourceLines = range.sourceLines ?? range.lines;
         for (let offset = 0; offset < sourceLines.length; offset += 1) {
-          const layoutLine = range.lines[Math.min(offset, range.lines.length - 1)] ?? '';
+          const layoutLine = range.sourceControlLines?.[offset]
+            ?? range.lines[Math.min(offset, range.lines.length - 1)]
+            ?? '';
           const request = requestForRasterLine(layoutLine, range.lineIndex + offset, capabilities, requestPrefix, financial, sourceLines[offset]);
           if (!request) continue;
           const result = await renderRasterSemanticUnit(renderer, request, financial);

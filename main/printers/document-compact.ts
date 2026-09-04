@@ -128,8 +128,8 @@ export function renderBillDocumentToCompactLines(
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const normalize = (text: string): string => normalizeThermalText(text, options.capabilities);
-  const markGroup = (groupId: string, start: number, sourceLines?: readonly string[]): void => {
-    if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start, ...(sourceLines ? { sourceLines } : {}) });
+  const markGroup = (groupId: string, start: number, sourceLines?: readonly string[], sourceControlLines?: readonly string[], financial = false): void => {
+    if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start, ...(sourceLines ? { sourceLines } : {}), ...(sourceControlLines ? { sourceControlLines } : {}), ...(financial ? { financial: true } : {}) });
   };
 
   lines.push('{INIT}');
@@ -161,7 +161,7 @@ export function renderBillDocumentToCompactLines(
   // Business header (store name only — compact keeps contact facts in the footer).
   const headerStart = lines.length;
   if (header?.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(header.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
-  markGroup('business-header', headerStart, header?.name ? [header.name.text] : []);
+  markGroup('business-header', headerStart, header?.name ? [header.name.text] : [], header?.name ? [lines[headerStart] ?? ''] : []);
   lines.push(bar);
 
   // Document meta.
@@ -182,16 +182,19 @@ export function renderBillDocumentToCompactLines(
   markGroup('document-meta', metaStart, metaSourceLines);
   const customerStart = lines.length;
   const customerSourceLines: string[] = [];
+  const customerSourceControlLines: string[] = [];
   if (customer?.name) {
     lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language, options.capabilities));
     customerSourceLines.push(labelOf(customer.nameLabel) + ': ' + customer.name.text);
+    customerSourceControlLines.push(lines.at(-1) ?? '');
   }
   if (customer?.phone) {
     const phone = options.maskCustomerPhone ? maskPhoneOnReceipt(customer.phone.text) : customer.phone.text;
     lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + phone));
     customerSourceLines.push(labelOf(customer.phoneLabel) + ': ' + phone);
+    customerSourceControlLines.push(lines.at(-1) ?? '');
   }
-  if (options.rasterGroups && lines.length > customerStart) options.rasterGroups.push({ groupId: 'customer', lineIndex: customerStart, lineCount: lines.length - customerStart, sourceLines: customerSourceLines });
+  if (options.rasterGroups && lines.length > customerStart) options.rasterGroups.push({ groupId: 'customer', lineIndex: customerStart, lineCount: lines.length - customerStart, sourceLines: customerSourceLines, sourceControlLines: customerSourceControlLines });
   lines.push(dash);
 
   // Item table.
@@ -224,19 +227,23 @@ export function renderBillDocumentToCompactLines(
       );
       lines.push(...rowLines);
       const sourceLines = [`${row.name.text} ${row.quantity} ${formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits)}`];
+      const sourceControlLines = [rowLines[0] ?? ''];
       for (const addon of row.addons) {
         const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
         lines.push(...addonLines);
         const quantitySuffix = addon.quantity > 1 ? ` x${addon.quantity}` : '';
         sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
+        sourceControlLines.push(addonLines[0] ?? '');
       }
       if (row.specialInstructions) {
-        lines.push(normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language, options.capabilities)));
+        const instructionLine = normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language, options.capabilities));
+        lines.push(instructionLine);
         sourceLines.push('  ' + labelOf(items.noteLabel) + ': ' + row.specialInstructions.text);
+        sourceControlLines.push(instructionLine);
       }
       if (options.rasterGroups && lines.length > rowStart) {
         const group = { groupId: `item-table-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
-        options.rasterGroups.push({ ...group, sourceLines });
+        options.rasterGroups.push({ ...group, sourceLines, sourceControlLines, financial: true });
       }
     }
   }
@@ -246,63 +253,66 @@ export function renderBillDocumentToCompactLines(
   // Totals (compact has no loyalty points section).
   const totalsStart = lines.length;
   const totalsSourceLines: string[] = [];
+  const totalsSourceControlLines: string[] = [];
+  const pushTotalRow = (rendered: string[], source: string, bold = false): void => {
+    const tokenLines = bold ? rendered.map((line) => `{BOLD}${line}{/BOLD}`) : rendered;
+    lines.push(...tokenLines);
+    totalsSourceLines.push(source);
+    totalsSourceControlLines.push(tokenLines[0] ?? '');
+  };
   if (totals) {
     const subtotalValue = formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    lines.push(...financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities));
-    totalsSourceLines.push(`${labelOf(totals.subtotal.label)}: ${subtotalValue}`);
+    pushTotalRow(financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities), `${labelOf(totals.subtotal.label)}: ${subtotalValue}`);
     if (totals.discount) {
       const discountValue = '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      lines.push(...financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities));
-      totalsSourceLines.push(`${labelOf(totals.discount.label)}: ${discountValue}`);
+      pushTotalRow(financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities), `${labelOf(totals.discount.label)}: ${discountValue}`);
     }
     if (breakdown && breakdown.lines.length > 0) {
       for (const line of breakdown.lines) {
         const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
         const label = truncate(labelOf(line.label) + rateSuffix, cols - 12, options.language, options.capabilities);
         const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
-        lines.push(...financialRows(label, value, cols, options.language, options.capabilities));
-        totalsSourceLines.push(`${labelOf(line.label)}${rateSuffix}: ${value}`);
+        pushTotalRow(financialRows(label, value, cols, options.language, options.capabilities), `${labelOf(line.label)}${rateSuffix}: ${value}`);
       }
     } else if (totals.tax) {
       const value = formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      lines.push(...financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities));
-      totalsSourceLines.push(`${labelOf(totals.tax.label)}: ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities), `${labelOf(totals.tax.label)}: ${value}`);
     }
     if (totals.serviceCharge) {
       const value = formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      lines.push(...financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities));
-      totalsSourceLines.push(`${labelOf(totals.serviceCharge.label)}: ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities), `${labelOf(totals.serviceCharge.label)}: ${value}`);
     }
     if (totals.deliveryCharge) {
       const value = formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      lines.push(...financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities));
-      totalsSourceLines.push(`${labelOf(totals.deliveryCharge.label)}: ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities), `${labelOf(totals.deliveryCharge.label)}: ${value}`);
     }
     if (totals.packagingCharge) {
       const value = formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      lines.push(...financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities));
-      totalsSourceLines.push(`${labelOf(totals.packagingCharge.label)}: ${value}`);
+      pushTotalRow(financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities), `${labelOf(totals.packagingCharge.label)}: ${value}`);
     }
     const grandTotalValue = formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    lines.push(...financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
-    totalsSourceLines.push(`${labelOf(totals.grandTotal.label)}: ${grandTotalValue}`);
+    pushTotalRow(financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities), `${labelOf(totals.grandTotal.label)}: ${grandTotalValue}`, true);
   }
-  markGroup('totals', totalsStart, totalsSourceLines);
+  markGroup('totals', totalsStart, totalsSourceLines, totalsSourceControlLines, true);
 
   // Payments.
   const paymentsStart = lines.length;
   const paymentSourceLines: string[] = [];
+  const paymentSourceControlLines: string[] = [];
   if (payments && payments.lines.length > 0) {
     lines.push(dash);
     paymentSourceLines.push(dash);
+    paymentSourceControlLines.push(dash);
     for (const line of payments.lines) {
       const methodLabel = truncate(paymentLabel(line.label), cols - 12, options.language, options.capabilities);
       const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      lines.push(...financialRows(methodLabel, value, cols, options.language, options.capabilities));
+      const rendered = financialRows(methodLabel, value, cols, options.language, options.capabilities);
+      lines.push(...rendered);
       paymentSourceLines.push(`${paymentLabel(line.label)}: ${value}`);
+      paymentSourceControlLines.push(rendered[0] ?? '');
     }
   }
-  markGroup('payments', paymentsStart, paymentSourceLines);
+  markGroup('payments', paymentsStart, paymentSourceLines, paymentSourceControlLines, true);
 
   // Footer contact details.
   lines.push(bar);

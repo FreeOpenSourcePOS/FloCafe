@@ -26,7 +26,7 @@ import {
 } from '../print/template-labels';
 import { renderClassicReceiptViaDocument } from './document-classic';
 import { renderCompactReceiptViaDocument } from './document-compact';
-import { renderKotViaDocument } from './document-kot';
+import { renderKotDocumentToLines, renderKotViaDocument } from './document-kot';
 import {
   GENERIC_THERMAL_CAPABILITIES,
   normalizeThermalText as normalizeThermalTextByCapabilities,
@@ -1110,6 +1110,7 @@ async function rasterizeDocumentLines(
       language: options.language,
       capabilities: options.capabilities,
       rasterUnits: raster.units,
+      rasterFailures: raster.failures,
     });
     for (const failure of raster.failures) {
       warnings.push({
@@ -1171,9 +1172,7 @@ export async function rasterizePrintDocumentForWebUsb(
 }
 
 export async function rasterizeKotDocumentForWebUsb(
-  order: any,
-  items: any[],
-  stationName: string,
+  document: import('../../shared/print/document').KotDocument,
   profileId: string,
   options: {
     columns: number;
@@ -1187,18 +1186,19 @@ export async function rasterizeKotDocumentForWebUsb(
   const profile = resolvePrinterProfile({ profile_id: profileId });
   const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
-  const document = renderKotViaDocument(order, items, stationName, {
+  const rasterGroups: RasterSemanticLineGroup[] = [];
+  const lines = renderKotDocumentToLines(document, {
     ...options,
-    timezone: options.timezone,
     cutMode: profile.cutMode,
     capabilities,
+    rasterGroups,
   });
-  const result = await rasterizeDocumentLines(document.lines, document.warnings, {
+  const result = await rasterizeDocumentLines(lines, [], {
     ...options,
     cutMode: profile.cutMode,
     capabilities,
     requestPrefix: 'webusb-kot',
-  }, document.rasterGroups);
+  }, rasterGroups);
   if (hasFinancialPrintWarning(result.warnings)) {
     return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
   }
@@ -2029,19 +2029,20 @@ export interface RasterLineUnit {
   readonly unit: RasterSemanticUnit;
 }
 
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[] } = {}, warnings?: PrintWarning[]): Buffer {
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[]; rasterFailures?: readonly { lineIndex: number; lineCount: number; financial: boolean }[] } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
   const useLegacyUnicode = options.capabilities === undefined && _useUnicode;
   const capabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
   const hasNativeCodePage = capabilities.encoding.codePages.some((codePage) => codePage !== 'ascii');
   let activeCodePage = capabilities.encoding.preferredCodePage;
   const rasterEntries = options.rasterUnits ?? [];
+  const rasterFailures = options.rasterFailures ?? [];
   const rasterByLine = new Map(rasterEntries.map((entry) => [entry.lineIndex, entry.unit]));
   const rasterLineCounts = new Map<number, number>();
   const rasterRanges: Array<{ start: number; end: number }> = [];
   for (const entry of rasterEntries) rasterLineCounts.set(entry.lineIndex, (rasterLineCounts.get(entry.lineIndex) ?? 0) + 1);
   const encodedRasterByLine = new Map<number, Uint8Array>();
-  let financialRasterFailure = false;
+  let financialRasterFailure = rasterFailures.some((failure) => failure.financial);
   for (const entry of rasterEntries) {
     const lineCount = entry.lineCount ?? 1;
     const lineIndexValid = Number.isSafeInteger(entry.lineIndex) && entry.lineIndex >= 0
@@ -2086,6 +2087,10 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   };
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    if (rasterFailures.some((failure) => Number.isSafeInteger(failure.lineIndex)
+      && Number.isSafeInteger(failure.lineCount)
+      && failure.lineIndex <= lineIndex
+      && lineIndex < failure.lineIndex + failure.lineCount)) continue;
     let line = lines[lineIndex];
     const rasterUnit = rasterByLine.get(lineIndex);
     if (rasterUnit) {

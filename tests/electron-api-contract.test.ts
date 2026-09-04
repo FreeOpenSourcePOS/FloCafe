@@ -43,6 +43,29 @@ try {
   Module._load = originalLoad;
 }
 
+const kotDocument = {
+  version: 1,
+  direction: { base: 'ltr', document: 'ltr', block: 'ltr', value: 'ltr' },
+  languages: ['en'],
+  blocks: [
+    {
+      kind: 'kot-header',
+      direction: 'ltr',
+      banner: { primary: 'Kitchen Order Ticket' },
+      stationLabel: { primary: 'Station' },
+      stationName: { text: 'Kitchen', direction: 'ltr' },
+      orderNumberLabel: { primary: 'Order' },
+      orderNumber: { text: 'K-1', direction: 'ltr' },
+      table: null,
+      orderType: null,
+      customer: null,
+      timeLabel: { primary: 'Time' },
+      timestamp: { text: '2026-01-01T12:00:00.000Z', direction: 'ltr' },
+    },
+    { kind: 'kot-items', direction: 'ltr', rows: [] },
+  ],
+};
+
 async function run(): Promise<void> {
   assert.ok(exposedApi, 'preload exposes electronAPI');
   assert.equal(syncCalls.length, 1);
@@ -72,7 +95,7 @@ async function run(): Promise<void> {
   await call('getPrinters');
   await call('savePrinter', { name: 'Kitchen Printer', connection_type: 'network' });
   await call('rasterizePrintDocument', { document: {}, template: 'classic', profileId: 'profile', options: {} });
-  await call('rasterizeKotDocument', { order: {}, items: [], stationName: 'Kitchen', profileId: 'profile', options: {} });
+  await call('rasterizeKotDocument', { document: kotDocument, profileId: 'profile', options: {} });
   await call('getDailySummary');
   await call('getBetaChannel');
   await call('setBetaChannel', true);
@@ -111,7 +134,7 @@ async function run(): Promise<void> {
     { channel: 'get-printers', args: [] },
     { channel: 'save-printer', args: [{ name: 'Kitchen Printer', connection_type: 'network' }] },
     { channel: 'rasterize-print-document', args: [{ document: {}, template: 'classic', profileId: 'profile', options: {} }] },
-    { channel: 'rasterize-kot-document', args: [{ order: {}, items: [], stationName: 'Kitchen', profileId: 'profile', options: {} }] },
+    { channel: 'rasterize-kot-document', args: [{ document: kotDocument, profileId: 'profile', options: {} }] },
     { channel: 'get-daily-summary', args: [] },
     { channel: 'updates:get-beta-channel', args: [] },
     { channel: 'updates:set-beta-channel', args: [true] },

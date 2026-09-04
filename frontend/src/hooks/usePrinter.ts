@@ -15,6 +15,7 @@ import {
   ensurePrintLanguagesLoaded,
   resolveBillPrintLanguages,
   buildFrontendBillDocument,
+  buildFrontendKotDocument,
 } from '@/lib/printer/print-document';
 import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
@@ -423,9 +424,13 @@ export const usePrinterStore = create<PrinterState>()(
             let output = bytes;
             if (rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizeKotDocument), webusbPrinter?.profile_id)) {
               const rasterResult = await window.electronAPI.rasterizeKotDocument({
-                order: orderForPrint,
-                items: orderForPrint.items ?? [],
-                stationName: opts?.stationName ?? 'Kitchen',
+                document: buildFrontendKotDocument(orderForPrint, {
+                  items: orderForPrint.items,
+                  stationName: opts?.stationName ?? 'Kitchen',
+                  columns: paperWidth === 80 ? 48 : 42,
+                  language: kotLanguage,
+                  ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
+                }),
                 profileId: webusbPrinter.profile_id,
                 options: {
                   columns: paperWidth === 80 ? 48 : 42,

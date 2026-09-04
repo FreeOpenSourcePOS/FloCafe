@@ -13,11 +13,12 @@ import {
   type RasterBand,
 } from '../shared/print/raster';
 import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '../shared/print/thermal-capabilities';
-import { isPrintDocument } from '../shared/print/document';
+import { buildKotDocument, isKotDocument, isPrintDocument } from '../shared/print/document';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
 import { buildEscPos, itemRows } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
+import { renderKotDocumentToLines } from '../main/printers/document-kot';
 import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
 
 function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer/raster-encoder') {
@@ -78,6 +79,30 @@ async function run(): Promise<void> {
     languages: ['en'],
     blocks: [],
   }), false);
+  const kotDocument = buildKotDocument({
+    stationName: 'ایستگاه',
+    order: { orderNumber: 'K-1', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },
+    items: [],
+  }, {
+    columns: 42,
+    languages: ['fa'],
+    baseDirection: 'rtl',
+    locale: 'fa-IR',
+    currencySymbol: '',
+    trimDecimals: false,
+    resolveLabel: (conceptId) => ({ conceptId, primary: conceptId }),
+  });
+  assert.equal(isKotDocument(kotDocument), true);
+  const kotLines = renderKotDocumentToLines(kotDocument, {
+    columns: 42,
+    language: 'fa',
+    locale: 'fa-IR',
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+  });
+  assert.equal(kotLines.some((line) => line.includes('ایستگاه')), true);
   const longUnsupportedName = 'فارسی خیلی طولانی برای اندازه‌گیری';
   assert.equal(itemRows({ product_name: longUnsupportedName, quantity: 1, total: 1 }, 4, 4, 12, '₹', 'en-US', false, 'fa', 2, caps)[0].includes('..'), false);
   const unit = { unitId: 'row-1', financial: false, complete: true, bands: [twoRows] } as const;
@@ -175,6 +200,14 @@ async function run(): Promise<void> {
   }, ['{CENTER}{FONT_B}فارسی{/FONT_B}{/CENTER}'], caps, 'font-b');
   assert.deepEqual(fontBRequests[0].styles, ['font-b']);
   assert.equal(fontBRequests[0].style, 'font-b');
+  const presentationFormRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      presentationFormRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit };
+    },
+  }, ['\uFB50'], caps, 'presentation-form');
+  assert.equal(presentationFormRequests[0].direction, 'rtl');
   const styledBanner = await renderUnsupportedRasterLines({
     render: async (rasterRequest) => ({
       version: 1 as const,
@@ -186,6 +219,21 @@ async function run(): Promise<void> {
   assert.equal(styledBanner.failures.length, 0);
   assert.equal(styledBanner.units.length, 1);
   assert.equal(renderedLines.failures.length, 0);
+
+  const failedGroup = await renderUnsupportedRasterLines({
+    render: async () => ({ version: 1 as const, requestId: 'failed', ok: false as const, code: 'font-unavailable' as const, detail: 'missing' }),
+  }, ['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], caps, 'failed', [{ groupId: 'customer', lineIndex: 0, lineCount: 2 }]);
+  assert.equal(failedGroup.failures[0]?.lineCount, 2);
+  const suppressed = buildEscPos(['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], false, {
+    capabilities: caps,
+    rasterFailures: failedGroup.failures,
+  });
+  assert.equal(suppressed.includes(0x35), false);
+  const refusedFailedGroup = buildEscPos(['{FINANCIAL}فارسی', '555-0100'], false, {
+    capabilities: caps,
+    rasterFailures: [{ lineIndex: 0, lineCount: 2, financial: true }],
+  });
+  assert.equal(refusedFailedGroup.length, 0);
 
   const request = {
     version: 1 as const,

@@ -20,7 +20,7 @@ import { isThemeMode, appendThemeQueryParam } from './title-bar-theme';
 import { getTenantCurrency } from './services/refund';
 import { getCurrencyMinorUnitFactor } from './countries';
 import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from './printers/thermal';
-import { isPrintDocument } from '../shared/print/document';
+import { isKotDocument, isPrintDocument } from '../shared/print/document';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -54,21 +54,6 @@ function maskSetting(key: string, value: string): string {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object';
-}
-
-function isRasterKotRequestData(order: unknown, items: unknown): boolean {
-  if (!isRecord(order) || !Array.isArray(items)) return false;
-  if (typeof order.order_number !== 'string' || typeof order.created_at !== 'string') return false;
-  return items.every((item) => isRecord(item)
-    && typeof item.product_name === 'string'
-    && typeof item.quantity === 'number'
-    && Number.isFinite(item.quantity)
-    && (item.addons === undefined || (Array.isArray(item.addons) && item.addons.every((addon) => isRecord(addon) && typeof addon.name === 'string')))
-    && (item.special_instructions === undefined || typeof item.special_instructions === 'string'));
 }
 
 /**
@@ -567,14 +552,12 @@ export function registerIpcHandlers(
   handle('rasterize-kot-document', async (_event, payload: unknown) => {
     if (!payload || typeof payload !== 'object') return { ok: false, error: 'Invalid raster KOT request' };
     const request = payload as {
-      order?: unknown;
-      items?: unknown;
-      stationName?: unknown;
+      document?: unknown;
       profileId?: unknown;
       options?: unknown;
     };
-    if (!isRasterKotRequestData(request.order, request.items)
-      || typeof request.stationName !== 'string' || typeof request.profileId !== 'string'
+    if (!isKotDocument(request.document)
+      || typeof request.profileId !== 'string'
       || request.profileId.length === 0 || !request.options || typeof request.options !== 'object') {
       return { ok: false, error: 'Invalid raster KOT request' };
     }
@@ -587,11 +570,9 @@ export function registerIpcHandlers(
     }
     try {
       return await rasterizeKotDocumentForWebUsb(
-        request.order,
-        request.items,
-        request.stationName,
+        request.document,
         request.profileId,
-        options as Parameters<typeof rasterizeKotDocumentForWebUsb>[4],
+        options as Parameters<typeof rasterizeKotDocumentForWebUsb>[2],
       );
     } catch (error: unknown) {
       return { ok: false, error: getErrorMessage(error) };

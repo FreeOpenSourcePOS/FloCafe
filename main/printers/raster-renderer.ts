@@ -279,6 +279,7 @@ export async function renderRasterSemanticUnit(
 
 export interface RasterLineRenderFailure {
   readonly lineIndex: number;
+  readonly lineCount: number;
   readonly text: string;
   readonly financial: boolean;
   readonly code: string;
@@ -337,7 +338,7 @@ function requestForRasterLine(
     text,
     widthDots: capabilities.raster.widthDots,
     maxBandHeight: capabilities.raster.maxBandHeight,
-    direction: /[\u0590-\u08FF]/.test(text) ? 'rtl' : 'ltr',
+    direction: /[\u0590-\u08FF\uFB50-\uFEFF]/.test(text) ? 'rtl' : 'ltr',
     align: line.includes('{CENTER}') && line.includes('{/CENTER}') ? 'center' : 'left',
     style: line.includes('{DOUBLE_HEIGHT}') ? 'double-height'
       : line.includes('{DOUBLE_WIDTH}') ? 'double-width'
@@ -382,14 +383,14 @@ export async function renderUnsupportedRasterLines(
     const renderedUnits: RasterSemanticUnit[] = [];
     let failure: RasterLineRenderFailure | null = null;
     if (!capabilities.raster.font) {
-      failure = { lineIndex: group.lineIndex, text: groupText, financial, code: 'font-unavailable', detail: 'No bundled raster font is configured' };
+      failure = { lineIndex: group.lineIndex, lineCount: group.lines.length, text: groupText, financial, code: 'font-unavailable', detail: 'No bundled raster font is configured' };
     } else {
       for (let offset = 0; offset < group.lines.length; offset += 1) {
         const request = requestForRasterLine(group.lines[offset], group.lineIndex + offset, capabilities, requestPrefix);
         if (!request) continue;
         const result = await renderRasterSemanticUnit(renderer, request, group.lines[offset].includes('{FINANCIAL}'));
         if (!result.ok) {
-          failure = { lineIndex: group.lineIndex, text: groupText, financial, code: result.code, detail: result.detail };
+          failure = { lineIndex: group.lineIndex, lineCount: group.lines.length, text: groupText, financial, code: result.code, detail: result.detail };
           break;
         }
         renderedUnits.push(result.unit);

@@ -24,8 +24,8 @@ import {
 } from './thermal';
 import {
   GENERIC_THERMAL_CAPABILITIES,
+  isThermalTextRepresentable,
   mergeThermalCapabilities,
-  shouldUseOrderTypeFallback,
   thermalTextFallback,
 } from '../../shared/print/thermal-capabilities';
 import { detectPrintLanguageDirection } from './document-classic';
@@ -139,7 +139,9 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
 // existing ASCII labels rather than silently losing ticket identity.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
 function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
-  return thermalTextFallback(value, fallback, mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping));
+  const merged = mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping);
+  if (merged.raster.enabled === true && !isThermalTextRepresentable(value, merged)) return value;
+  return thermalTextFallback(value, fallback, merged);
 }
 
 function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
@@ -156,8 +158,6 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   const cols = options.columns;
   const lines: string[] = [];
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
-  const thermalCapabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
-
   const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping, options.capabilities);
   const station = thermalSafeText(
     `${labelOf(header.stationLabel)}: ${header.stationName.text}`,
@@ -179,9 +179,7 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
     ? (() => {
       const localized = `${labelOf(header.orderType.label)}: ${header.orderType.value.text}`;
       const fallback = `Type: ${header.orderType.code.replace(/_/g, ' ').trim().toUpperCase()}`;
-      return shouldUseOrderTypeFallback(localized, thermalCapabilities)
-        ? fallback
-        : thermalSafeText(localized, fallback, options.language, options.arabicShaping, options.capabilities);
+      return thermalSafeText(localized, fallback, options.language, options.arabicShaping, options.capabilities);
     })()
     : null;
   const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions);

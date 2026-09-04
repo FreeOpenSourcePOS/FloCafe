@@ -16,7 +16,11 @@
 
 import {
   buildBillDocument,
+  buildKotDocument,
+  isKotItemPending,
   type LabelResolver,
+  type KotDocument,
+  type KotPrintData,
   type PrintContext,
   type PrintData,
   type PrintDocument,
@@ -29,7 +33,7 @@ import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/langu
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getCountryByCode } from '@countries';
 import { resolveTaxComponents } from './tax-components';
-import type { Bill } from '@/lib/types';
+import type { Bill, Order, OrderItem } from '@/lib/types';
 
 /**
  * Business/contact facts + receipt show-flags for one print run. Mirrors the
@@ -272,4 +276,50 @@ export function buildFrontendBillDocument(
     ...(opts.trimDecimals !== undefined ? { trimDecimals: opts.trimDecimals } : {}),
   });
   return buildBillDocument(printData, printContext);
+}
+
+export function buildFrontendKotDocument(
+  order: Order,
+  opts: {
+    stationName: string;
+    items?: readonly OrderItem[];
+    columns: number;
+    language: string;
+    timezone?: string;
+  },
+): KotDocument {
+  const languages = [opts.language] as ResolvedPrintLanguages;
+  const items = opts.items ?? order.items ?? [];
+  const printData: KotPrintData = {
+    stationName: String(opts.stationName ?? ''),
+    order: {
+      orderNumber: String(order.order_number ?? ''),
+      createdAt: String(order.created_at ?? ''),
+      tableName: String(order.table?.name ?? ''),
+      orderType: String(order.type ?? '').trim(),
+      customerName: String(order.customer?.name ?? '').trim(),
+    },
+    items: items.filter((item) => isKotItemPending(item.status)).map((item) => ({
+      productName: String(item.product_name ?? ''),
+      quantity: Number(item.quantity) || 0,
+      addons: (Array.isArray(item.addons) ? item.addons : []).map((addon) => ({
+        name: String(addon?.name ?? ''),
+        ...(typeof addon?.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
+          ? { quantity: addon.quantity }
+          : {}),
+      })),
+      specialInstructions: String(item.special_instructions ?? ''),
+    })),
+  };
+  const printContext: PrintContext = {
+    columns: opts.columns,
+    languages,
+    baseDirection: baseDirectionFor(languages),
+    locale: LANGUAGES[opts.language as Language]?.locale ?? 'en-US',
+    currencySymbol: '',
+    trimDecimals: false,
+    ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
+    resolveLabel: printLabelResolver,
+  };
+  return buildKotDocument(printData, printContext);
 }

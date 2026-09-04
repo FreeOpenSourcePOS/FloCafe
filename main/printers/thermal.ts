@@ -1769,11 +1769,13 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   let activeCodePage = capabilities.encoding.preferredCodePage;
   const rasterByLine = new Map((options.rasterUnits ?? []).map((entry) => [entry.lineIndex, entry.unit]));
   const encodedRasterByLine = new Map<number, Uint8Array>();
+  let financialRasterFailure = false;
   for (const entry of options.rasterUnits ?? []) {
     try {
       if (!rasterCapabilityEnabled(capabilities)) throw new Error('Raster output is not enabled for this printer profile');
       encodedRasterByLine.set(entry.lineIndex, encodeRasterUnits([entry.unit], capabilities));
     } catch (error) {
+      if (entry.unit.financial) financialRasterFailure = true;
       if (warnings) warnings.push({
         field: entry.unit.financial ? 'financial row' : 'receipt line',
         text: entry.unit.unitId,
@@ -1782,9 +1784,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       });
     }
   }
-  if (warnings?.some((warning) => warning.kind === 'financial' && (options.rasterUnits ?? []).some((entry) => entry.unit.financial && entry.unit.unitId === warning.text))) {
-    return Buffer.alloc(0);
-  }
+  if (financialRasterFailure) return Buffer.alloc(0);
 
   const resetAllStyles = () => {
     buf.push(0x1B, 0x45, 0x00);

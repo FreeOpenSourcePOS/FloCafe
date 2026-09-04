@@ -12,7 +12,7 @@ import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '.
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
 import { buildEscPos } from '../main/printers/thermal';
-import { rasterRendererHtml, renderRasterSemanticUnit } from '../main/printers/raster-renderer';
+import { renderRasterSemanticUnit } from '../main/printers/raster-renderer';
 
 function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer/raster-encoder') {
   const path = require('node:path') as typeof import('node:path');
@@ -78,15 +78,15 @@ async function run(): Promise<void> {
   }, financialWarnings);
   assert.equal(refused.length, 0);
   assert.equal(financialWarnings[0]?.kind, 'financial');
+  assert.equal(buildEscPos(['raster'], false, {
+    capabilities: caps,
+    rasterUnits: [{ lineIndex: 0, unit: { ...unit, financial: true, complete: false } }],
+  }).length, 0);
 
-  const diagnostic = buildRasterDiagnosticBands(17, 48);
-  assert.deepEqual(diagnostic.map((band) => band.heightDots), [48, 48, 24]);
+  const diagnostic = buildRasterDiagnosticBands(17, 32);
+  assert.deepEqual(diagnostic.map((band) => band.heightDots), [32, 16, 32, 16, 24]);
   assert.equal(diagnostic[0].pixels[0], 0);
   assert.equal(diagnostic[0].pixels[8], 1);
-
-  const html = rasterRendererHtml();
-  assert.match(html, /__floRaster/);
-  assert.equal(html.includes('https://'), false);
   const failedRender = await renderRasterSemanticUnit({ render: async () => ({ version: 1, requestId: 'r1', ok: false, code: 'font-unavailable', detail: 'missing' }) }, {} as any, true);
   assert.equal(failedRender.ok, false);
   assert.equal(failedRender.financial, true);

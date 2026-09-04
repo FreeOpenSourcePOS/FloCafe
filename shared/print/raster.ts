@@ -139,20 +139,27 @@ export function encodeRasterUnits(
 /** Diagnostic bands used by the capability-gated printer test page. */
 export function buildRasterDiagnosticBands(widthDots: number, maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT): RasterBand[] {
   if (!Number.isSafeInteger(widthDots) || widthDots <= 16) throw new Error('Diagnostic raster width is too small');
-  const makeBand = (heightDots: number, pixel: (x: number, y: number) => boolean): RasterBand => ({
+  if (!Number.isSafeInteger(maxBandHeight) || maxBandHeight <= 0 || maxBandHeight > DEFAULT_RASTER_MAX_BAND_HEIGHT) {
+    throw new Error('Invalid diagnostic raster band height');
+  }
+  const makeBand = (heightDots: number, yOffset: number, pixel: (x: number, y: number) => boolean): RasterBand => ({
     widthDots,
     heightDots,
     pixels: Uint8Array.from({ length: widthDots * heightDots }, (_, index) => {
       const x = index % widthDots;
-      const y = Math.floor(index / widthDots);
+      const y = yOffset + Math.floor(index / widthDots);
       return pixel(x, y) ? 1 : 0;
     }),
   });
-  const bands = [
-    makeBand(48, (x) => x >= 8 && x < widthDots - 8),
-    makeBand(48, (x, y) => Math.floor(x / 8) % 2 === Math.floor(y / 8) % 2),
-    makeBand(24, () => true),
-  ];
+  const bands: RasterBand[] = [];
+  const appendBands = (heightDots: number, pixel: (x: number, y: number) => boolean): void => {
+    for (let offset = 0; offset < heightDots; offset += maxBandHeight) {
+      bands.push(makeBand(Math.min(maxBandHeight, heightDots - offset), offset, pixel));
+    }
+  };
+  appendBands(48, (x) => x >= 8 && x < widthDots - 8);
+  appendBands(48, (x, y) => Math.floor(x / 8) % 2 === Math.floor(y / 8) % 2);
+  appendBands(24, () => true);
   bands.forEach((band) => validateRasterBand(band, maxBandHeight));
   return bands;
 }

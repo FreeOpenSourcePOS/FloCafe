@@ -39,15 +39,17 @@ export function rasterRendererHtml(): string {
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d', { alpha: false });
       if (!context) return makeFailure(request, 'render-failed', 'Canvas 2D context is unavailable');
-      const scale = request.style === 'double-width' ? 2 : 1;
-      const lineHeight = request.style === 'double-height' ? 40 : 20;
-      const fontSize = request.style === 'double-height' ? 24 : 16;
+      const scaleX = request.style === 'double-width' ? 2 : 1;
+      const scaleY = request.style === 'double-height' ? 2 : 1;
+      const logicalLineHeight = 20;
+      const lineHeight = logicalLineHeight * scaleY;
+      const fontSize = 16;
       const weight = request.style === 'bold' ? '700' : '400';
       context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
       context.textBaseline = 'top';
       context.direction = request.direction;
       context.textAlign = request.direction === 'rtl' ? 'right' : 'left';
-      const measure = (value) => context.measureText(value).width * scale;
+      const measure = (value) => context.measureText(value).width * scaleX;
       const lines = [];
       const sourceLines = request.text.split(/\\r?\\n/);
       for (const source of sourceLines) {
@@ -79,10 +81,11 @@ export function rasterRendererHtml(): string {
       context.textBaseline = 'top';
       context.direction = request.direction;
       context.textAlign = request.direction === 'rtl' ? 'right' : 'left';
+      context.setTransform(scaleX, 0, 0, scaleY, 0, 0);
       context.fillStyle = '#fff';
       context.fillRect(0, 0, width, canvas.height);
       context.fillStyle = '#000';
-      bounded.forEach((line, index) => context.fillText(line, request.direction === 'rtl' ? width : 0, index * lineHeight));
+      bounded.forEach((line, index) => context.fillText(line, request.direction === 'rtl' ? width / scaleX : 0, index * logicalLineHeight));
       const image = context.getImageData(0, 0, width, canvas.height).data;
       for (let i = 0; i < pixels.length; i++) pixels[i] = image[i * 4] < 128 ? 1 : 0;
       const bands = [];
@@ -104,7 +107,7 @@ export function rasterRendererHtml(): string {
 </script>`;
 }
 
-type RasterSurface = Pick<BrowserWindow, 'isDestroyed' | 'close' | 'webContents'>;
+type RasterSurface = Pick<BrowserWindow, 'isDestroyed' | 'close' | 'on' | 'removeListener' | 'webContents'>;
 
 export interface RasterRendererOptions {
   readonly preloadPath?: string;
@@ -119,7 +122,10 @@ export class ChromiumRasterRenderer {
   private readonly pending = new Map<string, { resolve: (result: RasterRenderResult) => void; timer: ReturnType<typeof setTimeout> }>();
   private ready: Promise<void>;
   private readyResolve!: () => void;
+  private readyTimer!: ReturnType<typeof setTimeout>;
+  private readySettled = false;
   private readyError: string | null = null;
+  private destroyed = false;
   private readonly onResult = (event: Electron.IpcMainEvent, result: unknown): void => {
     if (!this.isSurfaceSender(event.sender) || !result || typeof result !== 'object') return;
     const message = result as Partial<RasterIpcResultMessage>;
@@ -132,15 +138,21 @@ export class ChromiumRasterRenderer {
     entry.resolve(candidate);
   };
   private readonly onReady = (event: Electron.IpcMainEvent): void => {
-    if (this.isSurfaceSender(event.sender)) this.readyResolve();
+    if (this.isSurfaceSender(event.sender)) this.settleReady();
   };
   private readonly onLoadFailure = (_event: Electron.Event, errorCode: number, errorDescription: string): void => {
-    this.readyError = `Raster surface failed to load (${errorCode}): ${errorDescription}`;
-    this.readyResolve();
+    this.failSurface(`Raster surface failed to load (${errorCode}): ${errorDescription}`);
+  };
+  private readonly onSurfaceClosed = (): void => {
+    this.failSurface('Raster surface was closed');
+  };
+  private readonly onRenderProcessGone = (): void => {
+    this.failSurface('Raster renderer process exited');
   };
 
   constructor(options: RasterRendererOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? RENDER_TIMEOUT_MS;
+    this.ready = new Promise<void>((resolve) => { this.readyResolve = resolve; });
     const windowFactory = options.windowFactory ?? ((windowOptions) => new BrowserWindow(windowOptions));
     this.surface = windowFactory({
       show: false,
@@ -153,15 +165,34 @@ export class ChromiumRasterRenderer {
         sandbox: true,
       },
     });
-    this.ready = new Promise<void>((resolve) => { this.readyResolve = resolve; });
     ipcMain.on('flo:raster-ready', this.onReady);
     ipcMain.on('flo:raster-result', this.onResult);
+    this.surface.on('closed', this.onSurfaceClosed);
     this.surface.webContents.on('did-fail-load', this.onLoadFailure);
+    this.surface.webContents.on('render-process-gone', this.onRenderProcessGone);
+    this.readyTimer = setTimeout(() => this.settleReady('Raster surface readiness timed out'), this.timeoutMs);
     void this.surface.webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(rasterRendererHtml())}`);
   }
 
   private isSurfaceSender(sender: Electron.WebContents): boolean {
     return sender === this.surface.webContents;
+  }
+
+  private settleReady(error?: string): void {
+    if (this.readySettled) return;
+    this.readySettled = true;
+    if (error) this.readyError = error;
+    clearTimeout(this.readyTimer);
+    this.readyResolve();
+  }
+
+  private failSurface(detail: string): void {
+    this.settleReady(detail);
+    for (const [requestId, entry] of this.pending.entries()) {
+      clearTimeout(entry.timer);
+      entry.resolve({ version: 1, requestId, ok: false, code: 'render-failed', detail });
+    }
+    this.pending.clear();
   }
 
   async render(request: unknown): Promise<RasterRenderResult> {
@@ -171,7 +202,7 @@ export class ChromiumRasterRenderer {
         : '';
       return { version: 1, requestId, ok: false, code: 'invalid-request', detail: 'Raster request failed validation' };
     }
-    if (this.surface.isDestroyed()) {
+    if (this.destroyed || this.surface.isDestroyed()) {
       return { version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: 'Raster surface is unavailable' };
     }
     await this.ready;
@@ -187,16 +218,14 @@ export class ChromiumRasterRenderer {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     ipcMain.removeListener('flo:raster-ready', this.onReady);
     ipcMain.removeListener('flo:raster-result', this.onResult);
+    this.surface.removeListener('closed', this.onSurfaceClosed);
     this.surface.webContents.removeListener('did-fail-load', this.onLoadFailure);
-    this.readyError = this.readyError ?? 'Raster surface was closed';
-    this.readyResolve();
-    for (const entry of this.pending.values()) {
-      clearTimeout(entry.timer);
-      entry.resolve({ version: 1, requestId: '', ok: false, code: 'render-failed', detail: 'Raster surface was closed' });
-    }
-    this.pending.clear();
+    this.surface.webContents.removeListener('render-process-gone', this.onRenderProcessGone);
+    this.failSurface('Raster surface was closed');
     if (!this.surface.isDestroyed()) this.surface.close();
   }
 }

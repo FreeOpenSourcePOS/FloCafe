@@ -14,7 +14,7 @@ Companion documents:
 - [merchant-print-templates.md](merchant-print-templates.md) — the merchant template payload/envelope contracts (cross-linked, not duplicated here).
 - [i18n.md](i18n.md) — translation workflow and language registry.
 - [tax-packs.md](tax-packs.md) — signed tax/country-pack lifecycle.
-- [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md) — capability study for non-Latin scripts (FORWARD-LOOKING; raster fallback not implemented).
+- [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md) — capability study for non-Latin scripts and hardware-gated raster coverage.
 
 ---
 
@@ -544,7 +544,7 @@ The following remain future work and are described as such; do not promise
 them as shipped:
 
 - Visual merchant template editor ([#447](https://github.com/FreeOpenSourcePOS/FloCafe/issues/447) ships the model only).
-- Capability-tiered raster fallback for non-Latin scripts
+- Broader hardware- and font-validated raster coverage for non-Latin scripts
   ([printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md)).
 - Localized product/add-on *data* on receipts (labels are localized today;
   product names print as stored).

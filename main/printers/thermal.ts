@@ -37,6 +37,7 @@ import {
   type ThermalCodePage,
   type ThermalPrinterCapabilities,
 } from '../../shared/print/thermal-capabilities';
+import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippPrintRaw } from './ipp-client';
 
 export type PrintResult = {
   ok: boolean;
@@ -166,8 +167,16 @@ function parseDeviceUri(uri: string): { ip?: string; port?: number } {
 export async function detectConnectedPrinters(signal?: AbortSignal): Promise<PrinterInfo[]> {
   const printers: PrinterInfo[] = [];
 
-  if (isMasBuild || signal?.aborted) {
+  if (signal?.aborted) {
     return printers;
+  }
+
+  if (isMasBuild) {
+    // The App Sandbox blocks the `lpstat`/`lpoptions` shell-outs detectMacOSPrinters
+    // relies on, but CUPS's own local IPP server (127.0.0.1:631, always listening)
+    // is reachable with the network-client entitlement already granted — see
+    // ipp-client.ts for why this works where shelling out doesn't.
+    return process.platform === 'darwin' ? await detectPrintersViaIpp(signal) : printers;
   }
 
   if (process.platform === 'darwin') {
@@ -233,6 +242,66 @@ async function detectMacOSPrinters(signal?: AbortSignal): Promise<PrinterInfo[]>
     }
   } catch (err) {
     console.log('[Printer] Could not detect macOS printers:', err);
+  }
+
+  return printers;
+}
+
+// MAS-build counterpart to detectMacOSPrinters: same CUPS queues, reached over
+// local IPP instead of `lpstat`/`lpoptions` (see ipp-client.ts for why).
+async function detectPrintersViaIpp(signal?: AbortSignal): Promise<PrinterInfo[]> {
+  const printers: PrinterInfo[] = [];
+
+  try {
+    const [groups, defaultName] = await Promise.all([
+      ippGetPrinters(signal),
+      ippGetDefaultPrinterName(signal).catch(() => null),
+    ]);
+
+    for (const group of groups) {
+      if (signal?.aborted) return printers;
+      const name = group['printer-name']?.[0];
+      if (typeof name !== 'string' || !name) continue;
+
+      const deviceUri = String(group['device-uri']?.[0] || '');
+      const makeAndModel = String(group['printer-make-and-model']?.[0] || '');
+      const isNetwork = /^(socket|ipp|ipps|http|https|lpd):\/\//i.test(deviceUri);
+      const { ip, port } = isNetwork ? parseDeviceUri(deviceUri) : {};
+      const parsedUsb = !isNetwork ? parseCupsDeviceUri(deviceUri) : null;
+
+      const [make, ...modelParts] = makeAndModel.split(' ');
+      const model = modelParts.join(' ') || 'Thermal Printer';
+
+      const state = group['printer-state']?.[0];
+      const accepting = group['printer-is-accepting-jobs']?.[0];
+      const status: 'idle' | 'printing' | 'offline' =
+        accepting === false || state === 5 ? 'offline' : state === 4 ? 'printing' : 'idle';
+
+      printers.push(annotateProfile({
+        name,
+        make: parsedUsb?.make || make || 'Unknown',
+        model: parsedUsb?.model || model,
+        connectionType: isNetwork ? 'network' : 'usb',
+        deviceUri,
+        status,
+        isDefault: name === defaultName,
+        ipAddress: ip,
+        port: port || (isNetwork ? 9100 : undefined),
+        paperWidth: guessPaperWidth(name, parsedUsb?.model || model),
+      }));
+    }
+
+    // CUPS-Get-Default reports the server-level default, which most desktop
+    // installs never set — the "default" shown in System Settings/`lpstat -d`
+    // is a user-level lpoptions preference IPP has no operation for, and it
+    // is outside a sandboxed app's readable container. A single configured
+    // printer is the common case for a small POS setup and unambiguous, so
+    // fall back to it rather than leaving every printer's isDefault false.
+    if (!defaultName && printers.length === 1) {
+      printers[0].isDefault = true;
+    }
+  } catch (err) {
+    console.log('[Printer] Could not detect printers via local IPP:', err);
   }
 
   return printers;
@@ -632,7 +701,11 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
         warnings,
       };
     }
-    const receiptData = printer.cash_drawer_pulse_enabled === 1 ? appendCashDrawerPulse(data) : data;
+    const pulseSetting = getSettingValue('cash_drawer_pulse_enabled');
+    const shouldPulse = pulseSetting === null
+      ? printer.cash_drawer_pulse_enabled === 1
+      : pulseSetting === 'true' && shouldPulseForPayment(bill);
+    const receiptData = shouldPulse ? appendCashDrawerPulse(data) : data;
     console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
     console.log('[Printer] Receipt data length:', receiptData.length, 'bytes');
     console.log('[Printer] First 100 bytes:', Array.from(receiptData.slice(0, 100)).map(b => b.toString(16)).join(' '));
@@ -643,6 +716,35 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
     console.error('[Printer] Print error:', error);
     return { ok: false, detail: error?.message };
   }
+}
+
+/**
+ * Decide whether a paid bill contains a payment method selected for drawer
+ * opening. The setting is intentionally evaluated here, immediately before
+ * dispatch, so every receipt path shares the same backend-authoritative rule.
+ */
+function shouldPulseForPayment(bill: any): boolean {
+  const configured = getSettingValue('cash_drawer_pulse_methods');
+  let methods: string[] = ['cash', 'card'];
+  try {
+    const parsed = configured ? JSON.parse(configured) : methods;
+    if (Array.isArray(parsed)) methods = parsed.filter((value): value is string => typeof value === 'string');
+  } catch { /* Keep the safe cash/card defaults. */ }
+  if (!bill?.payment_details) return false;
+  try {
+    const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
+    if (!Array.isArray(payments)) return false;
+    const db = getDatabase();
+    return payments.some((payment: any) => {
+      if (!payment || Number(payment.amount || 0) <= 0) return false;
+      let method = String(payment.method || '').toLowerCase();
+      if (method === 'custom' && Number.isSafeInteger(Number(payment.payment_method_id))) {
+        const row = db.prepare('SELECT name FROM payment_methods WHERE id = ?').get(Number(payment.payment_method_id)) as { name?: string } | undefined;
+        method = String(row?.name || method).toLowerCase();
+      }
+      return methods.some((selected) => selected.toLowerCase() === method);
+    });
+  } catch { return false; }
 }
 
 export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false, targetPrinter?: any, signal?: AbortSignal, arabicShapingOverride?: boolean, language?: string): Promise<DispatchResult> {
@@ -826,6 +928,9 @@ async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): 
       return await printViaNetwork(printer.ip_address, printer.port || 9100, data, signal);
     case 'usb':
       if (isMasBuild) {
+        if (process.platform === 'darwin') {
+          return await printViaLocalIpp(data, printer.name, signal);
+        }
         const detail = 'USB printers are not supported in the App Store build. Use a network printer.';
         console.log(`[Printer] ${detail}`);
         return { ok: false, detail };
@@ -1887,6 +1992,44 @@ export async function printViaUSB(data: Buffer, printerName?: string, signal?: A
 
   console.warn('[Printer] Unsupported platform:', process.platform);
   return { ok: false, detail: `Unsupported platform: ${process.platform}` };
+}
+
+// MAS-build counterpart to printViaCups: submits the same raw ESC/POS bytes
+// to the same CUPS queue, over local IPP instead of shelling out to `lp`
+// (blocked by the App Sandbox). See ipp-client.ts for the rationale.
+async function printViaLocalIpp(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
+  if (!printerName) {
+    return { ok: false, detail: 'No printer configured' };
+  }
+
+  try {
+    const attrs = await ippGetPrinterAttributes(printerName, signal);
+    if (attrs.state === 5) {
+      return { ok: false, detail: 'print queue is disabled' };
+    }
+    if (attrs.isAcceptingJobs === false) {
+      return { ok: false, detail: 'print queue is not accepting jobs' };
+    }
+  } catch (err) {
+    // Mirrors describeCupsQueueProblem: an unreachable/unknown queue check
+    // should not itself block the print — let Print-Job below surface the
+    // real failure if there is one.
+    console.log(`[Printer] IPP pre-flight check failed for "${printerName}":`, err);
+  }
+
+  try {
+    const result = await ippPrintRaw(printerName, data, signal);
+    if (!result.ok) {
+      console.error(`[Printer] IPP print failed for "${printerName}": ${result.detail}`);
+      return { ok: false, detail: result.detail || `IPP print failed for "${printerName}"` };
+    }
+    console.log(`[Printer] IPP print queued for "${printerName}" (job ${result.jobId ?? 'unknown'})`);
+    return { ok: true, jobId: result.jobId };
+  } catch (err: any) {
+    const detail = String(err?.message || err || '').trim();
+    console.error(`[Printer] IPP print failed for "${printerName}": ${detail}`);
+    return { ok: false, detail: detail || `IPP print failed for "${printerName}"` };
+  }
 }
 
 // `lp` exits 0 as soon as CUPS accepts the job into the queue, so a queue that

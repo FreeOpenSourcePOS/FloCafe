@@ -29,7 +29,7 @@ import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
-import { rasterCapabilityEnabled } from '@print/raster';
+import { rasterWebUsbPathEnabled } from '@print/raster';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
@@ -236,10 +236,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const webusbPrinter = get().webusbPrinter;
           const webusbCapabilities = webusbPrinter?.capabilities;
-          if (webusbCapabilities && rasterCapabilityEnabled(webusbCapabilities, 'mixed')) {
-            if (!window.electronAPI?.rasterizePrintDocument || !webusbPrinter?.profile_id) {
-              throw new Error('Raster renderer is unavailable for this printer profile');
-            }
+          if (rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizePrintDocument), webusbPrinter?.profile_id)) {
             const rasterResult = await window.electronAPI.rasterizePrintDocument({
               document: buildFrontendBillDocument(bill, tenant, {
                 ...builderOpts,
@@ -424,10 +421,7 @@ export const usePrinterStore = create<PrinterState>()(
             const webusbPrinter = get().webusbPrinter;
             const webusbCapabilities = webusbPrinter?.capabilities;
             let output = bytes;
-            if (webusbCapabilities && rasterCapabilityEnabled(webusbCapabilities, 'mixed')) {
-              if (!window.electronAPI?.rasterizeKotDocument || !webusbPrinter?.profile_id) {
-                throw new Error('Raster renderer is unavailable for this printer profile');
-              }
+            if (rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizeKotDocument), webusbPrinter?.profile_id)) {
               const rasterResult = await window.electronAPI.rasterizeKotDocument({
                 order: orderForPrint,
                 items: orderForPrint.items ?? [],

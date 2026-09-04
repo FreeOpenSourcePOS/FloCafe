@@ -16,6 +16,7 @@ import { parseDbTimestamp } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
 import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
   addonRows,
@@ -67,6 +68,7 @@ export interface CompactDocumentRenderOptions {
   readonly arabicShaping: boolean;
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
+  readonly rasterGroups?: RasterSemanticLineGroup[];
 }
 
 function labelOf(label: SemanticLabel): string {
@@ -121,10 +123,14 @@ export function renderBillDocumentToCompactLines(
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const normalize = (text: string): string => normalizeThermalText(text, options.capabilities);
+  const markGroup = (groupId: string, start: number): void => {
+    if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start });
+  };
 
   lines.push('{INIT}');
 
   // Reprint banner (MessageBlock).
+  const messageStart = lines.length;
   if (messages?.reprintBanner) {
     lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(messages.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
   }
@@ -136,12 +142,16 @@ export function renderBillDocumentToCompactLines(
     if (banner.platform.text) lines.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
     if (banner.externalOrderId.text) lines.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
   }
+  markGroup('message-pre', messageStart);
 
   // Business header (store name only — compact keeps contact facts in the footer).
+  const headerStart = lines.length;
   if (header?.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(header.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
+  markGroup('business-header', headerStart);
   lines.push(bar);
 
   // Document meta.
+  const metaStart = lines.length;
   if (meta) {
     lines.push(normalize(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text));
     const date = parseDbTimestamp(meta.timestamp.text);
@@ -150,8 +160,11 @@ export function renderBillDocumentToCompactLines(
       lines.push(truncateShapedLine(meta.table.label.primary.replace('{name}', meta.table.name.text), cols, options.arabicShaping, options.language, options.capabilities));
     }
   }
+  markGroup('document-meta', metaStart);
+  const customerStart = lines.length;
   if (customer?.name) lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language, options.capabilities));
   if (customer?.phone) lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + customer.phone.text));
+  if (options.rasterGroups && lines.length > customerStart) options.rasterGroups.push({ groupId: 'customer', lineIndex: customerStart, lineCount: lines.length - customerStart });
   lines.push(dash);
 
   // Item table.
@@ -168,7 +181,8 @@ export function renderBillDocumentToCompactLines(
     lines.push(compactItemHeader(items, nameLen, amtLen, options.language, options.capabilities));
     lines.push(dash);
 
-    for (const row of items.rows) {
+    for (const [rowIndex, row] of items.rows.entries()) {
+      const rowStart = lines.length;
       lines.push(...itemRows(
         { product_name: row.name.text, quantity: row.quantity, total: row.amount },
         nameLen,
@@ -187,12 +201,14 @@ export function renderBillDocumentToCompactLines(
       if (row.specialInstructions) {
         lines.push(normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language, options.capabilities)));
       }
+      if (options.rasterGroups && lines.length > rowStart) options.rasterGroups.push({ groupId: `item-table-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart });
     }
   }
 
   lines.push(dash);
 
   // Totals (compact has no loyalty points section).
+  const totalsStart = lines.length;
   if (totals) {
     lines.push(...financialRows(labelOf(totals.subtotal.label), formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
     if (totals.discount) {
@@ -218,8 +234,10 @@ export function renderBillDocumentToCompactLines(
     }
     lines.push(...financialRows(labelOf(totals.grandTotal.label), formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
   }
+  markGroup('totals', totalsStart);
 
   // Payments.
+  const paymentsStart = lines.length;
   if (payments && payments.lines.length > 0) {
     lines.push(dash);
     for (const line of payments.lines) {
@@ -227,14 +245,17 @@ export function renderBillDocumentToCompactLines(
       lines.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
     }
   }
+  markGroup('payments', paymentsStart);
 
   // Footer contact details.
+  const footerStart = lines.length;
   lines.push(bar);
   if (header?.address) pushWrapped(lines, header.address.text, cols, options.language, options.capabilities);
   if (header?.phone && header.phoneLabel) pushWrapped(lines, labelOf(header.phoneLabel) + ': ' + header.phone.text, cols, options.language, options.capabilities);
   if (header?.taxId) pushWrapped(lines, labelOf(header.taxId.label) + ': ' + header.taxId.value.text, cols, options.language, options.capabilities);
   if (messages?.footerNote) pushCenteredWrapped(lines, messages.footerNote.text, cols, options.language, options.capabilities);
   else lines.push('{CENTER}' + normalize(labelOf(messages!.thankYou!)) + '{/CENTER}');
+  markGroup('footer', footerStart);
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
@@ -250,6 +271,7 @@ export interface CompactDocumentRenderResult {
   readonly lines: string[];
   readonly data: Buffer;
   readonly warnings: PrintWarning[];
+  readonly rasterGroups: readonly RasterSemanticLineGroup[];
 }
 
 /**
@@ -280,6 +302,7 @@ export function renderCompactReceiptViaDocument(
   });
   const document = buildBillDocument(printData, printContext);
   const warnings: PrintWarning[] = [];
+  const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = renderBillDocumentToCompactLines(document, {
     columns: opts.columns,
     language: printContext.languages[0],
@@ -292,7 +315,8 @@ export function renderCompactReceiptViaDocument(
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
+    rasterGroups,
   });
   const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);
-  return { document, lines, data, warnings };
+  return { document, lines, data, warnings, rasterGroups };
 }

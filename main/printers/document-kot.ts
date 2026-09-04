@@ -15,6 +15,7 @@ import { parseDbTimestamp } from '../db';
 import { printLabel, type PrintConceptId } from '../print/print-labels.generated';
 import type { PrinterCutMode } from './profiles';
 import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
   buildEscPos,
@@ -113,6 +114,7 @@ export interface KotDocumentRenderOptions {
   readonly arabicShaping: boolean;
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
+  readonly rasterGroups?: RasterSemanticLineGroup[];
 }
 
 /** Typed accessor for one block kind within a KOT document. */
@@ -156,7 +158,6 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const thermalCapabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
 
-  lines.push('{INIT}');
   const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping, options.capabilities);
   const station = thermalSafeText(
     `${labelOf(header.stationLabel)}: ${header.stationName.text}`,
@@ -244,13 +245,20 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
   const cols = options.columns;
   const bar = '='.repeat(cols);
 
-  if (header) lines.push(...kotHeaderLines(header, options));
+  lines.push('{INIT}');
+  if (header) {
+    const headerStart = lines.length;
+    lines.push(...kotHeaderLines(header, options));
+    options.rasterGroups?.push({ groupId: 'kot-header', lineIndex: headerStart, lineCount: lines.length - headerStart });
+  }
   lines.push(bar);
   lines.push('');
 
   if (items) {
-    for (const row of items.rows) {
+    for (const [rowIndex, row] of items.rows.entries()) {
+      const rowStart = lines.length;
       lines.push(...kotItemLines(row, cols, options.arabicShaping, options.language, options.capabilities));
+      options.rasterGroups?.push({ groupId: `kot-items-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart });
     }
   }
 
@@ -270,6 +278,7 @@ export interface KotDocumentRenderResult {
   readonly lines: string[];
   readonly data: Buffer;
   readonly warnings: PrintWarning[];
+  readonly rasterGroups: readonly RasterSemanticLineGroup[];
 }
 
 /**
@@ -300,6 +309,7 @@ export function renderKotViaDocument(
   });
   const document = buildKotDocument(printData, printContext);
   const warnings: PrintWarning[] = [];
+  const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = renderKotDocumentToLines(document, {
     columns: opts.columns,
     language: opts.language,
@@ -309,7 +319,8 @@ export function renderKotViaDocument(
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
+    rasterGroups,
   });
   const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);
-  return { document, lines, data, warnings };
+  return { document, lines, data, warnings, rasterGroups };
 }

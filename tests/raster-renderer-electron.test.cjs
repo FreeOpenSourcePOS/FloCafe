@@ -30,6 +30,31 @@ async function run() {
     await surface.webContents.executeJavaScript(`
       window.FontFace = class {
         constructor(family) { this.family = family; }
+        load() { return Promise.reject(new Error('bundled font unavailable')); }
+      };
+    `);
+    const fontFailure = await renderer.render({
+      version: 1,
+      requestId: 'electron-font-failure',
+      text: 'שלום עולם',
+      widthDots: 120,
+      maxBandHeight: 200,
+      direction: 'rtl',
+      align: 'center',
+      style: 'normal',
+      maxLines: 4,
+      bundledFont: font,
+    });
+    assert.deepEqual(fontFailure, {
+      version: 1,
+      requestId: 'electron-font-failure',
+      ok: false,
+      code: 'font-unavailable',
+      detail: 'bundled font unavailable',
+    });
+    await surface.webContents.executeJavaScript(`
+      window.FontFace = class {
+        constructor(family) { this.family = family; }
         load() { return Promise.resolve(this); }
       };
     `);

@@ -9,12 +9,14 @@ import {
   isRasterRenderRequest,
   isRasterRenderResult,
   rasterCapabilityEnabled,
+  rasterWebUsbPathEnabled,
   type RasterBand,
 } from '../shared/print/raster';
 import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '../shared/print/thermal-capabilities';
+import { isPrintDocument } from '../shared/print/document';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
-import { buildEscPos } from '../main/printers/thermal';
+import { buildEscPos, itemRows } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
 
@@ -65,8 +67,19 @@ async function run(): Promise<void> {
   const caps = capability();
   assert.equal(rasterCapabilityEnabled(caps), true);
   assert.equal(rasterCapabilityEnabled(caps, 'whole-receipt'), true);
+  assert.equal(rasterWebUsbPathEnabled(caps, false, 'validated-profile'), false);
+  assert.equal(rasterWebUsbPathEnabled(caps, true, undefined), false);
+  assert.equal(rasterWebUsbPathEnabled(caps, true, 'validated-profile'), true);
   assert.equal(rasterCapabilityEnabled(GENERIC_THERMAL_CAPABILITIES), false);
   assert.equal(getSupportedPrinterProfiles().every((profile) => profile.capabilities.raster.enabled === false), true);
+  assert.equal(isPrintDocument({
+    version: 1,
+    direction: { base: 'ltr', document: 'ltr', block: 'ltr', value: 'ltr' },
+    languages: ['en'],
+    blocks: [],
+  }), false);
+  const longUnsupportedName = 'فارسی خیلی طولانی برای اندازه‌گیری';
+  assert.equal(itemRows({ product_name: longUnsupportedName, quantity: 1, total: 1 }, 4, 4, 12, '₹', 'en-US', false, 'fa', 2, caps)[0].includes('..'), false);
   const unit = { unitId: 'row-1', financial: false, complete: true, bands: [twoRows] } as const;
   const native = Uint8Array.from([0x1B, 0x40, 0x41, 0x0A]);
   const mixed = encodeMixedPrintParts([{ kind: 'native', bytes: native }, { kind: 'raster', unit }], caps, 'partial');
@@ -141,6 +154,27 @@ async function run(): Promise<void> {
   assert.equal(renderRequests[0].direction, 'rtl');
   assert.equal(renderRequests[0].align, 'left');
   assert.equal(renderRequests.length, 2);
+  const groupedCustomer = await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      const typedRequest = rasterRequest as any;
+      renderRequests.push(typedRequest);
+      return { version: 1, requestId: typedRequest.requestId, ok: true, unit: { unitId: typedRequest.requestId, financial: false, complete: true, bands: [twoRows] } };
+    },
+  }, ['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], caps, 'customer', [{ groupId: 'customer', lineIndex: 0, lineCount: 2 }]);
+  assert.equal(groupedCustomer.units[0]?.unit.unitId, 'customer');
+  assert.equal(groupedCustomer.units[0]?.lineCount, 2);
+  assert.equal(renderRequests.at(-2)?.text, 'فارسی');
+  assert.equal(renderRequests.at(-1)?.text, '555-0100');
+  const fontBRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      const typedRequest = rasterRequest as any;
+      fontBRequests.push(typedRequest);
+      return { version: 1, requestId: typedRequest.requestId, ok: true, unit: { unitId: typedRequest.requestId, financial: false, complete: true, bands: [twoRows] } };
+    },
+  }, ['{CENTER}{FONT_B}فارسی{/FONT_B}{/CENTER}'], caps, 'font-b');
+  assert.deepEqual(fontBRequests[0].styles, ['font-b']);
+  assert.equal(fontBRequests[0].style, 'font-b');
   const styledBanner = await renderUnsupportedRasterLines({
     render: async (rasterRequest) => ({
       version: 1 as const,

@@ -39,6 +39,7 @@ import {
 } from '../../shared/print/thermal-capabilities';
 import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippPrintRaw } from './ipp-client';
 import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled, type RasterSemanticUnit } from '../../shared/print/raster';
+import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
 
 export type PrintResult = {
@@ -813,7 +814,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
         language: normalizePrintLanguage(language ?? biz?.language),
         capabilities,
         requestPrefix: 'kot',
-      });
+      }, documentResult.rasterGroups);
       data = rasterized.data;
       warnings.push(...rasterized.warnings);
     } else {
@@ -1027,7 +1028,7 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   return { printer, data, warnings, columns };
 }
 
-type RasterDocumentLines = { lines: string[]; warnings: PrintWarning[] };
+type RasterDocumentLines = { lines: string[]; warnings: PrintWarning[]; rasterGroups?: readonly RasterSemanticLineGroup[] };
 
 function receiptDocumentLines(
   order: any,
@@ -1095,11 +1096,12 @@ async function rasterizeDocumentLines(
     capabilities: ThermalPrinterCapabilities;
     requestPrefix: string;
   },
+  rasterGroups?: readonly RasterSemanticLineGroup[],
 ): Promise<{ data: Buffer; warnings: PrintWarning[] }> {
   const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
   const renderer = new ChromiumRasterRenderer();
   try {
-    const raster = await renderUnsupportedRasterLines(renderer, lines, options.capabilities, options.requestPrefix);
+    const raster = await renderUnsupportedRasterLines(renderer, lines, options.capabilities, options.requestPrefix, rasterGroups);
     const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
     const data = buildEscPos(lines, options.useUnicode, {
       cutMode: options.cutMode,
@@ -1142,23 +1144,26 @@ export async function rasterizePrintDocumentForWebUsb(
   const profile = resolvePrinterProfile({ profile_id: profileId });
   const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
+  const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = template === 'compact'
     ? renderBillDocumentToCompactLines(document, {
       ...options,
       cutMode: profile.cutMode,
       capabilities,
+      rasterGroups,
     })
     : renderBillDocumentToClassicLines(document, {
       ...options,
       cutMode: profile.cutMode,
       capabilities,
+      rasterGroups,
     });
   const result = await rasterizeDocumentLines(lines, [], {
     ...options,
     cutMode: profile.cutMode,
     capabilities,
     requestPrefix: 'webusb-receipt',
-  });
+  }, rasterGroups);
   if (hasFinancialPrintWarning(result.warnings)) {
     return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
   }
@@ -1193,7 +1198,7 @@ export async function rasterizeKotDocumentForWebUsb(
     cutMode: profile.cutMode,
     capabilities,
     requestPrefix: 'webusb-kot',
-  });
+  }, document.rasterGroups);
   if (hasFinancialPrintWarning(result.warnings)) {
     return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
   }
@@ -1238,7 +1243,7 @@ async function rasterizeReceiptIfEnabled(
     language: normalizePrintLanguage(language),
     capabilities,
     requestPrefix: 'receipt',
-  });
+  }, document.rasterGroups);
   return { ...prepared, data: result.data, warnings: result.warnings };
 }
 
@@ -1787,6 +1792,7 @@ export function rightAlign(text: string, width: number = 24): string {
 
 export function truncate(text: string, length: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
   const normalizedText = normalizeThermalText(text, capabilities);
+  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalizedText, capabilities)) return normalizedText;
   return normalizedText.length > length ? normalizedText.substring(0, length - 2) + '..' : normalizedText;
 }
 
@@ -1857,11 +1863,19 @@ export function wrapText(text: string, cols: number): string[] {
 
 export function pushWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
   const normalized = normalizeThermalText(text, capabilities);
+  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalized, capabilities)) {
+    lines.push(normalized);
+    return;
+  }
   for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
 export function pushCenteredWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
   const normalized = normalizeThermalText(text, capabilities);
+  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalized, capabilities)) {
+    lines.push('{CENTER}' + normalized + '{/CENTER}');
+    return;
+  }
   for (const line of wrapText(normalized, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 

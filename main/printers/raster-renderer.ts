@@ -8,6 +8,7 @@ import {
   type RasterRenderResult,
   type RasterStyle,
   type RasterSemanticUnit,
+  type RasterSemanticLineGroup,
 } from '../../shared/print/raster';
 import {
   isThermalTextRepresentable,
@@ -50,7 +51,7 @@ export function rasterRendererHtml(): string {
       const scaleY = styles.includes('double-height') ? 2 : 1;
       const logicalLineHeight = 24;
       const lineHeight = logicalLineHeight * scaleY;
-      const fontSize = 16;
+      const fontSize = styles.includes('font-b') ? 12 : 16;
       const weight = styles.includes('bold') ? '700' : '400';
       context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
       context.textBaseline = 'top';
@@ -284,13 +285,14 @@ export interface RasterLineRenderFailure {
   readonly detail: string;
 }
 
-interface RasterSemanticLineGroup {
+interface RasterSemanticLineGroupWithLines extends RasterSemanticLineGroup {
+  readonly groupId: string;
   readonly lineIndex: number;
   readonly lines: readonly string[];
 }
 
-function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroup[] {
-  const groups: RasterSemanticLineGroup[] = [];
+function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWithLines[] {
+  const groups: RasterSemanticLineGroupWithLines[] = [];
   for (let lineIndex = 0; lineIndex < lines.length;) {
     const line = lines[lineIndex];
     const kotItem = line.includes('{DOUBLE_HEIGHT}') && line.includes('{BOLD}') && !line.includes('{/CENTER}');
@@ -304,11 +306,11 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroup[]
         if (kotItem && candidate.includes('{DOUBLE_HEIGHT}') && candidate.includes('{BOLD}')) break;
         next += 1;
       }
-      groups.push({ lineIndex, lines: lines.slice(lineIndex, next) });
+      groups.push({ groupId: `${kotItem ? 'kot-item' : 'financial'}-${lineIndex}`, lineIndex, lines: lines.slice(lineIndex, next) });
       lineIndex = next;
       continue;
     }
-    groups.push({ lineIndex, lines: [line] });
+    groups.push({ groupId: `line-${lineIndex}`, lineIndex, lines: [line] });
     lineIndex += 1;
   }
   return groups;
@@ -327,6 +329,7 @@ function requestForRasterLine(
     line.includes('{BOLD}') ? 'bold' : null,
     line.includes('{DOUBLE_HEIGHT}') ? 'double-height' : null,
     line.includes('{DOUBLE_WIDTH}') ? 'double-width' : null,
+    line.includes('{FONT_B}') ? 'font-b' : null,
   ].filter((style): style is RasterStyle => style !== null);
   return {
     version: 1,
@@ -338,7 +341,8 @@ function requestForRasterLine(
     align: line.includes('{CENTER}') && line.includes('{/CENTER}') ? 'center' : 'left',
     style: line.includes('{DOUBLE_HEIGHT}') ? 'double-height'
       : line.includes('{DOUBLE_WIDTH}') ? 'double-width'
-        : line.includes('{BOLD}') ? 'bold' : 'normal',
+        : line.includes('{FONT_B}') ? 'font-b'
+          : line.includes('{BOLD}') ? 'bold' : 'normal',
     ...(styles.length > 0 ? { styles } : {}),
     maxLines: 256,
     bundledFont: capabilities.raster.font!,
@@ -350,10 +354,24 @@ export async function renderUnsupportedRasterLines(
   lines: readonly string[],
   capabilities: ThermalPrinterCapabilities,
   requestPrefix: string,
+  rasterGroups?: readonly RasterSemanticLineGroup[],
 ): Promise<{ units: Array<{ lineIndex: number; lineCount: number; unit: RasterSemanticUnit }>; failures: RasterLineRenderFailure[] }> {
   const units: Array<{ lineIndex: number; lineCount: number; unit: RasterSemanticUnit }> = [];
   const failures: RasterLineRenderFailure[] = [];
-  for (const group of semanticLineGroups(lines)) {
+  const groups = rasterGroups
+    ? rasterGroups.flatMap((group) => {
+      if (!Number.isSafeInteger(group.lineIndex) || !Number.isSafeInteger(group.lineCount)
+        || group.lineIndex < 0 || group.lineCount <= 0 || group.lineIndex + group.lineCount > lines.length) return [];
+      return [{ ...group, lines: lines.slice(group.lineIndex, group.lineIndex + group.lineCount) }];
+    })
+    : semanticLineGroups(lines);
+  const covered = new Set<number>(groups.flatMap((group) => Array.from({ length: group.lineCount }, (_, offset) => group.lineIndex + offset)));
+  const completeGroups: RasterSemanticLineGroupWithLines[] = [...groups];
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    if (!covered.has(lineIndex)) completeGroups.push({ groupId: `line-${lineIndex}`, lineIndex, lineCount: 1, lines: [lines[lineIndex]] });
+  }
+  completeGroups.sort((left, right) => left.lineIndex - right.lineIndex);
+  for (const group of completeGroups) {
     const groupText = group.lines.map((line) => line.replace(/\{[A-Z_/]+\}/g, '')).filter(Boolean).join('\n');
     const needsRaster = group.lines.some((line) => {
       const text = line.replace(/\{[A-Z_/]+\}/g, '');
@@ -385,7 +403,7 @@ export async function renderUnsupportedRasterLines(
       lineIndex: group.lineIndex,
       lineCount: group.lines.length,
       unit: {
-        unitId: `${requestPrefix}-${group.lineIndex}`,
+        unitId: group.groupId,
         financial,
         complete: true,
         bands: renderedUnits.flatMap((unit) => unit.bands),

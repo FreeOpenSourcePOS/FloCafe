@@ -13,7 +13,7 @@ export const DEFAULT_RASTER_MAX_BAND_HEIGHT = 200;
 export const GS_V_0_MODE = 0;
 
 export type RasterTextDirection = 'ltr' | 'rtl';
-export type RasterStyle = 'normal' | 'bold' | 'double-height' | 'double-width';
+export type RasterStyle = 'normal' | 'bold' | 'double-height' | 'double-width' | 'font-b';
 
 export interface RasterBand {
   readonly widthDots: number;
@@ -28,6 +28,12 @@ export interface RasterSemanticUnit {
   readonly financial: boolean;
   readonly complete: boolean;
   readonly bands: readonly RasterBand[];
+}
+
+export interface RasterSemanticLineGroup {
+  readonly groupId: string;
+  readonly lineIndex: number;
+  readonly lineCount: number;
 }
 
 export interface RasterRenderRequest {
@@ -69,6 +75,17 @@ export function rasterCapabilityEnabled(
     && Number.isSafeInteger(capabilities.raster.maxBandHeight)
     && capabilities.raster.maxBandHeight > 0 && capabilities.raster.maxBandHeight <= DEFAULT_RASTER_MAX_BAND_HEIGHT
     && capabilities.raster.modes.includes(mode);
+}
+
+export function rasterWebUsbPathEnabled(
+  capabilities: ThermalPrinterCapabilities | undefined,
+  rendererAvailable: boolean,
+  profileId: unknown,
+): boolean {
+  return rasterCapabilityEnabled(capabilities, 'mixed')
+    && rendererAvailable
+    && typeof profileId === 'string'
+    && profileId.length > 0;
 }
 
 export function validateRasterBand(band: RasterBand, maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT): void {
@@ -224,9 +241,9 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
     && Number.isSafeInteger(request.maxBandHeight) && (request.maxBandHeight as number) > 0 && (request.maxBandHeight as number) <= DEFAULT_RASTER_MAX_BAND_HEIGHT
     && (request.direction === 'ltr' || request.direction === 'rtl')
     && (request.align === undefined || request.align === 'left' || request.align === 'center')
-    && ['normal', 'bold', 'double-height', 'double-width'].includes(request.style as string)
+    && ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(request.style as string)
     && (request.styles === undefined || (Array.isArray(request.styles) && request.styles.length > 0 && request.styles.length <= 4
-      && request.styles.every((style) => ['normal', 'bold', 'double-height', 'double-width'].includes(style))))
+      && request.styles.every((style) => ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(style))))
     && Number.isSafeInteger(request.maxLines) && (request.maxLines as number) > 0 && (request.maxLines as number) <= 256
     && !!request.bundledFont && typeof request.bundledFont.family === 'string'
     && /^[A-Za-z0-9 _-]{1,64}$/.test(request.bundledFont.family)

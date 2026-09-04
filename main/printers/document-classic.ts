@@ -25,6 +25,7 @@ import {
 } from '../print/print-labels.generated';
 import type { PrinterCutMode } from './profiles';
 import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
   addonRows,
@@ -225,6 +226,7 @@ export interface ClassicDocumentRenderOptions {
   readonly arabicShaping: boolean;
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
+  readonly rasterGroups?: RasterSemanticLineGroup[];
 }
 
 function labelOf(label: SemanticLabel): string {
@@ -297,12 +299,13 @@ export function renderBillDocumentToClassicLines(
     pre: string[];
     main: string[];
     post: string[];
+    groups: Array<{ groupId: string; start: number; count: number }>;
   }
   const segments = new Map<PrintDocumentBlock['kind'], BlockSegments>();
   const segmentOf = (kind: PrintDocumentBlock['kind']): BlockSegments => {
     let segment = segments.get(kind);
     if (!segment) {
-      segment = { pre: [], main: [], post: [] };
+      segment = { pre: [], main: [], post: [], groups: [] };
       segments.set(kind, segment);
     }
     return segment;
@@ -344,8 +347,10 @@ export function renderBillDocumentToClassicLines(
       }
       case 'customer': {
         const segment = segmentOf('customer');
+        const start = segment.main.length;
         if (block.name) segment.main.push('{CENTER}{FONT_B}' + truncateShapedLine(block.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/FONT_B}{/CENTER}');
         if (block.phone) segment.main.push('{CENTER}' + block.phone.text + '{/CENTER}');
+        if (segment.main.length > start) segment.groups.push({ groupId: 'customer', start, count: segment.main.length - start });
         break;
       }
       case 'document-meta': {
@@ -377,7 +382,8 @@ export function renderBillDocumentToClassicLines(
         const nameLen = itemNameWidth(cols, amtLen);
         segment.main.push(classicItemHeader(block, nameLen, amtLen, options.language, options.capabilities));
         segment.main.push(dash);
-        for (const row of block.rows) {
+        for (const [rowIndex, row] of block.rows.entries()) {
+          const start = segment.main.length;
           segment.main.push(...itemRows(
             { product_name: row.name.text, quantity: row.quantity, total: row.amount },
             nameLen,
@@ -396,6 +402,7 @@ export function renderBillDocumentToClassicLines(
           if (row.specialInstructions) {
             segment.main.push(normalize('  ' + labelOf(block.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language, options.capabilities)));
           }
+          if (segment.main.length > start) segment.groups.push({ groupId: `item-table-row-${rowIndex}`, start, count: segment.main.length - start });
         }
         segment.main.push(dash);
         break;
@@ -515,7 +522,18 @@ export function renderBillDocumentToClassicLines(
 
   const emit = (kind: PrintDocumentBlock['kind'], part: keyof BlockSegments): void => {
     const segment = segments.get(kind);
-    if (segment) lines.push(...segment[part]);
+    if (!segment || part === 'groups') return;
+    const start = lines.length;
+    lines.push(...segment[part]);
+    if (options.rasterGroups && segment[part].length > 0) {
+      if (part === 'main' && segment.groups.length > 0) {
+        for (const group of segment.groups) {
+          options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count });
+        }
+      } else {
+        options.rasterGroups.push({ groupId: `${kind}-${part}`, lineIndex: start, lineCount: segment[part].length });
+      }
+    }
   };
 
   if (isCanonicalRelativeOrder) {
@@ -540,7 +558,9 @@ export function renderBillDocumentToClassicLines(
     for (const block of blocks) {
       const segment = segments.get(block.kind);
       if (!segment) continue;
-      lines.push(...segment.pre, ...segment.main, ...segment.post);
+      emit(block.kind, 'pre');
+      emit(block.kind, 'main');
+      emit(block.kind, 'post');
     }
   }
 
@@ -559,6 +579,7 @@ export interface ClassicDocumentPreviewResult {
   readonly lines: string[];
   readonly data: Buffer;
   readonly warnings: PrintWarning[];
+  readonly rasterGroups: readonly RasterSemanticLineGroup[];
 }
 
 /**
@@ -591,6 +612,7 @@ export function renderClassicReceiptViaDocument(
   });
   const document = buildBillDocument(printData, printContext);
   const warnings: PrintWarning[] = [];
+  const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = renderBillDocumentToClassicLines(document, {
     columns: opts.columns,
     language: printContext.languages[0],
@@ -603,7 +625,8 @@ export function renderClassicReceiptViaDocument(
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
+    rasterGroups,
   });
   const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);
-  return { document, lines, data, warnings };
+  return { document, lines, data, warnings, rasterGroups };
 }

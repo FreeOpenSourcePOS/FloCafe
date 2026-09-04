@@ -445,6 +445,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       address: settings.business_address || '',
       phone: settings.business_phone || '',
       taxRegistrationNumber: settings.tax_registration_number || '',
+      currency: settings.currency || getCountryByCode(settings.country || 'IN')?.currency || 'INR',
       currency_symbol: getCurrencySymbol(settings.currency || 'INR', getCountryByCode(settings.country || 'IN')?.locale) || settings.currency_symbol || '₹',
       country: settings.country || 'IN',
       instagram_handle: settings.instagram_handle || '',

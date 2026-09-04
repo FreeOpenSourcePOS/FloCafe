@@ -20,7 +20,7 @@ import { buildEscPos, financialRows, itemRows, normalizeThermalText } from '../m
 import { buildTestPage } from '../main/printers/thermal';
 import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
 import { renderBillDocumentToClassicLines } from '../main/printers/document-classic';
-import { renderBillDocumentToCompactLines } from '../main/printers/document-compact';
+import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from '../main/printers/document-compact';
 import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
 
 function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer/raster-encoder') {
@@ -407,6 +407,13 @@ async function run(): Promise<void> {
   });
   assert.equal(kotHeaderGroups[0].sourceLines.some((line: string) => line.includes('ایستگاه')), true);
   assert.equal(kotHeaderGroups[0].sourceLines.some((line: string) => line.includes('ORDER-123456789012345678901234567890')), true);
+  const jpyReceipt = renderCompactReceiptViaDocument(
+    { items: [] },
+    { total: 12.34, subtotal: 12.34, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
+    { country: 'JP', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
+    { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
+  );
+  assert.equal(jpyReceipt.lines.some((line) => line.includes('12.34')), false);
   const backendKotData = buildKotPrintData(
     { order_number: 'K-2', created_at: '2026-01-01T12:00:00.000Z' },
     [{ status: 'pending', product_name: 'Tea', quantity: 1, addons: '[{"name":"Extra sauce","quantity":2}]' }],

@@ -13,7 +13,7 @@
  */
 
 import { parseDbTimestamp } from '../db';
-import { getCurrencyFractionDigits } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
@@ -396,7 +396,7 @@ export function renderCompactReceiptViaDocument(
     locale: printContext.locale,
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
     currencySymbol: printContext.currencySymbol,
-    currency: String(business?.currency || 'INR'),
+    currency: String(business?.currency || getCountryByCode(String(business?.country || ''))?.currency || 'INR'),
     trimDecimals: printContext.trimDecimals,
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,

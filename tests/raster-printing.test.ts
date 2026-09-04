@@ -89,6 +89,16 @@ async function run(): Promise<void> {
     rasterUnits: [{ lineIndex: 0, unit: { ...unit, complete: false } }],
   }, metadataWarnings).length, 0);
   assert.equal(metadataWarnings[0]?.kind, 'financial');
+  assert.equal(buildEscPos(['raster'], false, {
+    capabilities: caps,
+    rasterUnits: [{ lineIndex: 9, unit: { ...unit, financial: true } }],
+  }).length, 0);
+  const bindingWarnings: any[] = [];
+  buildEscPos(['raster'], false, {
+    capabilities: caps,
+    rasterUnits: [{ lineIndex: 0, unit }, { lineIndex: 0, unit: { ...unit, unitId: 'row-2' } }],
+  }, bindingWarnings);
+  assert.equal(bindingWarnings.length, 2);
 
   const diagnostic = buildRasterDiagnosticBands(17, 32);
   assert.deepEqual(diagnostic.map((band) => band.heightDots), [32, 16, 32, 16, 24]);

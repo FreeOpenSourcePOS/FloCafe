@@ -1767,11 +1767,30 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   const capabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
   const hasNativeCodePage = capabilities.encoding.codePages.some((codePage) => codePage !== 'ascii');
   let activeCodePage = capabilities.encoding.preferredCodePage;
-  const rasterByLine = new Map((options.rasterUnits ?? []).map((entry) => [entry.lineIndex, entry.unit]));
+  const rasterEntries = options.rasterUnits ?? [];
+  const rasterByLine = new Map(rasterEntries.map((entry) => [entry.lineIndex, entry.unit]));
+  const rasterLineCounts = new Map<number, number>();
+  for (const entry of rasterEntries) rasterLineCounts.set(entry.lineIndex, (rasterLineCounts.get(entry.lineIndex) ?? 0) + 1);
   const encodedRasterByLine = new Map<number, Uint8Array>();
   let financialRasterFailure = false;
-  for (const entry of options.rasterUnits ?? []) {
-    const financial = entry.unit.financial || lines[entry.lineIndex]?.includes('{FINANCIAL}') === true;
+  for (const entry of rasterEntries) {
+    const lineIndexValid = Number.isSafeInteger(entry.lineIndex) && entry.lineIndex >= 0 && entry.lineIndex < lines.length;
+    const financial = entry.unit.financial || (lineIndexValid && lines[entry.lineIndex].includes('{FINANCIAL}'));
+    const bindingError = !lineIndexValid
+      ? 'Raster unit line index is outside the print document'
+      : (rasterLineCounts.get(entry.lineIndex) ?? 0) > 1
+        ? 'Multiple raster units share one line index'
+        : null;
+    if (bindingError) {
+      if (financial) financialRasterFailure = true;
+      if (warnings) warnings.push({
+        field: financial ? 'financial row' : 'receipt line',
+        text: entry.unit.unitId,
+        message: bindingError,
+        kind: financial ? 'financial' : 'line',
+      });
+      continue;
+    }
     try {
       if (!rasterCapabilityEnabled(capabilities)) throw new Error('Raster output is not enabled for this printer profile');
       encodedRasterByLine.set(entry.lineIndex, encodeRasterUnits([entry.unit], capabilities));

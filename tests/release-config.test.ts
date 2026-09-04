@@ -342,8 +342,10 @@ function run() {
   const promoteJob = jobs['promote-release'];
   assert.equal(promoteJob.needs, 'create-release');
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
-  const validatePromotedProvenance = findStep(promoteJob, 'Validate promoted release provenance');
-  assertShellStep(promoteJob, 'Validate promoted release provenance');
+  const promoteCheckout = promoteJob.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(promoteCheckout?.with?.ref, 'main', 'historical promotion must use current main verifier code');
+  const validatePromotedProvenance = findStep(promoteJob, 'Validate historical promotion binding');
+  assertShellStep(promoteJob, 'Validate historical promotion binding');
   assert.equal(validatePromotedProvenance.env.GH_TOKEN, '${{ github.token }}');
   assert.equal(validatePromotedProvenance.env.RELEASE_TAG, '${{ needs.create-release.outputs.version }}');
   const validatePromotedProvenanceExecution = executeWorkflowStep(validatePromotedProvenance, {
@@ -354,7 +356,7 @@ function run() {
   assert.equal(validatePromotedProvenanceExecution.status, 0, validatePromotedProvenanceExecution.stderr);
   assert.equal(
     validatePromotedProvenanceExecution.log.trim(),
-    `node scripts/release-gate/validate-release-ref.cjs --repo FreeOpenSourcePOS/FloCafe --tag 3.3.0 --commit ${'b'.repeat(40)} --allow-off-main`,
+    `node scripts/release-gate/validate-release-ref.cjs --repo FreeOpenSourcePOS/FloCafe --tag 3.3.0 --commit ${'b'.repeat(40)} --allow-off-main --allow-historical-promotion`,
   );
   const promoteVerifierDependencies = findStep(promoteJob, 'Install verifier dependencies');
   const promoteVerifier = findStep(promoteJob, 'Verify stable Snap publication and permanent evidence');

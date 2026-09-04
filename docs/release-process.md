@@ -82,12 +82,17 @@ or newer stable release without database rollbacks.
 
 ## Release gates
 
-1. Release provenance is checked before any platform build. The annotated tag
-   must be cryptographically verified, resolve to the workflow commit, the
-   commit must be cryptographically verified, and the tagged commit must be in
-   `main` history with the same `package.json` version as `main`. Promotion-only
-   runs skip the `main` version check but still require verified tag and commit
-   provenance.
+1. New tag-triggered builds check release provenance before any platform build:
+   the annotated tag must be cryptographically verified, resolve to the workflow
+   commit, the commit must be cryptographically verified, and the tagged commit
+   must be in `main` history with the same `package.json` version as `main`.
+   Promotion-only runs use the explicit `--allow-historical-promotion` binding
+   path for an already-published release: they retain annotated-tag, workflow-
+   commit, and tagged-package-version checks, then rely on the immutable
+   candidate manifest, release summary, artifacts, and Snap evidence checks
+   before promotion. The promotion job checks out current `main` for its
+   verifier code, while binding validation still uses the historical release
+   tag and workflow commit. They do not build or publish artifacts.
 2. The tag and `package.json` version must match (`X.Y.Z` or `X.Y.Z-beta.N`).
 3. Each platform builds with `--publish never` and passes
    `scripts/assert-release-artifact-names.cjs`. Produced filenames must match
@@ -197,11 +202,12 @@ stable release:
 3. To make it the default update target, dispatch **Release** once more from
    that exact tag with `release_tag=X.Y.Z`, `channel=stable`,
    `promote_stable=true`, plus the candidate-manifest asset ID and SHA-256. The
-   promotion-only job revalidates that immutable manifest against every current
-   release asset and first requires the permanent candidate summary and both
-   stable Snap publication markers, then refuses anything unpublished or
-   prerelease-flagged before selecting it as
-   GitHub Latest. Stable installs see it on their next update check.
+   promotion-only job uses the historical-promotion binding path for this
+   already-published release from current `main`, then revalidates the immutable
+   manifest against every current release asset and requires the permanent
+   candidate summary and both stable Snap publication markers. It refuses
+   anything unpublished or prerelease-flagged before selecting it as GitHub
+   Latest. Stable installs see it on their next update check.
 
 Betas also act as the N+1 update source for runtime upgrade matrix testing
 (#468): a client pinned to a given Electron runtime validates the next

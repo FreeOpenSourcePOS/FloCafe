@@ -22,6 +22,7 @@ function parseArgs(argv) {
     commit: requiredArg(args, '--commit').toLowerCase(),
     mainRef: optionalArg(args, '--main-ref', 'main'),
     requireMain: !args.includes('--allow-off-main'),
+    allowHistoricalPromotion: args.includes('--allow-historical-promotion'),
   };
   const parts = options.repo.split('/');
   if (parts.length !== 2 || parts.some((part) => !/^[a-zA-Z0-9.-]+$/.test(part))) {
@@ -30,6 +31,9 @@ function parseArgs(argv) {
   if (!SEMVER.test(options.tag)) throw new Error(`invalid release tag ${options.tag}`);
   if (!COMMIT.test(options.commit)) throw new Error(`invalid release commit ${options.commit}`);
   if (!/^[A-Za-z0-9._/-]+$/.test(options.mainRef)) throw new Error(`invalid main ref ${options.mainRef}`);
+  if (options.allowHistoricalPromotion && options.requireMain) {
+    throw new Error('--allow-historical-promotion requires --allow-off-main');
+  }
   return options;
 }
 
@@ -63,7 +67,7 @@ function decodeJsonContent(file, description) {
   }
 }
 
-async function resolveSignedTag(apiBase, tag, request = githubJson) {
+async function resolveSignedTag(apiBase, tag, request = githubJson, { requireVerification = true } = {}) {
   const ref = await request(`${apiBase}/git/ref/tags/${encodeURIComponent(tag)}`);
   if (ref?.object?.type !== 'tag') {
     throw new Error(`release tag ${tag} must be an annotated signed tag, not a lightweight tag`);
@@ -72,22 +76,25 @@ async function resolveSignedTag(apiBase, tag, request = githubJson) {
   if (tagObject?.object?.type !== 'commit' || !COMMIT.test(tagObject.object.sha || '')) {
     throw new Error(`release tag ${tag} does not resolve directly to a commit`);
   }
-  if (tagObject.verification?.verified !== true) {
+  if (requireVerification && tagObject.verification?.verified !== true) {
     throw new Error(`release tag ${tag} is not cryptographically verified (reason: ${tagObject.verification?.reason || 'unknown'})`);
   }
   return tagObject.object.sha.toLowerCase();
 }
 
-async function validateReleaseRef({ repo, tag, commit, mainRef = 'main', requireMain = true, request = githubJson }) {
+async function validateReleaseRef({ repo, tag, commit, mainRef = 'main', requireMain = true, allowHistoricalPromotion = false, request = githubJson }) {
   const apiBase = `https://api.github.com/repos/${repo}`;
   const expectedCommit = commit.toLowerCase();
-  const resolvedCommit = await resolveSignedTag(apiBase, tag, request);
+  if (allowHistoricalPromotion && requireMain) {
+    throw new Error('historical promotion validation requires main-history checks to be disabled');
+  }
+  const resolvedCommit = await resolveSignedTag(apiBase, tag, request, { requireVerification: !allowHistoricalPromotion });
   if (resolvedCommit !== expectedCommit) {
     throw new Error(`release tag ${tag} resolves to ${resolvedCommit}, not the workflow commit ${expectedCommit}`);
   }
 
   const commitObject = await request(`${apiBase}/commits/${resolvedCommit}`);
-  if (commitObject.commit?.verification?.verified !== true) {
+  if (!allowHistoricalPromotion && commitObject.commit?.verification?.verified !== true) {
     throw new Error(`release commit ${resolvedCommit} is not cryptographically verified (reason: ${commitObject.commit?.verification?.reason || 'unknown'})`);
   }
 

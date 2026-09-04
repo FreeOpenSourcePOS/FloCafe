@@ -490,6 +490,14 @@ jobs:
     requireMain: false,
     request: releaseRefRequest({ behindBy: 1, mainVersion: '3.3.9' }),
   }), 'promotion validation must allow an older signed release outside current main');
+  await assert.doesNotReject(() => validateReleaseRef({
+    repo: 'example/repo',
+    tag: '3.4.0',
+    commit: 'a'.repeat(40),
+    requireMain: false,
+    allowHistoricalPromotion: true,
+    request: releaseRefRequest({ behindBy: 1, mainVersion: '3.3.9', tagVerified: false, commitVerified: false }),
+  }), 'historical promotion must rely on immutable release evidence instead of rechecking signatures');
   await assert.rejects(
     () => validateReleaseRef({
       repo: 'example/repo',

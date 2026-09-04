@@ -1266,6 +1266,13 @@ export default function SettingsPage() {
   // Guards savePrinting from sending cash_drawer_pulse_enabled/_methods
   // before their real values have loaded — see the load effect below.
   const [cashDrawerPulseSettingsLoaded, setCashDrawerPulseSettingsLoaded] = useState(false);
+  // A deliberate toggle/checkbox change must always be saveable — even
+  // before the load above resolves, or if it fails outright — and must
+  // survive that load resolving afterwards instead of being overwritten by
+  // whatever was already stored. A ref (not state) so the load promise's
+  // .then(), set up once on mount, reads whatever this holds when it
+  // actually resolves rather than a value captured at effect-setup time.
+  const cashDrawerPulseUserEdited = useRef(false);
   const savePrinting = async (silent: boolean = false) => {
     // Build typed policies from the form and mirror them into the store for
     // renderer-side reads (renderers adopt them in #442+).
@@ -1303,11 +1310,12 @@ export default function SettingsPage() {
     posSettings.setBillShowCustomerPhone(printingForm.billShowCustomerPhone);
     posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
     await Promise.all([
-      // Their current values are only known once cashDrawerPulseSettingsLoaded
-      // is true — saving before that (or after the load failed) would send
-      // the form's initial defaults and silently narrow a migrated store's
-      // settings back down (see the load effect above).
-      ...(cashDrawerPulseSettingsLoaded ? [
+      // Skip these two only while the real values are still unknown AND the
+      // user hasn't touched the controls — saving the untouched defaults
+      // before the load resolves (or after it fails) would silently narrow
+      // a migrated store's settings (see the load effect above). A genuine
+      // edit is always saveable, loaded or not.
+      ...(cashDrawerPulseSettingsLoaded || cashDrawerPulseUserEdited.current ? [
         api.put('/settings/cash_drawer_pulse_enabled', { value: printingForm.cashDrawerPulseEnabled ? 'true' : 'false' }),
         api.put('/settings/cash_drawer_pulse_methods', {
           value: printingForm.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS
@@ -1782,8 +1790,14 @@ export default function SettingsPage() {
           }
         } catch { /* Use the safe defaults. */ }
       }
-      setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: enabled, cashDrawerPulseMethods: methods }));
+      // savedPrinting always adopts the true stored baseline. printingForm —
+      // the live edit buffer — only does if the user hasn't already changed
+      // it while this was in flight; otherwise this load would silently
+      // discard a real, visible edit the moment it resolved.
       setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled, cashDrawerPulseMethods: methods }));
+      if (!cashDrawerPulseUserEdited.current) {
+        setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: enabled, cashDrawerPulseMethods: methods }));
+      }
       setCashDrawerPulseSettingsLoaded(true);
     }).catch(() => {});
     api.get('/settings/bill_language_policy').then((res) => {
@@ -4123,7 +4137,10 @@ export default function SettingsPage() {
                       <p className="font-medium text-foreground">{t('sendPulseToCashDrawer')}</p>
                       <p className="text-sm text-muted-foreground">{t('sendPulseToCashDrawerHint')}</p>
                     </div>
-                    <Toggle value={printingForm.cashDrawerPulseEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }))} />
+                    <Toggle value={printingForm.cashDrawerPulseEnabled} onChange={(v) => {
+                      cashDrawerPulseUserEdited.current = true;
+                      setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }));
+                    }} />
                   </div>
                   {printingForm.cashDrawerPulseEnabled && (
                     <div className="mt-3 rounded-lg border border-border overflow-hidden">
@@ -4142,20 +4159,23 @@ export default function SettingsPage() {
                               <input
                                 type="checkbox"
                                 checked={printingForm.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS || printingForm.cashDrawerPulseMethods.includes(value)}
-                                onChange={(e) => setPrintingForm((p) => {
-                                  // Materialize the "all methods" sentinel into a concrete
-                                  // list on first interaction, so toggling one checkbox
-                                  // doesn't silently keep the raw 'all' string alongside it.
-                                  const current = p.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS
-                                    ? KNOWN_CASH_DRAWER_METHODS
-                                    : p.cashDrawerPulseMethods;
-                                  return {
-                                    ...p,
-                                    cashDrawerPulseMethods: e.target.checked
-                                      ? [...current, value]
-                                      : current.filter((method) => method !== value),
-                                  };
-                                })}
+                                onChange={(e) => {
+                                  cashDrawerPulseUserEdited.current = true;
+                                  setPrintingForm((p) => {
+                                    // Materialize the "all methods" sentinel into a concrete
+                                    // list on first interaction, so toggling one checkbox
+                                    // doesn't silently keep the raw 'all' string alongside it.
+                                    const current = p.cashDrawerPulseMethods === CASH_DRAWER_PULSE_ALL_METHODS
+                                      ? KNOWN_CASH_DRAWER_METHODS
+                                      : p.cashDrawerPulseMethods;
+                                    return {
+                                      ...p,
+                                      cashDrawerPulseMethods: e.target.checked
+                                        ? [...current, value]
+                                        : current.filter((method) => method !== value),
+                                    };
+                                  });
+                                }}
                                 className="h-4 w-4 rounded border-border text-brand focus:ring-brand"
                               />
                               {label}

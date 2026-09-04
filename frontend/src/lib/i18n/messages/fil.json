@@ -2015,8 +2015,6 @@
     "tableUpdateFailed": "Nabigong i-update ang lamesa",
     "title": "Mga Lamesa",
     "updateStatusFailed": "Nabigong i-update ang status",
-    "editFloorplan": "I-edit ang floor plan",
-    "backToTables": "Bumalik sa mga mesa",
     "floorplanUnassigned": "Hindi nakatala",
     "floorplanUnassignedHint": "Mga mesa na walang nakatalang palapag. Mag-click sa + Magdagdag ng palapag para gumawa.",
     "floorplanAuto": "Awtomatiko",

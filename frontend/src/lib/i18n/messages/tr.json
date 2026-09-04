@@ -2015,8 +2015,6 @@
     "tableUpdateFailed": "Masa güncellenemedi",
     "title": "Masa Yönetimi",
     "updateStatusFailed": "Durum güncellenemedi",
-    "editFloorplan": "Yerleşim planını düzenle",
-    "backToTables": "Masalara dön",
     "floorplanUnassigned": "Atanmamış",
     "floorplanUnassignedHint": "Kat atanmamış masalar. Oluşturmak için + Kat ekle'ye tıklayın.",
     "floorplanAuto": "Otomatik",

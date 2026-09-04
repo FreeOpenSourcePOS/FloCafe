@@ -369,6 +369,25 @@ async function main() {
     assertEqual(putUnplaceRes.data.table.position_y, null, 'tbl-floor-2 position_y cleared via PUT');
     console.log('   ✓ Unplace tables via PUT /tables/:id');
 
+    // ── POST accepts a 0 coordinate (no falsy-to-null coercion) ──
+    const postZeroRes = await api(baseUrl, '/api/tables', {
+      method: 'POST',
+      headers: authHeader,
+      body: { number: 'TT-ZERO', capacity: 2, floor: 'Ground', position_x: 0, position_y: 0 },
+    });
+    assertEqual(postZeroRes.status, 201, 'POST with 0 coordinates returns 201');
+    assertEqual(postZeroRes.data.table.position_x, 0, 'position_x 0 persists instead of coercing to null');
+    console.log('   ✓ POST persists a 0 coordinate');
+
+    // ── POST rejects out-of-range coordinates ──
+    const postRangeRes = await api(baseUrl, '/api/tables', {
+      method: 'POST',
+      headers: authHeader,
+      body: { number: 'TT-RANGE', capacity: 2, position_x: 150, position_y: 10 },
+    });
+    assertEqual(postRangeRes.status, 400, 'POST with out-of-range coordinates returns 400');
+    console.log('   ✓ POST rejects coordinates outside 0–100');
+
     // ── Role restriction on PATCH /tables/positions ──
     const { getJWTSecret } = require('../main/routes/auth');
     const jwt = require('jsonwebtoken');

@@ -113,6 +113,50 @@ test('floorplan editor: drag table onto map, save, persist after reload', async 
   await expect(page.getByTestId('floorplan-chip-T1')).toBeHidden();
 });
 
+test('floorplan editor: drag table back to tray unplaces it', async ({ page, request }) => {
+  // Self-sufficient: place T1 via API (beforeEach resets all seeds to unplaced).
+  const apiLogin = await request.post(`${BASE}/api/auth/login`, {
+    data: { email: EMAIL, password: PASSWORD },
+  });
+  const { access_token } = await apiLogin.json();
+  const apiAuth = { Authorization: `Bearer ${access_token}` };
+  const tableList = await (await request.get(`${BASE}/api/tables`, { headers: apiAuth })).json();
+  const t1 = (tableList.tables ?? []).find((t: { number: string }) => t.number === 'T1');
+  await request.patch(`${BASE}/api/tables/positions`, {
+    headers: apiAuth,
+    data: { positions: [{ id: t1.id, position_x: 30, position_y: 30 }] },
+  });
+
+  await login(page);
+
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  const chip = page.getByTestId('floorplan-chip-T1');
+  await expect(chip).toBeVisible();
+  const tray = page.getByTestId('floorplan-tray');
+  await expect(tray).toBeVisible();
+  await chip.scrollIntoViewIfNeeded();
+  const chipBox = await chip.boundingBox();
+  const trayBox = await tray.boundingBox();
+  if (!chipBox || !trayBox) throw new Error('missing drag geometry');
+  await page.mouse.move(chipBox.x + chipBox.width / 2, chipBox.y + chipBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(trayBox.x + trayBox.width / 2, trayBox.y + trayBox.height / 2, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.getByTestId('floorplan-tray-T1')).toBeVisible();
+  await expect(chip).toBeHidden();
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByText('Floorplan saved')).toBeVisible();
+
+  // Reload: T1 stays unplaced — the null positions persisted
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Tables' })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  await expect(page.getByTestId('floorplan-tray-T1')).toBeVisible();
+  await expect(page.getByTestId('floorplan-chip-T1')).toBeHidden();
+});
+
 test('floorplan editor: discard reverts unsaved drags', async ({ page }) => {
   await login(page);
 

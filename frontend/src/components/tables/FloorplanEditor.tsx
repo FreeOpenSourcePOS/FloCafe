@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Eye, LayoutGrid, Maximize2, Minimize2, Pencil, Plus, Sparkles, Table2, Trash2, Users } from 'lucide-react';
+import { ChevronRight, Eye, LayoutGrid, Maximize2, Minimize2, Pencil, Plus, Sparkles, Table2, Trash2, Users } from 'lucide-react';
 import type { Order, Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n';
@@ -870,9 +870,9 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                   <p className="text-sm font-bold text-foreground">{f || t('floorplanUnassigned')}</p>
                   <button
                     onClick={() => setActiveFloor(f)}
-                    className="text-xs font-semibold text-brand hover:text-brand-hover"
+                    className="flex items-center gap-0.5 text-xs font-semibold text-brand hover:text-brand-hover"
                   >
-                    {tCommon('edit')} →
+                    {tCommon('edit')} <ChevronRight size={12} />
                   </button>
                 </div>
                 <div
@@ -963,6 +963,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
       {!overview && (edit || unplaced.length > 0) && (
         <div
           ref={trayRef}
+          data-testid="floorplan-tray"
           className={`mt-5 rounded-2xl border-2 border-dashed p-3 transition-colors ${
             isOverTray
               ? 'border-brand bg-brand/10 ring-2 ring-brand'

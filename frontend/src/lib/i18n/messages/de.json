@@ -2015,8 +2015,6 @@
     "tableUpdateFailed": "Tisch konnte nicht aktualisiert werden",
     "title": "Tischverwaltung",
     "updateStatusFailed": "Status konnte nicht aktualisiert werden",
-    "editFloorplan": "Grundriss bearbeiten",
-    "backToTables": "Zurück zu den Tischen",
     "floorplanUnassigned": "Nicht zugewiesen",
     "floorplanUnassignedHint": "Tische ohne zugewiesene Etage. Klicken Sie auf + Etage hinzufügen, um eine zu erstellen.",
     "floorplanAuto": "Automatisch",

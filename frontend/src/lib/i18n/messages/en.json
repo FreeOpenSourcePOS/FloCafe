@@ -2015,8 +2015,6 @@
     "tableUpdateFailed": "Failed to update",
     "title": "Tables",
     "updateStatusFailed": "Failed to update",
-    "editFloorplan": "Edit Floorplan",
-    "backToTables": "Back to Tables",
     "floorplanUnassigned": "Unassigned",
     "floorplanUnassignedHint": "Tables with no floor assigned. Click + Add Floor to create one.",
     "floorplanAuto": "Auto",

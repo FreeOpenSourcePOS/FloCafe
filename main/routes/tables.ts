@@ -134,6 +134,11 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     if (normalizedFloor === undefined || normalizedSection === undefined) {
       return res.status(400).json({ code: 'TABLE_LOCATION_INVALID', error: 'Floor and section must be text values' });
     }
+    const normalizedX = normalizePositionCoord(position_x);
+    const normalizedY = normalizePositionCoord(position_y);
+    if (normalizedX === undefined || normalizedY === undefined) {
+      return res.status(400).json({ error: 'Coordinates must be numbers between 0 and 100, or null' });
+    }
 
     const db = getDatabase();
     const existing = db.prepare('SELECT * FROM tables WHERE number = ?').get(tableNumber) as any;
@@ -151,7 +156,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       tableId, tableNumber, normalizedCapacity, normalizedFloor, normalizedSection,
-      position_x || null, position_y || null, kitchen_station_id || null, now(), now()
+      normalizedX, normalizedY, kitchen_station_id || null, now(), now()
     );
 
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId);

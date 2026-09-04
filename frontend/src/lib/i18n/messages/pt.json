@@ -2015,8 +2015,6 @@
     "tableUpdateFailed": "Falha ao atualizar",
     "title": "Mesas",
     "updateStatusFailed": "Falha ao atualizar",
-    "editFloorplan": "Editar planta",
-    "backToTables": "Voltar às mesas",
     "floorplanUnassigned": "Sem andar",
     "floorplanUnassignedHint": "Mesas sem andar atribuído. Clique em + Adicionar andar para criar um.",
     "floorplanAuto": "Auto",

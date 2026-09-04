@@ -2015,8 +2015,6 @@
     "tableUpdateFailed": "No se pudo actualizar",
     "title": "Mesas",
     "updateStatusFailed": "No se pudo actualizar",
-    "editFloorplan": "Editar plano",
-    "backToTables": "Volver a mesas",
     "floorplanUnassigned": "Sin asignar",
     "floorplanUnassignedHint": "Mesas sin planta asignada. Haz clic en + Añadir planta para crear una.",
     "floorplanAuto": "Auto",

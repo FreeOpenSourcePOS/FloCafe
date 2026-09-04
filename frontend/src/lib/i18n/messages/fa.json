@@ -2015,8 +2015,6 @@
     "tableUpdateFailed": "به‌روزرسانی انجام نشد",
     "title": "میزها",
     "updateStatusFailed": "به‌روزرسانی انجام نشد",
-    "editFloorplan": "ویرایش نقشه سالن",
-    "backToTables": "بازگشت به میزها",
     "floorplanUnassigned": "بدون طبقه",
     "floorplanUnassignedHint": "میزهایی که طبقه‌ای به آن‌ها اختصاص داده نشده. برای ساخت طبقه روی + افزودن طبقه بزنید.",
     "floorplanAuto": "خودکار",

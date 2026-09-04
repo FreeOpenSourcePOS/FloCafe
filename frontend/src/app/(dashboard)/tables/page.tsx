@@ -404,7 +404,7 @@ export default function TablesPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-foreground">{tTables('title')}</h1>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 rounded-xl bg-gray-100 p-1">
+          <div className="flex items-center gap-1 rounded-xl bg-muted p-1">
             <button
               onClick={() => { setView('plan'); setLayoutMode(false); }}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${

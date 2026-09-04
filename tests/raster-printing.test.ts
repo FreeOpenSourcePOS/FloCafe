@@ -133,11 +133,24 @@ async function run(): Promise<void> {
       renderRequests.push(typedRequest);
       return { version: 1, requestId: typedRequest.requestId, ok: true, unit: { unitId: typedRequest.requestId, financial: false, complete: true, bands: [twoRows] } };
     },
-  }, ['{BOLD}{DOUBLE_WIDTH}فارسی{/DOUBLE_WIDTH}{/BOLD}', 'native'], caps, 'receipt');
+  }, ['{DOUBLE_HEIGHT}{BOLD}فارسی{/BOLD}{/DOUBLE_HEIGHT}', '  + native'], caps, 'receipt');
   assert.equal(renderedLines.units[0]?.lineIndex, 0);
-  assert.equal(renderRequests[0].style, 'double-width');
+  assert.equal(renderedLines.units[0]?.lineCount, 2);
+  assert.equal(renderRequests[0].style, 'double-height');
+  assert.deepEqual(renderRequests[0].styles, ['bold', 'double-height']);
   assert.equal(renderRequests[0].direction, 'rtl');
   assert.equal(renderRequests[0].align, 'left');
+  assert.equal(renderRequests.length, 2);
+  const styledBanner = await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => ({
+      version: 1 as const,
+      requestId: (rasterRequest as any).requestId,
+      ok: true as const,
+      unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] },
+    }),
+  }, ['{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}فارسی{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}'], caps, 'banner');
+  assert.equal(styledBanner.failures.length, 0);
+  assert.equal(styledBanner.units.length, 1);
   assert.equal(renderedLines.failures.length, 0);
 
   const request = {

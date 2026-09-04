@@ -57,7 +57,7 @@ async function run(): Promise<void> {
     'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
     'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openKdsWindow', 'platform', 'restartAndInstall',
-    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'setThemeEffective',
+    'rasterizeKotDocument', 'rasterizePrintDocument', 'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'setThemeEffective',
     'windowAction', 'windowReady',
   ].sort());
 
@@ -71,6 +71,8 @@ async function run(): Promise<void> {
   await call('openKdsWindow');
   await call('getPrinters');
   await call('savePrinter', { name: 'Kitchen Printer', connection_type: 'network' });
+  await call('rasterizePrintDocument', { document: {}, template: 'classic', profileId: 'profile', options: {} });
+  await call('rasterizeKotDocument', { order: {}, items: [], stationName: 'Kitchen', profileId: 'profile', options: {} });
   await call('getDailySummary');
   await call('getBetaChannel');
   await call('setBetaChannel', true);
@@ -108,6 +110,8 @@ async function run(): Promise<void> {
     { channel: 'open-kds-window', args: [] },
     { channel: 'get-printers', args: [] },
     { channel: 'save-printer', args: [{ name: 'Kitchen Printer', connection_type: 'network' }] },
+    { channel: 'rasterize-print-document', args: [{ document: {}, template: 'classic', profileId: 'profile', options: {} }] },
+    { channel: 'rasterize-kot-document', args: [{ order: {}, items: [], stationName: 'Kitchen', profileId: 'profile', options: {} }] },
     { channel: 'get-daily-summary', args: [] },
     { channel: 'updates:get-beta-channel', args: [] },
     { channel: 'updates:set-beta-channel', args: [true] },

@@ -39,6 +39,7 @@ import {
 } from '../../shared/print/thermal-capabilities';
 import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippPrintRaw } from './ipp-client';
 import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled, type RasterSemanticUnit } from '../../shared/print/raster';
+import type { PrintDocument } from '../../shared/print/document';
 
 export type PrintResult = {
   ok: boolean;
@@ -1122,6 +1123,83 @@ async function rasterizeDocumentLines(
   }
 }
 
+export async function rasterizePrintDocumentForWebUsb(
+  document: PrintDocument,
+  template: 'classic' | 'compact',
+  profileId: string,
+  options: {
+    columns: number;
+    language: string;
+    locale: string;
+    currency: string;
+    currencySymbol: string;
+    trimDecimals: boolean;
+    useUnicode: boolean;
+    arabicShaping: boolean;
+    timezone?: string;
+  },
+): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[] } | { ok: false; error: string }> {
+  const profile = resolvePrinterProfile({ profile_id: profileId });
+  const capabilities = getPrinterCapabilities(profile);
+  if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
+  const lines = template === 'compact'
+    ? renderBillDocumentToCompactLines(document, {
+      ...options,
+      cutMode: profile.cutMode,
+      capabilities,
+    })
+    : renderBillDocumentToClassicLines(document, {
+      ...options,
+      cutMode: profile.cutMode,
+      capabilities,
+    });
+  const result = await rasterizeDocumentLines(lines, [], {
+    ...options,
+    cutMode: profile.cutMode,
+    capabilities,
+    requestPrefix: 'webusb-receipt',
+  });
+  if (hasFinancialPrintWarning(result.warnings)) {
+    return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
+  }
+  return { ok: true, data: result.data, warnings: result.warnings };
+}
+
+export async function rasterizeKotDocumentForWebUsb(
+  order: any,
+  items: any[],
+  stationName: string,
+  profileId: string,
+  options: {
+    columns: number;
+    language: string;
+    locale: string;
+    timezone?: string;
+    useUnicode: boolean;
+    arabicShaping: boolean;
+  },
+): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[] } | { ok: false; error: string }> {
+  const profile = resolvePrinterProfile({ profile_id: profileId });
+  const capabilities = getPrinterCapabilities(profile);
+  if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
+  const document = renderKotViaDocument(order, items, stationName, {
+    ...options,
+    timezone: options.timezone,
+    cutMode: profile.cutMode,
+    capabilities,
+  });
+  const result = await rasterizeDocumentLines(document.lines, document.warnings, {
+    ...options,
+    cutMode: profile.cutMode,
+    capabilities,
+    requestPrefix: 'webusb-kot',
+  });
+  if (hasFinancialPrintWarning(result.warnings)) {
+    return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
+  }
+  return { ok: true, data: result.data, warnings: result.warnings };
+}
+
 async function rasterizeReceiptIfEnabled(
   prepared: ReturnType<typeof prepareReceipt>,
   order: any,
@@ -1933,6 +2011,7 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
  */
 export interface RasterLineUnit {
   readonly lineIndex: number;
+  readonly lineCount?: number;
   readonly unit: RasterSemanticUnit;
 }
 
@@ -1945,15 +2024,19 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   const rasterEntries = options.rasterUnits ?? [];
   const rasterByLine = new Map(rasterEntries.map((entry) => [entry.lineIndex, entry.unit]));
   const rasterLineCounts = new Map<number, number>();
+  const rasterRanges: Array<{ start: number; end: number }> = [];
   for (const entry of rasterEntries) rasterLineCounts.set(entry.lineIndex, (rasterLineCounts.get(entry.lineIndex) ?? 0) + 1);
   const encodedRasterByLine = new Map<number, Uint8Array>();
   let financialRasterFailure = false;
   for (const entry of rasterEntries) {
-    const lineIndexValid = Number.isSafeInteger(entry.lineIndex) && entry.lineIndex >= 0 && entry.lineIndex < lines.length;
+    const lineCount = entry.lineCount ?? 1;
+    const lineIndexValid = Number.isSafeInteger(entry.lineIndex) && entry.lineIndex >= 0
+      && Number.isSafeInteger(lineCount) && lineCount > 0 && entry.lineIndex + lineCount <= lines.length;
     const financial = entry.unit.financial || (lineIndexValid && lines[entry.lineIndex].includes('{FINANCIAL}'));
+    const overlaps = lineIndexValid && rasterRanges.some((range) => entry.lineIndex < range.end && entry.lineIndex + lineCount > range.start);
     const bindingError = !lineIndexValid
-      ? 'Raster unit line index is outside the print document'
-      : (rasterLineCounts.get(entry.lineIndex) ?? 0) > 1
+      ? 'Raster unit line range is outside the print document'
+      : (rasterLineCounts.get(entry.lineIndex) ?? 0) > 1 || overlaps
         ? 'Multiple raster units share one line index'
         : null;
     if (bindingError) {
@@ -1969,6 +2052,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     try {
       if (!rasterCapabilityEnabled(capabilities)) throw new Error('Raster output is not enabled for this printer profile');
       encodedRasterByLine.set(entry.lineIndex, encodeRasterUnits([entry.unit], capabilities));
+      rasterRanges.push({ start: entry.lineIndex, end: entry.lineIndex + lineCount });
     } catch (error) {
       if (financial) financialRasterFailure = true;
       if (warnings) warnings.push({
@@ -1999,6 +2083,10 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       }
       continue;
     }
+    if (rasterEntries.some((entry) => {
+      const lineCount = entry.lineCount ?? 1;
+      return entry.lineIndex < lineIndex && lineIndex < entry.lineIndex + lineCount;
+    })) continue;
     if (line.includes('{INIT}')) {
       buf.push(0x1B, 0x40);
       resetAllStyles();

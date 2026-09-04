@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getPrinters: () => ipcRenderer.invoke('get-printers'),
   savePrinter: (printer: unknown) => ipcRenderer.invoke('save-printer', printer),
+  rasterizePrintDocument: (request: unknown) => ipcRenderer.invoke('rasterize-print-document', request),
+  rasterizeKotDocument: (request: unknown) => ipcRenderer.invoke('rasterize-kot-document', request),
 
   getDailySummary: () => ipcRenderer.invoke('get-daily-summary'),
 

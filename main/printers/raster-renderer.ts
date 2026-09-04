@@ -6,6 +6,7 @@ import {
   type RasterIpcResultMessage,
   type RasterRenderRequest,
   type RasterRenderResult,
+  type RasterStyle,
   type RasterSemanticUnit,
 } from '../../shared/print/raster';
 import {
@@ -44,12 +45,13 @@ export function rasterRendererHtml(): string {
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d', { alpha: false });
       if (!context) return makeFailure(request, 'render-failed', 'Canvas 2D context is unavailable');
-      const scaleX = request.style === 'double-width' ? 2 : 1;
-      const scaleY = request.style === 'double-height' ? 2 : 1;
+      const styles = Array.isArray(request.styles) ? request.styles : [request.style];
+      const scaleX = styles.includes('double-width') ? 2 : 1;
+      const scaleY = styles.includes('double-height') ? 2 : 1;
       const logicalLineHeight = 20;
       const lineHeight = logicalLineHeight * scaleY;
       const fontSize = 16;
-      const weight = request.style === 'bold' ? '700' : '400';
+      const weight = styles.includes('bold') ? '700' : '400';
       context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
       context.textBaseline = 'top';
       context.direction = request.direction;
@@ -282,39 +284,111 @@ export interface RasterLineRenderFailure {
   readonly detail: string;
 }
 
+interface RasterSemanticLineGroup {
+  readonly lineIndex: number;
+  readonly lines: readonly string[];
+}
+
+function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroup[] {
+  const groups: RasterSemanticLineGroup[] = [];
+  for (let lineIndex = 0; lineIndex < lines.length;) {
+    const line = lines[lineIndex];
+    const kotItem = line.includes('{DOUBLE_HEIGHT}') && line.includes('{BOLD}') && !line.includes('{/CENTER}');
+    const financialBlock = line.includes('{FINANCIAL}');
+    if (kotItem || financialBlock) {
+      const end = lineIndex + 1;
+      let next = end;
+      while (next < lines.length) {
+        const candidate = lines[next];
+        if (candidate.includes('{CUT}') || /^[-=]{8,}$/.test(candidate)) break;
+        if (kotItem && candidate.includes('{DOUBLE_HEIGHT}') && candidate.includes('{BOLD}')) break;
+        next += 1;
+      }
+      groups.push({ lineIndex, lines: lines.slice(lineIndex, next) });
+      lineIndex = next;
+      continue;
+    }
+    groups.push({ lineIndex, lines: [line] });
+    lineIndex += 1;
+  }
+  return groups;
+}
+
+function requestForRasterLine(
+  line: string,
+  lineIndex: number,
+  capabilities: ThermalPrinterCapabilities,
+  requestId: string,
+): RasterRenderRequest | null {
+  if (line.includes('{INIT}') || line.includes('{CUT}') || line.includes('{FEED}')) return null;
+  const text = line.replace(/\{[A-Z_/]+\}/g, '');
+  if (!text) return null;
+  const styles: RasterStyle[] = [
+    line.includes('{BOLD}') ? 'bold' : null,
+    line.includes('{DOUBLE_HEIGHT}') ? 'double-height' : null,
+    line.includes('{DOUBLE_WIDTH}') ? 'double-width' : null,
+  ].filter((style): style is RasterStyle => style !== null);
+  return {
+    version: 1,
+    requestId: `${requestId}-${lineIndex}`,
+    text,
+    widthDots: capabilities.raster.widthDots,
+    maxBandHeight: capabilities.raster.maxBandHeight,
+    direction: /[\u0590-\u08FF]/.test(text) ? 'rtl' : 'ltr',
+    align: line.includes('{CENTER}') && line.includes('{/CENTER}') ? 'center' : 'left',
+    style: styles[0] ?? 'normal',
+    ...(styles.length > 0 ? { styles } : {}),
+    maxLines: 256,
+    bundledFont: capabilities.raster.font!,
+  };
+}
+
 export async function renderUnsupportedRasterLines(
   renderer: Pick<ChromiumRasterRenderer, 'render'>,
   lines: readonly string[],
   capabilities: ThermalPrinterCapabilities,
   requestPrefix: string,
-): Promise<{ units: Array<{ lineIndex: number; unit: RasterSemanticUnit }>; failures: RasterLineRenderFailure[] }> {
-  const units: Array<{ lineIndex: number; unit: RasterSemanticUnit }> = [];
+): Promise<{ units: Array<{ lineIndex: number; lineCount: number; unit: RasterSemanticUnit }>; failures: RasterLineRenderFailure[] }> {
+  const units: Array<{ lineIndex: number; lineCount: number; unit: RasterSemanticUnit }> = [];
   const failures: RasterLineRenderFailure[] = [];
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
-    const line = lines[lineIndex];
-    if (line.includes('{INIT}') || line.includes('{CUT}') || line.includes('{FEED}')) continue;
-    const text = line.replace(/\{[A-Z_/]+\}/g, '');
-    if (!text || isThermalTextRepresentable(text, capabilities)) continue;
-    const financial = line.includes('{FINANCIAL}');
-    const requestId = `${requestPrefix}-${lineIndex}`;
-    const result = capabilities.raster.font
-      ? await renderRasterSemanticUnit(renderer, {
-        version: 1,
-        requestId,
-        text,
-        widthDots: capabilities.raster.widthDots,
-        maxBandHeight: capabilities.raster.maxBandHeight,
-        direction: /[\u0590-\u08FF]/.test(text) ? 'rtl' : 'ltr',
-        align: line.startsWith('{CENTER}') && line.includes('{/CENTER}') ? 'center' : 'left',
-        style: line.includes('{DOUBLE_HEIGHT}') ? 'double-height'
-          : line.includes('{DOUBLE_WIDTH}') ? 'double-width'
-            : line.includes('{BOLD}') ? 'bold' : 'normal',
-        maxLines: 256,
-        bundledFont: capabilities.raster.font,
-      }, financial)
-      : { ok: false as const, code: 'font-unavailable', detail: 'No bundled raster font is configured', financial };
-    if (result.ok) units.push({ lineIndex, unit: result.unit });
-    else failures.push({ lineIndex, text, financial, code: result.code, detail: result.detail });
+  for (const group of semanticLineGroups(lines)) {
+    const groupText = group.lines.map((line) => line.replace(/\{[A-Z_/]+\}/g, '')).filter(Boolean).join('\n');
+    const needsRaster = group.lines.some((line) => {
+      const text = line.replace(/\{[A-Z_/]+\}/g, '');
+      return text.length > 0 && !isThermalTextRepresentable(text, capabilities);
+    });
+    if (!needsRaster) continue;
+    const financial = group.lines.some((line) => line.includes('{FINANCIAL}'));
+    const renderedUnits: RasterSemanticUnit[] = [];
+    let failure: RasterLineRenderFailure | null = null;
+    if (!capabilities.raster.font) {
+      failure = { lineIndex: group.lineIndex, text: groupText, financial, code: 'font-unavailable', detail: 'No bundled raster font is configured' };
+    } else {
+      for (let offset = 0; offset < group.lines.length; offset += 1) {
+        const request = requestForRasterLine(group.lines[offset], group.lineIndex + offset, capabilities, requestPrefix);
+        if (!request) continue;
+        const result = await renderRasterSemanticUnit(renderer, request, group.lines[offset].includes('{FINANCIAL}'));
+        if (!result.ok) {
+          failure = { lineIndex: group.lineIndex, text: groupText, financial, code: result.code, detail: result.detail };
+          break;
+        }
+        renderedUnits.push(result.unit);
+      }
+    }
+    if (failure) {
+      failures.push(failure);
+      continue;
+    }
+    units.push({
+      lineIndex: group.lineIndex,
+      lineCount: group.lines.length,
+      unit: {
+        unitId: `${requestPrefix}-${group.lineIndex}`,
+        financial,
+        complete: true,
+        bands: renderedUnits.flatMap((unit) => unit.bands),
+      },
+    });
   }
   return { units, failures };
 }

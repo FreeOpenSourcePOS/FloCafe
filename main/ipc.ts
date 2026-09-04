@@ -19,6 +19,7 @@ import {
 import { isThemeMode, appendThemeQueryParam } from './title-bar-theme';
 import { getTenantCurrency } from './services/refund';
 import { getCurrencyMinorUnitFactor } from './countries';
+import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from './printers/thermal';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -510,6 +511,75 @@ export function registerIpcHandlers(
       return { success: false, error: getErrorMessage(error) };
     }
     });
+  });
+
+  handle('rasterize-print-document', async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return { ok: false, error: 'Invalid raster document request' };
+    const request = payload as {
+      document?: unknown;
+      template?: unknown;
+      profileId?: unknown;
+      options?: unknown;
+    };
+    if (!request.document || typeof request.document !== 'object'
+      || (request.template !== 'classic' && request.template !== 'compact')
+      || typeof request.profileId !== 'string' || request.profileId.length === 0
+      || !request.options || typeof request.options !== 'object') {
+      return { ok: false, error: 'Invalid raster document request' };
+    }
+    const options = request.options as Record<string, unknown>;
+    if (!Number.isSafeInteger(options.columns) || (options.columns as number) <= 0
+      || typeof options.language !== 'string' || typeof options.locale !== 'string'
+      || typeof options.currency !== 'string' || typeof options.currencySymbol !== 'string'
+      || typeof options.trimDecimals !== 'boolean' || typeof options.useUnicode !== 'boolean'
+      || typeof options.arabicShaping !== 'boolean'
+      || (options.timezone !== undefined && typeof options.timezone !== 'string')) {
+      return { ok: false, error: 'Invalid raster document options' };
+    }
+    try {
+      return await rasterizePrintDocumentForWebUsb(
+        request.document as Parameters<typeof rasterizePrintDocumentForWebUsb>[0],
+        request.template,
+        request.profileId,
+        options as Parameters<typeof rasterizePrintDocumentForWebUsb>[3],
+      );
+    } catch (error: unknown) {
+      return { ok: false, error: getErrorMessage(error) };
+    }
+  });
+
+  handle('rasterize-kot-document', async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return { ok: false, error: 'Invalid raster KOT request' };
+    const request = payload as {
+      order?: unknown;
+      items?: unknown;
+      stationName?: unknown;
+      profileId?: unknown;
+      options?: unknown;
+    };
+    if (!request.order || typeof request.order !== 'object' || !Array.isArray(request.items)
+      || typeof request.stationName !== 'string' || typeof request.profileId !== 'string'
+      || request.profileId.length === 0 || !request.options || typeof request.options !== 'object') {
+      return { ok: false, error: 'Invalid raster KOT request' };
+    }
+    const options = request.options as Record<string, unknown>;
+    if (!Number.isSafeInteger(options.columns) || (options.columns as number) <= 0
+      || typeof options.language !== 'string' || typeof options.locale !== 'string'
+      || (options.timezone !== undefined && typeof options.timezone !== 'string')
+      || typeof options.useUnicode !== 'boolean' || typeof options.arabicShaping !== 'boolean') {
+      return { ok: false, error: 'Invalid raster KOT options' };
+    }
+    try {
+      return await rasterizeKotDocumentForWebUsb(
+        request.order,
+        request.items,
+        request.stationName,
+        request.profileId,
+        options as Parameters<typeof rasterizeKotDocumentForWebUsb>[4],
+      );
+    } catch (error: unknown) {
+      return { ok: false, error: getErrorMessage(error) };
+    }
   });
 
   // Reports

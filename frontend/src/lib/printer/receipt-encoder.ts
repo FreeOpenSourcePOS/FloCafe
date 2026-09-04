@@ -54,7 +54,6 @@ import {
   type TotalsBlock,
 } from '@print/document';
 import type { ResolvedPrintLanguages } from '@print/types';
-import type { MixedPrintPart } from '@print/raster';
 
 export interface ReceiptOptions {
   /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
@@ -98,9 +97,6 @@ export interface ReceiptOptions {
   languages?: ResolvedPrintLanguages;
   /** Selected thermal text capabilities; defaults to generic ESC/POS safety. */
   capabilities?: ThermalPrinterCapabilities;
-  /** Pre-rendered semantic mixed-mode parts for a profile-enabled WebUSB printer. */
-  rasterParts?: readonly MixedPrintPart[];
-  rasterCutMode?: 'full' | 'partial';
 }
 
 function printReprintBanner(

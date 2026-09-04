@@ -20,7 +20,6 @@ import {
 import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 import { isKotItemPending } from '@print/document';
-import type { MixedPrintPart } from '@print/raster';
 
 export interface KotOptions {
   /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
@@ -41,9 +40,6 @@ export interface KotOptions {
   timezone?: string;
   /** Selected thermal text capabilities; defaults to generic ESC/POS safety. */
   capabilities?: ThermalPrinterCapabilities;
-  /** Pre-rendered semantic mixed-mode parts for a profile-enabled WebUSB printer. */
-  rasterParts?: readonly MixedPrintPart[];
-  rasterCutMode?: 'full' | 'partial';
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.

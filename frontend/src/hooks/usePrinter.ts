@@ -14,6 +14,7 @@ import { useAuthStore } from '@/store/auth';
 import {
   ensurePrintLanguagesLoaded,
   resolveBillPrintLanguages,
+  buildFrontendBillDocument,
 } from '@/lib/printer/print-document';
 import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
@@ -26,10 +27,10 @@ import {
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
-import type { Language } from '@/lib/i18n/languages';
+import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterCapabilityEnabled } from '@print/raster';
-import { buildWebUsbMixedRasterBytes } from '@/lib/printer/raster-encoder';
+import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
 
@@ -226,15 +227,46 @@ export const usePrinterStore = create<PrinterState>()(
           };
 
           let bytes: Uint8Array;
+          const encoderWarnings: PrintWarning[] = [];
           if (billTemplate === 'compact') {
-            bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, warnings);
+            bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, encoderWarnings);
           } else {
-            bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, warnings);
+            bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, encoderWarnings);
           }
 
-          const webusbCapabilities = get().webusbPrinter?.capabilities;
-          if (opts?.rasterParts && webusbCapabilities && rasterCapabilityEnabled(webusbCapabilities, 'mixed')) {
-            bytes = buildWebUsbMixedRasterBytes(opts.rasterParts, webusbCapabilities, opts.rasterCutMode ?? 'full');
+          const webusbPrinter = get().webusbPrinter;
+          const webusbCapabilities = webusbPrinter?.capabilities;
+          if (webusbCapabilities && rasterCapabilityEnabled(webusbCapabilities, 'mixed')) {
+            if (!window.electronAPI?.rasterizePrintDocument || !webusbPrinter?.profile_id) {
+              throw new Error('Raster renderer is unavailable for this printer profile');
+            }
+            const rasterResult = await window.electronAPI.rasterizePrintDocument({
+              document: buildFrontendBillDocument(bill, tenant, {
+                ...builderOpts,
+                columns: configuredPaperWidth === 80 ? 48 : 42,
+                businessName: tenant.business_name,
+                includeTaxId: billShowTaxId,
+                taxIdLabel: 'Tax ID',
+              }),
+              template: billTemplate === 'compact' ? 'compact' : 'classic',
+              profileId: webusbPrinter.profile_id,
+              options: {
+                columns: configuredPaperWidth === 80 ? 48 : 42,
+                language: languages[0],
+                locale: getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US',
+                currency: tenant.currency ?? 'INR',
+                currencySymbol: getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale),
+                trimDecimals: printerTrimDecimals,
+                useUnicode: printerUseUnicode,
+                arabicShaping: printerArabicShaping,
+                ...(tenant.timezone ? { timezone: tenant.timezone } : {}),
+              },
+            });
+            if (!rasterResult.ok || !rasterResult.data) throw new Error(rasterResult.error || 'Raster rendering failed');
+            bytes = Uint8Array.from(rasterResult.data);
+            if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
+          } else {
+            warnings.push(...encoderWarnings);
           }
 
           if (hasFinancialPrintWarning(warnings)) {
@@ -383,15 +415,39 @@ export const usePrinterStore = create<PrinterState>()(
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             const { paperWidth } = get();
             const warnings: PrintWarning[] = [];
+            const encoderWarnings: PrintWarning[] = [];
             const bytes = buildKotBytes(
               orderForPrint,
               { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: get().webusbPrinter?.capabilities },
-              warnings,
+              encoderWarnings,
             );
-            const webusbCapabilities = get().webusbPrinter?.capabilities;
-            const output = opts?.rasterParts && webusbCapabilities && rasterCapabilityEnabled(webusbCapabilities, 'mixed')
-              ? buildWebUsbMixedRasterBytes(opts.rasterParts, webusbCapabilities, opts.rasterCutMode ?? 'full')
-              : bytes;
+            const webusbPrinter = get().webusbPrinter;
+            const webusbCapabilities = webusbPrinter?.capabilities;
+            let output = bytes;
+            if (webusbCapabilities && rasterCapabilityEnabled(webusbCapabilities, 'mixed')) {
+              if (!window.electronAPI?.rasterizeKotDocument || !webusbPrinter?.profile_id) {
+                throw new Error('Raster renderer is unavailable for this printer profile');
+              }
+              const rasterResult = await window.electronAPI.rasterizeKotDocument({
+                order: orderForPrint,
+                items: orderForPrint.items ?? [],
+                stationName: opts?.stationName ?? 'Kitchen',
+                profileId: webusbPrinter.profile_id,
+                options: {
+                  columns: paperWidth === 80 ? 48 : 42,
+                  language: kotLanguage,
+                  locale: LANGUAGES[kotLanguage as Language]?.locale ?? 'en-US',
+                  ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
+                  useUnicode: printerUseUnicode,
+                  arabicShaping: printerArabicShaping,
+                },
+              });
+              if (!rasterResult.ok || !rasterResult.data) throw new Error(rasterResult.error || 'Raster rendering failed');
+              output = Uint8Array.from(rasterResult.data);
+              if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
+            } else {
+              warnings.push(...encoderWarnings);
+            }
             set({ lastPrintedBytes: output });
             await printerService.print(output);
             return [

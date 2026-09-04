@@ -10,6 +10,7 @@
 import type { ThermalPrinterCapabilities } from './thermal-capabilities';
 
 export const DEFAULT_RASTER_MAX_BAND_HEIGHT = 200;
+const MAX_RASTER_WIDTH_DOTS = 8192;
 export const GS_V_0_MODE = 0;
 
 export type RasterTextDirection = 'ltr' | 'rtl';
@@ -75,7 +76,7 @@ export function rasterCapabilityEnabled(
 ): boolean {
   return capabilities?.raster.enabled === true
     && Number.isSafeInteger(capabilities.raster.widthDots)
-    && capabilities.raster.widthDots > 0 && capabilities.raster.widthDots <= 8192
+    && capabilities.raster.widthDots > 0 && capabilities.raster.widthDots <= MAX_RASTER_WIDTH_DOTS
     && Number.isSafeInteger(capabilities.raster.maxBandHeight)
     && capabilities.raster.maxBandHeight > 0 && capabilities.raster.maxBandHeight <= DEFAULT_RASTER_MAX_BAND_HEIGHT
     && capabilities.raster.modes.includes(mode);
@@ -165,7 +166,7 @@ export function encodeRasterUnits(
 
 /** Diagnostic bands used by the capability-gated printer test page. */
 export function buildRasterDiagnosticBands(widthDots: number, maxBandHeight = DEFAULT_RASTER_MAX_BAND_HEIGHT): RasterBand[] {
-  if (!Number.isSafeInteger(widthDots) || widthDots <= 16) throw new Error('Diagnostic raster width is too small');
+  if (!Number.isSafeInteger(widthDots) || widthDots <= 0 || widthDots > MAX_RASTER_WIDTH_DOTS) throw new Error('Invalid diagnostic raster width');
   if (!Number.isSafeInteger(maxBandHeight) || maxBandHeight <= 0 || maxBandHeight > DEFAULT_RASTER_MAX_BAND_HEIGHT) {
     throw new Error('Invalid diagnostic raster band height');
   }
@@ -241,7 +242,7 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
   return request.version === 1
     && typeof request.requestId === 'string' && request.requestId.length > 0 && request.requestId.length <= 128
     && typeof request.text === 'string' && request.text.length <= 16_000
-    && Number.isSafeInteger(request.widthDots) && (request.widthDots as number) > 0 && (request.widthDots as number) <= 8192
+    && Number.isSafeInteger(request.widthDots) && (request.widthDots as number) > 0 && (request.widthDots as number) <= MAX_RASTER_WIDTH_DOTS
     && Number.isSafeInteger(request.maxBandHeight) && (request.maxBandHeight as number) > 0 && (request.maxBandHeight as number) <= DEFAULT_RASTER_MAX_BAND_HEIGHT
     && (request.direction === 'ltr' || request.direction === 'rtl')
     && (request.align === undefined || request.align === 'left' || request.align === 'center')

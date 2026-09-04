@@ -191,6 +191,35 @@ async function run(): Promise<void> {
   const addressRequest = classicHeaderRequests.find((request) => request.text.includes('آدرس فارسی'));
   assert.equal(addressRequest?.align, 'center');
   assert.equal(classicHeaderRequests.some((request) => request.text.startsWith('** ') && request.text.endsWith(' **')), true);
+  const compactPaymentDocument = {
+    ...compactDocument,
+    blocks: compactDocument.blocks.map((block) => block.kind === 'payments'
+      ? { ...block, lines: [{ method: 'cash', label: { conceptId: 'payment.cash', primary: 'مدفوع' }, amount: 12.34 }] }
+      : block),
+  };
+  const compactPaymentGroups: any[] = [];
+  const compactPaymentLines = renderBillDocumentToCompactLines(compactPaymentDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currencySymbol: '$',
+    currency: 'INR',
+    trimDecimals: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    rasterGroups: compactPaymentGroups,
+  });
+  const compactPaymentRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      compactPaymentRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+    },
+  }, compactPaymentLines, caps, 'compact-payment-source', [compactPaymentGroups.find((group) => group.groupId === 'payments')]);
+  assert.equal(compactPaymentRequests.some((request) => request.text === 'مدفوع'), true);
+  assert.equal(compactPaymentRequests.some((request) => request.text.includes(':')), false);
   const financialDocument = {
     ...compactDocument,
     blocks: compactDocument.blocks.map((block) => block.kind === 'totals'
@@ -339,6 +368,9 @@ async function run(): Promise<void> {
   const diagnosticPage = buildTestPage('80mm', 'partial', 'en-US', undefined, { ...caps, raster: { ...caps.raster, maxBandHeight: 32, widthDots: 17 } });
   assert.equal(diagnosticPage.includes(0x1D) && diagnosticPage.includes(0x76), true);
   assert.deepEqual(Array.from(diagnosticPage.slice(-7)), Array.from(encodeRasterFeedAndCut('partial')));
+  const narrowRasterCapabilities = { ...caps, raster: { ...caps.raster, widthDots: 16 } };
+  assert.equal(rasterCapabilityEnabled(narrowRasterCapabilities), true);
+  assert.equal(buildRasterDiagnosticBands(16, 32)[0].widthDots, 16);
   const failedRender = await renderRasterSemanticUnit({ render: async () => ({ version: 1, requestId: 'r1', ok: false, code: 'font-unavailable', detail: 'missing' }) }, {} as any, true);
   assert.equal(failedRender.ok, false);
   assert.equal(failedRender.financial, true);

@@ -308,8 +308,8 @@ export function renderBillDocumentToCompactLines(
       const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
       const rendered = financialRows(methodLabel, value, cols, options.language, options.capabilities);
       lines.push(...rendered);
-      paymentSourceLines.push(`${paymentLabel(line.label)}: ${value}`);
-      paymentSourceControlLines.push(rendered[0] ?? '');
+      paymentSourceLines.push(...rendered);
+      paymentSourceControlLines.push(...rendered);
     }
   }
   markGroup('payments', paymentsStart, paymentSourceLines, paymentSourceControlLines, true);

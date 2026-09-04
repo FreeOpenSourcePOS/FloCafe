@@ -36,6 +36,7 @@ export interface PosSettingsState {
   defaultPrintMode: 'thermal' | 'web';
   // Bill template settings
   billTemplate: BillTemplate;
+  billTemplateSource: 'core' | 'pack' | 'merchant' | null;
   billFooterMessage: string;
   billTaxRegistrationNumber: string;
   billAddress: string;
@@ -81,6 +82,7 @@ export interface PosSettingsState {
   setWhatsappShareEnabled: (enabled: boolean) => void;
   setDefaultPrintMode: (mode: 'thermal' | 'web') => void;
   setBillTemplate: (t: BillTemplate) => void;
+  setBillTemplateSource: (source: 'core' | 'pack' | 'merchant' | null) => void;
   setBillFooterMessage: (m: string) => void;
   setBillTaxRegistrationNumber: (g: string) => void;
   setBillAddress: (a: string) => void;
@@ -125,6 +127,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       defaultPrintMode: 'thermal',
       // Bill template defaults
       billTemplate: 'classic',
+      billTemplateSource: null,
       billFooterMessage: '',
       billTaxRegistrationNumber: '',
       billAddress: '',
@@ -164,6 +167,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setWhatsappShareEnabled: (enabled) => set({ whatsappShareEnabled: enabled }),
       setDefaultPrintMode: (mode) => set({ defaultPrintMode: mode }),
       setBillTemplate: (t) => set({ billTemplate: t }),
+      setBillTemplateSource: (source) => set({ billTemplateSource: source }),
       setBillFooterMessage: (m) => set({ billFooterMessage: m }),
       setBillTaxRegistrationNumber: (g) => set({ billTaxRegistrationNumber: g }),
       setBillAddress: (a) => set({ billAddress: a }),

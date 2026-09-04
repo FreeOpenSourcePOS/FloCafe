@@ -265,7 +265,7 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
       if (row.specialInstructions) sourceLines.push('  >> ' + row.specialInstructions.text);
       if (options.rasterGroups) {
         const group = { groupId: `kot-items-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
-        options.rasterGroups.push(sourceLines.length === group.lineCount ? { ...group, sourceLines } : group);
+        options.rasterGroups.push({ ...group, sourceLines });
       }
     }
   }

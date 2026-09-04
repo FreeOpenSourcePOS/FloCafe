@@ -397,9 +397,9 @@ export async function renderUnsupportedRasterLines(
   ).map(([, ranges]) => ranges).sort((left, right) => left[0].lineIndex - right[0].lineIndex);
   for (const ranges of semanticGroups) {
     const group = ranges[0];
-    const groupText = ranges.flatMap((range) => range.sourceLines?.length === range.lines.length ? range.sourceLines : range.lines)
+    const groupText = ranges.flatMap((range) => range.sourceLines ?? range.lines)
       .map(stripRasterControlTokens).filter(Boolean).join('\n');
-    const needsRaster = ranges.some((range) => range.lines.some((line) => {
+    const needsRaster = ranges.some((range) => (range.sourceLines ?? range.lines).some((line) => {
       const text = stripRasterControlTokens(line);
       return text.length > 0 && !isThermalTextRepresentable(text, capabilities);
     }));
@@ -412,9 +412,10 @@ export async function renderUnsupportedRasterLines(
     } else {
       for (const range of ranges) {
         const renderedUnits: RasterSemanticUnit[] = [];
-        for (let offset = 0; offset < range.lines.length; offset += 1) {
-          const sourceText = range.sourceLines?.length === range.lines.length ? range.sourceLines[offset] : undefined;
-          const request = requestForRasterLine(range.lines[offset], range.lineIndex + offset, capabilities, requestPrefix, financial, sourceText);
+        const sourceLines = range.sourceLines ?? range.lines;
+        for (let offset = 0; offset < sourceLines.length; offset += 1) {
+          const layoutLine = range.lines[Math.min(offset, range.lines.length - 1)] ?? '';
+          const request = requestForRasterLine(layoutLine, range.lineIndex + offset, capabilities, requestPrefix, financial, sourceLines[offset]);
           if (!request) continue;
           const result = await renderRasterSemanticUnit(renderer, request, financial);
           if (!result.ok) {

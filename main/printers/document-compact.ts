@@ -128,48 +128,70 @@ export function renderBillDocumentToCompactLines(
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const normalize = (text: string): string => normalizeThermalText(text, options.capabilities);
-  const markGroup = (groupId: string, start: number): void => {
-    if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start });
+  const markGroup = (groupId: string, start: number, sourceLines?: readonly string[]): void => {
+    if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start, ...(sourceLines ? { sourceLines } : {}) });
   };
 
   lines.push('{INIT}');
 
   // Reprint banner (MessageBlock).
   const messageStart = lines.length;
+  const messageSourceLines: string[] = [];
   if (messages?.reprintBanner) {
     lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(messages.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+    messageSourceLines.push(labelOf(messages.reprintBanner));
   }
 
   // Online-order banner (#284, MessageBlock).
   if (messages?.onlineOrderBanner) {
     const banner = messages.onlineOrderBanner;
     lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-    if (banner.platform.text) lines.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
-    if (banner.externalOrderId.text) lines.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
+    messageSourceLines.push(labelOf(banner.label));
+    if (banner.platform.text) {
+      lines.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
+      messageSourceLines.push(banner.platform.text);
+    }
+    if (banner.externalOrderId.text) {
+      lines.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
+      messageSourceLines.push('#' + banner.externalOrderId.text);
+    }
   }
-  markGroup('message-pre', messageStart);
+  markGroup('message-pre', messageStart, messageSourceLines);
 
   // Business header (store name only — compact keeps contact facts in the footer).
   const headerStart = lines.length;
   if (header?.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(header.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
-  markGroup('business-header', headerStart);
+  markGroup('business-header', headerStart, header?.name ? [header.name.text] : []);
   lines.push(bar);
 
   // Document meta.
   const metaStart = lines.length;
+  const metaSourceLines: string[] = [];
   if (meta) {
     lines.push(normalize(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text));
+    metaSourceLines.push(labelOf(meta.billNumberLabel) + ': ' + meta.invoiceNumber.text);
     const date = parseDbTimestamp(meta.timestamp.text);
-    lines.push(normalize(labelOf(meta.dateLabel) + ': ' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions)));
+    const dateText = date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions);
+    lines.push(normalize(labelOf(meta.dateLabel) + ': ' + dateText));
+    metaSourceLines.push(labelOf(meta.dateLabel) + ': ' + dateText);
     if (meta.table) {
       lines.push(truncateShapedLine(meta.table.label.primary.replace('{name}', meta.table.name.text), cols, options.arabicShaping, options.language, options.capabilities));
+      metaSourceLines.push(meta.table.label.primary.replace('{name}', meta.table.name.text));
     }
   }
-  markGroup('document-meta', metaStart);
+  markGroup('document-meta', metaStart, metaSourceLines);
   const customerStart = lines.length;
-  if (customer?.name) lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language, options.capabilities));
-  if (customer?.phone) lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + (options.maskCustomerPhone ? maskPhoneOnReceipt(customer.phone.text) : customer.phone.text)));
-  if (options.rasterGroups && lines.length > customerStart) options.rasterGroups.push({ groupId: 'customer', lineIndex: customerStart, lineCount: lines.length - customerStart });
+  const customerSourceLines: string[] = [];
+  if (customer?.name) {
+    lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language, options.capabilities));
+    customerSourceLines.push(labelOf(customer.nameLabel) + ': ' + customer.name.text);
+  }
+  if (customer?.phone) {
+    const phone = options.maskCustomerPhone ? maskPhoneOnReceipt(customer.phone.text) : customer.phone.text;
+    lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + phone));
+    customerSourceLines.push(labelOf(customer.phoneLabel) + ': ' + phone);
+  }
+  if (options.rasterGroups && lines.length > customerStart) options.rasterGroups.push({ groupId: 'customer', lineIndex: customerStart, lineCount: lines.length - customerStart, sourceLines: customerSourceLines });
   lines.push(dash);
 
   // Item table.
@@ -214,7 +236,7 @@ export function renderBillDocumentToCompactLines(
       }
       if (options.rasterGroups && lines.length > rowStart) {
         const group = { groupId: `item-table-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
-        options.rasterGroups.push(sourceLines.length === group.lineCount ? { ...group, sourceLines } : group);
+        options.rasterGroups.push({ ...group, sourceLines });
       }
     }
   }
@@ -223,53 +245,88 @@ export function renderBillDocumentToCompactLines(
 
   // Totals (compact has no loyalty points section).
   const totalsStart = lines.length;
+  const totalsSourceLines: string[] = [];
   if (totals) {
-    lines.push(...financialRows(labelOf(totals.subtotal.label), formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+    const subtotalValue = formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
+    lines.push(...financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities));
+    totalsSourceLines.push(`${labelOf(totals.subtotal.label)}: ${subtotalValue}`);
     if (totals.discount) {
-      lines.push(...financialRows(labelOf(totals.discount.label), '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+      const discountValue = '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      lines.push(...financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities));
+      totalsSourceLines.push(`${labelOf(totals.discount.label)}: ${discountValue}`);
     }
     if (breakdown && breakdown.lines.length > 0) {
       for (const line of breakdown.lines) {
         const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
         const label = truncate(labelOf(line.label) + rateSuffix, cols - 12, options.language, options.capabilities);
-        lines.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+        const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
+        lines.push(...financialRows(label, value, cols, options.language, options.capabilities));
+        totalsSourceLines.push(`${labelOf(line.label)}${rateSuffix}: ${value}`);
       }
     } else if (totals.tax) {
-      lines.push(...financialRows(labelOf(totals.tax.label), formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+      const value = formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      lines.push(...financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities));
+      totalsSourceLines.push(`${labelOf(totals.tax.label)}: ${value}`);
     }
     if (totals.serviceCharge) {
-      lines.push(...financialRows(labelOf(totals.serviceCharge.label), formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+      const value = formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      lines.push(...financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities));
+      totalsSourceLines.push(`${labelOf(totals.serviceCharge.label)}: ${value}`);
     }
     if (totals.deliveryCharge) {
-      lines.push(...financialRows(labelOf(totals.deliveryCharge.label), formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+      const value = formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      lines.push(...financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities));
+      totalsSourceLines.push(`${labelOf(totals.deliveryCharge.label)}: ${value}`);
     }
     if (totals.packagingCharge) {
-      lines.push(...financialRows(labelOf(totals.packagingCharge.label), formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+      const value = formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      lines.push(...financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities));
+      totalsSourceLines.push(`${labelOf(totals.packagingCharge.label)}: ${value}`);
     }
-    lines.push(...financialRows(labelOf(totals.grandTotal.label), formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
+    const grandTotalValue = formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
+    lines.push(...financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
+    totalsSourceLines.push(`${labelOf(totals.grandTotal.label)}: ${grandTotalValue}`);
   }
-  markGroup('totals', totalsStart);
+  markGroup('totals', totalsStart, totalsSourceLines);
 
   // Payments.
   const paymentsStart = lines.length;
+  const paymentSourceLines: string[] = [];
   if (payments && payments.lines.length > 0) {
     lines.push(dash);
     for (const line of payments.lines) {
       const methodLabel = truncate(paymentLabel(line.label), cols - 12, options.language, options.capabilities);
-      lines.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+      const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      lines.push(...financialRows(methodLabel, value, cols, options.language, options.capabilities));
+      paymentSourceLines.push(`${paymentLabel(line.label)}: ${value}`);
     }
   }
-  markGroup('payments', paymentsStart);
+  markGroup('payments', paymentsStart, paymentSourceLines);
 
   // Footer contact details.
   const footerStart = lines.length;
+  const footerSourceLines: string[] = [bar];
   lines.push(bar);
-  if (header?.address) pushWrapped(lines, header.address.text, cols, options.language, options.capabilities);
-  if (header?.phone && header.phoneLabel) pushWrapped(lines, labelOf(header.phoneLabel) + ': ' + header.phone.text, cols, options.language, options.capabilities);
-  if (header?.taxId) pushWrapped(lines, labelOf(header.taxId.label) + ': ' + header.taxId.value.text, cols, options.language, options.capabilities);
-  if (messages?.footerNote) pushCenteredWrapped(lines, messages.footerNote.text, cols, options.language, options.capabilities);
-  else lines.push('{CENTER}' + normalize(labelOf(messages!.thankYou!)) + '{/CENTER}');
-  markGroup('footer', footerStart);
+  if (header?.address) {
+    pushWrapped(lines, header.address.text, cols, options.language, options.capabilities);
+    footerSourceLines.push(header.address.text);
+  }
+  if (header?.phone && header.phoneLabel) {
+    pushWrapped(lines, labelOf(header.phoneLabel) + ': ' + header.phone.text, cols, options.language, options.capabilities);
+    footerSourceLines.push(labelOf(header.phoneLabel) + ': ' + header.phone.text);
+  }
+  if (header?.taxId) {
+    pushWrapped(lines, labelOf(header.taxId.label) + ': ' + header.taxId.value.text, cols, options.language, options.capabilities);
+    footerSourceLines.push(labelOf(header.taxId.label) + ': ' + header.taxId.value.text);
+  }
+  if (messages?.footerNote) {
+    pushCenteredWrapped(lines, messages.footerNote.text, cols, options.language, options.capabilities);
+    footerSourceLines.push(messages.footerNote.text);
+  } else {
+    lines.push('{CENTER}' + normalize(labelOf(messages!.thankYou!)) + '{/CENTER}');
+    footerSourceLines.push(labelOf(messages!.thankYou!));
+  }
+  markGroup('footer', footerStart, footerSourceLines);
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 

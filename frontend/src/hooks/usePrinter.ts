@@ -35,7 +35,8 @@ import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 
 type CoreBillTemplate = 'classic' | 'compact';
 
-function resolveCoreBillTemplate(value: unknown): CoreBillTemplate | null {
+function resolveCoreBillTemplate(value: unknown, source: 'core' | 'pack' | 'merchant' | null): CoreBillTemplate | null {
+  if (source !== 'core') return null;
   if (value === 'classic' || value === 'compact') return value;
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -144,6 +145,7 @@ export const usePrinterStore = create<PrinterState>()(
         try {
           const {
             billTemplate,
+            billTemplateSource,
             billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
             billShowName, billShowAddress, billShowPhone, billShowTaxId,
             billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
@@ -155,7 +157,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const isReprint = opts?.isReprint ?? false;
           const billTemplateWarning = makeBillTemplateFallbackWarning(billTemplate);
-          const rasterBillTemplate = resolveCoreBillTemplate(billTemplate);
+          const rasterBillTemplate = resolveCoreBillTemplate(billTemplate, billTemplateSource);
 
           const executeBrowserPrint = async (): Promise<PrintWarning[]> => {
             const { printWebBill } = await import('@/lib/printer/web-print');

@@ -304,31 +304,44 @@ export function renderBillDocumentToClassicLines(
     pre: string[];
     main: string[];
     post: string[];
-    groups: Array<{ groupId: string; start: number; count: number }>;
+    sourceLines: { pre: string[]; main: string[]; post: string[] };
+    groups: Array<{ groupId: string; start: number; count: number; sourceLines?: readonly string[] }>;
   }
   const segments = new Map<PrintDocumentBlock['kind'], BlockSegments>();
   const segmentOf = (kind: PrintDocumentBlock['kind']): BlockSegments => {
     let segment = segments.get(kind);
     if (!segment) {
-      segment = { pre: [], main: [], post: [], groups: [] };
+      segment = { pre: [], main: [], post: [], sourceLines: { pre: [], main: [], post: [] }, groups: [] };
       segments.set(kind, segment);
     }
     return segment;
   };
 
   const renderGrandTotal = (block: TotalsBlock, target = segmentOf('totals')): void => {
-    target.main.push(...financialRows(labelOf(block.grandTotal.label), formatCurrency(block.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
+    const label = labelOf(block.grandTotal.label);
+    const value = formatCurrency(block.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
+    target.main.push(...financialRows(label, value, cols, options.language, options.capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
+    target.sourceLines.main.push(`${label}: ${value}`);
   };
 
   const renderCharges = (block: TotalsBlock, target: BlockSegments): void => {
     if (block.serviceCharge) {
-      target.main.push(...financialRows(labelOf(block.serviceCharge.label), formatCurrency(block.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+      const label = labelOf(block.serviceCharge.label);
+      const value = formatCurrency(block.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      target.main.push(...financialRows(label, value, cols, options.language, options.capabilities));
+      target.sourceLines.main.push(`${label}: ${value}`);
     }
     if (block.deliveryCharge) {
-      target.main.push(...financialRows(labelOf(block.deliveryCharge.label), formatCurrency(block.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+      const label = labelOf(block.deliveryCharge.label);
+      const value = formatCurrency(block.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      target.main.push(...financialRows(label, value, cols, options.language, options.capabilities));
+      target.sourceLines.main.push(`${label}: ${value}`);
     }
     if (block.packagingCharge) {
-      target.main.push(...financialRows(labelOf(block.packagingCharge.label), formatCurrency(block.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+      const label = labelOf(block.packagingCharge.label);
+      const value = formatCurrency(block.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      target.main.push(...financialRows(label, value, cols, options.language, options.capabilities));
+      target.sourceLines.main.push(`${label}: ${value}`);
     }
   };
 
@@ -336,42 +349,74 @@ export function renderBillDocumentToClassicLines(
     switch (block.kind) {
       case 'business-header': {
         const segment = segmentOf('business-header');
-        if (block.name) segment.main.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + truncateShapedLine(block.name.text, Math.floor(cols / 2), options.arabicShaping, options.language, options.capabilities) + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+        if (block.name) {
+          segment.main.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + truncateShapedLine(block.name.text, Math.floor(cols / 2), options.arabicShaping, options.language, options.capabilities) + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+          segment.sourceLines.main.push(block.name.text);
+        }
         // Contact/tax facts are header-owned content; they travel with
         // the header block's position in reordered compositions.
         const footerLines: string[] = [];
-        if (block.address) footerLines.push(block.address.text);
-        if (block.phone && block.phoneLabel) footerLines.push(normalize(labelOf(block.phoneLabel) + ': ' + block.phone.text));
-        if (block.taxId) footerLines.push(normalize(labelOf(block.taxId.label) + ': ' + block.taxId.value.text));
-        if (block.instagramHandle) footerLines.push(block.instagramHandle.text);
+        const footerSourceLines: string[] = [];
+        if (block.address) {
+          footerLines.push(block.address.text);
+          footerSourceLines.push(block.address.text);
+        }
+        if (block.phone && block.phoneLabel) {
+          footerLines.push(normalize(labelOf(block.phoneLabel) + ': ' + block.phone.text));
+          footerSourceLines.push(labelOf(block.phoneLabel) + ': ' + block.phone.text);
+        }
+        if (block.taxId) {
+          footerLines.push(normalize(labelOf(block.taxId.label) + ': ' + block.taxId.value.text));
+          footerSourceLines.push(labelOf(block.taxId.label) + ': ' + block.taxId.value.text);
+        }
+        if (block.instagramHandle) {
+          footerLines.push(block.instagramHandle.text);
+          footerSourceLines.push(block.instagramHandle.text);
+        }
         if (footerLines.length > 0) {
           segment.post.push(dash);
           for (const footerLine of footerLines) pushCenteredWrapped(segment.post, footerLine, cols, options.language, options.capabilities);
+          segment.sourceLines.post.push(dash, ...footerSourceLines);
         }
         break;
       }
       case 'customer': {
         const segment = segmentOf('customer');
         const start = segment.main.length;
-        if (block.name) segment.main.push('{CENTER}{FONT_B}' + truncateShapedLine(block.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/FONT_B}{/CENTER}');
-        if (block.phone) segment.main.push('{CENTER}' + (options.maskCustomerPhone ? maskPhoneOnReceipt(block.phone.text) : block.phone.text) + '{/CENTER}');
+        if (block.name) {
+          segment.main.push('{CENTER}{FONT_B}' + truncateShapedLine(block.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/FONT_B}{/CENTER}');
+          segment.sourceLines.main.push(block.name.text);
+        }
+        if (block.phone) {
+          const phone = options.maskCustomerPhone ? maskPhoneOnReceipt(block.phone.text) : block.phone.text;
+          segment.main.push('{CENTER}' + phone + '{/CENTER}');
+          segment.sourceLines.main.push(phone);
+        }
         if (segment.main.length > start) segment.groups.push({ groupId: 'customer', start, count: segment.main.length - start });
         break;
       }
       case 'document-meta': {
         const segment = segmentOf('document-meta');
         segment.main.push(dash);
+        segment.sourceLines.main.push(dash);
         const defaultTitle = block.title.conceptId === 'print.taxInvoiceTitle'
           ? printLabel(options.language, 'print.taxInvoiceTitle')
           : printLabel(options.language, 'print.invoiceTitle');
-        if (labelOf(block.title) !== defaultTitle) segment.main.push('{CENTER}' + normalize(labelOf(block.title)) + '{/CENTER}');
+        if (labelOf(block.title) !== defaultTitle) {
+          segment.main.push('{CENTER}' + normalize(labelOf(block.title)) + '{/CENTER}');
+          segment.sourceLines.main.push(labelOf(block.title));
+        }
         segment.main.push('{CENTER}' + normalize(labelOf(block.invoiceNumberLabel) + ' ' + block.invoiceNumber.text) + '{/CENTER}');
+        segment.sourceLines.main.push(labelOf(block.invoiceNumberLabel) + ' ' + block.invoiceNumber.text);
         const date = parseDbTimestamp(block.timestamp.text);
         segment.main.push('{CENTER}' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions) + '{/CENTER}');
+        segment.sourceLines.main.push(date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions));
         if (block.table) {
           segment.main.push('{CENTER}' + truncateShapedLine(block.table.label.primary.replace('{name}', block.table.name.text), cols, options.arabicShaping, options.language, options.capabilities) + '{/CENTER}');
+          segment.sourceLines.main.push(block.table.label.primary.replace('{name}', block.table.name.text));
         }
         segment.main.push(dash);
+        segment.sourceLines.main.push(dash);
         break;
       }
       case 'item-table': {
@@ -415,7 +460,7 @@ export function renderBillDocumentToClassicLines(
           }
           if (segment.main.length > start) {
             const group = { groupId: `item-table-row-${rowIndex}`, start, count: segment.main.length - start };
-            segment.groups.push(sourceLines.length === group.count ? { ...group, sourceLines } : group);
+            segment.groups.push({ ...group, sourceLines });
           }
         }
         segment.main.push(dash);
@@ -426,7 +471,9 @@ export function renderBillDocumentToClassicLines(
         for (const line of block.lines) {
           const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
           const label = truncate(labelOf(line.label) + rateSuffix, cols - 12, options.language, options.capabilities);
-          segment.main.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+          const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          segment.main.push(...financialRows(label, value, cols, options.language, options.capabilities));
+          segment.sourceLines.main.push(`${labelOf(line.label)}${rateSuffix}: ${value}`);
         }
         // Explicit canonical tax/totals parity handling: when the
         // breakdown FOLLOWS the totals block (non-canonical order), the
@@ -446,18 +493,31 @@ export function renderBillDocumentToClassicLines(
         const segment = segmentOf('totals');
         if (block.pointsRedeemed) {
           const label = labelOf(block.pointsRedeemed.label);
-          segment.main.push(...financialRows(label, '-' + block.pointsRedeemed.points + ' pts', cols, options.language, options.capabilities));
+          const value = '-' + block.pointsRedeemed.points + ' pts';
+          segment.main.push(...financialRows(label, value, cols, options.language, options.capabilities));
+          segment.sourceLines.main.push(`${label}: ${value}`);
         }
-        segment.main.push(...financialRows(labelOf(block.subtotal.label), formatCurrency(block.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+        {
+          const label = labelOf(block.subtotal.label);
+          const value = formatCurrency(block.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          segment.main.push(...financialRows(label, value, cols, options.language, options.capabilities));
+          segment.sourceLines.main.push(`${label}: ${value}`);
+        }
         if (block.discount) {
-          segment.main.push(...financialRows(labelOf(block.discount.label), '-' + formatCurrency(block.discount.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+          const label = labelOf(block.discount.label);
+          const value = '-' + formatCurrency(block.discount.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          segment.main.push(...financialRows(label, value, cols, options.language, options.capabilities));
+          segment.sourceLines.main.push(`${label}: ${value}`);
         }
         const hasBreakdownLines = blocks.some(
           (candidate) => candidate.kind === 'tax-breakdown'
             && (candidate as TaxBreakdownBlock).lines.length > 0,
         );
         if (!hasBreakdownLines && block.tax) {
-          segment.main.push(...financialRows(labelOf(block.tax.label), formatCurrency(block.tax.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+          const label = labelOf(block.tax.label);
+          const value = formatCurrency(block.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          segment.main.push(...financialRows(label, value, cols, options.language, options.capabilities));
+          segment.sourceLines.main.push(`${label}: ${value}`);
         }
         if (!hasBreakdownLines || breakdownIndex < totalsIndex) {
           renderCharges(block, segment);
@@ -470,13 +530,18 @@ export function renderBillDocumentToClassicLines(
         // Loyalty earned/balance is totals-owned content.
         if (block.pointsEarned || block.pointsBalance) {
           segment.post.push(dash);
+          segment.sourceLines.post.push(dash);
           if (block.pointsEarned) {
             const label = labelOf(block.pointsEarned.label);
-            segment.post.push(...financialRows(label, String(block.pointsEarned.points), cols, options.language, options.capabilities));
+            const value = String(block.pointsEarned.points);
+            segment.post.push(...financialRows(label, value, cols, options.language, options.capabilities));
+            segment.sourceLines.post.push(`${label}: ${value}`);
           }
           if (block.pointsBalance) {
             const label = labelOf(block.pointsBalance.label);
-            segment.post.push(...financialRows(label, String(block.pointsBalance.points), cols, options.language, options.capabilities));
+            const value = String(block.pointsBalance.points);
+            segment.post.push(...financialRows(label, value, cols, options.language, options.capabilities));
+            segment.sourceLines.post.push(`${label}: ${value}`);
           }
         }
         break;
@@ -485,7 +550,9 @@ export function renderBillDocumentToClassicLines(
         const segment = segmentOf('payments');
         for (const line of block.lines) {
           const methodLabel = truncate(paymentLabel(line.label), cols - 12, options.language, options.capabilities);
-          segment.main.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits), cols, options.language, options.capabilities));
+          const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          segment.main.push(...financialRows(methodLabel, value, cols, options.language, options.capabilities));
+          segment.sourceLines.main.push(`${paymentLabel(line.label)}: ${value}`);
         }
         break;
       }
@@ -493,17 +560,29 @@ export function renderBillDocumentToClassicLines(
         const segment = segmentOf('message');
         if (block.reprintBanner) {
           segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(block.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+          segment.sourceLines.pre.push(labelOf(block.reprintBanner));
         }
         if (block.onlineOrderBanner) {
           const banner = block.onlineOrderBanner;
           segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-          if (banner.platform.text) segment.pre.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
-          if (banner.externalOrderId.text) segment.pre.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
+          segment.sourceLines.pre.push(labelOf(banner.label));
+          if (banner.platform.text) {
+            segment.pre.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
+            segment.sourceLines.pre.push(banner.platform.text);
+          }
+          if (banner.externalOrderId.text) {
+            segment.pre.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
+            segment.sourceLines.pre.push('#' + banner.externalOrderId.text);
+          }
         }
         if (block.thankYou && labelOf(block.thankYou) !== printLabel(options.language, 'print.thankYouShort')) {
           segment.main.push('{CENTER}' + normalize(labelOf(block.thankYou)) + '{/CENTER}');
+          segment.sourceLines.main.push(labelOf(block.thankYou));
         }
-        if (block.footerNote) pushCenteredWrapped(segment.post, block.footerNote.text, cols, options.language, options.capabilities);
+        if (block.footerNote) {
+          pushCenteredWrapped(segment.post, block.footerNote.text, cols, options.language, options.capabilities);
+          segment.sourceLines.post.push(block.footerNote.text);
+        }
         break;
       }
     }
@@ -534,18 +613,18 @@ export function renderBillDocumentToClassicLines(
     return true;
   });
 
-  const emit = (kind: PrintDocumentBlock['kind'], part: keyof BlockSegments): void => {
+  const emit = (kind: PrintDocumentBlock['kind'], part: 'pre' | 'main' | 'post'): void => {
     const segment = segments.get(kind);
-    if (!segment || part === 'groups') return;
+    if (!segment) return;
     const start = lines.length;
     lines.push(...segment[part]);
     if (options.rasterGroups && segment[part].length > 0) {
       if (part === 'main' && segment.groups.length > 0) {
         for (const group of segment.groups) {
-          options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count });
+          options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count, ...(group.sourceLines ? { sourceLines: group.sourceLines } : {}) });
         }
       } else {
-        options.rasterGroups.push({ groupId: kind, lineIndex: start, lineCount: segment[part].length });
+        options.rasterGroups.push({ groupId: kind, lineIndex: start, lineCount: segment[part].length, sourceLines: segment.sourceLines[part] });
       }
     }
   };

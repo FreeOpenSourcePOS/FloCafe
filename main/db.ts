@@ -4238,6 +4238,30 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 80,
+    name: 'migrate_cash_drawer_pulse_to_global_setting',
+    up: () => {
+      // Cash-drawer pulse moved from a per-printer flag (v75) to a global
+      // setting. A store that already had it enabled on any printer must
+      // keep pulsing after the upgrade — printReceipt only reads the legacy
+      // column while the global setting is unset (main/printers/thermal.ts),
+      // and the settings UI writes 'false' to it the first time the printing
+      // tab is saved for any reason, which would otherwise silently drop the
+      // existing configuration.
+      const columns = getColumns(db, 'printers');
+      if (!columns.includes('cash_drawer_pulse_enabled')) return;
+      const anyEnabled = db.prepare(
+        `SELECT 1 FROM printers WHERE cash_drawer_pulse_enabled = 1 LIMIT 1`,
+      ).get();
+      if (anyEnabled) {
+        db.prepare(`
+          INSERT OR IGNORE INTO settings (key, value, updated_at)
+          VALUES ('cash_drawer_pulse_enabled', 'true', ?)
+        `).run(now());
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

@@ -53,7 +53,8 @@ test('Batch 5C Pages (Dashboard, Orders, Tables, Customers, OrderHistoryGrid) re
   await page.goto(`${BASE}/tables`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Tables');
-  // The default view is the floor plan; Add Table lives in the List view.
+  // The default view is the list; switch to the floor plan second view.
+  await page.getByRole('button', { name: 'Floor plan' }).click();
   await expect(page.getByRole('button', { name: 'Edit layout' })).toBeVisible();
   await captureScreenshot(page, 'tables-en.png');
 
@@ -98,6 +99,7 @@ test('Batch 5C Pages (Dashboard, Orders, Tables, Customers, OrderHistoryGrid) re
     await page.goto(`${BASE}/tables`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('میزها');
+    await page.getByRole('button', { name: 'نقشه سالن' }).click();
     await expect(page.getByRole('button', { name: 'ویرایش چیدمان' })).toBeVisible();
     await captureScreenshot(page, 'tables-fa.png');
 

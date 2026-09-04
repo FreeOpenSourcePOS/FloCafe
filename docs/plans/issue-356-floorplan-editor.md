@@ -25,7 +25,7 @@ Common denominators → **best-practice UX**: floor tabs, drag & drop on a canva
 
 1. `frontend/src/lib/types.ts`: add `position_x`/`position_y` to `Table`.
 2. New `frontend/src/components/tables/FloorplanEditor.tsx`: canvas + floor tabs + tray + pointer drag + Save/Discard + legend.
-3. Wire into `frontend/src/app/(dashboard)/tables/page.tsx` (header button + view toggle; editor inherits the page's 10s status polling).
+3. Wire into `frontend/src/app/(dashboard)/tables/page.tsx` (header button + view toggle; editor inherits the page's 10s status polling, including while layout editing is open).
 4. i18n keys ×5 languages.
 5. Backend integration test: PUT `position_x`/`position_y` persists and GET returns them (acceptance criterion 1).
 6. Playwright e2e: login → tables → Edit Floorplan → drag table → Save → reload → position persisted; floor switching works; visual snapshot check.

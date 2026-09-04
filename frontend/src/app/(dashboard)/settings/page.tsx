@@ -148,6 +148,16 @@ function invoicePreviewSegment(period: InvoiceResetPeriod, month: number, day: n
   return `${yyyy}${mm}${dd}`;
 }
 
+// A prefix stored before the letters/numbers-only rule existed (e.g. "FAC-")
+// would otherwise round-trip unchanged into the form and then fail this same
+// page's own save-time validation the next time ANY order-numbering field is
+// saved — blocking unrelated changes until the user also happens to fix the
+// prefix. Sanitize on load so a legacy value never re-enters the form dirty.
+function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
+  return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+
 function SettingsNavItem({
   label, value, active, onClick, indent, attention,
 }: {
@@ -890,12 +900,11 @@ export default function SettingsPage() {
   type PrinterForm = {
     name: string; connection_type: 'network' | 'usb' | 'webusb';
     ip_address: string; port: string; paper_width: string;
-    cash_drawer_pulse_enabled: boolean;
   };
 
   const emptyPrinterForm: PrinterForm = {
     name: '', connection_type: 'network', ip_address: '', port: '9100',
-    paper_width: 'cols-42', cash_drawer_pulse_enabled: false,
+    paper_width: 'cols-42',
   };
 
   type DetectedPrinter = {
@@ -995,7 +1004,6 @@ export default function SettingsPage() {
       name: p.name, connection_type: p.connection_type,
       ip_address: p.ip_address || '', port: String(p.port || 9100),
       paper_width: normalizePrinterWidthValue(p.paper_width),
-      cash_drawer_pulse_enabled: p.cash_drawer_pulse_enabled === 1,
     });
     setEditingPrinterId(p.id);
     setShowPrinterForm(true);
@@ -1011,7 +1019,6 @@ export default function SettingsPage() {
         ip_address: printerForm.connection_type === 'network' ? printerForm.ip_address : undefined,
         port: printerForm.connection_type === 'network' ? Number(printerForm.port) : undefined,
         paper_width: printerForm.paper_width,
-        cash_drawer_pulse_enabled: printerForm.cash_drawer_pulse_enabled,
       };
       if (editingPrinterId) {
         await api.put(`/printers/${editingPrinterId}`, payload);
@@ -1201,6 +1208,13 @@ export default function SettingsPage() {
   // Printing local state (buffered — saved only on explicit Save)
   type PrintingForm = {
     printerEnabled: boolean; printerPaperSize: PaperSize;
+    // undefined until loaded or explicitly toggled — see the load effect and
+    // savePrinting below. FloCafe has under 100 active installs, so a v80
+    // migration losing the legacy per-printer flag on upgrade (the original
+    // bug) is worth guarding against; the exact scenario of a save racing
+    // that one-time load, on a product this size, is not.
+    cashDrawerPulseEnabled: boolean | undefined;
+    cashDrawerPulseMethods: string[];
     printMethod: 'escpos' | 'browser';
     autoPrintKot: boolean; autoPrintBill: boolean;
     whatsappShareEnabled: boolean;
@@ -1217,6 +1231,8 @@ export default function SettingsPage() {
   const initPrinting = (): PrintingForm => ({
     printerEnabled: posSettings.printerEnabled,
     printerPaperSize: posSettings.printerPaperSize,
+    cashDrawerPulseEnabled: undefined,
+    cashDrawerPulseMethods: ['cash', 'card'],
     printMethod: printMethod as 'escpos' | 'browser',
     autoPrintKot: posSettings.autoPrintKot,
     autoPrintBill: posSettings.autoPrintBill,
@@ -1242,6 +1258,7 @@ export default function SettingsPage() {
   });
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
+  const [cashDrawerMethodsOpen, setCashDrawerMethodsOpen] = useState(false);
   const savePrinting = async (silent: boolean = false) => {
     // Build typed policies from the form and mirror them into the store for
     // renderer-side reads (renderers adopt them in #442+).
@@ -1279,6 +1296,13 @@ export default function SettingsPage() {
     posSettings.setBillShowCustomerPhone(printingForm.billShowCustomerPhone);
     posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
     await Promise.all([
+      // Skipped while still undefined — not yet loaded and never explicitly
+      // toggled — so a save can't send a guessed value over whatever a v80
+      // migration (or the user, on another device) already set.
+      ...(printingForm.cashDrawerPulseEnabled !== undefined ? [
+        api.put('/settings/cash_drawer_pulse_enabled', { value: printingForm.cashDrawerPulseEnabled ? 'true' : 'false' }),
+        api.put('/settings/cash_drawer_pulse_methods', { value: JSON.stringify(printingForm.cashDrawerPulseMethods) }),
+      ] : []),
       api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' }),
       api.put('/settings/bill_language_policy', { value: JSON.stringify(billLanguagePolicy) }),
       api.put('/settings/kot_language_policy', { value: JSON.stringify(kotLanguagePolicy) }),
@@ -1589,10 +1613,10 @@ export default function SettingsPage() {
       if (discountRes.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); }
 
       const loadedOrderNumbering: OrderNumberForm = {
-        prefix: orderNumberingRes.data.order_number_prefix ?? 'ORD',
+        prefix: orderNumberingRes.data.order_number_prefix == null ? 'ORD' : sanitizeStoredNumberPrefix(orderNumberingRes.data.order_number_prefix),
         includeDate: orderNumberingRes.data.order_number_include_date !== false,
         resetDaily: orderNumberingRes.data.order_number_reset_daily !== false,
-        invoicePrefix: orderNumberingRes.data.invoice_number_prefix ?? 'INV',
+        invoicePrefix: orderNumberingRes.data.invoice_number_prefix == null ? 'INV' : sanitizeStoredNumberPrefix(orderNumberingRes.data.invoice_number_prefix),
         invoiceIncludePeriod: orderNumberingRes.data.invoice_number_include_period !== false,
         invoiceResetPeriod: (orderNumberingRes.data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
         invoiceFinancialYearStartMonth: Number(orderNumberingRes.data.invoice_financial_year_start_month) || 4,
@@ -1720,6 +1744,26 @@ export default function SettingsPage() {
       setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
       setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
     }).catch(() => {});
+    api.get('/settings/cash_drawer_pulse_enabled').then((res) => {
+      const enabled = res.data.setting?.value === 'true';
+      setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
+      // Only applies while still undefined (untouched) — once the user
+      // toggles it, this load resolving afterwards must not revert them.
+      setPrintingForm((p) => (p.cashDrawerPulseEnabled === undefined ? { ...p, cashDrawerPulseEnabled: enabled } : p));
+    }).catch(() => {});
+    api.get('/settings/cash_drawer_pulse_methods').then((res) => {
+      try {
+        const methods = JSON.parse(res.data.setting?.value || '[]');
+        if (!Array.isArray(methods)) return;
+        const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
+        // A non-empty array that contains no valid strings (corrupt/legacy
+        // value) restores the safe defaults; an intentionally empty array —
+        // every method deselected — stays empty.
+        const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
+        setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
+        setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
+      } catch { /* Use the safe defaults. */ }
+    }).catch(() => {});
     api.get('/settings/bill_language_policy').then((res) => {
       const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
       if (!policy) return;
@@ -1824,10 +1868,10 @@ export default function SettingsPage() {
 
     api.get('/settings/order-numbering').then((res) => {
       const loaded: OrderNumberForm = {
-        prefix: res.data.order_number_prefix ?? 'ORD',
+        prefix: res.data.order_number_prefix == null ? 'ORD' : sanitizeStoredNumberPrefix(res.data.order_number_prefix),
         includeDate: res.data.order_number_include_date !== false,
         resetDaily: res.data.order_number_reset_daily !== false,
-        invoicePrefix: res.data.invoice_number_prefix ?? 'INV',
+        invoicePrefix: res.data.invoice_number_prefix == null ? 'INV' : sanitizeStoredNumberPrefix(res.data.invoice_number_prefix),
         invoiceIncludePeriod: res.data.invoice_number_include_period !== false,
         invoiceResetPeriod: (res.data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
         invoiceFinancialYearStartMonth: Number(res.data.invoice_financial_year_start_month) || 4,
@@ -2286,12 +2330,12 @@ export default function SettingsPage() {
 
   const saveOrderNumbering = async (silent = false) => {
     const prefix = orderNumberForm.prefix.trim();
-    if (prefix && !/^[A-Za-z0-9_-]{0,12}$/.test(prefix)) {
+    if (prefix && !/^[A-Za-z0-9]{0,12}$/.test(prefix)) {
       toast.error(t('orderNumberPrefixInvalid'));
       return;
     }
     const invoicePrefix = orderNumberForm.invoicePrefix.trim();
-    if (invoicePrefix && !/^[A-Za-z0-9_-]{0,12}$/.test(invoicePrefix)) {
+    if (invoicePrefix && !/^[A-Za-z0-9]{0,12}$/.test(invoicePrefix)) {
       toast.error(t('invoiceNumberPrefixInvalid'));
       return;
     }
@@ -2362,11 +2406,6 @@ export default function SettingsPage() {
       setTimeout(() => setCopiedCode(false), 2000);
     });
   };
-
-  const paperSizeOptions: { value: PaperSize; label: string }[] = [
-    { value: 'thermal58', label: t('paperSize58') },
-    { value: 'thermal80', label: t('paperSize80') },
-  ];
 
   const isDirty = 
     JSON.stringify(form) !== JSON.stringify(savedBusiness) ||
@@ -2718,7 +2757,7 @@ export default function SettingsPage() {
                     <input
                       type="text"
                       value={orderNumberForm.prefix}
-                      onChange={(e) => setOrderNumberForm((p) => ({ ...p, prefix: e.target.value.toUpperCase() }))}
+                      onChange={(e) => setOrderNumberForm((p) => ({ ...p, prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
                       placeholder="ORD"
                       maxLength={12}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
@@ -2771,7 +2810,7 @@ export default function SettingsPage() {
                       <input
                         type="text"
                         value={orderNumberForm.invoicePrefix}
-                        onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoicePrefix: e.target.value.toUpperCase() }))}
+                        onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoicePrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
                         placeholder="INV"
                         maxLength={12}
                         className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
@@ -3922,7 +3961,6 @@ export default function SettingsPage() {
                          t('browserWebusb')}
                         {' · '}{printWidthLabel(p.paper_width)}
                         {p.profile_name ? ` · ${p.profile_name}` : ''}
-                        {p.cash_drawer_pulse_enabled === 1 ? ` · ${t('cashDrawerPulseEnabledShort')}` : ''}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
@@ -3942,7 +3980,7 @@ export default function SettingsPage() {
                         <Settings size={15} />
                       </button>
                       <button onClick={() => deletePrinterHw(p.id)} title={t('delete')}
-                        className="p-2 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600">
+                        className="p-2 rounded-lg hover:bg-red-50 text-red-600 hover:text-red-700">
                         <Trash2 size={15} />
                       </button>
                     </div>
@@ -4019,13 +4057,6 @@ export default function SettingsPage() {
                         <option value="cols-48">{t('printColumns48')}</option>
                       </select>
                     </div>
-                    <div className="md:col-span-2 flex items-center justify-between gap-4 rounded-lg border border-border p-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-foreground text-sm">{t('cashDrawerPulse')}</p>
-                        <p className="text-xs text-muted-foreground">{t('cashDrawerPulseHint')}</p>
-                      </div>
-                      <Toggle value={printerForm.cash_drawer_pulse_enabled} onChange={(v) => setPrinterForm((p) => ({ ...p, cash_drawer_pulse_enabled: v }))} />
-                    </div>
                   </div>
 
                   <div className="mt-4 flex gap-2">
@@ -4064,15 +4095,47 @@ export default function SettingsPage() {
                   </div>
                   <Toggle value={printingForm.printerEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, printerEnabled: v }))} />
                 </div>
-                <div>
-                  <p className="font-medium text-foreground mb-2">{t('paperSize')}</p>
-                  <select value={printingForm.printerPaperSize}
-                    onChange={(e) => setPrintingForm((p) => ({ ...p, printerPaperSize: e.target.value as PaperSize }))}
-                    className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand">
-                    {paperSizeOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-foreground">{t('sendPulseToCashDrawer')}</p>
+                      <p className="text-sm text-muted-foreground">{t('sendPulseToCashDrawerHint')}</p>
+                    </div>
+                    <Toggle value={!!printingForm.cashDrawerPulseEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }))} />
+                  </div>
+                  {printingForm.cashDrawerPulseEnabled && (
+                    <div className="mt-3 rounded-lg border border-border overflow-hidden">
+                      <button type="button" onClick={() => setCashDrawerMethodsOpen((open) => !open)} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-start text-sm font-medium text-foreground hover:bg-muted">
+                        <span>{t('cashDrawerPulsePaymentOptions')}</span>
+                        <ChevronDown size={16} className={`text-gray-400 transition-transform ${cashDrawerMethodsOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {cashDrawerMethodsOpen && (
+                        <div className="border-t border-border bg-muted/30 px-3 py-2 space-y-2">
+                          {[
+                            ['cash', t('paymentMethodCash')],
+                            ['card', t('paymentMethodCard')],
+                            ['upi', t('paymentMethodUpi')],
+                          ].map(([value, label]) => (
+                            <label key={value} className="flex items-center gap-2 text-sm text-foreground">
+                              <input
+                                type="checkbox"
+                                checked={printingForm.cashDrawerPulseMethods.includes(value)}
+                                onChange={(e) => setPrintingForm((p) => ({
+                                  ...p,
+                                  cashDrawerPulseMethods: e.target.checked
+                                    ? [...p.cashDrawerPulseMethods, value]
+                                    : p.cashDrawerPulseMethods.filter((method) => method !== value),
+                                }))}
+                                className="h-4 w-4 rounded border-border text-brand focus:ring-brand"
+                              />
+                              {label}
+                            </label>
+                          ))}
+                          <p className="pt-1 text-xs text-muted-foreground">{t('cashDrawerPulsePaymentOptionsHint')}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <p className="font-medium text-foreground mb-2">{t('printMethod')}</p>

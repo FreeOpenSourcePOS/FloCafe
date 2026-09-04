@@ -505,7 +505,10 @@ function orderNumberingShape(s: Record<string, string>) {
   };
 }
 
-const ORDER_NUMBER_PREFIX_PATTERN = /^[A-Za-z0-9_-]{0,12}$/;
+// Letters and numbers only: the "-" separator between prefix, period segment,
+// and sequence is always inserted automatically, so allowing "-"/"_" here let
+// a saved prefix like "FAC-" collide with it and print as "FAC--20260101-0001".
+const ORDER_NUMBER_PREFIX_PATTERN = /^[A-Za-z0-9]{0,12}$/;
 const INVOICE_RESET_PERIODS = new Set(['never', 'daily', 'monthly', 'financial_year']);
 
 function parseBoundedInt(value: unknown, min: number, max: number, fallback: number): number {
@@ -537,10 +540,10 @@ router.put('/order-numbering', requireRole(...ROLE_ACCESS.ownerManager), (req: R
     } = req.body;
 
     if (order_number_prefix !== undefined && !ORDER_NUMBER_PREFIX_PATTERN.test(order_number_prefix)) {
-      return res.status(400).json({ error: 'order_number_prefix must be up to 12 characters (letters, numbers, - or _)' });
+      return res.status(400).json({ error: 'order_number_prefix must be up to 12 letters and numbers only' });
     }
     if (invoice_number_prefix !== undefined && !ORDER_NUMBER_PREFIX_PATTERN.test(invoice_number_prefix)) {
-      return res.status(400).json({ error: 'invoice_number_prefix must be up to 12 characters (letters, numbers, - or _)' });
+      return res.status(400).json({ error: 'invoice_number_prefix must be up to 12 letters and numbers only' });
     }
     if (invoice_number_reset_period !== undefined && !INVOICE_RESET_PERIODS.has(invoice_number_reset_period)) {
       return res.status(400).json({ error: 'invoice_number_reset_period must be one of never, daily, monthly, financial_year' });
@@ -871,6 +874,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'language',
   'kds_default_view',
   'printer_method', 'paper_size', 'bill_template', 'bill_footer_message', 'printer_trim_decimals',
+  'cash_drawer_pulse_enabled', 'cash_drawer_pulse_methods',
   'telemetry_enabled',
   'diagnostics_consent',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',

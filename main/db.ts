@@ -4238,6 +4238,46 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 80,
+    name: 'migrate_cash_drawer_pulse_to_global_setting',
+    up: () => {
+      // Cash-drawer pulse moved from a per-printer flag (v75) to a global
+      // setting. A store whose receipt printer already had it enabled must
+      // keep pulsing after the upgrade — printReceipt only reads the legacy
+      // column while the global setting is unset (main/printers/thermal.ts),
+      // and the settings UI writes 'false' to it the first time the printing
+      // tab is saved for any reason, which would otherwise silently drop the
+      // existing configuration.
+      //
+      // The legacy flag pulsed for every payment method; the new setting's
+      // method filter defaults to ['cash', 'card'], so a migrated store using
+      // UPI or a custom method for cash-drawer payments narrows to that
+      // default instead of carrying its exact prior behavior forward. With
+      // under 100 active installs (mostly testers), that's an acceptable,
+      // easily-reconfigured simplification — not worth a second setting or
+      // sentinel value to preserve exactly.
+      const columns = getColumns(db, 'printers');
+      if (!columns.includes('cash_drawer_pulse_enabled')) return;
+      // Only the printer printReceipt would actually have dispatched to
+      // (getPrinterConfig's own selection, mirrored here) matters — a flag
+      // left enabled on some other, non-default printer never pulsed a
+      // drawer at print time and migrating it would enable the drawer for
+      // whichever printer happens to be the receipt printer instead.
+      const receiptPrinter = db.prepare(`
+        SELECT cash_drawer_pulse_enabled FROM printers
+        WHERE connection_type != 'webusb'
+        ORDER BY is_default DESC, name
+        LIMIT 1
+      `).get() as { cash_drawer_pulse_enabled?: number } | undefined;
+      if (receiptPrinter?.cash_drawer_pulse_enabled === 1) {
+        db.prepare(`
+          INSERT OR IGNORE INTO settings (key, value, updated_at)
+          VALUES ('cash_drawer_pulse_enabled', 'true', ?)
+        `).run(now());
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5154,8 +5194,15 @@ function invoicePeriodSegment(period: InvoiceResetPeriod, timezone: string, star
   return date;
 }
 
+// Settings validation only accepts letters/numbers going forward, but a
+// value saved before that restriction (e.g. "FAC-") would otherwise collide
+// with the "-" separator inserted below and print as "FAC--20260101-0001".
+function sanitizedNumberPrefix(value: string | null | undefined, fallback: string): string {
+  return (value ?? fallback).replace(/[^A-Za-z0-9]/g, '');
+}
+
 export function generateOrderNumber(): string {
-  const prefix = getSettingValue('order_number_prefix') ?? 'ORD';
+  const prefix = sanitizedNumberPrefix(getSettingValue('order_number_prefix'), 'ORD');
   const includeDate = getSettingValue('order_number_include_date') !== 'false';
   const resetDaily = getSettingValue('order_number_reset_daily') !== 'false';
   const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
@@ -5171,7 +5218,7 @@ export function generateOrderNumber(): string {
 }
 
 export function generateBillNumber(): string {
-  const prefix = getSettingValue('invoice_number_prefix') ?? 'INV';
+  const prefix = sanitizedNumberPrefix(getSettingValue('invoice_number_prefix'), 'INV');
   const includePeriod = getSettingValue('invoice_number_include_period') !== 'false';
   const configuredPeriod = getSettingValue('invoice_number_reset_period') || 'daily';
   const resetPeriod: InvoiceResetPeriod = ['never', 'daily', 'monthly', 'financial_year'].includes(configuredPeriod)

@@ -20,6 +20,7 @@ import { buildEscPos, financialRows, itemRows, normalizeThermalText } from '../m
 import { buildTestPage } from '../main/printers/thermal';
 import { renderKotDocumentToLines } from '../main/printers/document-kot';
 import { renderBillDocumentToClassicLines } from '../main/printers/document-classic';
+import { renderBillDocumentToCompactLines } from '../main/printers/document-compact';
 import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
 
 function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer/raster-encoder') {
@@ -36,6 +37,28 @@ function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer
   };
   try {
     return require('../frontend/src/lib/printer/raster-encoder');
+  } finally {
+    moduleApi._resolveFilename = originalResolveFilename;
+  }
+}
+
+function loadFrontendPrintDocument(): typeof import('../frontend/src/lib/printer/print-document') {
+  const path = require('node:path') as typeof import('node:path');
+  const moduleApi = require('node:module') as { _resolveFilename: (...args: any[]) => string };
+  const originalResolveFilename = moduleApi._resolveFilename;
+  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+    let resolvedRequest = request;
+    if (request === '@countries') {
+      resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
+    } else if (request.startsWith('@/')) {
+      resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+    } else if (request.startsWith('@print/')) {
+      resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
+    }
+    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+  };
+  try {
+    return require('../frontend/src/lib/printer/print-document');
   } finally {
     moduleApi._resolveFilename = originalResolveFilename;
   }
@@ -119,6 +142,31 @@ async function run(): Promise<void> {
   }, sourceLines, caps, 'source-siblings', sourceGroups);
   assert.equal(sourceRequests.some((request) => request.text.includes(longAddon)), true);
   assert.equal(sourceRequests.some((request) => request.text.includes(longInstruction)), true);
+  const compactDocument = buildBillDocument({
+    isReprint: true,
+    order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: 'کافه', externalOrderId: 'K-7', items: [] },
+    bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
+    business: { name: 'فروشگاه فارسی', address: 'آدرس فارسی', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: 'پیام فارسی', customerName: '', customerPhone: '', showName: true, showAddress: true, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
+  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  const compactGroups: any[] = [];
+  renderBillDocumentToCompactLines(compactDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currencySymbol: '$',
+    trimDecimals: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    rasterGroups: compactGroups,
+  });
+  const compactBusinessGroups = compactGroups.filter((group) => group.groupId === 'business-header');
+  const compactMessageGroups = compactGroups.filter((group) => group.groupId === 'message');
+  assert.equal(compactBusinessGroups.length, 2);
+  assert.equal(compactBusinessGroups[0].lineIndex < compactBusinessGroups[1].lineIndex, true);
+  assert.equal(compactMessageGroups.length, 2);
+  assert.equal(compactMessageGroups[0].lineIndex < compactMessageGroups[1].lineIndex, true);
   const kotDocument = buildKotDocument({
     stationName: 'ایستگاه',
     order: { orderNumber: 'K-1', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },
@@ -135,6 +183,17 @@ async function run(): Promise<void> {
   assert.equal(isKotDocument(kotDocument), true);
   assert.equal(isKotDocument({ ...kotDocument, blocks: [...kotDocument.blocks, kotDocument.blocks[1]] }), false);
   assert.equal(isKotDocument({ ...kotDocument, blocks: [kotDocument.blocks[0]] }), false);
+  const frontendKotDocument = loadFrontendPrintDocument().buildFrontendKotDocument({
+    order_number: 'K-2',
+    created_at: '2026-01-01T12:00:00.000Z',
+    items: [{ product_name: 'Tea', quantity: 1, status: 'pending', addons: '[{"name":"Extra sauce","quantity":2}]', special_instructions: null }],
+  } as any, {
+    stationName: 'Main Kitchen',
+    columns: 42,
+    language: 'en',
+  });
+  const frontendKotItems = frontendKotDocument.blocks.find((block) => block.kind === 'kot-items') as any;
+  assert.deepEqual(frontendKotItems.rows[0].addons.map((addon: any) => ({ text: addon.text, quantity: addon.quantity })), [{ text: 'Extra sauce', quantity: 2 }]);
   const kotLines = renderKotDocumentToLines(kotDocument, {
     columns: 42,
     language: 'fa',

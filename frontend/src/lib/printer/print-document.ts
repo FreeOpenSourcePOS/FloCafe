@@ -304,6 +304,20 @@ export function buildFrontendKotDocument(
     timezone?: string;
   },
 ): KotDocument {
+  const parseKotAddons = (value: unknown): Array<{ name: string; quantity?: number }> => {
+    let candidates = value;
+    if (typeof value === 'string') {
+      try {
+        candidates = JSON.parse(value);
+      } catch {
+        candidates = null;
+      }
+    }
+    if (!Array.isArray(candidates)) return [];
+    return candidates.filter((addon): addon is { name: string; quantity?: number } => (
+      typeof addon === 'object' && addon !== null && typeof (addon as { name?: unknown }).name === 'string'
+    ));
+  };
   const languages = [opts.language] as ResolvedPrintLanguages;
   const items = opts.items ?? order.items ?? [];
   const printData: KotPrintData = {
@@ -318,7 +332,7 @@ export function buildFrontendKotDocument(
     items: items.filter((item) => isKotItemPending(item.status)).map((item) => ({
       productName: String(item.product_name ?? ''),
       quantity: Number(item.quantity) || 0,
-      addons: (Array.isArray(item.addons) ? item.addons : []).map((addon) => ({
+      addons: parseKotAddons(item.addons).map((addon) => ({
         name: String(addon?.name ?? ''),
         ...(typeof addon?.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
           ? { quantity: addon.quantity }

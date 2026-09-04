@@ -693,7 +693,19 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
       console.log('[Printer] No printer configured');
       return { ok: false, detail: 'No printer configured' };
     }
-    const { data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language, additionalLanguage);
+    const prepared = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language, additionalLanguage);
+    const { data, warnings, columns } = await rasterizeReceiptIfEnabled(
+      prepared,
+      order,
+      bill,
+      business,
+      template,
+      useUnicode,
+      isReprint,
+      arabicShapingOverride,
+      language,
+      additionalLanguage,
+    );
     if (hasFinancialPrintWarning(warnings)) {
       return {
         ok: false,
@@ -780,7 +792,32 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     // wins over the profile default so the merchant's explicit choice (#437)
     // applies even when the matched profile leaves the flag unset.
     const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
-    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, capabilities.shaping.arabic, normalizePrintLanguage(language ?? biz?.language), capabilities);
+    let data: Buffer;
+    if (rasterCapabilityEnabled(capabilities)) {
+      const documentResult = renderKotViaDocument(order, items, stationName, {
+        columns: cols,
+        language: normalizePrintLanguage(language ?? biz?.language),
+        locale,
+        timezone,
+        useUnicode,
+        arabicShaping: capabilities.shaping.arabic,
+        cutMode: profile.cutMode,
+        capabilities,
+      });
+      const rasterized = await rasterizeDocumentLines(documentResult.lines, documentResult.warnings, {
+        useUnicode,
+        cutMode: profile.cutMode,
+        arabicShaping: capabilities.shaping.arabic,
+        columns: cols,
+        language: normalizePrintLanguage(language ?? biz?.language),
+        capabilities,
+        requestPrefix: 'kot',
+      });
+      data = rasterized.data;
+      warnings.push(...rasterized.warnings);
+    } else {
+      data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, capabilities.shaping.arabic, normalizePrintLanguage(language ?? biz?.language), capabilities);
+    }
     console.log('[Printer] KOT data length:', data.length, 'bytes');
     const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
@@ -987,6 +1024,144 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
   const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, capabilities.shaping.arabic, language, additionalLanguage, capabilities);
   return { printer, data, warnings, columns };
+}
+
+type RasterDocumentLines = { lines: string[]; warnings: PrintWarning[] };
+
+function receiptDocumentLines(
+  order: any,
+  bill: any,
+  business: any,
+  template: string,
+  columns: number,
+  useUnicode: boolean,
+  isReprint: boolean,
+  arabicShaping: boolean,
+  language: string,
+  additionalLanguage: string | undefined,
+  cutMode: PrinterCutMode,
+  capabilities: ThermalPrinterCapabilities,
+): RasterDocumentLines | null {
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
+  const selection = parseBillTemplateSelection(template);
+  if (selection?.source === 'pack') return null;
+  if (selection?.source === 'merchant') {
+    return renderMerchantReceiptViaDocument(order, bill, biz, selection.id, {
+      columns,
+      language,
+      ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+      isReprint,
+      useUnicode,
+      arabicShaping,
+      cutMode,
+      capabilities,
+    });
+  }
+  const normalizedTemplate = normalizeReceiptTemplate(selection?.source === 'core' ? selection.id : template);
+  const result = normalizedTemplate === 'compact'
+    ? renderCompactReceiptViaDocument(order, bill, biz, {
+      columns,
+      language,
+      ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+      isReprint,
+      useUnicode,
+      arabicShaping,
+      cutMode,
+      capabilities,
+    })
+    : renderClassicReceiptViaDocument(order, bill, biz, {
+      columns,
+      language,
+      ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+      isReprint,
+      useUnicode,
+      arabicShaping,
+      cutMode,
+      capabilities,
+    });
+  return result;
+}
+
+async function rasterizeDocumentLines(
+  lines: string[],
+  sourceWarnings: readonly PrintWarning[],
+  options: {
+    useUnicode: boolean;
+    cutMode: PrinterCutMode;
+    arabicShaping: boolean;
+    columns: number;
+    language: string;
+    capabilities: ThermalPrinterCapabilities;
+    requestPrefix: string;
+  },
+): Promise<{ data: Buffer; warnings: PrintWarning[] }> {
+  const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
+  const renderer = new ChromiumRasterRenderer();
+  try {
+    const raster = await renderUnsupportedRasterLines(renderer, lines, options.capabilities, options.requestPrefix);
+    const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
+    const data = buildEscPos(lines, options.useUnicode, {
+      cutMode: options.cutMode,
+      arabicShaping: options.arabicShaping,
+      columns: options.columns,
+      language: options.language,
+      capabilities: options.capabilities,
+      rasterUnits: raster.units,
+    });
+    for (const failure of raster.failures) {
+      warnings.push({
+        field: failure.financial ? 'financial row' : 'receipt line',
+        text: failure.text,
+        message: `Raster rendering failed (${failure.code}): ${failure.detail}`,
+        kind: failure.financial ? 'financial' : 'line',
+      });
+    }
+    return { data, warnings };
+  } finally {
+    renderer.destroy();
+  }
+}
+
+async function rasterizeReceiptIfEnabled(
+  prepared: ReturnType<typeof prepareReceipt>,
+  order: any,
+  bill: any,
+  business: any,
+  template: string,
+  useUnicode: boolean,
+  isReprint: boolean,
+  arabicShapingOverride: boolean | undefined,
+  language: string | undefined,
+  additionalLanguage: string | undefined,
+): Promise<ReturnType<typeof prepareReceipt>> {
+  const profile = resolvePrinterProfile(prepared.printer);
+  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+  if (!rasterCapabilityEnabled(capabilities)) return prepared;
+  const document = receiptDocumentLines(
+    order,
+    bill,
+    business,
+    template,
+    prepared.columns,
+    useUnicode,
+    isReprint,
+    capabilities.shaping.arabic,
+    normalizePrintLanguage(language),
+    additionalLanguage === undefined ? undefined : normalizePrintLanguage(additionalLanguage),
+    profile.cutMode,
+    capabilities,
+  );
+  if (!document) return prepared;
+  const result = await rasterizeDocumentLines(document.lines, document.warnings, {
+    useUnicode,
+    cutMode: profile.cutMode,
+    arabicShaping: capabilities.shaping.arabic,
+    columns: prepared.columns,
+    language: normalizePrintLanguage(language),
+    capabilities,
+    requestPrefix: 'receipt',
+  });
+  return { ...prepared, data: result.data, warnings: result.warnings };
 }
 
 export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {

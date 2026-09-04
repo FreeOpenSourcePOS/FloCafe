@@ -8,6 +8,10 @@ import {
   type RasterRenderResult,
   type RasterSemanticUnit,
 } from '../../shared/print/raster';
+import {
+  isThermalTextRepresentable,
+  type ThermalPrinterCapabilities,
+} from '../../shared/print/thermal-capabilities';
 
 const RENDER_TIMEOUT_MS = 10_000;
 
@@ -49,7 +53,7 @@ export function rasterRendererHtml(): string {
       context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
       context.textBaseline = 'top';
       context.direction = request.direction;
-      context.textAlign = request.direction === 'rtl' ? 'right' : 'left';
+      context.textAlign = request.align === 'center' ? 'center' : request.direction === 'rtl' ? 'right' : 'left';
       const measure = (value) => context.measureText(value).width * scaleX;
       const lines = [];
       const sourceLines = request.text.split(/\\r?\\n/);
@@ -81,12 +85,16 @@ export function rasterRendererHtml(): string {
       context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
       context.textBaseline = 'top';
       context.direction = request.direction;
-      context.textAlign = request.direction === 'rtl' ? 'right' : 'left';
+      context.textAlign = request.align === 'center' ? 'center' : request.direction === 'rtl' ? 'right' : 'left';
       context.setTransform(scaleX, 0, 0, scaleY, 0, 0);
       context.fillStyle = '#fff';
       context.fillRect(0, 0, width, canvas.height);
       context.fillStyle = '#000';
-      bounded.forEach((line, index) => context.fillText(line, request.direction === 'rtl' ? width / scaleX : 0, index * logicalLineHeight));
+      bounded.forEach((line, index) => context.fillText(
+        line,
+        request.align === 'center' ? width / (2 * scaleX) : request.direction === 'rtl' ? width / scaleX : 0,
+        index * logicalLineHeight,
+      ));
       const image = context.getImageData(0, 0, width, canvas.height).data;
       for (let i = 0; i < pixels.length; i++) pixels[i] = image[i * 4] < 128 ? 1 : 0;
       const bands = [];
@@ -113,6 +121,7 @@ type RasterSurface = Pick<BrowserWindow, 'isDestroyed' | 'close' | 'on' | 'remov
 export interface RasterRendererOptions {
   readonly preloadPath?: string;
   readonly windowFactory?: (options: Electron.BrowserWindowConstructorOptions) => RasterSurface;
+  readonly ipc?: Pick<Electron.IpcMain, 'on' | 'removeListener'>;
   readonly timeoutMs?: number;
 }
 
@@ -120,6 +129,7 @@ export interface RasterRendererOptions {
 export class ChromiumRasterRenderer {
   private readonly surface: RasterSurface;
   private readonly timeoutMs: number;
+  private readonly ipc: Pick<Electron.IpcMain, 'on' | 'removeListener'>;
   private readonly pending = new Map<string, { resolve: (result: RasterRenderResult) => void; timer: ReturnType<typeof setTimeout> }>();
   private ready: Promise<void>;
   private readyResolve!: () => void;
@@ -155,6 +165,7 @@ export class ChromiumRasterRenderer {
 
   constructor(options: RasterRendererOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? RENDER_TIMEOUT_MS;
+    this.ipc = options.ipc ?? ipcMain;
     this.ready = new Promise<void>((resolve) => { this.readyResolve = resolve; });
     const windowFactory = options.windowFactory ?? ((windowOptions) => new BrowserWindow(windowOptions));
     this.surface = windowFactory({
@@ -168,8 +179,8 @@ export class ChromiumRasterRenderer {
         sandbox: true,
       },
     });
-    ipcMain.on('flo:raster-ready', this.onReady);
-    ipcMain.on('flo:raster-result', this.onResult);
+    this.ipc.on('flo:raster-ready', this.onReady);
+    this.ipc.on('flo:raster-result', this.onResult);
     this.surface.on('closed', this.onSurfaceClosed);
     this.surface.webContents.on('did-fail-load', this.onLoadFailure);
     this.surface.webContents.on('render-process-gone', this.onRenderProcessGone);
@@ -239,8 +250,8 @@ export class ChromiumRasterRenderer {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
-    ipcMain.removeListener('flo:raster-ready', this.onReady);
-    ipcMain.removeListener('flo:raster-result', this.onResult);
+    this.ipc.removeListener('flo:raster-ready', this.onReady);
+    this.ipc.removeListener('flo:raster-result', this.onResult);
     this.surface.removeListener('closed', this.onSurfaceClosed);
     this.surface.webContents.removeListener('did-fail-load', this.onLoadFailure);
     this.surface.webContents.removeListener('render-process-gone', this.onRenderProcessGone);
@@ -261,4 +272,49 @@ export async function renderRasterSemanticUnit(
     return { ok: false, code: 'render-failed', detail: 'Raster renderer returned an incomplete semantic unit', financial };
   }
   return { ok: true, unit: { ...result.unit, financial, complete: true } };
+}
+
+export interface RasterLineRenderFailure {
+  readonly lineIndex: number;
+  readonly text: string;
+  readonly financial: boolean;
+  readonly code: string;
+  readonly detail: string;
+}
+
+export async function renderUnsupportedRasterLines(
+  renderer: Pick<ChromiumRasterRenderer, 'render'>,
+  lines: readonly string[],
+  capabilities: ThermalPrinterCapabilities,
+  requestPrefix: string,
+): Promise<{ units: Array<{ lineIndex: number; unit: RasterSemanticUnit }>; failures: RasterLineRenderFailure[] }> {
+  const units: Array<{ lineIndex: number; unit: RasterSemanticUnit }> = [];
+  const failures: RasterLineRenderFailure[] = [];
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
+    if (line.includes('{INIT}') || line.includes('{CUT}') || line.includes('{FEED}')) continue;
+    const text = line.replace(/\{[A-Z_/]+\}/g, '');
+    if (!text || isThermalTextRepresentable(text, capabilities)) continue;
+    const financial = line.includes('{FINANCIAL}');
+    const requestId = `${requestPrefix}-${lineIndex}`;
+    const result = capabilities.raster.font
+      ? await renderRasterSemanticUnit(renderer, {
+        version: 1,
+        requestId,
+        text,
+        widthDots: capabilities.raster.widthDots,
+        maxBandHeight: capabilities.raster.maxBandHeight,
+        direction: /[\u0590-\u08FF]/.test(text) ? 'rtl' : 'ltr',
+        align: line.startsWith('{CENTER}') && line.includes('{/CENTER}') ? 'center' : 'left',
+        style: line.includes('{DOUBLE_HEIGHT}') ? 'double-height'
+          : line.includes('{DOUBLE_WIDTH}') ? 'double-width'
+            : line.includes('{BOLD}') ? 'bold' : 'normal',
+        maxLines: 256,
+        bundledFont: capabilities.raster.font,
+      }, financial)
+      : { ok: false as const, code: 'font-unavailable', detail: 'No bundled raster font is configured', financial };
+    if (result.ok) units.push({ lineIndex, unit: result.unit });
+    else failures.push({ lineIndex, text, financial, code: result.code, detail: result.detail });
+  }
+  return { units, failures };
 }

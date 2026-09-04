@@ -28,6 +28,8 @@ import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 import type { Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
+import { rasterCapabilityEnabled } from '@print/raster';
+import { buildWebUsbMixedRasterBytes } from '@/lib/printer/raster-encoder';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
 
@@ -230,6 +232,11 @@ export const usePrinterStore = create<PrinterState>()(
             bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, warnings);
           }
 
+          const webusbCapabilities = get().webusbPrinter?.capabilities;
+          if (opts?.rasterParts && webusbCapabilities && rasterCapabilityEnabled(webusbCapabilities, 'mixed')) {
+            bytes = buildWebUsbMixedRasterBytes(opts.rasterParts, webusbCapabilities, opts.rasterCutMode ?? 'full');
+          }
+
           if (hasFinancialPrintWarning(warnings)) {
             const refusal = makeFinancialPrintRefusalMessage(warnings);
             toast.error(refusal);
@@ -381,8 +388,12 @@ export const usePrinterStore = create<PrinterState>()(
               { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: get().webusbPrinter?.capabilities },
               warnings,
             );
-            set({ lastPrintedBytes: bytes });
-            await printerService.print(bytes);
+            const webusbCapabilities = get().webusbPrinter?.capabilities;
+            const output = opts?.rasterParts && webusbCapabilities && rasterCapabilityEnabled(webusbCapabilities, 'mixed')
+              ? buildWebUsbMixedRasterBytes(opts.rasterParts, webusbCapabilities, opts.rasterCutMode ?? 'full')
+              : bytes;
+            set({ lastPrintedBytes: output });
+            await printerService.print(output);
             return [
               ...failedLanguages.map((language) => ({
                 field: 'kot language',

@@ -37,6 +37,7 @@ export interface RasterRenderRequest {
   readonly widthDots: number;
   readonly maxBandHeight: number;
   readonly direction: RasterTextDirection;
+  readonly align?: 'left' | 'center';
   readonly style: RasterStyle;
   readonly maxLines: number;
   /** A data: URL for a font bundled by the application, never a network URL. */
@@ -221,6 +222,7 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
     && Number.isSafeInteger(request.widthDots) && (request.widthDots as number) > 0 && (request.widthDots as number) <= 8192
     && Number.isSafeInteger(request.maxBandHeight) && (request.maxBandHeight as number) > 0 && (request.maxBandHeight as number) <= DEFAULT_RASTER_MAX_BAND_HEIGHT
     && (request.direction === 'ltr' || request.direction === 'rtl')
+    && (request.align === undefined || request.align === 'left' || request.align === 'center')
     && ['normal', 'bold', 'double-height', 'double-width'].includes(request.style as string)
     && Number.isSafeInteger(request.maxLines) && (request.maxLines as number) > 0 && (request.maxLines as number) <= 256
     && !!request.bundledFont && typeof request.bundledFont.family === 'string'

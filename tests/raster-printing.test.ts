@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import {
   buildRasterDiagnosticBands,
   encodeGsV0Band,
   encodeMixedPrintParts,
+  encodeWholeReceiptRaster,
   encodeRasterFeedAndCut,
   isRasterRenderRequest,
   isRasterRenderResult,
@@ -13,7 +15,8 @@ import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '.
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
 import { buildEscPos } from '../main/printers/thermal';
-import { renderRasterSemanticUnit } from '../main/printers/raster-renderer';
+import { buildTestPage } from '../main/printers/thermal';
+import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
 
 function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer/raster-encoder') {
   const path = require('node:path') as typeof import('node:path');
@@ -37,7 +40,13 @@ function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer
 function capability(): ThermalPrinterCapabilities {
   return {
     ...GENERIC_THERMAL_CAPABILITIES,
-    raster: { enabled: true, widthDots: 9, maxBandHeight: 2, modes: ['mixed', 'whole-receipt'] },
+    raster: {
+      enabled: true,
+      widthDots: 9,
+      maxBandHeight: 2,
+      modes: ['mixed', 'whole-receipt'],
+      font: { family: 'FloRaster', dataUrl: 'data:font/woff2;base64,AA==' },
+    },
   };
 }
 
@@ -65,6 +74,10 @@ async function run(): Promise<void> {
   assert.deepEqual(Array.from(mixed.slice(-7)), Array.from(encodeRasterFeedAndCut('partial')));
   assert.deepEqual(Array.from(mixed), Array.from(buildBackendMixedRasterBytes([{ kind: 'native', bytes: native }, { kind: 'raster', unit }], caps, 'partial')));
   assert.deepEqual(Array.from(mixed), Array.from(loadFrontendRasterEncoder().buildWebUsbMixedRasterBytes([{ kind: 'native', bytes: native }, { kind: 'raster', unit }], caps, 'partial')));
+  assert.deepEqual(
+    Array.from(encodeWholeReceiptRaster(unit, caps, 'partial')),
+    Array.from(encodeMixedPrintParts([{ kind: 'raster', unit }], caps, 'partial')),
+  );
   assert.throws(() => encodeMixedPrintParts([{ kind: 'raster', unit: { ...unit, complete: false, financial: true } }], caps, 'full'), /incomplete/);
   assert.throws(() => encodeMixedPrintParts([{ kind: 'raster', unit: { ...unit, bands: [{ ...twoRows, widthDots: 8 }] } }], caps, 'full'), /does not match/);
   const mixedWarnings: any[] = [];
@@ -107,9 +120,25 @@ async function run(): Promise<void> {
   assert.deepEqual(diagnostic.map((band) => band.heightDots), [32, 16, 32, 16, 24]);
   assert.equal(diagnostic[0].pixels[0], 0);
   assert.equal(diagnostic[0].pixels[8], 1);
+  const diagnosticPage = buildTestPage('80mm', 'partial', 'en-US', undefined, { ...caps, raster: { ...caps.raster, maxBandHeight: 32, widthDots: 17 } });
+  assert.equal(diagnosticPage.includes(0x1D) && diagnosticPage.includes(0x76), true);
+  assert.deepEqual(Array.from(diagnosticPage.slice(-7)), Array.from(encodeRasterFeedAndCut('partial')));
   const failedRender = await renderRasterSemanticUnit({ render: async () => ({ version: 1, requestId: 'r1', ok: false, code: 'font-unavailable', detail: 'missing' }) }, {} as any, true);
   assert.equal(failedRender.ok, false);
   assert.equal(failedRender.financial, true);
+  const renderRequests: any[] = [];
+  const renderedLines = await renderUnsupportedRasterLines({
+    render: async (request) => {
+      const typedRequest = request as any;
+      renderRequests.push(typedRequest);
+      return { version: 1, requestId: typedRequest.requestId, ok: true, unit: { unitId: typedRequest.requestId, financial: false, complete: true, bands: [twoRows] } };
+    },
+  }, ['{BOLD}{DOUBLE_WIDTH}فارسی{/DOUBLE_WIDTH}{/BOLD}', 'native'], caps, 'receipt');
+  assert.equal(renderedLines.units[0]?.lineIndex, 0);
+  assert.equal(renderRequests[0].style, 'double-width');
+  assert.equal(renderRequests[0].direction, 'rtl');
+  assert.equal(renderRequests[0].align, 'left');
+  assert.equal(renderedLines.failures.length, 0);
 
   const request = {
     version: 1 as const,
@@ -122,6 +151,34 @@ async function run(): Promise<void> {
     maxLines: 2,
     bundledFont: { family: 'FloRaster', dataUrl: 'data:font/woff2;base64,AA==' },
   };
+  const ipc = new EventEmitter();
+  const webContents = new EventEmitter() as EventEmitter & {
+    sent?: unknown;
+    loadURL?: (url: string) => Promise<void>;
+    send?: (channel: string, message: unknown) => void;
+  };
+  webContents.loadURL = async () => undefined;
+  webContents.send = (_channel, message) => { webContents.sent = message; };
+  const surface = new EventEmitter() as EventEmitter & {
+    webContents: typeof webContents;
+    isDestroyed: () => boolean;
+    close: () => void;
+  };
+  surface.webContents = webContents;
+  surface.isDestroyed = () => false;
+  surface.close = () => surface.emit('closed');
+  const renderer = new ChromiumRasterRenderer({
+    timeoutMs: 100,
+    ipc: ipc as any,
+    windowFactory: () => surface as any,
+  });
+  ipc.emit('flo:raster-ready', { sender: webContents });
+  const renderPromise = renderer.render(request);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual((webContents.sent as any).request, request);
+  ipc.emit('flo:raster-result', { sender: webContents }, { version: 1, result: { version: 1, requestId: request.requestId, ok: true, unit } });
+  assert.deepEqual(await renderPromise, { version: 1, requestId: request.requestId, ok: true, unit });
+  renderer.destroy();
   assert.equal(isRasterRenderRequest(request), true);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: 'https://example.invalid/font.woff2' } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: null } }), false);

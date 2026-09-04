@@ -18,6 +18,7 @@ export interface ThermalRasterCapabilities {
   /** Maximum rows in one GS v 0 command. */
   readonly maxBandHeight: number;
   readonly modes: readonly ThermalRasterMode[];
+  readonly font?: { readonly family: string; readonly dataUrl: string };
 }
 
 export interface ThermalPrinterCapabilities {

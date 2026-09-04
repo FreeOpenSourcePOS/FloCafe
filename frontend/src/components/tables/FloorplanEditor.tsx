@@ -872,7 +872,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                     onClick={() => setActiveFloor(f)}
                     className="flex items-center gap-0.5 text-xs font-semibold text-brand hover:text-brand-hover"
                   >
-                    {tCommon('edit')} <ChevronRight size={12} />
+                    {tCommon('edit')} <ChevronRight size={12} className="rtl-flip" />
                   </button>
                 </div>
                 <div

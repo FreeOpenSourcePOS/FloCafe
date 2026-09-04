@@ -265,7 +265,6 @@ async function main() {
     // Scenario E: Migration handles NULL IDs
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario E: Migration handles NULL IDs ───');
-
     // Simulate old table with NULL ID (from pre-fix INSERT)
     db.prepare(`INSERT INTO tables (number, capacity, status) VALUES (?, ?, ?)`).run('T-NULL-TEST', 4, 'available');
 
@@ -281,6 +280,158 @@ async function main() {
     assertEqual(typeof migratedTable.id, 'string', 'Migrated table has string ID');
     assert(/^tbl-\d+$/.test(migratedTable.id), `Migrated ID matches tbl-{rowid} format: ${migratedTable.id}`);
     console.log(`   ✓ Migrated NULL ID to: ${migratedTable.id}`);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Scenario F: Floorplan editor positions persist (issue #356)
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n─── Scenario F: Floorplan position persistence ───');
+
+    seedTable(db, 'tbl-floor-1', 93, 4);
+    seedTable(db, 'tbl-floor-2', 94, 2);
+
+    const floorPutRes = await api(baseUrl, '/api/tables/tbl-floor-1', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { position_x: 25.5, position_y: 40 },
+    });
+    assertEqual(floorPutRes.status, 200, 'PUT accepts floorplan position');
+    assertEqual(floorPutRes.data.table.position_x, 25.5, 'position_x persisted');
+    assertEqual(floorPutRes.data.table.position_y, 40, 'position_y persisted');
+
+    // Partial update: only position_y keeps position_x (COALESCE contract)
+    const floorPutRes2 = await api(baseUrl, '/api/tables/tbl-floor-1', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { position_y: 61.25 },
+    });
+    assertEqual(floorPutRes2.status, 200, 'partial PUT accepted');
+    assertEqual(floorPutRes2.data.table.position_x, 25.5, 'position_x preserved on partial update');
+    assertEqual(floorPutRes2.data.table.position_y, 61.25, 'position_y updated');
+
+    const floorListRes = await api(baseUrl, '/api/tables', { headers: authHeader });
+    const floorTable = floorListRes.data.tables.find((t: any) => t.id === 'tbl-floor-1');
+    assertEqual(floorTable.position_x, 25.5, 'GET /tables returns position_x');
+    assertEqual(floorTable.position_y, 61.25, 'GET /tables returns position_y');
+    assertEqual(floorTable.capacity, 4, 'other fields untouched by position save');
+    assertEqual(floorTable.status, 'available', 'status untouched by position save');
+    const untouched = floorListRes.data.tables.find((t: any) => t.id === 'tbl-floor-2');
+    assert(untouched.position_x === null && untouched.position_y === null, 'unpositioned table stays off-map');
+    console.log('   ✓ Floorplan positions persist via PUT/GET');
+
+    // ── Batch layout endpoint: PATCH /api/tables/positions ──
+    const batchRes = await api(baseUrl, '/api/tables/positions', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: {
+        positions: [
+          { id: 'tbl-floor-1', position_x: 10, position_y: 20 },
+          { id: 'tbl-floor-2', position_x: 75, position_y: 80 },
+        ],
+      },
+    });
+    assertEqual(batchRes.status, 200, 'PATCH /tables/positions returns 200');
+    assertEqual(batchRes.data.success, true, 'batch positions returns success');
+    assertEqual(batchRes.data.count, 2, 'batch positions returns count');
+
+    const batchCheck = await api(baseUrl, '/api/tables', { headers: authHeader });
+    const b1 = batchCheck.data.tables.find((t: any) => t.id === 'tbl-floor-1');
+    const b2 = batchCheck.data.tables.find((t: any) => t.id === 'tbl-floor-2');
+    assertEqual(b1.position_x, 10, 'tbl-floor-1 batch position_x updated');
+    assertEqual(b1.position_y, 20, 'tbl-floor-1 batch position_y updated');
+    assertEqual(b2.position_x, 75, 'tbl-floor-2 batch position_x updated');
+    assertEqual(b2.position_y, 80, 'tbl-floor-2 batch position_y updated');
+    console.log('   ✓ Batch position updates persist via PATCH /tables/positions');
+
+    // ── Batch unplacing: set positions to null ──
+    const unplaceBatchRes = await api(baseUrl, '/api/tables/positions', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: {
+        positions: [
+          { id: 'tbl-floor-1', position_x: null, position_y: null },
+        ],
+      },
+    });
+    assertEqual(unplaceBatchRes.status, 200, 'unplace via batch returns 200');
+    const unplaceCheck = await api(baseUrl, '/api/tables', { headers: authHeader });
+    const u1 = unplaceCheck.data.tables.find((t: any) => t.id === 'tbl-floor-1');
+    assert(u1.position_x === null && u1.position_y === null, 'tbl-floor-1 unplaced via batch');
+    console.log('   ✓ Unplace tables via batch PATCH /tables/positions');
+
+    // ── Unplace via PUT /tables/:id (COALESCE null trap fix) ──
+    const putUnplaceRes = await api(baseUrl, '/api/tables/tbl-floor-2', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { position_x: null, position_y: null },
+    });
+    assertEqual(putUnplaceRes.status, 200, 'unplace via PUT returns 200');
+    assertEqual(putUnplaceRes.data.table.position_x, null, 'tbl-floor-2 position_x cleared via PUT');
+    assertEqual(putUnplaceRes.data.table.position_y, null, 'tbl-floor-2 position_y cleared via PUT');
+    console.log('   ✓ Unplace tables via PUT /tables/:id');
+
+    // ── POST accepts a 0 coordinate (no falsy-to-null coercion) ──
+    const postZeroRes = await api(baseUrl, '/api/tables', {
+      method: 'POST',
+      headers: authHeader,
+      body: { number: 'TT-ZERO', capacity: 2, floor: 'Ground', position_x: 0, position_y: 0 },
+    });
+    assertEqual(postZeroRes.status, 201, 'POST with 0 coordinates returns 201');
+    assertEqual(postZeroRes.data.table.position_x, 0, 'position_x 0 persists instead of coercing to null');
+    console.log('   ✓ POST persists a 0 coordinate');
+
+    // ── POST rejects out-of-range coordinates ──
+    const postRangeRes = await api(baseUrl, '/api/tables', {
+      method: 'POST',
+      headers: authHeader,
+      body: { number: 'TT-RANGE', capacity: 2, position_x: 150, position_y: 10 },
+    });
+    assertEqual(postRangeRes.status, 400, 'POST with out-of-range coordinates returns 400');
+    console.log('   ✓ POST rejects coordinates outside 0–100');
+
+    // ── Role restriction on PATCH /tables/positions ──
+    const { getJWTSecret } = require('../main/routes/auth');
+    const jwt = require('jsonwebtoken');
+    const cashierToken = jwt.sign(
+      { userId: 'cashier-test-001', email: 'cashier@test.local', role: 'cashier' },
+      getJWTSecret(),
+      { expiresIn: '1h' }
+    );
+    const cashierHeader = { Authorization: `Bearer ${cashierToken}` };
+
+    const cashierPatchRes = await api(baseUrl, '/api/tables/positions', {
+      method: 'PATCH',
+      headers: cashierHeader,
+      body: { positions: [{ id: 'tbl-floor-1', position_x: 50, position_y: 50 }] },
+    });
+    assertEqual(cashierPatchRes.status, 403, 'cashier role is denied on PATCH /tables/positions');
+    console.log('   ✓ RBAC enforced on layout positions endpoint');
+
+    // ── Coordinate range validation (0–100 canvas percent) ──
+    const rangeRes = await api(baseUrl, '/api/tables/positions', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { positions: [{ id: 'tbl-floor-1', position_x: 101, position_y: -1 }] },
+    });
+    assertEqual(rangeRes.status, 400, 'out-of-range coordinates are rejected with 400');
+    console.log('   ✓ Batch rejects coordinates outside 0–100');
+
+    // ── Unknown table IDs are rejected, not silently skipped ──
+    const unknownRes = await api(baseUrl, '/api/tables/positions', {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { positions: [{ id: 'tbl-does-not-exist', position_x: 10, position_y: 10 }] },
+    });
+    assertEqual(unknownRes.status, 404, 'unknown table ID returns 404');
+    console.log('   ✓ Batch rejects unknown table IDs');
+
+    // ── PUT mirrors the contract: invalid coordinates are rejected ──
+    const putBadRes = await api(baseUrl, '/api/tables/tbl-floor-1', {
+      method: 'PUT',
+      headers: authHeader,
+      body: { position_x: 'not-a-number' },
+    });
+    assertEqual(putBadRes.status, 400, 'PUT with non-numeric position returns 400');
+    console.log('   ✓ PUT rejects invalid coordinates with 400');
 
     console.log('\n✅ All tables string ID tests passed');
   } finally {

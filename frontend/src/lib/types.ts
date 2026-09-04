@@ -122,6 +122,8 @@ export interface Table {
   kitchen_station_id: number | null;
   floor: string | null;
   section: string | null;
+  position_x: number | null;
+  position_y: number | null;
   is_active: boolean;
   activeOrder?: Order | null;
   current_order?: Order | null;

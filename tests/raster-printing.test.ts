@@ -13,7 +13,7 @@ import {
   type RasterBand,
 } from '../shared/print/raster';
 import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '../shared/print/thermal-capabilities';
-import { buildKotDocument, isKotDocument, isPrintDocument } from '../shared/print/document';
+import { buildBillDocument, buildKotDocument, isKotDocument, isPrintDocument } from '../shared/print/document';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
 import { buildEscPos, financialRows, itemRows } from '../main/printers/thermal';
@@ -79,6 +79,14 @@ async function run(): Promise<void> {
     languages: ['en'],
     blocks: [],
   }), false);
+  const printDocument = buildBillDocument({
+    isReprint: false,
+    order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', items: [] },
+    bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
+    business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
+  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  assert.equal(isPrintDocument(printDocument), true);
+  assert.equal(isPrintDocument({ ...printDocument, blocks: [...printDocument.blocks, printDocument.blocks[0]] }), false);
   const kotDocument = buildKotDocument({
     stationName: 'ایستگاه',
     order: { orderNumber: 'K-1', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },
@@ -182,6 +190,14 @@ async function run(): Promise<void> {
   assert.equal(renderRequests[0].direction, 'rtl');
   assert.equal(renderRequests[0].align, 'left');
   assert.equal(renderRequests.length, 2);
+  const financialRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      financialRequests.push(rasterRequest);
+      return { version: 1, requestId: (rasterRequest as any).requestId, ok: true, unit: { unitId: (rasterRequest as any).requestId, financial: true, complete: true, bands: [twoRows] } };
+    },
+  }, ['{FINANCIAL}فارسی'], caps, 'financial');
+  assert.equal(financialRequests[0].financial, true);
   const groupedCustomer = await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {
       const typedRequest = rasterRequest as any;
@@ -257,6 +273,7 @@ async function run(): Promise<void> {
     maxBandHeight: 200,
     direction: 'rtl' as const,
     style: 'normal' as const,
+    financial: false,
     maxLines: 2,
     bundledFont: { family: 'FloRaster', dataUrl: 'data:font/woff2;base64,AA==' },
   };

@@ -32,7 +32,7 @@ export function rasterRendererHtml(): string {
   const familyName = (value) => /^[A-Za-z0-9 _-]{1,64}$/.test(value);
   const makeFailure = (request, code, detail) => ({ version: 1, requestId: request.requestId, ok: false, code, detail });
   const render = async (request) => {
-    if (!request || request.version !== 1 || typeof request.text !== 'string' || !familyName(request.bundledFont?.family)) {
+    if (!request || request.version !== 1 || typeof request.text !== 'string' || typeof request.financial !== 'boolean' || !familyName(request.bundledFont?.family)) {
       return makeFailure(request || { requestId: '' }, 'invalid-request', 'Raster request failed validation');
     }
     try {
@@ -73,6 +73,9 @@ export function rasterRendererHtml(): string {
         }
         lines.push(current);
       }
+      if (request.financial && lines.length > request.maxLines) {
+        return makeFailure(request, 'render-failed', 'Financial raster unit exceeds renderer line limit');
+      }
       let bounded = lines.slice(0, request.maxLines);
       if (lines.length > request.maxLines && bounded.length > 0) {
         let last = bounded[bounded.length - 1];
@@ -106,7 +109,7 @@ export function rasterRendererHtml(): string {
         const bandPixels = pixels.slice(offset * width, (offset + height) * width);
         bands.push({ widthDots: width, heightDots: height, pixels: bandPixels });
       }
-      return { version: 1, requestId: request.requestId, ok: true, unit: { unitId: request.requestId, financial: false, complete: true, bands } };
+      return { version: 1, requestId: request.requestId, ok: true, unit: { unitId: request.requestId, financial: request.financial, complete: true, bands } };
     } catch (error) {
       return makeFailure(request, 'render-failed', error instanceof Error ? error.message : String(error));
     }
@@ -322,6 +325,7 @@ function requestForRasterLine(
   lineIndex: number,
   capabilities: ThermalPrinterCapabilities,
   requestId: string,
+  financial: boolean,
 ): RasterRenderRequest | null {
   if (line.includes('{INIT}') || line.includes('{CUT}') || line.includes('{FEED}')) return null;
   const text = line.replace(/\{[A-Z_/]+\}/g, '') || ' ';
@@ -344,6 +348,7 @@ function requestForRasterLine(
         : line.includes('{FONT_B}') ? 'font-b'
           : line.includes('{BOLD}') ? 'bold' : 'normal',
     ...(styles.length > 0 ? { styles } : {}),
+    financial,
     maxLines: 256,
     bundledFont: capabilities.raster.font!,
   };
@@ -385,9 +390,9 @@ export async function renderUnsupportedRasterLines(
       failure = { lineIndex: group.lineIndex, lineCount: group.lines.length, text: groupText, financial, code: 'font-unavailable', detail: 'No bundled raster font is configured' };
     } else {
       for (let offset = 0; offset < group.lines.length; offset += 1) {
-        const request = requestForRasterLine(group.lines[offset], group.lineIndex + offset, capabilities, requestPrefix);
+        const request = requestForRasterLine(group.lines[offset], group.lineIndex + offset, capabilities, requestPrefix, financial);
         if (!request) continue;
-        const result = await renderRasterSemanticUnit(renderer, request, group.lines[offset].includes('{FINANCIAL}'));
+        const result = await renderRasterSemanticUnit(renderer, request, financial);
         if (!result.ok) {
           failure = { lineIndex: group.lineIndex, lineCount: group.lines.length, text: groupText, financial, code: result.code, detail: result.detail };
           break;

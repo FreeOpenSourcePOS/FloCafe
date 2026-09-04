@@ -46,6 +46,7 @@ export interface RasterRenderRequest {
   readonly align?: 'left' | 'center';
   readonly style: RasterStyle;
   readonly styles?: readonly RasterStyle[];
+  readonly financial: boolean;
   readonly maxLines: number;
   /** A data: URL for a font bundled by the application, never a network URL. */
   readonly bundledFont: { readonly family: string; readonly dataUrl: string };
@@ -244,6 +245,7 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
     && ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(request.style as string)
     && (request.styles === undefined || (Array.isArray(request.styles) && request.styles.length > 0 && request.styles.length <= 4
       && request.styles.every((style) => ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(style))))
+    && typeof request.financial === 'boolean'
     && Number.isSafeInteger(request.maxLines) && (request.maxLines as number) > 0 && (request.maxLines as number) <= 256
     && !!request.bundledFont && typeof request.bundledFont.family === 'string'
     && /^[A-Za-z0-9 _-]{1,64}$/.test(request.bundledFont.family)

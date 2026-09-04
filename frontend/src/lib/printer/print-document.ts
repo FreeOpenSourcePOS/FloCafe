@@ -59,6 +59,11 @@ export interface BillBusinessOptions {
   isReprint?: boolean;
 }
 
+function maskPhoneOnReceipt(phone: string): string {
+  if (!phone || phone.length < 4) return phone;
+  return 'x'.repeat(phone.length - 4) + phone.slice(-4);
+}
+
 /** Resolve the active UI language, falling back to `en` outside the client store. */
 export function resolveActiveUiLanguage(language?: Language): Language {
   if (language) return language;
@@ -215,7 +220,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       instagramHandle: String(opts.instagramHandle ?? ''),
       footerNote: String(opts.footerNote ?? ''),
       customerName: String(order?.customer?.name ?? ''),
-      customerPhone: String(order?.customer?.phone ?? ''),
+      customerPhone: maskPhoneOnReceipt(String(order?.customer?.phone ?? '')),
       showName: opts.showBusinessName !== false,
       showAddress: !!opts.address,
       showPhone: !!opts.phone,

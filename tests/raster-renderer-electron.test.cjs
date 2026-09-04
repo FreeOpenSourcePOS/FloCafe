@@ -28,8 +28,8 @@ async function run() {
       });
     });
     await surface.webContents.executeJavaScript(`
-      window.FontFace = class {
-        constructor(family) { this.family = family; }
+      window.__floNativeFontFace = window.FontFace;
+      window.FontFace = class extends window.__floNativeFontFace {
         load() { return Promise.reject(new Error('bundled font unavailable')); }
       };
     `);
@@ -42,6 +42,7 @@ async function run() {
       direction: 'rtl',
       align: 'center',
       style: 'normal',
+      financial: false,
       maxLines: 4,
       bundledFont: font,
     });
@@ -53,8 +54,7 @@ async function run() {
       detail: 'bundled font unavailable',
     });
     await surface.webContents.executeJavaScript(`
-      const NativeFontFace = window.FontFace;
-      window.FontFace = class extends NativeFontFace {
+      window.FontFace = class extends window.__floNativeFontFace {
         load() { return Promise.resolve(this); }
       };
     `);
@@ -65,6 +65,7 @@ async function run() {
       maxBandHeight: 200,
       direction: 'rtl',
       align: 'center',
+      financial: false,
       maxLines: 4,
       bundledFont: font,
     };
@@ -83,6 +84,15 @@ async function run() {
     assert.equal(styled.unit.bands[0].widthDots, 120);
     assert.ok(area(normal.unit) > 0);
     assert.ok(area(styled.unit) > area(normal.unit));
+    const financialOverflow = await renderer.render({
+      ...base,
+      requestId: 'electron-financial-overflow',
+      text: 'שלום '.repeat(200),
+      financial: true,
+      maxLines: 1,
+    });
+    assert.equal(financialOverflow.ok, false);
+    assert.equal(financialOverflow.code, 'render-failed');
     console.log('Chromium raster surface rendered styled RTL output.');
   } finally {
     renderer.destroy();

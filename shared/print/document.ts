@@ -900,7 +900,8 @@ export function isPrintDocument(value: unknown): value is PrintDocument {
     && isLanguages(value.languages)
     && Array.isArray(value.blocks)
     && value.blocks.length > 0
-    && value.blocks.every(isPrintDocumentBlock);
+    && value.blocks.every(isPrintDocumentBlock)
+    && new Set(value.blocks.map((block) => isRecord(block) ? block.kind : undefined)).size === value.blocks.length;
 }
 
 function isKotDocumentBlock(value: unknown): value is KotDocumentBlock {

@@ -13,7 +13,7 @@ async function run() {
   await app.whenReady();
   let surface;
   const renderer = new ChromiumRasterRenderer({
-    preloadPath: path.join(__dirname, '../dist/raster-preload.js'),
+    preloadPath: path.join(__dirname, '../dist/main/raster-preload.js'),
     windowFactory: (options) => {
       surface = new BrowserWindow(options);
       return surface;

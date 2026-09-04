@@ -97,6 +97,7 @@ export function renderMerchantReceiptViaDocument(
       columns: opts.columns,
       language: opts.language,
       capabilities: opts.capabilities,
+      financialLineRanges: rendered.rasterGroups.filter((group) => group.financial === true).map(({ lineIndex, lineCount }) => ({ lineIndex, lineCount })),
     }, warnings);
     return { data, lines: rendered.lines, warnings, fellBackToClassic, rasterGroups: rendered.rasterGroups };
   };

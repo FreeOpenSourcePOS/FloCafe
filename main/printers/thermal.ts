@@ -1346,6 +1346,12 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
 
 function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
   const lines: string[] = [];
+  const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
+  const pushFinancialLines = (financialLines: string[]): void => {
+    if (financialLines.length === 0) return;
+    financialLineRanges.push({ lineIndex: lines.length, lineCount: financialLines.length });
+    lines.push(...financialLines);
+  };
   const cols = profile.columns;
   const layout = profile.layout || {};
   const date = parseDbTimestamp(order.created_at);
@@ -1392,12 +1398,13 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(...pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang, capabilities));
+      pushFinancialLines(pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang, capabilities));
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
           const addonLines: string[] = [];
           pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits) : ''), cols, lang, capabilities);
-          lines.push(...addonLines);
+          if (addon.price) pushFinancialLines(addonLines);
+          else lines.push(...addonLines);
         }
       }
       if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
@@ -1414,21 +1421,21 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const rowLabelWidth = Math.max(8, cols - 12);
   if (payload?.totals?.showSubtotal !== false) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'subtotal', lang)), rowLabelWidth);
-    lines.push(...financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'discount', lang)), rowLabelWidth);
-    lines.push(...financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
       const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      lines.push(pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits), layout, cols, lang, capabilities));
+      pushFinancialLines([pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits), layout, cols, lang, capabilities)]);
     }
   } else if (Number(bill.tax_amount) !== 0) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)), rowLabelWidth);
-    lines.push(...financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   // `chargeRows` is an explicit capability declaration. Its order is not
   // presentation authority: country/legal rows remain in this stable order,
@@ -1442,7 +1449,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     const amount = chargeAmounts[row];
     if (amount === 0) continue;
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, row, lang)), rowLabelWidth);
-    lines.push(...financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   lines.push(bar);
   // Label precedence (#445): the author's structural literal (e.g.
@@ -1450,7 +1457,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   // payload-root `labels` map overrides next; otherwise the built-in default
   // resolves localized through the canonical print-labels catalog (#440).
   const totalLabel = fitTemplateLabel(normalize(String(payload?.totals?.grandTotalLabel || '')), rowLabelWidth) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'total', lang)), rowLabelWidth);
-  lines.push(...financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
+  pushFinancialLines(financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
 
   if (bill.payment_details) {
     lines.push(dash);
@@ -1460,7 +1467,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
         for (const payment of payments) {
           if (payment && payment.method) {
             const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12, lang, capabilities);
-            lines.push(...financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+            pushFinancialLines(financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
           }
         }
       }
@@ -1481,7 +1488,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang, capabilities }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang, capabilities, financialLineRanges }, warnings);
 }
 
 export function appendPoweredByFooter(lines: string[]): void {
@@ -2037,7 +2044,7 @@ export interface RasterLineUnit {
   readonly unit: RasterSemanticUnit;
 }
 
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[]; rasterFailures?: readonly { lineIndex: number; lineCount: number; financial: boolean }[] } = {}, warnings?: PrintWarning[]): Buffer {
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[]; rasterFailures?: readonly { lineIndex: number; lineCount: number; financial: boolean }[]; financialLineRanges?: readonly { lineIndex: number; lineCount: number }[] } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
   const useLegacyUnicode = options.capabilities === undefined && _useUnicode;
   const capabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
@@ -2045,6 +2052,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
   let activeCodePage = capabilities.encoding.preferredCodePage;
   const rasterEntries = options.rasterUnits ?? [];
   const rasterFailures = options.rasterFailures ?? [];
+  const financialLineRanges = options.financialLineRanges ?? [];
   const rasterByLine = new Map<number, typeof rasterEntries[number]['unit']>();
   const rasterLineCounts = new Map<number, number>();
   const rasterRanges: Array<{ start: number; end: number }> = [];
@@ -2140,6 +2148,10 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     line = normalizeThermalTextByCapabilities(line, capabilities);
 
     const isStoreName = line.includes('{STORE_NAME}');
+    const isFinancial = financialLineRanges.some((range) => Number.isSafeInteger(range.lineIndex)
+      && Number.isSafeInteger(range.lineCount)
+      && range.lineIndex <= lineIndex
+      && lineIndex < range.lineIndex + range.lineCount);
     line = line.replace(/\{STORE_NAME\}/g, '');
     let printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
     const lineBold = line.includes('{BOLD}');
@@ -2165,10 +2177,10 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         if (warnings) {
           const text = printableLine.trim();
           warnings.push({
-            field: isStoreName ? 'store name' : 'receipt line',
+            field: isFinancial ? 'financial row' : isStoreName ? 'store name' : 'receipt line',
             text,
             message: makeUnsupportedLineWarning(isStoreName, text),
-            kind: 'line',
+            kind: isFinancial ? 'financial' : 'line',
           });
         }
         continue;

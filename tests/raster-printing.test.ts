@@ -190,6 +190,7 @@ async function run(): Promise<void> {
   }, classicHeaderLines, caps, 'classic-header', classicHeaderGroups);
   const addressRequest = classicHeaderRequests.find((request) => request.text.includes('آدرس فارسی'));
   assert.equal(addressRequest?.align, 'center');
+  assert.equal(classicHeaderRequests.some((request) => request.text.startsWith('** ') && request.text.endsWith(' **')), true);
   const kotDocument = buildKotDocument({
     stationName: 'ایستگاه',
     order: { orderNumber: 'K-1', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },
@@ -277,6 +278,12 @@ async function run(): Promise<void> {
     rasterUnits: [{ lineIndex: 0, unit: { ...unit, complete: false } }],
   }, metadataWarnings).length, 0);
   assert.equal(metadataWarnings[0]?.kind, 'line');
+  const nativeFinancialWarnings: any[] = [];
+  buildEscPos(['فارسی'], false, {
+    capabilities: caps,
+    financialLineRanges: [{ lineIndex: 0, lineCount: 1 }],
+  }, nativeFinancialWarnings);
+  assert.equal(nativeFinancialWarnings[0]?.kind, 'financial');
   const literalMarker = buildEscPos(['{FINANCIAL}raster'], false);
   assert.equal(escPosToText(literalMarker).includes('{FINANCIAL}raster'), true);
   assert.equal(buildEscPos(['raster'], false, {

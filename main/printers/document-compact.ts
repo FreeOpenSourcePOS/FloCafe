@@ -139,14 +139,14 @@ export function renderBillDocumentToCompactLines(
   const messageSourceLines: string[] = [];
   if (messages?.reprintBanner) {
     lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(messages.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-    messageSourceLines.push(labelOf(messages.reprintBanner));
+    messageSourceLines.push(`** ${labelOf(messages.reprintBanner)} **`);
   }
 
   // Online-order banner (#284, MessageBlock).
   if (messages?.onlineOrderBanner) {
     const banner = messages.onlineOrderBanner;
     lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-    messageSourceLines.push(labelOf(banner.label));
+    messageSourceLines.push(`** ${labelOf(banner.label)} **`);
     if (banner.platform.text) {
       lines.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
       messageSourceLines.push(banner.platform.text);
@@ -405,6 +405,6 @@ export function renderCompactReceiptViaDocument(
     maskCustomerPhone: opts.maskCustomerPhone,
     rasterGroups,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges: rasterGroups.filter((group) => group.financial === true).map(({ lineIndex, lineCount }) => ({ lineIndex, lineCount })) }, warnings);
   return { document, lines, data, warnings, rasterGroups };
 }

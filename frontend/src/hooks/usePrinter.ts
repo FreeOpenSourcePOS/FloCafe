@@ -36,6 +36,7 @@ import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/li
 type CoreBillTemplate = 'classic' | 'compact';
 
 function resolveCoreBillTemplate(value: unknown, source: 'core' | 'pack' | 'merchant' | null): CoreBillTemplate | null {
+  if (source === null && (value === 'classic' || value === 'compact')) return value;
   if (source !== 'core') return null;
   if (value === 'classic' || value === 'compact') return value;
   if (typeof value !== 'string') return null;

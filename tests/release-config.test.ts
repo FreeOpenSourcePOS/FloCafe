@@ -229,7 +229,7 @@ function run() {
   assert.equal(masTriggers.workflow_dispatch.inputs.release_tag.type, 'string');
   const masCheckouts = masJob.steps.filter((step: any) => step.uses?.startsWith('actions/checkout@'));
   assert.equal(masCheckouts[0]?.with?.ref, 'main', 'MAS provenance must use current main verifier code');
-  assert.equal(masCheckouts[1]?.with?.ref, '${{ github.ref }}', 'MAS build must use the selected release ref');
+  assert.equal(masCheckouts[1]?.with?.ref, '${{ github.sha }}', 'MAS build must use the validated event commit');
   const masProvenance = findStep(masJob, 'Validate MAS release provenance');
   assertShellStep(masJob, 'Validate MAS release provenance');
   assert.equal(masProvenance.env.GH_TOKEN, '${{ github.token }}');

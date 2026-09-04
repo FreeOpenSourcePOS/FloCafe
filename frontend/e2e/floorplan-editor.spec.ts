@@ -264,3 +264,43 @@ test('floorplan editor: add a named floor and see it in the all-floors overview'
   await expect(page.getByTestId('floorplan-canvas')).toBeVisible();
   await expect(page.getByTestId(`floorplan-chip-${floorTable}`)).toBeVisible();
 });
+
+test('floorplan editor: live table status refreshes while editing', async ({ page, request }) => {
+  const apiLogin = await request.post(`${BASE}/api/auth/login`, {
+    data: { email: EMAIL, password: PASSWORD },
+  });
+  const { access_token } = await apiLogin.json();
+  const apiAuth = { Authorization: `Bearer ${access_token}` };
+  const tableList = await (await request.get(`${BASE}/api/tables`, { headers: apiAuth })).json();
+  const t1 = (tableList.tables ?? []).find((t: { number: string }) => t.number === 'T1');
+  await request.patch(`${BASE}/api/tables/${t1.id}/status`, {
+    headers: apiAuth,
+    data: { status: 'available' },
+  });
+  await request.patch(`${BASE}/api/tables/positions`, {
+    headers: apiAuth,
+    data: { positions: [{ id: t1.id, position_x: 30, position_y: 30 }] },
+  });
+
+  await login(page);
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+  const chip = page.getByTestId('floorplan-chip-T1');
+  await expect(chip).toHaveAttribute('aria-label', /Available/);
+
+  await request.patch(`${BASE}/api/tables/${t1.id}/status`, {
+    headers: apiAuth,
+    data: { status: 'occupied' },
+  });
+  await expect(chip).toHaveAttribute('aria-label', /Occupied/, { timeout: 15_000 });
+});
+
+test('list view: Add Table keeps the selected floor', async ({ page }) => {
+  await login(page);
+
+  await page.getByRole('button', { name: 'List', exact: true }).click();
+  await page.getByRole('button', { name: 'First', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Table', exact: true }).click();
+
+  const form = page.locator('form').filter({ hasText: 'Floor' });
+  await expect(form.locator('input').nth(2)).toHaveValue('First');
+});

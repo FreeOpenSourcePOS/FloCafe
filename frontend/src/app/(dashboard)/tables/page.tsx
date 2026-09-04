@@ -244,7 +244,6 @@ export default function TablesPage() {
   };
 
   useEffect(() => {
-    if (layoutMode) return;
     const load = () => {
       api.get('/tables')
         .then(({ data }) => setTables(data.tables || []))
@@ -267,7 +266,6 @@ export default function TablesPage() {
   }
 
   useEffect(() => {
-    if (layoutMode) return;
     if (view !== 'plan' && !showDetails) return;
     const fetchOrders = () => {
       api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
@@ -298,9 +296,9 @@ export default function TablesPage() {
     setForm({ name: '', capacity: '4', floor: 'Ground', section: '' });
   };
 
-  const openCreate = () => {
+  const openCreate = (floor = 'Ground') => {
     setEditingTable(null);
-    setForm({ name: '', capacity: '4', floor: 'Ground', section: '' });
+    setForm({ name: '', capacity: '4', floor, section: '' });
     setShowForm(true);
   };
 
@@ -444,10 +442,7 @@ export default function TablesPage() {
             </label>
           )}
           {view === 'list' && canManageTables && (
-            <Button onClick={() => {
-              setForm((p) => ({ ...p, floor: [...new Set(tables.map((tb) => tb.floor).filter((f): f is string => Boolean(f)))][0] ?? '' }));
-              openCreate();
-            }}>
+            <Button onClick={() => openCreate(activeFloor === 'all' ? 'Ground' : activeFloor)}>
               <Plus size={16} className="me-1" /> {tTables('addTable')}
             </Button>
           )}

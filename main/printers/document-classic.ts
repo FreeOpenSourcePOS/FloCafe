@@ -606,6 +606,7 @@ export function renderClassicReceiptViaDocument(
     arabicShaping: boolean;
     cutMode: PrinterCutMode;
     capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities;
+    maskCustomerPhone?: boolean;
   },
 ): ClassicDocumentPreviewResult {
   const printData = buildBillPrintData(order, bill, business, opts.isReprint);
@@ -630,6 +631,7 @@ export function renderClassicReceiptViaDocument(
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
+    maskCustomerPhone: opts.maskCustomerPhone,
     rasterGroups,
   });
   const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities }, warnings);

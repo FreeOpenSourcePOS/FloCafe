@@ -1,0 +1,11 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+reviews:
+  path_filters:
+    # Version bumps only ever touch these two files, and neither carries
+    # reviewable logic: package-lock.json is fully generated, and
+    # package.json's `version` field is a plain string bump. Excluding them
+    # from review scope (rather than skipping review by PR title) means a
+    # release PR that also carries an unrelated functional change still gets
+    # that change fully reviewed — title text alone can't bypass review.
+    - "!package-lock.json"
+    - "!package.json"

@@ -33,6 +33,23 @@ import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterWebUsbPathEnabled } from '@print/raster';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 
+type CoreBillTemplate = 'classic' | 'compact';
+
+function resolveCoreBillTemplate(value: unknown): CoreBillTemplate | null {
+  if (value === 'classic' || value === 'compact') return value;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+  try {
+    const selection = JSON.parse(trimmed) as { source?: unknown; id?: unknown };
+    return selection.source === 'core' && (selection.id === 'classic' || selection.id === 'compact')
+      ? selection.id
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export type { PrintWarning } from '@/lib/printer/warnings';
 
 type PrintModeType = 'receipt' | 'tax' | 'kot';
@@ -138,6 +155,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const isReprint = opts?.isReprint ?? false;
           const billTemplateWarning = makeBillTemplateFallbackWarning(billTemplate);
+          const rasterBillTemplate = resolveCoreBillTemplate(billTemplate);
 
           const executeBrowserPrint = async (): Promise<PrintWarning[]> => {
             const { printWebBill } = await import('@/lib/printer/web-print');
@@ -237,7 +255,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const webusbPrinter = get().webusbPrinter;
           const webusbCapabilities = webusbPrinter?.capabilities;
-          if (rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizePrintDocument), webusbPrinter?.profile_id)) {
+          if (rasterBillTemplate && rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizePrintDocument), webusbPrinter?.profile_id)) {
             const rasterResult = await window.electronAPI.rasterizePrintDocument({
               document: buildFrontendBillDocument(bill, tenant, {
                 ...builderOpts,
@@ -246,8 +264,9 @@ export const usePrinterStore = create<PrinterState>()(
                 includeTaxId: billShowTaxId,
                 taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel ?? 'Tax ID',
                 maskCustomerPhone: true,
+                useBillCustomer: true,
               }),
-              template: billTemplate === 'compact' ? 'compact' : 'classic',
+              template: rasterBillTemplate,
               profileId: webusbPrinter.profile_id,
               options: {
                 columns: configuredPaperWidth === 80 ? 48 : 42,

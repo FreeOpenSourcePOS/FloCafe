@@ -1046,19 +1046,7 @@ function receiptDocumentLines(
 ): RasterDocumentLines | null {
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
   const selection = parseBillTemplateSelection(template);
-  if (selection?.source === 'pack') return null;
-  if (selection?.source === 'merchant') {
-    return renderMerchantReceiptViaDocument(order, bill, biz, selection.id, {
-      columns,
-      language,
-      ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
-      isReprint,
-      useUnicode,
-      arabicShaping,
-      cutMode,
-      capabilities,
-    });
-  }
+  if (selection?.source === 'pack' || selection?.source === 'merchant') return null;
   const normalizedTemplate = normalizeReceiptTemplate(selection?.source === 'core' ? selection.id : template);
   const result = normalizedTemplate === 'compact'
     ? renderCompactReceiptViaDocument(order, bill, biz, {

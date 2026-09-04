@@ -52,6 +52,7 @@ export interface BillBusinessOptions {
   /** Pre-resolved country-profile tax-id label (GSTIN, کد اقتصادی, …). */
   taxIdLabel?: string;
   maskCustomerPhone?: boolean;
+  useBillCustomer?: boolean;
   showTaxBreakdown?: boolean;
   showBusinessName?: boolean;
   showCustomerName?: boolean;
@@ -166,6 +167,8 @@ function parsePaymentDetails(raw: Bill['payment_details']): Array<{ method: stri
  */
 export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): PrintData {
   const order = bill.order;
+  const billCustomer = (bill as Bill & { customer?: { name?: unknown; phone?: unknown } }).customer;
+  const customer = opts.useBillCustomer === true ? billCustomer ?? order?.customer : order?.customer;
   const items = order?.items ?? [];
 
   const showTaxId = opts.includeTaxId === true && !!opts.taxRegistrationNumber;
@@ -220,10 +223,10 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       taxIdLabel: String(opts.taxIdLabel ?? ''),
       instagramHandle: String(opts.instagramHandle ?? ''),
       footerNote: String(opts.footerNote ?? ''),
-      customerName: String(order?.customer?.name ?? ''),
+      customerName: String(customer?.name ?? ''),
       customerPhone: opts.maskCustomerPhone === true
-        ? maskPhoneOnReceipt(String(order?.customer?.phone ?? ''))
-        : String(order?.customer?.phone ?? ''),
+        ? maskPhoneOnReceipt(String(customer?.phone ?? ''))
+        : String(customer?.phone ?? ''),
       showName: opts.showBusinessName !== false,
       showAddress: !!opts.address,
       showPhone: !!opts.phone,

@@ -58,15 +58,18 @@ export function rasterRendererHtml(): string {
       context.direction = request.direction;
       context.textAlign = request.align === 'center' ? 'center' : request.direction === 'rtl' ? 'right' : 'left';
       const measure = (value) => context.measureText(value).width * scaleX;
+      if (typeof Intl.Segmenter !== 'function') return makeFailure(request, 'render-failed', 'Grapheme segmentation is unavailable');
+      const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+      const graphemes = (value) => Array.from(segmenter.segment(value), (part) => part.segment);
       const lines = [];
       const sourceLines = request.text.split(/\\r?\\n/);
       for (const source of sourceLines) {
         let current = '';
-        for (const character of Array.from(source)) {
-          const candidate = current + character;
+        for (const grapheme of graphemes(source)) {
+          const candidate = current + grapheme;
           if (current && measure(candidate) > request.widthDots) {
             lines.push(current);
-            current = character;
+            current = grapheme;
           } else {
             current = candidate;
           }
@@ -79,8 +82,9 @@ export function rasterRendererHtml(): string {
       let bounded = lines.slice(0, request.maxLines);
       if (lines.length > request.maxLines && bounded.length > 0) {
         let last = bounded[bounded.length - 1];
-        while (last && measure(last + '…') > request.widthDots) last = last.slice(0, -1);
-        bounded[bounded.length - 1] = last + '…';
+        const lastGraphemes = graphemes(last);
+        while (lastGraphemes.length > 0 && measure(lastGraphemes.join('') + '…') > request.widthDots) lastGraphemes.pop();
+        bounded[bounded.length - 1] = lastGraphemes.join('') + '…';
       }
       const width = request.widthDots;
       const pixels = new Uint8Array(width * Math.max(1, bounded.length * lineHeight));

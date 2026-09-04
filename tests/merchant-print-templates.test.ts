@@ -607,6 +607,25 @@ async function runLifecycle(): Promise<void> {
     assert(!reorderedText.includes('Flo Parity Cafe'), 'omitted business-header block is not rendered');
     ok('reordered and omitted blocks render semantically through the document pipeline');
 
+    const merchantInstructionWarnings: any[] = [];
+    const merchantInstructionReceipt = formatReceipt(
+      { ...order, items: [{ ...order.items[0], special_instructions: 'فارسی توضیح' }] },
+      bill,
+      business,
+      serializeBillTemplateSelection({ source: 'merchant', id: reorderedId }),
+      42,
+      false,
+      false,
+      'full',
+      merchantInstructionWarnings,
+      false,
+      'en',
+    );
+    assert(merchantInstructionReceipt.length > 0, 'unsupported merchant instructions do not refuse native output');
+    assert(!merchantInstructionWarnings.some((warning) => warning.kind === 'financial'), 'merchant instructions remain nonfinancial warnings');
+    assert(merchantInstructionWarnings.some((warning) => warning.kind === 'line'), 'merchant instructions still report a line warning');
+    ok('merchant financial refusal tracks amount-bearing lines only');
+
     const taxOnly = await request(app).post('/api/print-templates')
       .set('Authorization', OWNER).send({
         name: 'Tax Only',

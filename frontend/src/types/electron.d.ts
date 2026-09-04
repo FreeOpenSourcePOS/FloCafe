@@ -40,12 +40,14 @@ export interface ElectronAPI {
   rasterizePrintDocument: (request: unknown) => Promise<{
     ok: boolean;
     data?: Uint8Array;
+    rasterSelected?: boolean;
     warnings?: Array<{ field: string; text: string; message: string; kind?: string }>;
     error?: string;
   }>;
   rasterizeKotDocument: (request: unknown) => Promise<{
     ok: boolean;
     data?: Uint8Array;
+    rasterSelected?: boolean;
     warnings?: Array<{ field: string; text: string; message: string; kind?: string }>;
     error?: string;
   }>;

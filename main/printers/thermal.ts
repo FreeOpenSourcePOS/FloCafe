@@ -815,7 +815,9 @@ export async function printKOT(order: any, items: any[], stationName: string, us
         capabilities,
         requestPrefix: 'kot',
       }, documentResult.rasterGroups);
-      data = rasterized.data;
+      data = rasterized.rasterSelected || rasterized.warnings.length > 0
+        ? rasterized.data
+        : documentResult.data;
       warnings.push(...rasterized.warnings);
     } else {
       data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, capabilities.shaping.arabic, normalizePrintLanguage(language ?? biz?.language), capabilities);
@@ -1131,7 +1133,7 @@ export async function rasterizePrintDocumentForWebUsb(
     arabicShaping: boolean;
     timezone?: string;
   },
-): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[] } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
   const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
@@ -1160,7 +1162,7 @@ export async function rasterizePrintDocumentForWebUsb(
   if (hasFinancialPrintWarning(result.warnings)) {
     return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
   }
-  return { ok: true, data: result.data, warnings: result.warnings };
+  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected };
 }
 
 export async function rasterizeKotDocumentForWebUsb(
@@ -1174,7 +1176,7 @@ export async function rasterizeKotDocumentForWebUsb(
     useUnicode: boolean;
     arabicShaping: boolean;
   },
-): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[] } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
   const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
@@ -1194,7 +1196,7 @@ export async function rasterizeKotDocumentForWebUsb(
   if (hasFinancialPrintWarning(result.warnings)) {
     return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
   }
-  return { ok: true, data: result.data, warnings: result.warnings };
+  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected };
 }
 
 async function rasterizeReceiptIfEnabled(

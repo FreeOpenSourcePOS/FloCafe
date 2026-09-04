@@ -281,8 +281,12 @@ export const usePrinterStore = create<PrinterState>()(
               },
             });
             if (!rasterResult.ok || !rasterResult.data) throw new Error(rasterResult.error || 'Raster rendering failed');
-            bytes = Uint8Array.from(rasterResult.data);
             if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
+            if (rasterResult.rasterSelected) {
+              bytes = Uint8Array.from(rasterResult.data);
+            } else {
+              warnings.push(...encoderWarnings);
+            }
           } else {
             warnings.push(...encoderWarnings);
           }
@@ -464,8 +468,12 @@ export const usePrinterStore = create<PrinterState>()(
                 },
               });
               if (!rasterResult.ok || !rasterResult.data) throw new Error(rasterResult.error || 'Raster rendering failed');
-              output = Uint8Array.from(rasterResult.data);
               if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
+              if (rasterResult.rasterSelected) {
+                output = Uint8Array.from(rasterResult.data);
+              } else {
+                warnings.push(...encoderWarnings);
+              }
             } else {
               warnings.push(...encoderWarnings);
             }

@@ -252,6 +252,10 @@ function run() {
   assert.notEqual(masBranchExecution.status, 0, 'MAS publishing must reject non-tag workflow refs');
   assert.match(masBranchExecution.stdout, /must run from the selected release tag/);
   const createRelease = jobs['create-release'];
+  for (const jobName of ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release', 'publish-release']) {
+    const checkout = jobs[jobName].steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
+    assert.equal(checkout?.with?.ref, '${{ github.sha }}', `${jobName} must use the validated event commit`);
+  }
   const metadata = findStep(createRelease, 'Determine release metadata');
   const validateTag = findStep(createRelease, 'Validate release tag');
   const validateProvenance = findStep(createRelease, 'Validate release provenance');

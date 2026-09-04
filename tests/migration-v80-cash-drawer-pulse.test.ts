@@ -20,6 +20,13 @@
  * earlier app version had, then apply v80 alone and assert the global
  * setting is seeded — and that a store without the legacy flag enabled
  * gets no such setting (preserving the "unset means check legacy" default).
+ *
+ * The legacy flag also pulsed unconditionally, for every payment method —
+ * shouldPulseForPayment's new method filter defaults to ['cash', 'card'],
+ * which would silently stop pulsing for UPI or a custom method on a
+ * migrated store (also flagged by CodeRabbit on PR #640). v80 seeds
+ * cash_drawer_pulse_methods with thermal.ts's CASH_DRAWER_PULSE_ALL_METHODS
+ * sentinel ('all') alongside the enabled flag, which this test also asserts.
  */
 const Module = require('module');
 const originalLoad = Module._load;
@@ -91,6 +98,7 @@ function main() {
 
   assert(getCurrentSchemaVersion() === originalMigrations[originalMigrations.length - 1].version, 'store A upgrade reaches latest schema');
   assert(settingValue(db, 'cash_drawer_pulse_enabled') === 'true', 'store A: legacy per-printer flag migrates to the global setting');
+  assert(settingValue(db, 'cash_drawer_pulse_methods') === 'all', 'store A: legacy unconditional pulse preserved via the "all methods" sentinel, not narrowed to cash/card');
 
   closeDatabase();
 
@@ -110,6 +118,7 @@ function main() {
   runPendingMigrations();
 
   assert(settingValue(db, 'cash_drawer_pulse_enabled') === undefined, 'store B: no legacy flag means no global setting is seeded (unset default preserved)');
+  assert(settingValue(db, 'cash_drawer_pulse_methods') === undefined, 'store B: no legacy flag means no methods sentinel is seeded either');
 
   closeDatabase();
   fs.rmSync(testDirA, { recursive: true, force: true });

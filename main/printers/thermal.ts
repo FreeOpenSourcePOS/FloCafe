@@ -723,20 +723,32 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
  * opening. The setting is intentionally evaluated here, immediately before
  * dispatch, so every receipt path shares the same backend-authoritative rule.
  */
+// Sentinel for cash_drawer_pulse_methods meaning "every payment method,
+// including future/custom ones" — not expressible as an explicit array since
+// custom payment methods are open-ended. Only ever written by db.ts's v80
+// migration, to preserve the legacy per-printer flag's behavior (it pulsed
+// unconditionally) for a store that already had it enabled; the settings
+// page always writes a concrete array from its checkboxes, so a store that
+// interacts with the new UI at all naturally moves off this sentinel.
+const CASH_DRAWER_PULSE_ALL_METHODS = 'all';
+
 function shouldPulseForPayment(bill: any): boolean {
   const configured = getSettingValue('cash_drawer_pulse_methods');
+  const pulseForAllMethods = configured === CASH_DRAWER_PULSE_ALL_METHODS;
   let methods: string[] = ['cash', 'card'];
-  try {
-    const parsed = configured ? JSON.parse(configured) : methods;
-    if (Array.isArray(parsed)) {
-      const valid = parsed.filter((value): value is string => typeof value === 'string');
-      // A non-empty array that contains no valid strings (corrupt/legacy
-      // value) restores the safe defaults; an intentionally empty array —
-      // every method deselected — stays empty. Mirrors the settings page's
-      // hydration of the same setting.
-      methods = parsed.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
-    }
-  } catch { /* Keep the safe cash/card defaults. */ }
+  if (!pulseForAllMethods) {
+    try {
+      const parsed = configured ? JSON.parse(configured) : methods;
+      if (Array.isArray(parsed)) {
+        const valid = parsed.filter((value): value is string => typeof value === 'string');
+        // A non-empty array that contains no valid strings (corrupt/legacy
+        // value) restores the safe defaults; an intentionally empty array —
+        // every method deselected — stays empty. Mirrors the settings page's
+        // hydration of the same setting.
+        methods = parsed.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
+      }
+    } catch { /* Keep the safe cash/card defaults. */ }
+  }
   if (!bill?.payment_details) return false;
   try {
     const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
@@ -744,6 +756,7 @@ function shouldPulseForPayment(bill: any): boolean {
     const db = getDatabase();
     return payments.some((payment: any) => {
       if (!payment || Number(payment.amount || 0) <= 0) return false;
+      if (pulseForAllMethods) return true;
       let method = String(payment.method || '').toLowerCase();
       if (method === 'custom' && Number.isSafeInteger(Number(payment.payment_method_id))) {
         const row = db.prepare('SELECT name FROM payment_methods WHERE id = ?').get(Number(payment.payment_method_id)) as { name?: string } | undefined;

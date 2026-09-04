@@ -168,6 +168,28 @@ async function run(): Promise<void> {
   assert.equal(compactBusinessGroups[0].lineIndex < compactBusinessGroups[1].lineIndex, true);
   assert.equal(compactMessageGroups.length, 2);
   assert.equal(compactMessageGroups[0].lineIndex < compactMessageGroups[1].lineIndex, true);
+  const classicHeaderGroups: any[] = [];
+  const classicHeaderLines = renderBillDocumentToClassicLines(compactDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currencySymbol: '$',
+    trimDecimals: false,
+    useUnicode: false,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+    rasterGroups: classicHeaderGroups,
+  });
+  const classicHeaderRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      classicHeaderRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { unitId: (rasterRequest as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+    },
+  }, classicHeaderLines, caps, 'classic-header', classicHeaderGroups);
+  const addressRequest = classicHeaderRequests.find((request) => request.text.includes('آدرس فارسی'));
+  assert.equal(addressRequest?.align, 'center');
   const kotDocument = buildKotDocument({
     stationName: 'ایستگاه',
     order: { orderNumber: 'K-1', createdAt: '2026-01-01T12:00:00.000Z', tableName: '', orderType: '' },

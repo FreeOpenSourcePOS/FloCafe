@@ -382,7 +382,7 @@ export function renderBillDocumentToClassicLines(
           segment.post.push(dash);
           for (const footerLine of footerLines) pushCenteredWrapped(segment.post, footerLine, cols, options.language, options.capabilities);
           segment.sourceLines.post.push(dash, ...footerSourceLines);
-          segment.sourceControlLines.post.push(dash, ...footerLines);
+          segment.sourceControlLines.post.push(dash, ...footerLines.map((line) => '{CENTER}' + line + '{/CENTER}'));
         }
         break;
       }

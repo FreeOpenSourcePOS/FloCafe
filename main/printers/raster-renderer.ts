@@ -332,8 +332,16 @@ function stripRasterControlTokens(line: string): string {
 
 function controlMetadataLine(line: string, sourceText?: string): string {
   if (sourceText === undefined) return line;
-  const sourceIndex = line.indexOf(sourceText);
-  if (sourceIndex >= 0) return line.slice(0, sourceIndex) + line.slice(sourceIndex + sourceText.length);
+  if (sourceText.length === 0) return line;
+  let sourceIndex = line.indexOf(sourceText);
+  while (sourceIndex >= 0) {
+    const tokenStart = line.lastIndexOf('{', sourceIndex);
+    const tokenEnd = tokenStart >= 0 ? line.indexOf('}', tokenStart) : -1;
+    if (tokenStart < 0 || tokenStart === sourceIndex || tokenEnd < sourceIndex) {
+      return line.slice(0, sourceIndex) + line.slice(sourceIndex + sourceText.length);
+    }
+    sourceIndex = line.indexOf(sourceText, sourceIndex + sourceText.length);
+  }
   let metadataLine = line;
   for (const token of sourceText.match(RASTER_CONTROL_TOKEN_RE) ?? []) {
     const tokenIndex = metadataLine.lastIndexOf(token);

@@ -313,6 +313,16 @@ async function run(): Promise<void> {
   assert.equal(controlCollision.failures.length, 0);
   assert.equal(controlCollisionRequests[0].text, 'فارسی {CUT}');
   assert.equal(controlCollision.units[0]?.lineCount, 2);
+  const styleCollisionRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      styleCollisionRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId } };
+    },
+  }, ['{BOLD}BOLD{/BOLD}', 'فارسی'], caps, 'style-collision', [
+    { groupId: 'item', lineIndex: 0, lineCount: 2, sourceLines: ['BOLD', 'فارسی'] },
+  ]);
+  assert.equal(styleCollisionRequests[0].style, 'bold');
   const splitHeaderRequests: any[] = [];
   const splitHeader = await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {

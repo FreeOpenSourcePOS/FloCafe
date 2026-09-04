@@ -294,6 +294,7 @@ export function renderBillDocumentToCompactLines(
   const paymentSourceLines: string[] = [];
   if (payments && payments.lines.length > 0) {
     lines.push(dash);
+    paymentSourceLines.push(dash);
     for (const line of payments.lines) {
       const methodLabel = truncate(paymentLabel(line.label), cols - 12, options.language, options.capabilities);
       const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);

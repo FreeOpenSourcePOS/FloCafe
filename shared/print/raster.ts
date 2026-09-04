@@ -73,7 +73,9 @@ export function validateRasterBand(band: RasterBand, maxBandHeight = DEFAULT_RAS
   if (!Number.isSafeInteger(band.widthDots) || band.widthDots <= 0) throw new Error('Raster width must be a positive integer');
   if (!Number.isSafeInteger(band.heightDots) || band.heightDots <= 0) throw new Error('Raster height must be a positive integer');
   if (band.heightDots > maxBandHeight) throw new Error(`Raster band exceeds maximum height of ${maxBandHeight}`);
-  const expectedLength = Math.ceil(band.widthDots / 8) * band.heightDots;
+  const widthBytes = Math.ceil(band.widthDots / 8);
+  if (widthBytes > 0xFFFF) throw new Error('Raster width exceeds GS v 0 limit');
+  const expectedLength = widthBytes * band.heightDots;
   if (band.pixels.length !== band.widthDots * band.heightDots) {
     throw new Error('Raster pixels must contain one value per pixel');
   }

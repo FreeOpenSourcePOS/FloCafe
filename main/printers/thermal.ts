@@ -1140,7 +1140,7 @@ export async function rasterizePrintDocumentForWebUsb(
   },
 ): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[] } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = getPrinterCapabilities(profile);
+  const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const lines = template === 'compact'
     ? renderBillDocumentToCompactLines(document, {
@@ -1180,7 +1180,7 @@ export async function rasterizeKotDocumentForWebUsb(
   },
 ): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[] } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = getPrinterCapabilities(profile);
+  const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const document = renderKotViaDocument(order, items, stationName, {
     ...options,

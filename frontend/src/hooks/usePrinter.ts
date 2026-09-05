@@ -469,23 +469,24 @@ export const usePrinterStore = create<PrinterState>()(
             const { paperWidth } = get();
             const warnings: PrintWarning[] = [];
             const encoderWarnings: PrintWarning[] = [];
+            const webusbPrinter = get().webusbPrinter;
+            const webusbCapabilities = webusbPrinter?.capabilities;
+            const useRaster = rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizeKotDocument), webusbPrinter?.profile_id);
+            let rasterOrder = orderForPrint;
+            if (useRaster && (orderForPrint.table_id || orderForPrint.customer_id)) {
+              const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
+              rasterOrder = orderForPrint.items
+                ? { ...response.data.order, items: orderForPrint.items }
+                : response.data.order;
+            }
             const bytes = buildKotBytes(
-              orderForPrint,
+              rasterOrder,
               { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: get().webusbPrinter?.capabilities },
               encoderWarnings,
             );
-            const webusbPrinter = get().webusbPrinter;
-            const webusbCapabilities = webusbPrinter?.capabilities;
             let output = bytes;
-            if (rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizeKotDocument), webusbPrinter?.profile_id)) {
+            if (useRaster) {
               try {
-                let rasterOrder = orderForPrint;
-                if (orderForPrint.table_id || orderForPrint.customer_id) {
-                  const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
-                  rasterOrder = orderForPrint.items
-                    ? { ...response.data.order, items: orderForPrint.items }
-                    : response.data.order;
-                }
                 const rasterResult = await window.electronAPI.rasterizeKotDocument({
                   document: buildFrontendKotDocument(rasterOrder, {
                     items: rasterOrder.items,

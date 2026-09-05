@@ -484,6 +484,6 @@ export function renderCompactReceiptViaDocument(
     rasterGroups,
     financialLineRanges,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges: opts.capabilities?.raster.enabled === true ? financialLineRanges : undefined }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges }, warnings);
   return { document, lines, data, warnings, rasterGroups };
 }

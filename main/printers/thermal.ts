@@ -2292,7 +2292,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     buf.push(0x0A);
   }
 
-  return financialTextFailure ? Buffer.alloc(0) : Buffer.from(buf);
+  return financialTextFailure && !options.arabicShaping ? Buffer.alloc(0) : Buffer.from(buf);
 }
 
 /** Convert the command subset emitted by buildEscPos() into a paperless text preview. */

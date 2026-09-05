@@ -398,7 +398,10 @@ exit 0
 
   const shardRunStep = linuxTestsJob.steps.find((step: any) => step.name === 'Core test suite (shard ${{ matrix.shard }})');
   assert.ok(shardRunStep, 'linux-tests must define its core test suite step');
-  assert.strictEqual(shardRunStep.run.trim(), 'SHARD_TOTAL=2 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs');
+  assert.strictEqual(
+    shardRunStep.run.trim(),
+    "xvfb-run -a --server-args='-screen 0 1280x800x24' env SHARD_TOTAL=2 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs",
+  );
   assert.ok(
     linuxTestsJob.steps.some((step: any) => step.if === 'matrix.shard == 0'),
     'Payment method split check must run only on shard 0',

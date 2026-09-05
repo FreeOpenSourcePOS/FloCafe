@@ -612,17 +612,15 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
   assert('backend accented item labels are treated as financial content', hasFinancialPrintWarning(accentedWarnings));
 
   const { receiptEncoder, warnings: frontendWarnings } = loadFrontendPrinterModules();
-  const unsupportedTenant = { business_name: 'Cafe', currency: 'XXX', country: 'IN' };
+  const arbitraryCodeTenant = { business_name: 'Cafe', currency: 'XXX', country: 'IN' };
   for (const template of ['classic', 'compact'] as const) {
     for (const paperWidth of [58, 80] as const) {
       const warnings: any[] = [];
       const builder = template === 'classic'
-        ? receiptEncoder.buildClassicReceiptBytes(unsupportedBill as any, unsupportedTenant as any, { paperWidth, languages: ['fa'] as any }, warnings)
-        : receiptEncoder.buildCompactReceiptBytes(unsupportedBill as any, unsupportedTenant as any, { paperWidth, languages: ['fa'] as any }, warnings);
-      assert(`WebUSB ${template}/${paperWidth}mm: financial warning is identified`, frontendWarnings.hasFinancialPrintWarning(warnings));
-      assert(`WebUSB ${template}/${paperWidth}mm: refusal is explicit`, frontendWarnings.makeFinancialPrintRefusalMessage(warnings).includes('Receipt not printed'));
-      assert(`WebUSB ${template}/${paperWidth}mm: unsupported currency is not silently accepted`, warnings.some((warning: any) => warning.kind === 'financial'));
-      assert(`WebUSB ${template}/${paperWidth}mm: builder remains paperless`, builder.length > 0);
+        ? receiptEncoder.buildClassicReceiptBytes(unsupportedBill as any, arbitraryCodeTenant as any, { paperWidth, languages: ['en'] as any }, warnings)
+        : receiptEncoder.buildCompactReceiptBytes(unsupportedBill as any, arbitraryCodeTenant as any, { paperWidth, languages: ['en'] as any }, warnings);
+      assert(`WebUSB ${template}/${paperWidth}mm: arbitrary three-letter currency code is printable`, !frontendWarnings.hasFinancialPrintWarning(warnings));
+      assert(`WebUSB ${template}/${paperWidth}mm: arbitrary currency code is emitted`, Buffer.from(builder).toString().includes('XXX'));
     }
   }
 }

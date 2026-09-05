@@ -16,13 +16,13 @@
  */
 
 import { parseDbTimestamp } from '../db';
-import { getCountryByCode, getCurrencyFractionDigits } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import {
   printLabel,
   isGeneratedPrintLanguage,
-  type PrintConceptId,
 } from '../print/print-labels.generated';
+import type { PrintConceptId } from '../../shared/print/concepts';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
@@ -196,12 +196,16 @@ export function buildBillPrintContext(opts: {
     && opts.additionalLanguage !== lang
     ? [lang, normalizePrintLanguage(opts.additionalLanguage)]
     : [lang];
+  const country = getCountryByCode(String(opts.business?.country ?? ''));
+  const currency = resolveTenantCurrency(opts.business?.currency, opts.business?.country);
+  const locale = country?.locale ?? 'en-US';
   return {
     columns: opts.columns,
     languages,
     baseDirection: detectPrintLanguageDirection(lang),
-    locale: getCountryByCode(String(opts.business?.country ?? ''))?.locale ?? 'en-US',
-    currencySymbol: String(opts.business?.currency_symbol || '₹'),
+    locale,
+    currency,
+    currencySymbol: String(opts.business?.currency_symbol || getCurrencySymbol(currency, locale) || currency),
     trimDecimals: opts.business?.trim_decimals === true,
     ...(opts.business?.timezone ? { timezone: String(opts.business.timezone) } : {}),
     resolveLabel: (conceptId, language) => printLabel(language, conceptId as PrintConceptId),
@@ -220,8 +224,8 @@ export interface ClassicDocumentRenderOptions {
   readonly locale: string;
   readonly timezone?: string;
   /** Currency prefix preference (symbol + unicode mode). */
+  readonly currency: string;
   readonly currencySymbol: string;
-  readonly currency?: string;
   readonly trimDecimals: boolean;
   readonly useUnicode: boolean;
   readonly arabicShaping: boolean;
@@ -830,8 +834,8 @@ export function renderClassicReceiptViaDocument(
     language: printContext.languages[0],
     locale: printContext.locale,
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
+    currency: printContext.currency,
     currencySymbol: printContext.currencySymbol,
-    currency: String(business?.raster_currency || business?.currency || 'INR'),
     trimDecimals: printContext.trimDecimals,
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,

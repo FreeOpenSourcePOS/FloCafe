@@ -62,8 +62,8 @@ export interface CompactDocumentRenderOptions {
   readonly locale: string;
   readonly timezone?: string;
   /** Currency prefix preference (symbol + unicode mode). */
+  readonly currency: string;
   readonly currencySymbol: string;
-  readonly currency?: string;
   readonly trimDecimals: boolean;
   readonly useUnicode: boolean;
   readonly arabicShaping: boolean;
@@ -472,8 +472,8 @@ export function renderCompactReceiptViaDocument(
     language: printContext.languages[0],
     locale: printContext.locale,
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
+    currency: printContext.currency,
     currencySymbol: printContext.currencySymbol,
-    currency: String(business?.raster_currency || business?.currency || 'INR'),
     trimDecimals: printContext.trimDecimals,
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,

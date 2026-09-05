@@ -30,10 +30,21 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const MESSAGES_DIR = path.join(ROOT, 'frontend/src/lib/i18n/messages');
+const LANGUAGE_REGISTRY_FILE = path.join(ROOT, 'frontend/src/lib/i18n/languages.ts');
+const SHARED_CONCEPTS_FILE = path.join(ROOT, 'shared/print/concepts.ts');
 const OUT_FILE = path.join(ROOT, 'main/print/print-labels.generated.ts');
 
-/** Committed languages, in stable generation order (keep in sync with languages.ts). */
-const LANGUAGES = ['en', 'fa', 'es', 'fr', 'pt', 'tr', 'fil', 'de'];
+/** Derive print locales in canonical registry order; translations stay JSON-backed. */
+function readCanonicalLanguages() {
+  const source = fs.readFileSync(LANGUAGE_REGISTRY_FILE, 'utf8');
+  const registry = source.match(/export const LANGUAGES = \{([\s\S]*?)\n\} as const satisfies/);
+  if (!registry) throw new Error('Could not locate the canonical LANGUAGES registry');
+  const languages = [...registry[1].matchAll(/^  ([A-Za-z][A-Za-z0-9_-]*): \{/gm)].map((match) => match[1]);
+  if (languages.length === 0) throw new Error('Canonical LANGUAGES registry is empty');
+  return languages;
+}
+
+const LANGUAGES = readCanonicalLanguages();
 
 
 /**
@@ -117,7 +128,20 @@ const BORROWED_KEYS = [
   'pos.methodWallet',
 ];
 
+function readSharedConcepts() {
+  const source = fs.readFileSync(SHARED_CONCEPTS_FILE, 'utf8');
+  const catalog = source.match(/export const PRINT_CONCEPT_IDS = \[([\s\S]*?)\n\] as const;/);
+  if (!catalog) throw new Error('Could not locate the shared print-concept catalog');
+  const concepts = [...catalog[1].matchAll(/^  '([^']+)',$/gm)].map((match) => match[1]);
+  if (concepts.length === 0) throw new Error('Shared print-concept catalog is empty');
+  return concepts;
+}
+
 const ALL_CONCEPTS = [...PRINT_NAMESPACE_KEYS, ...BORROWED_KEYS];
+const SHARED_CONCEPTS = readSharedConcepts();
+if (JSON.stringify(ALL_CONCEPTS) !== JSON.stringify(SHARED_CONCEPTS)) {
+  throw new Error('Shared print-concept catalog drifted from generator concept order');
+}
 
 function getLeaf(messages, dottedKey) {
   let node = messages;
@@ -153,12 +177,8 @@ function generateTypeScript(tables) {
   lines.push('// Derived view of frontend/src/lib/i18n/messages/*.json for backend thermal');
   lines.push('// printing (#440). Do not edit by hand: regeneration must be byte-identical.');
   lines.push('');
-  lines.push('/** Stable concept identifiers resolvable through printLabel(). */');
-  lines.push('export type PrintConceptId =');
-  for (const key of ALL_CONCEPTS) {
-    lines.push(`  | '${key}'`);
-  }
-  lines.push('  ;');
+  lines.push("import type { PrintConceptId } from '../../shared/print/concepts';");
+  lines.push('export type { PrintConceptId } from \'../../shared/print/concepts\';');
   lines.push('');
   lines.push('export const PRINT_LABEL_LANGUAGES = [');
   for (const lang of LANGUAGES) {
@@ -242,4 +262,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { LANGUAGES, PRINT_NAMESPACE_KEYS, BORROWED_KEYS, ALL_CONCEPTS, OUT_FILE, normalizeEol, regenerate };
+module.exports = { LANGUAGES, PRINT_NAMESPACE_KEYS, BORROWED_KEYS, ALL_CONCEPTS, OUT_FILE, normalizeEol, regenerate, readCanonicalLanguages, readSharedConcepts };

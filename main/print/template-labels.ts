@@ -1,5 +1,5 @@
 import { printLabel } from './print-labels.generated';
-import type { PrintConceptId } from './print-labels.generated';
+import type { PrintConceptId } from '../../shared/print/concepts';
 
 /**
  * Semantic label ids accepted on the optional payload-root `labels` map of

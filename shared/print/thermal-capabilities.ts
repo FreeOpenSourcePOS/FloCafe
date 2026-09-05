@@ -1,3 +1,5 @@
+import { CURRENCY_TOKEN_PATTERN } from './currency';
+
 /**
  * Capability policy shared by the backend ESC/POS and WebUSB encoders.
  * Raster support is additive and remains profile-owned; locale never enables it.
@@ -69,7 +71,7 @@ const CODE_PAGE_CHARACTERS: Record<Exclude<ThermalCodePage, 'ascii'>, string> = 
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
 const SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
-const THERMAL_CURRENCY_TOKEN_RE = /(?:د\.إ|ریال|E£|₹|₨|€|£|¥|₩|₺|₫|₪|₽|฿|₱|₴|₦|₵|₡|₲|﷼|৳)/g;
+const THERMAL_CURRENCY_TOKEN_RE = new RegExp(`(?:${CURRENCY_TOKEN_PATTERN})`, 'g');
 const LATIN_LETTER_RE = /\p{Script=Latin}/u;
 const LETTER_RE = /\p{Letter}/u;
 

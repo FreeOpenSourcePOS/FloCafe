@@ -31,7 +31,7 @@ import { createTranslator } from 'use-intl/core';
 import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { getCountryByCode } from '@countries';
+import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@countries';
 import { resolveTaxComponents } from './tax-components';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 
@@ -265,12 +265,14 @@ export function buildBillPrintContext(opts: {
   trimDecimals?: boolean;
 }): PrintContext {
   const country = getCountryByCode(opts.tenant.country ?? '');
+  const currency = resolveTenantCurrency(opts.tenant.currency, opts.tenant.country);
   return {
     columns: opts.columns ?? 42,
     languages: opts.languages,
     baseDirection: baseDirectionFor(opts.languages),
     locale: LANGUAGES[opts.languages[0] as Language]?.locale ?? country?.locale ?? 'en-US',
-    currencySymbol: String(opts.tenant.currency ?? ''),
+    currency,
+    currencySymbol: getCurrencySymbol(currency, country?.locale ?? 'en-US'),
     trimDecimals: opts.trimDecimals === true,
     ...(opts.tenant.timezone ? { timezone: String(opts.tenant.timezone) } : {}),
     resolveLabel: printLabelResolver,
@@ -358,6 +360,7 @@ export function buildFrontendKotDocument(
     languages,
     baseDirection: baseDirectionFor(languages),
     locale: LANGUAGES[opts.language as Language]?.locale ?? 'en-US',
+    currency: '',
     currencySymbol: '',
     trimDecimals: false,
     ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),

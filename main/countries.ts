@@ -1,4 +1,5 @@
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
+import { isSyntacticallyValidCurrencyCode } from '../shared/print/currency';
 
 export interface TaxIdFormat {
   // JS RegExp source (no slashes/flags) — validated case-insensitively.
@@ -236,16 +237,20 @@ export const getCountryByCode = (code: string): Country | undefined => {
 };
 
 export function resolveTenantCurrency(currency: unknown, countryCode: unknown): string {
-  if (typeof currency === 'string' && /^[A-Z]{3}$/.test(currency)) return currency;
+  if (typeof currency === 'string') {
+    const normalized = currency.trim().toUpperCase();
+    if (isSyntacticallyValidCurrencyCode(normalized)) return normalized;
+  }
   return getCountryByCode(String(countryCode || ''))?.currency || 'INR';
 }
 
 export const getCurrencySymbol = (currency: string, locale = 'en-US'): string => {
   if (!currency) return currency;
   try {
-    return new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+    const symbol = new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
       .formatToParts(0)
-      .find((p) => p.type === 'currency')?.value ?? currency;
+      .find((p) => p.type === 'currency')?.value;
+    return symbol && symbol !== '¤' ? symbol : currency;
   } catch {
     return currency;
   }

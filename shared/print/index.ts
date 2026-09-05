@@ -6,6 +6,8 @@
  * functions only — see shared/print/README.md.
  */
 export * from './types';
+export * from './concepts';
+export * from './currency';
 export * from './policy';
 export * from './direction';
 export * from './bilingual';

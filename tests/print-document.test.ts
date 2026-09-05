@@ -50,6 +50,7 @@ function makeContext(overrides: Partial<PrintContext> = {}): PrintContext {
     languages: ['en'],
     baseDirection: 'ltr',
     locale: 'en-IN',
+    currency: 'INR',
     currencySymbol: '₹',
     trimDecimals: false,
     resolveLabel: stubResolver,
@@ -391,6 +392,7 @@ console.log('\n▶ Backend PrintData normalization (main layer)');
   assert.equal(context.columns, 48);
   assert.deepEqual(context.languages, ['en']);
   assert.equal(context.locale, 'en-IN');
+  assert.equal(context.currency, 'INR');
   assert.equal(context.currencySymbol, '₹');
   assert.equal(context.trimDecimals, false);
   assert.equal(context.baseDirection, 'ltr');

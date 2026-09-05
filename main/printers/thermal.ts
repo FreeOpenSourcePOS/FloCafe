@@ -16,7 +16,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
 import CodepageEncoder from '@point-of-sale/codepage-encoder';
 import { printLabel, isGeneratedPrintLanguage } from '../print/print-labels.generated';
-import type { PrintConceptId } from '../print/print-labels.generated';
+import type { PrintConceptId } from '../../shared/print/concepts';
 import {
   declaredTemplateChargeRows,
   fitTemplateLabel,
@@ -41,6 +41,7 @@ import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippP
 import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled, type RasterSemanticUnit } from '../../shared/print/raster';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
+import { CURRENCY_ASCII_MAP, CURRENCY_TOKEN_PATTERN, normalizeCurrencyToAscii } from '../../shared/print/currency';
 
 export type PrintResult = {
   ok: boolean;
@@ -1077,7 +1078,6 @@ function receiptDocumentLines(
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
   const rasterBiz = {
     ...biz,
-    ...(biz.raster_currency ? { currency: biz.raster_currency, currency_symbol: biz.raster_currency_symbol || biz.currency_symbol } : {}),
     ...(biz.customer_phone ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) } : {}),
   };
   const selection = parseBillTemplateSelection(template);
@@ -2007,7 +2007,15 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     '{CUT}',
   ];
   if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang });
-  const textData = buildEscPos(lines.slice(0, -1), false, { cutMode, language: lang, capabilities });
+  // The diagnostic raster probe is capability-gated independently from text
+  // shaping. Keep the selected profile's shaping fact explicit so a raster
+  // profile cannot accidentally pass unsupported Arabic through the text leg.
+  const textData = buildEscPos(lines.slice(0, -1), false, {
+    cutMode,
+    language: lang,
+    capabilities,
+    arabicShaping: capabilities.shaping.arabic,
+  });
   const rasterData = encodeRasterUnits([{
     unitId: 'diagnostic-test-page',
     financial: false,
@@ -2019,21 +2027,7 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
 
 // Every ASCII fallback is no wider than 3 characters, so currency labels such
 // as USD/EUR/INR have a stable reserved slot in receipt amount columns.
-const CURRENCY_ASCII_MAP: Record<string, string> = {
-  '₹': 'Rs', '₨': 'Rs', '€': 'EUR', '£': 'GBP', '¥': 'Yen',
-  '₩': 'KRW', '₺': 'TRY', '₫': 'VND', '₪': 'ILS', '₽': 'RUB',
-  '฿': 'THB', '₱': 'PHP', '₴': 'UAH', '₦': 'NGN', '₵': 'GHS',
-  '₡': 'CRC', '₲': 'PYG', 'د.إ': 'AED', '﷼': 'SAR', 'ریال': 'IRR', '৳': 'BDT',
-  'E£': 'EGP',
-};
-
-const CURRENCY_TOKEN_RE = new RegExp(
-  Object.keys(CURRENCY_ASCII_MAP)
-    .sort((left, right) => right.length - left.length)
-    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|'),
-  'g',
-);
+const CURRENCY_TOKEN_RE = new RegExp(`(?:${CURRENCY_TOKEN_PATTERN})`, 'g');
 
 const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
 
@@ -2045,12 +2039,6 @@ export function normalizeThermalText(text: string, capabilities: ThermalPrinterC
 export function maskPhoneOnReceipt(phone: string): string {
   if (!phone || phone.length < 4) return phone;
   return 'x'.repeat(phone.length - 4) + phone.slice(-4);
-}
-
-function normalizeCurrencyToAscii(text: string): string {
-  return Object.entries(CURRENCY_ASCII_MAP)
-    .sort(([left], [right]) => right.length - left.length)
-    .reduce((value, [symbol, fallback]) => value.split(symbol).join(fallback), text);
 }
 
 // Resolves the currency symbol into the exact text that will be printed,

@@ -43,10 +43,12 @@ never kernel → registry.
 | File          | Contents |
 | ------------- | -------- |
 | `types.ts`    | `PrintLanguageCode`, policy shapes (`ReceiptLanguagePolicy`, `KotLanguagePolicy`), `DirectionScope`, registry-facts interface |
+| `concepts.ts` | Typed `PrintConceptId` catalog boundary shared by semantic documents and generated locale views |
+| `currency.ts` | Shared ASCII currency fallback tokens and canonical three-letter code validation |
 | `policy.ts`   | Resolution (`resolveReceiptLanguages`, `resolveKotLanguage`) and validation (`parsePrintLanguagePolicy`, `parseKotLanguagePolicy`); max-2 documents enforced at type level for v1 |
 | `direction.ts`| Per-scope direction (`document` / `block` / `value`), LTR-island classification |
 | `bilingual.ts`| `BilingualLabel` + width-fit strategies (`inline` vs `stacked`) parameterized by column count |
-| `document.ts` | Renderer-independent `PrintDocument` v1 / `KotDocument` v1 (#442/#443): receipt and kitchen-ticket block types, `PrintData`/`PrintContext` snapshots, and pure `buildBillDocument` / `buildKotDocument`. Schema and extension policy documented in [docs/printing-architecture.md](../../docs/printing-architecture.md) (#449) |
+| `document.ts` | Renderer-independent `PrintDocument` v1 / `KotDocument` v1 (#442/#443): receipt and kitchen-ticket block types, `PrintData`/`PrintContext` snapshots (including tenant currency), and pure `buildBillDocument` / `buildKotDocument`. Schema and extension policy documented in [docs/printing-architecture.md](../../docs/printing-architecture.md) (#449) |
 
 Consumers: `main/*` imports the relative path `../../shared/print` and gets
 one compiled runtime copy under `dist/shared/print`; `frontend/*` imports

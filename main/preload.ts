@@ -25,6 +25,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
 
+  // Fire-and-forget: reports a caught renderer render exception (see the
+  // dashboard error boundary) to anonymous telemetry via main.
+  reportRendererError: (report: { message?: string; stack?: string; digest?: string; route?: string }) =>
+    ipcRenderer.invoke('report-renderer-error', report),
+
   getStatus: () => ipcRenderer.invoke('get-status'),
 
   windowReady: (payload: { epoch: number }) => ipcRenderer.invoke('window-ready', { ...payload, documentNonce }),

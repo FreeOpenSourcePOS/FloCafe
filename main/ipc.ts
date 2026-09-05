@@ -488,13 +488,13 @@ export function registerIpcHandlers(
     const r = report as { message?: unknown; stack?: unknown; digest?: unknown; route?: unknown } | null;
     const clamp = (value: unknown, max: number): string | undefined =>
       typeof value === 'string' ? value.slice(0, max) : undefined;
-    void sendTelemetryEvent('renderer_error', {
+    const sent = await sendTelemetryEvent('renderer_error', {
       message: clamp(r?.message, 500),
       stack: clamp(r?.stack, 4000),
       digest: clamp(r?.digest, 200),
       route: clamp(r?.route, 200),
     });
-    return { success: true };
+    return { success: sent };
   });
 
   // Printers

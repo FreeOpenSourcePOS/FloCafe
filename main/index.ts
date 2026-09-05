@@ -388,15 +388,30 @@ let runtimeRelaunchRequested = false;
 // (see requestRuntimeRelaunch below). Cleared on the next successful load so
 // a stale error from an earlier, unrelated failure is never reported.
 let lastWindowLoadFailure: { errorCode: number; errorDescription: string; validatedURL?: string } | null = null;
-// Self-healing GPU fallback: a GPU-process crash (child-process-gone with
-// type 'GPU') sets this immediately; repeated renderer crashes of unknown
-// cause also set it as a fallback heuristic, since a bad GPU/driver is the
-// most common reason a renderer keeps dying only inside Electron's bundled
-// Chromium and not in the machine's regular browser. performAppRelaunch()
-// appends --disable-gpu on the next relaunch when this is true.
+// Self-healing GPU fallback: repeated GPU-process crashes (child-process-gone
+// with type 'GPU'), or repeated renderer crashes of unknown cause, set this
+// and actively request a relaunch — a bad GPU/driver is the most common
+// reason a renderer keeps dying only inside Electron's bundled Chromium and
+// not in the machine's regular browser. performAppRelaunch() appends
+// --disable-gpu on that relaunch (and every one after, while the flag or the
+// command-line switch itself is already set) since disabling hardware
+// acceleration is a process-startup decision a running window can't apply.
 let shouldDisableGpuOnRelaunch = false;
 let consecutiveRendererCrashes = 0;
+let consecutiveGpuCrashes = 0;
 const GPU_FALLBACK_CRASH_THRESHOLD = 2;
+// A replacement window's own did-finish-load must not erase the crash count
+// that got it created — that would mean a renderer that crashes, reloads,
+// and crashes again immediately can never reach GPU_FALLBACK_CRASH_THRESHOLD.
+// Only a load that stays up for this long counts as genuine recovery.
+const RENDERER_STABILITY_RESET_MS = 30_000;
+let rendererStabilityResetTimer: NodeJS.Timeout | null = null;
+function clearRendererStabilityResetTimer(): void {
+  if (rendererStabilityResetTimer) {
+    clearTimeout(rendererStabilityResetTimer);
+    rendererStabilityResetTimer = null;
+  }
+}
 const updateShutdownState: UpdateShutdownState = {
   setInstallingUpdate: (value) => { isInstallingUpdate = value; },
   setQuitting: (value) => {
@@ -794,7 +809,12 @@ function createWindow(): void {
   mainWindow.webContents.once('did-finish-load', () => {
     windowLoadRecoveryAttempted = false;
     lastWindowLoadFailure = null;
-    consecutiveRendererCrashes = 0;
+    clearRendererStabilityResetTimer();
+    rendererStabilityResetTimer = setTimeout(() => {
+      rendererStabilityResetTimer = null;
+      consecutiveRendererCrashes = 0;
+      consecutiveGpuCrashes = 0;
+    }, RENDERER_STABILITY_RESET_MS);
   });
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
@@ -802,6 +822,11 @@ function createWindow(): void {
     console.error('[Window] Renderer process gone:', details.reason);
 
     if (details.reason !== 'clean-exit') {
+      // A crash means the window was never actually stable — cancel any
+      // pending reset so this crash still counts toward the threshold below,
+      // even though the replacement window's own did-finish-load already
+      // armed a fresh timer for itself.
+      clearRendererStabilityResetTimer();
       // Best-effort and independent of the recovery dialog below: this is the
       // only signal we get for a hard renderer crash (as opposed to a caught
       // render exception, which reports itself via report-renderer-error), so
@@ -813,6 +838,8 @@ function createWindow(): void {
       });
       if (consecutiveRendererCrashes >= GPU_FALLBACK_CRASH_THRESHOLD) {
         shouldDisableGpuOnRelaunch = true;
+        log.error('[Window] Repeated renderer crashes — requesting relaunch with hardware acceleration disabled.');
+        requestRuntimeRelaunchOnce('renderer-repeated-crash-gpu-fallback');
       }
     }
 
@@ -957,9 +984,19 @@ function registerChildProcessCrashTelemetry(): void {
       exitCode: details.exitCode,
       serviceName: details.serviceName,
     });
-    if (details.type === 'GPU' && !shouldDisableGpuOnRelaunch) {
-      log.error('[Process] GPU process crashed — will relaunch with hardware acceleration disabled if this recurs.');
-      shouldDisableGpuOnRelaunch = true;
+    if (details.type === 'GPU') {
+      // Cancel any pending stability reset — a GPU crash means the current
+      // window's graphics pipeline was not actually stable, even if the
+      // renderer itself never reported render-process-gone.
+      clearRendererStabilityResetTimer();
+      consecutiveGpuCrashes++;
+      if (consecutiveGpuCrashes >= GPU_FALLBACK_CRASH_THRESHOLD) {
+        shouldDisableGpuOnRelaunch = true;
+        log.error('[Process] Repeated GPU process crashes — requesting relaunch with hardware acceleration disabled.');
+        requestRuntimeRelaunchOnce('gpu-process-repeated-crash');
+      } else {
+        log.error('[Process] GPU process crashed — will relaunch with hardware acceleration disabled if this recurs.');
+      }
     }
   });
 }

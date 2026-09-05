@@ -18,6 +18,10 @@ function syncTenantLanguage(t: Tenant | null | undefined) {
   }
 }
 
+function clearBillTemplateProvenance(): void {
+  usePosSettingsStore.getState().setBillTemplateSource?.(null);
+}
+
 interface AuthState {
   user: User | null;
   token: string | null;
@@ -79,6 +83,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: async (email: string, password: string, rememberMe = false) => {
     const operation = ++authOperation;
+    clearBillTemplateProvenance();
     const { data } = await api.post('/auth/login', { email, password, rememberMe });
     if (operation !== authOperation) return;
     const tenants: Tenant[] = data.tenants;
@@ -100,6 +105,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   selectTenant: async (tenantId: number) => {
     const operation = ++authOperation;
+    clearBillTemplateProvenance();
     const { data } = await api.post('/auth/tenants/select', { tenant_id: tenantId });
     if (operation !== authOperation) return;
     persistSession(data.access_token, data.tenant);
@@ -115,6 +121,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     ++authOperation;
+    clearBillTemplateProvenance();
     api.post('/auth/logout').catch(() => {});
     localStorage.removeItem('token');
     localStorage.removeItem('tenant');
@@ -132,6 +139,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   loadFromStorage: async () => {
     const operation = ++authOperation;
+    clearBillTemplateProvenance();
     if (typeof window === 'undefined') {
       set({ loading: false, printLanguageLoadErrors: [] });
       return;

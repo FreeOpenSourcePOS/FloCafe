@@ -281,9 +281,13 @@ export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: n
   const childScopedItems = billId === undefined
     ? projectedItems
     : applyPersistedChildTaxBreakdowns(projectedItems, itemRows, persistedTaxBreakdown, minorFactor);
+  const table = order.table_id
+    ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
+    : null;
   return {
     ...order,
     items: attachEffectiveAddons(db, childScopedItems.map(parseItemJson)),
+    ...(table ? { table: { name: table.number } } : {}),
   };
 }
 

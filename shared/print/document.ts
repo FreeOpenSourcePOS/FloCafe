@@ -221,9 +221,9 @@ export interface PrintContext {
   readonly baseDirection: TextDirection;
   /** BCP-47 locale used for date/number formatting (e.g. `en-IN`). */
   readonly locale: string;
-  /** Canonical three-letter tenant currency code used for formatting. */
+  /** Canonical three-letter tenant currency code used for formatting. KOT rendering does not read this field. */
   readonly currency: string;
-  /** Currency symbol as configured for the business. */
+  /** Currency symbol as configured for the business. KOT rendering does not read this field. */
   readonly currencySymbol: string;
   /** Whether trailing `.00` decimals are trimmed on amounts. */
   readonly trimDecimals: boolean;

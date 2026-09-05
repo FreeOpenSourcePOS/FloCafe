@@ -222,7 +222,9 @@ function resolveEncoderCurrency(rawCurrency: string, currencyCode: string, useUn
   // behavior for every other currency value.
   const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
   const asciiFallback = normalizeCurrencyToAscii(normalizedCurrency);
-  const fallbackCurrency = /^[\x00-\x7F]+$/.test(asciiFallback) ? asciiFallback : currencyCode;
+  const fallbackCurrency = normalizedCurrency === '¥' && currencyCode !== 'JPY'
+    ? currencyCode
+    : /^[\x00-\x7F]+$/.test(asciiFallback) ? asciiFallback : currencyCode;
   if (capabilities) {
     const normalizedForCapabilities = normalizeThermalText(normalizedCurrency, capabilities);
     return padCurrencyPrefix(

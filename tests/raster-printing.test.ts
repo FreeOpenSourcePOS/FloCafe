@@ -110,7 +110,7 @@ async function run(): Promise<void> {
     order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', items: [] },
     bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
     business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
   assert.equal(isPrintDocument(printDocument), true);
   assert.equal(isPrintDocument({ ...printDocument, blocks: printDocument.blocks.slice(0, -1) }), false);
   assert.equal(isPrintDocument({ ...printDocument, blocks: [...printDocument.blocks, printDocument.blocks[0]] }), false);
@@ -121,7 +121,7 @@ async function run(): Promise<void> {
     order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', items: [{ productName: 'فارسی محصول', quantity: 1, unitPrice: 1, total: 1, addons: [{ name: longAddon, price: 1, quantity: 1 }], specialInstructions: longInstruction }] },
     bill: { billNumber: '', subtotal: 1, discountAmount: 0, taxAmount: 0, total: 1, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
     business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
   const sourceGroups: any[] = [];
   const sourceLines = renderBillDocumentToClassicLines(sourceDocument, {
     columns: 42,
@@ -153,7 +153,7 @@ async function run(): Promise<void> {
     order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: 'کافه', externalOrderId: 'K-7', items: [] },
     bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
     business: { name: 'فروشگاه فارسی', address: 'آدرس فارسی', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: 'پیام فارسی', customerName: '', customerPhone: '', showName: true, showAddress: true, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
   const compactGroups: any[] = [];
   renderBillDocumentToCompactLines(compactDocument, {
     columns: 42,
@@ -339,6 +339,7 @@ async function run(): Promise<void> {
     languages: ['fa'],
     baseDirection: 'rtl',
     locale: 'fa-IR',
+    currency: '',
     currencySymbol: '',
     trimDecimals: false,
     resolveLabel: (conceptId) => conceptId,
@@ -697,6 +698,7 @@ async function run(): Promise<void> {
     languages: ['fa'],
     baseDirection: 'rtl',
     locale: 'fa-IR',
+    currency: '',
     currencySymbol: '',
     trimDecimals: false,
     resolveLabel: (conceptId) => conceptId === 'pos.orderNumber' ? 'Order #: {number}' : conceptId,

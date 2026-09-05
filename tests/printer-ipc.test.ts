@@ -136,12 +136,12 @@ async function run(): Promise<void> {
       order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', items: [] },
       bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
       business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-    }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId: string) => conceptId });
+    }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId: string) => conceptId });
     const kotDocument = buildKotDocument({
       stationName: 'Kitchen',
       order: { orderNumber: 'K-1', createdAt: '', tableName: '', orderType: '' },
       items: [],
-    }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '', trimDecimals: false, resolveLabel: (conceptId: string) => conceptId });
+    }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: '', currencySymbol: '', trimDecimals: false, resolveLabel: (conceptId: string) => conceptId });
     const rasterPrint = registered.get('rasterize-print-document');
     const rasterKot = registered.get('rasterize-kot-document');
     assert.deepEqual(await rasterPrint!(trustedSender, {

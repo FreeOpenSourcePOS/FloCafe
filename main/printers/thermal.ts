@@ -6,7 +6,7 @@ import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, getPrinterCapabilities, SupportedPrinterProfile } from './profiles';
-import { getCountryByCode, getCurrencyFractionDigits, resolveTenantCurrency } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
 import { renderMerchantReceiptViaDocument } from './document-merchant';
@@ -1429,10 +1429,10 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const currency = resolveTenantCurrency(biz.currency, biz.country);
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode, capabilities, false, currency);
   const fractionDigits = getCurrencyFractionDigits(currency);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
+  const prefix = resolveCurrencyPrefix(biz.currency_symbol || getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
   const normalize = (text: string): string => normalizeThermalText(text, capabilities);
   const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
@@ -2059,13 +2059,16 @@ export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capab
     ? normalizeThermalTextByCapabilities(normalizedSymbol, capabilities)
     : normalizedSymbol;
   const fallbackCurrency = currencyCode || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs';
+  const mappedFallback = normalizedSymbol === '¥' && currencyCode && currencyCode !== 'JPY'
+    ? fallbackCurrency
+    : (CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency);
   const rawPrefix = capabilities
     ? (selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
       ? normalizedForCapabilities
-      : (CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency))
+      : mappedFallback)
     : (useUnicode || isAsciiSafe)
       ? normalizedSymbol
-      : (CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency);
+      : mappedFallback;
   const prefix = rawPrefix;
   return prefix.length >= 3 ? prefix : ' '.repeat(3 - prefix.length) + prefix;
 }

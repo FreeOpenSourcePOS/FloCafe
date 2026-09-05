@@ -584,7 +584,8 @@ name, but not every omitted update is automatically detected.
 2. Register the concept id in [`scripts/generate-print-labels.cjs`](../scripts/generate-print-labels.cjs):
    append to `PRINT_NAMESPACE_KEYS` (new `print.*` key) or `BORROWED_KEYS`
    (existing key reused verbatim — prefer this when the UI already has the
-   string).
+   string). Add the same concept to [`shared/print/concepts.ts`](../shared/print/concepts.ts)
+   in the matching `ALL_CONCEPTS` order.
 3. Run `npm run generate:print-labels` and commit the regenerated
    [`main/print/print-labels.generated.ts`](../main/print/print-labels.generated.ts) together with the message edits.
    Builds never regenerate tracked sources; drift fails `npm run i18n:check`.

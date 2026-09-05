@@ -448,6 +448,8 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       phone: settings.business_phone || '',
       taxRegistrationNumber: settings.tax_registration_number || '',
       currency,
+      // Derive from the resolved currency before the stored symbol: legacy settings
+      // can retain a stale symbol after a currency change (issue #266).
       currency_symbol: getCurrencySymbol(currency, getCountryByCode(country)?.locale) || settings.currency_symbol || currency,
       country,
       instagram_handle: settings.instagram_handle || '',

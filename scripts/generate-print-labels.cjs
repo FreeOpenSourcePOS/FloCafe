@@ -27,6 +27,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const ts = require('typescript');
 
 const ROOT = path.join(__dirname, '..');
 const MESSAGES_DIR = path.join(ROOT, 'frontend/src/lib/i18n/messages');
@@ -34,12 +35,34 @@ const LANGUAGE_REGISTRY_FILE = path.join(ROOT, 'frontend/src/lib/i18n/languages.
 const SHARED_CONCEPTS_FILE = path.join(ROOT, 'shared/print/concepts.ts');
 const OUT_FILE = path.join(ROOT, 'main/print/print-labels.generated.ts');
 
+/** Find a top-level const initializer without depending on source formatting. */
+function readConstInitializer(filePath, name) {
+  const source = fs.readFileSync(filePath, 'utf8');
+  const file = ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  for (const statement of file.statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.name.text === name && declaration.initializer) {
+        let initializer = declaration.initializer;
+        while (ts.isAsExpression(initializer) || ts.isSatisfiesExpression(initializer) || ts.isParenthesizedExpression(initializer)) {
+          initializer = initializer.expression;
+        }
+        return initializer;
+      }
+    }
+  }
+  throw new Error(`Could not locate ${name} in ${filePath}`);
+}
+
 /** Derive print locales in canonical registry order; translations stay JSON-backed. */
 function readCanonicalLanguages() {
-  const source = fs.readFileSync(LANGUAGE_REGISTRY_FILE, 'utf8');
-  const registry = source.match(/export const LANGUAGES = \{([\s\S]*?)\n\} as const satisfies/);
-  if (!registry) throw new Error('Could not locate the canonical LANGUAGES registry');
-  const languages = [...registry[1].matchAll(/^  ([A-Za-z][A-Za-z0-9_-]*): \{/gm)].map((match) => match[1]);
+  const initializer = readConstInitializer(LANGUAGE_REGISTRY_FILE, 'LANGUAGES');
+  if (!ts.isObjectLiteralExpression(initializer)) throw new Error('Canonical LANGUAGES registry must be an object');
+  const languages = initializer.properties
+    .filter((property) => ts.isPropertyAssignment(property))
+    .map((property) => property.name)
+    .filter((name) => name && (ts.isIdentifier(name) || ts.isStringLiteral(name)))
+    .map((name) => name.text);
   if (languages.length === 0) throw new Error('Canonical LANGUAGES registry is empty');
   return languages;
 }
@@ -129,10 +152,11 @@ const BORROWED_KEYS = [
 ];
 
 function readSharedConcepts() {
-  const source = fs.readFileSync(SHARED_CONCEPTS_FILE, 'utf8');
-  const catalog = source.match(/export const PRINT_CONCEPT_IDS = \[([\s\S]*?)\n\] as const;/);
-  if (!catalog) throw new Error('Could not locate the shared print-concept catalog');
-  const concepts = [...catalog[1].matchAll(/^  '([^']+)',$/gm)].map((match) => match[1]);
+  const initializer = readConstInitializer(SHARED_CONCEPTS_FILE, 'PRINT_CONCEPT_IDS');
+  if (!ts.isArrayLiteralExpression(initializer)) throw new Error('Shared print-concept catalog must be an array');
+  const concepts = initializer.elements
+    .filter((element) => ts.isStringLiteral(element))
+    .map((element) => element.text);
   if (concepts.length === 0) throw new Error('Shared print-concept catalog is empty');
   return concepts;
 }

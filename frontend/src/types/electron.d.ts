@@ -34,6 +34,11 @@ export interface ElectronAPI {
   // App info
   getAppInfo: () => Promise<ElectronAppInfo | ElectronIpcError>;
 
+  // Diagnostics: reports a caught renderer render exception (see the
+  // dashboard error boundary) to anonymous telemetry via main. Best-effort —
+  // failures are swallowed by the caller.
+  reportRendererError?: (report: { message?: string; stack?: string; digest?: string; route?: string }) => Promise<ElectronActionResult>;
+
   // Printers
   getPrinters: () => Promise<ElectronPrinter[] | ElectronIpcError>;
   savePrinter: (printer: ElectronPrinterInput) => Promise<ElectronActionResult | ElectronIpcError>;

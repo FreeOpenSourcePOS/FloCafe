@@ -384,6 +384,19 @@ let activationPending = false;
 let windowLoadRecoveryAttempted = false;
 let windowRecoveryInProgress = false;
 let runtimeRelaunchRequested = false;
+// Last did-fail-load detail captured for the runtime-stuck diagnostic dialog
+// (see requestRuntimeRelaunch below). Cleared on the next successful load so
+// a stale error from an earlier, unrelated failure is never reported.
+let lastWindowLoadFailure: { errorCode: number; errorDescription: string; validatedURL?: string } | null = null;
+// Self-healing GPU fallback: a GPU-process crash (child-process-gone with
+// type 'GPU') sets this immediately; repeated renderer crashes of unknown
+// cause also set it as a fallback heuristic, since a bad GPU/driver is the
+// most common reason a renderer keeps dying only inside Electron's bundled
+// Chromium and not in the machine's regular browser. performAppRelaunch()
+// appends --disable-gpu on the next relaunch when this is true.
+let shouldDisableGpuOnRelaunch = false;
+let consecutiveRendererCrashes = 0;
+const GPU_FALLBACK_CRASH_THRESHOLD = 2;
 const updateShutdownState: UpdateShutdownState = {
   setInstallingUpdate: (value) => { isInstallingUpdate = value; },
   setQuitting: (value) => {
@@ -472,6 +485,11 @@ function hasAlreadyAttemptedRuntimeRelaunch(): boolean {
 const relaunchAttemptGuard = createRelaunchAttemptGuard(hasAlreadyAttemptedRuntimeRelaunch());
 
 function performAppRelaunch(): void {
+  // Self-healing GPU fallback (see shouldDisableGpuOnRelaunch): once armed,
+  // every subsequent relaunch keeps --disable-gpu, including across the
+  // process-restart boundary, since app.commandLine.hasSwitch('disable-gpu')
+  // below reads it back from this process's own argv.
+  const wantsGpuDisabled = shouldDisableGpuOnRelaunch || app.commandLine.hasSwitch('disable-gpu');
   if (process.defaultApp || !app.isPackaged) {
     const relaunchArgs = process.argv.slice(1).map((arg) => (arg === '.' ? process.cwd() : arg));
     // Playwright applies Chromium switches through app.commandLine, and its
@@ -481,7 +499,7 @@ function performAppRelaunch(): void {
     if (app.commandLine.hasSwitch('no-sandbox') && !relaunchArgs.includes('--no-sandbox')) {
       relaunchArgs.push('--no-sandbox');
     }
-    if (app.commandLine.hasSwitch('disable-gpu') && !relaunchArgs.includes('--disable-gpu')) {
+    if (wantsGpuDisabled && !relaunchArgs.includes('--disable-gpu')) {
       relaunchArgs.push('--disable-gpu');
     }
     if (app.commandLine.hasSwitch('disable-dev-shm-usage') && !relaunchArgs.includes('--disable-dev-shm-usage')) {
@@ -491,9 +509,68 @@ function performAppRelaunch(): void {
     app.relaunch({ execPath: process.execPath, args: relaunchArgs });
   } else {
     const relaunchArgs = process.argv.slice(1);
+    if (wantsGpuDisabled && !relaunchArgs.includes('--disable-gpu')) {
+      relaunchArgs.push('--disable-gpu');
+    }
     if (!relaunchArgs.includes(RUNTIME_RELAUNCH_ATTEMPT_FLAG)) relaunchArgs.push(RUNTIME_RELAUNCH_ATTEMPT_FLAG);
     app.relaunch({ args: relaunchArgs });
   }
+}
+
+/**
+ * Last-resort dialog shown when the runtime has already relaunched once
+ * across process restarts and failed again (see hasAlreadyAttemptedRuntimeRelaunch).
+ * Explains what happened in plain language and offers to send the details
+ * that would otherwise only live in the local log file, via the same
+ * anonymous telemetry channel already used for startup failures.
+ */
+async function showRuntimeStuckDialog(reason: string): Promise<void> {
+  const services = getRuntimeServices();
+  const detailLines = [
+    `Reason: ${reason}`,
+    `Server: ${services.main ? 'running' : 'stopped'} | KDS: ${services.kds ? 'running' : 'stopped'} | Server App: ${services.serverApp ? 'running' : 'stopped'}`,
+  ];
+  if (lastWindowLoadFailure) {
+    detailLines.push(
+      `Load error: ${lastWindowLoadFailure.errorDescription} (${lastWindowLoadFailure.errorCode})`,
+      `URL: ${lastWindowLoadFailure.validatedURL ?? `http://localhost:${getServerPort()}`}`,
+    );
+  }
+  detailLines.push(`Platform: ${process.platform} | Flo: ${app.getVersion()}`);
+
+  const { response } = await dialog.showMessageBox({
+    type: 'error',
+    title: 'Flo needs to restart',
+    message: 'Flo could not recover automatically. This usually means another program '
+      + '(antivirus, firewall, or a leftover Flo process) is blocking its local server.\n\n'
+      + 'Please quit and reopen the app. If this keeps happening, sending a diagnostic '
+      + 'report helps us fix it — it contains no order, customer, or business data.',
+    detail: detailLines.join('\n'),
+    buttons: ['Send Diagnostic Report', 'Quit'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+
+  if (response !== 0) return;
+
+  const sent = await sendTelemetryEvent('runtime_relaunch_exhausted', {
+    reason,
+    services,
+    errorCode: lastWindowLoadFailure?.errorCode,
+    errorDescription: lastWindowLoadFailure?.errorDescription,
+    validatedURL: lastWindowLoadFailure?.validatedURL,
+  }).catch(() => false);
+
+  await dialog.showMessageBox({
+    type: sent ? 'info' : 'warning',
+    title: 'Flo',
+    message: sent
+      ? 'Diagnostic report sent. Thank you.'
+      : 'Could not send the diagnostic report (diagnostics may be disabled in '
+        + 'Settings > Privacy, or there is no internet connection).',
+    buttons: ['Quit'],
+  });
 }
 
 function requestRuntimeRelaunch(reason: string): void {
@@ -506,17 +583,23 @@ function requestRuntimeRelaunch(reason: string): void {
   const alreadyAttempted = relaunchAttemptGuard.hasExhaustedAttempt();
 
   const finishRelaunch = (): void => {
+    if (alreadyAttempted) {
+      log.error(`[Lifecycle] Runtime already relaunched once and failed again (${reason}); not relaunching again.`);
+      void showRuntimeStuckDialog(reason)
+        .catch((error) => log.error('[Lifecycle] Runtime-stuck dialog failed:', error))
+        .finally(() => {
+          try {
+            app.exit(0);
+          } catch (error) {
+            log.error('[Lifecycle] Exit after runtime-stuck dialog failed:', error);
+            app.exit(1);
+          }
+        });
+      return;
+    }
     try {
-      if (alreadyAttempted) {
-        log.error(`[Lifecycle] Runtime already relaunched once and failed again (${reason}); not relaunching again.`);
-        dialog.showErrorBox(
-          'Flo needs to restart',
-          'Flo could not recover automatically. Please quit and reopen the app.',
-        );
-      } else {
-        log.info('[Lifecycle] Runtime cleanup finished; relaunching Flo');
-        performAppRelaunch();
-      }
+      log.info('[Lifecycle] Runtime cleanup finished; relaunching Flo');
+      performAppRelaunch();
       app.exit(0);
     } catch (error) {
       log.error('[Lifecycle] Runtime relaunch failed after cleanup:', error);
@@ -710,12 +793,29 @@ function createWindow(): void {
 
   mainWindow.webContents.once('did-finish-load', () => {
     windowLoadRecoveryAttempted = false;
+    lastWindowLoadFailure = null;
+    consecutiveRendererCrashes = 0;
   });
 
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     log.error('[Window] Renderer process gone:', details.reason);
     console.error('[Window] Renderer process gone:', details.reason);
-    
+
+    if (details.reason !== 'clean-exit') {
+      // Best-effort and independent of the recovery dialog below: this is the
+      // only signal we get for a hard renderer crash (as opposed to a caught
+      // render exception, which reports itself via report-renderer-error), so
+      // it must not depend on the user dismissing anything first.
+      void sendTelemetryEvent('renderer_process_gone', {
+        reason: details.reason,
+        exitCode: details.exitCode,
+        consecutiveCrashCount: ++consecutiveRendererCrashes,
+      });
+      if (consecutiveRendererCrashes >= GPU_FALLBACK_CRASH_THRESHOLD) {
+        shouldDisableGpuOnRelaunch = true;
+      }
+    }
+
     if (details.reason !== 'clean-exit' && mainWindow === createdWindow) {
       dialog.showMessageBox({
         type: 'error',
@@ -746,6 +846,7 @@ function createWindow(): void {
     log,
     onRetryExhausted: ({ errorCode, errorDescription, validatedURL, retries }) => {
       log.error('[Window] Load retry exhaustion:', errorCode, errorDescription, validatedURL, `retries=${retries}`);
+      lastWindowLoadFailure = { errorCode, errorDescription, validatedURL };
       recoverFailedWindow(createdWindow);
     },
   });
@@ -837,6 +938,29 @@ function registerPowerMonitorRecovery(): void {
       mainWindow.setSize(width + 1, height);
       mainWindow.setSize(width, height);
     }, 1000);
+  });
+}
+
+// Registered once at startup. A GPU-process crash never fires webContents'
+// render-process-gone (that's the renderer, a separate process) — this is
+// the only way to see it at all, and a bad GPU driver is a common cause of
+// "the app crashes on this Windows machine but the same page is fine in a
+// regular browser" reports, since the browser's own GPU/driver workarounds
+// don't apply to Electron's bundled, independently-versioned Chromium.
+function registerChildProcessCrashTelemetry(): void {
+  app.on('child-process-gone', (_event, details) => {
+    log.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
+    console.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
+    void sendTelemetryEvent('child_process_gone', {
+      type: details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      serviceName: details.serviceName,
+    });
+    if (details.type === 'GPU' && !shouldDisableGpuOnRelaunch) {
+      log.error('[Process] GPU process crashed — will relaunch with hardware acceleration disabled if this recurs.');
+      shouldDisableGpuOnRelaunch = true;
+    }
   });
 }
 
@@ -1283,6 +1407,7 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Creating window...');
     createWindow();
     registerPowerMonitorRecovery();
+    registerChildProcessCrashTelemetry();
     createTray();
     createMenu();
     // Auto-updater: wired up on every non-store platform, including Linux now
@@ -1460,9 +1585,19 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
 process.on('uncaughtException', (error) => {
   log.error('[Flo] Uncaught exception:', error);
   console.error('[Flo] Uncaught exception:', error);
+  void sendTelemetryEvent('main_uncaught_exception', {
+    message: error?.message?.slice(0, 500),
+    stack: error?.stack?.slice(0, 4000),
+  });
 });
 
 process.on('unhandledRejection', (reason) => {
   log.error('[Flo] Unhandled rejection:', reason);
   console.error('[Flo] Unhandled rejection:', reason);
+  const message = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : undefined;
+  void sendTelemetryEvent('main_unhandled_rejection', {
+    message: message?.slice(0, 500),
+    stack: stack?.slice(0, 4000),
+  });
 });

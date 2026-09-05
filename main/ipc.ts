@@ -21,6 +21,7 @@ import { getTenantCurrency } from './services/refund';
 import { getCurrencyMinorUnitFactor } from './countries';
 import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from './printers/thermal';
 import { isKotDocument, isPrintDocument } from '../shared/print/document';
+import { sendEvent as sendTelemetryEvent } from './services/telemetry';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -478,6 +479,22 @@ export function registerIpcHandlers(
       node: process.versions.node,
       platform: process.platform,
     };
+  });
+
+  // Reports a caught renderer-side render exception (see the dashboard error
+  // boundary) via the existing anonymous telemetry channel — sendEvent
+  // already respects the telemetry_enabled setting and never throws.
+  handle('report-renderer-error', async (event, report: unknown) => {
+    const r = report as { message?: unknown; stack?: unknown; digest?: unknown; route?: unknown } | null;
+    const clamp = (value: unknown, max: number): string | undefined =>
+      typeof value === 'string' ? value.slice(0, max) : undefined;
+    void sendTelemetryEvent('renderer_error', {
+      message: clamp(r?.message, 500),
+      stack: clamp(r?.stack, 4000),
+      digest: clamp(r?.digest, 200),
+      route: clamp(r?.route, 200),
+    });
+    return { success: true };
   });
 
   // Printers

@@ -908,18 +908,15 @@ async function run(): Promise<void> {
     render: async () => ({ version: 1 as const, requestId: 'failed', ok: false as const, code: 'font-unavailable' as const, detail: 'missing' }),
   }, ['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], caps, 'failed', [{ groupId: 'customer', lineIndex: 0, lineCount: 2 }]);
   assert.equal(failedGroup.failures[0]?.lineCount, 2);
-  const suppressed = buildEscPos(['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], false, {
-    capabilities: caps,
-    rasterFailures: failedGroup.failures,
-  });
-  assert.equal(suppressed.includes(0x35), false);
+  const nativeFallback = buildEscPos(['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], false, { capabilities: caps });
+  assert.equal(escPosToText(nativeFallback).includes('555-0100'), true);
   const refusedFailedGroup = buildEscPos(['{FINANCIAL}فارسی', '555-0100'], false, {
     capabilities: caps,
     rasterFailures: [{ lineIndex: 0, lineCount: 2, financial: true }],
   });
   assert.equal(refusedFailedGroup.length, 0);
   const encodeFailureWarnings: any[] = [];
-  const encodeFailure = buildEscPos(['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], false, {
+  buildEscPos(['{CENTER}فارسی{/CENTER}', '{CENTER}555-0100{/CENTER}'], false, {
     capabilities: caps,
     rasterUnits: [{
       lineIndex: 0,
@@ -928,7 +925,10 @@ async function run(): Promise<void> {
     }],
   }, encodeFailureWarnings);
   assert.equal(encodeFailureWarnings.some((warning) => warning.kind === 'line'), true);
-  assert.equal(escPosToText(encodeFailure).includes('555-0100'), false);
+  const shapedFinancialWarnings: any[] = [];
+  const shapedFinancial = buildEscPos(['{FINANCIAL}税 10'], false, { capabilities: caps, arabicShaping: true }, shapedFinancialWarnings);
+  assert.equal(shapedFinancial.length, 0);
+  assert.equal(shapedFinancialWarnings.some((warning) => warning.kind === 'financial'), true);
 
   const request = {
     version: 1 as const,

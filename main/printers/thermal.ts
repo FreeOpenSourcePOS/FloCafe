@@ -1192,7 +1192,7 @@ export async function rasterizePrintDocumentForWebUsb(
     arabicShaping: boolean;
     timezone?: string;
   },
-): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
   const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
@@ -1223,7 +1223,7 @@ export async function rasterizePrintDocumentForWebUsb(
   if (hasFinancialPrintWarning(result.warnings)) {
     return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
   }
-  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected };
+  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected, rasterFailed: result.rasterFailed };
 }
 
 export async function rasterizeKotDocumentForWebUsb(
@@ -1237,7 +1237,7 @@ export async function rasterizeKotDocumentForWebUsb(
     useUnicode: boolean;
     arabicShaping: boolean;
   },
-): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
   const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
@@ -1257,7 +1257,7 @@ export async function rasterizeKotDocumentForWebUsb(
   if (hasFinancialPrintWarning(result.warnings)) {
     return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
   }
-  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected };
+  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected, rasterFailed: result.rasterFailed };
 }
 
 async function rasterizeReceiptIfEnabled(
@@ -2292,7 +2292,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     buf.push(0x0A);
   }
 
-  return financialTextFailure && !options.arabicShaping ? Buffer.alloc(0) : Buffer.from(buf);
+  return financialTextFailure ? Buffer.alloc(0) : Buffer.from(buf);
 }
 
 /** Convert the command subset emitted by buildEscPos() into a paperless text preview. */

@@ -41,6 +41,7 @@ export interface ElectronAPI {
     ok: boolean;
     data?: Uint8Array;
     rasterSelected?: boolean;
+    rasterFailed?: boolean;
     warnings?: Array<{ field: string; text: string; message: string; kind?: string }>;
     error?: string;
   }>;
@@ -48,6 +49,7 @@ export interface ElectronAPI {
     ok: boolean;
     data?: Uint8Array;
     rasterSelected?: boolean;
+    rasterFailed?: boolean;
     warnings?: Array<{ field: string; text: string; message: string; kind?: string }>;
     error?: string;
   }>;

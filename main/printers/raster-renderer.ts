@@ -340,7 +340,11 @@ interface RasterPhysicalSourceLine {
 
 function mapPhysicalSourceLines(group: RasterSemanticLineGroupWithLines): RasterPhysicalSourceLine[] | null {
   if (!group.sourceLines) {
-    return [{ lineIndex: group.lineIndex, lineCount: group.lineCount, controlLine: group.lines[0] ?? '' }];
+    return Array.from({ length: group.lineCount }, (_, offset) => ({
+      lineIndex: group.lineIndex + offset,
+      lineCount: 1,
+      controlLine: group.lines[offset] ?? '',
+    }));
   }
   const controlLines = group.sourceControlLines;
   if (!controlLines) {

@@ -35,6 +35,12 @@ import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/li
 
 type CoreBillTemplate = 'classic' | 'compact';
 
+function nativeFallbackCapabilities(capabilities?: ThermalPrinterCapabilities): ThermalPrinterCapabilities | undefined {
+  return capabilities?.raster.enabled === true
+    ? { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
+    : capabilities;
+}
+
 function makeRasterFallbackWarning(detail: unknown): PrintWarning {
   const message = detail instanceof Error
     ? detail.message
@@ -259,7 +265,7 @@ export const usePrinterStore = create<PrinterState>()(
             isReprint,
             trimDecimals: printerTrimDecimals,
             languages,
-            capabilities: get().webusbPrinter?.capabilities,
+            capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities),
           };
 
           let bytes: Uint8Array;
@@ -414,7 +420,7 @@ export const usePrinterStore = create<PrinterState>()(
             trimDecimals: printerTrimDecimals,
             rawEscPos: true,
             language: languages[0],
-            capabilities: get().webusbPrinter?.capabilities,
+            capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities),
           }, warnings);
           if (hasFinancialPrintWarning(warnings)) {
             const refusal = makeFinancialPrintRefusalMessage(warnings);
@@ -487,7 +493,7 @@ export const usePrinterStore = create<PrinterState>()(
             }
             const bytes = buildKotBytes(
               rasterOrder,
-              { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: get().webusbPrinter?.capabilities },
+              { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities) },
               encoderWarnings,
             );
             let output = bytes;

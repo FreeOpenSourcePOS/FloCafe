@@ -502,6 +502,7 @@ export function renderBillDocumentToClassicLines(
           }
         }
         segment.main.push(dash);
+        segment.sourceLines.main.push(dash);
         segment.sourceControlLines.main.push(dash);
         break;
       }

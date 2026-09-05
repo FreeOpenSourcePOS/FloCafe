@@ -331,6 +331,44 @@ interface RasterSemanticLineGroupWithLines extends RasterSemanticLineGroup {
   readonly lines: readonly string[];
 }
 
+interface RasterPhysicalSourceLine {
+  readonly lineIndex: number;
+  readonly lineCount: number;
+  readonly sourceIndex?: number;
+  readonly controlLine: string;
+}
+
+function mapPhysicalSourceLines(group: RasterSemanticLineGroupWithLines): RasterPhysicalSourceLine[] | null {
+  if (!group.sourceLines) {
+    return [{ lineIndex: group.lineIndex, lineCount: group.lineCount, controlLine: group.lines[0] ?? '' }];
+  }
+  const controlLines = group.sourceControlLines;
+  if (!controlLines) {
+    return group.sourceLines.length === group.lineCount
+      ? group.sourceLines.map((_, sourceIndex) => ({ lineIndex: group.lineIndex + sourceIndex, lineCount: 1, sourceIndex, controlLine: group.lines[sourceIndex] ?? '' }))
+      : null;
+  }
+  if (controlLines.length !== group.sourceLines.length || controlLines.length === 0) return null;
+  const starts: number[] = [];
+  let cursor = 0;
+  for (const controlLine of controlLines) {
+    const start = group.lines.indexOf(controlLine, cursor);
+    if (start < 0 || (starts.length === 0 && start !== 0)) return null;
+    starts.push(start);
+    cursor = start + 1;
+  }
+  const ranges = starts.map((start, sourceIndex) => ({
+    lineIndex: group.lineIndex + start,
+    lineCount: (starts[sourceIndex + 1] ?? group.lines.length) - start,
+    sourceIndex,
+    controlLine: controlLines[sourceIndex],
+  }));
+  return ranges.every((range) => range.lineCount > 0)
+    && ranges.at(-1)!.lineIndex + ranges.at(-1)!.lineCount === group.lineIndex + group.lineCount
+    ? ranges
+    : null;
+}
+
 function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWithLines[] {
   const groups: RasterSemanticLineGroupWithLines[] = [];
   for (let lineIndex = 0; lineIndex < lines.length;) {
@@ -459,13 +497,45 @@ export async function renderUnsupportedRasterLines(
   const failures: RasterLineRenderFailure[] = [];
   const groups = rasterGroups
     ? rasterGroups.flatMap((group) => {
-      if (!Number.isSafeInteger(group.lineIndex) || !Number.isSafeInteger(group.lineCount)
-        || group.lineIndex < 0 || group.lineCount <= 0 || group.lineIndex + group.lineCount > lines.length) return [];
+      const valid = Number.isSafeInteger(group.lineIndex) && Number.isSafeInteger(group.lineCount)
+        && group.lineIndex >= 0 && group.lineCount > 0 && group.lineIndex + group.lineCount <= lines.length;
+      if (!valid) {
+        failures.push({
+          lineIndex: Number.isSafeInteger(group.lineIndex) ? group.lineIndex : 0,
+          lineCount: Number.isSafeInteger(group.lineCount) && group.lineCount > 0 ? group.lineCount : 1,
+          text: (group.sourceLines ?? []).filter(Boolean).join('\n'),
+          financial: group.financial === true,
+          code: 'invalid-range',
+          detail: 'Raster semantic group range is outside the print document',
+        });
+        return [];
+      }
       return [{ ...group, lines: lines.slice(group.lineIndex, group.lineIndex + group.lineCount) }];
     })
     : semanticLineGroups(lines);
+  const overlappingGroups = new Set<RasterSemanticLineGroupWithLines>();
+  for (let leftIndex = 0; leftIndex < groups.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < groups.length; rightIndex += 1) {
+      const left = groups[leftIndex];
+      const right = groups[rightIndex];
+      if (left.lineIndex < right.lineIndex + right.lineCount && right.lineIndex < left.lineIndex + left.lineCount) {
+        overlappingGroups.add(left);
+        overlappingGroups.add(right);
+      }
+    }
+  }
+  for (const group of overlappingGroups) {
+    failures.push({
+      lineIndex: group.lineIndex,
+      lineCount: group.lineCount,
+      text: (group.sourceLines ?? group.lines.map(stripRasterControlTokens)).filter(Boolean).join('\n'),
+      financial: group.financial === true,
+      code: 'invalid-range',
+      detail: 'Raster semantic groups overlap in the print document',
+    });
+  }
   const covered = new Set<number>(groups.flatMap((group) => Array.from({ length: group.lineCount }, (_, offset) => group.lineIndex + offset)));
-  const completeGroups: RasterSemanticLineGroupWithLines[] = [...groups];
+  const completeGroups: RasterSemanticLineGroupWithLines[] = groups.filter((group) => !overlappingGroups.has(group));
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     if (!covered.has(lineIndex)) completeGroups.push({ groupId: `line-${lineIndex}`, lineIndex, lineCount: 1, lines: [lines[lineIndex]] });
   }
@@ -497,21 +567,41 @@ export async function renderUnsupportedRasterLines(
     } else {
       for (const range of ranges) {
         const renderedUnits: RasterSemanticUnit[] = [];
-        const sourceLines = range.sourceLines ?? range.lines;
-        for (let offset = 0; offset < sourceLines.length; offset += 1) {
-          const layoutLine = range.sourceControlLines?.[offset]
-            ?? range.lines[Math.min(offset, range.lines.length - 1)]
-            ?? '';
-          const sourceText = range.sourceLines ? sourceLines[offset] : undefined;
-          const layoutFinancial = range.financialSourceLines?.[offset] ?? financial;
+        const physicalSourceLines = mapPhysicalSourceLines(range);
+        if (!physicalSourceLines) {
+          failure = {
+            lineIndex: range.lineIndex,
+            lineCount: range.lineCount,
+            text: groupText,
+            financial,
+            code: 'invalid-range',
+            detail: 'Raster semantic source rows do not map to physical print lines',
+          };
+          break;
+        }
+        for (const physicalSourceLine of physicalSourceLines) {
+          const sourceText = physicalSourceLine.sourceIndex === undefined ? undefined : range.sourceLines![physicalSourceLine.sourceIndex];
+          const layoutFinancial = physicalSourceLine.sourceIndex === undefined
+            ? financial
+            : range.financialSourceLines?.[physicalSourceLine.sourceIndex] ?? financial;
           const layout = sourceText !== undefined && layoutFinancial
-            ? financialLayoutForLine(group.groupId, offset, sourceText)
+            ? financialLayoutForLine(group.groupId, physicalSourceLine.sourceIndex!, sourceText)
             : undefined;
-          const request = requestForRasterLine(layoutLine, range.lineIndex + offset, capabilities, requestPrefix, financial, sourceText, layout);
+          const request = requestForRasterLine(physicalSourceLine.controlLine, physicalSourceLine.lineIndex, capabilities, requestPrefix, financial, sourceText, layout);
           if (!request) continue;
-          const result = await renderRasterSemanticUnit(renderer, request, financial);
+          let result: Awaited<ReturnType<typeof renderRasterSemanticUnit>>;
+          try {
+            result = await renderRasterSemanticUnit(renderer, request, financial);
+          } catch (error) {
+            result = {
+              ok: false,
+              code: 'render-failed',
+              detail: error instanceof Error ? error.message : String(error),
+              financial,
+            };
+          }
           if (!result.ok) {
-            failure = { lineIndex: range.lineIndex, lineCount: range.lines.length, text: groupText, financial, code: result.code, detail: result.detail };
+            failure = { lineIndex: range.lineIndex, lineCount: range.lineCount, text: groupText, financial: result.financial, code: result.code, detail: result.detail };
             break;
           }
           renderedUnits.push(result.unit);

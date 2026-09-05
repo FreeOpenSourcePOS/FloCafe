@@ -1105,10 +1105,10 @@ async function rasterizeDocumentLines(
   },
   rasterGroups?: readonly RasterSemanticLineGroup[],
 ): Promise<{ data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean }> {
+  let selectedFinancial = false;
   const failureResult = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
-    const financial = sourceWarnings.some((warning) => warning.kind === 'financial')
-      || rasterGroups?.some((group) => group.financial === true) === true;
+    const financial = selectedFinancial;
     const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
     warnings.push({
       field: financial ? 'financial row' : 'raster renderer',
@@ -1124,6 +1124,7 @@ async function rasterizeDocumentLines(
     const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
     renderer = new ChromiumRasterRenderer();
     const raster = await renderUnsupportedRasterLines(renderer, lines, options.capabilities, options.requestPrefix, rasterGroups);
+    selectedFinancial = raster.units.some((unit) => unit.unit.financial) || raster.failures.some((failure) => failure.financial);
     const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
     const data = buildEscPos(lines, options.useUnicode, {
       cutMode: options.cutMode,
@@ -1133,7 +1134,7 @@ async function rasterizeDocumentLines(
       capabilities: options.capabilities,
       rasterUnits: raster.units,
       rasterFailures: raster.failures,
-    });
+    }, warnings);
     for (const failure of raster.failures) {
       warnings.push({
         field: failure.financial ? 'financial row' : 'receipt line',
@@ -1142,7 +1143,7 @@ async function rasterizeDocumentLines(
         kind: failure.financial ? 'financial' : 'line',
       });
     }
-    result = { data, warnings, rasterSelected: raster.units.length > 0, rasterFailed: raster.failures.length > 0 };
+    result = { data, warnings, rasterSelected: raster.units.length > 0, rasterFailed: raster.failures.length > 0 || warnings.some((warning) => warning.kind === 'line' || warning.kind === 'financial') };
   } catch (error) {
     result = failureResult(error);
   }

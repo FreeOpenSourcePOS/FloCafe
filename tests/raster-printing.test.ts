@@ -482,6 +482,17 @@ async function run(): Promise<void> {
     { groupId: 'financial', lineIndex: 0, lineCount: 1, sourceLines: ['فارسی {FINANCIAL}'], financial: true },
   ]);
   assert.equal(financialUnitRequests[0].financial, true);
+  const legacyFinancialRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      legacyFinancialRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true } };
+    },
+  }, ['{FINANCIAL}فارسی'], caps, 'legacy-financial', [
+    { groupId: 'legacy-financial', lineIndex: 0, lineCount: 1, financial: true },
+  ]);
+  assert.equal(legacyFinancialRequests[0].text, 'فارسی');
+  assert.equal(legacyFinancialRequests[0].financial, true);
   const financialLayoutRequests: any[] = [];
   await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {

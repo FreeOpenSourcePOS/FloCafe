@@ -379,6 +379,7 @@ const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'common.appTitle', // brand
   'common.brandName', // brand
   'common.logoAlt', // brand
+  'expenses.paymentMethodUpi', // technical acronym (Unified Payments Interface)
   'kds.emptyColumn', // em dash
   'pos.addonPrice', // pure format: +{currency}{price}
   'pos.loadingEllipsis', // ellipsis

@@ -259,6 +259,114 @@ export interface Staff {
   updated_at: string;
 }
 
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+  is_active: boolean;
+  total_expenses: number;
+  total_payments: number;
+  due: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ExpensePaymentMethod = 'cash' | 'card' | 'upi';
+
+export interface ExpenseLedgerEntry {
+  id: number;
+  category_id: string;
+  category_name: string;
+  amount: number;
+  note: string | null;
+  date: string;
+  method: ExpensePaymentMethod | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export interface ExpenseMonthSummaryCategory {
+  category_id: string;
+  category_name: string;
+  due: number;
+  total_expenses: number;
+  total_payments: number;
+  payments_by_method: Record<ExpensePaymentMethod, number>;
+}
+
+export interface ExpenseMonthSummary {
+  month: string;
+  from: string;
+  to: string;
+  categories: ExpenseMonthSummaryCategory[];
+  overall: {
+    total_expenses: number;
+    total_payments: number;
+    payments_by_method: Record<ExpensePaymentMethod, number>;
+  };
+}
+
+export interface CashOpeningFloat {
+  id: number;
+  date: string;
+  amount: number;
+  note: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export interface CashCountRecord {
+  id: number;
+  date: string;
+  counted_amount: number;
+  note: string | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+}
+
+export interface CashOrderPayment {
+  bill_id: number;
+  bill_number: string;
+  amount: number;
+  payment_time: string;
+}
+
+export interface CashDailySummary {
+  date: string;
+  opening_float: CashOpeningFloat | null;
+  cash_from_orders: { total: number; payments: CashOrderPayment[] };
+  cash_expenses: { total: number; payments: ExpenseLedgerEntry[] };
+  expected_cash: number;
+  counts: CashCountRecord[];
+  latest_count: CashCountRecord | null;
+  variance: number | null;
+}
+
+export interface CashMonthlyDay {
+  date: string;
+  opening_float: number;
+  cash_from_orders: number;
+  cash_expenses: number;
+  expected_cash: number;
+  latest_count: number | null;
+  variance: number | null;
+}
+
+export interface CashMonthlySummary {
+  month: string;
+  from: string;
+  to: string;
+  days: CashMonthlyDay[];
+  totals: {
+    total_opening_floats: number;
+    total_cash_from_orders: number;
+    total_cash_expenses: number;
+    net: number;
+  };
+}
+
 export interface KitchenStation {
   id: number;
   name: string;

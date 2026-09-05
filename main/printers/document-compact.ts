@@ -258,9 +258,17 @@ export function renderBillDocumentToCompactLines(
         lines.push(...addonLines);
         if (addon.price) recordFinancialLines(addonStart, addonLines);
         const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
-        sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
+        const addonLabel = `  + ${addon.name.text}${quantitySuffix}`;
+        const addonAmount = addon.price ? formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits) : '';
+        sourceLines.push(`${addonLabel}${addon.price ? ` ${addonAmount}` : ''}`);
         sourceControlLines.push(addonLines[0] ?? '');
-        sourceLayouts.push(undefined);
+        sourceLayouts.push(addon.price ? {
+          kind: 'financial-summary',
+          columns: [
+            { text: addonLabel, align: 'left' },
+            { text: addonAmount.trimStart(), align: 'right' },
+          ],
+        } : undefined);
         financialSourceLines.push(Boolean(addon.price));
       }
       if (row.specialInstructions) {

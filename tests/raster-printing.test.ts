@@ -144,6 +144,9 @@ async function run(): Promise<void> {
   }, sourceLines, caps, 'source-siblings', sourceGroups);
   assert.equal(sourceRequests.some((request) => request.text.includes(longAddon)), true);
   assert.equal(sourceRequests.some((request) => request.text.includes(longInstruction)), true);
+  const addonRequest = sourceRequests.find((request) => request.text.includes(longAddon));
+  assert.equal(addonRequest?.layout?.kind, 'financial-summary');
+  assert.equal(addonRequest?.layout?.columns.at(-1)?.align, 'right');
   assert.equal(sourceRequests.find((request) => request.text.includes(longInstruction))?.layout, undefined);
   const compactDocument = buildBillDocument({
     isReprint: true,

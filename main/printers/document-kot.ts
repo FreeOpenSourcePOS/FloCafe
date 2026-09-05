@@ -26,6 +26,7 @@ import {
   GENERIC_THERMAL_CAPABILITIES,
   isThermalTextRepresentable,
   mergeThermalCapabilities,
+  shouldUseOrderTypeFallback,
   thermalTextFallback,
 } from '../../shared/print/thermal-capabilities';
 import { detectPrintLanguageDirection } from './document-classic';
@@ -172,6 +173,7 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
   const cols = options.columns;
   const lines: string[] = [];
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
+  const thermalCapabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
   const banner = thermalSafeText(labelOf(header.banner), 'KITCHEN ORDER TICKET', options.language, options.arabicShaping, options.capabilities);
   const station = thermalSafeText(
     `${labelOf(header.stationLabel)}: ${header.stationName.text}`,
@@ -193,7 +195,9 @@ function kotHeaderLines(header: KotHeaderBlock, options: KotDocumentRenderOption
     ? (() => {
       const localized = `${labelOf(header.orderType.label)}: ${header.orderType.value.text}`;
       const fallback = `Type: ${header.orderType.code.replace(/_/g, ' ').trim().toUpperCase()}`;
-      return thermalSafeText(localized, fallback, options.language, options.arabicShaping, options.capabilities);
+      return shouldUseOrderTypeFallback(localized, thermalCapabilities)
+        ? fallback
+        : thermalSafeText(localized, fallback, options.language, options.arabicShaping, options.capabilities);
     })()
     : null;
   const time = parseDbTimestamp(header.timestamp.text).toLocaleTimeString((options.locale ?? 'en-US') + '-u-nu-latn', tzOptions);

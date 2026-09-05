@@ -629,7 +629,7 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
   assert('backend BHD receipt falls back to the canonical code', !hasFinancialPrintWarning(bhdWarnings) && escPosToText(bhdReceipt).includes('BHD'));
   assert('currency prefix fallback uses the supplied canonical code', resolveCurrencyPrefix('د.ب.', false, undefined, false, 'BHD').includes('BHD'));
 
-  const { receiptEncoder, warnings: frontendWarnings } = loadFrontendPrinterModules();
+  const { receiptEncoder, taxBillEncoder, warnings: frontendWarnings } = loadFrontendPrinterModules();
   const arbitraryCodeTenant = { business_name: 'Cafe', currency: 'XXX', country: 'IN' };
   for (const template of ['classic', 'compact'] as const) {
     for (const paperWidth of [58, 80] as const) {
@@ -640,6 +640,17 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
       assert(`WebUSB ${template}/${paperWidth}mm: arbitrary three-letter currency code is printable`, !frontendWarnings.hasFinancialPrintWarning(warnings));
       assert(`WebUSB ${template}/${paperWidth}mm: arbitrary currency code is emitted`, Buffer.from(builder).toString().includes('XXX'));
     }
+  }
+
+  const bhdFrontendTenant = { business_name: 'Cafe', currency: 'BHD', country: 'BH' };
+  for (const paperWidth of [58, 80] as const) {
+    const receiptWarnings: any[] = [];
+    const receipt = receiptEncoder.buildClassicReceiptBytes(unsupportedBill as any, bhdFrontendTenant as any, { paperWidth, languages: ['en'] as any }, receiptWarnings);
+    assert(`WebUSB classic/${paperWidth}mm: BHD falls back to its canonical code`, !frontendWarnings.hasFinancialPrintWarning(receiptWarnings) && Buffer.from(receipt).toString().includes('BHD'));
+
+    const taxWarnings: any[] = [];
+    const taxBill = taxBillEncoder.buildTaxBillBytes(unsupportedBill as any, bhdFrontendTenant as any, { paperWidth, language: 'en' }, taxWarnings);
+    assert(`WebUSB tax/${paperWidth}mm: BHD falls back to its canonical code`, !frontendWarnings.hasFinancialPrintWarning(taxWarnings) && Buffer.from(taxBill).toString().includes('BHD'));
   }
 }
 

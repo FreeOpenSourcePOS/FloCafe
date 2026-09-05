@@ -16,7 +16,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
-import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol } from '@/lib/countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
@@ -91,25 +91,27 @@ function maskPhoneOnReceipt(phone: string): string {
 /**
  * Build a detailed tax bill byte array from a Bill object.
  */
-function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean, rawEscPos: boolean, capabilities?: ThermalPrinterCapabilities): string {
+function resolveEncoderCurrency(rawCurrency: string, currencyCode: string, useUnicode: boolean, rawEscPos: boolean, capabilities?: ThermalPrinterCapabilities): string {
   const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
+  const asciiFallback = normalizeCurrencyToAscii(normalizedCurrency);
+  const fallbackCurrency = /^[\x00-\x7F]+$/.test(asciiFallback) ? asciiFallback : currencyCode;
   if (capabilities) {
     const normalizedForCapabilities = normalizeThermalText(normalizedCurrency, capabilities);
     return padCurrencyPrefix(
       selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
         ? normalizedForCapabilities
-        : normalizeCurrencyToAscii(normalizedCurrency),
+        : fallbackCurrency,
     );
   }
   if (!rawEscPos) {
-    return padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
+    return padCurrencyPrefix(useUnicode ? rawCurrency : fallbackCurrency);
   }
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS
   // printers cannot shape that token, so normalize this known currency even
   // when the caller requests Unicode. Preserve the existing useUnicode
   // behavior for every other currency value.
   return padCurrencyPrefix(
-    useUnicode ? normalizedCurrency : normalizeCurrencyToAscii(normalizedCurrency),
+    useUnicode ? normalizedCurrency : fallbackCurrency,
   );
 }
 
@@ -178,8 +180,9 @@ export function buildTaxBillBytes(
     return padRowForLanguage(left, right, cols, language, opts.capabilities);
   };
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, language, opts.capabilities);
-  const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = resolveEncoderCurrency(rawCurrency, useUnicode, rawEscPos, opts.capabilities);
+  const currencyCode = resolveTenantCurrency(tenant.currency, tenant.country);
+  const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const currency = resolveEncoderCurrency(rawCurrency, currencyCode, useUnicode, rawEscPos, opts.capabilities);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const amountLocale = rawEscPos ? getSafeLatnLocale(locale) : locale;
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';

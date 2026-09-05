@@ -473,11 +473,16 @@ export const usePrinterStore = create<PrinterState>()(
             const webusbCapabilities = webusbPrinter?.capabilities;
             const useRaster = rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizeKotDocument), webusbPrinter?.profile_id);
             let rasterOrder = orderForPrint;
+            let rasterHydrationError: unknown = null;
             if (useRaster && (orderForPrint.table_id || orderForPrint.customer_id)) {
-              const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
-              rasterOrder = orderForPrint.items
-                ? { ...response.data.order, items: orderForPrint.items }
-                : response.data.order;
+              try {
+                const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
+                rasterOrder = orderForPrint.items
+                  ? { ...response.data.order, items: orderForPrint.items }
+                  : response.data.order;
+              } catch (error) {
+                rasterHydrationError = error;
+              }
             }
             const bytes = buildKotBytes(
               rasterOrder,
@@ -485,7 +490,10 @@ export const usePrinterStore = create<PrinterState>()(
               encoderWarnings,
             );
             let output = bytes;
-            if (useRaster) {
+            if (useRaster && rasterHydrationError) {
+              warnings.push(makeRasterFallbackWarning(rasterHydrationError));
+              warnings.push(...encoderWarnings);
+            } else if (useRaster) {
               try {
                 const rasterResult = await window.electronAPI.rasterizeKotDocument({
                   document: buildFrontendKotDocument(rasterOrder, {

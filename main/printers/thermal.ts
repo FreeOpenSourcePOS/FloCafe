@@ -2026,8 +2026,8 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
   return Buffer.concat([textData, Buffer.from(rasterData), Buffer.from(encodeRasterFeedAndCut(cutMode))]);
 }
 
-// Every ASCII fallback is no wider than 3 characters, so currency labels such
-// as USD/EUR/INR have a stable reserved slot in receipt amount columns.
+// Known ASCII fallbacks and canonical currency codes stay bounded for receipt
+// amount columns; representable localized symbols retain their full label.
 const CURRENCY_TOKEN_RE = new RegExp(`(?:${CURRENCY_TOKEN_PATTERN})`, 'g');
 
 const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;

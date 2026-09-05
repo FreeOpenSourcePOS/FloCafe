@@ -503,7 +503,8 @@ export async function renderUnsupportedRasterLines(
             ?? range.lines[Math.min(offset, range.lines.length - 1)]
             ?? '';
           const sourceText = range.sourceLines ? sourceLines[offset] : undefined;
-          const layout = sourceText !== undefined && financial
+          const layoutFinancial = range.financialSourceLines?.[offset] ?? financial;
+          const layout = sourceText !== undefined && layoutFinancial
             ? financialLayoutForLine(group.groupId, offset, sourceText)
             : undefined;
           const request = requestForRasterLine(layoutLine, range.lineIndex + offset, capabilities, requestPrefix, financial, sourceText, layout);

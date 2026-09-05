@@ -236,6 +236,7 @@ export function renderBillDocumentToCompactLines(
       recordFinancialLines(rowStart, rowLines);
       const sourceLines = [`${row.name.text} ${row.quantity} ${formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits)}`];
       const sourceControlLines = [rowLines[0] ?? ''];
+      const financialSourceLines = [true];
       for (const addon of row.addons) {
         const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
         const addonStart = lines.length;
@@ -244,16 +245,18 @@ export function renderBillDocumentToCompactLines(
         const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
         sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
         sourceControlLines.push(addonLines[0] ?? '');
+        financialSourceLines.push(Boolean(addon.price));
       }
       if (row.specialInstructions) {
         const instructionLine = normalize('  ' + labelOf(items.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language, options.capabilities));
         lines.push(instructionLine);
         sourceLines.push('  ' + labelOf(items.noteLabel) + ': ' + row.specialInstructions.text);
         sourceControlLines.push(instructionLine);
+        financialSourceLines.push(false);
       }
       if (options.rasterGroups && lines.length > rowStart) {
         const group = { groupId: `item-table-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
-        options.rasterGroups.push({ ...group, sourceLines, sourceControlLines, financial: true });
+        options.rasterGroups.push({ ...group, sourceLines, sourceControlLines, financialSourceLines, financial: true });
       }
     }
   }

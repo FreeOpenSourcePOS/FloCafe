@@ -115,7 +115,7 @@ async function run(): Promise<void> {
   assert.equal(isPrintDocument({ ...printDocument, blocks: printDocument.blocks.slice(0, -1) }), false);
   assert.equal(isPrintDocument({ ...printDocument, blocks: [...printDocument.blocks, printDocument.blocks[0]] }), false);
   const longAddon = 'ASCII addon content that must remain available to pixel wrapping';
-  const longInstruction = 'ASCII instruction content that must remain available to pixel wrapping';
+  const longInstruction = 'ASCII instruction content that must remain available to pixel wrapping 2';
   const sourceDocument = buildBillDocument({
     isReprint: false,
     order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', items: [{ productName: 'فارسی محصول', quantity: 1, unitPrice: 1, total: 1, addons: [{ name: longAddon, price: 1, quantity: 1 }], specialInstructions: longInstruction }] },
@@ -144,6 +144,7 @@ async function run(): Promise<void> {
   }, sourceLines, caps, 'source-siblings', sourceGroups);
   assert.equal(sourceRequests.some((request) => request.text.includes(longAddon)), true);
   assert.equal(sourceRequests.some((request) => request.text.includes(longInstruction)), true);
+  assert.equal(sourceRequests.find((request) => request.text.includes(longInstruction))?.layout, undefined);
   const compactDocument = buildBillDocument({
     isReprint: true,
     order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: 'کافه', externalOrderId: 'K-7', items: [] },

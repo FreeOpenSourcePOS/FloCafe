@@ -307,7 +307,7 @@ export function renderBillDocumentToClassicLines(
     post: string[];
     sourceLines: { pre: string[]; main: string[]; post: string[] };
     sourceControlLines: { pre: string[]; main: string[]; post: string[] };
-    groups: Array<{ groupId: string; start: number; count: number; sourceLines?: readonly string[]; sourceControlLines?: readonly string[]; financial?: boolean }>;
+    groups: Array<{ groupId: string; start: number; count: number; sourceLines?: readonly string[]; sourceControlLines?: readonly string[]; financialSourceLines?: readonly boolean[]; financial?: boolean }>;
     financialRanges: { pre: Array<{ start: number; count: number }>; main: Array<{ start: number; count: number }>; post: Array<{ start: number; count: number }> };
   }
   const segments = new Map<PrintDocumentBlock['kind'], BlockSegments>();
@@ -472,6 +472,7 @@ export function renderBillDocumentToClassicLines(
           segment.main.push(...rowLines);
           const sourceLines = [`${row.name.text} ${row.quantity} ${formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits)}`];
           const sourceControlLines = [rowLines[0] ?? ''];
+          const financialSourceLines = [true];
           for (const addon of row.addons) {
             const addonStart = segment.main.length;
             const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
@@ -480,16 +481,18 @@ export function renderBillDocumentToClassicLines(
             const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
             sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
             sourceControlLines.push(addonLines[0] ?? '');
+            financialSourceLines.push(Boolean(addon.price));
           }
           if (row.specialInstructions) {
             const instructionLine = normalize('  ' + labelOf(block.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8, options.language, options.capabilities));
             segment.main.push(instructionLine);
             sourceLines.push('  ' + labelOf(block.noteLabel) + ': ' + row.specialInstructions.text);
             sourceControlLines.push(instructionLine);
+            financialSourceLines.push(false);
           }
           if (segment.main.length > start) {
             const group = { groupId: `item-table-row-${rowIndex}`, start, count: segment.main.length - start };
-            segment.groups.push({ ...group, sourceLines, sourceControlLines, financial: true });
+            segment.groups.push({ ...group, sourceLines, sourceControlLines, financialSourceLines, financial: true });
           }
         }
         segment.main.push(dash);

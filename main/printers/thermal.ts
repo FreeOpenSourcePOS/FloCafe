@@ -2043,7 +2043,7 @@ export function maskPhoneOnReceipt(phone: string): string {
 }
 
 // Resolves the currency symbol into the exact text that will be printed,
-// padded to a fixed 3-column slot (leading spaces for shorter symbols/codes).
+// padded to a minimum 3-column slot (leading spaces for shorter symbols/codes).
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
 // symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
 // pushes trailing digits onto the next line.
@@ -2066,7 +2066,7 @@ export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capab
     : (useUnicode || isAsciiSafe)
       ? normalizedSymbol
       : (CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency);
-  const prefix = rawPrefix.length > 3 ? rawPrefix.slice(0, 3) : rawPrefix;
+  const prefix = rawPrefix;
   return prefix.length >= 3 ? prefix : ' '.repeat(3 - prefix.length) + prefix;
 }
 

@@ -629,6 +629,22 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
   assert('backend BHD receipt falls back to the canonical code', !hasFinancialPrintWarning(bhdWarnings) && escPosToText(bhdReceipt).includes('BHD'));
   assert('currency prefix fallback uses the supplied canonical code', resolveCurrencyPrefix('د.ب.', false, undefined, false, 'BHD').includes('BHD'));
 
+  const xafWarnings: any[] = [];
+  const xafReceipt = formatReceipt(
+    fixtureOrder,
+    fixtureBill,
+    { ...fixtureBusiness, country: 'CM', currency: 'XAF', currency_symbol: getCurrencySymbol('XAF', 'fr-CM'), show_tax_breakdown: false },
+    'classic',
+    48,
+    false,
+    false,
+    'full',
+    xafWarnings,
+    false,
+    'en',
+  );
+  assert('backend XAF receipt preserves its full representable symbol', !hasFinancialPrintWarning(xafWarnings) && escPosToText(xafReceipt).includes('FCFA'));
+
   const { receiptEncoder, taxBillEncoder, warnings: frontendWarnings } = loadFrontendPrinterModules();
   const arbitraryCodeTenant = { business_name: 'Cafe', currency: 'XXX', country: 'IN' };
   for (const template of ['classic', 'compact'] as const) {

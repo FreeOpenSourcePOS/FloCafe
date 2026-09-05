@@ -50,6 +50,12 @@ test('formatCurrencyForTenant: missing country defaults to IN', () => {
   assert.match(out, /₹/);
 });
 
+test('formatCurrencyForTenant: arbitrary currency code avoids Intl placeholder', () => {
+  const out = formatCurrencyForTenant(100, 'US', 'XXX');
+  assert.match(out, /XXX/);
+  assert.doesNotMatch(out, /¤/);
+});
+
 test('getCurrencyFractionDigits: resolves ISO 4217 standard precision', () => {
   const { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } = require('../main/countries');
   assert.equal(getCurrencyFractionDigits('JPY'), 0);

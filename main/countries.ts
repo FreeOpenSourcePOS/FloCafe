@@ -326,10 +326,17 @@ export const formatMoney = (
 
   if (!currency) return formatNumber(amount, locale, numberingSystem);
   try {
-    return new Intl.NumberFormat(locale, {
+    const formatted = new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
       currencyDisplay: 'narrowSymbol',
+      numberingSystem,
+    }).format(amount);
+    if (!formatted.includes('¤')) return formatted;
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'code',
       numberingSystem,
     }).format(amount);
   } catch {

@@ -11,6 +11,7 @@ import {
   formatReceipt,
   formatKOT,
   buildEscPos,
+  resolveCurrencyPrefix,
   buildTestPage,
   escPosToText,
   detectConnectedPrinters,
@@ -610,6 +611,23 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
     'en',
   );
   assert('backend accented item labels are treated as financial content', hasFinancialPrintWarning(accentedWarnings));
+
+  const bhdWarnings: any[] = [];
+  const bhdReceipt = formatReceipt(
+    fixtureOrder,
+    fixtureBill,
+    { ...fixtureBusiness, country: 'BH', currency: 'BHD', currency_symbol: getCurrencySymbol('BHD', 'ar-BH'), show_tax_breakdown: false },
+    'classic',
+    48,
+    false,
+    false,
+    'full',
+    bhdWarnings,
+    false,
+    'en',
+  );
+  assert('backend BHD receipt falls back to the canonical code', !hasFinancialPrintWarning(bhdWarnings) && escPosToText(bhdReceipt).includes('BHD'));
+  assert('currency prefix fallback uses the supplied canonical code', resolveCurrencyPrefix('د.ب.', false, undefined, false, 'BHD').includes('BHD'));
 
   const { receiptEncoder, warnings: frontendWarnings } = loadFrontendPrinterModules();
   const arbitraryCodeTenant = { business_name: 'Cafe', currency: 'XXX', country: 'IN' };
@@ -1264,6 +1282,12 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   const browserTaxHtml = generateBillHtml(frontendBill as any, frontendTenant, { useUnicode: false });
   assert('browser tax-bill printing preserves Persian Rial output', browserTaxHtml.includes('ریال') && !browserTaxHtml.includes('IRR'));
   assert('browser tax-bill printing preserves Persian numeric output', /[۰-۹]/.test(browserTaxHtml));
+  const browserArbitraryCurrencyHtml = generateBillHtml(
+    frontendBill as any,
+    { ...frontendTenant, country: 'US', currency: 'XXX' },
+    { useUnicode: false },
+  );
+  assert('browser printing uses the arbitrary currency code instead of Intl placeholder', browserArbitraryCurrencyHtml.includes('XXX') && !browserArbitraryCurrencyHtml.includes('¤'));
   const browserTomanHtml = generateBillHtml(
     frontendBill as any,
     { ...frontendTenant, currency_display: 'toman' },

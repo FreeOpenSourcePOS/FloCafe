@@ -25,6 +25,7 @@ import type { PrintWarning } from './warnings';
 import {
   getCountryByCode,
   getCurrencyFractionDigits,
+  getCurrencySymbol,
   formatCurrencyForTenant,
   formatNumberForTenant,
   formatDateForTenant,
@@ -578,11 +579,12 @@ function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false
   if (trimDecimals && !hasDecimals && !isToman) {
     const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
     const numberingSystem = tenant.number_digits === 'latin' ? 'latn' : undefined;
+    const currency = tenant.currency || 'INR';
     try {
       return new Intl.NumberFormat(locale, {
         style: 'currency',
-        currency: tenant.currency || 'INR',
-        currencyDisplay: 'narrowSymbol',
+        currency,
+        currencyDisplay: getCurrencySymbol(currency, locale) === currency ? 'code' : 'narrowSymbol',
         ...(numberingSystem ? { numberingSystem } : {}),
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,

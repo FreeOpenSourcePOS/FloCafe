@@ -15,6 +15,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { CORE_BILL_TEMPLATES, isAvailableBillTemplate, listInstalledPrintTemplates, upgradeBillTemplateValue } from '../services/print-templates';
 import { listMerchantPrintTemplates } from '../services/merchant-print-templates';
+import { isSyntacticallyValidCurrencyCode } from '../../shared/print/currency';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
@@ -59,7 +60,7 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
 
 function validBusinessLocation(timezone: unknown, currency: unknown, country: unknown): boolean {
   if (timezone !== undefined && !isValidTimeZone(timezone)) return false;
-  if (currency !== undefined && (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency))) return false;
+  if (currency !== undefined && !isSyntacticallyValidCurrencyCode(currency)) return false;
   if (country !== undefined && (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country))) return false;
   return true;
 }
@@ -984,6 +985,12 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
       return res.status(400).json({ error: 'Invalid theme_mode value' });
     }
     let valueToPersist: unknown = value;
+    if (req.params.key === 'currency') {
+      valueToPersist = typeof value === 'string' ? value.trim().toUpperCase() : value;
+      if (!isSyntacticallyValidCurrencyCode(valueToPersist)) {
+        return res.status(400).json({ error: 'Invalid currency' });
+      }
+    }
     if (req.params.key === 'bill_template') {
       valueToPersist = upgradeBillTemplateValue(value);
     }

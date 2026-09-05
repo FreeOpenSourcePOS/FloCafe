@@ -6,7 +6,7 @@ import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, getPrinterCapabilities, SupportedPrinterProfile } from './profiles';
-import { getCountryByCode, getCurrencyFractionDigits } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, resolveTenantCurrency } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
 import { renderMerchantReceiptViaDocument } from './document-merchant';
@@ -1428,8 +1428,9 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const date = parseDbTimestamp(order.created_at);
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode, capabilities);
-  const fractionDigits = getCurrencyFractionDigits(biz.currency || 'INR');
+  const currency = resolveTenantCurrency(biz.currency, biz.country);
+  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode, capabilities, false, currency);
+  const fractionDigits = getCurrencyFractionDigits(currency);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const normalize = (text: string): string => normalizeThermalText(text, capabilities);
@@ -2046,7 +2047,7 @@ export function maskPhoneOnReceipt(phone: string): string {
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
 // symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
 // pushes trailing digits onto the next line.
-export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities, preserveConfiguredSymbol = false): string {
+export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities, preserveConfiguredSymbol = false, currencyCode?: string): string {
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS printers
   // cannot shape that token, so normalize this known currency even when the
   // caller requests Unicode. Preserve the existing useUnicode behavior for
@@ -2057,13 +2058,14 @@ export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capab
   const normalizedForCapabilities = capabilities
     ? normalizeThermalTextByCapabilities(normalizedSymbol, capabilities)
     : normalizedSymbol;
+  const fallbackCurrency = currencyCode || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs';
   const rawPrefix = capabilities
     ? (selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
       ? normalizedForCapabilities
-      : (CURRENCY_ASCII_MAP[normalizedSymbol] || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs'))
+      : (CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency))
     : (useUnicode || isAsciiSafe)
       ? normalizedSymbol
-      : (CURRENCY_ASCII_MAP[normalizedSymbol] || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs');
+      : (CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency);
   const prefix = rawPrefix.length > 3 ? rawPrefix.slice(0, 3) : rawPrefix;
   return prefix.length >= 3 ? prefix : ' '.repeat(3 - prefix.length) + prefix;
 }

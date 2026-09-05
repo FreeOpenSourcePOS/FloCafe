@@ -123,7 +123,7 @@ export function renderBillDocumentToCompactLines(
   const payments = getBlock(document, 'payments') as PaymentsBlock | undefined;
   const messages = getBlock(document, 'message') as MessageBlock | undefined;
 
-  const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode, options.capabilities, options.preserveCurrencySymbol === true);
+  const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode, options.capabilities, options.preserveCurrencySymbol === true, options.currency);
   const fractionDigits = getCurrencyFractionDigits(options.currency || 'INR');
   const trimDecimals = options.trimDecimals === true;
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;

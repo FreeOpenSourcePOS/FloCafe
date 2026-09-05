@@ -675,7 +675,7 @@ export function renderBillDocumentToClassicLines(
     if (options.rasterGroups && segment[part].length > 0) {
       if (part === 'main' && segment.groups.length > 0) {
         for (const group of segment.groups) {
-          options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count, ...(group.sourceLines ? { sourceLines: group.sourceLines } : {}), ...(group.sourceControlLines ? { sourceControlLines: group.sourceControlLines } : {}), ...(group.financial ? { financial: true } : {}) });
+          options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count, ...(group.sourceLines ? { sourceLines: group.sourceLines } : {}), ...(group.sourceControlLines ? { sourceControlLines: group.sourceControlLines } : {}), ...(group.financialSourceLines ? { financialSourceLines: group.financialSourceLines } : {}), ...(group.financial ? { financial: true } : {}) });
         }
       } else {
         const financial = kind === 'totals' || kind === 'tax-breakdown' || kind === 'payments';

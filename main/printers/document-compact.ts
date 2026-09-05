@@ -342,19 +342,26 @@ export function renderBillDocumentToCompactLines(
   lines.push(bar);
   const businessFooterStart = lines.length;
   const businessFooterSourceLines: string[] = [];
+  const businessFooterSourceControlLines: string[] = [];
   if (header?.address) {
+    const start = lines.length;
     pushWrapped(lines, header.address.text, cols, options.language, options.capabilities);
     businessFooterSourceLines.push(header.address.text);
+    businessFooterSourceControlLines.push(lines[start] ?? '');
   }
   if (header?.phone && header.phoneLabel) {
+    const start = lines.length;
     pushWrapped(lines, labelOf(header.phoneLabel) + ': ' + header.phone.text, cols, options.language, options.capabilities);
     businessFooterSourceLines.push(labelOf(header.phoneLabel) + ': ' + header.phone.text);
+    businessFooterSourceControlLines.push(lines[start] ?? '');
   }
   if (header?.taxId) {
+    const start = lines.length;
     pushWrapped(lines, labelOf(header.taxId.label) + ': ' + header.taxId.value.text, cols, options.language, options.capabilities);
     businessFooterSourceLines.push(labelOf(header.taxId.label) + ': ' + header.taxId.value.text);
+    businessFooterSourceControlLines.push(lines[start] ?? '');
   }
-  markGroup('business-header', businessFooterStart, businessFooterSourceLines);
+  markGroup('business-header', businessFooterStart, businessFooterSourceLines, businessFooterSourceControlLines);
 
   const messageFooterStart = lines.length;
   const messageFooterSourceLines: string[] = [];

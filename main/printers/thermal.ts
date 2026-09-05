@@ -1137,7 +1137,7 @@ async function rasterizeDocumentLines(
     });
     return { data: Buffer.alloc(0), warnings, rasterSelected: false, rasterFailed: true };
   };
-  let renderer: { destroy: () => void } | undefined;
+  let renderer: Pick<import('./raster-renderer').ChromiumRasterRenderer, 'render' | 'destroy'> | undefined;
   let result = failureResult(new Error('Raster renderer was not initialized'));
   try {
     const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
@@ -2106,7 +2106,7 @@ export interface RasterLineUnit {
   readonly unit: RasterSemanticUnit;
 }
 
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[]; rasterFailures?: readonly { lineIndex: number; lineCount: number; financial: boolean }[]; financialLineRanges?: readonly { lineIndex: number; lineCount: number }[] } = {}, warnings?: PrintWarning[]): Buffer {
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[]; rasterFailures?: readonly { lineIndex: number; lineCount: number; financial: boolean }[]; financialLineRanges?: readonly { lineIndex: number; lineCount: number }[] } = {}, warnings?: PrintWarning[]): Buffer<ArrayBuffer> {
   const buf: number[] = [];
   const useLegacyUnicode = options.capabilities === undefined && _useUnicode;
   const capabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);

@@ -542,17 +542,17 @@ async function run(): Promise<void> {
       digitNamedFinancialRequests.push(rasterRequest);
       return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true } };
     },
-  }, ['Meal 2 L 1 10.00'], caps, 'digit-named-financial', [
+  }, ['{FINANCIAL}Meal 2 L فارسی 1 10.00'], caps, 'digit-named-financial', [
     {
       groupId: 'item-table-row-0',
       lineIndex: 0,
       lineCount: 1,
-      sourceLines: ['Meal 2 L 1 10.00'],
-      sourceControlLines: ['{FINANCIAL}Meal 2 L 1 10.00'],
+      sourceLines: ['Meal 2 L فارسی 1 10.00'],
+      sourceControlLines: ['{FINANCIAL}Meal 2 L فارسی 1 10.00'],
       sourceLayouts: [{
         kind: 'financial-item',
         columns: [
-          { text: 'Meal 2 L', align: 'left' },
+          { text: 'Meal 2 L فارسی', align: 'left' },
           { text: '1', align: 'left' },
           { text: '10.00', align: 'right' },
         ],
@@ -561,7 +561,7 @@ async function run(): Promise<void> {
     },
   ]);
   assert.deepEqual(digitNamedFinancialRequests[0].layout.columns.map((column: any) => [column.text, column.align]), [
-    ['Meal 2 L', 'left'],
+    ['Meal 2 L فارسی', 'left'],
     ['1', 'left'],
     ['10.00', 'right'],
   ]);

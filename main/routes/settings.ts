@@ -225,15 +225,16 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
       currency_display, number_digits, calendar } = req.body;
+    const normalizedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
 
-    if (!validBusinessLocation(timezone, currency, country)) {
+    if (!validBusinessLocation(timezone, normalizedCurrency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
     }
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
     const effectiveCountry = country || currentSettings.country || 'IN';
-    const effectiveCurrency = currency || currentSettings.currency || 'INR';
+    const effectiveCurrency = normalizedCurrency || currentSettings.currency || 'INR';
 
     // Validate explicitly supplied locale preferences against the effective
     // country's declared options, and normalize stale legacy values (e.g. a
@@ -274,8 +275,8 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     }
 
     upsertSettings(db, {
-      business_name, timezone, currency, country, language,
-      currency_symbol: (currency !== undefined || country !== undefined)
+      business_name, timezone, currency: normalizedCurrency, country, language,
+      currency_symbol: (normalizedCurrency !== undefined || country !== undefined)
         ? deriveCurrencySymbol(effectiveCurrency, effectiveCountry)
         : undefined,
       tax_registration_number, state_code, business_address,

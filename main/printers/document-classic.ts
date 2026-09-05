@@ -225,6 +225,7 @@ export interface ClassicDocumentRenderOptions {
   readonly trimDecimals: boolean;
   readonly useUnicode: boolean;
   readonly arabicShaping: boolean;
+  readonly preserveCurrencySymbol?: boolean;
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
   readonly maskCustomerPhone?: boolean;
@@ -274,7 +275,7 @@ export function renderBillDocumentToClassicLines(
   const breakdownIndex = blocks.findIndex((block) => block.kind === 'tax-breakdown');
   const totalsIndex = blocks.findIndex((block) => block.kind === 'totals');
 
-  const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode, options.capabilities);
+  const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode, options.capabilities, options.preserveCurrencySymbol === true);
   const fractionDigits = getCurrencyFractionDigits(options.currency || 'INR');
   const trimDecimals = options.trimDecimals === true;
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;

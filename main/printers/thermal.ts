@@ -1065,6 +1065,7 @@ function receiptDocumentLines(
       arabicShaping,
       cutMode,
       capabilities,
+      preserveCurrencySymbol: true,
       maskCustomerPhone: false,
     })
     : renderClassicReceiptViaDocument(order, bill, rasterBiz, {
@@ -1076,6 +1077,7 @@ function receiptDocumentLines(
       arabicShaping,
       cutMode,
       capabilities,
+      preserveCurrencySymbol: true,
       maskCustomerPhone: false,
     });
   return result;
@@ -1146,6 +1148,7 @@ export async function rasterizePrintDocumentForWebUsb(
   const lines = template === 'compact'
     ? renderBillDocumentToCompactLines(document, {
       ...options,
+      preserveCurrencySymbol: true,
       cutMode: profile.cutMode,
       capabilities,
       maskCustomerPhone: false,
@@ -1153,6 +1156,7 @@ export async function rasterizePrintDocumentForWebUsb(
     })
     : renderBillDocumentToClassicLines(document, {
       ...options,
+      preserveCurrencySymbol: true,
       cutMode: profile.cutMode,
       capabilities,
       maskCustomerPhone: false,
@@ -1992,12 +1996,13 @@ function normalizeCurrencyToAscii(text: string): string {
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
 // symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
 // pushes trailing digits onto the next line.
-export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities): string {
+export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities, preserveConfiguredSymbol = false): string {
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS printers
   // cannot shape that token, so normalize this known currency even when the
   // caller requests Unicode. Preserve the existing useUnicode behavior for
   // every other currency value.
-  const normalizedSymbol = symbol === 'ریال' ? 'IRR' : symbol;
+  const normalizedSymbol = preserveConfiguredSymbol ? symbol : (symbol === 'ریال' ? 'IRR' : symbol);
+  if (preserveConfiguredSymbol) return normalizedSymbol;
   const isAsciiSafe = /^[\x00-\x7F]+$/.test(normalizedSymbol);
   const normalizedForCapabilities = capabilities
     ? normalizeThermalTextByCapabilities(normalizedSymbol, capabilities)

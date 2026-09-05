@@ -35,6 +35,19 @@ import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/li
 
 type CoreBillTemplate = 'classic' | 'compact';
 
+function makeRasterFallbackWarning(detail: unknown): PrintWarning {
+  const message = detail instanceof Error
+    ? detail.message
+    : (typeof detail === 'string' && detail.length > 0 ? detail : 'Raster rendering failed');
+  const financial = message.startsWith('Receipt not printed:');
+  return {
+    field: financial ? 'financial row' : 'raster renderer',
+    text: '',
+    message: `${message}. Native thermal output was used instead.`,
+    kind: financial ? 'financial' : 'configuration',
+  };
+}
+
 function resolveCoreBillTemplate(value: unknown, source: 'core' | 'pack' | 'merchant' | null): CoreBillTemplate | null {
   if (source !== 'core') return null;
   if (value === 'classic' || value === 'compact') return value;
@@ -262,36 +275,45 @@ export const usePrinterStore = create<PrinterState>()(
           const webusbPrinter = get().webusbPrinter;
           const webusbCapabilities = webusbPrinter?.capabilities;
           if (rasterBillTemplate && rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizePrintDocument), webusbPrinter?.profile_id)) {
-            const currency = resolveTenantCurrency(tenant.currency, tenant.country);
-            const rasterResult = await window.electronAPI.rasterizePrintDocument({
-              document: buildFrontendBillDocument(bill, tenant, {
-                ...builderOpts,
-                columns: builderOpts.paperWidth === 80 ? 48 : 42,
-                businessName: tenant.business_name,
-                includeTaxId: billShowTaxId,
-                taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel ?? 'Tax ID',
-                maskCustomerPhone: true,
-                useBillCustomer: true,
-              }),
-              template: rasterBillTemplate,
-              profileId: webusbPrinter.profile_id,
-              options: {
-                columns: builderOpts.paperWidth === 80 ? 48 : 42,
-                language: languages[0],
-                locale: getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US',
-                currency,
-                currencySymbol: getCurrencySymbol(currency, getCountryByCode(tenant.country ?? 'IN')?.locale),
-                trimDecimals: printerTrimDecimals,
-                useUnicode: printerUseUnicode,
-                arabicShaping: printerArabicShaping,
-                ...(tenant.timezone ? { timezone: tenant.timezone } : {}),
-              },
-            });
-            if (!rasterResult.ok || !rasterResult.data) throw new Error(rasterResult.error || 'Raster rendering failed');
-            if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
-            if (rasterResult.rasterSelected || (rasterResult.warnings?.length ?? 0) > 0) {
-              bytes = Uint8Array.from(rasterResult.data);
-            } else {
+            try {
+              const currency = resolveTenantCurrency(tenant.currency, tenant.country);
+              const rasterResult = await window.electronAPI.rasterizePrintDocument({
+                document: buildFrontendBillDocument(bill, tenant, {
+                  ...builderOpts,
+                  columns: builderOpts.paperWidth === 80 ? 48 : 42,
+                  businessName: tenant.business_name,
+                  includeTaxId: billShowTaxId,
+                  taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel ?? 'Tax ID',
+                  maskCustomerPhone: true,
+                  useBillCustomer: true,
+                }),
+                template: rasterBillTemplate,
+                profileId: webusbPrinter.profile_id,
+                options: {
+                  columns: builderOpts.paperWidth === 80 ? 48 : 42,
+                  language: languages[0],
+                  locale: getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US',
+                  currency,
+                  currencySymbol: getCurrencySymbol(currency, getCountryByCode(tenant.country ?? 'IN')?.locale),
+                  trimDecimals: printerTrimDecimals,
+                  useUnicode: printerUseUnicode,
+                  arabicShaping: printerArabicShaping,
+                  ...(tenant.timezone ? { timezone: tenant.timezone } : {}),
+                },
+              });
+              if (!rasterResult.ok || !rasterResult.data) {
+                warnings.push(makeRasterFallbackWarning(rasterResult.ok ? undefined : rasterResult.error));
+                warnings.push(...encoderWarnings);
+              } else {
+                if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
+                if (rasterResult.rasterSelected || (rasterResult.warnings?.length ?? 0) > 0) {
+                  bytes = Uint8Array.from(rasterResult.data);
+                } else {
+                  warnings.push(...encoderWarnings);
+                }
+              }
+            } catch (error) {
+              warnings.push(makeRasterFallbackWarning(error));
               warnings.push(...encoderWarnings);
             }
           } else {
@@ -456,36 +478,45 @@ export const usePrinterStore = create<PrinterState>()(
             const webusbCapabilities = webusbPrinter?.capabilities;
             let output = bytes;
             if (rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizeKotDocument), webusbPrinter?.profile_id)) {
-              let rasterOrder = orderForPrint;
-              if (orderForPrint.table_id || orderForPrint.customer_id) {
-                const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
-                rasterOrder = orderForPrint.items
-                  ? { ...response.data.order, items: orderForPrint.items }
-                  : response.data.order;
-              }
-              const rasterResult = await window.electronAPI.rasterizeKotDocument({
-                document: buildFrontendKotDocument(rasterOrder, {
-                  items: rasterOrder.items,
-                  stationName: opts?.stationName ?? 'Kitchen',
-                  columns: paperWidth === 80 ? 48 : 42,
-                  language: kotLanguage,
-                  ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
-                }),
-                profileId: webusbPrinter.profile_id,
-                options: {
-                  columns: paperWidth === 80 ? 48 : 42,
-                  language: kotLanguage,
-                  locale: tenantLocale,
-                  ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
-                  useUnicode: printerUseUnicode,
-                  arabicShaping: printerArabicShaping,
-                },
-              });
-              if (!rasterResult.ok || !rasterResult.data) throw new Error(rasterResult.error || 'Raster rendering failed');
-              if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
-              if (rasterResult.rasterSelected || (rasterResult.warnings?.length ?? 0) > 0) {
-                output = Uint8Array.from(rasterResult.data);
-              } else {
+              try {
+                let rasterOrder = orderForPrint;
+                if (orderForPrint.table_id || orderForPrint.customer_id) {
+                  const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
+                  rasterOrder = orderForPrint.items
+                    ? { ...response.data.order, items: orderForPrint.items }
+                    : response.data.order;
+                }
+                const rasterResult = await window.electronAPI.rasterizeKotDocument({
+                  document: buildFrontendKotDocument(rasterOrder, {
+                    items: rasterOrder.items,
+                    stationName: opts?.stationName ?? 'Kitchen',
+                    columns: paperWidth === 80 ? 48 : 42,
+                    language: kotLanguage,
+                    ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
+                  }),
+                  profileId: webusbPrinter.profile_id,
+                  options: {
+                    columns: paperWidth === 80 ? 48 : 42,
+                    language: kotLanguage,
+                    locale: tenantLocale,
+                    ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
+                    useUnicode: printerUseUnicode,
+                    arabicShaping: printerArabicShaping,
+                  },
+                });
+                if (!rasterResult.ok || !rasterResult.data) {
+                  warnings.push(makeRasterFallbackWarning(rasterResult.ok ? undefined : rasterResult.error));
+                  warnings.push(...encoderWarnings);
+                } else {
+                  if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
+                  if (rasterResult.rasterSelected || (rasterResult.warnings?.length ?? 0) > 0) {
+                    output = Uint8Array.from(rasterResult.data);
+                  } else {
+                    warnings.push(...encoderWarnings);
+                  }
+                }
+              } catch (error) {
+                warnings.push(makeRasterFallbackWarning(error));
                 warnings.push(...encoderWarnings);
               }
             } else {

@@ -67,6 +67,7 @@ export interface CompactDocumentRenderOptions {
   readonly trimDecimals: boolean;
   readonly useUnicode: boolean;
   readonly arabicShaping: boolean;
+  readonly preserveCurrencySymbol?: boolean;
   readonly cutMode: PrinterCutMode;
   readonly capabilities?: ThermalPrinterCapabilities;
   readonly maskCustomerPhone?: boolean;
@@ -122,7 +123,7 @@ export function renderBillDocumentToCompactLines(
   const payments = getBlock(document, 'payments') as PaymentsBlock | undefined;
   const messages = getBlock(document, 'message') as MessageBlock | undefined;
 
-  const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode, options.capabilities);
+  const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode, options.capabilities, options.preserveCurrencySymbol === true);
   const fractionDigits = getCurrencyFractionDigits(options.currency || 'INR');
   const trimDecimals = options.trimDecimals === true;
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;

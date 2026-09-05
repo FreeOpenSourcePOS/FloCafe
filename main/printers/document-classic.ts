@@ -833,7 +833,7 @@ export function renderClassicReceiptViaDocument(
     locale: printContext.locale,
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
     currencySymbol: printContext.currencySymbol,
-    currency: String(business?.currency || 'INR'),
+    currency: String(business?.raster_currency || business?.currency || 'INR'),
     trimDecimals: printContext.trimDecimals,
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,

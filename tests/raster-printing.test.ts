@@ -710,10 +710,17 @@ async function run(): Promise<void> {
   const jpyReceipt = renderCompactReceiptViaDocument(
     { items: [] },
     { total: 12.34, subtotal: 12.34, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
-    { country: 'JP', currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
+    { country: 'JP', raster_currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
     { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
   );
   assert.equal(jpyReceipt.lines.some((line) => line.includes('12.34')), false);
+  const jpyClassicReceipt = renderClassicReceiptViaDocument(
+    { items: [] },
+    { total: 12.34, subtotal: 12.34, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
+    { country: 'JP', raster_currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
+    { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
+  );
+  assert.equal(jpyClassicReceipt.lines.some((line) => line.includes('12.34')), false);
   assert.equal(resolveTenantCurrency(undefined, 'JP'), 'JPY');
   const unpricedAddonReceipt = renderCompactReceiptViaDocument(
     {

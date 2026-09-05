@@ -571,19 +571,26 @@ async function run(): Promise<void> {
       negativeFinancialLayoutRequests.push(rasterRequest);
       return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true } };
     },
-  }, ['{FINANCIAL}تخفیف - Rs1.23'], caps, 'negative-financial-layout', [
+  }, ['{FINANCIAL}GST @5% ₹-10.00'], caps, 'negative-financial-layout', [
     {
       groupId: 'totals',
       lineIndex: 0,
       lineCount: 1,
-      sourceLines: ['تخفیف - Rs1.23'],
-      sourceControlLines: ['{FINANCIAL}تخفیف - Rs1.23'],
+      sourceLines: ['GST @5% ₹-10.00'],
+      sourceControlLines: ['{FINANCIAL}GST @5% ₹-10.00'],
+      sourceLayouts: [{
+        kind: 'financial-summary',
+        columns: [
+          { text: 'GST @5%', align: 'left' },
+          { text: '₹-10.00', align: 'right' },
+        ],
+      }],
       financial: true,
     },
   ]);
   assert.deepEqual(negativeFinancialLayoutRequests[0].layout.columns.map((column: any) => [column.text, column.align]), [
-    ['تخفیف', 'left'],
-    ['- Rs1.23', 'right'],
+    ['GST @5%', 'left'],
+    ['₹-10.00', 'right'],
   ]);
   const alignedStyleRequests: any[] = [];
   await renderUnsupportedRasterLines({

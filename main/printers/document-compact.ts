@@ -130,8 +130,8 @@ export function renderBillDocumentToCompactLines(
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const normalize = (text: string): string => normalizeThermalText(text, options.capabilities);
-  const markGroup = (groupId: string, start: number, sourceLines?: readonly string[], sourceControlLines?: readonly string[], financial = false): void => {
-    if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start, ...(sourceLines ? { sourceLines } : {}), ...(sourceControlLines ? { sourceControlLines } : {}), ...(financial ? { financial: true } : {}) });
+  const markGroup = (groupId: string, start: number, sourceLines?: readonly string[], sourceControlLines?: readonly string[], financial = false, sourceLayouts?: readonly (RasterTextLayout | undefined)[]): void => {
+    if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start, ...(sourceLines ? { sourceLines } : {}), ...(sourceControlLines ? { sourceControlLines } : {}), ...(sourceLayouts ? { sourceLayouts } : {}), ...(financial ? { financial: true } : {}) });
   };
   const recordFinancialLines = (start: number, rendered: readonly string[]): void => {
     if (!options.financialLineRanges) return;
@@ -292,20 +292,28 @@ export function renderBillDocumentToCompactLines(
   const totalsStart = lines.length;
   const totalsSourceLines: string[] = [];
   const totalsSourceControlLines: string[] = [];
-  const pushTotalRow = (rendered: string[], bold = false, sourceLine?: string): void => {
+  const totalsSourceLayouts: Array<RasterTextLayout | undefined> = [];
+  const pushTotalRow = (rendered: string[], bold = false, sourceLabel?: string, sourceValue?: string): void => {
     const start = lines.length;
     const tokenLines = bold ? rendered.map((line) => `{BOLD}${line}{/BOLD}`) : rendered;
     lines.push(...tokenLines);
     recordFinancialLines(start, tokenLines);
-    totalsSourceLines.push(sourceLine ?? rendered.join(' '));
+    totalsSourceLines.push(sourceLabel !== undefined && sourceValue !== undefined ? `${sourceLabel} ${sourceValue.trimStart()}` : rendered.join(' '));
     totalsSourceControlLines.push(tokenLines[0] ?? '');
+    totalsSourceLayouts.push(sourceLabel !== undefined && sourceValue !== undefined ? {
+      kind: 'financial-summary',
+      columns: [
+        { text: sourceLabel, align: 'left' },
+        { text: sourceValue.trimStart(), align: 'right' },
+      ],
+    } : undefined);
   };
   if (totals) {
     const subtotalValue = formatCurrency(totals.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    pushTotalRow(financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities), false, `${labelOf(totals.subtotal.label)} ${subtotalValue.trimStart()}`);
+    pushTotalRow(financialRows(labelOf(totals.subtotal.label), subtotalValue, cols, options.language, options.capabilities), false, labelOf(totals.subtotal.label), subtotalValue);
     if (totals.discount) {
       const discountValue = '-' + formatCurrency(totals.discount.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities), false, `${labelOf(totals.discount.label)} ${discountValue.trimStart()}`);
+      pushTotalRow(financialRows(labelOf(totals.discount.label), discountValue, cols, options.language, options.capabilities), false, labelOf(totals.discount.label), discountValue);
     }
     if (breakdown && breakdown.lines.length > 0) {
       for (const line of breakdown.lines) {
@@ -313,37 +321,39 @@ export function renderBillDocumentToCompactLines(
         const rawLabel = labelOf(line.label) + rateSuffix;
         const label = truncate(rawLabel, cols - 12, options.language, options.capabilities);
         const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
-        pushTotalRow(financialRows(label, value, cols, options.language, options.capabilities), false, `${rawLabel} ${value.trimStart()}`);
+        pushTotalRow(financialRows(label, value, cols, options.language, options.capabilities), false, rawLabel, value);
       }
     } else if (totals.tax) {
       const value = formatCurrency(totals.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.tax.label)} ${value.trimStart()}`);
+      pushTotalRow(financialRows(labelOf(totals.tax.label), value, cols, options.language, options.capabilities), false, labelOf(totals.tax.label), value);
     }
     if (totals.serviceCharge) {
       const value = formatCurrency(totals.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.serviceCharge.label)} ${value.trimStart()}`);
+      pushTotalRow(financialRows(labelOf(totals.serviceCharge.label), value, cols, options.language, options.capabilities), false, labelOf(totals.serviceCharge.label), value);
     }
     if (totals.deliveryCharge) {
       const value = formatCurrency(totals.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.deliveryCharge.label)} ${value.trimStart()}`);
+      pushTotalRow(financialRows(labelOf(totals.deliveryCharge.label), value, cols, options.language, options.capabilities), false, labelOf(totals.deliveryCharge.label), value);
     }
     if (totals.packagingCharge) {
       const value = formatCurrency(totals.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
-      pushTotalRow(financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities), false, `${labelOf(totals.packagingCharge.label)} ${value.trimStart()}`);
+      pushTotalRow(financialRows(labelOf(totals.packagingCharge.label), value, cols, options.language, options.capabilities), false, labelOf(totals.packagingCharge.label), value);
     }
     const grandTotalValue = formatCurrency(totals.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
-    pushTotalRow(financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities), true, `${labelOf(totals.grandTotal.label)} ${grandTotalValue.trimStart()}`);
+    pushTotalRow(financialRows(labelOf(totals.grandTotal.label), grandTotalValue, cols, options.language, options.capabilities), true, labelOf(totals.grandTotal.label), grandTotalValue);
   }
-  markGroup('totals', totalsStart, totalsSourceLines, totalsSourceControlLines, true);
+  markGroup('totals', totalsStart, totalsSourceLines, totalsSourceControlLines, true, totalsSourceLayouts);
 
   // Payments.
   const paymentsStart = lines.length;
   const paymentSourceLines: string[] = [];
   const paymentSourceControlLines: string[] = [];
+  const paymentSourceLayouts: Array<RasterTextLayout | undefined> = [];
   if (payments && payments.lines.length > 0) {
     lines.push(dash);
     paymentSourceLines.push(dash);
     paymentSourceControlLines.push(dash);
+    paymentSourceLayouts.push(undefined);
     for (const line of payments.lines) {
       const rawMethodLabel = paymentLabel(line.label);
       const methodLabel = truncate(rawMethodLabel, cols - 12, options.language, options.capabilities);
@@ -353,9 +363,16 @@ export function renderBillDocumentToCompactLines(
       lines.push(...rendered);
       paymentSourceLines.push(`${rawMethodLabel} ${value.trimStart()}`);
       paymentSourceControlLines.push(rendered[0] ?? '');
+      paymentSourceLayouts.push({
+        kind: 'financial-summary',
+        columns: [
+          { text: rawMethodLabel, align: 'left' },
+          { text: value.trimStart(), align: 'right' },
+        ],
+      });
     }
   }
-  markGroup('payments', paymentsStart, paymentSourceLines, paymentSourceControlLines, true);
+  markGroup('payments', paymentsStart, paymentSourceLines, paymentSourceControlLines, true, paymentSourceLayouts);
 
   // Footer contact details.
   lines.push(bar);

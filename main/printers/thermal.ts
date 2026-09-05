@@ -1409,10 +1409,8 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
 
 function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
   const lines: string[] = [];
-  const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
   const pushFinancialLines = (financialLines: string[]): void => {
     if (financialLines.length === 0) return;
-    financialLineRanges.push({ lineIndex: lines.length, lineCount: financialLines.length });
     lines.push(...financialLines);
   };
   const cols = profile.columns;
@@ -1551,7 +1549,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang, capabilities, financialLineRanges }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang, capabilities }, warnings);
 }
 
 export function appendPoweredByFooter(lines: string[]): void {

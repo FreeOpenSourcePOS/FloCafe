@@ -86,19 +86,17 @@ export function renderMerchantReceiptViaDocument(
 
   const renderDocument = (document: Parameters<typeof renderBillDocumentToClassicLines>[0]) => {
     const rasterGroups: RasterSemanticLineGroup[] = [];
-    const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
-    const lines = renderBillDocumentToClassicLines(document, { ...baseOptions, rasterGroups, financialLineRanges });
-    return { lines, rasterGroups, financialLineRanges };
+    const lines = renderBillDocumentToClassicLines(document, { ...baseOptions, rasterGroups });
+    return { lines, rasterGroups };
   };
 
-  const finish = (rendered: { lines: string[]; rasterGroups: RasterSemanticLineGroup[]; financialLineRanges: Array<{ lineIndex: number; lineCount: number }> }, fellBackToClassic: boolean) => {
+  const finish = (rendered: { lines: string[]; rasterGroups: RasterSemanticLineGroup[] }, fellBackToClassic: boolean) => {
     const data = buildEscPos(rendered.lines, opts.useUnicode, {
       cutMode: opts.cutMode,
       arabicShaping: opts.arabicShaping,
       columns: opts.columns,
       language: opts.language,
       capabilities: opts.capabilities,
-      financialLineRanges: rendered.financialLineRanges,
     }, warnings);
     return { data, lines: rendered.lines, warnings, fellBackToClassic, rasterGroups: rendered.rasterGroups };
   };

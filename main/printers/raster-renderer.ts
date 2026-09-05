@@ -403,22 +403,6 @@ function stripRasterControlTokens(line: string): string {
   return line.replace(RASTER_CONTROL_TOKEN_RE, '');
 }
 
-function financialLayoutForLine(sourceText: string): RasterTextLayout | undefined {
-  const amountPattern = /((?:[-+]\s*)?(?:[^0-9\s]+\s*)?\d[\d\s.,]*(?:\s+[^\d\s]+)?)$/u;
-  const amountMatch = sourceText.match(amountPattern);
-  if (!amountMatch || amountMatch.index === undefined || amountMatch.index <= 0) return undefined;
-  const label = sourceText.slice(0, amountMatch.index).trimEnd();
-  const value = amountMatch[1].trimStart();
-  if (!label || !value) return undefined;
-  return {
-    kind: 'financial-summary',
-    columns: [
-      { text: label, align: 'left' },
-      { text: value, align: 'right' },
-    ],
-  };
-}
-
 function controlMetadataLine(line: string, sourceText?: string): string {
   if (sourceText === undefined) return line;
   if (sourceText.length === 0) return line;
@@ -577,7 +561,6 @@ export async function renderUnsupportedRasterLines(
             : range.financialSourceLines?.[physicalSourceLine.sourceIndex] ?? financial;
           const layout = sourceText !== undefined && layoutFinancial
             ? range.sourceLayouts?.[physicalSourceLine.sourceIndex!]
-              ?? (group.groupId.startsWith('item-table-row-') ? undefined : financialLayoutForLine(sourceText))
             : undefined;
           const request = requestForRasterLine(physicalSourceLine.controlLine, physicalSourceLine.lineIndex, capabilities, requestPrefix, layoutFinancial, sourceText, layout);
           if (!request) continue;

@@ -362,7 +362,7 @@ function stripRasterControlTokens(line: string): string {
 }
 
 function financialLayoutForLine(groupId: string, offset: number, sourceText: string): RasterTextLayout | undefined {
-  const amountPattern = /((?:[-+]\s*)?(?:[^0-9\s]+\s*)?\d[\d\s.,]*)$/u;
+  const amountPattern = /((?:[-+]\s*)?(?:[^0-9\s]+\s*)?\d[\d\s.,]*(?:\s+[^\d\s]+)?)$/u;
   if (groupId.startsWith('item-table-row-') && offset === 0) {
     const itemMatch = sourceText.match(/^([\s\S]+?)\s+(\d+(?:[.,]\d+)?)\s+((?:[-+]\s*)?(?:[^0-9\s]+\s*)?\d[\d\s.,]*)$/u);
     if (itemMatch) {

@@ -290,7 +290,11 @@ async function run(): Promise<void> {
   const financialDocument = {
     ...compactDocument,
     blocks: compactDocument.blocks.map((block) => block.kind === 'totals'
-      ? { ...block, grandTotal: { ...block.grandTotal, label: { ...block.grandTotal.label, primary: 'جمع کل' } } }
+      ? {
+        ...block,
+        pointsRedeemed: { label: { ...block.grandTotal.label, primary: 'نقاط مستردة' }, points: 5 },
+        grandTotal: { ...block.grandTotal, label: { ...block.grandTotal.label, primary: 'جمع کل' } },
+      }
       : block),
   };
   const financialGroups: any[] = [];
@@ -317,6 +321,11 @@ async function run(): Promise<void> {
   const grandTotalRequests = financialRequests.filter((request) => request.text === 'جمع کل $0.00');
   assert.equal(grandTotalRequests.length, 1);
   assert.equal(grandTotalRequests[0].style, 'bold');
+  const pointsRequest = financialRequests.find((request) => request.text === 'نقاط مستردة -5 pts');
+  assert.deepEqual(pointsRequest?.layout?.columns, [
+    { text: 'نقاط مستردة', align: 'left' },
+    { text: '-5 pts', align: 'right' },
+  ]);
   assert.equal(financialRequests.some((request) => request.text.includes(':')), false);
   const kotDocument = buildKotDocument({
     stationName: 'ایستگاه',

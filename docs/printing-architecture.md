@@ -477,9 +477,9 @@ profiles until the diagnostic probe and real-printer evidence are complete.
 When enabled, the dedicated hidden Chromium surface accepts only typed
 requests with bundled local font data URLs; the shared `GS v 0` encoder emits
 bounded bands and preserves the semantic unit boundary. Mixed mode is the
-primary path, while whole-receipt raster is a tested per-printer compatibility
-mode and not a default. Unsupported financial units still refuse before any
-transport write. See [`shared/print/raster.ts`](../shared/print/raster.ts) and
+primary path, while whole-receipt raster is an internal compatibility path that
+requires a profile to opt into that mode and is not a default. Unsupported
+financial units still refuse before any transport write. See [`shared/print/raster.ts`](../shared/print/raster.ts) and
 [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md).
 Native code pages remain limited to declared text representability; no shipped
 profile claims broad non-Latin support without hardware evidence.

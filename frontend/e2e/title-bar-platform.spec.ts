@@ -201,6 +201,8 @@ test('browser Electron fixture exposes the complete renderer API and explicit in
     'onUpdateStatus',
     'openKdsWindow',
     'platform',
+    'rasterizeKotDocument',
+    'rasterizePrintDocument',
     'restartAndInstall',
     'restoreBackup',
     'savePrinter',

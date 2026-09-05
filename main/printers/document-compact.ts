@@ -15,7 +15,7 @@
 import { parseDbTimestamp } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
-import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import { hasArabicScript, isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
@@ -133,7 +133,8 @@ export function renderBillDocumentToCompactLines(
   const markGroup = (groupId: string, start: number, sourceLines?: readonly string[], sourceControlLines?: readonly string[], financial = false, sourceLayouts?: readonly (RasterTextLayout | undefined)[]): void => {
     if (options.rasterGroups && lines.length > start) options.rasterGroups.push({ groupId, lineIndex: start, lineCount: lines.length - start, ...(sourceLines ? { sourceLines } : {}), ...(sourceControlLines ? { sourceControlLines } : {}), ...(sourceLayouts ? { sourceLayouts } : {}), ...(financial ? { financial: true } : {}) });
   };
-  const recordFinancialLines = (start: number, rendered: readonly string[]): void => {
+  const recordFinancialLines = (start: number, rendered: readonly string[], financial = true): void => {
+    if (!financial) return;
     if (!options.financialLineRanges) return;
     rendered.forEach((line, offset) => {
       options.financialLineRanges!.push({ lineIndex: start + offset, lineCount: 1 });
@@ -239,7 +240,7 @@ export function renderBillDocumentToCompactLines(
         options.capabilities,
       );
       lines.push(...rowLines);
-      recordFinancialLines(rowStart, rowLines);
+      recordFinancialLines(rowStart, rowLines, !hasArabicScript(row.name.text) || options.capabilities?.shaping.arabic === true);
       const amount = formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits);
       const sourceLines = [`${row.name.text} ${row.quantity} ${amount}`];
       const sourceControlLines = [rowLines[0] ?? ''];
@@ -256,7 +257,7 @@ export function renderBillDocumentToCompactLines(
         const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
         const addonStart = lines.length;
         lines.push(...addonLines);
-        if (addon.price) recordFinancialLines(addonStart, addonLines);
+        if (addon.price) recordFinancialLines(addonStart, addonLines, !hasArabicScript(addon.name.text) || options.capabilities?.shaping.arabic === true);
         const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
         const addonLabel = `  + ${addon.name.text}${quantitySuffix}`;
         const addonAmount = addon.price ? formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits) : '';
@@ -483,6 +484,6 @@ export function renderCompactReceiptViaDocument(
     rasterGroups,
     financialLineRanges,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges: opts.capabilities?.raster.enabled === true ? financialLineRanges : undefined }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges }, warnings);
   return { document, lines, data, warnings, rasterGroups };
 }

@@ -314,8 +314,8 @@ export const usePrinterStore = create<PrinterState>()(
                 warnings.push(...encoderWarnings);
               } else {
                 if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
-                const rasterFailed = rasterResult.warnings?.some((warning) => warning.kind === 'line' || warning.kind === 'financial') ?? false;
-                if (rasterResult.rasterSelected && !rasterFailed) {
+                const rasterFinancialFailed = rasterResult.warnings?.some((warning) => warning.kind === 'financial') ?? false;
+                if (rasterResult.rasterSelected && !rasterFinancialFailed) {
                   bytes = Uint8Array.from(rasterResult.data);
                 } else {
                   warnings.push(...encoderWarnings);
@@ -528,8 +528,8 @@ export const usePrinterStore = create<PrinterState>()(
                   warnings.push(...encoderWarnings);
                 } else {
                   if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
-                  const rasterFailed = rasterResult.warnings?.some((warning) => warning.kind === 'line' || warning.kind === 'financial') ?? false;
-                  if (rasterResult.rasterSelected && !rasterFailed) {
+                  const rasterFinancialFailed = rasterResult.warnings?.some((warning) => warning.kind === 'financial') ?? false;
+                  if (rasterResult.rasterSelected && !rasterFinancialFailed) {
                     output = Uint8Array.from(rasterResult.data);
                   } else {
                     warnings.push(...encoderWarnings);

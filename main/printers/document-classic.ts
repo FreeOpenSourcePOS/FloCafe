@@ -24,7 +24,7 @@ import {
   type PrintConceptId,
 } from '../print/print-labels.generated';
 import type { PrinterCutMode } from './profiles';
-import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import { hasArabicScript, isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
@@ -482,7 +482,9 @@ export function renderBillDocumentToClassicLines(
             fractionDigits,
             options.capabilities,
           );
-          segment.financialRanges.main.push({ start, count: rowLines.length });
+          if (!hasArabicScript(row.name.text) || options.capabilities?.shaping.arabic === true) {
+            segment.financialRanges.main.push({ start, count: rowLines.length });
+          }
           segment.main.push(...rowLines);
           const amount = formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits);
           const sourceLines = [`${row.name.text} ${row.quantity} ${amount}`];
@@ -500,7 +502,9 @@ export function renderBillDocumentToClassicLines(
             const addonStart = segment.main.length;
             const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
             segment.main.push(...addonLines);
-            if (addon.price) segment.financialRanges.main.push({ start: addonStart, count: addonLines.length });
+            if (addon.price && (!hasArabicScript(addon.name.text) || options.capabilities?.shaping.arabic === true)) {
+              segment.financialRanges.main.push({ start: addonStart, count: addonLines.length });
+            }
             const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
             const addonLabel = `  + ${addon.name.text}${quantitySuffix}`;
             const addonAmount = addon.price ? formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits) : '';
@@ -840,6 +844,6 @@ export function renderClassicReceiptViaDocument(
     rasterGroups,
     financialLineRanges,
   });
-  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges: opts.capabilities?.raster.enabled === true ? financialLineRanges : undefined }, warnings);
+  const data = buildEscPos(lines, opts.useUnicode, { cutMode: opts.cutMode, arabicShaping: opts.arabicShaping, columns: opts.columns, language: opts.language, capabilities: opts.capabilities, financialLineRanges }, warnings);
   return { document, lines, data, warnings, rasterGroups };
 }

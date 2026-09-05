@@ -36,7 +36,6 @@ import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/li
 type CoreBillTemplate = 'classic' | 'compact';
 
 function resolveCoreBillTemplate(value: unknown, source: 'core' | 'pack' | 'merchant' | null): CoreBillTemplate | null {
-  if (source === null && (value === 'classic' || value === 'compact')) return value;
   if (source !== 'core') return null;
   if (value === 'classic' || value === 'compact') return value;
   if (typeof value !== 'string') return null;
@@ -157,7 +156,9 @@ export const usePrinterStore = create<PrinterState>()(
           } = usePosSettingsStore.getState();
 
           const isReprint = opts?.isReprint ?? false;
-          const billTemplateWarning = makeBillTemplateFallbackWarning(billTemplate);
+          const billTemplateWarning = billTemplateSource === 'core'
+            ? null
+            : makeBillTemplateFallbackWarning({ source: billTemplateSource ?? 'unknown', id: billTemplate });
           const rasterBillTemplate = resolveCoreBillTemplate(billTemplate, billTemplateSource);
 
           const executeBrowserPrint = async (): Promise<PrintWarning[]> => {
@@ -251,7 +252,7 @@ export const usePrinterStore = create<PrinterState>()(
           let bytes: Uint8Array;
           const encoderWarnings: PrintWarning[] = [];
           const nativeBillTemplate = rasterBillTemplate
-            ?? (billTemplate === 'compact' || billTemplate === 'classic' ? billTemplate : 'classic');
+            ?? (billTemplateSource === 'core' && (billTemplate === 'compact' || billTemplate === 'classic') ? billTemplate : 'classic');
           if (nativeBillTemplate === 'compact') {
             bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, encoderWarnings);
           } else {
@@ -456,8 +457,7 @@ export const usePrinterStore = create<PrinterState>()(
             let output = bytes;
             if (rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizeKotDocument), webusbPrinter?.profile_id)) {
               let rasterOrder = orderForPrint;
-              if ((orderForPrint.table_id && !orderForPrint.table?.name)
-                || (orderForPrint.customer_id && !orderForPrint.customer?.name)) {
+              if (orderForPrint.table_id || orderForPrint.customer_id) {
                 const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
                 rasterOrder = orderForPrint.items
                   ? { ...response.data.order, items: orderForPrint.items }

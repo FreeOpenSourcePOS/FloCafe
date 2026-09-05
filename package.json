@@ -98,7 +98,7 @@
     "test:print-kernel": "ts-node --transpile-only -P tests/tsconfig.json tests/print-kernel.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/kernel-purity.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/print-language-settings.test.ts",
     "test:thermal-capabilities": "ts-node --transpile-only -P tests/tsconfig.json tests/thermal-capabilities.test.ts",
     "test:raster": "ts-node --transpile-only -P tests/tsconfig.json tests/raster-printing.test.ts && npm run test:raster-electron",
-    "test:raster-electron": "npm run build && electron tests/raster-renderer-electron.test.cjs",
+    "test:raster-electron": "npm run build && electron --no-sandbox tests/raster-renderer-electron.test.cjs",
     "test:cancel-override": "node tests/run-electron-node-test.cjs tests/cancel-override.test.ts && node tests/run-electron-node-test.cjs tests/manager-pin-rate-limit-bypass.test.ts",
     "test:refunds": "node tests/run-electron-node-test.cjs tests/refunds.test.ts",
     "test:kitchen-addons": "node tests/run-electron-node-test.cjs tests/kitchen-addons-parsing.test.ts",

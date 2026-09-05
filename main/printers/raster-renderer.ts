@@ -597,7 +597,7 @@ export async function renderUnsupportedRasterLines(
               ok: false,
               code: 'render-failed',
               detail: error instanceof Error ? error.message : String(error),
-              financial,
+              financial: layoutFinancial,
             };
           }
           if (!result.ok) {

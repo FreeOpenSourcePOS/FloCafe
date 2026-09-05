@@ -414,7 +414,10 @@ pure policy in [`shared/print/thermal-capabilities.ts`](../shared/print/thermal-
 In addition to paper geometry and command set, every profile owns the thermal
 text boundary: ordered supported `encoding.codePages` plus a preferred page,
 `shaping.arabic`, representable scripts, transliteration enablement, and the
-unsupported/financial/order-type warning policies. Selection is deliberate:
+unsupported/financial/order-type warning policies. The additive `raster` block
+also owns whether mixed or whole-receipt raster is enabled, the profile-derived
+width and band limits, and the bundled font data used by the isolated renderer.
+Selection is deliberate:
 `selectThermalCodePage` chooses the first declared page that represents the
 normalized line, while the backend and WebUSB guards use the same policy.
 Profile resolution remains explicit `profile_id` → name/make/model alias →
@@ -655,15 +658,19 @@ lowercase `aliases` (matched by substring after normalization), command set,
 default paper width and port, Font A/B column counts, optional physical print
 width, cut mode, profile-owned thermal capabilities, and notes. The capability
 block declares supported code pages and preferred page, Arabic shaping,
-representable scripts, transliteration, and warning policies; use the generic
-ASCII-only capability block unless the profile has evidence for a narrower
-hardware capability.
+representable scripts, transliteration, warning policies, and the additive
+raster geometry/mode/font fields; use the generic ASCII-only, raster-disabled
+capability block unless the profile has evidence for a narrower hardware
+capability.
 
 Rules:
 
 - Set `capabilities.shaping.arabic: true` ONLY after a real print on that
   specific hardware proves shaped, correctly ordered Persian output; leave it
   false otherwise. Generic ESC/POS profiles ship with it false (§6).
+- Keep `capabilities.raster.enabled: false` until the profile's bundled font,
+  geometry, selected mode, and diagnostic probe are validated on real hardware;
+  only an enabled mode may be listed in `capabilities.raster.modes`.
 - Resolution is explicit-id → alias-match → paper-width generic fallback
   (`resolvePrinterProfile`); choose aliases so real-world USB/device names
   match (`matchSupportedPrinterProfile` normalizes case and underscores) in

@@ -41,7 +41,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | --- | --- | --- |
 | [tax-engine-v2-spec.md](tax-engine-v2-spec.md) | Architectural specification for Tax Engine v2, data-only country packs, and future capability plugin boundaries. *(Note: 2026-07-31 amendment establishes that country packs are catalog-only and not auto-bundled).* | ACTIVE DESIGN |
 | [cloud-v2-plan.md](cloud-v2-plan.md) | Client integration plan for FloAdmin v2 cloud coordination. Phase 1 client work is implemented in code; forward-looking multi-device sync and FloAdmin contracts remain in design/specs. | ACTIVE DESIGN / FORWARD-LOOKING |
-| [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md) | Capability study and decision record for non-Latin scripts (Arabic/Persian, Hebrew, CJK, Indic) on ESC/POS hardware: approach comparison, Phase 9 capability-gated raster contract, community hardware-test matrix, and diagnostic test-page probe. Broad coverage remains hardware/font-evidence gated. | FORWARD-LOOKING |
+| [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md) | Capability study and decision record for non-Latin scripts (Arabic/Persian, Hebrew, CJK, Indic) on ESC/POS hardware: approach comparison, Phase 9 capability-gated raster contract, community hardware-test matrix, and diagnostic test-page probe. Broad coverage remains hardware/font-evidence gated. | CURRENT / FORWARD-LOOKING |
 
 ### Historical records
 

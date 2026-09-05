@@ -9,6 +9,7 @@ import {
   type RasterStyle,
   type RasterSemanticUnit,
   type RasterSemanticLineGroup,
+  type RasterTextLayout,
 } from '../../shared/print/raster';
 import {
   isThermalTextRepresentable,
@@ -61,35 +62,58 @@ export function rasterRendererHtml(): string {
       if (typeof Intl.Segmenter !== 'function') return makeFailure(request, 'render-failed', 'Grapheme segmentation is unavailable');
       const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
       const graphemes = (value) => Array.from(segmenter.segment(value), (part) => part.segment);
-      const lines = [];
-      const sourceLines = request.text.split(/\\r?\\n/);
-      for (const source of sourceLines) {
+      const wrap = (value, width) => {
+        const wrapped = [];
         let current = '';
-        for (const grapheme of graphemes(source)) {
+        for (const grapheme of graphemes(value)) {
           const candidate = current + grapheme;
-          if (current && measure(candidate) > request.widthDots) {
-            lines.push(current);
+          if (current && measure(candidate) > width) {
+            wrapped.push(current);
             current = grapheme;
           } else {
             current = candidate;
           }
         }
-        lines.push(current);
-      }
-      if (request.financial && lines.length > request.maxLines) {
-        return makeFailure(request, 'render-failed', 'Financial raster unit exceeds renderer line limit');
-      }
-      let bounded = lines.slice(0, request.maxLines);
-      if (lines.length > request.maxLines && bounded.length > 0) {
-        let last = bounded[bounded.length - 1];
-        const lastGraphemes = graphemes(last);
-        while (lastGraphemes.length > 0 && measure(lastGraphemes.join('') + '…') > request.widthDots) lastGraphemes.pop();
-        bounded[bounded.length - 1] = lastGraphemes.join('') + '…';
+        wrapped.push(current);
+        return wrapped;
+      };
+      const gapDots = Math.max(1, Math.round(request.widthDots / 48));
+      const renderLines = request.layout
+        ? (() => {
+          const columns = request.layout.columns;
+          const measured = columns.map((column) => Math.max(1, measure(column.text)));
+          const gaps = gapDots * (columns.length - 1);
+          const available = Math.max(1, request.widthDots - gaps);
+          const widths = columns.length === 2
+            ? [Math.max(1, available - Math.min(Math.max(measured[1] + gapDots, Math.floor(available * 0.2)), Math.floor(available * 0.45))), 0]
+            : [0, Math.max(1, Math.floor(available * 0.1)), 0];
+          if (columns.length === 2) widths[1] = available - widths[0];
+          else {
+            widths[2] = Math.min(Math.max(measured[2] + gapDots, Math.floor(available * 0.2)), Math.floor(available * 0.35));
+            widths[0] = Math.max(1, available - widths[1] - widths[2]);
+          }
+          const wrappedColumns = columns.map((column, index) => wrap(column.text, widths[index]));
+          const lineCount = Math.max(1, ...wrappedColumns.map((column) => column.length));
+          return Array.from({ length: lineCount }, (_, lineIndex) => columns.map((column, columnIndex) => ({
+            text: wrappedColumns[columnIndex][lineIndex] || '',
+            align: column.align,
+            width: widths[columnIndex],
+          })));
+        })()
+        : request.text.split(/\\r?\\n/).flatMap((source) => wrap(source, request.widthDots)).map((text) => [{
+          text,
+          align: request.align === 'center' ? 'center' : 'left',
+          width: request.widthDots,
+        }]);
+      if (renderLines.length > request.maxLines) {
+        return makeFailure(request, 'render-failed', request.financial
+          ? 'Financial raster unit exceeds renderer line limit'
+          : 'Raster unit exceeds renderer line limit');
       }
       const width = request.widthDots;
-      const pixels = new Uint8Array(width * Math.max(1, bounded.length * lineHeight));
+      const pixels = new Uint8Array(width * Math.max(1, renderLines.length * lineHeight));
       canvas.width = width;
-      canvas.height = Math.max(1, bounded.length * lineHeight);
+      canvas.height = Math.max(1, renderLines.length * lineHeight);
       // Resizing a canvas resets its drawing state, so restore the measured
       // font and bidi direction before painting the final pixels.
       context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
@@ -100,11 +124,16 @@ export function rasterRendererHtml(): string {
       context.fillStyle = '#fff';
       context.fillRect(0, 0, width, canvas.height);
       context.fillStyle = '#000';
-      bounded.forEach((line, index) => context.fillText(
-        line,
-        request.align === 'center' ? width / (2 * scaleX) : 0,
-        index * logicalLineHeight,
-      ));
+      renderLines.forEach((line, lineIndex) => {
+        let x = 0;
+        line.forEach((cell, cellIndex) => {
+          context.textAlign = cell.align === 'center' ? 'center' : cell.align;
+          const cellX = cell.align === 'right' ? x + cell.width : cell.align === 'center' ? x + cell.width / 2 : x;
+          context.fillText(cell.text, cellX / scaleX, lineIndex * logicalLineHeight);
+          x += cell.width;
+          if (cellIndex < line.length - 1) x += gapDots;
+        });
+      });
       const image = context.getImageData(0, 0, width, canvas.height).data;
       for (let i = 0; i < pixels.length; i++) pixels[i] = image[i * 4] < 128 ? 1 : 0;
       const bands = [];
@@ -332,6 +361,35 @@ function stripRasterControlTokens(line: string): string {
   return line.replace(RASTER_CONTROL_TOKEN_RE, '');
 }
 
+function financialLayoutForLine(groupId: string, offset: number, sourceText: string): RasterTextLayout | undefined {
+  const amountPattern = /((?:[-+]?[^0-9\s]*)?\d[\d\s.,]*)$/u;
+  if (groupId.startsWith('item-table-row-') && offset === 0) {
+    const itemMatch = sourceText.match(/^([\s\S]+?)\s+(\d+(?:[.,]\d+)?)\s+((?:[-+]?[^0-9\s]*)?\d[\d\s.,]*)$/u);
+    if (itemMatch) {
+      return {
+        kind: 'financial-item',
+        columns: [
+          { text: itemMatch[1], align: 'left' },
+          { text: itemMatch[2], align: 'left' },
+          { text: itemMatch[3].trimStart(), align: 'right' },
+        ],
+      };
+    }
+  }
+  const amountMatch = sourceText.match(amountPattern);
+  if (!amountMatch || amountMatch.index === undefined || amountMatch.index <= 0) return undefined;
+  const label = sourceText.slice(0, amountMatch.index).trimEnd();
+  const value = amountMatch[1].trimStart();
+  if (!label || !value) return undefined;
+  return {
+    kind: 'financial-summary',
+    columns: [
+      { text: label, align: 'left' },
+      { text: value, align: 'right' },
+    ],
+  };
+}
+
 function controlMetadataLine(line: string, sourceText?: string): string {
   if (sourceText === undefined) return line;
   if (sourceText.length === 0) return line;
@@ -359,6 +417,7 @@ function requestForRasterLine(
   requestId: string,
   financial: boolean,
   sourceText?: string,
+  layout?: RasterTextLayout,
 ): RasterRenderRequest | null {
   const metadataLine = controlMetadataLine(line, sourceText);
   if (metadataLine.includes('{INIT}') || metadataLine.includes('{CUT}') || metadataLine.includes('{FEED}')) return null;
@@ -377,6 +436,7 @@ function requestForRasterLine(
     maxBandHeight: capabilities.raster.maxBandHeight,
     direction: /[\u0590-\u08FF\uFB50-\uFEFF]/.test(text) ? 'rtl' : 'ltr',
     align: metadataLine.includes('{CENTER}') && metadataLine.includes('{/CENTER}') ? 'center' : 'left',
+    ...(layout ? { layout } : {}),
     style: metadataLine.includes('{DOUBLE_HEIGHT}') ? 'double-height'
       : metadataLine.includes('{DOUBLE_WIDTH}') ? 'double-width'
         : metadataLine.includes('{FONT_B}') ? 'font-b'
@@ -442,7 +502,11 @@ export async function renderUnsupportedRasterLines(
           const layoutLine = range.sourceControlLines?.[offset]
             ?? range.lines[Math.min(offset, range.lines.length - 1)]
             ?? '';
-          const request = requestForRasterLine(layoutLine, range.lineIndex + offset, capabilities, requestPrefix, financial, range.sourceLines ? sourceLines[offset] : undefined);
+          const sourceText = range.sourceLines ? sourceLines[offset] : undefined;
+          const layout = sourceText !== undefined && financial
+            ? financialLayoutForLine(group.groupId, offset, sourceText)
+            : undefined;
+          const request = requestForRasterLine(layoutLine, range.lineIndex + offset, capabilities, requestPrefix, financial, sourceText, layout);
           if (!request) continue;
           const result = await renderRasterSemanticUnit(renderer, request, financial);
           if (!result.ok) {

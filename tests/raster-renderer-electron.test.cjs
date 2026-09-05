@@ -96,6 +96,15 @@ async function run() {
     });
     assert.equal(financialOverflow.ok, false);
     assert.equal(financialOverflow.code, 'render-failed');
+    const nonFinancialOverflow = await renderer.render({
+      ...base,
+      requestId: 'electron-nonfinancial-overflow',
+      text: 'שלום '.repeat(200),
+      financial: false,
+      maxLines: 1,
+    });
+    assert.equal(nonFinancialOverflow.ok, false);
+    assert.equal(nonFinancialOverflow.code, 'render-failed');
     surface.webContents.emit('render-process-gone');
     const processFailure = await renderer.render({ ...base, requestId: 'electron-process-failure' });
     assert.deepEqual(processFailure, {

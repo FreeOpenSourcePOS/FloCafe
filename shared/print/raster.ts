@@ -15,6 +15,15 @@ export const GS_V_0_MODE = 0;
 
 export type RasterTextDirection = 'ltr' | 'rtl';
 export type RasterStyle = 'normal' | 'bold' | 'double-height' | 'double-width' | 'font-b';
+export type RasterLayoutKind = 'financial-summary' | 'financial-item';
+
+export interface RasterTextLayout {
+  readonly kind: RasterLayoutKind;
+  readonly columns: readonly {
+    readonly text: string;
+    readonly align: 'left' | 'right';
+  }[];
+}
 
 export interface RasterBand {
   readonly widthDots: number;
@@ -48,6 +57,7 @@ export interface RasterRenderRequest {
   readonly maxBandHeight: number;
   readonly direction: RasterTextDirection;
   readonly align?: 'left' | 'center';
+  readonly layout?: RasterTextLayout;
   readonly style: RasterStyle;
   readonly styles?: readonly RasterStyle[];
   readonly financial: boolean;
@@ -246,6 +256,17 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
     && Number.isSafeInteger(request.maxBandHeight) && (request.maxBandHeight as number) > 0 && (request.maxBandHeight as number) <= DEFAULT_RASTER_MAX_BAND_HEIGHT
     && (request.direction === 'ltr' || request.direction === 'rtl')
     && (request.align === undefined || request.align === 'left' || request.align === 'center')
+    && (request.layout === undefined || (
+      !!request.layout
+      && (request.layout.kind === 'financial-summary' || request.layout.kind === 'financial-item')
+      && Array.isArray(request.layout.columns)
+      && request.layout.columns.length >= 2
+      && request.layout.columns.length <= 3
+      && request.layout.columns.every((column) => !!column
+        && typeof column.text === 'string'
+        && column.text.length <= 16_000
+        && (column.align === 'left' || column.align === 'right'))
+    ))
     && ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(request.style as string)
     && (request.styles === undefined || (Array.isArray(request.styles) && request.styles.length > 0 && request.styles.length <= 4
       && request.styles.every((style) => ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(style))))

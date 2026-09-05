@@ -482,6 +482,28 @@ async function run(): Promise<void> {
     { groupId: 'financial', lineIndex: 0, lineCount: 1, sourceLines: ['فارسی {FINANCIAL}'], financial: true },
   ]);
   assert.equal(financialUnitRequests[0].financial, true);
+  const financialLayoutRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      financialLayoutRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true } };
+    },
+  }, ['{FINANCIAL}فارسی 1 ₹12.34'], caps, 'financial-layout', [
+    {
+      groupId: 'item-table-row-0',
+      lineIndex: 0,
+      lineCount: 1,
+      sourceLines: ['فارسی 1 ₹12.34'],
+      sourceControlLines: ['{FINANCIAL}فارسی 1 ₹12.34'],
+      financial: true,
+    },
+  ]);
+  assert.equal(financialLayoutRequests[0].layout.kind, 'financial-item');
+  assert.deepEqual(financialLayoutRequests[0].layout.columns.map((column: any) => [column.text, column.align]), [
+    ['فارسی', 'left'],
+    ['1', 'left'],
+    ['₹12.34', 'right'],
+  ]);
   const alignedStyleRequests: any[] = [];
   await renderUnsupportedRasterLines({
     render: async (rasterRequest) => {

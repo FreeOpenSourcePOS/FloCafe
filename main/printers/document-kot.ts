@@ -66,7 +66,7 @@ export function buildKotPrintData(order: any, items: any[], stationName: string)
     items: ticketItems.map((item: any) => ({
       productName: String(item?.product_name ?? ''),
       quantity: Number(item?.quantity) || 0,
-      addons: parseKotAddons(item?.addons).map((addon: any) => ({
+      addons: parseKotAddons(item?.addons).map((addon) => ({
         name: String(addon?.name ?? ''),
         ...(typeof addon?.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
           ? { quantity: addon.quantity }

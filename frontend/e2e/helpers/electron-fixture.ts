@@ -119,6 +119,8 @@ export async function injectElectronFixture(
       getAppInfo: async () => appInfo,
       getPrinters: async () => [],
       savePrinter: async () => result,
+      rasterizePrintDocument: async () => ({ ok: false, error: 'fixture' }),
+      rasterizeKotDocument: async () => ({ ok: false, error: 'fixture' }),
       getDailySummary: async () => dailySummary,
       getStatus: async () => status,
       windowReady: async () => result,

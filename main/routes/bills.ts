@@ -282,7 +282,7 @@ export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: n
     ? projectedItems
     : applyPersistedChildTaxBreakdowns(projectedItems, itemRows, persistedTaxBreakdown, minorFactor);
   const table = order.table_id
-    ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
+    ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as { number?: string | number } | null
     : null;
   return {
     ...order,

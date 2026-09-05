@@ -1058,11 +1058,12 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
 }
 
 type RasterDocumentLines = { lines: string[]; warnings: PrintWarning[]; rasterGroups?: readonly RasterSemanticLineGroup[] };
+type RasterBusinessInput = Record<string, unknown> | null | undefined;
 
 function receiptDocumentLines(
-  order: any,
-  bill: any,
-  business: any,
+  order: unknown,
+  bill: unknown,
+  business: RasterBusinessInput,
   template: string,
   columns: number,
   useUnicode: boolean,
@@ -1261,9 +1262,9 @@ export async function rasterizeKotDocumentForWebUsb(
 
 async function rasterizeReceiptIfEnabled(
   prepared: ReturnType<typeof prepareReceipt>,
-  order: any,
-  bill: any,
-  business: any,
+  order: unknown,
+  bill: unknown,
+  business: RasterBusinessInput,
   template: string,
   useUnicode: boolean,
   isReprint: boolean,

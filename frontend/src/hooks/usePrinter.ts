@@ -281,10 +281,11 @@ export const usePrinterStore = create<PrinterState>()(
 
           const webusbPrinter = get().webusbPrinter;
           const webusbCapabilities = webusbPrinter?.capabilities;
-          if (rasterBillTemplate && rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizePrintDocument), webusbPrinter?.profile_id)) {
+          const rasterizePrintDocument = window.electronAPI?.rasterizePrintDocument;
+          if (rasterBillTemplate && webusbPrinter && rasterizePrintDocument && rasterWebUsbPathEnabled(webusbCapabilities, true, webusbPrinter.profile_id)) {
             try {
               const currency = resolveTenantCurrency(tenant.currency, tenant.country);
-              const rasterResult = await window.electronAPI.rasterizePrintDocument({
+              const rasterResult = await rasterizePrintDocument({
                 document: buildFrontendBillDocument(bill, tenant, {
                   ...builderOpts,
                   columns: builderOpts.paperWidth === 80 ? 48 : 42,
@@ -479,7 +480,8 @@ export const usePrinterStore = create<PrinterState>()(
             const encoderWarnings: PrintWarning[] = [];
             const webusbPrinter = get().webusbPrinter;
             const webusbCapabilities = webusbPrinter?.capabilities;
-            const useRaster = rasterWebUsbPathEnabled(webusbCapabilities, Boolean(window.electronAPI?.rasterizeKotDocument), webusbPrinter?.profile_id);
+            const rasterizeKotDocument = window.electronAPI?.rasterizeKotDocument;
+            const useRaster = Boolean(webusbPrinter && rasterizeKotDocument && rasterWebUsbPathEnabled(webusbCapabilities, true, webusbPrinter.profile_id));
             let rasterOrder = orderForPrint;
             let rasterHydrationError: unknown = null;
             if (useRaster && (orderForPrint.table_id || orderForPrint.customer_id)) {
@@ -501,9 +503,9 @@ export const usePrinterStore = create<PrinterState>()(
             if (useRaster && rasterHydrationError) {
               warnings.push(makeRasterFallbackWarning(rasterHydrationError));
               warnings.push(...encoderWarnings);
-            } else if (useRaster) {
+            } else if (useRaster && rasterizeKotDocument && webusbPrinter) {
               try {
-                const rasterResult = await window.electronAPI.rasterizeKotDocument({
+                const rasterResult = await rasterizeKotDocument({
                   document: buildFrontendKotDocument(rasterOrder, {
                     items: rasterOrder.items,
                     stationName: opts?.stationName ?? 'Kitchen',

@@ -794,6 +794,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     // wins over the profile default so the merchant's explicit choice (#437)
     // applies even when the matched profile leaves the flag unset.
     const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+    const nativeCapabilities = nativeFallbackCapabilities(capabilities);
     let data: Buffer;
     if (rasterCapabilityEnabled(capabilities)) {
       const documentResult = renderKotViaDocument(order, items, stationName, {
@@ -806,6 +807,16 @@ export async function printKOT(order: any, items: any[], stationName: string, us
         cutMode: profile.cutMode,
         capabilities,
       });
+      const nativeResult = renderKotViaDocument(order, items, stationName, {
+        columns: cols,
+        language: normalizePrintLanguage(language ?? biz?.language),
+        locale,
+        timezone,
+        useUnicode,
+        arabicShaping: nativeCapabilities.shaping.arabic,
+        cutMode: profile.cutMode,
+        capabilities: nativeCapabilities,
+      });
       const rasterized = await rasterizeDocumentLines(documentResult.lines, documentResult.warnings, {
         useUnicode,
         cutMode: profile.cutMode,
@@ -817,7 +828,8 @@ export async function printKOT(order: any, items: any[], stationName: string, us
       }, documentResult.rasterGroups);
       data = rasterized.rasterSelected && !rasterized.rasterFailed
         ? rasterized.data
-        : documentResult.data;
+        : nativeResult.data;
+      if (rasterized.rasterFailed) warnings.push(...nativeResult.warnings);
       warnings.push(...rasterized.warnings);
     } else {
       data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, capabilities.shaping.arabic, normalizePrintLanguage(language ?? biz?.language), capabilities);
@@ -961,6 +973,12 @@ function getColumnsForPrinter(printer: any, profile: SupportedPrinterProfile): n
   return profile.fontAColumns || 48;
 }
 
+function nativeFallbackCapabilities(capabilities: ThermalPrinterCapabilities): ThermalPrinterCapabilities {
+  return capabilities.raster.enabled
+    ? { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
+    : capabilities;
+}
+
 function columnsForPaperWidth(paperWidth: string): number | null {
   const colsMatch = String(paperWidth || '').match(/^cols-(3[2-9]|4[0-8])$/);
   if (colsMatch) return Number(colsMatch[1]);
@@ -1034,7 +1052,8 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   // wins over the profile default (#437); absent override keeps the
   // profile's declared capability.
   const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
-  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, capabilities.shaping.arabic, language, additionalLanguage, capabilities);
+  const nativeCapabilities = nativeFallbackCapabilities(capabilities);
+  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, nativeCapabilities.shaping.arabic, language, additionalLanguage, nativeCapabilities);
   return { printer, data, warnings, columns };
 }
 

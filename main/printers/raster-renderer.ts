@@ -587,11 +587,11 @@ export async function renderUnsupportedRasterLines(
           const layout = sourceText !== undefined && layoutFinancial
             ? financialLayoutForLine(group.groupId, physicalSourceLine.sourceIndex!, sourceText)
             : undefined;
-          const request = requestForRasterLine(physicalSourceLine.controlLine, physicalSourceLine.lineIndex, capabilities, requestPrefix, financial, sourceText, layout);
+          const request = requestForRasterLine(physicalSourceLine.controlLine, physicalSourceLine.lineIndex, capabilities, requestPrefix, layoutFinancial, sourceText, layout);
           if (!request) continue;
           let result: Awaited<ReturnType<typeof renderRasterSemanticUnit>>;
           try {
-            result = await renderRasterSemanticUnit(renderer, request, financial);
+            result = await renderRasterSemanticUnit(renderer, request, layoutFinancial);
           } catch (error) {
             result = {
               ok: false,

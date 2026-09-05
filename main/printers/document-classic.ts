@@ -385,9 +385,14 @@ export function renderBillDocumentToClassicLines(
         }
         if (footerLines.length > 0) {
           segment.post.push(dash);
-          for (const footerLine of footerLines) pushCenteredWrapped(segment.post, footerLine, cols, options.language, options.capabilities);
+          const footerControlLines: string[] = [dash];
+          for (const footerLine of footerLines) {
+            const start = segment.post.length;
+            pushCenteredWrapped(segment.post, footerLine, cols, options.language, options.capabilities);
+            footerControlLines.push(segment.post[start] ?? '');
+          }
           segment.sourceLines.post.push(dash, ...footerSourceLines);
-          segment.sourceControlLines.post.push(dash, ...footerLines.map((line) => '{CENTER}' + line + '{/CENTER}'));
+          segment.sourceControlLines.post.push(...footerControlLines);
         }
         break;
       }

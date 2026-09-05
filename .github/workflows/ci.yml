@@ -170,8 +170,7 @@ jobs:
       - name: Core test suite (shard ${{ matrix.shard }})
         # The suite list is derived from package.json's "test" script at run
         # time, so shard coverage cannot drift from a hand-maintained list.
-        run: |
-          SHARD_TOTAL=2 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs
+        run: xvfb-run -a --server-args='-screen 0 1280x800x24' env SHARD_TOTAL=2 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs
 
   # 5. Playwright E2E
   e2e-playwright:

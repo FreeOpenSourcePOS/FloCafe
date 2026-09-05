@@ -24,7 +24,7 @@ import {
   type PrintConceptId,
 } from '../print/print-labels.generated';
 import type { PrinterCutMode } from './profiles';
-import { hasArabicScript, isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
@@ -482,9 +482,7 @@ export function renderBillDocumentToClassicLines(
             fractionDigits,
             options.capabilities,
           );
-          if (!hasArabicScript(row.name.text) || options.capabilities?.shaping.arabic === true) {
-            segment.financialRanges.main.push({ start, count: rowLines.length });
-          }
+          segment.financialRanges.main.push({ start, count: rowLines.length });
           segment.main.push(...rowLines);
           const amount = formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits);
           const sourceLines = [`${row.name.text} ${row.quantity} ${amount}`];
@@ -502,7 +500,7 @@ export function renderBillDocumentToClassicLines(
             const addonStart = segment.main.length;
             const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
             segment.main.push(...addonLines);
-            if (addon.price && (!hasArabicScript(addon.name.text) || options.capabilities?.shaping.arabic === true)) {
+            if (addon.price) {
               segment.financialRanges.main.push({ start: addonStart, count: addonLines.length });
             }
             const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';

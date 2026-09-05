@@ -1125,7 +1125,14 @@ async function rasterizeDocumentLines(
   },
   rasterGroups?: readonly RasterSemanticLineGroup[],
 ): Promise<{ data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean }> {
-  let selectedFinancial = false;
+  const financialRasterContent = (rasterGroups ?? []).some((group) => {
+    const sourceLines = group.sourceLines ?? lines.slice(group.lineIndex, group.lineIndex + group.lineCount);
+    return sourceLines.some((line, index) => {
+      const financial = group.financialSourceLines?.[index] ?? group.financial === true;
+      return financial && line.length > 0 && !isThermalTextRepresentable(line, options.capabilities);
+    });
+  });
+  let selectedFinancial = financialRasterContent;
   const failureResult = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     const financial = selectedFinancial;

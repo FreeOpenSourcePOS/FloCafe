@@ -15,7 +15,7 @@
 import { parseDbTimestamp } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
-import { hasArabicScript, isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
+import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
@@ -240,7 +240,7 @@ export function renderBillDocumentToCompactLines(
         options.capabilities,
       );
       lines.push(...rowLines);
-      recordFinancialLines(rowStart, rowLines, !hasArabicScript(row.name.text) || options.capabilities?.shaping.arabic === true);
+      recordFinancialLines(rowStart, rowLines);
       const amount = formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits);
       const sourceLines = [`${row.name.text} ${row.quantity} ${amount}`];
       const sourceControlLines = [rowLines[0] ?? ''];
@@ -257,7 +257,7 @@ export function renderBillDocumentToCompactLines(
         const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
         const addonStart = lines.length;
         lines.push(...addonLines);
-        if (addon.price) recordFinancialLines(addonStart, addonLines, !hasArabicScript(addon.name.text) || options.capabilities?.shaping.arabic === true);
+        if (addon.price) recordFinancialLines(addonStart, addonLines);
         const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
         const addonLabel = `  + ${addon.name.text}${quantitySuffix}`;
         const addonAmount = addon.price ? formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits) : '';

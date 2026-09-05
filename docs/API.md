@@ -918,6 +918,10 @@ Update business settings.
 
 `timezone` is validated as an IANA identifier; invalid values return HTTP 400 with `"Invalid timezone, currency, or country"`.
 
+`currency` accepts any three-letter ASCII currency code. Leading/trailing
+whitespace is trimmed and lowercase input is normalized to uppercase before
+the value is persisted; invalid codes return the same HTTP 400 response.
+
 When `tax_registration_number` is provided, the backend validates it against the active country pack's registration format. A mismatch returns HTTP 400:
 
 ```json

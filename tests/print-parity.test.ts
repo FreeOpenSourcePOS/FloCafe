@@ -321,7 +321,9 @@ function section(title: string): void {
 }
 
 function run(): void {
-  const { order, bill, business, tenant } = buildParityFixtures();
+  const { order: fullOrder, bill: fullBill, business, tenant } = buildParityFixtures();
+  const order = { ...fullOrder, items: fullOrder.items.filter((item: any) => item.product_name !== PERSIAN_ITEM) };
+  const bill = { ...fullBill, order };
   const fe = loadFrontendPrintModules();
 
   const baseExpect = {
@@ -338,20 +340,20 @@ function run(): void {
   // ------------------------------------------------------------------
   // 1. Backend ESC/POS — classic + compact at 32/42/48 columns
   // ------------------------------------------------------------------
+  {
+    const refusalWarnings: Warnings = [];
+    const refusal = formatReceipt(fullOrder, fullBill, business, 'compact', 48, false, false, undefined, refusalWarnings);
+    warn(refusal.length === 0, 'backend refuses unsupported paid Persian rows before transport');
+    warn(refusalWarnings.some((warning) => warning.kind === 'financial'), 'backend refusal identifies the unsupported paid row as financial');
+  }
   for (const template of ['classic', 'compact'] as const) {
     for (const cols of [32, 42, 48]) {
       section(`Backend ${template} @ ${cols} cols`);
-      const warnings: Warnings = [];
       const text = escPosToText(
-        formatReceipt(order, bill, business, template, cols, false, false, undefined, warnings)
+        formatReceipt(order, bill, business, template, cols, false, false, undefined, [])
       );
-      // LEGACY: Persian-script line is skipped by the unsupported-character
-      // guard (see #437/#355 history). This documents current behavior; do
-      // not treat it as the future architecture contract.
       const withSubtotal = template === 'classic' ? { subtotal: 1220 } : {};
       expectContent(`${template}/${cols}`, text, { ...baseExpect, ...withSubtotal, absentItems: [PERSIAN_ITEM] }, warn);
-      warn(warnings.some((w) => (w.message ?? w.text ?? '').includes('Persian/Arabic')),
-        `${template}/${cols}: skip produced explicit Persian/Arabic warning`);
 
       section(`Backend ${template} @ ${cols} cols — reprint`);
       const reText = escPosToText(
@@ -369,8 +371,8 @@ function run(): void {
       section(`WebUSB ${variant} @ ${paperWidth}mm`);
       const warnings: Warnings = [];
       const bytes = variant === 'classic'
-        ? fe.receiptEncoder.buildClassicReceiptBytes(bill as any, tenant as any, { paperWidth }, warnings as any)
-        : fe.receiptEncoder.buildCompactReceiptBytes(bill as any, tenant as any, { paperWidth }, warnings as any);
+        ? fe.receiptEncoder.buildClassicReceiptBytes(fullBill as any, tenant as any, { paperWidth }, warnings as any)
+        : fe.receiptEncoder.buildCompactReceiptBytes(fullBill as any, tenant as any, { paperWidth }, warnings as any);
       const text = new TextDecoder().decode(bytes);
       // LEGACY: same skip-with-warning contract as backend (safePrinterText).
       const feSubtotal = variant === 'classic' ? { subtotal: 1220 } : {};
@@ -396,7 +398,7 @@ function run(): void {
   section('WebUSB reprint banner');
   {
     const bytes = fe.receiptEncoder.buildClassicReceiptBytes(
-      bill as any,
+      fullBill as any,
       tenant as any,
       { paperWidth: 80, isReprint: true },
       []
@@ -552,7 +554,7 @@ function run(): void {
   // ------------------------------------------------------------------
   for (const paperSize of ['thermal58', 'thermal80'] as const) {
     section(`Browser HTML @ ${paperSize}`);
-    const html = fe.webPrint.generateBillHtml(bill as any, tenant as any, {
+    const html = fe.webPrint.generateBillHtml(fullBill as any, tenant as any, {
       paperSize,
       address: business.address,
       phone: business.phone,
@@ -570,7 +572,7 @@ function run(): void {
 
   section('Browser HTML reprint banner');
   {
-    const html = fe.webPrint.generateBillHtml(bill as any, tenant as any, {
+    const html = fe.webPrint.generateBillHtml(fullBill as any, tenant as any, {
       paperSize: 'thermal80',
       businessName: business.name,
       isReprint: true,
@@ -580,7 +582,7 @@ function run(): void {
 
   section('Browser HTML uses semantic catalog labels and fallback');
   {
-    const html = fe.webPrint.generateBillHtml(bill as any, tenant as any, {
+    const html = fe.webPrint.generateBillHtml(fullBill as any, tenant as any, {
       paperSize: 'thermal80',
       businessName: business.name,
       address: business.address,
@@ -610,7 +612,7 @@ function run(): void {
     ] as const) {
       warn(html.includes(expected), `browser semantic label ${concept} renders as ${expected}`);
     }
-    const fallback = fe.webPrint.generateBillHtml(bill as any, tenant as any, {
+    const fallback = fe.webPrint.generateBillHtml(fullBill as any, tenant as any, {
       languages: ['unknown-language'] as any,
     });
     warn(fallback.includes('<strong>Grand Total</strong>') && !fallback.includes('receipt.grandTotal'),
@@ -657,10 +659,6 @@ function run(): void {
         ...(isReprint ? { reprint: true } : {}),
       }, warn);
       warn(docResult.document.version === 1 && docResult.document.blocks.length > 0, `${label}: PrintDocument v1 with blocks`);
-      if (!isReprint) {
-        warn(docResult.warnings.some((w) => (w.message ?? w.text ?? '').includes('Persian/Arabic')),
-          `${label}: skip produced explicit Persian/Arabic warning`);
-      }
     }
   }
 
@@ -687,7 +685,7 @@ function run(): void {
   for (const cols of [32, 42, 48]) {
     const label = `kot-document/${cols}`;
     section(label);
-    const migratedBuf = formatKOT(kotOrder, order.items, 'Main Kitchen', cols, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en');
+    const migratedBuf = formatKOT(kotOrder, fullOrder.items, 'Main Kitchen', cols, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en');
     const kotText = escPosToText(migratedBuf);
     warn(kotText.includes('Main Kitchen'), `${label}: station block rendered`);
     warn(kotText.includes('Order #ORD-PARITY-001'), `${label}: shared order-number format rendered`);
@@ -696,7 +694,7 @@ function run(): void {
     warn(kotText.includes('>> Less sugar'), `${label}: instruction lines rendered`);
     if (cols >= 42) warn(!kotText.includes(PERSIAN_ITEM), `${label}: unsupported-script item skipped with warning only`);
   }
-  const typedKotText = escPosToText(formatKOT(typedKotOrder, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en'));
+  const typedKotText = escPosToText(formatKOT(typedKotOrder, fullOrder.items, 'Main Kitchen', 42, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en'));
   warn(typedKotText.includes('Type: Dine in'), 'kot-document/order-type: localized order type rendered when present');
 
   // ------------------------------------------------------------------
@@ -714,6 +712,11 @@ function run(): void {
         formatReceipt(order, bill, business, template, 42, false, false, 'full', warnings, true, language),
       );
       const totalLabel = printLabel(language, 'print.grandTotal');
+      if (language === 'fr') {
+        warn(text.length === 0, `${label}: unsupported accented financial labels refuse before transport`);
+        warn(warnings.some((warning) => warning.kind === 'financial'), `${label}: refusal identifies the accented financial label`);
+        continue;
+      }
       warn(text.includes(totalLabel), `${label}: grand-total label localized (${totalLabel})`);
       const subtotalLabel = printLabel(language, 'pos.subtotal');
       warn(text.includes(subtotalLabel), `${label}: subtotal label localized (${subtotalLabel})`);
@@ -735,7 +738,7 @@ function run(): void {
     );
     warn(receiptLangs[0] === 'fa' && receiptLangs[1] === 'es', 'receipt policy resolves primary + additional');
     // A fixed-en KOT ticket stays English even for a fa store (#443).
-    const kotTextEn = escPosToText(formatKOT(kotOrder, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', undefined, [], false, fixedEn));
+    const kotTextEn = escPosToText(formatKOT(kotOrder, fullOrder.items, 'Main Kitchen', 42, false, 'full', 'en-US', undefined, [], false, fixedEn));
     warn(kotTextEn.includes('Time:'), 'fixed-en KOT ticket renders English time label');
   }
 

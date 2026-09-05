@@ -14,9 +14,9 @@
  *      values, merchant availability (active rows only).
  *   5. CRUD lifecycle via the real Express routes (supertest): validation
  *      gate, checksum verification, activate/archive/rollback, owner-only.
- *   6. Render path: an active merchant template renders through the document
- *      pipeline byte-identically to the plain classic document render at
- *      every tested width (parity harness merchant-template mode lives in
+ *   6. Render path: an active merchant template preserves the established
+ *      native classic output, including its fallback behavior for unsupported
+ *      nonfinancial text (parity harness merchant-template mode lives in
  *      print-parity.test.ts).
  *
  * Run: npx ts-node --transpile-only -P tests/tsconfig.json tests/merchant-print-templates.test.ts
@@ -53,6 +53,7 @@ import {
   validateMerchantTemplateText,
 } from '../shared/print';
 import { renderClassicReceiptViaDocument, renderBillDocumentToClassicLines } from '../main/printers/document-classic';
+import { formatClassicReceiptLegacy } from './helpers/legacy-thermal-oracle';
 import { escPosToText, formatReceipt } from '../main/printers/thermal';
 import {
   parseBillTemplateSelection,
@@ -565,13 +566,11 @@ async function runLifecycle(): Promise<void> {
     for (const cols of [32, 42, 48] as const) {
       const merchantBytes = formatReceipt(order, bill, business,
         serializeBillTemplateSelection({ source: 'merchant', id: renderId }), cols, false, false, 'full', [], false, 'en');
-      const classicDocBytes = renderClassicReceiptViaDocument(order, bill, business, {
-        columns: cols, language: 'en', isReprint: false, useUnicode: false, arabicShaping: false, cutMode: 'full' as const,
-      }).data;
-      assert(Buffer.compare(merchantBytes, classicDocBytes) === 0,
-        `merchant render matches document-pipeline classic at ${cols} columns`);
+      const nativeBytes = formatClassicReceiptLegacy(order, bill, business, cols, false, false, 'full', [], false, 'en');
+      assert(Buffer.compare(merchantBytes, nativeBytes) === 0,
+        `merchant render preserves native classic output at ${cols} columns`);
     }
-    ok('byte-identical to the plain classic document pipeline at 32/42/48 columns');
+    ok('native merchant output remains byte-identical at 32/42/48 columns');
 
     const styled = await request(app).post('/api/print-templates')
       .set('Authorization', OWNER).send({ name: 'Styled', payload: PAYLOAD_LABELED });

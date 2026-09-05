@@ -7,6 +7,7 @@ const Module = require('module');
 const originalLoad = Module._load;
 const registered = new Map<string, (...args: any[]) => any>();
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-printer-ipc-'));
+const { buildBillDocument, buildKotDocument } = require('../shared/print/document');
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
@@ -129,6 +130,31 @@ async function run(): Promise<void> {
     const listed = await getPrinters!(trustedSender);
     assert.equal(Array.isArray(listed), true, 'get-printers returns persisted rows through IPC');
     assert.equal(listed.some((printer: any) => printer.id === inserted.id), true);
+
+    const printDocument = buildBillDocument({
+      isReprint: false,
+      order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', items: [] },
+      bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
+      business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
+    }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId: string) => conceptId });
+    const kotDocument = buildKotDocument({
+      stationName: 'Kitchen',
+      order: { orderNumber: 'K-1', createdAt: '', tableName: '', orderType: '' },
+      items: [],
+    }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '', trimDecimals: false, resolveLabel: (conceptId: string) => conceptId });
+    const rasterPrint = registered.get('rasterize-print-document');
+    const rasterKot = registered.get('rasterize-kot-document');
+    assert.deepEqual(await rasterPrint!(trustedSender, {
+      document: printDocument,
+      template: 'classic',
+      profileId: 'profile',
+      options: { columns: 100000000, language: 'en', locale: 'en-US', currency: 'INR', currencySymbol: '₹', trimDecimals: false, useUnicode: false, arabicShaping: false },
+    }), { ok: false, error: 'Invalid raster document options' }, 'print raster IPC rejects oversized column counts');
+    assert.deepEqual(await rasterKot!(trustedSender, {
+      document: kotDocument,
+      profileId: 'profile',
+      options: { columns: 100000000, language: 'en', locale: 'en-US', useUnicode: false, arabicShaping: false },
+    }), { ok: false, error: 'Invalid raster KOT options' }, 'KOT raster IPC rejects oversized column counts');
     console.log('Electron printer IPC create/update behavior matches the live SQLite schema.');
   } finally {
     closeDatabase();

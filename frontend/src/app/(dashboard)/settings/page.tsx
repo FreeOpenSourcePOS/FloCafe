@@ -1341,6 +1341,7 @@ export default function SettingsPage() {
   const [billTemplateCards, setBillTemplateCards] = useState<TemplateCard[]>(TEMPLATE_CARDS);
   const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
+    posSettings.setBillTemplateSource(billForm.billTemplateSource);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
     // Persist the resolved selection identity captured at selection time
     // (NOT re-derived by first-id match, which a colliding pack id would
@@ -1861,6 +1862,7 @@ export default function SettingsPage() {
       const billFooterMessage = footerResponse?.data.setting?.value ?? posSettings.billFooterMessage;
       const loadedBillForm = { billTemplate, billTemplateSource, billFooterMessage };
       posSettings.setBillTemplate(billTemplate);
+      posSettings.setBillTemplateSource(billTemplateSource);
       posSettings.setBillFooterMessage(billFooterMessage);
       setBillForm(loadedBillForm);
       setSavedBillForm(loadedBillForm);

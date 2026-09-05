@@ -14,6 +14,8 @@ import { useAuthStore } from '@/store/auth';
 import {
   ensurePrintLanguagesLoaded,
   resolveBillPrintLanguages,
+  buildFrontendBillDocument,
+  buildFrontendKotDocument,
 } from '@/lib/printer/print-document';
 import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
@@ -26,8 +28,47 @@ import {
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
-import type { Language } from '@/lib/i18n/languages';
+import { type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
+import { rasterWebUsbPathEnabled } from '@print/raster';
+import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
+
+type CoreBillTemplate = 'classic' | 'compact';
+
+function nativeFallbackCapabilities(capabilities?: ThermalPrinterCapabilities): ThermalPrinterCapabilities | undefined {
+  return capabilities?.raster.enabled === true
+    ? { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
+    : capabilities;
+}
+
+function makeRasterFallbackWarning(detail: unknown): PrintWarning {
+  const message = detail instanceof Error
+    ? detail.message
+    : (typeof detail === 'string' && detail.length > 0 ? detail : 'Raster rendering failed');
+  const financial = message.startsWith('Receipt not printed:');
+  return {
+    field: financial ? 'financial row' : 'raster renderer',
+    text: '',
+    message: `${message}. Native thermal output was used instead.`,
+    kind: financial ? 'financial' : 'configuration',
+  };
+}
+
+function resolveCoreBillTemplate(value: unknown, source: 'core' | 'pack' | 'merchant' | null): CoreBillTemplate | null {
+  if (source !== 'core') return null;
+  if (value === 'classic' || value === 'compact') return value;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+  try {
+    const selection = JSON.parse(trimmed) as { source?: unknown; id?: unknown };
+    return selection.source === 'core' && (selection.id === 'classic' || selection.id === 'compact')
+      ? selection.id
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 export type { PrintWarning } from '@/lib/printer/warnings';
 
@@ -123,6 +164,7 @@ export const usePrinterStore = create<PrinterState>()(
         try {
           const {
             billTemplate,
+            billTemplateSource,
             billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
             billShowName, billShowAddress, billShowPhone, billShowTaxId,
             billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
@@ -133,7 +175,11 @@ export const usePrinterStore = create<PrinterState>()(
           } = usePosSettingsStore.getState();
 
           const isReprint = opts?.isReprint ?? false;
-          const billTemplateWarning = makeBillTemplateFallbackWarning(billTemplate);
+          const isUnknownCoreTemplate = billTemplateSource === null && (billTemplate === 'compact' || billTemplate === 'classic');
+          const billTemplateWarning = billTemplateSource === 'core' || isUnknownCoreTemplate
+            ? null
+            : makeBillTemplateFallbackWarning({ source: billTemplateSource ?? 'unknown', id: billTemplate });
+          const rasterBillTemplate = resolveCoreBillTemplate(billTemplate, billTemplateSource);
 
           const executeBrowserPrint = async (): Promise<PrintWarning[]> => {
             const { printWebBill } = await import('@/lib/printer/web-print');
@@ -220,14 +266,67 @@ export const usePrinterStore = create<PrinterState>()(
             isReprint,
             trimDecimals: printerTrimDecimals,
             languages,
-            capabilities: get().webusbPrinter?.capabilities,
+            capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities),
           };
 
           let bytes: Uint8Array;
-          if (billTemplate === 'compact') {
-            bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, warnings);
+          const encoderWarnings: PrintWarning[] = [];
+          const nativeBillTemplate = rasterBillTemplate
+            ?? (billTemplateSource === null && (billTemplate === 'compact' || billTemplate === 'classic') ? billTemplate : 'classic');
+          if (nativeBillTemplate === 'compact') {
+            bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, encoderWarnings);
           } else {
-            bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, warnings);
+            bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, encoderWarnings);
+          }
+
+          const webusbPrinter = get().webusbPrinter;
+          const webusbCapabilities = webusbPrinter?.capabilities;
+          const rasterizePrintDocument = window.electronAPI?.rasterizePrintDocument;
+          if (rasterBillTemplate && webusbPrinter && rasterizePrintDocument && rasterWebUsbPathEnabled(webusbCapabilities, true, webusbPrinter.profile_id)) {
+            try {
+              const currency = resolveTenantCurrency(tenant.currency, tenant.country);
+              const rasterResult = await rasterizePrintDocument({
+                document: buildFrontendBillDocument(bill, tenant, {
+                  ...builderOpts,
+                  columns: builderOpts.paperWidth === 80 ? 48 : 42,
+                  businessName: tenant.business_name,
+                  includeTaxId: billShowTaxId,
+                  taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel ?? 'Tax ID',
+                  maskCustomerPhone: true,
+                  useBillCustomer: true,
+                }),
+                template: rasterBillTemplate,
+                profileId: webusbPrinter.profile_id,
+                options: {
+                  columns: builderOpts.paperWidth === 80 ? 48 : 42,
+                  language: languages[0],
+                  locale: getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US',
+                  currency,
+                  currencySymbol: getCurrencySymbol(currency, getCountryByCode(tenant.country ?? 'IN')?.locale),
+                  trimDecimals: printerTrimDecimals,
+                  useUnicode: printerUseUnicode,
+                  arabicShaping: printerArabicShaping,
+                  ...(tenant.timezone ? { timezone: tenant.timezone } : {}),
+                },
+              });
+              if (!rasterResult.ok || !rasterResult.data) {
+                warnings.push(makeRasterFallbackWarning(rasterResult.ok ? undefined : rasterResult.error));
+                warnings.push(...encoderWarnings);
+              } else {
+                if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
+                const rasterFinancialFailed = rasterResult.warnings?.some((warning) => warning.kind === 'financial') ?? false;
+                if (rasterResult.rasterSelected && !rasterResult.rasterFailed && !rasterFinancialFailed) {
+                  bytes = Uint8Array.from(rasterResult.data);
+                } else {
+                  warnings.push(...encoderWarnings);
+                }
+              }
+            } catch (error) {
+              warnings.push(makeRasterFallbackWarning(error));
+              warnings.push(...encoderWarnings);
+            }
+          } else {
+            warnings.push(...encoderWarnings);
           }
 
           if (hasFinancialPrintWarning(warnings)) {
@@ -323,7 +422,7 @@ export const usePrinterStore = create<PrinterState>()(
             trimDecimals: printerTrimDecimals,
             rawEscPos: true,
             language: languages[0],
-            capabilities: get().webusbPrinter?.capabilities,
+            capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities),
           }, warnings);
           if (hasFinancialPrintWarning(warnings)) {
             const refusal = makeFinancialPrintRefusalMessage(warnings);
@@ -346,7 +445,9 @@ export const usePrinterStore = create<PrinterState>()(
         // (issue #133) — coarser than auto_print_kot, which only gates
         // automatic printing on order placement.
         const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
-        const tenantTimezone = useAuthStore.getState().currentTenant?.timezone;
+        const tenant = useAuthStore.getState().currentTenant;
+        const tenantTimezone = tenant?.timezone;
+        const tenantLocale = getCountryByCode(tenant?.country ?? 'IN')?.locale ?? 'en-US';
         if (!kotPrintingEnabled) {
           const err = new Error('KOT printing is disabled for this business');
           set({ lastError: err.message });
@@ -376,13 +477,78 @@ export const usePrinterStore = create<PrinterState>()(
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             const { paperWidth } = get();
             const warnings: PrintWarning[] = [];
+            const encoderWarnings: PrintWarning[] = [];
+            const webusbPrinter = get().webusbPrinter;
+            const webusbCapabilities = webusbPrinter?.capabilities;
+            const rasterizeKotDocument = window.electronAPI?.rasterizeKotDocument;
+            const useRaster = Boolean(webusbPrinter && rasterizeKotDocument && rasterWebUsbPathEnabled(webusbCapabilities, true, webusbPrinter.profile_id));
+            let rasterOrder = orderForPrint;
+            let rasterHydrationError: unknown = null;
+            if (useRaster && (orderForPrint.table_id || orderForPrint.customer_id)) {
+              try {
+                const response = await api.get<{ order: Order }>(`/orders/${orderForPrint.id}`);
+                rasterOrder = orderForPrint.items
+                  ? { ...response.data.order, items: orderForPrint.items }
+                  : response.data.order;
+              } catch (error) {
+                rasterHydrationError = error;
+              }
+            }
             const bytes = buildKotBytes(
-              orderForPrint,
-              { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: get().webusbPrinter?.capabilities },
-              warnings,
+              rasterOrder,
+              { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities) },
+              encoderWarnings,
             );
-            set({ lastPrintedBytes: bytes });
-            await printerService.print(bytes);
+            let output = bytes;
+            if (useRaster && rasterHydrationError) {
+              warnings.push(makeRasterFallbackWarning(rasterHydrationError));
+              warnings.push(...encoderWarnings);
+            } else if (useRaster && rasterizeKotDocument && webusbPrinter) {
+              try {
+                const rasterResult = await rasterizeKotDocument({
+                  document: buildFrontendKotDocument(rasterOrder, {
+                    items: rasterOrder.items,
+                    stationName: opts?.stationName ?? 'Kitchen',
+                    columns: paperWidth === 80 ? 48 : 42,
+                    language: kotLanguage,
+                    ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
+                  }),
+                  profileId: webusbPrinter.profile_id,
+                  options: {
+                    columns: paperWidth === 80 ? 48 : 42,
+                    language: kotLanguage,
+                    locale: tenantLocale,
+                    ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
+                    useUnicode: printerUseUnicode,
+                    arabicShaping: printerArabicShaping,
+                  },
+                });
+                if (!rasterResult.ok || !rasterResult.data) {
+                  warnings.push(makeRasterFallbackWarning(rasterResult.ok ? undefined : rasterResult.error));
+                  warnings.push(...encoderWarnings);
+                } else {
+                  if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
+                  const rasterFinancialFailed = rasterResult.warnings?.some((warning) => warning.kind === 'financial') ?? false;
+                  if (rasterResult.rasterSelected && !rasterResult.rasterFailed && !rasterFinancialFailed) {
+                    output = Uint8Array.from(rasterResult.data);
+                  } else {
+                    warnings.push(...encoderWarnings);
+                  }
+                }
+              } catch (error) {
+                warnings.push(makeRasterFallbackWarning(error));
+                warnings.push(...encoderWarnings);
+              }
+            } else {
+              warnings.push(...encoderWarnings);
+            }
+            if (hasFinancialPrintWarning(warnings)) {
+              const refusal = makeFinancialPrintRefusalMessage(warnings);
+              toast.error(refusal);
+              throw new Error(refusal);
+            }
+            set({ lastPrintedBytes: output });
+            await printerService.print(output);
             return [
               ...failedLanguages.map((language) => ({
                 field: 'kot language',

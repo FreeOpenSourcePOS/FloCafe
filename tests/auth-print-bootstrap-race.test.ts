@@ -16,9 +16,11 @@ const selection = deferred<{ data: { access_token: string; tenant: any } }>();
 const settings = {
   state: {
     language: 'en',
+    billTemplateSource: 'core' as 'core' | null,
     billLanguagePolicy: null as unknown,
     kotLanguagePolicy: null as unknown,
     setLanguage(language: string) { this.language = language; },
+    setBillTemplateSource(source: 'core' | null) { this.billTemplateSource = source; },
     setBillLanguagePolicy(policy: unknown) { this.billLanguagePolicy = policy; },
     setKotLanguagePolicy(policy: unknown) { this.kotLanguagePolicy = policy; },
   },
@@ -75,6 +77,7 @@ async function run(): Promise<void> {
   await restoreRun;
 
   assert.equal(useAuthStore.getState().currentTenant?.id, 2, 'stale session restore cannot replace the selected tenant');
+  assert.equal(settings.state.billTemplateSource, null, 'tenant selection clears stale bill template provenance');
   assert.equal(settings.state.billLanguagePolicy.primary.language, 'de', 'stale restore cannot replace the receipt policy');
   assert.equal(settings.state.kotLanguagePolicy.primary.language, 'de', 'stale restore cannot replace the KOT policy');
   console.log('✅ stale auth bootstrap result is ignored after tenant selection');

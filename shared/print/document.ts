@@ -779,6 +779,174 @@ export interface KotDocument {
   readonly blocks: readonly KotDocumentBlock[];
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object';
+}
+
+function isDirection(value: unknown): value is TextDirection {
+  return value === 'ltr' || value === 'rtl';
+}
+
+function isDirectionSpec(value: unknown): value is DirectionSpec {
+  return isRecord(value)
+    && isDirection(value.base)
+    && isDirection(value.document)
+    && isDirection(value.block)
+    && isDirection(value.value);
+}
+
+function isLanguages(value: unknown): value is ResolvedPrintLanguages {
+  return Array.isArray(value)
+    && (value.length === 1 || value.length === 2)
+    && value.every((language) => typeof language === 'string' && language.length > 0);
+}
+
+function isSemanticLabel(value: unknown): value is SemanticLabel {
+  return isRecord(value)
+    && typeof value.primary === 'string'
+    && (value.conceptId === undefined || typeof value.conceptId === 'string')
+    && (value.secondary === undefined || typeof value.secondary === 'string');
+}
+
+function isDirectionalText(value: unknown): value is DirectionalText {
+  return isRecord(value) && typeof value.text === 'string' && isDirection(value.direction);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isOptionalDirectionalText(value: unknown): value is DirectionalText | null {
+  return value === null || isDirectionalText(value);
+}
+
+function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
+  if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string') return false;
+  switch (value.kind) {
+    case 'business-header':
+      return isOptionalDirectionalText(value.name)
+        && isOptionalDirectionalText(value.address)
+        && isOptionalDirectionalText(value.phone)
+        && isOptionalDirectionalText(value.instagramHandle)
+        && (value.taxId === null || (isRecord(value.taxId) && isSemanticLabel(value.taxId.label) && isDirectionalText(value.taxId.value)))
+        && (value.phoneLabel === null || isSemanticLabel(value.phoneLabel));
+    case 'document-meta':
+      return isSemanticLabel(value.title)
+        && isSemanticLabel(value.invoiceNumberLabel)
+        && isSemanticLabel(value.billNumberLabel)
+        && isSemanticLabel(value.dateLabel)
+        && isDirectionalText(value.invoiceNumber)
+        && isDirectionalText(value.timestamp)
+        && (value.table === null || (isRecord(value.table) && isSemanticLabel(value.table.label) && isDirectionalText(value.table.name)));
+    case 'customer':
+      return isOptionalDirectionalText(value.name)
+        && isOptionalDirectionalText(value.phone)
+        && isSemanticLabel(value.nameLabel)
+        && isSemanticLabel(value.phoneLabel);
+    case 'item-table':
+      return isRecord(value.header)
+        && isSemanticLabel(value.header.item)
+        && isSemanticLabel(value.header.quantity)
+        && isSemanticLabel(value.header.amount)
+        && isSemanticLabel(value.noteLabel)
+        && Array.isArray(value.rows)
+        && value.rows.every((row) => isRecord(row)
+          && isDirection(row.direction)
+          && isDirectionalText(row.name)
+          && isFiniteNumber(row.quantity)
+          && (row.unitPrice === undefined || isFiniteNumber(row.unitPrice))
+          && isFiniteNumber(row.amount)
+          && Array.isArray(row.addons)
+          && row.addons.every((addon) => isRecord(addon)
+            && isDirectionalText(addon.name)
+            && isFiniteNumber(addon.price)
+            && (addon.quantity === undefined || isFiniteNumber(addon.quantity)))
+          && isOptionalDirectionalText(row.specialInstructions));
+    case 'tax-breakdown':
+      return Array.isArray(value.lines)
+        && value.lines.every((line) => isRecord(line)
+          && isSemanticLabel(line.label)
+          && (line.rate === null || isFiniteNumber(line.rate))
+          && isFiniteNumber(line.amount));
+    case 'totals':
+      return ['subtotal', 'grandTotal'].every((key) => isRecord(value[key])
+        && isSemanticLabel(value[key].label)
+        && isFiniteNumber(value[key].amount))
+        && ['discount', 'tax', 'serviceCharge', 'deliveryCharge', 'packagingCharge'].every((key) => value[key] === null || (isRecord(value[key]) && isSemanticLabel(value[key].label) && isFiniteNumber(value[key].amount)))
+        && ['pointsRedeemed', 'pointsEarned', 'pointsBalance'].every((key) => value[key] === null || (isRecord(value[key]) && isSemanticLabel(value[key].label) && isFiniteNumber(value[key].points)));
+    case 'payments':
+      return Array.isArray(value.lines)
+        && value.lines.every((line) => isRecord(line)
+          && typeof line.method === 'string'
+          && isSemanticLabel(line.label)
+          && isFiniteNumber(line.amount));
+    case 'message':
+      return (value.reprintBanner === null || isSemanticLabel(value.reprintBanner))
+        && (value.onlineOrderBanner === null || (isRecord(value.onlineOrderBanner)
+          && isSemanticLabel(value.onlineOrderBanner.label)
+          && isDirectionalText(value.onlineOrderBanner.platform)
+          && isDirectionalText(value.onlineOrderBanner.externalOrderId)))
+        && isOptionalDirectionalText(value.footerNote)
+        && (value.thankYou === null || isSemanticLabel(value.thankYou));
+    default:
+      return false;
+  }
+}
+
+export function isPrintDocument(value: unknown): value is PrintDocument {
+  const blockKinds = new Set(['business-header', 'document-meta', 'customer', 'item-table', 'tax-breakdown', 'totals', 'payments', 'message']);
+  return isRecord(value)
+    && value.version === 1
+    && isDirectionSpec(value.direction)
+    && isLanguages(value.languages)
+    && Array.isArray(value.blocks)
+    && value.blocks.length === blockKinds.size
+    && value.blocks.every(isPrintDocumentBlock)
+    && value.blocks.every((block) => isRecord(block) && blockKinds.has(block.kind))
+    && new Set(value.blocks.map((block) => isRecord(block) ? block.kind : undefined)).size === value.blocks.length;
+}
+
+function isKotDocumentBlock(value: unknown): value is KotDocumentBlock {
+  if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string') return false;
+  if (value.kind === 'kot-header') {
+    return isSemanticLabel(value.banner)
+      && isSemanticLabel(value.stationLabel)
+      && isDirectionalText(value.stationName)
+      && isSemanticLabel(value.orderNumberLabel)
+      && isDirectionalText(value.orderNumber)
+      && (value.table === null || (isRecord(value.table) && isSemanticLabel(value.table.label) && isDirectionalText(value.table.name)))
+      && (value.orderType === null || (isRecord(value.orderType) && isSemanticLabel(value.orderType.label) && isDirectionalText(value.orderType.value) && typeof value.orderType.code === 'string'))
+      && (value.customer === null || (isRecord(value.customer) && isSemanticLabel(value.customer.label) && isDirectionalText(value.customer.name)))
+      && isSemanticLabel(value.timeLabel)
+      && isDirectionalText(value.timestamp);
+  }
+  if (value.kind !== 'kot-items' || !Array.isArray(value.rows)) return false;
+  return value.rows.every((row) => isRecord(row)
+    && isFiniteNumber(row.quantity)
+    && isDirectionalText(row.name)
+    && Array.isArray(row.addons)
+    && row.addons.every((addon) => isRecord(addon) && isDirectionalText(addon)
+      && (addon.quantity === undefined || isFiniteNumber(addon.quantity)))
+    && isOptionalDirectionalText(row.specialInstructions));
+}
+
+export function isKotDocument(value: unknown): value is KotDocument {
+  return isRecord(value)
+    && value.version === 1
+    && isDirectionSpec(value.direction)
+    && isLanguages(value.languages)
+    && value.languages.length === 1
+    && Array.isArray(value.blocks)
+    && value.blocks.length === 2
+    && isRecord(value.blocks[0])
+    && value.blocks[0].kind === 'kot-header'
+    && isRecord(value.blocks[1])
+    && value.blocks[1].kind === 'kot-items'
+    && value.blocks.filter((block) => isRecord(block) && block.kind === 'kot-header').length === 1
+    && value.blocks.filter((block) => isRecord(block) && block.kind === 'kot-items').length === 1
+    && value.blocks.every(isKotDocumentBlock);
+}
+
 /**
  * Build a KotDocument v1 from normalized kitchen-ticket data. Pure: reads
  * only its arguments and performs no IO or recomputation.

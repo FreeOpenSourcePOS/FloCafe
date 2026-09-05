@@ -16,7 +16,11 @@
 
 import {
   buildBillDocument,
+  buildKotDocument,
+  isKotItemPending,
   type LabelResolver,
+  type KotDocument,
+  type KotPrintData,
   type PrintContext,
   type PrintData,
   type PrintDocument,
@@ -29,7 +33,7 @@ import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/langu
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getCountryByCode } from '@countries';
 import { resolveTaxComponents } from './tax-components';
-import type { Bill } from '@/lib/types';
+import type { Bill, Order, OrderItem } from '@/lib/types';
 
 /**
  * Business/contact facts + receipt show-flags for one print run. Mirrors the
@@ -47,12 +51,19 @@ export interface BillBusinessOptions {
   includeTaxId?: boolean;
   /** Pre-resolved country-profile tax-id label (GSTIN, کد اقتصادی, …). */
   taxIdLabel?: string;
+  maskCustomerPhone?: boolean;
+  useBillCustomer?: boolean;
   showTaxBreakdown?: boolean;
   showBusinessName?: boolean;
   showCustomerName?: boolean;
   showCustomerPhone?: boolean;
   showTableNumber?: boolean;
   isReprint?: boolean;
+}
+
+function maskPhoneOnReceipt(phone: string): string {
+  if (!phone || phone.length < 4) return phone;
+  return 'x'.repeat(phone.length - 4) + phone.slice(-4);
 }
 
 /** Resolve the active UI language, falling back to `en` outside the client store. */
@@ -156,6 +167,13 @@ function parsePaymentDetails(raw: Bill['payment_details']): Array<{ method: stri
  */
 export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): PrintData {
   const order = bill.order;
+  const billCustomer = (bill as Bill & { customer?: { name?: unknown; phone?: unknown; country_code?: unknown } }).customer;
+  const customer = opts.useBillCustomer === true ? billCustomer ?? order?.customer : order?.customer;
+  const customerPhone = String(customer?.phone ?? '');
+  const customerCountryCode = String(customer?.country_code ?? '');
+  const rasterCustomerPhone = customerCountryCode && customerPhone && !customerPhone.startsWith(customerCountryCode)
+    ? `${customerCountryCode} ${customerPhone}`
+    : customerPhone;
   const items = order?.items ?? [];
 
   const showTaxId = opts.includeTaxId === true && !!opts.taxRegistrationNumber;
@@ -210,8 +228,10 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       taxIdLabel: String(opts.taxIdLabel ?? ''),
       instagramHandle: String(opts.instagramHandle ?? ''),
       footerNote: String(opts.footerNote ?? ''),
-      customerName: String(order?.customer?.name ?? ''),
-      customerPhone: String(order?.customer?.phone ?? ''),
+      customerName: String(customer?.name ?? ''),
+      customerPhone: opts.maskCustomerPhone === true
+        ? maskPhoneOnReceipt(rasterCustomerPhone)
+        : customerPhone,
       showName: opts.showBusinessName !== false,
       showAddress: !!opts.address,
       showPhone: !!opts.phone,
@@ -272,4 +292,76 @@ export function buildFrontendBillDocument(
     ...(opts.trimDecimals !== undefined ? { trimDecimals: opts.trimDecimals } : {}),
   });
   return buildBillDocument(printData, printContext);
+}
+
+export function buildFrontendKotDocument(
+  order: Order,
+  opts: {
+    stationName: string;
+    items?: readonly OrderItem[];
+    columns: number;
+    language: string;
+    timezone?: string;
+  },
+): KotDocument {
+  const orderShape = order as Order & {
+    table_name?: unknown;
+    tableName?: unknown;
+    customer_name?: unknown;
+    customerName?: unknown;
+  };
+  const firstText = (...values: unknown[]): string => {
+    for (const value of values) {
+      if (typeof value === 'string' && value.trim().length > 0) return value;
+    }
+    return '';
+  };
+  const parseKotAddons = (value: unknown): Array<{ name: string; quantity?: number }> => {
+    let candidates = value;
+    if (typeof value === 'string') {
+      try {
+        candidates = JSON.parse(value);
+      } catch {
+        candidates = null;
+      }
+    }
+    if (!Array.isArray(candidates)) return [];
+    return candidates.filter((addon): addon is { name: string; quantity?: number } => (
+      typeof addon === 'object' && addon !== null && typeof (addon as { name?: unknown }).name === 'string'
+    ));
+  };
+  const languages = [opts.language] as ResolvedPrintLanguages;
+  const items = opts.items ?? order.items ?? [];
+  const printData: KotPrintData = {
+    stationName: String(opts.stationName ?? ''),
+    order: {
+      orderNumber: String(order.order_number ?? ''),
+      createdAt: String(order.created_at ?? ''),
+      tableName: firstText(order.table?.name, orderShape.table_name, orderShape.tableName),
+      orderType: String(order.type ?? '').trim(),
+      customerName: firstText(order.customer?.name, orderShape.customer_name, orderShape.customerName),
+    },
+    items: items.filter((item) => isKotItemPending(item.status)).map((item) => ({
+      productName: String(item.product_name ?? ''),
+      quantity: Number(item.quantity) || 0,
+      addons: parseKotAddons(item.addons).map((addon) => ({
+        name: String(addon?.name ?? ''),
+        ...(typeof addon?.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
+          ? { quantity: addon.quantity }
+          : {}),
+      })),
+      specialInstructions: String(item.special_instructions ?? ''),
+    })),
+  };
+  const printContext: PrintContext = {
+    columns: opts.columns,
+    languages,
+    baseDirection: baseDirectionFor(languages),
+    locale: LANGUAGES[opts.language as Language]?.locale ?? 'en-US',
+    currencySymbol: '',
+    trimDecimals: false,
+    ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),
+    resolveLabel: printLabelResolver,
+  };
+  return buildKotDocument(printData, printContext);
 }

@@ -14,7 +14,7 @@ import {
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
-import { getCountryByCode, getCurrencySymbol } from '../countries';
+import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
 
@@ -314,6 +314,7 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
       profile.cutMode,
       tenantLanguage(db),
       tenantSettingValue(db, 'timezone') || 'Asia/Kolkata',
+      req.body?.rasterProbe === true ? profile.capabilities : undefined,
     );
     let result: { ok: boolean; detail?: string } = { ok: false };
 
@@ -439,13 +440,17 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       }
     }
 
+    const country = settings.country || 'IN';
+    const rasterCurrency = resolveTenantCurrency(settings.currency, country);
     const business = {
       name: settings.business_name || '',
       address: settings.business_address || '',
       phone: settings.business_phone || '',
       taxRegistrationNumber: settings.tax_registration_number || '',
-      currency_symbol: getCurrencySymbol(settings.currency || 'INR', getCountryByCode(settings.country || 'IN')?.locale) || settings.currency_symbol || '₹',
-      country: settings.country || 'IN',
+      raster_currency: rasterCurrency,
+      currency_symbol: getCurrencySymbol(settings.currency || 'INR', getCountryByCode(country)?.locale) || settings.currency_symbol || '₹',
+      raster_currency_symbol: getCurrencySymbol(rasterCurrency, getCountryByCode(country)?.locale) || settings.currency_symbol || '₹',
+      country,
       instagram_handle: settings.instagram_handle || '',
       customer_name: customer?.name || '',
       customer_phone: customer?.phone

@@ -18,7 +18,7 @@ Enable **Open cash drawer on checkout** on a receipt printer only when a till is
 
 ## Arabic and Persian text
 
-In **Settings → Printers**, enable **Printer supports Arabic/Persian shaping** only for a thermal printer whose firmware performs Arabic/Persian contextual shaping and bidirectional ordering. With this setting enabled, receipt, tax-bill, and kitchen-ticket lines containing Arabic or Persian text are sent to the printer for it to shape; the setting is off by default for generic ESC/POS hardware. On document-driven and signed country-pack ESC/POS receipt paths, guarded unsupported non-financial text is skipped with a warning, while an unsupported item or financial row refuses the receipt before transport with an explicit operator warning. See [printing-architecture.md](printing-architecture.md) for the exact warning contract, direct-write exceptions, and legacy WebUSB encoder behavior.
+In **Settings → Printers**, enable **Printer supports Arabic/Persian shaping** only for a thermal printer whose firmware performs Arabic/Persian contextual shaping and bidirectional ordering. With this setting enabled, receipt, tax-bill, and kitchen-ticket lines containing Arabic or Persian text are sent to the printer for it to shape; the setting is off by default for generic ESC/POS hardware. A separately validated printer profile may also enable the capability-gated raster path, which uses the isolated Chromium renderer and bundled local fonts for unsupported core receipt/KOT content. On document-driven and signed country-pack ESC/POS receipt paths, guarded unsupported non-financial text is skipped with a warning, while an unsupported item or financial row refuses the receipt before transport with an explicit operator warning. See [printing-architecture.md](printing-architecture.md) for the exact warning contract, direct-write exceptions, and legacy WebUSB encoder behavior.
 
 ## Receipt and kitchen-ticket languages
 
@@ -30,9 +30,9 @@ On policy-aware paths, receipt labels (invoice title, bill number, date, totals,
 - See [printing-architecture.md §4](printing-architecture.md#4-language-behavior) for policy resolution and [§6](printing-architecture.md#6-printer-capability-model--warning-semantics) for transport fallbacks, KOT metadata visibility, raw dates, and financial-row refusal.
 - For policy-aware paths, invalid or missing policy values always fall back to the store language; printing never fails because of a malformed policy.
 
-For shared document-driven behavior, including non-financial warnings, financial-row refusal, direction handling, language policy, and legacy exceptions, see [printing-architecture.md](printing-architecture.md). Current ESC/POS renderers do not consume `DirectionalText.direction` or implement bidi/LTR-island handling ([`main/printers/thermal.ts`](../main/printers/thermal.ts)), so direction-aware ESC/POS output remains unsupported/future.
+For shared document-driven behavior, including non-financial warnings, financial-row refusal, direction handling, language policy, and legacy exceptions, see [printing-architecture.md](printing-architecture.md). Native ESC/POS renderers do not consume `DirectionalText.direction` or implement bidi/LTR-island handling ([`main/printers/thermal.ts`](../main/printers/thermal.ts)); host-managed direction-aware raw output is available through the separately validated, capability-gated raster path.
 
-For the full study of non-Latin script support on thermal printers — including the recommended raster fallback architecture, community hardware-test checklist, and open decisions — see [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md).
+For the full study of non-Latin script support on thermal printers — including the Phase 9 raster boundary, community hardware-test checklist, and remaining open decisions — see [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md).
 
 ## Kitchen printing
 

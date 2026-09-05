@@ -476,13 +476,13 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
     ],
   };
 
-  // Receipt without capability flag: Persian lines skipped with precise warnings, English item and financial lines remain
+  // Receipt without capability flag: paid Persian rows refuse before transport.
   const defaultReceiptWarnings: Array<{ field: string; text: string; message: string }> = [];
   const defaultReceipt = formatReceipt(persianReceiptOrder, fixtureBill, persianBiz, 'compact', 48, true, false, 'full', defaultReceiptWarnings, false);
   assert('formatReceipt without flag skips Persian business name', !defaultReceipt.toString('utf8').includes('کافه فلو تهران'));
   assert('formatReceipt without flag skips Persian item name', !defaultReceipt.toString('utf8').includes('چای زعفرانی'));
-  assert('formatReceipt without flag retains English item name', defaultReceipt.toString('utf8').includes('Espresso'));
-  assert('formatReceipt without flag retains financial lines', defaultReceipt.toString('utf8').includes('TOTAL'));
+  assert('formatReceipt without flag refuses the unsupported financial receipt', defaultReceipt.length === 0);
+  assert('formatReceipt without flag reports a financial warning', defaultReceiptWarnings.some((warning) => warning.kind === 'financial'));
   assert('formatReceipt without flag emits precise Arabic shaping warnings', defaultReceiptWarnings.length >= 2 && defaultReceiptWarnings.every(w => /Arabic shaping|Persian\/Arabic/.test(w.message)));
 
   // Receipt with capability flag: Persian business name and items printed with 0 warnings

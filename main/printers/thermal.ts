@@ -24,9 +24,9 @@ import {
   sanitizeTemplateLabelText,
   type TemplateChargeRowId,
 } from '../print/template-labels';
-import { renderClassicReceiptViaDocument } from './document-classic';
-import { renderCompactReceiptViaDocument } from './document-compact';
-import { renderKotViaDocument } from './document-kot';
+import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from './document-classic';
+import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from './document-compact';
+import { renderKotDocumentToLines, renderKotViaDocument } from './document-kot';
 import {
   GENERIC_THERMAL_CAPABILITIES,
   normalizeThermalText as normalizeThermalTextByCapabilities,
@@ -38,6 +38,9 @@ import {
   type ThermalPrinterCapabilities,
 } from '../../shared/print/thermal-capabilities';
 import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippPrintRaw } from './ipp-client';
+import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled, type RasterSemanticUnit } from '../../shared/print/raster';
+import type { RasterSemanticLineGroup } from '../../shared/print/raster';
+import type { PrintDocument } from '../../shared/print/document';
 
 export type PrintResult = {
   ok: boolean;
@@ -692,7 +695,19 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
       console.log('[Printer] No printer configured');
       return { ok: false, detail: 'No printer configured' };
     }
-    const { data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language, additionalLanguage);
+    const prepared = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language, additionalLanguage);
+    const { data, warnings, columns } = await rasterizeReceiptIfEnabled(
+      prepared,
+      order,
+      bill,
+      business,
+      template,
+      useUnicode,
+      isReprint,
+      arabicShapingOverride,
+      language,
+      additionalLanguage,
+    );
     if (hasFinancialPrintWarning(warnings)) {
       return {
         ok: false,
@@ -779,7 +794,54 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     // wins over the profile default so the merchant's explicit choice (#437)
     // applies even when the matched profile leaves the flag unset.
     const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
-    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, capabilities.shaping.arabic, normalizePrintLanguage(language ?? biz?.language), capabilities);
+    const nativeCapabilities = nativeFallbackCapabilities(capabilities);
+    let data: Buffer;
+    if (rasterCapabilityEnabled(capabilities)) {
+      const documentResult = renderKotViaDocument(order, items, stationName, {
+        columns: cols,
+        language: normalizePrintLanguage(language ?? biz?.language),
+        locale,
+        timezone,
+        useUnicode,
+        arabicShaping: capabilities.shaping.arabic,
+        cutMode: profile.cutMode,
+        capabilities,
+      });
+      const nativeResult = renderKotViaDocument(order, items, stationName, {
+        columns: cols,
+        language: normalizePrintLanguage(language ?? biz?.language),
+        locale,
+        timezone,
+        useUnicode,
+        arabicShaping: nativeCapabilities.shaping.arabic,
+        cutMode: profile.cutMode,
+        capabilities: nativeCapabilities,
+      });
+      const rasterized = await rasterizeDocumentLines(documentResult.lines, documentResult.warnings, {
+        useUnicode,
+        cutMode: profile.cutMode,
+        arabicShaping: capabilities.shaping.arabic,
+        columns: cols,
+        language: normalizePrintLanguage(language ?? biz?.language),
+        capabilities,
+        requestPrefix: 'kot',
+      }, documentResult.rasterGroups);
+      data = rasterized.rasterSelected && !rasterized.rasterFailed
+        ? rasterized.data
+        : nativeResult.data;
+      if (rasterized.rasterFailed) warnings.push(...nativeResult.warnings);
+      warnings.push(...rasterized.warnings);
+    } else {
+      data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, capabilities.shaping.arabic, normalizePrintLanguage(language ?? biz?.language), capabilities);
+    }
+    if (hasFinancialPrintWarning(warnings)) {
+      return {
+        ok: false,
+        detail: makeFinancialPrintRefusalMessage(warnings),
+        failureClass: 'unsupported',
+        warnings,
+      };
+    }
     console.log('[Printer] KOT data length:', data.length, 'bytes');
     const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
@@ -911,6 +973,12 @@ function getColumnsForPrinter(printer: any, profile: SupportedPrinterProfile): n
   return profile.fontAColumns || 48;
 }
 
+function nativeFallbackCapabilities(capabilities: ThermalPrinterCapabilities): ThermalPrinterCapabilities {
+  return capabilities.raster.enabled
+    ? { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
+    : capabilities;
+}
+
 function columnsForPaperWidth(paperWidth: string): number | null {
   const colsMatch = String(paperWidth || '').match(/^cols-(3[2-9]|4[0-8])$/);
   if (colsMatch) return Number(colsMatch[1]);
@@ -984,8 +1052,266 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   // wins over the profile default (#437); absent override keeps the
   // profile's declared capability.
   const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
-  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, capabilities.shaping.arabic, language, additionalLanguage, capabilities);
+  const nativeCapabilities = nativeFallbackCapabilities(capabilities);
+  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, nativeCapabilities.shaping.arabic, language, additionalLanguage, nativeCapabilities);
   return { printer, data, warnings, columns };
+}
+
+type RasterDocumentLines = { lines: string[]; warnings: PrintWarning[]; rasterGroups?: readonly RasterSemanticLineGroup[] };
+type RasterBusinessInput = Record<string, unknown> | null | undefined;
+
+function receiptDocumentLines(
+  order: unknown,
+  bill: unknown,
+  business: RasterBusinessInput,
+  template: string,
+  columns: number,
+  useUnicode: boolean,
+  isReprint: boolean,
+  arabicShaping: boolean,
+  language: string,
+  additionalLanguage: string | undefined,
+  cutMode: PrinterCutMode,
+  capabilities: ThermalPrinterCapabilities,
+): RasterDocumentLines | null {
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
+  const rasterBiz = {
+    ...biz,
+    ...(biz.raster_currency ? { currency: biz.raster_currency, currency_symbol: biz.raster_currency_symbol || biz.currency_symbol } : {}),
+    ...(biz.customer_phone ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) } : {}),
+  };
+  const selection = parseBillTemplateSelection(template);
+  if (selection?.source === 'pack' || selection?.source === 'merchant') return null;
+  const normalizedTemplate = normalizeReceiptTemplate(selection?.source === 'core' ? selection.id : template);
+  const result = normalizedTemplate === 'compact'
+    ? renderCompactReceiptViaDocument(order, bill, rasterBiz, {
+      columns,
+      language,
+      ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+      isReprint,
+      useUnicode,
+      arabicShaping,
+      cutMode,
+      capabilities,
+      preserveCurrencySymbol: true,
+      maskCustomerPhone: false,
+    })
+    : renderClassicReceiptViaDocument(order, bill, rasterBiz, {
+      columns,
+      language,
+      ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+      isReprint,
+      useUnicode,
+      arabicShaping,
+      cutMode,
+      capabilities,
+      preserveCurrencySymbol: true,
+      maskCustomerPhone: false,
+    });
+  return result;
+}
+
+async function rasterizeDocumentLines(
+  lines: string[],
+  sourceWarnings: readonly PrintWarning[],
+  options: {
+    useUnicode: boolean;
+    cutMode: PrinterCutMode;
+    arabicShaping: boolean;
+    columns: number;
+    language: string;
+    capabilities: ThermalPrinterCapabilities;
+    requestPrefix: string;
+  },
+  rasterGroups?: readonly RasterSemanticLineGroup[],
+): Promise<{ data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean }> {
+  const financialRasterContent = (rasterGroups ?? []).some((group) => {
+    const sourceLines = group.sourceLines ?? lines.slice(group.lineIndex, group.lineIndex + group.lineCount);
+    return sourceLines.some((line, index) => {
+      const financial = group.financialSourceLines?.[index] ?? group.financial === true;
+      return financial && line.length > 0 && !isThermalTextRepresentable(line, options.capabilities);
+    });
+  });
+  let selectedFinancial = financialRasterContent;
+  const failureResult = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    const financial = selectedFinancial;
+    const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
+    warnings.push({
+      field: financial ? 'financial row' : 'raster renderer',
+      text: '',
+      message: `Raster rendering failed: ${message}`,
+      kind: financial ? 'financial' : 'line',
+    });
+    return { data: Buffer.alloc(0), warnings, rasterSelected: false, rasterFailed: true };
+  };
+  let renderer: Pick<import('./raster-renderer').ChromiumRasterRenderer, 'render' | 'destroy'> | undefined;
+  let result = failureResult(new Error('Raster renderer was not initialized'));
+  try {
+    const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
+    renderer = new ChromiumRasterRenderer();
+    const raster = await renderUnsupportedRasterLines(renderer, lines, options.capabilities, options.requestPrefix, rasterGroups);
+    selectedFinancial = raster.units.some((unit) => unit.unit.financial) || raster.failures.some((failure) => failure.financial);
+    const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
+    const data = buildEscPos(lines, options.useUnicode, {
+      cutMode: options.cutMode,
+      arabicShaping: options.arabicShaping,
+      columns: options.columns,
+      language: options.language,
+      capabilities: options.capabilities,
+      rasterUnits: raster.units,
+      rasterFailures: raster.failures,
+    }, warnings);
+    for (const failure of raster.failures) {
+      warnings.push({
+        field: failure.financial ? 'financial row' : 'receipt line',
+        text: failure.text,
+        message: `Raster rendering failed (${failure.code}): ${failure.detail}`,
+        kind: failure.financial ? 'financial' : 'line',
+      });
+    }
+    result = { data, warnings, rasterSelected: raster.units.length > 0, rasterFailed: raster.failures.length > 0 || warnings.some((warning) => warning.kind === 'line' || warning.kind === 'financial') };
+  } catch (error) {
+    result = failureResult(error);
+  }
+  if (renderer) {
+    try {
+      renderer.destroy();
+    } catch (error) {
+      result = failureResult(error);
+    }
+  }
+  return result;
+}
+
+export async function rasterizePrintDocumentForWebUsb(
+  document: PrintDocument,
+  template: 'classic' | 'compact',
+  profileId: string,
+  options: {
+    columns: number;
+    language: string;
+    locale: string;
+    currency: string;
+    currencySymbol: string;
+    trimDecimals: boolean;
+    useUnicode: boolean;
+    arabicShaping: boolean;
+    timezone?: string;
+  },
+): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
+  const profile = resolvePrinterProfile({ profile_id: profileId });
+  const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
+  if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
+  const rasterGroups: RasterSemanticLineGroup[] = [];
+  const lines = template === 'compact'
+    ? renderBillDocumentToCompactLines(document, {
+      ...options,
+      preserveCurrencySymbol: true,
+      cutMode: profile.cutMode,
+      capabilities,
+      maskCustomerPhone: false,
+      rasterGroups,
+    })
+    : renderBillDocumentToClassicLines(document, {
+      ...options,
+      preserveCurrencySymbol: true,
+      cutMode: profile.cutMode,
+      capabilities,
+      maskCustomerPhone: false,
+      rasterGroups,
+    });
+  const result = await rasterizeDocumentLines(lines, [], {
+    ...options,
+    cutMode: profile.cutMode,
+    capabilities,
+    requestPrefix: 'webusb-receipt',
+  }, rasterGroups);
+  if (hasFinancialPrintWarning(result.warnings)) {
+    return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
+  }
+  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected, rasterFailed: result.rasterFailed };
+}
+
+export async function rasterizeKotDocumentForWebUsb(
+  document: import('../../shared/print/document').KotDocument,
+  profileId: string,
+  options: {
+    columns: number;
+    language: string;
+    locale: string;
+    timezone?: string;
+    useUnicode: boolean;
+    arabicShaping: boolean;
+  },
+): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
+  const profile = resolvePrinterProfile({ profile_id: profileId });
+  const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
+  if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
+  const rasterGroups: RasterSemanticLineGroup[] = [];
+  const lines = renderKotDocumentToLines(document, {
+    ...options,
+    cutMode: profile.cutMode,
+    capabilities,
+    rasterGroups,
+  });
+  const result = await rasterizeDocumentLines(lines, [], {
+    ...options,
+    cutMode: profile.cutMode,
+    capabilities,
+    requestPrefix: 'webusb-kot',
+  }, rasterGroups);
+  if (hasFinancialPrintWarning(result.warnings)) {
+    return { ok: false, error: makeFinancialPrintRefusalMessage(result.warnings) };
+  }
+  return { ok: true, data: result.data, warnings: result.warnings, rasterSelected: result.rasterSelected, rasterFailed: result.rasterFailed };
+}
+
+async function rasterizeReceiptIfEnabled(
+  prepared: ReturnType<typeof prepareReceipt>,
+  order: unknown,
+  bill: unknown,
+  business: RasterBusinessInput,
+  template: string,
+  useUnicode: boolean,
+  isReprint: boolean,
+  arabicShapingOverride: boolean | undefined,
+  language: string | undefined,
+  additionalLanguage: string | undefined,
+): Promise<ReturnType<typeof prepareReceipt>> {
+  const profile = resolvePrinterProfile(prepared.printer);
+  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+  if (!rasterCapabilityEnabled(capabilities)) return prepared;
+  const document = receiptDocumentLines(
+    order,
+    bill,
+    business,
+    template,
+    prepared.columns,
+    useUnicode,
+    isReprint,
+    capabilities.shaping.arabic,
+    normalizePrintLanguage(language),
+    additionalLanguage === undefined ? undefined : normalizePrintLanguage(additionalLanguage),
+    profile.cutMode,
+    capabilities,
+  );
+  if (!document) return prepared;
+  const result = await rasterizeDocumentLines(document.lines, document.warnings, {
+    useUnicode,
+    cutMode: profile.cutMode,
+    arabicShaping: capabilities.shaping.arabic,
+    columns: prepared.columns,
+    language: normalizePrintLanguage(language),
+    capabilities,
+    requestPrefix: 'receipt',
+  }, document.rasterGroups);
+  if (result.rasterFailed) {
+    return { ...prepared, warnings: [...prepared.warnings, ...result.warnings] };
+  }
+  return result.rasterSelected
+    ? { ...prepared, data: result.data, warnings: result.warnings }
+    : prepared;
 }
 
 export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
@@ -1001,11 +1327,14 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   // keep their compliance renderer; unknown values fall through to the core
   // classic/compact name matching below (unchanged behavior).
   const selection = parseBillTemplateSelection(template);
+  const templateCapabilities = selection?.source === 'pack' || selection?.source === 'merchant'
+    ? capabilities && { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
+    : capabilities;
   if (selection?.source === 'pack') {
     return renderPluginReceipt(
       loadInstalledPrintTemplate(selection.id),
       order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang,
-      capabilities,
+      templateCapabilities,
     );
   }
   if (selection?.source === 'merchant') {
@@ -1017,7 +1346,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
       useUnicode,
       arabicShaping,
       cutMode,
-      capabilities,
+      capabilities: templateCapabilities,
     });
     if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
     return result.data;
@@ -1088,6 +1417,12 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
 
 function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): Buffer {
   const lines: string[] = [];
+  const financialLineRanges: Array<{ lineIndex: number; lineCount: number }> = [];
+  const pushFinancialLines = (financialLines: string[]): void => {
+    if (financialLines.length === 0) return;
+    financialLineRanges.push({ lineIndex: lines.length, lineCount: financialLines.length });
+    lines.push(...financialLines);
+  };
   const cols = profile.columns;
   const layout = profile.layout || {};
   const date = parseDbTimestamp(order.created_at);
@@ -1134,12 +1469,13 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(...pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang, capabilities));
+      pushFinancialLines(pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang, capabilities));
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
           const addonLines: string[] = [];
           pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits) : ''), cols, lang, capabilities);
-          lines.push(...addonLines.map((line) => addon.price ? '{FINANCIAL}' + line : line));
+          if (addon.price) pushFinancialLines(addonLines);
+          else lines.push(...addonLines);
         }
       }
       if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
@@ -1156,21 +1492,21 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const rowLabelWidth = Math.max(8, cols - 12);
   if (payload?.totals?.showSubtotal !== false) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'subtotal', lang)), rowLabelWidth);
-    lines.push(...financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'discount', lang)), rowLabelWidth);
-    lines.push(...financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
       const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      lines.push(pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits), layout, cols, lang, capabilities));
+      pushFinancialLines([pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits), layout, cols, lang, capabilities)]);
     }
   } else if (Number(bill.tax_amount) !== 0) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)), rowLabelWidth);
-    lines.push(...financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   // `chargeRows` is an explicit capability declaration. Its order is not
   // presentation authority: country/legal rows remain in this stable order,
@@ -1184,7 +1520,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     const amount = chargeAmounts[row];
     if (amount === 0) continue;
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, row, lang)), rowLabelWidth);
-    lines.push(...financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   lines.push(bar);
   // Label precedence (#445): the author's structural literal (e.g.
@@ -1192,7 +1528,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   // payload-root `labels` map overrides next; otherwise the built-in default
   // resolves localized through the canonical print-labels catalog (#440).
   const totalLabel = fitTemplateLabel(normalize(String(payload?.totals?.grandTotalLabel || '')), rowLabelWidth) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'total', lang)), rowLabelWidth);
-  lines.push(...financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
+  pushFinancialLines(financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
 
   if (bill.payment_details) {
     lines.push(dash);
@@ -1202,7 +1538,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
         for (const payment of payments) {
           if (payment && payment.method) {
             const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12, lang, capabilities);
-            lines.push(...financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+            pushFinancialLines(financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
           }
         }
       }
@@ -1223,7 +1559,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang, capabilities }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang, capabilities, financialLineRanges }, warnings);
 }
 
 export function appendPoweredByFooter(lines: string[]): void {
@@ -1348,7 +1684,7 @@ function pluginItemRows(item: any, layout: any, cols: number, prefix: string, lo
   const lineCount = Math.max(1, ...wrappedValues.map((value) => value.length));
   const rows: string[] = [];
   for (let index = 0; index < lineCount; index++) {
-    rows.push('{FINANCIAL}' + composePluginColumns(values.map((column, columnIndex) => ({
+    rows.push(composePluginColumns(values.map((column, columnIndex) => ({
       ...column,
       value: wrappedValues[columnIndex][index] || '',
     })), gap, cols));
@@ -1390,13 +1726,13 @@ function pluginSummaryRow(label: string, amount: string, layout: any, cols: numb
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
   if (Number.isInteger(labelWidth) && Number.isInteger(amountWidth) && labelWidth > 0 && amountWidth > 0) {
-    return '{FINANCIAL}' + composePluginColumns([
+    return composePluginColumns([
       { value: normalizedLabel, width: labelWidth, align: 'left', ellipsis: true },
       { value: amount, width: amountWidth, align: 'right', ellipsis: true },
     ], Math.max(0, cols - labelWidth - amountWidth), cols);
   }
   const safeLabel = truncate(normalizedLabel, cols - 12, lang, capabilities);
-  return '{FINANCIAL}' + safeLabel + rightAlign(amount, cols - safeLabel.length);
+  return safeLabel + rightAlign(amount, cols - safeLabel.length);
 }
 
 function composePluginColumns(columns: Array<PluginLineColumn & { value: string }>, gap: number, cols: number): string {
@@ -1466,8 +1802,8 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
   const label = name + qty;
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
   const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (amount.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(amount, cols - label.length)];
-  return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(amount, cols).map((line) => '{FINANCIAL}' + line)];
+  if (amount.length <= inlineWidth) return [label + rightAlign(amount, cols - label.length)];
+  return [label.trimEnd(), ...wrapValue(amount, cols)];
 }
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
@@ -1477,18 +1813,20 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits);
   const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (price.length <= inlineWidth) return ['{FINANCIAL}' + label + rightAlign(price, cols - label.length)];
-  return ['{FINANCIAL}' + label.trimEnd(), ...wrapValue(price, cols).map((line) => '{FINANCIAL}' + line)];
+  if (price.length <= inlineWidth) return [label + rightAlign(price, cols - label.length)];
+  return [label.trimEnd(), ...wrapValue(price, cols)];
 }
 
 export function financialRows(label: string, value: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): string[] {
   const normalizedLabel = normalizeThermalText(label, capabilities);
-  const safeLabel = normalizedLabel.slice(0, Math.max(1, cols - 1));
+  const safeLabel = capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalizedLabel, capabilities)
+    ? normalizedLabel
+    : normalizedLabel.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
-    return ['{FINANCIAL}' + safeLabel + rightAlign(value, cols - safeLabel.length)];
+    return [safeLabel + rightAlign(value, cols - safeLabel.length)];
   }
-  return ['{FINANCIAL}' + safeLabel, ...wrapValue(value, cols).map((line) => '{FINANCIAL}' + line)];
+  return [safeLabel, ...wrapValue(value, cols)];
 }
 
 function wrapValue(value: string, cols: number): string[] {
@@ -1533,6 +1871,7 @@ export function rightAlign(text: string, width: number = 24): string {
 
 export function truncate(text: string, length: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
   const normalizedText = normalizeThermalText(text, capabilities);
+  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalizedText, capabilities)) return normalizedText;
   return normalizedText.length > length ? normalizedText.substring(0, length - 2) + '..' : normalizedText;
 }
 
@@ -1603,11 +1942,19 @@ export function wrapText(text: string, cols: number): string[] {
 
 export function pushWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
   const normalized = normalizeThermalText(text, capabilities);
+  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalized, capabilities)) {
+    lines.push(normalized);
+    return;
+  }
   for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
 export function pushCenteredWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
   const normalized = normalizeThermalText(text, capabilities);
+  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalized, capabilities)) {
+    lines.push('{CENTER}' + normalized + '{/CENTER}');
+    return;
+  }
   for (const line of wrapText(normalized, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
@@ -1632,7 +1979,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   return result.data;
 }
 
-export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', language?: string, timezone?: string): Buffer {
+export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', language?: string, timezone?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
   const width = columnsForPaperWidth(paperWidth) || 48;
   const lang = normalizePrintLanguage(language);
   const label = (concept: PrintConceptId): string => normalizeThermalText(printLabel(lang, concept));
@@ -1659,7 +2006,15 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     bar,
     '{CUT}',
   ];
-  return buildEscPos(lines, false, { cutMode, language: lang });
+  if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang });
+  const textData = buildEscPos(lines.slice(0, -1), false, { cutMode, language: lang, capabilities });
+  const rasterData = encodeRasterUnits([{
+    unitId: 'diagnostic-test-page',
+    financial: false,
+    complete: true,
+    bands: buildRasterDiagnosticBands(capabilities.raster.widthDots, capabilities.raster.maxBandHeight),
+  }], capabilities);
+  return Buffer.concat([textData, Buffer.from(rasterData), Buffer.from(encodeRasterFeedAndCut(cutMode))]);
 }
 
 // Every ASCII fallback is no wider than 3 characters, so currency labels such
@@ -1680,8 +2035,16 @@ const CURRENCY_TOKEN_RE = new RegExp(
   'g',
 );
 
+const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
+
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
+  if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) return text;
   return normalizeThermalTextByCapabilities(text, capabilities);
+}
+
+export function maskPhoneOnReceipt(phone: string): string {
+  if (!phone || phone.length < 4) return phone;
+  return 'x'.repeat(phone.length - 4) + phone.slice(-4);
 }
 
 function normalizeCurrencyToAscii(text: string): string {
@@ -1695,12 +2058,13 @@ function normalizeCurrencyToAscii(text: string): string {
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
 // symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
 // pushes trailing digits onto the next line.
-export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities): string {
+export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities, preserveConfiguredSymbol = false): string {
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS printers
   // cannot shape that token, so normalize this known currency even when the
   // caller requests Unicode. Preserve the existing useUnicode behavior for
   // every other currency value.
-  const normalizedSymbol = symbol === 'ریال' ? 'IRR' : symbol;
+  const normalizedSymbol = preserveConfiguredSymbol ? symbol : (symbol === 'ریال' ? 'IRR' : symbol);
+  if (preserveConfiguredSymbol) return normalizedSymbol;
   const isAsciiSafe = /^[\x00-\x7F]+$/.test(normalizedSymbol);
   const normalizedForCapabilities = capabilities
     ? normalizeThermalTextByCapabilities(normalizedSymbol, capabilities)
@@ -1745,14 +2109,70 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
 /**
  * Build ESC/POS bytes and classify unsupported financial rows for the receipt
  * transport guard. Receipt renderers mark amount-bearing lines with the
- * internal {FINANCIAL} token; it is stripped before bytes are emitted.
  */
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities } = {}, warnings?: PrintWarning[]): Buffer {
+export interface RasterLineUnit {
+  readonly lineIndex: number;
+  readonly lineCount?: number;
+  readonly unit: RasterSemanticUnit;
+}
+
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[]; rasterFailures?: readonly { lineIndex: number; lineCount: number; financial: boolean }[]; financialLineRanges?: readonly { lineIndex: number; lineCount: number }[] } = {}, warnings?: PrintWarning[]): Buffer<ArrayBuffer> {
   const buf: number[] = [];
   const useLegacyUnicode = options.capabilities === undefined && _useUnicode;
   const capabilities = mergeThermalCapabilities(options.capabilities, options.arabicShaping);
   const hasNativeCodePage = capabilities.encoding.codePages.some((codePage) => codePage !== 'ascii');
   let activeCodePage = capabilities.encoding.preferredCodePage;
+  const rasterEntries = options.rasterUnits ?? [];
+  const rasterFailures = options.rasterFailures ?? [];
+  const financialLineRanges = options.financialLineRanges ?? [];
+  const rasterByLine = new Map<number, typeof rasterEntries[number]['unit']>();
+  const rasterLineCounts = new Map<number, number>();
+  const rasterRanges: Array<{ start: number; end: number }> = [];
+  const failedRasterRanges: Array<{ start: number; end: number }> = [];
+  for (const entry of rasterEntries) rasterLineCounts.set(entry.lineIndex, (rasterLineCounts.get(entry.lineIndex) ?? 0) + 1);
+  const encodedRasterByLine = new Map<number, Uint8Array>();
+  let financialRasterFailure = rasterFailures.some((failure) => failure.financial);
+  let financialTextFailure = false;
+  for (const entry of rasterEntries) {
+    const lineCount = entry.lineCount ?? 1;
+    const lineIndexValid = Number.isSafeInteger(entry.lineIndex) && entry.lineIndex >= 0
+      && Number.isSafeInteger(lineCount) && lineCount > 0 && entry.lineIndex + lineCount <= lines.length;
+    const financial = entry.unit.financial === true;
+    const overlaps = lineIndexValid && rasterRanges.some((range) => entry.lineIndex < range.end && entry.lineIndex + lineCount > range.start);
+    const bindingError = !lineIndexValid
+      ? 'Raster unit line range is outside the print document'
+      : (rasterLineCounts.get(entry.lineIndex) ?? 0) > 1 || overlaps
+        ? 'Multiple raster units share one line index'
+        : null;
+    if (bindingError) {
+      if (financial) financialRasterFailure = true;
+      if (warnings) warnings.push({
+        field: financial ? 'financial row' : 'receipt line',
+        text: entry.unit.unitId,
+        message: bindingError,
+        kind: financial ? 'financial' : 'line',
+      });
+      continue;
+    }
+    try {
+      if (!rasterCapabilityEnabled(capabilities)) throw new Error('Raster output is not enabled for this printer profile');
+      encodedRasterByLine.set(entry.lineIndex, encodeRasterUnits([entry.unit], capabilities));
+      rasterByLine.set(entry.lineIndex, entry.unit);
+      rasterRanges.push({ start: entry.lineIndex, end: entry.lineIndex + lineCount });
+    } catch (error) {
+      failedRasterRanges.push({ start: entry.lineIndex, end: entry.lineIndex + lineCount });
+      if (financial) financialRasterFailure = true;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!warnings) throw new Error(message);
+      warnings.push({
+        field: financial ? 'financial row' : 'receipt line',
+        text: entry.unit.unitId,
+        message,
+        kind: financial ? 'financial' : 'line',
+      });
+    }
+  }
+  if (financialRasterFailure) return Buffer.alloc(0);
 
   const resetAllStyles = () => {
     buf.push(0x1B, 0x45, 0x00);
@@ -1760,7 +2180,24 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     buf.push(0x1B, 0x61, 0x00);
   };
 
-  for (let line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    if (rasterFailures.some((failure) => Number.isSafeInteger(failure.lineIndex)
+      && Number.isSafeInteger(failure.lineCount)
+      && failure.lineIndex <= lineIndex
+      && lineIndex < failure.lineIndex + failure.lineCount)) continue;
+    if (failedRasterRanges.some((range) => range.start <= lineIndex && lineIndex < range.end)) continue;
+    let line = lines[lineIndex];
+    const rasterUnit = rasterByLine.get(lineIndex);
+    if (rasterUnit) {
+      const rasterBytes = encodedRasterByLine.get(lineIndex);
+      if (rasterBytes) {
+        resetAllStyles();
+        buf.push(...rasterBytes);
+        resetAllStyles();
+      }
+      continue;
+    }
+    if (rasterRanges.some((range) => range.start < lineIndex && lineIndex < range.end)) continue;
     if (line.includes('{INIT}')) {
       buf.push(0x1B, 0x40);
       resetAllStyles();
@@ -1789,9 +2226,12 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     line = normalizeThermalTextByCapabilities(line, capabilities);
 
     const isStoreName = line.includes('{STORE_NAME}');
-    const isFinancial = line.includes('{FINANCIAL}');
+    const isFinancial = line.includes('{FINANCIAL}') || financialLineRanges.some((range) => Number.isSafeInteger(range.lineIndex)
+      && Number.isSafeInteger(range.lineCount)
+      && range.lineIndex <= lineIndex
+      && lineIndex < range.lineIndex + range.lineCount);
     line = line.replace(/\{STORE_NAME\}/g, '');
-    let printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
+    let printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
     const lineBold = line.includes('{BOLD}');
     const lineDH = line.includes('{DOUBLE_HEIGHT}');
     const lineDW = line.includes('{DOUBLE_WIDTH}');
@@ -1812,6 +2252,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         );
       const codePageRepresentable = isThermalTextRepresentable(textWithoutSupportedCurrency, capabilities);
       if (!arabicOnly && !codePageRepresentable) {
+        if (isFinancial) financialTextFailure = true;
         if (warnings) {
           const text = printableLine.trim();
           warnings.push({
@@ -1824,7 +2265,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         continue;
       }
       line = line.replace(ESCPOS_TEXT_CONTROL_RE, '');
-      printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
+      printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
       if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
         const maxCols = lineDW ? Math.floor((options.columns as number) / 2) : (options.columns as number);
         line = truncate(printableLine, Math.max(1, maxCols));
@@ -1834,12 +2275,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     // ESC/POS mode byte bit 0 selects the character font: 0 = Font A (12x24,
     // the default), 1 = Font B (9x17, condensed). No token means Font A.
 
-    line = line.replace(/\{FINANCIAL\}/g, '');
-    line = line.replace(/\{CENTER\}/g, '').replace(/\{\/CENTER\}/g, '');
-    line = line.replace(/\{BOLD\}/g, '').replace(/\{\/BOLD\}/g, '');
-    line = line.replace(/\{DOUBLE_HEIGHT\}/g, '').replace(/\{\/DOUBLE_HEIGHT\}/g, '');
-    line = line.replace(/\{DOUBLE_WIDTH\}/g, '').replace(/\{\/DOUBLE_WIDTH\}/g, '');
-    line = line.replace(/\{FONT_B\}/g, '').replace(/\{\/FONT_B\}/g, '');
+    line = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
 
     buf.push(0x1B, 0x61, center ? 0x01 : 0x00);
 
@@ -1865,7 +2301,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     buf.push(0x0A);
   }
 
-  return Buffer.from(buf);
+  return financialTextFailure ? Buffer.alloc(0) : Buffer.from(buf);
 }
 
 /** Convert the command subset emitted by buildEscPos() into a paperless text preview. */

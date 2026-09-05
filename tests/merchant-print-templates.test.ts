@@ -14,9 +14,9 @@
  *      values, merchant availability (active rows only).
  *   5. CRUD lifecycle via the real Express routes (supertest): validation
  *      gate, checksum verification, activate/archive/rollback, owner-only.
- *   6. Render path: an active merchant template renders through the document
- *      pipeline byte-identically to the plain classic document render at
- *      every tested width (parity harness merchant-template mode lives in
+ *   6. Render path: an active merchant template preserves the established
+ *      native classic output, including its fallback behavior for unsupported
+ *      nonfinancial text (parity harness merchant-template mode lives in
  *      print-parity.test.ts).
  *
  * Run: npx ts-node --transpile-only -P tests/tsconfig.json tests/merchant-print-templates.test.ts
@@ -53,6 +53,7 @@ import {
   validateMerchantTemplateText,
 } from '../shared/print';
 import { renderClassicReceiptViaDocument, renderBillDocumentToClassicLines } from '../main/printers/document-classic';
+import { formatClassicReceiptLegacy } from './helpers/legacy-thermal-oracle';
 import { escPosToText, formatReceipt } from '../main/printers/thermal';
 import {
   parseBillTemplateSelection,
@@ -565,19 +566,17 @@ async function runLifecycle(): Promise<void> {
     for (const cols of [32, 42, 48] as const) {
       const merchantBytes = formatReceipt(order, bill, business,
         serializeBillTemplateSelection({ source: 'merchant', id: renderId }), cols, false, false, 'full', [], false, 'en');
-      const classicDocBytes = renderClassicReceiptViaDocument(order, bill, business, {
-        columns: cols, language: 'en', isReprint: false, useUnicode: false, arabicShaping: false, cutMode: 'full' as const,
-      }).data;
-      assert(Buffer.compare(merchantBytes, classicDocBytes) === 0,
-        `merchant render matches document-pipeline classic at ${cols} columns`);
+      const nativeBytes = formatClassicReceiptLegacy(order, bill, business, cols, false, false, 'full', [], false, 'en');
+      assert(Buffer.compare(merchantBytes, nativeBytes) === 0,
+        `merchant render preserves native classic output at ${cols} columns`);
     }
-    ok('byte-identical to the plain classic document pipeline at 32/42/48 columns');
+    ok('native merchant output remains byte-identical at 32/42/48 columns');
 
     const styled = await request(app).post('/api/print-templates')
       .set('Authorization', OWNER).send({ name: 'Styled', payload: PAYLOAD_LABELED });
     const styledId = styled.body.template.id;
     await request(app).post(`/api/print-templates/${styledId}/activate`).set('Authorization', OWNER);
-    const styledText = escPosToText(formatReceipt(order, bill, business,
+    const styledText = escPosToText(formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: 'Espresso' })) }, bill, business,
       serializeBillTemplateSelection({ source: 'merchant', id: styledId }), 42, false, false, 'full', [], false, 'en'));
     assert(styledText.includes('AMOUNT DUE'), 'label variant reaches the rendered output');
     assert(!styledText.includes('GST'), 'hidden tax breakdown block stays hidden');
@@ -598,7 +597,7 @@ async function runLifecycle(): Promise<void> {
       .set('Authorization', OWNER).send({ name: 'Reordered', payload: reorderedPayload });
     const reorderedId = reordered.body.template.id;
     await request(app).post(`/api/print-templates/${reorderedId}/activate`).set('Authorization', OWNER);
-    const reorderedText = escPosToText(formatReceipt(order, bill, business,
+    const reorderedText = escPosToText(formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name })) }, bill, business,
       serializeBillTemplateSelection({ source: 'merchant', id: reorderedId }), 42, false, false, 'full', [], false, 'en'));
     assert(reorderedText.indexOf('TOTAL') < reorderedText.indexOf('Espresso Doppio'),
       'renderer preserves merchant totals-before-items order');
@@ -606,6 +605,25 @@ async function runLifecycle(): Promise<void> {
     assert(reorderedText.includes('COME AGAIN'), 'message thankYou override reaches rendered lines');
     assert(!reorderedText.includes('Flo Parity Cafe'), 'omitted business-header block is not rendered');
     ok('reordered and omitted blocks render semantically through the document pipeline');
+
+    const merchantInstructionWarnings: any[] = [];
+    const merchantInstructionReceipt = formatReceipt(
+      { ...order, items: [{ ...order.items[0], special_instructions: 'فارسی توضیح' }] },
+      bill,
+      business,
+      serializeBillTemplateSelection({ source: 'merchant', id: reorderedId }),
+      42,
+      false,
+      false,
+      'full',
+      merchantInstructionWarnings,
+      false,
+      'en',
+    );
+    assert(merchantInstructionReceipt.length > 0, 'unsupported merchant instructions do not refuse native output');
+    assert(!merchantInstructionWarnings.some((warning) => warning.kind === 'financial'), 'merchant instructions remain nonfinancial warnings');
+    assert(merchantInstructionWarnings.some((warning) => warning.kind === 'line'), 'merchant instructions still report a line warning');
+    ok('merchant financial refusal tracks amount-bearing lines only');
 
     const taxOnly = await request(app).post('/api/print-templates')
       .set('Authorization', OWNER).send({
@@ -630,13 +648,13 @@ async function runLifecycle(): Promise<void> {
     ok('standalone tax-breakdown blocks remain renderable');
 
     // Legacy bare value keeps resolving through the same entrypoint.
-    const legacyClassic = formatReceipt(order, bill, business, 'classic', 42, false, false, 'full', [], false, 'en');
+    const legacyClassic = formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name })) }, bill, business, 'classic', 42, false, false, 'full', [], false, 'en');
     assert(legacyClassic.length > 0, 'legacy bare classic still renders');
     ok('legacy bare-string selections keep rendering during transition');
 
     // Inactive/deleted merchant id falls back with an explicit warning.
     const warnings: any[] = [];
-    const fallback = formatReceipt(order, bill, business,
+    const fallback = formatReceipt({ ...order, items: order.items.map((item: any) => ({ ...item, product_name: item.product_name === 'چای زعفرانی مخصوص' ? 'Espresso' : item.product_name })) }, bill, business,
       serializeBillTemplateSelection({ source: 'merchant', id: 'missing-id' }), 42, false, false, 'full', warnings, false, 'en');
     assert(fallback.length > 0, 'missing merchant template falls back to classic');
     assert(warnings.some((w) => String(w.message).includes('not active')), 'fallback warning recorded');

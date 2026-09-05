@@ -1,8 +1,6 @@
 /**
  * Capability policy shared by the backend ESC/POS and WebUSB encoders.
- *
- * This module deliberately describes text-only thermal output. Raster output,
- * broad script shaping, and locale-specific policy do not belong here.
+ * Raster support is additive and remains profile-owned; locale never enables it.
  */
 
 export type ThermalCodePage = 'ascii' | 'cp437' | 'cp850' | 'cp858' | 'windows1252';
@@ -10,6 +8,18 @@ export type ThermalScript = 'ascii' | 'latin' | 'arabic';
 export type UnsupportedTextPolicy = 'skip';
 export type FinancialTextPolicy = 'refuse';
 export type OrderTypeFallbackPolicy = 'ascii';
+export type ThermalRasterMode = 'mixed' | 'whole-receipt';
+
+export interface ThermalRasterCapabilities {
+  /** False unless this exact profile has been validated on real hardware. */
+  readonly enabled: boolean;
+  /** Printable head width in dots, supplied by the profile, not locale. */
+  readonly widthDots: number;
+  /** Maximum rows in one GS v 0 command. */
+  readonly maxBandHeight: number;
+  readonly modes: readonly ThermalRasterMode[];
+  readonly font?: { readonly family: string; readonly dataUrl: string };
+}
 
 export interface ThermalPrinterCapabilities {
   encoding: {
@@ -30,6 +40,8 @@ export interface ThermalPrinterCapabilities {
     financialText: FinancialTextPolicy;
     orderTypeFallback: OrderTypeFallbackPolicy;
   };
+  /** Additive raster contract; disabled for all unverified shipped profiles. */
+  readonly raster: ThermalRasterCapabilities;
 }
 
 export const GENERIC_THERMAL_CAPABILITIES: ThermalPrinterCapabilities = {
@@ -38,6 +50,7 @@ export const GENERIC_THERMAL_CAPABILITIES: ThermalPrinterCapabilities = {
   representability: { scripts: ['ascii'] },
   transliteration: { enabled: true },
   warnings: { unsupportedText: 'skip', financialText: 'refuse', orderTypeFallback: 'ascii' },
+  raster: { enabled: false, widthDots: 0, maxBandHeight: 0, modes: [] },
 };
 
 // The shipped fallback preserves the established German thermal transliteration

@@ -19,6 +19,8 @@ import {
 import { isThemeMode, appendThemeQueryParam } from './title-bar-theme';
 import { getTenantCurrency } from './services/refund';
 import { getCurrencyMinorUnitFactor } from './countries';
+import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from './printers/thermal';
+import { isKotDocument, isPrintDocument } from '../shared/print/document';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -52,6 +54,16 @@ function maskSetting(key: string, value: string): string {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+const MIN_RASTER_COLUMNS = 32;
+const MAX_RASTER_COLUMNS = 48;
+
+function isValidRasterColumns(value: unknown): value is number {
+  return typeof value === 'number'
+    && Number.isSafeInteger(value)
+    && value >= MIN_RASTER_COLUMNS
+    && value <= MAX_RASTER_COLUMNS;
 }
 
 /**
@@ -510,6 +522,71 @@ export function registerIpcHandlers(
       return { success: false, error: getErrorMessage(error) };
     }
     });
+  });
+
+  handle('rasterize-print-document', async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return { ok: false, error: 'Invalid raster document request' };
+    const request = payload as {
+      document?: unknown;
+      template?: unknown;
+      profileId?: unknown;
+      options?: unknown;
+    };
+    if (!isPrintDocument(request.document)
+      || (request.template !== 'classic' && request.template !== 'compact')
+      || typeof request.profileId !== 'string' || request.profileId.length === 0
+      || !request.options || typeof request.options !== 'object') {
+      return { ok: false, error: 'Invalid raster document request' };
+    }
+    const options = request.options as Record<string, unknown>;
+    if (!isValidRasterColumns(options.columns)
+      || typeof options.language !== 'string' || typeof options.locale !== 'string'
+      || typeof options.currency !== 'string' || typeof options.currencySymbol !== 'string'
+      || typeof options.trimDecimals !== 'boolean' || typeof options.useUnicode !== 'boolean'
+      || typeof options.arabicShaping !== 'boolean'
+      || (options.timezone !== undefined && typeof options.timezone !== 'string')) {
+      return { ok: false, error: 'Invalid raster document options' };
+    }
+    try {
+      return await rasterizePrintDocumentForWebUsb(
+        request.document as Parameters<typeof rasterizePrintDocumentForWebUsb>[0],
+        request.template,
+        request.profileId,
+        options as Parameters<typeof rasterizePrintDocumentForWebUsb>[3],
+      );
+    } catch (error: unknown) {
+      return { ok: false, error: getErrorMessage(error) };
+    }
+  });
+
+  handle('rasterize-kot-document', async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return { ok: false, error: 'Invalid raster KOT request' };
+    const request = payload as {
+      document?: unknown;
+      profileId?: unknown;
+      options?: unknown;
+    };
+    if (!isKotDocument(request.document)
+      || typeof request.profileId !== 'string'
+      || request.profileId.length === 0 || !request.options || typeof request.options !== 'object') {
+      return { ok: false, error: 'Invalid raster KOT request' };
+    }
+    const options = request.options as Record<string, unknown>;
+    if (!isValidRasterColumns(options.columns)
+      || typeof options.language !== 'string' || typeof options.locale !== 'string'
+      || (options.timezone !== undefined && typeof options.timezone !== 'string')
+      || typeof options.useUnicode !== 'boolean' || typeof options.arabicShaping !== 'boolean') {
+      return { ok: false, error: 'Invalid raster KOT options' };
+    }
+    try {
+      return await rasterizeKotDocumentForWebUsb(
+        request.document,
+        request.profileId,
+        options as Parameters<typeof rasterizeKotDocumentForWebUsb>[2],
+      );
+    } catch (error: unknown) {
+      return { ok: false, error: getErrorMessage(error) };
+    }
   });
 
   // Reports

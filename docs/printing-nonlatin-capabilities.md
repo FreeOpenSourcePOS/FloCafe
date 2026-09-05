@@ -1,13 +1,13 @@
 # Non-Latin thermal receipt printing — capability study and decision record
 
 **Refs:** #446 (research issue) · epic #438
-**Status of this document:** Study and decision record. It describes a *recommended* target architecture for raster and broad non-Latin support that is **not yet implemented**. The current profile-owned text capability contract, including conservative code-page selection and shared backend/WebUSB warning behavior, is documented in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics). Any prototype or dependency adoption requires separate review (see Section 8, *Open decisions*).
+**Status of this document:** Study and decision record plus Phase 9 implementation boundary. The pure `GS v 0` contract, dedicated Chromium surface, and mixed-mode assembly are implemented behind the additive profile-owned raster capability. Shipped profiles remain disabled until real-printer evidence is recorded. Broad script/font coverage and any dependency adoption still require separate review (see Section 8, *Open decisions*). The current profile-owned text capability contract is documented in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics).
 
 ---
 
 ## 1. Problem
 
-Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — remains limited by printer firmware and font coverage. The current runtime uses the shared profile-owned text capability contract described in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics): shipped profiles remain conservative, generic profiles are ASCII-only, and unsupported item or financial rows are refused before transport so a receipt is never printed with missing financial content. This document covers the deferred raster and broad-script alternatives.
+Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — remains limited by printer firmware and font coverage. The current runtime uses the shared profile-owned text capability contract described in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics): shipped profiles remain conservative, generic profiles are ASCII-only, and unsupported item or financial rows are refused before transport so a receipt is never printed with missing financial content. This document covers the implemented Phase 9 raster boundary and deferred broader script and hardware validation.
 
 Why generic ESC/POS printers fail non-Latin text:
 
@@ -76,10 +76,10 @@ Render the receipt (or parts) to a 1-bit bitmap and print it with `GS v 0 m xL x
 | Mixed-script correctness | Trivial: no column math on RTL text; truncation becomes measured pixel width with ellipsis. |
 | Performance | Payload grows from ~1–2 KB (text receipt) to ≈ 72 B × ~1150 dot rows ≈ 80 KB (80 mm) / ≈ 55 KB (58 mm). Transfer over TCP 9100 / USB bulk is sub-second; head time is unchanged because the same paper area prints either way. Slow MCUs on clones can stutter on very large single images — solved by banding (Section 5). |
 | Paper width / density | Requires dots-per-line knowledge: 384 (58 mm) vs 576 (80 mm) at 203 dpi. Derivable from the existing paper-width profile data. |
-| Transport support | Identical byte stream on TCP, USB RAW queues, and WebUSB — it is ordinary bytes after init. OS spooler RAW pass-through is proven by Odoo/CUPS. No WebUSB-specific work. |
-| Package size impact | None at the protocol layer. Cost lives in the host rendering engine and bundled script fonts (a dependency question — see Section 8). |
+| Transport support | The shared raster assembly produces equivalent bytes for TCP, USB RAW queues, and WebUSB; WebUSB uses a typed document bridge. OS spooler RAW pass-through is proven by Odoo/CUPS. |
+| Package size impact | None at the protocol layer. Phase 9 adds no production rendering dependency; a separately reviewed bundled font remains required before enabling a profile (Section 8). |
 | Maintenance burden | One renderer consuming the semantic print kernel; new scripts become font additions, not logic changes. |
-| Failure/fallback mode | Falls back to today's exact behavior (native attempt + explicit warning). Never worse than status quo. |
+| Failure/fallback mode | Disabled or failed raster retains native output for eligible content; unsupported non-financial lines warn and unsupported financial units refuse before transport. Never silently loses financial content. |
 
 **Verdict:** the only approach satisfying "universal system that supports ALL printers".
 
@@ -95,7 +95,7 @@ The browser print path already renders every script correctly (the browser does 
 | Native code pages | ✗ | ✗ isolated forms | ✗ | all | none | garbage, `?` |
 | UTF-8 pass-through | varies | varies | varies | all | none | mojibake |
 | Host shaping + bidi text | ✗ (glyph gap) | partial | hard | all | small | blank/garbage |
-| **Raster `GS v 0`** | **✓** | **✓** | **✓** | **all raw transports** | rendering engine (Section 8) | falls back to skip+warn |
+| **Raster `GS v 0`** | **✓** | **✓** | **✓** | **all raw transports** | none in Phase 9; bundled font validation required | native fallback or skip/refuse |
 
 ## 4. What other systems do
 
@@ -121,22 +121,27 @@ PrintDocument ──► renderer decides per line/block:
    Tier 2  Non-Latin + profile proves
            firmware shaping            → profile-owned `capabilities.shaping.arabic` passthrough
    Tier 3  Everything else             → host-shaped, bidi-correct RASTER band(s) via GS v 0
-                                         [mixed mode; default for non-Latin content]
-   Tier 4  Whole-receipt raster        → opt-in compatibility toggle / fallback if mixed
+                                         [mixed mode when raster is enabled]
+   Tier 4  Whole-receipt raster        → tested compatibility mode / fallback if mixed
                                          mode misbehaves on specific hardware
    Tier 5  Skip-with-warning           → retained last resort; never silent
 ```
 
-Per transport: identical strategy everywhere — TCP 9100, USB RAW, and WebUSB all move the same byte stream. The browser HTML path needs nothing.
+Per transport: backend and WebUSB use equivalent validated semantic inputs and
+the shared raster assembly; native bytes remain available for units that do not
+need raster. The browser HTML path is unchanged.
 
-Migration implications for the legacy skip-with-warning path: once raster is proven on real hardware, tiers shift upward (skipped lines become raster bands); skip-with-warning remains the terminal fallback when raster is disabled or fails, preserving the no-silent-data-loss contract.
+Runtime implication of the legacy skip-with-warning path: when an enabled
+profile selects raster, unsupported lines become complete raster units; when
+raster is disabled or fails, skip-with-warning remains the non-financial
+fallback and financial output is refused before transport.
 
-Integration notes for the future implementation crew (descriptive, no code changed by this document):
+Phase 9 implementation boundary:
 
-- A raster renderer is another consumer of the shared print kernel (`shared/print/document.ts`), like the existing classic/compact/KOT/merchant renderers; it receives semantic blocks, not business truth.
-- The natural seam is the line-emission guard in the backend encoder and its frontend mirror (`safePrinterText`): doomed lines convert to raster bands instead of warnings.
-- Future raster capability flags belong on `SupportedPrinterProfile` alongside the existing text capability block (for example a raster-support flag and dots-per-line derived from paper width), consistent with epic principle 8.
-- Bundled open script fonts (Noto family subsets) satisfy offline-first principle 1 — no remote fonts.
+- The dedicated [`main/printers/raster-renderer.ts`](../main/printers/raster-renderer.ts) surface consumes typed requests derived from semantic `PrintDocument`/`KotDocument` output; it is isolated from the ordinary POS page and accepts bundled local font data URLs only.
+- Backend and WebUSB core receipt/KOT paths group semantic rows or blocks before raster selection, then assemble raster and native output through the shared [`shared/print/raster.ts`](../shared/print/raster.ts) contract.
+- Raster capability flags live on `ThermalPrinterCapabilities.raster` and are supplied by `SupportedPrinterProfile`; shipped profiles remain disabled until profile-specific font and real-printer evidence is recorded.
+- No production rendering dependency or remote font source was added.
 
 Risks and mitigations:
 
@@ -180,7 +185,7 @@ Seed validators: @MaMaDTHUG82 (Meva TP-UN, Iran — reporter of #437), plus FloC
 
 ## 7. Test-page raster probe specification
 
-A future test-page enhancement (flag-gated; **not part of this change**) adds a diagnostic band so remote users can validate raster support with a single photo:
+The diagnostic test-page enhancement is implemented but remains capability-gated: it is emitted only when the selected profile explicitly enables raster. The backend route accepts `rasterProbe: true` for an owner/manager test request and passes the selected profile capability; disabled profiles retain the existing test page unchanged. The probe gives remote users a single photo-based validation path:
 
 1. After the existing ruler/edge-probe section, emit a solid black rectangle: `widthDots - 16` dots wide, 48 dot rows tall, as one `GS v 0` band (`m=0`, xL/xH = `(widthBytes)` little-endian, yL/yH = 48 little-endian).
 2. Follow with a second band containing inverted checkerboard (8×8 dot cells) to reveal dithering/density misconfiguration.
@@ -188,15 +193,12 @@ A future test-page enhancement (flag-gated; **not part of this change**) adds a 
 4. Close with the standard feed + cut sequence so cutter position is validated in the same printout.
 5. Expected result on healthy hardware: crisp solid bar, uniform checkerboard, correct proportions, clean cut. Any band missing, skewed, or stretched indicates a raster/density defect to report in the checklist above.
 
-Implementation note for that future change: reuse the profile-derived dots-per-line rather than hardcoding 384/576, and route through the same dispatch used by ordinary receipts so all transports are exercised.
+Implementation note: `buildRasterDiagnosticBands` in [`shared/print/raster.ts`](../shared/print/raster.ts) uses the profile-derived width and bounded height. The route sends the result through the same dispatch used by ordinary receipts, so TCP, OS RAW, USB, and WebUSB response semantics remain transport-neutral.
 
 ## 8. Open decisions requiring a human call
 
-- **Rendering-engine dependency** for the host side (needed by Tiers 3–4, evaluated separately per #446 rules; nothing was added to `package.json` in this change):
-  - (a) canvas library in the Electron main process (full shaping + bidi via Skia; native binary weight);
-  - (b) pure-JS stack: WASM-shaped HarfBuzz subset (~613 kB) + outline rasterization (zero native deps, most implementation effort);
-  - (c) render in the renderer process over IPC (no new deps, coupling/latency cost).
-- Whether Tier 4 whole-receipt raster should ship as a user-facing compatibility toggle from day one or remain internal fallback until telemetry justifies exposure.
+- **Rendering-engine dependency:** Phase 9 uses option (c), a dedicated renderer process over a narrow typed IPC boundary, with no production dependency added. The surface accepts bundled local font data URLs only; a separately reviewed local font bundle is still required before enabling a profile.
+- Whether Tier 4 whole-receipt raster should ship as a user-facing compatibility toggle from day one or remain internal fallback until telemetry justifies exposure. The Phase 9 default remains mixed mode, with whole-receipt mode internal/tested only.
 
 ## 9. References
 

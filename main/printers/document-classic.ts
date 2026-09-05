@@ -25,7 +25,7 @@ import {
 } from '../print/print-labels.generated';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
-import type { RasterSemanticLineGroup } from '../../shared/print/raster';
+import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
   addonRows,
@@ -308,7 +308,7 @@ export function renderBillDocumentToClassicLines(
     post: string[];
     sourceLines: { pre: string[]; main: string[]; post: string[] };
     sourceControlLines: { pre: string[]; main: string[]; post: string[] };
-    groups: Array<{ groupId: string; start: number; count: number; sourceLines?: readonly string[]; sourceControlLines?: readonly string[]; financialSourceLines?: readonly boolean[]; financial?: boolean }>;
+    groups: Array<{ groupId: string; start: number; count: number; sourceLines?: readonly string[]; sourceControlLines?: readonly string[]; sourceLayouts?: readonly (RasterTextLayout | undefined)[]; financialSourceLines?: readonly boolean[]; financial?: boolean }>;
     financialRanges: { pre: Array<{ start: number; count: number }>; main: Array<{ start: number; count: number }>; post: Array<{ start: number; count: number }> };
   }
   const segments = new Map<PrintDocumentBlock['kind'], BlockSegments>();
@@ -476,8 +476,17 @@ export function renderBillDocumentToClassicLines(
           );
           segment.financialRanges.main.push({ start, count: rowLines.length });
           segment.main.push(...rowLines);
-          const sourceLines = [`${row.name.text} ${row.quantity} ${formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits)}`];
+          const amount = formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          const sourceLines = [`${row.name.text} ${row.quantity} ${amount}`];
           const sourceControlLines = [rowLines[0] ?? ''];
+          const sourceLayouts: Array<RasterTextLayout | undefined> = [{
+            kind: 'financial-item',
+            columns: [
+              { text: row.name.text, align: 'left' },
+              { text: String(row.quantity), align: 'left' },
+              { text: amount.trimStart(), align: 'right' },
+            ],
+          }];
           const financialSourceLines = [true];
           for (const addon of row.addons) {
             const addonStart = segment.main.length;
@@ -487,6 +496,7 @@ export function renderBillDocumentToClassicLines(
             const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
             sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
             sourceControlLines.push(addonLines[0] ?? '');
+            sourceLayouts.push(undefined);
             financialSourceLines.push(Boolean(addon.price));
           }
           if (row.specialInstructions) {
@@ -494,11 +504,12 @@ export function renderBillDocumentToClassicLines(
             segment.main.push(instructionLine);
             sourceLines.push('  ' + labelOf(block.noteLabel) + ': ' + row.specialInstructions.text);
             sourceControlLines.push(instructionLine);
+            sourceLayouts.push(undefined);
             financialSourceLines.push(false);
           }
           if (segment.main.length > start) {
             const group = { groupId: `item-table-row-${rowIndex}`, start, count: segment.main.length - start };
-            segment.groups.push({ ...group, sourceLines, sourceControlLines, financialSourceLines, financial: true });
+            segment.groups.push({ ...group, sourceLines, sourceControlLines, sourceLayouts, financialSourceLines, financial: true });
           }
         }
         segment.main.push(dash);
@@ -681,7 +692,7 @@ export function renderBillDocumentToClassicLines(
     if (options.rasterGroups && segment[part].length > 0) {
       if (part === 'main' && segment.groups.length > 0) {
         for (const group of segment.groups) {
-          options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count, ...(group.sourceLines ? { sourceLines: group.sourceLines } : {}), ...(group.sourceControlLines ? { sourceControlLines: group.sourceControlLines } : {}), ...(group.financialSourceLines ? { financialSourceLines: group.financialSourceLines } : {}), ...(group.financial ? { financial: true } : {}) });
+          options.rasterGroups.push({ groupId: group.groupId, lineIndex: start + group.start, lineCount: group.count, ...(group.sourceLines ? { sourceLines: group.sourceLines } : {}), ...(group.sourceControlLines ? { sourceControlLines: group.sourceControlLines } : {}), ...(group.sourceLayouts ? { sourceLayouts: group.sourceLayouts } : {}), ...(group.financialSourceLines ? { financialSourceLines: group.financialSourceLines } : {}), ...(group.financial ? { financial: true } : {}) });
         }
       } else {
         const financial = kind === 'totals' || kind === 'tax-breakdown' || kind === 'payments';

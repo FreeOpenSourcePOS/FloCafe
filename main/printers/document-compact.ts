@@ -16,7 +16,7 @@ import { parseDbTimestamp } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
-import type { RasterSemanticLineGroup } from '../../shared/print/raster';
+import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
 import type { PrintWarning } from './thermal';
 import {
   addonRows,
@@ -240,8 +240,17 @@ export function renderBillDocumentToCompactLines(
       );
       lines.push(...rowLines);
       recordFinancialLines(rowStart, rowLines);
-      const sourceLines = [`${row.name.text} ${row.quantity} ${formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits)}`];
+      const amount = formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      const sourceLines = [`${row.name.text} ${row.quantity} ${amount}`];
       const sourceControlLines = [rowLines[0] ?? ''];
+      const sourceLayouts: Array<RasterTextLayout | undefined> = [{
+        kind: 'financial-item',
+        columns: [
+          { text: row.name.text, align: 'left' },
+          { text: String(row.quantity), align: 'left' },
+          { text: amount.trimStart(), align: 'right' },
+        ],
+      }];
       const financialSourceLines = [true];
       for (const addon of row.addons) {
         const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
@@ -251,6 +260,7 @@ export function renderBillDocumentToCompactLines(
         const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
         sourceLines.push(`  + ${addon.name.text}${quantitySuffix}${addon.price ? ` ${formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits)}` : ''}`);
         sourceControlLines.push(addonLines[0] ?? '');
+        sourceLayouts.push(undefined);
         financialSourceLines.push(Boolean(addon.price));
       }
       if (row.specialInstructions) {
@@ -258,11 +268,12 @@ export function renderBillDocumentToCompactLines(
         lines.push(instructionLine);
         sourceLines.push('  ' + labelOf(items.noteLabel) + ': ' + row.specialInstructions.text);
         sourceControlLines.push(instructionLine);
+        sourceLayouts.push(undefined);
         financialSourceLines.push(false);
       }
       if (options.rasterGroups && lines.length > rowStart) {
         const group = { groupId: `item-table-row-${rowIndex}`, lineIndex: rowStart, lineCount: lines.length - rowStart };
-        options.rasterGroups.push({ ...group, sourceLines, sourceControlLines, financialSourceLines, financial: true });
+        options.rasterGroups.push({ ...group, sourceLines, sourceControlLines, sourceLayouts, financialSourceLines, financial: true });
       }
     }
   }

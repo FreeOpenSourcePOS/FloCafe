@@ -516,6 +516,14 @@ async function run(): Promise<void> {
       lineCount: 1,
       sourceLines: ['فارسی 1 ₹12.34'],
       sourceControlLines: ['{FINANCIAL}فارسی 1 ₹12.34'],
+      sourceLayouts: [{
+        kind: 'financial-item',
+        columns: [
+          { text: 'فارسی', align: 'left' },
+          { text: '1', align: 'left' },
+          { text: '₹12.34', align: 'right' },
+        ],
+      }],
       financial: true,
     },
   ]);
@@ -524,6 +532,35 @@ async function run(): Promise<void> {
     ['فارسی', 'left'],
     ['1', 'left'],
     ['₹12.34', 'right'],
+  ]);
+  const digitNamedFinancialRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (rasterRequest) => {
+      digitNamedFinancialRequests.push(rasterRequest);
+      return { version: 1 as const, requestId: (rasterRequest as any).requestId, ok: true as const, unit: { ...unit, unitId: (rasterRequest as any).requestId, financial: true } };
+    },
+  }, ['Meal 2 L 1 10.00'], caps, 'digit-named-financial', [
+    {
+      groupId: 'item-table-row-0',
+      lineIndex: 0,
+      lineCount: 1,
+      sourceLines: ['Meal 2 L 1 10.00'],
+      sourceControlLines: ['{FINANCIAL}Meal 2 L 1 10.00'],
+      sourceLayouts: [{
+        kind: 'financial-item',
+        columns: [
+          { text: 'Meal 2 L', align: 'left' },
+          { text: '1', align: 'left' },
+          { text: '10.00', align: 'right' },
+        ],
+      }],
+      financial: true,
+    },
+  ]);
+  assert.deepEqual(digitNamedFinancialRequests[0].layout.columns.map((column: any) => [column.text, column.align]), [
+    ['Meal 2 L', 'left'],
+    ['1', 'left'],
+    ['10.00', 'right'],
   ]);
   const negativeFinancialLayoutRequests: any[] = [];
   await renderUnsupportedRasterLines({

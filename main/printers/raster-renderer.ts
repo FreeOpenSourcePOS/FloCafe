@@ -403,21 +403,8 @@ function stripRasterControlTokens(line: string): string {
   return line.replace(RASTER_CONTROL_TOKEN_RE, '');
 }
 
-function financialLayoutForLine(groupId: string, offset: number, sourceText: string): RasterTextLayout | undefined {
+function financialLayoutForLine(sourceText: string): RasterTextLayout | undefined {
   const amountPattern = /((?:[-+]\s*)?(?:[^0-9\s]+\s*)?\d[\d\s.,]*(?:\s+[^\d\s]+)?)$/u;
-  if (groupId.startsWith('item-table-row-') && offset === 0) {
-    const itemMatch = sourceText.match(/^([\s\S]+?)\s+(\d+(?:[.,]\d+)?)\s+((?:[-+]\s*)?(?:[^0-9\s]+\s*)?\d[\d\s.,]*)$/u);
-    if (itemMatch) {
-      return {
-        kind: 'financial-item',
-        columns: [
-          { text: itemMatch[1], align: 'left' },
-          { text: itemMatch[2], align: 'left' },
-          { text: itemMatch[3].trimStart(), align: 'right' },
-        ],
-      };
-    }
-  }
   const amountMatch = sourceText.match(amountPattern);
   if (!amountMatch || amountMatch.index === undefined || amountMatch.index <= 0) return undefined;
   const label = sourceText.slice(0, amountMatch.index).trimEnd();
@@ -589,7 +576,8 @@ export async function renderUnsupportedRasterLines(
             ? financial
             : range.financialSourceLines?.[physicalSourceLine.sourceIndex] ?? financial;
           const layout = sourceText !== undefined && layoutFinancial
-            ? financialLayoutForLine(group.groupId, physicalSourceLine.sourceIndex!, sourceText)
+            ? range.sourceLayouts?.[physicalSourceLine.sourceIndex!]
+              ?? (group.groupId.startsWith('item-table-row-') ? undefined : financialLayoutForLine(sourceText))
             : undefined;
           const request = requestForRasterLine(physicalSourceLine.controlLine, physicalSourceLine.lineIndex, capabilities, requestPrefix, layoutFinancial, sourceText, layout);
           if (!request) continue;

@@ -46,6 +46,7 @@ export interface RasterSemanticLineGroup {
   readonly lineCount: number;
   readonly sourceLines?: readonly string[];
   readonly sourceControlLines?: readonly string[];
+  readonly sourceLayouts?: readonly (RasterTextLayout | undefined)[];
   readonly financialSourceLines?: readonly boolean[];
   readonly financial?: boolean;
 }

@@ -815,12 +815,20 @@ export async function printKOT(order: any, items: any[], stationName: string, us
         capabilities,
         requestPrefix: 'kot',
       }, documentResult.rasterGroups);
-      data = rasterized.rasterSelected || rasterized.warnings.length > 0
+      data = rasterized.rasterSelected && !rasterized.rasterFailed
         ? rasterized.data
         : documentResult.data;
       warnings.push(...rasterized.warnings);
     } else {
       data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, capabilities.shaping.arabic, normalizePrintLanguage(language ?? biz?.language), capabilities);
+    }
+    if (hasFinancialPrintWarning(warnings)) {
+      return {
+        ok: false,
+        detail: makeFinancialPrintRefusalMessage(warnings),
+        failureClass: 'unsupported',
+        warnings,
+      };
     }
     console.log('[Printer] KOT data length:', data.length, 'bytes');
     const dispatch = await dispatchPrint(printer, data, signal);
@@ -1096,7 +1104,7 @@ async function rasterizeDocumentLines(
     requestPrefix: string;
   },
   rasterGroups?: readonly RasterSemanticLineGroup[],
-): Promise<{ data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean }> {
+): Promise<{ data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean }> {
   const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
   const renderer = new ChromiumRasterRenderer();
   try {
@@ -1119,7 +1127,7 @@ async function rasterizeDocumentLines(
         kind: failure.financial ? 'financial' : 'line',
       });
     }
-    return { data, warnings, rasterSelected: raster.units.length > 0 };
+    return { data, warnings, rasterSelected: raster.units.length > 0, rasterFailed: raster.failures.length > 0 };
   } finally {
     renderer.destroy();
   }
@@ -1247,7 +1255,10 @@ async function rasterizeReceiptIfEnabled(
     capabilities,
     requestPrefix: 'receipt',
   }, document.rasterGroups);
-  return result.rasterSelected || result.warnings.length > 0
+  if (result.rasterFailed) {
+    return { ...prepared, warnings: [...prepared.warnings, ...result.warnings] };
+  }
+  return result.rasterSelected
     ? { ...prepared, data: result.data, warnings: result.warnings }
     : prepared;
 }

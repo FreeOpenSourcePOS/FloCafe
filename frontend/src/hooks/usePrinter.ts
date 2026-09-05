@@ -306,7 +306,8 @@ export const usePrinterStore = create<PrinterState>()(
                 warnings.push(...encoderWarnings);
               } else {
                 if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
-                if (rasterResult.rasterSelected || (rasterResult.warnings?.length ?? 0) > 0) {
+                const rasterFailed = rasterResult.warnings?.some((warning) => warning.kind === 'line' || warning.kind === 'financial') ?? false;
+                if (rasterResult.rasterSelected && !rasterFailed) {
                   bytes = Uint8Array.from(rasterResult.data);
                 } else {
                   warnings.push(...encoderWarnings);
@@ -518,7 +519,8 @@ export const usePrinterStore = create<PrinterState>()(
                   warnings.push(...encoderWarnings);
                 } else {
                   if (rasterResult.warnings) warnings.push(...rasterResult.warnings as PrintWarning[]);
-                  if (rasterResult.rasterSelected || (rasterResult.warnings?.length ?? 0) > 0) {
+                  const rasterFailed = rasterResult.warnings?.some((warning) => warning.kind === 'line' || warning.kind === 'financial') ?? false;
+                  if (rasterResult.rasterSelected && !rasterFailed) {
                     output = Uint8Array.from(rasterResult.data);
                   } else {
                     warnings.push(...encoderWarnings);
@@ -530,6 +532,11 @@ export const usePrinterStore = create<PrinterState>()(
               }
             } else {
               warnings.push(...encoderWarnings);
+            }
+            if (hasFinancialPrintWarning(warnings)) {
+              const refusal = makeFinancialPrintRefusalMessage(warnings);
+              toast.error(refusal);
+              throw new Error(refusal);
             }
             set({ lastPrintedBytes: output });
             await printerService.print(output);

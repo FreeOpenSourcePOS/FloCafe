@@ -978,25 +978,30 @@ function registerChildProcessCrashTelemetry(): void {
   app.on('child-process-gone', (_event, details) => {
     log.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
     console.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
-    void sendTelemetryEvent('child_process_gone', {
-      type: details.type,
-      reason: details.reason,
-      exitCode: details.exitCode,
-      serviceName: details.serviceName,
-    });
-    if (details.type === 'GPU') {
+    const isGpu = details.type === 'GPU';
+    if (isGpu) {
       // Cancel any pending stability reset — a GPU crash means the current
       // window's graphics pipeline was not actually stable, even if the
       // renderer itself never reported render-process-gone.
       clearRendererStabilityResetTimer();
       consecutiveGpuCrashes++;
-      if (consecutiveGpuCrashes >= GPU_FALLBACK_CRASH_THRESHOLD) {
-        shouldDisableGpuOnRelaunch = true;
-        log.error('[Process] Repeated GPU process crashes — requesting relaunch with hardware acceleration disabled.');
-        requestRuntimeRelaunchOnce('gpu-process-repeated-crash');
-      } else {
-        log.error('[Process] GPU process crashed — will relaunch with hardware acceleration disabled if this recurs.');
-      }
+    }
+    void sendTelemetryEvent('child_process_gone', {
+      type: details.type,
+      reason: details.reason,
+      exitCode: details.exitCode,
+      serviceName: details.serviceName,
+      consecutiveGpuCrashCount: isGpu ? consecutiveGpuCrashes : undefined,
+    });
+    if (isGpu) {
+      // Unlike a renderer crash (which could have many causes, so it waits
+      // for GPU_FALLBACK_CRASH_THRESHOLD occurrences before assuming GPU is
+      // to blame), Electron has already told us definitively this is the GPU
+      // process — no need to wait for a repeat to be confident. Relaunch on
+      // the first one.
+      shouldDisableGpuOnRelaunch = true;
+      log.error('[Process] GPU process crashed — requesting relaunch with hardware acceleration disabled.');
+      requestRuntimeRelaunchOnce('gpu-process-crashed');
     }
   });
 }

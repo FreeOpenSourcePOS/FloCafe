@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { reportRendererError } from '@/lib/report-renderer-error';
 
 /**
@@ -11,11 +11,13 @@ import { reportRendererError } from '@/lib/report-renderer-error';
  */
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   const reportedDigest = useRef<string | undefined>(undefined);
+  const [reportStatus, setReportStatus] = useState<'pending' | 'sent' | 'failed'>('pending');
 
   useEffect(() => {
     if (reportedDigest.current !== (error.digest ?? error.message)) {
       reportedDigest.current = error.digest ?? error.message;
-      reportRendererError(error);
+      setReportStatus('pending');
+      void reportRendererError(error).then((sent) => setReportStatus(sent ? 'sent' : 'failed'));
     }
   }, [error]);
 
@@ -26,7 +28,10 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           <div style={{ maxWidth: 420, textAlign: 'center' }}>
             <h1 style={{ fontSize: 18, fontWeight: 600, marginBottom: 8 }}>Flo needs to restart</h1>
             <p style={{ fontSize: 14, color: '#555', marginBottom: 16 }}>
-              Something went wrong loading Flo. Your data is safe. A diagnostic report was sent automatically.
+              Something went wrong loading Flo. Your data is safe.{' '}
+              {reportStatus === 'pending' && 'Sending a diagnostic report…'}
+              {reportStatus === 'sent' && 'A diagnostic report was sent automatically.'}
+              {reportStatus === 'failed' && "Couldn't send a diagnostic report automatically."}
             </p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
               <button

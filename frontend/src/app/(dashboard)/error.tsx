@@ -12,6 +12,7 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
   const reportedDigest = useRef<string | undefined>(undefined);
   const hasAutoRetried = useRef(false);
   const [autoRetrying, setAutoRetrying] = useState(false);
+  const [reportStatus, setReportStatus] = useState<'pending' | 'sent' | 'failed'>('pending');
 
   useEffect(() => {
     // React re-invokes this effect on every reset()->re-throw cycle with a
@@ -19,7 +20,8 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
     // in a row — dedupe on digest so one crash isn't reported repeatedly.
     if (reportedDigest.current !== (error.digest ?? error.message)) {
       reportedDigest.current = error.digest ?? error.message;
-      reportRendererError(error);
+      setReportStatus('pending');
+      void reportRendererError(error).then((sent) => setReportStatus(sent ? 'sent' : 'failed'));
     }
 
     // One bounded, silent recovery attempt: most render exceptions here come
@@ -59,7 +61,9 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
                 <Button variant="outline" onClick={() => window.location.reload()}>Reload Flo</Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                A diagnostic report was sent automatically to help us fix this.
+                {reportStatus === 'pending' && 'Sending a diagnostic report to help us fix this…'}
+                {reportStatus === 'sent' && 'A diagnostic report was sent automatically to help us fix this.'}
+                {reportStatus === 'failed' && "Couldn't send a diagnostic report automatically — diagnostics may be off in Settings > Privacy, or there's no connection."}
               </p>
             </>
           )}

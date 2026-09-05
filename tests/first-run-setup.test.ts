@@ -168,6 +168,27 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(count('users'), 0, 'no owner is created when the timezone is invalid');
     console.log('   ✓ setup rejects an invalid IANA timezone');
 
+    const invalidCurrency = await request(baseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'First Owner',
+        email: 'owner@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        business_name: 'First Cafe',
+        setup_profile: 'express',
+        service_model: 'qsr',
+        terms_accepted: true,
+        country: 'CA',
+        currency: 'US',
+        timezone: 'America/Vancouver',
+      }),
+    });
+    assert.equal(invalidCurrency.status, 400, 'setup rejects a currency that is not a three-letter code');
+    assert.equal(invalidCurrency.data.error, 'Invalid currency', 'setup reports a currency-specific validation error');
+    assert.equal(count('users'), 0, 'no owner is created when the currency is invalid');
+    console.log('   ✓ setup rejects an invalid currency code');
+
     const first = await request(baseUrl, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({
@@ -182,7 +203,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         // A Canadian store on the west coast selects its true timezone rather
         // than the country profile's America/Toronto default (#389).
         country: 'CA',
-        currency: 'CAD',
+        currency: 'cad',
         timezone: 'America/Vancouver',
         // Deliberately sent as false: first-run setup no longer asks about
         // telemetry, it discloses it. The route must ignore this field

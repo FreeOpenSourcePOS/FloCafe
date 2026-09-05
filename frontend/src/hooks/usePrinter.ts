@@ -175,7 +175,8 @@ export const usePrinterStore = create<PrinterState>()(
           } = usePosSettingsStore.getState();
 
           const isReprint = opts?.isReprint ?? false;
-          const billTemplateWarning = billTemplateSource === 'core'
+          const isUnknownCoreTemplate = billTemplateSource === null && (billTemplate === 'compact' || billTemplate === 'classic');
+          const billTemplateWarning = billTemplateSource === 'core' || isUnknownCoreTemplate
             ? null
             : makeBillTemplateFallbackWarning({ source: billTemplateSource ?? 'unknown', id: billTemplate });
           const rasterBillTemplate = resolveCoreBillTemplate(billTemplate, billTemplateSource);

@@ -744,6 +744,7 @@ export function renderClassicReceiptViaDocument(
     cutMode: PrinterCutMode;
     capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities;
     maskCustomerPhone?: boolean;
+    preserveCurrencySymbol?: boolean;
   },
 ): ClassicDocumentPreviewResult {
   const semanticBusiness = opts.maskCustomerPhone
@@ -773,6 +774,7 @@ export function renderClassicReceiptViaDocument(
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
     maskCustomerPhone: false,
+    preserveCurrencySymbol: opts.preserveCurrencySymbol,
     rasterGroups,
     financialLineRanges,
   });

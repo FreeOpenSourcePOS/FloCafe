@@ -1105,9 +1105,24 @@ async function rasterizeDocumentLines(
   },
   rasterGroups?: readonly RasterSemanticLineGroup[],
 ): Promise<{ data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean }> {
-  const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
-  const renderer = new ChromiumRasterRenderer();
+  const failureResult = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    const financial = sourceWarnings.some((warning) => warning.kind === 'financial')
+      || rasterGroups?.some((group) => group.financial === true) === true;
+    const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
+    warnings.push({
+      field: financial ? 'financial row' : 'raster renderer',
+      text: '',
+      message: `Raster rendering failed: ${message}`,
+      kind: financial ? 'financial' : 'line',
+    });
+    return { data: Buffer.alloc(0), warnings, rasterSelected: false, rasterFailed: true };
+  };
+  let renderer: { destroy: () => void } | undefined;
+  let result = failureResult(new Error('Raster renderer was not initialized'));
   try {
+    const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
+    renderer = new ChromiumRasterRenderer();
     const raster = await renderUnsupportedRasterLines(renderer, lines, options.capabilities, options.requestPrefix, rasterGroups);
     const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
     const data = buildEscPos(lines, options.useUnicode, {
@@ -1127,10 +1142,18 @@ async function rasterizeDocumentLines(
         kind: failure.financial ? 'financial' : 'line',
       });
     }
-    return { data, warnings, rasterSelected: raster.units.length > 0, rasterFailed: raster.failures.length > 0 };
-  } finally {
-    renderer.destroy();
+    result = { data, warnings, rasterSelected: raster.units.length > 0, rasterFailed: raster.failures.length > 0 };
+  } catch (error) {
+    result = failureResult(error);
   }
+  if (renderer) {
+    try {
+      renderer.destroy();
+    } catch (error) {
+      result = failureResult(error);
+    }
+  }
+  return result;
 }
 
 export async function rasterizePrintDocumentForWebUsb(

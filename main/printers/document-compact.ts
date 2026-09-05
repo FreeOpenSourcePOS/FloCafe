@@ -397,6 +397,7 @@ export function renderCompactReceiptViaDocument(
     cutMode: PrinterCutMode;
     capabilities?: import('../../shared/print/thermal-capabilities').ThermalPrinterCapabilities;
     maskCustomerPhone?: boolean;
+    preserveCurrencySymbol?: boolean;
   },
 ): CompactDocumentRenderResult {
   const semanticBusiness = opts.maskCustomerPhone
@@ -426,6 +427,7 @@ export function renderCompactReceiptViaDocument(
     cutMode: opts.cutMode,
     capabilities: opts.capabilities,
     maskCustomerPhone: false,
+    preserveCurrencySymbol: opts.preserveCurrencySymbol,
     rasterGroups,
     financialLineRanges,
   });

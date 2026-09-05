@@ -714,6 +714,22 @@ async function run(): Promise<void> {
     { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
   );
   assert.equal(jpyReceipt.lines.some((line) => line.includes('12.34')), false);
+  const nullThankYouDocument = {
+    ...jpyReceipt.document,
+    blocks: jpyReceipt.document.blocks.map((block) => block.kind === 'message' ? { ...block, thankYou: null } : block),
+  };
+  const nullThankYouLines = renderBillDocumentToCompactLines(nullThankYouDocument, {
+    columns: 42,
+    language: 'en',
+    locale: 'en-US',
+    currencySymbol: '¥',
+    trimDecimals: false,
+    useUnicode: true,
+    arabicShaping: false,
+    cutMode: 'full',
+    capabilities: caps,
+  });
+  assert.equal(nullThankYouLines.some((line) => line.includes('Thank you')), false);
   const jpyClassicReceipt = renderClassicReceiptViaDocument(
     { items: [] },
     { total: 12.34, subtotal: 12.34, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },

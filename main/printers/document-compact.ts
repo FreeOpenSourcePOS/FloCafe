@@ -408,9 +408,9 @@ export function renderBillDocumentToCompactLines(
     pushCenteredWrapped(lines, messages.footerNote.text, cols, options.language, options.capabilities);
     messageFooterSourceLines.push(messages.footerNote.text);
     messageFooterSourceControlLines.push(lines[start] ?? '');
-  } else {
-    lines.push('{CENTER}' + normalize(labelOf(messages!.thankYou!)) + '{/CENTER}');
-    messageFooterSourceLines.push(labelOf(messages!.thankYou!));
+  } else if (messages?.thankYou) {
+    lines.push('{CENTER}' + normalize(labelOf(messages.thankYou)) + '{/CENTER}');
+    messageFooterSourceLines.push(labelOf(messages.thankYou));
     messageFooterSourceControlLines.push(lines.at(-1) ?? '');
   }
   markGroup('message', messageFooterStart, messageFooterSourceLines, messageFooterSourceControlLines);

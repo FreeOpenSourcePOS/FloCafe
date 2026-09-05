@@ -2,6 +2,14 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.5.7] - 2026-09-06
+
+### Added
+- Added capability-gated raster thermal printing for non-Latin scripts, rendered through isolated Chromium/Electron typed IPC, with fail-closed handling for financial documents and native/browser fallback preserved. Shipped raster profiles remain disabled by default pending hardware validation.
+
+### Fixed
+- The app now recovers from a renderer crash or an uncaught render exception with a friendly retry screen instead of a blank or frozen window, and automatically sends a diagnostic report so these issues are visible without a user needing to describe them. A GPU-process crash, or a renderer that keeps crashing, now makes the app relaunch with hardware acceleration disabled.
+
 ## [3.3.0] - 2026-08-21
 
 ### Added

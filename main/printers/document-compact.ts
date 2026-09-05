@@ -145,9 +145,11 @@ export function renderBillDocumentToCompactLines(
   // Reprint banner (MessageBlock).
   const messageStart = lines.length;
   const messageSourceLines: string[] = [];
+  const messageSourceControlLines: string[] = [];
   if (messages?.reprintBanner) {
     lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(messages.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
     messageSourceLines.push(`** ${labelOf(messages.reprintBanner)} **`);
+    messageSourceControlLines.push(lines.at(-1) ?? '');
   }
 
   // Online-order banner (#284, MessageBlock).
@@ -155,16 +157,19 @@ export function renderBillDocumentToCompactLines(
     const banner = messages.onlineOrderBanner;
     lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
     messageSourceLines.push(`** ${labelOf(banner.label)} **`);
+    messageSourceControlLines.push(lines.at(-1) ?? '');
     if (banner.platform.text) {
       lines.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
       messageSourceLines.push(banner.platform.text);
+      messageSourceControlLines.push(lines.at(-1) ?? '');
     }
     if (banner.externalOrderId.text) {
       lines.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
       messageSourceLines.push('#' + banner.externalOrderId.text);
+      messageSourceControlLines.push(lines.at(-1) ?? '');
     }
   }
-  markGroup('message', messageStart, messageSourceLines);
+  markGroup('message', messageStart, messageSourceLines, messageSourceControlLines);
 
   // Business header (store name only — compact keeps contact facts in the footer).
   const headerStart = lines.length;
@@ -353,14 +358,18 @@ export function renderBillDocumentToCompactLines(
 
   const messageFooterStart = lines.length;
   const messageFooterSourceLines: string[] = [];
+  const messageFooterSourceControlLines: string[] = [];
   if (messages?.footerNote) {
+    const start = lines.length;
     pushCenteredWrapped(lines, messages.footerNote.text, cols, options.language, options.capabilities);
     messageFooterSourceLines.push(messages.footerNote.text);
+    messageFooterSourceControlLines.push(lines[start] ?? '');
   } else {
     lines.push('{CENTER}' + normalize(labelOf(messages!.thankYou!)) + '{/CENTER}');
     messageFooterSourceLines.push(labelOf(messages!.thankYou!));
+    messageFooterSourceControlLines.push(lines.at(-1) ?? '');
   }
-  markGroup('message', messageFooterStart, messageFooterSourceLines);
+  markGroup('message', messageFooterStart, messageFooterSourceLines, messageFooterSourceControlLines);
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 

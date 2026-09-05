@@ -605,27 +605,34 @@ export function renderBillDocumentToClassicLines(
         if (block.reprintBanner) {
           segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(block.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
           segment.sourceLines.pre.push(`** ${labelOf(block.reprintBanner)} **`);
+          segment.sourceControlLines.pre.push(segment.pre.at(-1) ?? '');
         }
         if (block.onlineOrderBanner) {
           const banner = block.onlineOrderBanner;
           segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
           segment.sourceLines.pre.push(`** ${labelOf(banner.label)} **`);
+          segment.sourceControlLines.pre.push(segment.pre.at(-1) ?? '');
           if (banner.platform.text) {
             segment.pre.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
             segment.sourceLines.pre.push(banner.platform.text);
+            segment.sourceControlLines.pre.push(segment.pre.at(-1) ?? '');
           }
           if (banner.externalOrderId.text) {
             segment.pre.push('{CENTER}#' + normalize(banner.externalOrderId.text) + '{/CENTER}');
             segment.sourceLines.pre.push('#' + banner.externalOrderId.text);
+            segment.sourceControlLines.pre.push(segment.pre.at(-1) ?? '');
           }
         }
         if (block.thankYou && labelOf(block.thankYou) !== printLabel(options.language, 'print.thankYouShort')) {
           segment.main.push('{CENTER}' + normalize(labelOf(block.thankYou)) + '{/CENTER}');
           segment.sourceLines.main.push(labelOf(block.thankYou));
+          segment.sourceControlLines.main.push(segment.main.at(-1) ?? '');
         }
         if (block.footerNote) {
+          const start = segment.post.length;
           pushCenteredWrapped(segment.post, block.footerNote.text, cols, options.language, options.capabilities);
           segment.sourceLines.post.push(block.footerNote.text);
+          segment.sourceControlLines.post.push(segment.post[start] ?? '');
         }
         break;
       }

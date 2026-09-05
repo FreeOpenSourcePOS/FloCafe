@@ -14,10 +14,16 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
   const [reportStatus, setReportStatus] = useState<'pending' | 'sent' | 'failed'>('pending');
 
   useEffect(() => {
-    if (reportedDigest.current !== (error.digest ?? error.message)) {
-      reportedDigest.current = error.digest ?? error.message;
+    const digest = error.digest ?? error.message;
+    if (reportedDigest.current !== digest) {
+      reportedDigest.current = digest;
       setReportStatus('pending');
-      void reportRendererError(error).then((sent) => setReportStatus(sent ? 'sent' : 'failed'));
+      void reportRendererError(error).then((sent) => {
+        // A newer error may have started (and possibly already finished) its
+        // own report while this one was in flight — don't let this stale
+        // completion overwrite that newer status.
+        if (reportedDigest.current === digest) setReportStatus(sent ? 'sent' : 'failed');
+      });
     }
   }, [error]);
 

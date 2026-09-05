@@ -978,8 +978,16 @@ function registerChildProcessCrashTelemetry(): void {
   app.on('child-process-gone', (_event, details) => {
     log.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
     console.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
-    const isGpu = details.type === 'GPU';
-    if (isGpu) {
+    // clean-exit means the process exited with code 0 (e.g. normal shutdown
+    // teardown) — not a crash, and never grounds for arming --disable-gpu or
+    // relaunching. Also skip recovery entirely once quitting/shutdown is
+    // already underway, so a GPU process winding down as part of a deliberate
+    // quit can't trigger a relaunch that fights the quit in progress.
+    const isGpuFailure = details.type === 'GPU'
+      && details.reason !== 'clean-exit'
+      && !isQuitting
+      && !isShutdownRequested();
+    if (isGpuFailure) {
       // Cancel any pending stability reset — a GPU crash means the current
       // window's graphics pipeline was not actually stable, even if the
       // renderer itself never reported render-process-gone.
@@ -991,9 +999,11 @@ function registerChildProcessCrashTelemetry(): void {
       reason: details.reason,
       exitCode: details.exitCode,
       serviceName: details.serviceName,
-      consecutiveGpuCrashCount: isGpu ? consecutiveGpuCrashes : undefined,
+      consecutiveGpuCrashCount: isGpuFailure ? consecutiveGpuCrashes : undefined,
+    }).catch((error) => {
+      log.error('[Process] Failed to report child-process failure:', error);
     });
-    if (isGpu) {
+    if (isGpuFailure) {
       // Unlike a renderer crash (which could have many causes, so it waits
       // for GPU_FALLBACK_CRASH_THRESHOLD occurrences before assuming GPU is
       // to blame), Electron has already told us definitively this is the GPU

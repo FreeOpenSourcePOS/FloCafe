@@ -586,7 +586,8 @@ export async function renderUnsupportedRasterLines(
       }
     }
     if (failure) {
-      failures.push(...ranges.map((range) => ({ ...failure, lineIndex: range.lineIndex, lineCount: range.lines.length })));
+      const groupFailure = failure;
+      failures.push(...ranges.map((range) => ({ ...groupFailure, lineIndex: range.lineIndex, lineCount: range.lines.length })));
       continue;
     }
     units.push(...renderedRanges.map((range) => ({

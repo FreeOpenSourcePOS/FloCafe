@@ -99,6 +99,14 @@ export type PrintFailureClass =
   | 'unsupported'
   | 'unknown';
 
+const XML_ENTITIES: Record<string, string> = {
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&apos;': "'",
+  '&amp;': '&',
+};
+
 /** Strips PowerShell CLIXML serialization envelopes and extracts clean error text. */
 export function sanitizePowerShellStderr(stderr?: string): string {
   if (!stderr) return '';
@@ -114,11 +122,7 @@ export function sanitizePowerShellStderr(stderr?: string): string {
     const text = match[1]
       .replace(/_x000D__x000A_/g, '\n')
       .replace(/_x([0-9a-fA-F]{4})_/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&amp;/g, '&')
-      .replace(/&quot;/g, '"')
-      .replace(/&apos;/g, "'")
+      .replace(/&(?:lt|gt|quot|apos|amp);/g, (entity) => XML_ENTITIES[entity] ?? entity)
       .trim();
     if (text && !text.startsWith('At line:') && !text.startsWith('+ ')) {
       errorMatches.push(text);
@@ -130,8 +134,7 @@ export function sanitizePowerShellStderr(stderr?: string): string {
   }
 
   return raw
-    .replace(/^#<\s*CLIXML/i, '')
-    .replace(/<[^>]+>/g, '')
+    .replace(/^#<\s*CLIXML[\r\n]*/i, '')
     .replace(/_x000D__x000A_/g, '\n')
     .replace(/_x([0-9a-fA-F]{4})_/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     .trim();

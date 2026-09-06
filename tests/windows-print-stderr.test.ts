@@ -48,9 +48,9 @@ function runTests(): void {
     "Printer spooler service stopped.\nCannot communicate with spooler daemon.",
   );
 
-  // 5. Malformed CLIXML fallback (strips tags)
-  const malformedClixml = "#< CLIXML\r\n<Objs><UnknownTag>Some unexpected error message</UnknownTag></Objs>";
-  assert.equal(sanitizePowerShellStderr(malformedClixml), "Some unexpected error message");
+  // 5. Fallback when no <S S="Error"> blocks match (strips CLIXML header and decodes escapes)
+  const malformedClixml = '#< CLIXML\r\nSome unexpected error message_x000D__x000A_';
+  assert.equal(sanitizePowerShellStderr(malformedClixml), 'Some unexpected error message');
 
   // 6. classifyPrintFailure handles CLIXML-wrapped errors correctly
   assert.equal(classifyPrintFailure(clixmlSingle), "unknown");

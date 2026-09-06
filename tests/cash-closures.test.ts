@@ -548,6 +548,102 @@ async function main() {
       db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('currency', 'INR', ?) ON CONFLICT(key) DO UPDATE SET value='INR', updated_at=excluded.updated_at`).run(now());
     }
 
+    console.log('\n7a. Cross-midnight: staff + tax snapshot key by paid_at window (issue #649 / Greptile)');
+    {
+      // Regression for the Greptile P1: a bill created on day-1 and paid on
+      // day-2 must roll every Z section (gross, payments, staff revenue,
+      // tax) into the day-2 close, with day-1's close excluding all four.
+      // The order is created on day-1 at 23:50 and paid on day-2 at 00:10.
+      const dayZBase = new Date(Date.now() - 80 * 24 * 60 * 60 * 1000);
+      const day1 = dayZBase.toISOString().slice(0, 10);
+      const day2 = new Date(dayZBase.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      // Tax snapshot with splitAllocation + lines so aggregateTaxComponents
+      // emits a CGST+SGST entry worth 50/50 cents (matches the F4 fixture).
+      const zSnapshot = JSON.stringify({
+        splitAllocation: 'minor-unit-v1',
+        lines: [{
+          kind: 'item',
+          components: [
+            { label: 'CGST', rate: '9', amount: 50 },
+            { label: 'SGST', rate: '9', amount: 50 },
+          ],
+        }],
+      });
+      const zBreakdown = JSON.stringify([
+        { title: 'CGST', rate: 9, amount: 50 },
+        { title: 'SGST', rate: 9, amount: 50 },
+      ]);
+      // Cross-midnight order: order_created day1 23:50Z, bill_paid day2 00:10Z.
+      // The order's user_id is the test cashier (see test fixture seed above).
+      // The bill's tax_breakdown / tax_snapshot carry 100 cents tax and 1100
+      // total (cash 1100 cents) — paid at day-2 00:10Z.
+      const orderNum = 'ORD-CROSS-1';
+      const orderCreatedAt = dbTimestamp(new Date(`${day1}T23:50:00Z`));
+      const billPaidAt = dbTimestamp(new Date(`${day2}T00:10:00Z`));
+      db.prepare(`
+        INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+        VALUES (?, ?, 'takeaway', 'completed', ?, ?, ?, ?, ?)
+      `).run(orderNum, cashierId, 1000, 1100, orderCreatedAt, billPaidAt, billPaidAt);
+      const orderId = Number(db.prepare('SELECT id FROM orders WHERE order_number = ?').get(orderNum).id);
+      db.prepare(`
+        INSERT INTO bills (
+          bill_number, order_id, subtotal, total, paid_amount, balance, payment_status,
+          payment_details, paid_at, created_at, updated_at,
+          tax_amount, tax_snapshot, tax_breakdown
+        ) VALUES (?, ?, ?, ?, ?, 0, 'paid', ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        'B-CROSS-1', orderId, 1000, 1100, 1100,
+        JSON.stringify([{ method: 'cash', amount: 1100, timestamp: billPaidAt }]),
+        billPaidAt, orderCreatedAt, billPaidAt,
+        100, zSnapshot, zBreakdown,
+      );
+      // Sanity: the order is on day1 by creation but the bill on day2 by paid_at.
+      const orderDay = db.prepare('SELECT created_at FROM orders WHERE id = ?').get(orderId).created_at;
+      const paidDay = db.prepare('SELECT paid_at FROM bills WHERE id = ?').get(orderId).paid_at;
+      assert(orderDay < day2 && paidDay >= day2, 'fixture: order is created before day2 but paid on day2');
+
+      // Close day1 first. Everything in the bill belongs to day2, so day1's
+      // close must report zero bills, zero gross, no staff row, no tax rows.
+      const close1 = await request(app).post('/api/cash-closures').set('Authorization', `Bearer ${ownerToken}`).send({
+        business_date: day1, opening_float_cents: 0, counted_cash_cents: 0,
+      });
+      assertEqual(close1.status, 201, `day1 close returns 201 (got ${close1.status})`);
+      const z1 = close1.body?.zReport;
+      assertEqual(z1.bill_count, 0, 'day1: cross-midnight bill does not appear (created but unpaid)');
+      assertEqual(z1.gross_collected_cents, 0, 'day1: gross = 0 (bill unpaid at end of day1)');
+      assertEqual(z1.expected_cash_cents, 0, 'day1: expected = 0 (no cash flow before close)');
+      const day1Staff = (z1.staff_sales as any[]).filter((s) => s.user_id === cashierId);
+      assertEqual(day1Staff.length, 0, 'day1: cross-midnight order does not contribute to staff_sales');
+      const day1Tax = z1.tax_components as any[];
+      assertEqual(day1Tax.length, 0, 'day1: tax_components is empty (no taxable bills paid today)');
+
+      // Close day2. Every section now reflects the bill (paid_at window).
+      const close2 = await request(app).post('/api/cash-closures').set('Authorization', `Bearer ${ownerToken}`).send({
+        business_date: day2, opening_float_cents: 0, counted_cash_cents: 110000,
+      });
+      assertEqual(close2.status, 201, `day2 close returns 201 (got ${close2.status}, body=${JSON.stringify(close2.body)})`);
+      const z2 = close2.body?.zReport;
+      assertEqual(z2.bill_count, 1, 'day2: cross-midnight bill counted exactly once');
+      assertEqual(z2.gross_collected_cents, 110000, 'day2: gross = 1100 INR in cents');
+      assertEqual(z2.expected_cash_cents, 110000, 'day2: expected = 0 + 1100 cash (drawer reality)');
+      const day2Staff = (z2.staff_sales as any[]).find((s) => s.user_id === cashierId);
+      assert(!!day2Staff, 'day2: cashier row present in staff_sales');
+      assertEqual(day2Staff.revenue_cents, 110000, 'day2: staff revenue = bill total (paid_at window)');
+      assertEqual(day2Staff.orderCount, 1, 'day2: staff orderCount = 1');
+      // Tax components are populated by aggregateTaxComponents over bills
+      // inside the paid_at window — the CGST/SGST fixture carries 50/50 cents.
+      const day2Tax = z2.tax_components as any[];
+      const day2Cgst = day2Tax.find((c) => c.title === 'CGST');
+      const day2Sgst = day2Tax.find((c) => c.title === 'SGST');
+      assert(!!day2Cgst && day2Cgst.amount === 50, `day2: CGST component present at 50 (got ${JSON.stringify(day2Cgst)})`);
+      assert(!!day2Sgst && day2Sgst.amount === 50, `day2: SGST component present at 50 (got ${JSON.stringify(day2Sgst)})`);
+      // Reconciliation invariant: gross minus refunds equals the sum of
+      // payment_method totals (catches a future divergence between the
+      // summary fields and the per-section breakdown).
+      const pmSum = (z2.payment_methods as any[]).reduce((s, m) => s + (Number(m.total_cents) || 0), 0);
+      assertEqual(pmSum, z2.gross_collected_cents, `day2: Σ payment_methods.total_cents == gross (got ${pmSum} vs ${z2.gross_collected_cents})`);
+    }
+
     console.log('\n7. Z-number monotonic lifetime');
     {
       const z = nextZNumber();
@@ -606,12 +702,12 @@ async function main() {
         assertEqual(report.priorClosedCashCents, null, 'xReport.priorClosedCashCents is null when no prior close exists');
       }
       // F3 null-prior branch: probe a date strictly before the earliest seeded
-      // close (day-60, before section 8's day-45) — there has been no prior
-      // close ever, so both prior fields must be null. Section 9 above
-      // exercises the with-prior branch; this exercises the null-prior
-      // branch so the F1 no-prior-close prefill + noPriorCloseHint UX is
-      // deterministically covered.
-      const noPriorDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      // close (day-100, before section 7a's day-80 and section 8's day-45) —
+      // there has been no prior close ever, so both prior fields must be
+      // null. Section 9 above exercises the with-prior branch; this exercises
+      // the null-prior branch so the F1 no-prior-close prefill +
+      // noPriorCloseHint UX is deterministically covered.
+      const noPriorDate = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       const np = await request(app).get(`/api/reports/x-report?date=${noPriorDate}`).set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(np.status, 200, `x-report on day-60 returns 200 (got ${np.status})`);
       const npReport = np.body?.xReport;

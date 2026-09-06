@@ -264,28 +264,34 @@ export function computeDayAggregates(db: ReturnType<typeof getDatabase>, busines
   // numbers reconcile with the live financial-summary endpoint for the same day.
   const paymentMethodsRows = paymentMethodBreakdown(db, businessDate, businessDate, true, true);
 
-  // Per-staff sales — same window as the bill count, day-scoped topStaff shape
-  // (mirrors insights endpoint).
+  // Per-staff sales — same window as the bill count, keyed by paid_at so a
+  // cross-midnight bill (created day-1, paid day-2) rolls into day-2's Z
+  // (matches the gross/payment/expected windows above; cancels the prior
+  // creation-time key, which produced a non-reconciling Z with respect to
+  // the rest of the snapshot). Unpaid orders drop out: uncollected money
+  // is not staff revenue for the day it was created.
   const staffSalesRows = db.prepare(`
     SELECT u.id AS user_id, u.name AS name, u.role AS role,
-      COALESCE(SUM(o.total), 0) AS revenue,
-      COUNT(o.id) AS orderCount
-    FROM orders o
+      COALESCE(SUM(b.paid_amount), 0) AS revenue,
+      COUNT(DISTINCT b.id) AS orderCount
+    FROM bills b
+    JOIN orders o ON o.id = b.order_id
     JOIN users u ON u.id = o.user_id
-    WHERE o.created_at >= ? AND o.created_at < ?
+    WHERE b.paid_at >= ? AND b.paid_at < ?
     GROUP BY u.id
     ORDER BY revenue DESC
     LIMIT 20
   `).all(start, end) as StaffSalesRow[];
 
-  // Tax components — same input shape as the live tax-components endpoint
-  // (main/routes/reports.ts:307-336): bills hydrated with their order items,
-  // then aggregated via the existing `aggregateTaxComponents` pipeline.
+  // Tax components — keyed by paid_at window to stay reconciled with the
+  // rest of the Z. Bills are hydrated with their order items and then
+  // aggregated via the existing `aggregateTaxComponents` pipeline, unchanged.
+  // Unpaid bills drop out by the same logic as the staff query above.
   const bills = db.prepare(`
     SELECT b.*
     FROM bills b
-    WHERE b.created_at >= ? AND b.created_at < ?
-    ORDER BY b.created_at, b.id
+    WHERE b.paid_at >= ? AND b.paid_at < ?
+    ORDER BY b.paid_at, b.id
   `).all(start, end) as any[];
   const orders = getOrdersWithItemsForBills(db, bills);
   const taxDocuments = bills.map((bill) => ({

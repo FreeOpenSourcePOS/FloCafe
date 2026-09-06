@@ -50,9 +50,8 @@ export function useTaxPreview(
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Reset immediately when the cart becomes empty, read directly during render (React's
-  // recommended pattern for "adjusting state when a prop changes") rather than an effect —
-  // any in-flight request is still cancelled by the previous effect run's cleanup below.
+  // Reset immediately during render when cart becomes empty;
+  // in-flight requests are cancelled by effect cleanup.
   const [wasEmpty, setWasEmpty] = useState(isEmpty);
   if (isEmpty !== wasEmpty) {
     setWasEmpty(isEmpty);

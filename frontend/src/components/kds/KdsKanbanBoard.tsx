@@ -42,10 +42,8 @@ function statusOf(item: KdsOrderItem): KitchenStatus {
   return normalizeKitchenStatus(item.status);
 }
 
-// The 4 draggable stages, as opposed to the locked 'voided' status (issue
-// #150) which gets its own read-only, non-draggable section below — never a
-// dnd-kit column, so a card can never be dragged into "voided" as a bypass
-// for the manager-PIN void flow.
+// The 4 draggable stages; 'voided' is read-only and non-draggable
+// to preserve manager-PIN void requirements.
 type BoardStatus = Exclude<KitchenStatus, 'voided'>;
 
 export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanbanBoardProps) {
@@ -103,10 +101,7 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
 
     const sourceIdx = STATUS_ORDER.indexOf(sourceData.fromStatus as BoardStatus);
     const targetIdx = STATUS_ORDER.indexOf(targetData.status as BoardStatus);
-    // A forward drag that jumps over one or more stages (e.g. preparing →
-    // served) can accidentally complete an order, so require an explicit
-    // confirmation before committing (issue #301). Backward and single-step
-    // moves stay one-touch.
+    // Require confirmation when skipping stages forward to prevent accidental status jumps.
     const skipsStage = sourceIdx >= 0 && targetIdx > sourceIdx + 1;
     if (skipsStage) {
       const targetLabel = t(STATUS_CONFIG[targetData.status].labelKey);
@@ -274,10 +269,7 @@ function KanbanOrderCard({
   );
 }
 
-// Read-only column for voided items (issue #150) — deliberately not a
-// KdsColumn/useDroppable target and its cards aren't useDraggable, so an
-// in-progress item can only ever land here through the manager-PIN void
-// flow on the Orders page, never by a kitchen drag-and-drop shortcut.
+// Read-only display column for voided items; drag-and-drop transitions are disabled.
 function VoidedColumn({
   groups,
   onItemOpen,

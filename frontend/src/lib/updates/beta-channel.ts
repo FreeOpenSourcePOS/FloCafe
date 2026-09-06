@@ -1,14 +1,4 @@
-/**
- * Pure helpers for the beta/pre-release update channel toggle (#463).
- *
- * The `updates:get-beta-channel` / `updates:set-beta-channel` IPC contract
- * is implemented by the main process and preload bindings. This module keeps
- * the renderer compatible with older builds that do not expose those methods.
- *
- * Everything here is deliberately tolerant of unknown result shapes so the
- * renderer can degrade safely when an older build or an unavailable IPC call
- * does not return the current response envelope.
- */
+/** Helpers for beta update channel toggle with backward-tolerant IPC handling. */
 
 export interface BetaChannelApi {
   getBetaChannel?: () => Promise<unknown>;
@@ -21,11 +11,7 @@ export function betaChannelApiSupported(api: BetaChannelApi | null | undefined):
     && typeof api?.setBetaChannel === 'function';
 }
 
-/**
- * Coerce a get/set payload into a tri-state: true/false when a boolean is
- * recoverable, null when the value is missing or malformed (callers treat
- * null as "unsupported" and fall back to the disabled UI).
- */
+/** Coerces get/set payload into boolean or null when missing/malformed. */
 export function normalizeBetaChannelValue(raw: unknown): boolean | null {
   if (typeof raw === 'boolean') return raw;
   if (raw === undefined || raw === null) return null;
@@ -81,11 +67,8 @@ export async function readBetaChannelState(api: BetaChannelApi | null | undefine
   }
 }
 
-/**
- * Optimistic-update helper for the Settings toggle: returns the state to
- * render after the IPC call settles. Only a confirmed success moves the
- * toggle; failures keep the previously rendered value.
- */
+/** Returns state to render after IPC call; moves toggle only on
+ * confirmed success, reverting on failure. */
 export async function writeBetaChannelState(
   api: BetaChannelApi | null | undefined,
   enabled: boolean,

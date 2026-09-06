@@ -479,12 +479,7 @@ export default function OrdersPage() {
     }
   };
 
-  // A prepaid order is marked 'completed' the moment its bill is fully paid,
-  // which can happen before the kitchen has prepared anything (payment and
-  // kitchen fulfillment are independent and can finish in either order) — so
-  // a completed order still counts as "active" if the kitchen hasn't served
-  // all of its items yet. Only applies when this business uses KDS; without
-  // it item status is never updated, so it can't be used as a signal.
+  // Completed prepaid orders remain active while unserved kitchen items exist (when KDS enabled).
   const isOrderActive = (order: Order) => {
     if (order.status === 'cancelled') return false;
     if (order.status === 'completed') {
@@ -496,9 +491,7 @@ export default function OrdersPage() {
   const filteredOrders = orders.filter((order) => {
     // Tab filter
     if (tabFilter === 'active' && !isOrderActive(order)) return false;
-    // An order without a bill has not been paid yet. Bills are deliberately
-    // generated only when checkout starts, so filtering on bill existence
-    // hid otherwise payable orders from the Unpaid tab.
+    // Filter unpaid orders using resolved payment status since bills are generated at checkout.
     if (tabFilter === 'unpaid' && !['unpaid', 'partial'].includes(paymentStatusOf(order) || '')) return false;
 
     // Search by order number

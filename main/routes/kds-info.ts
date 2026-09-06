@@ -1,8 +1,4 @@
-/**
- * GET /api/kds-info
- * Returns the KDS access URLs (mDNS + local IP) so the POS UI can render a QR code.
- * The tablet/display on the same network opens either URL in a browser.
- */
+/** Returns KDS access URLs (mDNS and local IP) for POS QR code generation. */
 import { Router, Request, Response } from 'express';
 import QRCode from 'qrcode';
 import { getLocalIP, getAllLocalIPs } from '../server';

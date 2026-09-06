@@ -23,8 +23,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
   const tCommon = useTranslations('common');
   const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[normalizeKitchenStatus(s)].labelKey);
   const currentStatus = normalizeKitchenStatus(item.status);
-  // 'voided' is locked — it's outside STATUS_ORDER on purpose (issue #150),
-  // so there's no next/prev to compute for it.
+  // 'voided' status is locked and excluded from sequential status transitions.
   const isVoided = currentStatus === 'voided';
   const currentIdx = isVoided ? -1 : STATUS_ORDER.indexOf(currentStatus as Exclude<KitchenStatus, 'voided'>);
   const next = !isVoided ? STATUS_ORDER[currentIdx + 1] ?? null : null;

@@ -20,10 +20,7 @@ export interface SupportedPrinterProfile {
   fontBColumns: number;
   printWidthMm?: number;
   cutMode: PrinterCutMode;
-  /**
-   * Legacy stored override for the profile-owned Arabic shaping capability.
-   * @deprecated Use capabilities.shaping.arabic. Kept for stored profile compatibility.
-   */
+  /** Legacy override for Arabic shaping capability. @deprecated Use capabilities.shaping.arabic. */
   arabicShaping?: boolean;
   /** Text encoding, shaping, representability, transliteration, and warning policy. */
   capabilities: ThermalPrinterCapabilities;

@@ -20,23 +20,13 @@ interface RateLimitOptions {
 const DEFAULT_WINDOW_MS = 60 * 1000; // 1 minute
 const DEFAULT_MAX = 100;
 
-/**
- * Canonicalizes an IP address for rate-limit bucketing so that equivalent
- * address forms share one budget (GHSA-wp3q-hc3p-v36c):
- *   - IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is the same host as `a.b.c.d`.
- *   - Hex case is normalized (IPv6 addresses are case-insensitive).
- * Returns the address unchanged (lowercased) when it is not a recognized form.
- */
+/** Canonicalizes an IP address for rate-limit bucketing so equivalent forms share budget. */
 function normalizeIpForRateLimit(ip: string): string {
   const lower = ip.toLowerCase();
   return lower.startsWith('::ffff:') ? lower.substring(7) : lower;
 }
 
-/**
- * Simple in-memory rate limiter for the local Express API.
- * Uses the canonicalized IP address as the key. Designed for a single-tenant
- * desktop app.
- */
+/** In-memory rate limiter for local Express API keyed by canonicalized IP. */
 export function rateLimit(options: RateLimitOptions = {}) {
   const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
   const max = options.max ?? DEFAULT_MAX;
@@ -49,18 +39,14 @@ export function rateLimit(options: RateLimitOptions = {}) {
     const now = Date.now();
     const ip = normalizeIpForRateLimit(rawIp);
 
-    // Bound the in-memory table. Sweep expired entries once it grows past a
-    // threshold so abandoned client keys cannot accumulate without limit in a
-    // long-running process (GHSA-wp3q-hc3p-v36c).
+    // Bound in-memory table: sweep expired entries once past threshold.
     if (requests.size > 1000) {
       for (const [key, value] of requests.entries()) {
         if (value.resetAt <= now) requests.delete(key);
       }
     }
 
-    // Bypass rate limit for local / private / Tailscale IPs (general API traffic).
-    // Auth endpoints opt out of this bypass via bypassPrivateIp: false so that
-    // LAN-based brute-force against /api/auth/login is still throttled.
+    // Bypass rate limit for local/private/Tailscale IPs unless bypassPrivateIp is false.
     const bypassPrivateIp = options.bypassPrivateIp !== false;
     if (bypassPrivateIp && isAllowedPrivateIp(ip)) {
       return next();
@@ -96,11 +82,7 @@ export function rateLimit(options: RateLimitOptions = {}) {
   };
 }
 
-/**
- * Stricter rate limiter for authentication endpoints.
- * Private/LAN IPs are NOT exempt — LAN-based brute-force is a real threat
- * for a POS system. (vuln-0003)
- */
+/** Stricter rate limiter for authentication endpoints; private/LAN IPs are not exempt. */
 export function authRateLimit(options: { max?: number } = {}) {
   const envMax = process.env.FLO_AUTH_RATE_LIMIT_MAX ? parseInt(process.env.FLO_AUTH_RATE_LIMIT_MAX, 10) : undefined;
   return rateLimit({
@@ -111,14 +93,7 @@ export function authRateLimit(options: { max?: number } = {}) {
   });
 }
 
-/**
- * Shared rate limiter for static/SPA file serving. Static assets are public
- * and cheap, but the SPA fallback performs a filesystem read per request, so a
- * generous limit bounds external clients without throttling LAN clients (KDS,
- * Server App, recovery) — mirroring the private-IP convenience of rateLimit().
- * Uses express-rate-limit (rather than the in-memory rateLimit above) so CodeQL
- * recognizes the route as rate-limited (js/missing-rate-limiting).
- */
+/** Shared rate limiter for static/SPA file serving with private IP bypass. */
 export function staticRouteRateLimit(options: { windowMs?: number; limit?: number } = {}) {
   return expressRateLimit({
     windowMs: options.windowMs ?? 60 * 1000,
@@ -136,22 +111,14 @@ interface UserAuthCacheEntry {
   expiresAt: number;
 }
 
-// Bounds how long a deactivated/role-changed user's existing JWT keeps working
-// after the DB is updated (vuln-0001). Kept short so requireAuth doesn't need
-// a DB hit on every single request.
+// Short cache TTL bounds how long deactivated/role-changed user JWTs persist.
 const USER_AUTH_CACHE_TTL_MS = 30 * 1000;
 const USER_AUTH_CACHE_PRUNE_INTERVAL_MS = USER_AUTH_CACHE_TTL_MS;
 
 const userAuthCache = new Map<string, UserAuthCacheEntry>();
 let lastUserAuthCachePruneAt = 0;
 
-/**
- * Looks up (and caches) whether a JWT's subject is still an active user, their
- * current role, and the earliest `iat` a token for them may still carry.
- * requireAuth uses this to reject tokens for deactivated users, and tokens
- * issued before a password/PIN change (#173), instead of trusting the JWT's
- * signature/expiry alone.
- */
+/** Caches user active status, current role, and tokens_valid_after timestamp. */
 export function getUserAuthStatus(
   userId: string,
   options: { fresh?: boolean } = {},
@@ -193,11 +160,7 @@ export function getUserAuthStatus(
   return { isActive: entry.isActive, role: entry.role, tokensValidAfter: entry.tokensValidAfter };
 }
 
-/**
- * Forces the next requireAuth check for this user to re-read the DB instead
- * of serving a stale cache entry. Call after deactivate/reactivate/role changes,
- * or after bumping tokens_valid_after (password/PIN change, #173).
- */
+/** Forces next requireAuth check for user to re-read DB instead of cache. */
 export function invalidateUserAuthCache(userId: string): void {
   userAuthCache.delete(userId);
 }
@@ -207,29 +170,15 @@ export function clearUserAuthCache(): void {
   lastUserAuthCachePruneAt = 0;
 }
 
-/**
- * True if a JWT's `iat` (issued-at, seconds since epoch) predates the user's
- * `tokens_valid_after` — i.e. the credentials were changed after this token was
- * issued, so it must be rejected even though its signature and expiry are fine.
- * A stateless per-token blocklist (see revokeToken below) can't do this: it only
- * knows about the one token used to log out, not every other session a user may
- * have open on other devices at the time of a password/PIN change (#173).
- */
+/** True if token iat predates user tokens_valid_after (e.g. after password/PIN change). */
 export function isTokenStale(iat: number | undefined, tokensValidAfter: string | null | undefined): boolean {
   if (!tokensValidAfter || typeof iat !== 'number') return false;
-  // `tokens_valid_after` is stored in the DB's UTC space form; parse it as
-  // UTC — `new Date()` would read it as machine-local and shift the
-  // revocation window by the host's offset. Both sides are compared at
-  // whole-second resolution, so a token minted in the very same second as
-  // the change (e.g. the fresh login right after a password reset) is not
-  // flagged as stale.
+  // tokens_valid_after is stored in UTC; compare at second resolution.
   const tokensValidAfterSeconds = Math.floor(parseDbTimestamp(tokensValidAfter).getTime() / 1000);
   return iat < tokensValidAfterSeconds;
 }
 
-// Keep a small in-memory fallback for malformed tokens and for immediate
-// same-process behavior, but persist valid-token hashes so logout survives
-// restart and cannot be defeated by FIFO eviction.
+// In-memory fallback and persistent hash store for token revocations.
 const revokedTokens = new Set<string>();
 const MAX_IN_MEMORY_REVOKED_TOKENS = 5000;
 const REVOCATION_CLEANUP_INTERVAL_MS = 60 * 1000;
@@ -292,9 +241,7 @@ export function isTokenRevoked(token: string): boolean {
     ).get(hashRevokedToken(token), nowMs) as { revoked: number } | undefined;
     return row?.revoked === 1;
   } catch (error) {
-    // Fail closed. A revocation-store failure (missing table, locked DB,
-    // closed DB, or any query error) must deny, not silently allow, a token
-    // that may have been revoked (GHSA-ppjh-gjj8-7f63).
+    // Fail closed: database query failure denies rather than allows token.
     console.error('[Auth] Token revocation lookup failed; rejecting token:', error);
     return true;
   }
@@ -313,10 +260,7 @@ export function clearRevokedTokens(): void {
   }
 }
 
-/**
- * Role-based authorization middleware.
- * Must be used after requireAuth.
- */
+/** Role-based authorization middleware (must follow requireAuth). */
 export function requireRole(...roles: readonly string[]) {
   return (req: Request, res: Response, next: () => void) => {
     const user = (req as any).user;
@@ -330,13 +274,7 @@ export function requireRole(...roles: readonly string[]) {
   };
 }
 
-/**
- * Gates authenticated KDS REST endpoints behind the `kds_enabled` setting
- * (issue #133). These are only reachable by an already-authenticated
- * kitchen-staff/manager/owner session, so a clear, explicit error is fine —
- * there's no LAN-probing concern here the way there is for the pairing
- * endpoints and WebSocket upgrade (see requireKdsEnabledOr404).
- */
+/** Gates authenticated KDS REST endpoints behind the kds_enabled setting. */
 export function requireKdsEnabled(req: Request, res: Response, next: () => void) {
   if (!isKdsEnabled()) {
     return res.status(403).json({ error: 'KDS is disabled for this business' });
@@ -344,12 +282,7 @@ export function requireKdsEnabled(req: Request, res: Response, next: () => void)
   next();
 }
 
-/**
- * Gates KDS pairing/discovery surface behind the `kds_enabled` setting,
- * returning 404 instead of 403 (issue #133). A stale or misconfigured KDS
- * device on the LAN should get no confirmation the feature even exists once
- * it's been turned off.
- */
+/** Gates KDS pairing endpoints behind kds_enabled, returning 404 when disabled. */
 export function requireKdsEnabledOr404(req: Request, res: Response, next: () => void) {
   if (!isKdsEnabled()) {
     return res.status(404).json({ error: 'Not found' });
@@ -360,18 +293,12 @@ export function requireKdsEnabledOr404(req: Request, res: Response, next: () => 
 import { URL } from 'url';
 import * as net from 'net';
 
-/**
- * Checks if the given IP address is a private, local, or Tailscale IP.
- */
+/** Checks if IP address is private, local, or Tailscale IP. */
 export function isAllowedPrivateIp(ip: string): boolean {
   const version = net.isIP(ip);
   if (!version) return false;
 
-  // IPv6 (GHSA-wp3q-hc3p-v36c): only the loopback address is treated as local.
-  // IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is normalized to IPv4 so it shares the
-  // same decision as its embedded address. Link-local (fe80::/10), unique-local
-  // (fc00::/7), and other reserved IPv6 ranges are intentionally NOT exempt —
-  // they are rate-limited like any other address.
+  // IPv6: loopback is local; IPv4-mapped IPv6 is normalized to IPv4.
   if (version === 6) {
     if (ip === '::1') return true;
     const mapped = ip.toLowerCase().match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
@@ -397,16 +324,7 @@ export function isAllowedPrivateIp(ip: string): boolean {
   return false;
 }
 
-/**
- * Checks if an IP address is disallowed as an outbound fetch target for the
- * SSRF-guarded image proxy (vuln-0003): loopback, private ranges, link-local
- * (includes the 169.254.169.254 cloud metadata address), CGNAT, multicast,
- * and other reserved ranges. This is a broader blocklist than
- * isAllowedPrivateIp, which is a LAN-convenience allowlist for rate
- * limiting/CORS and intentionally does not cover link-local/metadata.
- * Best-effort — covers the realistic SSRF targets, not every obscure
- * IPv6 transition/compat range.
- */
+/** Checks if an IP address is disallowed as an outbound fetch target for SSRF protection. */
 export function isBlockedSsrfTarget(ip: string): boolean {
   const version = net.isIP(ip);
   if (version === 4) {
@@ -457,10 +375,7 @@ export const corsOptions = {
   }
 };
 
-/**
- * Validates password complexity (vuln-0006).
- * Requires: >= 8 characters, at least 1 uppercase, 1 lowercase, 1 digit.
- */
+/** Validates password complexity: >= 8 chars with uppercase, lowercase, and digit. */
 export function validatePassword(password: string): boolean {
   if (!password || password.length < 8) return false;
   if (!/[A-Z]/.test(password)) return false;

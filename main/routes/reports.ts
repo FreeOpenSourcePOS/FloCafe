@@ -32,14 +32,7 @@ function reportDate(value: unknown, fallback: string): string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
 }
 
-/**
- * Buckets order timestamps into local hour-of-day (0-23) and local
- * day-of-week (0=Sunday..6=Saturday), using the tenant's configured
- * timezone rather than server/UTC time — otherwise "busiest hour" would
- * reflect UTC, not when the restaurant is actually busy. SQLite has no
- * IANA timezone support (only fixed offsets), so this bucketing happens
- * in JS via Intl instead of in SQL.
- */
+/** Buckets order timestamps into local hour and day-of-week using tenant timezone. */
 function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { hourCounts: number[]; dayCounts: number[] } {
   const hourFmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' });
   const weekdayFmt = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long' });
@@ -59,11 +52,7 @@ function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { 
   return { hourCounts, dayCounts };
 }
 
-/**
- * Return payment lines in a UTC half-open range using SQLite JSON1. Keeping
- * expansion in SQL avoids loading every bill and tolerates both the current
- * array shape, legacy top-level objects, and invalid JSON.
- */
+/** Return payment lines in a UTC half-open range using SQLite JSON1 expansion. */
 function paymentMethodBreakdown(
   db: ReturnType<typeof getDatabase>,
   startDate: string,
@@ -294,9 +283,7 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
   }
 });
 
-// Dynamic tax-component report for receipt/report consumers. Components are
-// derived item by item so mixed legacy + categorized bills cannot double-count
-// the categorized portion already present in the bill-level tax_breakdown.
+// Tax-component report derived per-item to prevent double-counting categorized portions.
 router.get('/tax-components', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -458,10 +445,7 @@ router.get('/recentOrders', requireRole(...ROLE_ACCESS.ownerManager), (req: Requ
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
 
-    // Without a date, "most recent overall" (dashboard live view). With one,
-    // scoped to that day — lets the dashboard show a past day's orders
-    // instead of always the latest regardless of which date is selected.
-    // #208: range filter hits idx_orders_created_at instead of full scan.
+    // Scoped to date if specified, otherwise fetches most recent overall.
     const params: any[] = [];
     let where = '';
     if (date) {
@@ -547,18 +531,13 @@ router.get('/tables', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
   }
 });
 
-// ── GET /insights — dashboard metrics beyond today's snapshot ──────────────
-// AOV, top staff, top categories, busiest/idlest hour & day-of-week, and
-// average kitchen prep time, aggregated over a trailing window (default 30
-// days) so hour/day patterns reflect a consistent trend rather than one day.
+// Aggregate dashboard metrics (AOV, top staff/categories, hour/day trends, kitchen prep time).
 router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const days = Math.min(Math.max(parseInt(req.query.days as string) || 30, 1), 365);
-    // #208: "N days back" in the tenant's local calendar, with a UTC range
-    // so the window filters on the index. The same timezone drives the
-    // hour/day-of-week bucketing below.
+    // Range calculated in tenant-local calendar with UTC window bounds.
     const timeZone = tenantTimezone();
     const today = localDateInTimezone(new Date(), timeZone);
     const startDateValue = new Date(`${today}T00:00:00Z`);
@@ -576,10 +555,7 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     `).get(minorFactor, windowStart, windowStart) as { billCount: number; total: number };
     const aov = revenue.billCount > 0 ? revenue.total / revenue.billCount : 0;
 
-    // Kitchen velocity — substitutes for "best cook", which isn't derivable:
-    // order_items has no per-chef attribution (marking an item ready doesn't
-    // record who did it), so there's no data to rank individual cooks by.
-    // Average prep time is the closest real signal for kitchen performance.
+    // Kitchen velocity — average prep time for finished non-cancelled orders.
     const prepTime = db.prepare(`
       SELECT AVG((julianday(ready_at) - julianday(cooking_started_at)) * 24 * 60) as avgMinutes,
         COUNT(*) as sampleSize
@@ -624,14 +600,10 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
     const { hourCounts, dayCounts } = bucketByLocalHourAndWeekday(orderTimestamps, timeZone);
 
-    // Hours with zero orders are excluded from busiest/idlest — almost
-    // certainly "closed overnight" rather than a meaningful idle signal,
-    // and would otherwise trivially always "win" idlest hour.
+    // Exclude zero-order hours (overnight closures), but keep zero-order days (closed weekdays).
     const busiestHour = pickExtreme(hourCounts, 'max', (c) => c > 0);
     const idlestHour = pickExtreme(hourCounts, 'min', (c) => c > 0);
 
-    // Day-of-week zero counts ARE kept — "closed Mondays" is a real,
-    // useful signal, unlike an overnight hour with no foot traffic.
     const busiestDay = pickExtreme(dayCounts, 'max', () => true);
     const idlestDay = pickExtreme(dayCounts, 'min', () => true);
 

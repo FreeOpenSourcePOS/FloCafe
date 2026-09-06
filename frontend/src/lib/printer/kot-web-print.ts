@@ -1,18 +1,4 @@
-/**
- * kot-web-print.ts
- *
- * Semantic Kitchen Order Ticket HTML for the browser print dialog (#444,
- * epic #438). Replaces the old fallback that decoded raw ESC/POS bytes with
- * `TextDecoder` and printed control-character-laden text inside a `<pre>`
- * page: the ticket is now rendered from the order's semantic fields with
- * labels resolved through the shared message catalog (print.kot.* concepts,
- * #440) and bidi isolation driven by the direction kernel — mirroring the
- * backend KOT document structure (issue E, epic #438).
- *
- * Output is a single styled container element so it flows through
- * `PrinterService.printViaBrowser`, which supplies the 58 mm / 80 mm page
- * geometry; all content styles are inline for the same reason.
- */
+/** Semantic Kitchen Order Ticket HTML renderer for the browser print dialog. */
 
 import type { Order } from '@/lib/types';
 import { createTranslator } from 'use-intl/core';
@@ -55,10 +41,7 @@ function translatorFor(lang: Language): ((key: string) => string) {
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
 }
 
-/**
- * Render one kernel-annotated value: confident LTR islands get a
- * bidi-isolated LTR span inside RTL tickets.
- */
+/** Render one kernel-annotated value with bidi-isolated LTR span inside RTL tickets. */
 function directionalValue(value: DirectionalText, base: TextDirection): string {
   if (value.direction === 'ltr' && base === 'rtl') {
     return `<span dir="ltr" style="direction:ltr;unicode-bidi:isolate;">${escapeHtml(value.text)}</span>`;
@@ -109,9 +92,7 @@ function resolveOrderType(type: unknown, language: Language, tr: (key: string) =
   return tr(key);
 }
 
-/**
- * Generate the semantic KOT HTML fragment (without opening a print dialog).
- */
+/** Generate the semantic KOT HTML fragment (without opening a print dialog). */
 export function generateKotHtml(
   order: Order,
   opts: KotWebPrintOptions = {}

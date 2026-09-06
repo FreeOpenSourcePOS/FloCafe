@@ -1,14 +1,4 @@
-/**
- * Merchant print template CRUD API (#447, epic #438).
- *
- * Owner-role lifecycle management for tenant-owned semantic receipt
- * templates: create draft -> activate -> archive, with single-step rollback.
- * Payloads are validated fail-closed by the shared kernel validator on every
- * write. #448 adds validated offline transfer: GET /:id/export downloads a
- * self-describing `.json` envelope; POST /import runs the same fail-closed
- * pipeline on an uploaded envelope and lands it as a NEW draft. This API
- * deliberately does NOT expose a visual editor.
- */
+/** Merchant print template CRUD and export/import transfer API. */
 
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
@@ -158,12 +148,7 @@ router.get('/:id/export', merchantTemplateWriteRateLimit, requireRole(...ROLE_AC
   }
 });
 
-/**
- * Import a transfer file as a NEW draft (owner only). The body carries the
- * raw envelope text in `file` (plus optional `name` override and the client
- * `fileName` for provenance); every byte is treated as untrusted input and
- * pushed through the full fail-closed validation pipeline in the service.
- */
+/** Import a validated template transfer file as a new draft. */
 router.post('/import', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
     const row = importMerchantPrintTemplateFile({

@@ -13,9 +13,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const isPos = pathname === '/pos' || pathname === '/kds';
   const isSettings = pathname === '/settings';
-  // Hoisted here (rather than only in PrinterStatus/Settings) so hardwarePrinter
-  // and the WebUSB reconnect attempt are ready before the POS page can place
-  // its first order — closes the startup race described in issue #534.
+  // Sync printer status early so hardware and WebUSB reconnect before first print.
   usePrinterStatusSync();
 
   return (

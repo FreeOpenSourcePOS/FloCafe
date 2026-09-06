@@ -1,17 +1,4 @@
-/**
- * GET /api/more-apps
- * Returns the catalog of companion apps shown on the Settings → More Apps
- * tab, with a QR code per store link so a phone can scan-to-download
- * instead of typing a URL.
- *
- * RevFlo is deliberately not in this generic catalog — it gets its own
- * consolidated section in Settings → Integrations (QR/download + pairing
- * code + paired devices) via GET /api/more-apps/revflo below, instead of
- * being split across the generic apps grid and the Account tab.
- *
- * Store links are filled in once each app actually has a published
- * listing — update MORE_APPS below when that happens, no schema change needed.
- */
+/** Returns catalog of companion apps and download QR codes for settings display. */
 import { Router, Request, Response } from 'express';
 import QRCode from 'qrcode';
 import { asyncHandler } from '../middleware/async-handler';

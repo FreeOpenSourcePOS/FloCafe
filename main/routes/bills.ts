@@ -420,9 +420,7 @@ router.get('/', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, 
       params.push(s, e);
     }
 
-    // #208: default page size of 50 and a hard cap even when clients omit
-    // per_page — the previous "unbounded" default could return every bill
-    // ever when a caller left the param off.
+    // Limit page size with a default of 50 and maximum cap of 500.
     const requestedLimit = parsePaginationInteger(req.query.per_page ?? req.query.limit, 50);
     if (requestedLimit === null || requestedLimit < 1) {
       return res.status(400).json({ error: 'per_page must be a positive integer' });
@@ -510,9 +508,7 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
       const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order_id) as any;
       if (existingBill) {
         if (existingBill.split_group_id) return { bill: parseRowJson(existingBill), isNew: false };
-        // Re-sync bill totals from the order in case discount/adjustments were applied
-        // after the bill was first generated (e.g. discount applied → then checkout clicked).
-        // Only sync if the bill is still unpaid (partial or full payments must not be changed).
+        // Re-sync unpaid bill totals from order in case discount/adjustments changed.
         const orderSubtotal      = order.subtotal        || 0;
         const orderTaxAmount     = order.tax_amount      || 0;
         const orderDiscountAmt   = order.discount_amount || 0;
@@ -637,9 +633,7 @@ export function allocateMinorUnits(sourceMinor: number, weights: number[]): numb
   return base;
 }
 
-// Tax snapshots may contain signed evidence for a historical adjustment. Keep
-// allocateMinorUnits' non-negative contract unchanged and allocate the
-// magnitude with the same largest-remainder ordering before restoring the sign.
+// Allocate signed tax adjustments preserving sign with largest-remainder ordering.
 export function allocateSignedMinorUnits(sourceMinor: number, weights: number[]): number[] {
   const sign = sourceMinor < 0 ? -1 : 1;
   return allocateMinorUnits(Math.abs(sourceMinor), weights).map((minor) => minor * sign);
@@ -664,11 +658,7 @@ function formatSnapshotMinorAmount(original: unknown, minor: number, minorFactor
   return typeof original === 'string' ? amount.toFixed(Math.log10(minorFactor)) : amount;
 }
 
-/**
- * Persist a child-specific copy of every tax snapshot. Snapshot amounts are
- * tax evidence, so allocate each component in integer minor units with the
- * same non-negative largest-remainder allocator used for bill totals.
- */
+/** Allocates tax snapshot components in integer minor units across child checks. */
 interface SnapshotTaxAllocation {
   original: unknown;
   allocations: number[];
@@ -1492,9 +1482,7 @@ export function syncUnpaidBillsForOrder(
   });
 }
 
-// Divide one unpaid dine-in bill into independently payable guest checks.
-// The kitchen order and inventory rows remain singular; bill_items stores only
-// the whole-unit quantity allocated to each resulting check.
+// Split unpaid dine-in bill into independently payable guest checks.
 router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -1863,9 +1851,7 @@ function preparePaymentBatch(
   const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * minorFactor));
   if (remainingCents <= 0) throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
   const raw = resolvedPayments.map((payment) => {
-    // Preserve omitted/null compatibility for the legacy single-line contracts.
-    // Multi-line batches must state every amount explicitly so allocation is
-    // deterministic before any write.
+    // Single-line payments may omit amount to pay remaining balance; multi-line requires explicit amounts.
     const supportsOmittedAmount = allowOmittedAmount || payments.length === 1;
     const amountValue = supportsOmittedAmount && payment.amount === null ? undefined : payment.amount;
     const amount = amountValue === undefined
@@ -1941,9 +1927,7 @@ function applyPaymentBatch(
   idempotencyUserId?: string,
 ): { bill: any; walletDebited: boolean; loyaltyPointsEarned: number } {
   if (idempotencyKey && idempotencyUserId) {
-    // `legacy` is an append-only compatibility owner for pre-user-scoped
-    // records whose original user cannot be recovered. It is only reachable
-    // with the exact bill and request hash; new records are always user-bound.
+    // Look up idempotency record scoped to user or legacy fallback.
     const prior = db.prepare(`
       SELECT bill_id, request_hash, response_json
       FROM payment_idempotency
@@ -2055,10 +2039,7 @@ router.post('/:id/payment', requireRole(...ROLE_ACCESS.ownerManagerCashier), (re
   }
 });
 
-// POST /:id/payments — atomic split-payment batch endpoint (#177). Applies every
-// payment line in the array within a single transaction, so a failure partway
-// through (insufficient wallet balance, an invalid amount, etc.) rolls back every
-// line already applied instead of leaving the bill partially paid.
+// Atomic split-payment batch endpoint applying payment lines in a single transaction.
 router.post('/:id/payments', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const body = req.body;
@@ -2185,9 +2166,7 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
     const minorFactor = getCurrencyMinorUnitFactor(currency);
     discountAmount = Number(discountAmount.toFixed(decimals));
 
-    // Always derive the undiscounted tax basis from active item rows. Using
-    // bill.tax_amount here compounds the previous discount whenever a manager
-    // edits 10% to 20%. Keep inclusive tax out of the payable total.
+    // Derive undiscounted tax basis directly from active items to prevent compounding discounts.
     const activeItems = db.prepare(
       "SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')"
     ).all(bill.order_id) as any[];

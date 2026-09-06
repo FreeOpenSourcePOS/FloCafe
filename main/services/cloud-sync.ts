@@ -1,10 +1,4 @@
-/**
- * Outbound-only cloud bridge for FloCafe POS.
- *
- * The POS never opens a public listener. It registers with Blue over HTTPS,
- * pushes local events to an outbox endpoint, and polls a signed command queue
- * for whitelisted read-only requests such as reports and live orders.
- */
+/** Outbound-only cloud bridge for pushing local events and polling signed commands. */
 
 import * as crypto from 'crypto';
 import * as os from 'os';
@@ -116,11 +110,7 @@ export type SupportTicketInput = {
   diagnostics?: Record<string, unknown> | null;
 };
 
-/**
- * Tier 2 store-attributed diagnostics (specs/floadmin.md § 6.2). No names,
- * phones, addresses, or order payloads belong in message/metadata — this is
- * "which typed error, on which store," not a log dump.
- */
+/** Tier 2 store-attributed diagnostic event payload without customer PII or order data. */
 export type DiagnosticEventInput = {
   event_id: string;
   event_code: string;
@@ -166,9 +156,7 @@ function apiPath(pathname: string): string {
 function endpoint(serverUrl: string, pathname: string): URL {
   const base = new URL(serverUrl);
   const basePath = base.pathname.replace(/\/+$/g, '');
-  // Split off any query string before assigning to base.pathname — the URL API's pathname
-  // setter percent-encodes "?" instead of treating it as a delimiter, so a literal
-  // "/api/pos/commands?limit=5" passed straight through silently mangles the query.
+  // Strip query string before pathname assignment to avoid percent-encoding '?'.
   const [rawPath, rawQuery] = apiPath(pathname).split('?');
   const adjustedPath = basePath.endsWith('/api') && rawPath.startsWith('/api/')
     ? rawPath.slice('/api'.length)
@@ -399,11 +387,7 @@ export class CloudSyncService {
       const socket = this.relaySocket;
       this.relaySocket = null;
       socket.removeAllListeners();
-      // Terminating a still-CONNECTING socket makes `ws` synchronously emit
-      // 'error' ("closed before the connection was established"). The real
-      // listeners were just removed above, so with nothing left to catch it
-      // that throws and crashes the process — swallow it, we're intentionally
-      // discarding this socket.
+      // Swallow errors while terminating a connecting socket after listeners were removed.
       socket.on('error', () => {});
       if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
         socket.terminate();
@@ -413,11 +397,7 @@ export class CloudSyncService {
     this.relayMode = 'disconnected';
   }
 
-  /**
-   * Email preferences are an optional cloud-account feature. Keep callers
-   * from attempting an outbound request when this install has no usable
-   * cloud account or the owner explicitly stopped cloud services.
-   */
+  /** Returns whether cloud account features are available and enabled by the user. */
   isCloudAccountAvailable(): boolean {
     const settings = this.readSettings(getDatabase());
     return settings.cloud_registration_status === 'registered'
@@ -480,12 +460,7 @@ export class CloudSyncService {
     const owner = db.prepare(
       "SELECT name FROM users WHERE role = 'owner' AND is_active = 1 ORDER BY created_at ASC LIMIT 1"
     ).get() as { name?: string } | undefined;
-    // Country is reported through readCountryProvenance() rather than read
-    // straight off settings, because settings.country is seeded to 'IN' at
-    // install: sending it raw told FloAdmin that every unconfigured install on
-    // earth was Indian. An unconfirmed country is withheld (FloAdmin COALESCEs,
-    // so null preserves whatever it already has) and the OS's own region goes
-    // alongside as the signal an install default cannot fake.
+    // Use country provenance to avoid reporting seeded default country values.
     const provenance = readCountryProvenance();
     const body = {
       pos_hash: posHash,
@@ -665,9 +640,7 @@ export class CloudSyncService {
     if (activeFlushes.length > 0) await Promise.allSettled(activeFlushes);
     await this.waitForCloudNetworkIdle();
     const db = getDatabase();
-    // Persist the disabled/pending intent before the remote purge. If the
-    // process dies after the server accepts the request, restart cannot
-    // resume syncing or auto-register with the old credentials.
+    // Persist deletion intent locally before remote purge to prevent sync resumption.
     db.transaction(() => {
       db.prepare("DELETE FROM cloud_sync_outbox").run();
       db.prepare("DELETE FROM support_ticket_outbox").run();
@@ -818,14 +791,7 @@ export class CloudSyncService {
     }, signal);
   }
 
-  /**
-   * Tells FloAdmin the merchant's current Tier 2 diagnostics choice, so
-   * `stores.diagnostics_consent` server-side matches the local toggle in both
-   * directions (on AND off) — not just inferred from "an event arrived."
-   * Best-effort: if the POS is offline or unregistered right now, the very
-   * next reportDiagnostic() call (when back online) is gated locally anyway,
-   * and the next successful call here will still bring the server in sync.
-   */
+  /** Synchronizes the merchant's Tier 2 diagnostics consent preference with FloAdmin. */
   async setDiagnosticsConsent(enabled: boolean, signal?: AbortSignal): Promise<void> {
     try {
       const res = await this.signedFetch('/api/pos/diagnostics-consent', {
@@ -915,9 +881,7 @@ export class CloudSyncService {
       for (const row of rowsToFail) {
         const attempts = row.attempt_count + 1;
         const delayMs = Math.min(30 * 60_000, Math.pow(2, Math.min(attempts, 8)) * 1000);
-        // Space form, same as now() — the flush query compares
-        // `next_attempt_at <= now()`, and an ISO-Z value would sort after
-        // every space-form row of the same day, deferring retries by up to a day.
+        // Format timestamp with space to match SQLite now() lexicographical comparison.
         const nextAttemptAt = new Date(Date.now() + delayMs).toISOString().replace('T', ' ').replace(/\..*$/, '');
         db.prepare(`
           UPDATE support_ticket_outbox
@@ -935,11 +899,7 @@ export class CloudSyncService {
     return this.supportFlushPromise;
   }
 
-  /**
-   * Queue a Tier 2 store-attributed diagnostic event durably. No-ops silently
-   * when the merchant hasn't given the separate diagnostics_consent opt-in —
-   * callers should not need to check this themselves before every call site.
-   */
+  /** Queue a Tier 2 diagnostic event durably if consent is enabled. */
   reportDiagnostic(input: DiagnosticEventInput): void {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     this.runBackground(this.withDatabaseRequest(() => {
@@ -998,9 +958,7 @@ export class CloudSyncService {
       for (const row of rowsToFail) {
         const attempts = row.attempt_count + 1;
         const delayMs = Math.min(30 * 60_000, Math.pow(2, Math.min(attempts, 8)) * 1000);
-        // Space form, same as now() — the flush query compares
-        // `next_attempt_at <= now()`, and an ISO-Z value would sort after
-        // every space-form row of the same day, deferring retries by up to a day.
+        // Format timestamp with space to match SQLite now() lexicographical comparison.
         const nextAttemptAt = new Date(Date.now() + delayMs).toISOString().replace('T', ' ').replace(/\..*$/, '');
         db.prepare(`
           UPDATE store_diagnostics_outbox
@@ -1019,13 +977,7 @@ export class CloudSyncService {
     return this.diagnosticsFlushPromise;
   }
 
-  /**
-   * Generate (or, with revoke=true, explicitly rotate) the RevFlo pairing
-   * code for this store. revoke=true also disconnects every already-paired
-   * device — only the explicit "Generate new code" action in Settings should
-   * pass it; a plain cache-miss refetch must not silently kick anyone off.
-   * See specs/floadmin.md § Device pairing.
-   */
+  /** Generate or rotate the RevFlo pairing code for this store. */
   async generatePairingCode(revoke: boolean): Promise<{ code: string; expires_at: string }> {
     const res = await this.signedFetch('/api/pos/pairing-code', {
       method: 'POST',
@@ -1044,12 +996,7 @@ export class CloudSyncService {
     return Array.isArray(data.devices) ? data.devices : [];
   }
 
-  // No customer data (name/phone/email) is ever sent to the cloud either —
-  // storing customer PII centrally is unnecessary liability with no upside
-  // for this business, on top of bills/orders/payments already never being
-  // pushed. There used to be a customer-upsert call here piggybacked on
-  // bill payment; removed entirely, not replaced with anything.
-
+  // Customer PII is never pushed to the cloud.
   recordOrderChanged(orderId: number | string, eventType = 'order.updated') {
     try {
       if (!this.loadSettings()?.orders_enabled) return;
@@ -1235,9 +1182,7 @@ export class CloudSyncService {
     for (const row of rows) {
       const attempts = row.attempt_count + 1;
       const delayMs = Math.min(30 * 60_000, Math.pow(2, Math.min(attempts, 8)) * 1000);
-      // Space form, same as now() — `next_attempt_at <= now()` in the flush
-      // query compares like-for-like (an ISO-Z value would sort after space
-      // rows of the same day and delay retries by up to a day).
+      // Format timestamp with space to match SQLite now() lexicographical comparison.
       const nextAttemptAt = new Date(Date.now() + delayMs).toISOString().replace('T', ' ').replace(/\..*$/, '');
       stmt.run(attempts, nextAttemptAt, message, now(), row.id);
     }
@@ -1322,28 +1267,20 @@ export class CloudSyncService {
     this.runBackground(tracked, 'command polling');
   }
 
-  /**
-   * Register on every boot so FloAdmin receives refreshed store metadata
-   * (name, contact, country, version) after setup changes. The server's
-   * create-or-find endpoint preserves the installation identity and API key.
-   */
+  /** Register on startup to sync updated store metadata with FloAdmin. */
   private maybeAutoRegister() {
     const db = getDatabase();
     const settings = this.readSettings(db);
     if (isCloudDeletionBlocking(settings.cloud_deletion_status)
       || settings.cloud_sync_enabled !== '1' || settings.cloud_services_disabled_by_user === 'true') return;
-    // initDatabase() runs before first-run setup. Registering seeded defaults at
-    // that point creates a permanent-looking blank row in FloAdmin. Setup always
-    // writes a non-empty business name (falling back to "Store"), so wait for it.
+    // Wait until first-run setup writes a business name before registering.
     if (!settings.business_name?.trim()) return;
     this.attemptAutoRegister();
   }
 
   /** Refresh FloAdmin after setup or store-profile settings change. */
   refreshRegistrationProfile() {
-    // Routes are also imported by isolated tests and backend-only tooling where
-    // the desktop runtime was never started. Do not create background network
-    // retries in those processes.
+    // Skip registration retries when desktop runtime is not running.
     if (!this.runtimeStarted) return;
     this.maybeAutoRegister();
   }
@@ -1530,12 +1467,7 @@ export class CloudSyncService {
     if (this.commandTimer) { clearInterval(this.commandTimer); this.commandTimer = null; }
   }
 
-  /**
-   * Only reload when a flag actually *changes* — Blue may reasonably send `features` on every
-   * heartbeat_ack (not just when something changed), and reloading unconditionally would tear
-   * down and reopen the relay connection every heartbeat cycle, which itself immediately re-sends
-   * a heartbeat and can spiral into a reconnect storm.
-   */
+  /** Apply feature flags only when values changed to avoid relay reconnect storms. */
   private applyFeatures(features: unknown) {
     if (!features || typeof features !== 'object') return;
     const f = features as Record<string, unknown>;

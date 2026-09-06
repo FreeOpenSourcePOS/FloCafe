@@ -22,16 +22,9 @@ export function isCoreBillTemplate(value: string): value is CoreBillTemplate {
   return (CORE_BILL_TEMPLATES as readonly string[]).includes(value);
 }
 
-// ---------------------------------------------------------------------------
-// Selection identity (#447) — structured, not concatenated strings
-// ---------------------------------------------------------------------------
+// Structured bill-template selection identity.
 
-/**
- * A structured bill-template selection persisted in the `bill_template`
- * setting as `{ source: 'core' | 'pack' | 'merchant', id }` JSON. Legacy bare
- * string values (`classic`, `compact`, `<pack-template-id>`) keep resolving
- * during the transition and are upgraded transparently on the next save.
- */
+/** Structured bill-template selection persisted in settings as JSON. */
 export type BillTemplateSource = 'core' | 'pack' | 'merchant';
 
 export interface BillTemplateSelection {
@@ -49,14 +42,7 @@ function parseStructuredSelection(value: unknown): BillTemplateSelection | null 
   return { source, id };
 }
 
-/**
- * Resolve ANY persisted `bill_template` value into a structured selection:
- * accepts the structured object, its JSON-string encoding, and every legacy
- * bare-string form. Returns null for values that resolve to nothing.
- *
- * Legacy resolution order mirrors history: core names first, then pack
- * template ids. Merchant ids are uuids that never collide with either.
- */
+/** Resolves structured JSON or legacy string template representations into a BillTemplateSelection. */
 export function parseBillTemplateSelection(rawValue: unknown): BillTemplateSelection | null {
   // Structured object form.
   const direct = parseStructuredSelection(rawValue);
@@ -94,10 +80,7 @@ export function serializeBillTemplateSelection(selection: BillTemplateSelection)
   return JSON.stringify({ source: selection.source, id: selection.id });
 }
 
-/**
- * Upgrade any accepted input to its canonical structured form when it is
- * resolvable; returns null for unresolvable values (caller decides policy).
- */
+/** Upgrades any resolvable template representation to its canonical JSON format. */
 export function upgradeBillTemplateValue(rawValue: unknown): string | null {
   const selection = parseBillTemplateSelection(rawValue);
   return selection ? serializeBillTemplateSelection(selection) : null;
@@ -137,11 +120,7 @@ export function loadInstalledPrintTemplate(templateId: string): InstalledPrintTe
   }
 }
 
-/**
- * Extended for #447: accepts both the structured `{ source, id }` forms and
- * every legacy bare-string value; merchant templates qualify while they have
- * an ACTIVE row (drafts and archived rows are not selectable).
- */
+/** Checks if a template reference is available and currently active. */
 export function isAvailableBillTemplate(value: unknown): boolean {
   const selection = parseBillTemplateSelection(value);
   if (!selection) return false;

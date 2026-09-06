@@ -6,11 +6,7 @@ type OrdersKey = keyof AppConfig['Messages']['orders'];
 /** Order-type domain union (mirrors `Order['type']`). */
 export type OrderType = Order['type'];
 
-/**
- * Order type → `orders` namespace leaf key. Typed so dynamic lookups are
- * checked at compile time; unknown types fall back to the raw string at the
- * call site.
- */
+/** Maps OrderType enum to typed use-intl orders leaf keys. */
 export const ORDER_TYPE_LABEL_KEYS = {
   dine_in: 'dineIn',
   takeaway: 'takeaway',

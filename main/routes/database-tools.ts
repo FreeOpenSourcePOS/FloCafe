@@ -46,9 +46,7 @@ router.get('/backups', requireRole(...ROLE_ACCESS.owner), (_req: Request, res: R
   }
 });
 
-// Deletes one backup from the managed backups/ directory (#120) — same
-// master-PIN gate as creating one, since a backup is the safety net a
-// restore/initialize depends on.
+// Deletes one backup from the managed backups directory, protected by Master PIN.
 router.post('/backups/:fileName/delete', requireRole(...ROLE_ACCESS.owner), requireMasterPin, (req: Request, res: Response) => {
   try {
     deleteBackup(req.params.fileName as string);

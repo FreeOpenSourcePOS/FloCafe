@@ -124,9 +124,7 @@ function sameColumnList(a: string[], b: string[]): boolean {
 }
 
 function fkSignature(fk: ForeignKeyDef): string {
-  // Include the referential actions so a table whose only difference is its
-  // ON DELETE/ON UPDATE cascade behavior is reported instead of passing as
-  // identical. Delete behavior directly affects data safety.
+  // Include referential actions so differences in ON DELETE/UPDATE cascade behavior are reported.
   return `${fk.from}->${fk.table}.${fk.to}:${fk.onDelete}:${fk.onUpdate}`;
 }
 
@@ -317,11 +315,7 @@ export interface ApplySafeFixesResult {
   errors: { id: string; error: string }[];
 }
 
-/**
- * Re-derives the report itself (rather than trusting client-supplied DDL) so a
- * tampered request body can, at worst, select which already-computed safe
- * fixes to apply — never inject arbitrary SQL.
- */
+/** Re-derives report before applying fixes so clients cannot inject arbitrary SQL. */
 export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
   const report = runHealthCheck();
   const db = getDatabase();
@@ -333,10 +327,7 @@ export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
 
   if (targets.length === 0) return result;
 
-  // Apply the whole batch inside one transaction so a failure partway through
-  // cannot leave a partially repaired schema behind. SQLite DDL is
-  // transactional, so CREATE TABLE / CREATE INDEX / ALTER TABLE all roll back
-  // together if any single fix fails.
+  // Run batch inside a transaction so failed DDL rolls back cleanly.
   db.exec('BEGIN IMMEDIATE');
   try {
     for (const finding of targets) {

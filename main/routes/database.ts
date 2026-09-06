@@ -22,12 +22,9 @@ const EXPORT_SETTINGS_REDACT = new Set([
   'cloud_pos_hash',
   'mobile_pairing_code',
   'mobile_pairing_code_expires_at',
-  // Bearer-like token used to poll a pending cloud account-deletion request
-  // (see main/services/cloud-sync.ts) — same exposure risk as the cloud
-  // credentials above.
+  // Token used to poll pending cloud account-deletion requests.
   'cloud_deletion_status_token',
-  // Legacy builds persisted arbitrary upstream errors here; keep exports
-  // from carrying that text even before an upgraded database is reopened.
+  // Redact legacy error strings from exported settings.
   'cloud_last_error',
 ]);
 
@@ -37,10 +34,7 @@ const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 // Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
 const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'kds_pairing_tokens']);
 
-// Parses an import file's schema_version exactly as the import handler does.
-// A missing or malformed value collapses to -1 (and an omitted version to 0),
-// which always counts as a mismatch against the live schema — and therefore as
-// a destructive, delete-and-replace import that needs Master PIN confirmation.
+// Parse schema version; invalid or missing versions collapse to -1 or 0 to trigger mismatch handling.
 function parseImportSchemaVersion(value: unknown): number {
   const raw = String(value ?? '0');
   return /^(?:0|[1-9]\d*)$/.test(raw) ? Number(raw) : -1;
@@ -119,12 +113,7 @@ router.get('/export', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Res
 
 router.post('/import', requireRole(...ROLE_ACCESS.owner),
   (req: Request, res: Response, next: () => void) => {
-    // A schema-mismatch import reaches the same delete-and-replace path as an
-    // explicit overwrite (the `overwrite || hasVersionMismatch` branch below),
-    // so it must require the same Master PIN confirmation. Gate on both
-    // triggers so an owner cannot bypass the destructive-operation confirmation
-    // by submitting a deliberately mismatched or malformed schema_version
-    // (GHSA-xxv4-gm82-4639).
+    // Require Master PIN for overwrite or version mismatch to guard destructive replacement.
     const body = req.body as { overwrite?: unknown; data?: Record<string, unknown> } | undefined;
     const overwrite = Boolean(body?.overwrite);
     const schemaVersionMismatch = body?.data && typeof body.data === 'object'
@@ -168,9 +157,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
       });
     }
 
-    // Exported user rows intentionally omit password/pin hashes. Preserve
-    // existing destination accounts, and create inactive placeholders for
-    // redacted exported users so historical rows keep valid staff references.
+    // Preserve existing accounts and create inactive placeholders for redacted users without hashes.
     const importedUserRows = Array.isArray(importData.users) ? importData.users : [];
     const credentialedUserIds = new Set(
       importedUserRows
@@ -339,10 +326,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
         clearInMemoryRevokedTokens();
         clearJWTSecretCache();
       } catch (cacheError: any) {
-        // The import is already committed above. A failure to clear the
-        // in-memory auth/revocation caches must not be reported as a failed
-        // import — that would encourage an operator to retry an already-
-        // committed import. Log it and still report success.
+        // Log post-commit cache cleanup failure without failing the committed import.
         console.error('[DB Import] Post-commit cache cleanup failed:', cacheError);
       }
       res.json({ 

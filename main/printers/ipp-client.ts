@@ -1,17 +1,5 @@
-// Minimal IPP (RFC 8011) client for talking to the local CUPS daemon over
-// loopback HTTP. Exists only for the macOS App Store build: a sandboxed app
-// cannot shell out to `lp`/`lpstat` (main/printers/thermal.ts's non-MAS path)
-// because the App Sandbox blocks the process-exec / IPC that CUPS's CLI tools
-// need, but it CAN reach CUPS's own IPP server on 127.0.0.1:631 — cupsd
-// always listens there regardless of whether "Printer Sharing" is on — using
-// the same com.apple.security.network.client entitlement already granted for
-// network printers. Submitting a raw job over IPP reaches the exact same
-// already-configured CUPS queue that `lp -o raw` targets in the non-MAS build,
-// so it works for USB printers without a new USB entitlement or fighting the
-// system's printer-class driver for exclusive interface access.
-//
-// Implements only the operations FloCafe needs: Print-Job, Get-Printer-Attributes,
-// and the CUPS extensions CUPS-Get-Printers / CUPS-Get-Default.
+// Minimal IPP (RFC 8011) client to communicate with local CUPS over loopback HTTP.
+// Used for macOS App Store sandboxed builds without shelling out to lp/lpstat.
 
 import * as http from 'http';
 
@@ -176,11 +164,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// cupsd is launchd-socket-activated and exits when idle — the exact scenario
-// a POS printer sits in between rushes. A connection that lands mid-relaunch
-// gets an immediate ECONNREFUSED even though the very next attempt succeeds
-// (reproduced against a real Mac's idle cupsd); a couple of short retries
-// absorb that race instead of surfacing it as a print failure.
+// Retry on ECONNREFUSED to handle cupsd launchd socket-activation idle races.
 async function ippRequest(path: string, operationId: number, operationAttributes: IppAttribute[], body?: Buffer, signal?: AbortSignal): Promise<IppResponse> {
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {

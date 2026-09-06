@@ -1,13 +1,4 @@
-/**
- * Refund processing (#278): bill-level cash-back and item-level "already
- * prepared, must be pulled off a paid bill" refunds.
- *
- * Item-level refunds mirror the existing in-progress item-void mechanism
- * (main/routes/index.ts, PATCH /api/orders/:orderId/items/:itemId/cancel)
- * but for a bill that already has payment on it, which that endpoint always
- * blocks. Inventory is deliberately not restored — it was already consumed
- * when the item was prepared, same rule as the existing void path.
- */
+/** Bill-level cash-back and item-level refund processing for paid bills. */
 import { getDatabase, getSettingValue, now, parseDbTimestamp, verifyPin } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
@@ -18,10 +9,7 @@ type Database = ReturnType<typeof getDatabase>;
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 const REFUND_ITEM_ELIGIBLE_STATUSES = ['preparing', 'ready'];
 const REFUND_WINDOW_MS = 60 * 60 * 1000;
-// Kept in sync with the ['cancelled', 'voided', 'void_adjustment'] exclusion
-// list used throughout main/routes/bills.ts, main/routes/index.ts, and
-// main/routes/orders.ts — 'refunded' is the new terminal item status this
-// feature introduces and must be excluded everywhere those are.
+// Terminal item statuses excluded from active order calculations.
 export const TERMINAL_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
 
 export function getTenantCurrency(db?: Database): string {
@@ -56,12 +44,7 @@ function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
 }
 
-/**
- * Returns the refundable balance for a bill in integer minor units.
- * `refunds.amount_cents` stores integer minor units scaled by `minorFactor`
- * (e.g. factor 1 for JPY, 100 for USD/INR, 1000 for KWD). Historical rows
- * originated exclusively under 2-decimal currencies where cents = minor units.
- */
+/** Returns the refundable balance for a bill in integer minor units. */
 export function getRefundableBalance(db: Database, billId: string | number, currency?: string): {
   paidCents: number;
   refundedCents: number;
@@ -88,12 +71,7 @@ function resolveRefundApprover(db: Database, overridePin: string, managerId?: st
   return null;
 }
 
-/**
- * Validates, authorizes, and persists a refund. Must be called from inside
- * the caller's withTxn — mirrors applyPaymentBatch's caller contract, where
- * the whole function (idempotency lookup included) runs inside one
- * transaction (main/routes/bills.ts).
- */
+/** Validates, authorizes, and persists a refund inside an active transaction. */
 export function createRefund(db: Database, req: RefundRequest): RefundResult {
   if (req.idempotencyKey) {
     const prior = db.prepare(`
@@ -178,10 +156,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   const timestamp = now();
 
   if (item) {
-    // Mirrors the existing void_adjustment mirrored-negative-row mechanism
-    // (main/routes/index.ts) verbatim, except the original item transitions
-    // to 'refunded' (not 'voided') so refund and void stay distinguishable
-    // in reporting, and inventory is never touched either way.
+    // Insert negative void_adjustment row to reverse item cost while preserving audit trail.
     const adjustmentResult = db.prepare(`
       INSERT INTO order_items (
         order_id, product_id, product_name, product_sku, unit_price, quantity,

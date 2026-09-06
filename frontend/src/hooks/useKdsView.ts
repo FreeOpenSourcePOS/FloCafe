@@ -15,17 +15,8 @@ function readOverride(): KdsViewMode | null {
   }
 }
 
-/**
- * Resolves the active KDS view mode for this session.
- *
- * Resolution order (highest wins):
- *   1. localStorage `kds_view_override` (per-session chef toggle)
- *   2. Server setting `kds_default_view` (admin/owner default)
- *   3. Final fallback: `tabs`
- *
- * `serverDefault` should come from `GET /api/kds/info`. Until that fetch
- * resolves, we use `tabs` so existing tenants see no regression.
- */
+/** Resolves active KDS view mode with precedence:
+ * session override > server default > 'tabs' fallback. */
 export function useKdsView(serverDefault: KdsViewMode | null): {
   viewMode: KdsViewMode;
   setViewMode: (v: KdsViewMode) => void;

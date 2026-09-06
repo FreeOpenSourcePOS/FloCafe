@@ -26,10 +26,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const isStandalonePath = pathname?.startsWith('/kds') || pathname?.startsWith('/server-standalone');
 
   useEffect(() => {
-    // Standalone KDS and Server App pages own their auth protocol. Their
-    // /api/auth/me responses intentionally do not include the dashboard's
-    // tenant list, so loading the shared POS auth store here can interpret a
-    // valid standalone session as malformed and clear its token.
+    // Standalone KDS and Server App pages manage their own auth sessions;
+    // skip loading shared POS auth store to avoid clearing their tokens.
     if (isStandalonePath) return;
     loadFromStorage();
   }, [isStandalonePath, loadFromStorage]);

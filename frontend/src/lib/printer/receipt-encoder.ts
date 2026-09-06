@@ -1,30 +1,4 @@
-/**
- * receipt-encoder.ts
- *
- * Converts a Flo POS Bill (+ its nested Order) into raw ESC/POS bytes
- * using `@point-of-sale/receipt-printer-encoder` — now driven by the shared
- * renderer-independent PrintDocument (#444, epic #438): raw rows are
- * normalized once in `print-document.ts`, the semantic document is built via
- * `buildBillDocument`, and the classic/compact renderers below map document
- * blocks onto token lines. Labels arrive already resolved inside the
- * document (SemanticLabel) or through the injected catalog resolver — no
- * per-template label literals remain in the classic/compact paths.
- *
- * Two core receipt templates are available:
- *   buildClassicReceiptBytes  — rich legacy-style (default)
- *   buildCompactReceiptBytes  — minimal, fast
- *
- * `buildReceiptBytes` is kept as a re-export of the classic builder
- * for backward compatibility.
- *
- * LEGACY-FROZEN (#444 decision): `buildDetailedReceiptBytes` below is a
- * diagnostic/print-test-only template that is NOT migrated onto the
- * PrintDocument model. It keeps its historical raw-bill rendering and is
- * exempted from the document-driven contract so it cannot silently fork
- * semantics; future country-specific templates must come from the active
- * tax pack/plugin contract instead (see the block comment above it).
- */
-
+/** Converts a Flo POS Bill and nested Order into raw ESC/POS bytes. */
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
@@ -80,20 +54,13 @@ export interface ReceiptOptions {
   showTableNumber?: boolean;
   /** If false (default), replace ₹/€/£/etc. with ASCII (Rs, EUR, GBP…). */
   useUnicode?: boolean;
-  /**
-   * Printer firmware performs Arabic/Persian contextual shaping (#437).
-   * Lets pure ASCII+Arabic lines through the unsupported-character guard;
-   * other non-ASCII scripts stay blocked. Default: false.
-   */
+  /** Printer firmware performs Arabic/Persian contextual shaping. Default: false. */
   arabicShaping?: boolean;
   /** Print a large "REPRINT" banner at the top so a reprinted receipt can't be mistaken for the original. */
   isReprint?: boolean;
   /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
   trimDecimals?: boolean;
-  /**
-   * Ordered receipt languages (primary first), resolved by the caller from
-   * the print language policy. Defaults to the client policy resolution.
-   */
+  /** Ordered receipt languages (primary first) resolved from policy. */
   languages?: ResolvedPrintLanguages;
   /** Selected thermal text capabilities; defaults to generic ESC/POS safety. */
   capabilities?: ThermalPrinterCapabilities;
@@ -163,18 +130,13 @@ function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
 const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
 
-/**
- * Mask phone number for receipt display — shows only last 4 digits.
- * Example: "9876543210" → "xxxxx3210"
- */
+/** Mask phone number for receipt display — shows only last 4 digits. */
 function maskPhoneOnReceipt(phone: string): string {
   if (!phone || phone.length < 4) return phone;
   return 'x'.repeat(phone.length - 4) + phone.slice(-4);
 }
 
-// ---------------------------------------------------------------------------
 // Document render environment (shared by classic + compact)
-// ---------------------------------------------------------------------------
 
 interface DocumentBlocks {
   document: PrintDocument;
@@ -216,10 +178,7 @@ function safePrinterTextForLanguage(language: string, useUnicode: boolean, capab
 }
 
 function resolveEncoderCurrency(rawCurrency: string, currencyCode: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities): string {
-  // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS
-  // printers cannot shape that token, so normalize this known currency even
-  // when the caller requests Unicode. Preserve the existing useUnicode
-  // behavior for every other currency value.
+  // Normalize known currencies like IRR (ریال) that generic ESC/POS cannot shape.
   const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
   const asciiFallback = normalizeCurrencyToAscii(normalizedCurrency);
   const fallbackCurrency = normalizedCurrency === '¥' && currencyCode !== 'JPY'
@@ -239,11 +198,7 @@ function resolveEncoderCurrency(rawCurrency: string, currencyCode: string, useUn
   );
 }
 
-/**
- * Thermal-safe timestamp: numeric calendar fields on Latin digits, mirroring
- * the desktop document-classic renderer so the meta line stays printable by
- * generic ESC/POS printers for every locale.
- */
+/** Thermal-safe timestamp: numeric calendar fields on Latin digits. */
 function formatThermalTimestamp(iso: string, locale: string, timezone?: string | null): string {
   const parsed = parseDbTimestamp(iso);
   if (Number.isNaN(parsed.getTime())) return iso;
@@ -263,10 +218,7 @@ function getSafeLatnLocale(locale: string | undefined): string {
   return `${locale}-u-nu-latn`;
 }
 
-/**
- * Build the semantic document + resolved blocks for one thermal receipt.
- * Raw bill fields are read only here, via the shared normalization bridge.
- */
+/** Build semantic document and resolved blocks for one thermal receipt. */
 function buildReceiptEnvironment(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'> & Partial<Pick<Tenant, 'timezone'>>,
@@ -306,14 +258,7 @@ function buildReceiptEnvironment(
   };
 }
 
-// ---------------------------------------------------------------------------
-// 4-column layout helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Minimum column widths for 4-column item tables.
- * Layout: [name, qty, rate, amount]
- */
+// 4-column layout helpers: [name, qty, rate, amount]
 type Col4Widths = [number, number, number, number];
 
 function col4Widths(cols: number): Col4Widths {
@@ -406,10 +351,7 @@ function fitLabeledValue(label: string, value: string, cols: number): string[] {
   return lines.length > 0 ? lines : [prefix];
 }
 
-// ---------------------------------------------------------------------------
 // Classic template
-// ---------------------------------------------------------------------------
-
 export function buildClassicReceiptBytes(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'> & Partial<Pick<Tenant, 'timezone'>>,
@@ -647,10 +589,7 @@ export function buildClassicReceiptBytes(
   return enc.encode();
 }
 
-// ---------------------------------------------------------------------------
 // Compact template
-// ---------------------------------------------------------------------------
-
 export function buildCompactReceiptBytes(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'> & Partial<Pick<Tenant, 'timezone'>>,
@@ -827,15 +766,7 @@ export function buildCompactReceiptBytes(
   return enc.encode();
 }
 
-// ---------------------------------------------------------------------------
-// Legacy detailed tax encoder — LEGACY-FROZEN (#444 decision, epic #438).
-// Tax-specific templates are no longer exposed as core bill templates; this
-// diagnostic renderer intentionally stays on the raw-bill path and is exempt
-// from the PrintDocument migration so it cannot silently fork document
-// semantics. Future country-specific templates should come from the active
-// tax pack/plugin contract instead.
-// ---------------------------------------------------------------------------
-
+// Legacy detailed tax encoder for print tests; retains raw-bill rendering.
 export function buildDetailedReceiptBytes(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'> & Partial<Pick<Tenant, 'timezone'>>,
@@ -1015,17 +946,10 @@ export function buildDetailedReceiptBytes(
   return enc.encode();
 }
 
-// ---------------------------------------------------------------------------
-// Backward-compat alias
-// ---------------------------------------------------------------------------
-
 /** @deprecated Use buildClassicReceiptBytes directly */
 export const buildReceiptBytes = buildClassicReceiptBytes;
 
-// ---------------------------------------------------------------------------
 // Formatting helpers (shared)
-// ---------------------------------------------------------------------------
-
 function padRowForLanguage(left: string, right: string, cols: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {
   const normalizedLeft = normalizeThermalText(left, capabilities);
   const normalizedRight = normalizeThermalText(right, capabilities);

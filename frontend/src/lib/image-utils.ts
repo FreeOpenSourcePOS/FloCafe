@@ -1,10 +1,4 @@
-/**
- * Image utilities for product image upload and display.
- *
- * compressImage() — Canvas API pipeline: resize to 1:1, compress to WebP.
- * nameToColor() — Deterministic HSL color from product name (for fallback tiles).
- * validateImageSize() — Check Base64 data URI length against 50K limit.
- */
+/** Image upload and compression utilities (WebP pipeline, size validation, fallback colors). */
 
 const MAX_BASE64_LENGTH = 50_000;
 
@@ -39,14 +33,7 @@ export function compressCroppedImage(image: HTMLImageElement, crop: CropArea): s
   return null;
 }
 
-/**
- * Compress an image file to a Base64 WebP data URI.
- * Pipeline: load → draw to canvas (1:1 crop) → toDataURL('image/webp', quality).
- *
- * @param file - Raw image file from user (max 5 MB pre-check done before calling)
- * @param quality - WebP quality (0.8 default, retries at 0.6 then 0.4 if too large)
- * @returns Base64 data URI string, or null if all attempts fail
- */
+/** Compresses an image file to a 1:1 WebP data URI within size limits. */
 export function compressImage(file: File, quality = 0.8): Promise<string | null> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -102,13 +89,7 @@ export function compressImage(file: File, quality = 0.8): Promise<string | null>
   });
 }
 
-/**
- * Generate a deterministic HSL color from a product name.
- * Same name always produces the same color — cashiers develop muscle memory.
- *
- * @param name - Product name
- * @returns HSL color string (e.g., "hsl(142, 45%, 65%)")
- */
+/** Generates deterministic HSL color from product name for fallback tiles. */
 export function nameToColor(name: string): string {
   let hash = 0;
   for (const character of name) {
@@ -119,12 +100,7 @@ export function nameToColor(name: string): string {
   return `hsl(${hue}, 45%, 65%)`;
 }
 
-/**
- * Check if a Base64 data URI is within the size limit.
- *
- * @param dataUri - Base64 data URI string
- * @returns true if valid and within 50K character limit
- */
+/** Checks whether Base64 data URI is within character size limit (50K chars). */
 export function validateImageSize(dataUri: string): boolean {
   return typeof dataUri === 'string' && dataUri.length <= MAX_BASE64_LENGTH;
 }

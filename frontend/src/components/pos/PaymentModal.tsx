@@ -123,9 +123,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
 
-  // Sync state with active bill discount on load or update. Read directly during render
-  // (React's recommended pattern for "adjusting state when a prop changes") instead of an
-  // effect, since this must run before paint and would otherwise cause a flash of stale values.
+  // Sync state with active bill discount during render before paint
+  // to prevent flashing stale values.
   const [syncedBill, setSyncedBill] = useState(bill);
   if (bill !== syncedBill) {
     setSyncedBill(bill);
@@ -152,9 +151,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     setDiscountPin('');
   }
 
-  // Dynamically update payment inputs when remaining balance changes, but only until the
-  // cashier manually edits an amount — after that, discount/wallet edits must not silently
-  // rewrite amounts they've already typed in. Same during-render pattern as above.
+  // Proportionally update payment inputs when remaining balance changes,
+  // unless cashier has already edited inputs manually.
   const [syncedRemaining, setSyncedRemaining] = useState(remaining);
   if (!paymentsTouched && remaining !== syncedRemaining) {
     setSyncedRemaining(remaining);
@@ -374,9 +372,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         .filter((p) => p.amount > 0 && !isNaN(p.amount));
       if (walletAmt > 0) splitLines.push({ method: 'wallet', amount: walletAmt });
 
-      // Single atomic call (#177) — either every split line is applied, or none are.
-      // Sequential per-line requests would leave the bill partially paid if a later
-      // line failed (e.g. network drop) after an earlier one had already committed.
+      // Atomic call ensures all split payment lines succeed together
+      // or fail together without leaving partial payments.
       const idempotencyKey = idempotencyKeyRef.current || (typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID()
         : 'payment-req');

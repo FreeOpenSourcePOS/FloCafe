@@ -65,12 +65,7 @@ export interface TaxPackUpdate {
   entry: TaxPackCatalogEntry;
 }
 
-// Pack ids renamed by commit 3a75876, before the public catalog existed —
-// see LEGACY_TRUSTED_PACK_DIGESTS in routes/tax-packs.ts for the matching
-// signature-trust concern. Stores that installed one of these before the
-// rename still carry the pre-rename id in country_packs.id; the catalog only
-// lists the current id, so update checks must resolve through this alias or
-// a renamed pack looks like "no updates" forever.
+// Legacy pack ID aliases to resolve installed packs against current catalog IDs.
 const LEGACY_TAX_PACK_ID_ALIASES: Record<string, string> = {
   'official-in': 'official-india',
   'official-th': 'official-thailand',
@@ -280,9 +275,7 @@ function validPluginPrintTemplate(value: unknown): value is PluginPrintTemplate 
   const hasPaperColumns = paperColumns.length > 0
     && paperColumns.every((width) => Number.isInteger(width) && [32, 36, 40, 42, 44, 48].includes(width as number));
   const payloadObject = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
-  // Additive optional `labels` map (#445): validated fail-closed at install
-  // time. A malformed map throws with a clear rejection message instead of
-  // failing silently; templates without labels behave exactly as before.
+  // Validate optional additive labels map fail-closed at install time.
   validateTemplateLabelsMap(payloadObject.labels);
   // Charge rows are an additive v1 capability declaration. Validate only when
   // present so older signed templates retain their existing contract.

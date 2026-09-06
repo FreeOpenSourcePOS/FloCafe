@@ -1,19 +1,5 @@
-/**
- * Maps backend enum/status strings to i18n translation keys.
- *
- * Backend values (roles, order statuses, item statuses, table statuses, etc.)
- * are English identifiers stored in the DB. The UI must never render them
- * raw — pass them through these maps and then through the appropriate
- * translator (`useTranslations()` leaf keys) so every language shows a
- * localized label.
- *
- * All maps in this module are exhaustively typed against use-intl leaf keys
- * (`AppConfig['Messages']`), including `ORDER_TYPE_LABEL_KEYS` re-exported
- * from `order-types.ts`.
- *
- * Unknown values fall back to the raw string, so a new backend status never
- * crashes the UI — it just shows in English until a translation key is added.
- */
+/** Maps backend domain enum and status strings to typed
+ * use-intl translation keys. */
 
 import { ORDER_TYPE_LABEL_KEYS } from '../order-types';
 import type { Order, Table, OrderItem } from '../types';

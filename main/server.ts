@@ -28,11 +28,7 @@ let stopping = false;
 const PORT = parseInt(process.env.PORT || '3001', 10);
 let activePort = PORT;
 
-/**
- * JWT verification middleware. Skips health check and auth routes (those
- * verify tokens individually). Protects all resource routes from unauthenticated
- * LAN access.
- */
+/** JWT verification middleware protecting API routes from unauthenticated LAN access. */
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
   // Only protect API routes — static files and SPA fallback must pass through
   if (!req.path.startsWith('/api')) { next(); return; }
@@ -56,8 +52,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     }
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
-    // Reject tokens for users deactivated (or deleted) since the token was
-    // issued, instead of trusting the JWT's signature/expiry alone (vuln-0001).
+    // Reject tokens for users deactivated (or deleted) since token was issued.
     const freshKdsAuth = req.path.startsWith('/api/kds')
       || req.path.startsWith('/api/kitchen')
       || req.path.startsWith('/api/order-items');
@@ -67,14 +62,13 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
       return;
     }
 
-    // Reject tokens issued before the user's password/PIN was last changed (#173).
+    // Reject tokens issued before user password/PIN was last changed.
     if (isTokenStale(decoded.iat, status.tokensValidAfter)) {
       res.status(401).json({ error: 'Invalid or expired token' });
       return;
     }
 
-    // Use the DB's current role rather than the JWT's role claim, so a role
-    // change takes effect without waiting for the token to expire.
+    // Use current DB role rather than JWT role claim for immediate updates.
     (req as any).user = { ...decoded, role: status.role };
     next();
   } catch {
@@ -90,12 +84,7 @@ export function getServerPort(): number {
   return activePort;
 }
 
-/**
- * Locate the Next.js static export directory.
- *
- * Dev build  → <repo-root>/frontend/out
- * Packaged   → <resourcesPath>/frontend-out   (see electron-builder extraResources)
- */
+/** Locate Next.js static export directory for dev or packaged builds. */
 function getFrontendDir(): string | null {
   const candidates = [
     // Development / unpackaged: relative to dist/main/ (compiled output of
@@ -113,10 +102,7 @@ function getFrontendDir(): string | null {
   return null;
 }
 
-/**
- * Helper to rewrite dotted Next.js static segment file requests to nested paths on Windows.
- * E.g., /products/__next.!KGRhc2hib2FyZCk.products.__PAGE__.txt -> /products/__next.!KGRhc2hib2FyZCk/products/__PAGE__.txt
- */
+/** Helper to rewrite dotted Next.js static segment file requests on Windows. */
 function rewriteNextExportPath(reqPath: string): string {
   const nextIndex = reqPath.indexOf('__next.');
   if (nextIndex === -1) return reqPath;
@@ -166,9 +152,7 @@ export function startServer(): Promise<void> {
       }
       next(error);
     });
-    // body-parser 2.x (bundled with Express 5) leaves req.body undefined
-    // instead of {} when a request has no parseable body -- restore the
-    // old default so route handlers can destructure req.body directly.
+    // Restore empty body default for Express 5 compatibility.
     app.use((req: Request, _res: Response, next: NextFunction) => {
       if (req.body === undefined) req.body = {};
       next();
@@ -176,10 +160,7 @@ export function startServer(): Promise<void> {
     app.use(databaseMaintenanceMiddleware);
 
     // ── Global API rate limiting ───────────────────────────────────────
-    // Keep this at the API boundary so every authenticated route, including
-    // routes mounted from separate routers, receives the same protection.
-    // Use express-rate-limit directly so static analysis recognizes the
-    // middleware when reviewing route handlers.
+    // Protect all API routes with express-rate-limit and LAN bypass.
     app.use('/api', expressRateLimit({
       windowMs: 60 * 1000,
       limit: 100,
@@ -189,8 +170,7 @@ export function startServer(): Promise<void> {
     }));
 
     // ── Content Security Policy ────────────────────────────────────────
-    // Blocks eval() and remote code. 'unsafe-inline' is required for
-    // Next.js RSC hydration scripts and Tailwind-generated style tags.
+    // Blocks eval() and remote code; unsafe-inline allowed for Next.js and Tailwind.
     app.use((req: Request, res: Response, next: NextFunction) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Security-Policy', buildCspHeader(req));
@@ -222,9 +202,6 @@ export function startServer(): Promise<void> {
       console.log(`[Server] Serving frontend from: ${frontendDir}`);
 
       // Middleware to patch Windows-specific Next.js static export path nesting.
-      // On Windows, the Next.js static export uses dotted segments (e.g.
-      // __next.!KGRhc2hib2FyZCk.products.__PAGE__.txt) instead of nested
-      // directories. This rewrite is only needed when the app runs on Windows.
       if (process.platform === 'win32') {
         app.use(staticRouteRateLimit(), (req: Request, res: Response, next: NextFunction) => {
           if (req.path.includes('__next.')) {
@@ -243,9 +220,7 @@ export function startServer(): Promise<void> {
 
       app.use(express.static(frontendDir, { dotfiles: 'allow', index: false }));
 
-      // Serve each Next.js static route's own index. Returning the root export
-      // for /whatsapp (or any direct link/refresh) runs app/page.tsx and sends
-      // the user to Dashboard instead of the requested page.
+      // Serve each Next.js static route index directly to avoid root redirects.
       app.get(/^(?!\/api|\/kds).*$/, staticRouteRateLimit(), (req: Request, res: Response) => {
         res.sendFile(resolveStaticPage(frontendDir, req.path), { dotfiles: 'allow' });
       });
@@ -295,10 +270,7 @@ export function startServer(): Promise<void> {
         console.log(`[Server] HTTP server running on http://localhost:${activePort}`);
 
         if (listeningServer) {
-          // noServer + a manual 'upgrade' handler (rather than passing `server`
-          // straight to WebSocketServer) so a disabled KDS can 404 the upgrade
-          // instead of completing it — checked fresh on every request since
-          // kds_enabled can change at runtime without a restart (issue #133).
+          // Manual upgrade handler allows checking runtime KDS enablement dynamically per connection.
           const websocketServer = new WebSocketServer({ noServer: true });
           wss = websocketServer;
           setupKdsWebSocket(websocketServer);
@@ -318,9 +290,7 @@ export function startServer(): Promise<void> {
             }
 
             if (!isKdsEnabled()) {
-              // Pretend the endpoint doesn't exist rather than confirming it's
-              // just disabled — less to probe from a stale/misconfigured KDS
-              // device on the LAN (issue #133).
+              // Return 404 when disabled to avoid revealing KDS presence to LAN clients.
               socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
               socket.destroy();
               return;

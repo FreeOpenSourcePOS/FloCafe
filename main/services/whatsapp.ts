@@ -10,9 +10,7 @@ const { loadBaileys: loadBaileysModule } = require('../baileys-loader.cjs') as {
   loadBaileys: () => Promise<typeof import('@whiskeysockets/baileys')>;
 };
 
-// Baileys is ESM-only; CommonJS `require()` blows up with ERR_REQUIRE_ESM.
-// Lazy-load via dynamic import() and cache the module reference for the
-// lifetime of the process.
+// Baileys is ESM-only; lazily load via dynamic import and cache reference.
 let baileysModule: typeof import('@whiskeysockets/baileys') | null = null;
 async function loadBaileys(): Promise<typeof import('@whiskeysockets/baileys')> {
   if (!baileysModule) {
@@ -21,17 +19,7 @@ async function loadBaileys(): Promise<typeof import('@whiskeysockets/baileys')> 
   return baileysModule;
 }
 
-// pino's default write path pulls in `thread-stream`, which spawns a real
-// Node worker_threads Worker pointed at a file path — inside an
-// electron-builder asar archive that path doesn't resolve the way plain
-// require()/fs calls do, so this can throw at load time in a *packaged*
-// build even though it's fine in dev (plain node_modules on disk). This is
-// a `require()`, not a static `import`, specifically so the failure is
-// catchable here — a static `import { pino } from 'pino'` at module scope
-// can't be wrapped in try/catch and would take the entire process down
-// before any route (including /api/auth/login) could ever respond, for
-// every user, WhatsApp on or off. Fall back to a no-op logger shaped like
-// pino's so callers (and Baileys, which uses .child()) don't need to care.
+// Safely load pino with a no-op fallback to avoid ASAR worker thread failures in packaged builds.
 type MinimalLogger = { level: string; trace: (...a: unknown[]) => void; debug: (...a: unknown[]) => void; info: (...a: unknown[]) => void; warn: (...a: unknown[]) => void; error: (...a: unknown[]) => void; fatal: (...a: unknown[]) => void; child: (obj: Record<string, unknown>) => MinimalLogger };
 function makeBaileysLogger(): MinimalLogger {
   const noop = (): void => {};
@@ -80,11 +68,7 @@ export interface WhatsAppStatus {
   connectedPhone: string | null;
   lastError: string | null;
   cooldownUntil: string | null;
-  /**
-   * Stable reason code for the last error. Frontend translates via i18n.
-   * Distinct from `lastError` (which may be a raw third-party string for
-   * debugging). Known values: `logged_out`, `reconnecting`, `rate_limited`.
-   */
+  /** Stable reason code for frontend i18n translation of connection errors. */
   lastErrorReason?: string | null;
   qr?: string;
   pairingCode?: string;
@@ -303,20 +287,7 @@ export function getStatus(): WhatsAppStatus {
   };
 }
 
-/**
- * Resolve a user-supplied phone number to the JID WhatsApp actually uses for
- * it. Two-stage validation: libphonenumber-js normalizes the format (no
- * country-specific code — handles AR `9`, BR `0`, MX `1`, etc. via Google's
- * metadata), then socket.onWhatsApp() asks WhatsApp's own registry and
- * returns the canonical JID (which may be a LID or a different form than
- * the naive phone-JID). Only WhatsApp's server knows whether the number is
- * registered and which JID format it accepts.
- *
- * Returns null when the number is either unparseable or not on WhatsApp —
- * caller maps both to the `not_on_whatsapp` SendResult reason. Falls back
- * to the naive phone-JID if onWhatsApp throws (network blip); better to
- * attempt the send than block the cashier behind a transient error.
- */
+/** Resolves user phone number to canonical WhatsApp JID via format normalization and registry check. */
 async function resolveJid(phoneE164: string, sock: BaileysSocket, signal: AbortSignal): Promise<string | null> {
   let normalized: string;
   try {
@@ -340,15 +311,7 @@ function userFromJid(jid: string): string {
   return jid.split('@')[0].split(':')[0];
 }
 
-/**
- * Resolve a Baileys JID (which may carry `@lid` instead of `@s.whatsapp.net`
- * under WhatsApp's new Local ID system) back to a phone JID. Tries in order:
- *   1. local cache (populated by inbound messages + lid-mapping.update events)
- *   2. the alt JID Baileys v7 attaches to every message
- *   3. signalRepository.lidMapping.getPNForLID (whatsapp's own resolver)
- * Falls back to the original JID if nothing resolves — better to record an
- * LID than to drop the message.
- */
+/** Translates WhatsApp Local ID (@lid) JIDs back to phone-number JIDs. */
 async function translateJid(jid: string, altJid: string | undefined, sock: BaileysSocket, signal: AbortSignal): Promise<string> {
   if (!jid.endsWith('@lid')) return jid;
   const lidUser = userFromJid(jid);
@@ -530,15 +493,7 @@ function updateMessageRow(id: number, patch: {
   db.prepare(`UPDATE whatsapp_messages SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 }
 
-/**
- * Advance a message's status and backfill any earlier-stage timestamps that
- * haven't fired yet (Baileys sometimes jumps straight to status=3 or 4
- * without an intermediate update). Without the COALESCE guard, a row ends up
- * with status='read' but only read_at populated — the stepper shows the row
- * at the end of the pipeline while the timeline shows a single
- * timestamp, which is what the operator sees as "the status didn't reach
- * the end".
- */
+/** Advances message status and backfills earlier timestamps using COALESCE. */
 function advanceStatus(id: number, latest: 'sent' | 'delivered' | 'read'): void {
   const ts = now();
   const stamps = new Set<string>([latest]);
@@ -563,9 +518,7 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
   const signal = whatsappAbortController.signal;
   const rawJid: string = msg.key?.remoteJid ?? '';
   if (!rawJid || rawJid === 'status@broadcast') return;
-  // Resolve LID → phone JID. Group chats intentionally keep their @g.us JID
-  // (not translated) because the group sender-key distribution depends on it,
-  // but DMs/contacts come in carrying @lid from WhatsApp's new ID system.
+  // Translate DM @lid to phone JID while preserving group chat @g.us JIDs.
   const resolvedJid = rawJid.endsWith('@g.us')
     ? rawJid
     : await translateJid(rawJid, msg.key?.remoteJidAlt, sock, signal);
@@ -628,9 +581,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         state.lastErrorReason = 'logged_out';
         wipeAuthDir();
       } else if (!isWhatsAppTerminal() && state.enabled) {
-        // Auto-reconnect on any transient failure (network blip, server
-        // restart, etc). Don't penalize the operator for an infrastructure
-        // blip — the cooldown only applies to explicit 429s on sends.
+        // Auto-reconnect on transient disconnections; cooldown only applies to explicit 429 errors.
         state.state = 'connecting';
         state.lastError = `Connection closed (${status ?? 'unknown'}), reconnecting in ${RECONNECT_DELAY_MS / 1000}s…`;
         state.lastErrorReason = 'reconnecting';
@@ -670,10 +621,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
     for (const msg of messages) {
       if (isWhatsAppTerminal()) return;
       if (msg.key?.fromMe) continue;
-      // No one asks Flo to deliver a paid bill into a group chat. When the
-      // operator enables the group filter, drop inbound @g.us messages
-      // before we persist them — the inbox stays clean and we never
-      // process (translateJid / store) what we don't intend to handle.
+      // Ignore incoming group messages when group filtering is enabled.
       if (filterGroups && msg.key?.remoteJid?.endsWith('@g.us')) continue;
       await persistIncoming(msg, socket);
     }
@@ -691,11 +639,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
       if (!stored) continue;
       const status = u.update?.status;
       if (status === undefined) continue;
-      // Baileys WAProto: PENDING=1, SERVER_ACK=2, DELIVERED=3, READ=4, PLAYED=5.
-      // SERVER_ACK is the first server-side confirmation that WhatsApp
-      // accepted the payload — that's the truthful 'sent' mark. Earlier
-      // versions mapped 1→sent which silently promoted rows to 'delivered'
-      // on the real confirmation and never marked anything 'sent' at all.
+      // Map Baileys status updates: 2=SERVER_ACK (sent), 3=delivered, 4=read.
       if (status === 2) advanceStatus(stored.id, 'sent');
       else if (status === 3) advanceStatus(stored.id, 'delivered');
       else if (status === 4) advanceStatus(stored.id, 'read');
@@ -705,12 +649,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
 }
 
 async function resolveWaWebVersion(signal: AbortSignal): Promise<[number, number, number] | undefined> {
-  // Baileys' built-in fetchLatestWaWebVersion scrapes sw.js which is
-  // aggressively rate-limited (429). When it fails, Baileys falls back to
-  // a hardcoded version that goes stale within weeks — WhatsApp rejects
-  // connections with an expired buildHash (405 at Noise layer). Try the
-  // wppconnect version tracker first (more reliable, but HTML scrape — no
-  // JSON API), then Baileys as a fallback.
+  // Fetch latest WhatsApp Web version to prevent connection rejection from stale build hashes.
   try {
     const res = await fetch('https://wppconnect.io/whatsapp-versions/', {
       signal: AbortSignal.any([signal, AbortSignal.timeout(VERSION_FETCH_TIMEOUT_MS)]),
@@ -761,9 +700,7 @@ async function startSocketImpl(requestSignal?: AbortSignal): Promise<void> {
     getMessage: async (key: WAMessageKey) => {
       const cached = state.sentMessageCache.get(key.id ?? '');
       if (cached) return cached;
-      // Returning an empty message prevents Baileys from hanging on
-      // "waiting for this message" when WhatsApp asks to re-encrypt a
-      // message we've already sent (common around session restarts).
+      // Return empty message to avoid hanging on re-encryption requests.
       return proto.Message.create({});
     },
   });
@@ -805,9 +742,7 @@ export async function enable(userId: string): Promise<{ ok: boolean; error?: str
   writeSetting('whatsapp_disclosure_version_acknowledged', '1');
   state.lastError = null;
   state.lastErrorReason = null;
-  // Restore from creds.json if present — re-pairing while creds are still
-  // valid is a WhatsApp ban risk. 401 from the server falls through to the
-  // QR flow as usual.
+  // Restore session from existing credentials if present to avoid unneeded re-pairing.
   const credsPath = path.join(getAuthDir(), 'creds.json');
   if (fs.existsSync(credsPath)) {
     void startSocket().catch((err) => {
@@ -880,9 +815,7 @@ export async function connectWithPairingCode(phone: string, requestSignal?: Abor
 }
 
 export function disconnect(): void {
-  // Match disable(): setting shuttingDown before ending the socket makes the
-  // close handler take the disconnected branch instead of scheduling a
-  // reconnect. Without this, every logout re-pops a pairing QR 5s later.
+  // Set shuttingDown before closing socket to prevent automatic reconnect loops.
   state.shuttingDown = true;
   whatsappAbortController.abort();
   if (state.socket) {
@@ -919,9 +852,7 @@ export interface SendResult {
 
 const sendLocks = new Map<string, Promise<void>>();
 
-// Serialize sends per recipient. The rate-limit and duplicate-body checks are
-// synchronous, but sendMessage yields while resolving the JID and sending;
-// without this lock two requests could both pass those checks.
+// Serializes outgoing sends per recipient to prevent race conditions during rate-limit checks.
 export function sendMessage(req: QueuedSend): Promise<SendResult> {
   return trackWhatsAppWork(sendMessageWithLock(req));
 }
@@ -1045,18 +976,11 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
     const sent = await abortable(() => socket.sendMessage(jid, { text: req.body }), signal);
     if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
-    // sendMessage() only resolves when Baileys hands the payload to its
-    // local queue — not when WhatsApp's servers ACK it. Don't claim 'sent'
-    // yet; the messages.update handler sets status='sent' + sent_at when
-    // the server returns status=2 (SERVER_ACK). Without this guard, a
-    // silently-dropped message (bad JID, network blip, server reject)
-    // would mark the row 'sent' while the recipient never receives it.
+    // Do not mark 'sent' immediately; wait for server ACK (status=2) in messages.update.
     updateMessageRow(messageId, {
       external_message_id: sent?.key?.id ?? null,
     });
-    // Cache the message body so Baileys's getMessage() can serve re-encrypt
-    // requests for it (common around session restarts). Without this,
-    // Baileys hangs on "waiting for this message" indefinitely.
+    // Cache sent message payload for session restart re-encryption requests.
     if (sent?.key?.id && sent?.message) {
       state.sentMessageCache.set(sent.key.id, sent.message);
       if (state.sentMessageCache.size > SENT_MESSAGE_CACHE_MAX) {

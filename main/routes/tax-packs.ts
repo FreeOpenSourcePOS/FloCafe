@@ -22,18 +22,7 @@ import { getCurrencyFractionDigits } from '../countries';
 
 const router = Router();
 const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id, pack]));
-// India and Thailand were bundled unsigned before country packs moved to the
-// signed release catalog. Existing customer databases still contain those
-// exact artifacts. Rather than keep the original tax-rate content in the
-// repo just to re-check it byte-for-byte, we keep only the SHA-256 digest of
-// that exact historical JSON (sha256(JSON.stringify(pack))) — enough to keep
-// validating those specific already-installed rows as trusted, without the
-// underlying tax content living in source. Exported so tests can inject a
-// synthetic id/digest pair instead of depending on real pack content.
-// 'official-in'/'official-th' are the pre-rename ids used before commit
-// 3a75876 renamed them to 'official-india'/'official-thailand'; stores that
-// installed taxes before that rename still carry the old id in their DB and
-// must keep validating too.
+// SHA-256 digests of historical unbundled/renamed India and Thailand packs.
 export const LEGACY_TRUSTED_PACK_DIGESTS: Record<string, string> = {
   'official-india': '873e8212625d5eefc4192bf99bcebece107cd2384ce8a1c6ecd44a7095082f2d',
   'official-thailand': '25f4082e56372599e90cad6222a493c426f7846552e00ccf486a71e7aa90d656',
@@ -89,10 +78,7 @@ interface ActivateOptions {
   acknowledgeCommunityDisclaimer?: boolean;
 }
 
-// Thrown by activateInstalledPack when a community-sourced pack's no-liability
-// disclaimer hasn't been acknowledged yet for this pack id. Callers should
-// catch this specifically and surface requires_disclaimer to the frontend
-// instead of a generic 500 — nothing is activated when this throws.
+// Thrown when community tax pack requires disclaimer acknowledgment before activation.
 class DisclaimerRequiredError extends Error {
   statusCode = 428;
   requiresDisclaimer = true as const;
@@ -171,13 +157,7 @@ function persistPackArtifacts(
   persistPackContent(version, definition, installedAt, printTemplates);
 }
 
-// Re-derivable content for a version row that already exists in
-// country_pack_versions: categories, rules, and bundled print templates.
-// Split out from persistPackArtifacts so reinstallPackVersion can clear and
-// re-run just this part for a version whose row is present but whose
-// dependent rows (most commonly installed_print_templates, e.g. after a
-// restored/desynced database) went missing without needing to fight the
-// (pack_id, version) UNIQUE constraint on country_pack_versions.
+// Persists re-derivable categories, rules, and print templates for an existing version row.
 function persistPackContent(
   version: VersionRow,
   definition: CountryPack,
@@ -382,10 +362,7 @@ function containsUnsafeData(value: unknown): boolean {
   return false;
 }
 
-// Pack-agnostic activation vector: verifies self-consistency of the engine's
-// output against the PACK'S OWN declared data (never a hardcoded expected
-// rate keyed by a known pack id), so this works identically for the bundled
-// packs and for any legitimately new pack installed from the signed catalog.
+// Pack-agnostic activation vector checking engine self-consistency against declared data.
 function activationVectorPasses(pack: CountryPack): boolean {
   const primaryCategory = pack.categories[0];
   if (!primaryCategory) return false;
@@ -412,10 +389,7 @@ function activationVectorPasses(pack: CountryPack): boolean {
   const taxAmount = new Decimal(intra.taxAmount);
   const payableTotal = new Decimal(intra.payableTotal);
   if (!taxAmount.isFinite() || taxAmount.isNegative()) return false;
-  // A category that DECLARES rules but produces zero applied components is a
-  // real bug signature (e.g. a broken bidirectional category<->rule link).
-  // A category with no declared rules at all (a blank manual/local template)
-  // legitimately produces zero tax -- that is not a failure.
+  // Fail if rules are declared on the category but produce no tax components.
   if (primaryCategory.ruleIds.length > 0 && line.components.length === 0 && line.taxBehavior !== 'exempt') {
     return false;
   }
@@ -600,14 +574,7 @@ export function validationChecklist(
   const stableIds = !activePack
     || (activePack.categories.every((category) => categoryIds.includes(category.id))
       && activePack.rules.every((rule) => ruleIds.includes(rule.id)));
-  // Official packs must keep category/rule IDs stable across versions so
-  // overrides never silently orphan (spec: "removed or renamed rules require
-  // explicit resolution"). A local/manual pack is edited by re-submitting the
-  // owner's full category list each time, so renaming or deleting a category
-  // is a normal, expected edit there — the manual-config route (routes/
-  // tax-packs.ts) handles that case itself by reassigning affected products/
-  // add-ons to the new default and reporting what moved, so this check is
-  // informational only for local packs rather than a hard block.
+  // Official packs require stable IDs; local packs handle renames dynamically on save.
   add(19, stableIds || pack.publisher === 'local', 'Existing IDs remain available, so override aliases are not required');
   const activeVersion = getDatabase().prepare(
     'SELECT active_version_id FROM country_packs WHERE id = ?'
@@ -618,12 +585,7 @@ export function validationChecklist(
     WHERE pack_version_id = ?
       AND json_extract(value_json, '$.categoryId') NOT IN (${categoryIds.map(() => '?').join(',') || "''"})
   `).get(activeVersion.active_version_id, ...categoryIds) as { count: number } : { count: 0 };
-  // Same local-pack carve-out as check 19, and for the same reason: this
-  // check runs before the manual-config route's withTxn block, which is
-  // exactly what remaps every stale override to the new default category
-  // for a local pack. Leaving this a hard block here would reject the save
-  // before that remap ever gets a chance to run, making it impossible to
-  // ever rename/remove a manual category that any override still targets.
+  // Overrides must resolve against new version; manual configs remap stale overrides in-txn.
   add(20, overrideConflicts.count === 0 || pack.publisher === 'local',
     'Every current merchant override resolves against this version');
   add(21, pack.categories.every((category) => Boolean(category.label))
@@ -641,14 +603,7 @@ export function validationChecklist(
     if (registrationFormatValid) {
       try { new RegExp(pattern, 'i'); } catch { registrationFormatValid = false; }
     }
-    // A syntactically valid pattern can still be catastrophically slow: the
-    // Settings page runs this pattern against the Tax ID field on every
-    // keystroke (frontend length-bounds the tested value as a backstop, see
-    // TAX_ID_WARNING_MAX_LENGTH), so a pack that ships a classic nested-
-    // quantifier shape — (x+)+, (x*)+, (x+b+)*, etc. — must never activate.
-    // This is a known-shape heuristic, not a formal safety proof (full ReDoS
-    // detection is undecidable in general); it catches the textbook case a
-    // trusted publisher could ship by mistake.
+    // ReDoS safety check: reject nested-quantifier regex patterns like (x+)+.
     if (registrationFormatValid && /\([^()]*[+*][^()]*\)[+*]/.test(pattern)) registrationFormatValid = false;
   }
   add(25, registrationFormatValid, 'Registration-number format, if declared, is a well-formed, non-catastrophic pattern and description');
@@ -967,9 +922,7 @@ router.post('/ensure-country', requireRole(...ROLE_ACCESS.ownerManager), asyncHa
       throw error;
     }
     const definition = JSON.parse(version.pack_json) as CountryPack;
-    // Enabling taxes should work immediately for a normal merchant. Existing
-    // explicit assignments are preserved; only previously unclassified rows
-    // receive the official country defaults.
+    // Assigns official country defaults to unclassified products and add-ons.
     withTxn(() => {
       db.prepare(`UPDATE products SET tax_category_id = ?, updated_at = ? WHERE tax_category_id IS NULL AND deleted_at IS NULL`)
         .run(definition.defaultCategories.product, now());
@@ -990,17 +943,9 @@ router.post('/ensure-country', requireRole(...ROLE_ACCESS.ownerManager), asyncHa
   }
 }));
 
-// Manual tax builder: an owner-authored local pack for countries with no
-// official plugin (or to override one). Flat only, by design — no interstate
-// or business-type conditions, no compounding. A tax category is a bucket of
-// N independently-labeled components (e.g. "Standard" -> Tax 1 2.5% + Tax 2
-// 2.5%) that all apply together whenever that category is selected; see
-// resolveTaxCategory/calculateRawLine in services/tax-engine.ts, which
-// already sums every matching rule's component with no changes needed here.
+// Generates URL-safe, unique tax identifiers for categories and rules.
 export function slugifyTaxId(label: string, used: Set<string>, fallback: string): string {
-  // Strip leading/trailing underscores with a single linear scan instead of an
-  // underscore regex like /^_+|_+$/g (or its unanchored /_+$/ form), which
-  // backtracks super-linearly on `_`-heavy input (CodeQL js/polynomial-redos).
+  // Strip leading/trailing underscores using linear scan to prevent polynomial ReDoS.
   let base = String(label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
   let start = 0;
   while (start < base.length && base[start] === '_') start += 1;
@@ -1090,18 +1035,11 @@ function buildManualPack(body: any, country: string, currency: string): CountryP
     packaging: resolveDefault('packaging charges', body?.packagingCategoryTempId),
     delivery: resolveDefault('delivery charges', body?.deliveryCategoryTempId),
     service_charge: resolveDefault('service charges', body?.serviceChargeCategoryTempId),
-    // An add-on is never its own taxable line — calculateItemTax folds its
-    // price into the parent item's subtotal before tax runs (services/tax.ts),
-    // so it is always taxed at the item's rate. `defaultCategories.addon`
-    // only exists because the pack schema requires every TaxLineKind to
-    // resolve to *some* category; mirroring the product default keeps that
-    // requirement satisfied without implying a separate add-on rate exists.
+    // Mirror product default to satisfy schema (add-ons are taxed at parent item rate).
     addon: productCategoryId,
   };
 
-  // A hidden zero-rate category always exists so unclassifiedCategoryId
-  // resolves without asking the owner to reason about a bucket that (per
-  // resolveTaxCategory in tax-engine.ts) only applies when nothing else does.
+  // Hidden zero-rate fallback for unclassified line items.
   const unclassifiedId = slugifyTaxId('unclassified', usedCategoryIds, 'unclassified');
   categories.push({ id: unclassifiedId, label: 'Unclassified', ruleIds: [] });
 
@@ -1194,11 +1132,7 @@ router.post('/manual-config', requireRole(...ROLE_ACCESS.owner), (req: Request, 
       const packRow = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(pack.id) as PackRow;
       activateInstalledPack(packRow, version, actorUserId(req));
 
-      // A category the owner removed or renamed in this edit can no longer be
-      // resolved by the engine (calculateRawLine throws on an unknown
-      // category), so checkout would 400 on every line still pointing at it.
-      // Reassign those rows to the new default and report the count instead
-      // of leaving products silently broken.
+      // Reassign products and add-ons pointing to removed/renamed categories to the new default.
       const categoryIds = pack.categories.map((category) => category.id);
       const placeholders = categoryIds.map(() => '?').join(',');
       const staleProducts = db.prepare(
@@ -1214,16 +1148,7 @@ router.post('/manual-config', requireRole(...ROLE_ACCESS.owner), (req: Request, 
         `UPDATE addons SET tax_category_id = ? WHERE tax_category_id IS NULL OR tax_category_id NOT IN (${placeholders})`
       ).run(pack.defaultCategories.addon, ...categoryIds);
 
-      // Merchant overrides (product/addon-specific, plus store-wide
-      // packaging/delivery/service_charge picks) are a second, independent
-      // place a removed category id can hide — activateInstalledPack() above
-      // already moved every override's pack_version_id onto this new
-      // version, but never inspected value_json.categoryId itself. Left
-      // alone, resolveTaxCategory (tax-engine.ts) still returns the deleted
-      // id for any line that hits an override, and calculateRawLine throws
-      // "resolved unknown tax category" — checkout rejects an otherwise
-      // valid line. Same policy as products/addons above: reassign to the
-      // new pack's default category for that entity type.
+      // Reassign merchant overrides referencing removed categories to the new defaults.
       const overrideDefaultByEntity: Record<OverrideEntityType, string> = {
         product: pack.defaultCategories.product,
         addon: pack.defaultCategories.addon,
@@ -1516,12 +1441,7 @@ router.post('/:packId/versions/:versionId/activate', requireRole(...ROLE_ACCESS.
   }
 });
 
-// Re-downloads an already-installed version and re-derives its categories,
-// rules, and bundled print templates in place. Repairs a pack that shows as
-// installed/active but is missing dependent rows (most visibly, its billing
-// template not appearing under Printers > Bill Template) — e.g. after a
-// database restore or an interrupted prior install — without needing to
-// bump the version number, which the normal install path requires.
+// Re-downloads and repairs dependent rows (categories, rules, print templates) in place.
 router.post('/:packId/versions/:versionId/reinstall', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   try {
     const requestSignal = getHttpRequestSignal(req);

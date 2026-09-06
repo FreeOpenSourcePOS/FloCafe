@@ -1,10 +1,4 @@
-/**
- * kot-encoder.ts
- *
- * Converts a Flo POS Order into a Kitchen Order Ticket (KOT) ESC/POS byte array.
- * KOTs are printed in the kitchen to show what items need to be prepared.
- */
-
+/** Converts a Flo POS Order into a Kitchen Order Ticket (KOT) ESC/POS byte array. */
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
@@ -26,11 +20,7 @@ export interface KotOptions {
   paperWidth?: 58 | 80;
   /** Kitchen station name to print on KOT */
   stationName?: string;
-  /**
-   * Printer firmware performs Arabic/Persian contextual shaping (#437).
-   * Lets pure ASCII+Arabic lines through the unsupported-character guard.
-   * Default: false.
-   */
+  /** Printer firmware performs Arabic/Persian contextual shaping. Default: false. */
   arabicShaping?: boolean;
   /** Print language resolved from the KOT language policy. */
   language?: string;
@@ -61,10 +51,7 @@ function safePrinterTextForLanguage(language: string, columns: number, capabilit
   };
 }
 
-/**
- * Build a KOT byte array from an Order object.
- * The Order must have `items` populated.
- */
+/** Build a KOT byte array from an Order object with items populated. */
 export function buildKotBytes(
   order: Order,
   opts: KotOptions = {},
@@ -191,17 +178,13 @@ function thermalRule(
   enc.rule({ style });
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
-
 function truncate(str: string, max: number, capabilities?: ThermalPrinterCapabilities): string {
   const normalized = normalizeThermalText(str, capabilities);
   return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
 }
 
-// Keep nonfinancial KOT identity visible when the selected capabilities cannot
-// represent a localized header label; item text still follows safePrinterText.
+// Fallback label when thermal capabilities cannot represent metadata.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
 
 function thermalSafeMetadataValue(value: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {

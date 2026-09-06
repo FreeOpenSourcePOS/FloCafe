@@ -12,10 +12,8 @@ import type { Order, OrderItem, Bill } from '@/lib/types';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 
-// --- Mock data ---------------------------------------------------------
-// Shaped like the real `Order` / `Bill` types (src/lib/types.ts) so this
-// swaps over to `GET /api/orders?status=completed,cancelled` with just a
-// fetch + map, no shape changes.
+// Mock data shaped like Order/Bill types for seamless transition
+// to GET /api/orders endpoint.
 
 function hoursAgo(h: number): string {
   return new Date(Date.now() - h * 3_600_000).toISOString();

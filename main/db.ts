@@ -76,9 +76,7 @@ function createDatabaseShutdownTimeoutError(): Error & { code: string } {
   return error;
 }
 
-// #278: fail closed instead of silently opening a brand-new, empty database
-// in place of one that has gone missing (deleted, unmounted drive, wrong
-// path). See getDbInitializedMarkerPath().
+// Refuse to silently open a blank database when an initialized database file goes missing.
 function createDatabaseMissingError(dbPath: string): Error & { code: string } {
   const error = new Error(
     `Database file is missing at ${dbPath}, but this install was previously initialized. ` +
@@ -89,12 +87,7 @@ function createDatabaseMissingError(dbPath: string): Error & { code: string } {
   return error;
 }
 
-/**
- * A maintenance operation (backup/import/restore/initialize) must not wait
- * forever for in-flight database requests to drain — a stuck request would
- * otherwise hold the maintenance lock indefinitely. Bound the drain and fail
- * the maintenance operation with an explicit, retryable error.
- */
+// Maintenance operations bound wait times when draining active database requests.
 export const MAINTENANCE_DRAIN_TIMEOUT_MS = SHUTDOWN_TIMEOUT_MS;
 
 function createMaintenanceDrainTimeoutError(timeoutMs: number): Error & { code: string } {
@@ -227,17 +220,13 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
     res.status(503).json({ error: 'Database is shutting down' });
     return;
   }
-  // A later request must still be rejected here, before authentication or
-  // route middleware can query a database handle that the active operation may
-  // close and replace.
+  // Reject requests while maintenance is active before middleware can touch database handle.
   if (databaseMaintenanceActive) {
     res.status(503).json({ error: 'Database maintenance in progress' });
     return;
   }
 
-  // These handlers acquire the FIFO lock themselves. Do not count the lock
-  // owner as an active database request: its response cannot finish until the
-  // handler returns, so counting it would make the handler wait for itself.
+  // Maintenance route handlers acquire the FIFO lock themselves; exclude from active count.
   if (isDatabaseMaintenanceRoute(req)) {
     next();
     return;
@@ -274,9 +263,7 @@ export function withDatabaseMaintenanceLock<T>(operation: (signal: AbortSignal) 
       try { listener(); } catch (error) { console.error('[DB] Maintenance listener failed:', error); }
     }
     try {
-      // Maintenance routes are excluded from activeDatabaseRequests by the
-      // middleware above. Any remaining active requests were already in flight
-      // before maintenance began and must drain first.
+      // Drain requests in flight before maintenance started.
       if (activeDatabaseRequests > 0) {
         await waitForActiveDatabaseRequests(maintenanceSignal, timeoutMs ?? MAINTENANCE_DRAIN_TIMEOUT_MS);
       }
@@ -385,11 +372,7 @@ function getBackupDir(): string {
   return path.join(userDataPath, 'backups');
 }
 
-// #278: written once a production install finishes a normal, healthy startup.
-// Its presence is what lets initDatabase() tell "this install's database file
-// has gone missing" apart from "this is a brand-new install that has never
-// had a database" — both look identical (dbPath absent) from the filesystem
-// alone.
+// Marker written on first startup to distinguish empty fresh install from missing db file.
 function getDbInitializedMarkerPath(): string {
   const userDataPath = app.getPath('userData');
   return path.join(userDataPath, '.flo-db-initialized');
@@ -403,9 +386,7 @@ type ReplacementJournal = {
 };
 
 function syncFile(filePath: string): void {
-  // Windows does not allow fsync on a read-only file handle (it reports
-  // EPERM). All callers pass application-owned database, journal, or backup
-  // files, so use a writable handle for portable durability flushing.
+  // Use writable handle for portable fsync across Windows and POSIX.
   const fd = fs.openSync(filePath, 'r+');
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
@@ -545,9 +526,7 @@ function removeOlderReplacementJournals(journals: string[], dbPath: string, back
       }
       removeReplacementArtifacts(journalPath, journal.recoveryPath);
     } catch (error) {
-      // The newest journal has already established the recovery decision. Do
-      // not let an unrelated stale/corrupt older journal brick every startup;
-      // remove only that journal and its same-basename snapshot.
+      // Remove invalid stale journal and its snapshot without blocking startup.
       const fallbackRecovery = path.join(backupRoot, `${path.basename(journalPath, '.json')}.db`);
       removeReplacementArtifacts(journalPath, fallbackRecovery);
       console.warn(`[DB] Removed stale invalid replacement journal: ${journalPath}`);
@@ -601,18 +580,13 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     if (journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
-    // Journals written by this version carry the exact legacy FK baseline.
-    // Older journals predate that field, so retain their compatibility behavior
-    // rather than bricking an installation during an upgrade.
+    // Preserve baseline FK violations for compatibility with older journals.
     const allowedForeignKeyViolations = journal.baselineForeignKeyViolations === undefined
       ? null
       : new Set(journal.baselineForeignKeyViolations);
-    // Replacement snapshots are copies of the live database, not backup
-    // artifacts; the live database intentionally has no _flo_meta table.
+    // Snapshots copy live database without metadata table.
     const requireMetadata = false;
-    // A committed replacement is already durable in the live path. Finalize
-    // its journal before touching the old snapshot; legacy installs may have
-    // pre-existing FK violations that are intentionally preserved.
+    // Finalize committed replacement if database file is healthy.
     if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath, allowedForeignKeyViolations, requireMetadata)) {
       removeReplacementArtifacts(journalPath, recoveryPath);
       removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
@@ -650,13 +624,7 @@ export function initDatabase(recoverInterruptedReplacement = true, allowDuringSh
   }
   if (recoverInterruptedReplacement) recoverInterruptedDatabaseReplacement(dbPath, backupDir);
 
-  // #278: this guard only applies to the top-level startup call (the
-  // default recoverInterruptedReplacement=true). Every internal
-  // backup/restore/reset call site passes false and already manages the
-  // db file's lifecycle itself (including recreating it deliberately, as
-  // resetDatabaseWithBackup does) — recoverInterruptedReplacement having
-  // already run above means any legitimate interrupted-replacement
-  // recovery has had its chance to restore dbPath before this check.
+  // Startup guard: prevent silent recreation of missing database if previously initialized.
   const isProductionStartup = recoverInterruptedReplacement && app.isPackaged && !process.env.FLO_E2E_DB_PATH;
   if (isProductionStartup && !fs.existsSync(dbPath) && fs.existsSync(getDbInitializedMarkerPath())) {
     throw createDatabaseMissingError(dbPath);
@@ -684,12 +652,7 @@ export function initDatabase(recoverInterruptedReplacement = true, allowDuringSh
     try {
       fs.writeFileSync(markerPath, now());
     } catch (err) {
-      // Most failures here are transient (AV scan lock, momentary ENOSPC);
-      // retry once immediately rather than leaving this install's #278
-      // missing-database guard blind until some future boot happens to
-      // succeed. If it still fails, log to the persistent app log (not just
-      // console) so the gap is visible to support/diagnostics instead of
-      // being truly swallowed.
+      // Retry writing marker once on transient filesystem errors.
       try {
         fs.writeFileSync(markerPath, now());
       } catch (retryErr) {
@@ -745,48 +708,27 @@ export function ensureTelemetryAnonId(): string {
   return anonId;
 }
 
-/**
- * Anonymous usage telemetry is on by default for new installs and is switched
- * off in Settings > Privacy. First-run setup discloses it rather than asking:
- * a pre-ticked consent box is not valid consent, so we do not present one.
- * Tier 2 store-attributed diagnostics is a separate, explicit opt-in and is
- * never bundled into this stream.
- */
+/** Anonymous telemetry toggle; enabled by default, reconfigurable in Settings > Privacy. */
 export function isTelemetryEnabled(): boolean {
   return getSettingValue('telemetry_enabled') === 'true';
 }
 
-/**
- * Tier 2 store-attributed diagnostics, kept separate from anonymous telemetry.
- * New installs default to enabled; an owner can switch it off in Settings.
- */
+/** Tier 2 diagnostics consent toggle; separate from anonymous telemetry. */
 export function isDiagnosticsConsentEnabled(): boolean {
   return getSettingValue('diagnostics_consent') !== 'false';
 }
 
-/**
- * Kitchen Display System on/off switch (issue #133). Defaults to enabled
- * (missing/anything but the literal 'false') so pre-existing installs that
- * predate this setting keep their current always-on behavior.
- */
+/** Kitchen Display System on/off switch. Defaults to enabled. */
 export function isKdsEnabled(): boolean {
   return getSettingValue('kds_enabled') !== 'false';
 }
 
-/**
- * Server App on/off switch. Defaults to enabled for new and upgraded installs,
- * while still allowing owners to hide the tableside ordering surface entirely.
- */
+/** Server App tableside ordering switch; defaults to enabled. */
 export function isServerAppEnabled(): boolean {
   return getSettingValue('server_app_enabled') !== 'false';
 }
 
-/**
- * KOT ticket printing on/off switch (issue #133) — coarser than
- * `auto_print_kot` (which only gates *automatic* printing on order
- * placement). When this is off, no KOT print command may be sent,
- * automatic or manual. Defaults to enabled, same reasoning as isKdsEnabled.
- */
+/** KOT ticket printing on/off switch (gates automatic and manual prints). Defaults to enabled. */
 export function isKotPrintingEnabled(): boolean {
   return getSettingValue('kot_printing_enabled') !== 'false';
 }
@@ -844,9 +786,7 @@ function runStartupIntegrityCheck(): void {
   }
 }
 
-/** Re-seeds the sequences table from existing order_number and bill_number data.
- *  Fixes UNIQUE constraint collisions caused by migration v10 dropping and recreating
- *  the sequences table, which reset counters while old numbered rows still existed. */
+/** Re-seeds sequences table from existing orders and bills to fix unique constraint collisions. */
 function repairSequences(): void {
   try {
     const collectSequenceMax = (table: 'orders' | 'bills', numberColumn: string, pattern: RegExp) => {
@@ -1008,11 +948,7 @@ export async function createBackupUnlocked(targetPath?: string, signal?: AbortSi
     fs.mkdirSync(backupDir, { recursive: true });
   }
 
-  // Always write to a temp path inside userData first. On MAS, the sandbox
-  // only grants access to the user-selected file itself — opening the backup
-  // DB in WAL mode would try to create .db-wal/.db-shm siblings next to the
-  // user-selected file, which the sandbox blocks. Writing to userData first
-  // avoids that restriction; we copy the final clean file to targetPath.
+  // Write to userData temp path first to support sandbox constraints, then copy to targetPath.
   const tempPath = path.join(backupDir, `flo-backup-${timestamp}-${uniqueSuffix}.db`);
   const finalPath = targetPath ? path.resolve(targetPath) : tempPath;
   const stagedTargetPath = finalPath !== tempPath
@@ -1079,10 +1015,7 @@ export async function createBackupUnlocked(targetPath?: string, signal?: AbortSi
         fs.renameSync(stagedTargetPath, finalPath);
       }
       syncDirectory(path.dirname(finalPath));
-      // On Windows, the WAL checkpoint can hold the temp file open briefly
-      // after backupDb.close(), causing EBUSY/EPERM. The file is already
-      // fully copied to finalPath, so silently ignore that specific error
-      // and let the OS clean it up. Re-throw anything else.
+      // On Windows, ignore EBUSY/EPERM if temp file is briefly locked after close.
       try {
         fs.unlinkSync(tempPath);
       } catch (unlinkErr: any) {
@@ -1133,12 +1066,7 @@ function removeDatabaseFiles(dbPath: string): string[] {
   return failures;
 }
 
-/**
- * Creates the safety backup and resets the live database while holding the
- * same maintenance lock used by ordinary backups. On a failed wipe/reopen,
- * restore the safety backup before surfacing the error so callers never see a
- * false success or an intentionally closed database.
- */
+/** Resets database while holding maintenance lock; recovers safety backup if reset fails. */
 export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ backupPath: string }> {
   return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
     const { path: backupPath } = await createBackupUnlocked(undefined, maintenanceSignal);
@@ -1235,13 +1163,7 @@ function readBackupSchemaVersion(fullPath: string): number | null {
   }
 }
 
-/**
- * Lists backups in the managed backups/ directory, newest first. Only
- * backups written by createBackup()/syncBackupBeforeMigration() live here —
- * a backup saved to a user-chosen custom path (via the Export Backup /
- * "choose location" flow) intentionally does not appear here, same as it
- * never has for the existing File > Export Backup menu action. See #120.
- */
+/** Lists auto and manual backups located in the managed backups directory, newest first. */
 export function listBackups(): { fileName: string; path: string; sizeBytes: number; createdAt: string; kind: 'manual' | 'auto'; schemaVersion: number | null }[] {
   const backupDir = getBackupDir();
   if (!fs.existsSync(backupDir)) return [];
@@ -1267,12 +1189,7 @@ export function listBackups(): { fileName: string; path: string; sizeBytes: numb
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-/**
- * Deletes one backup from the managed backups/ directory by file name.
- * fileName is validated against the exact naming scheme createBackup() uses
- * and resolved only inside backupDir, so a path-traversal fileName (e.g.
- * `../../flo.db`) can't escape the backups folder or delete the live DB.
- */
+/** Deletes a backup from the managed backups directory after validating filename format. */
 export function deleteBackup(fileName: string): void {
   const invalidName = () => {
     const error = new Error('Invalid backup file name') as Error & { code: string };
@@ -1295,13 +1212,7 @@ export function deleteBackup(fileName: string): void {
   fs.unlinkSync(fullPath);
 }
 
-/**
- * Returns true when `candidatePath` resolves (symlinks followed) to a regular
- * file inside the managed backups/ directory that matches the naming scheme
- * used by createBackup()/listBackups(). Renderer-initiated restores (Backup
- * History, #120) must pass this boundary so a compromised renderer cannot
- * point the restore IPC at an arbitrary database file on disk.
- */
+/** Returns true if candidate path points to a valid file inside the managed backups directory. */
 export function isManagedBackupFile(candidatePath: string): boolean {
   if (typeof candidatePath !== 'string' || !candidatePath) return false;
   let resolved: string;
@@ -1469,9 +1380,7 @@ export function captureRestoreProtectedSettings(dbInstance: Database.Database): 
   const deviceSecret = byKey.get('cloud_device_secret');
   return keys.map((key) => ({
     key,
-    // Pairing codes are installation-local, short-lived credentials. Never
-    // carry one across a restore, even if the live installation had one.
-    // A position hash without its device secret is also unsafe to preserve.
+    // Exclude short-lived credentials and standalone position hashes from restore.
     present: !key.startsWith('mobile_pairing_code')
       && !(key === 'cloud_pos_hash' && !deviceSecret)
       && byKey.has(key),
@@ -1484,8 +1393,7 @@ export function mergeRestoreProtectedSettings(dbInstance: Database.Database, sta
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `);
-  // Cloud identity/configuration is installation-local. Remove every backup
-  // cloud key first so a future or backup-only key cannot cross installations.
+  // Clear cloud settings first; cloud identity is installation-local.
   dbInstance.prepare("DELETE FROM settings WHERE key LIKE 'cloud_%'").run();
   for (const state of states) {
     if (state.present) upsert.run(state.key, state.value, now());
@@ -1831,16 +1739,13 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
     backupDb?.close();
   }
 
-  // The SQLite header is authoritative for what initDatabase() will open. A
-  // forged/stale _flo_meta stamp must not let forceDirect replace the live DB
-  // with a database this build cannot migrate or serve.
+  // Determine schema version from metadata stamp or SQLite user_version pragma.
   const backupSchemaVersion = Number.isFinite(metadataVersion) && metadataVersion > 0
     ? metadataVersion
     : pragmaVersion;
   const currentDb = getDatabase();
   const currentVersion = getCurrentSchemaVersion();
-  // Never let restoring an older snapshot resurrect a token that was revoked
-  // after that snapshot was created.
+  // Preserve revocations from live database so restored older snapshot cannot unrevoke tokens.
   const preservedRevocations = readRevocations(currentDb);
   const preservedUserSecurity = captureUserSecurityState(currentDb);
   const preservedUserStations = captureUserStationSecurityState(currentDb);
@@ -2139,9 +2044,7 @@ function dataOnlyRestore(
 
   try {
     throwIfDatabaseMaintenanceAborted(signal);
-    // FK enforcement must be disabled before BEGIN. With it off, deleting a
-    // common parent does not cascade-delete current-only child tables that an
-    // older backup does not contain. The final check below protects commit.
+    // Disable FK checks before BEGIN so deleting parent rows does not cascade to child tables.
     currentDb.pragma('foreign_keys = OFF');
     const safeBackupPath = backupPath.replace(/'/g, "''");
     currentDb.exec(`ATTACH DATABASE '${safeBackupPath}' AS _restore_src`);
@@ -2189,9 +2092,7 @@ function dataOnlyRestore(
       throw new Error(`Restore would introduce ${newForeignKeyViolations.length} new foreign-key violation(s)`);
     }
 
-    // SQLite does not allow DETACH while a write transaction is active.
-    // Commit only after the integrity check, then detach the already-closed
-    // source handle immediately so the long-lived connection stays clean.
+    // Commit write transaction before detaching database.
     throwIfDatabaseMaintenanceAborted(signal);
     currentDb.exec('COMMIT');
     inTransaction = false;
@@ -2199,10 +2100,7 @@ function dataOnlyRestore(
       currentDb.exec('DETACH DATABASE _restore_src');
       attached = false;
     } catch (detachError: any) {
-      // Once committed, a detach failure cannot be rolled back. Reopening the
-      // main connection drops every attachment and gives the caller a clean,
-      // usable handle instead of reporting a false failure with live data
-      // already changed.
+      // Reopen connection if detach fails to clean up attachments.
       try {
         closeDatabase();
         initDatabase(false, true);
@@ -2288,19 +2186,7 @@ export function getCurrentSchemaVersion(): number {
   return (db ?? getDatabase()).pragma('user_version', { simple: true }) as number;
 }
 
-/**
- * Builds a throwaway in-memory database by running the exact same
- * createSchema()+MIGRATIONS pipeline a real fresh install takes. This is the
- * "ideal" schema reference for the DB health check — deriving it from the
- * live migration pipeline (instead of hand-maintaining a second schema spec)
- * guarantees it can never drift from what main/db.ts actually produces.
- *
- * Temporarily swaps the module-level `db` binding since createSchema()/
- * runMigrations() operate on it directly. Safe because better-sqlite3 is
- * fully synchronous and Node is single-threaded — nothing else can observe
- * the swapped binding as long as this function doesn't yield to the event loop.
- * Caller owns the returned handle and must call .close() on it.
- */
+/** Builds in-memory database using migration pipeline as ideal schema reference. */
 export function buildIdealSchemaDb(): Database.Database {
   const idealDb = new Database(':memory:');
   idealDb.pragma('foreign_keys = OFF'); // Off during migrations
@@ -2318,8 +2204,7 @@ export function buildIdealSchemaDb(): Database.Database {
 }
 
 // ─── Migration registry ───────────────────────────────────────────────────────
-// Each entry runs exactly once, in order, wrapped in a transaction.
-// To add a schema change: append a new entry. Never edit existing entries.
+// Entries run once in order within a transaction. Append new entries; do not edit existing entries.
 
 export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   {
@@ -2335,7 +2220,6 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     name: 'hash_plaintext_pins',
     up: () => {
       // Migrate from plaintext PINs to hashed PINs.
-      // New installs going forward store only pin_hash.
       const userColumns = getColumns(db, 'users');
       if (!userColumns.includes('pin_hash')) {
         db.exec(`ALTER TABLE users ADD COLUMN pin_hash TEXT`);
@@ -2436,8 +2320,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 10,
     name: 'fix_sequences_composite_key',
     up: () => {
-      // v9 used `name TEXT PRIMARY KEY` but the code needs (name, date) as a
-      // composite key. Drop and recreate with the correct schema.
+      // Recreate sequences table with (name, date) composite primary key.
       db.exec(`DROP TABLE IF EXISTS sequences`);
       db.exec(`
         CREATE TABLE sequences (
@@ -2461,9 +2344,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 12,
     name: 'fix_table_integer_ids',
     up: () => {
-      // Non-destructive migration: convert integer table IDs to strings.
-      // Some tables were created before POST /tables was fixed (Task 1),
-      // so they got SQLite rowid integers instead of 'tbl-...' strings.
+      // Convert legacy integer table IDs to strings.
       db.exec(`UPDATE tables SET id = 'tbl-' || id WHERE typeof(id) = 'integer'`);
     },
   },
@@ -2471,13 +2352,10 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 13,
     name: 'fix_null_table_ids',
     up: () => {
-      // Fix tables with NULL ids caused by old INSERT without id column.
-      // SQLite stored NULL instead of generating an id.
-      //
-      // Generate string IDs using rowid for existing tables with NULL ids
+      // Generate string IDs using rowid for existing tables with NULL ids.
       db.exec(`UPDATE tables SET id = 'tbl-' || rowid WHERE id IS NULL`);
 
-      // Also catch any integer ids that slipped through v12
+      // Catch any integer ids that slipped through v12.
       db.exec(`UPDATE tables SET id = 'tbl-' || id WHERE typeof(id) = 'integer'`);
     },
   },
@@ -2485,9 +2363,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 14,
     name: 'simplify_loyalty_settings',
     up: () => {
-      // Loyalty program is now a single on/off switch — earning rate comes from
-      // each product's own cb_percent, and redemption uses a fixed in-code rate.
-      // Drop the now-unused tuning settings; keep only loyalty_enabled.
+      // Keep only loyalty_enabled and remove unused tuning settings.
       db.exec(`
         DELETE FROM settings WHERE key IN (
           'loyalty_points_per_currency',
@@ -2546,10 +2422,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 18,
     name: 'fix_null_category_ids',
     up: () => {
-      // Same bug as v13's fix_null_table_ids: POST /categories inserted without
-      // the id column, and categories.id (TEXT PRIMARY KEY, not a rowid alias)
-      // silently accepted NULL. Backfill so these rows become deletable and
-      // stop colliding with the "All" filter (which also compares against null).
+      // Backfill missing category IDs using rowid.
       db.exec(`UPDATE categories SET id = 'cat-' || rowid WHERE id IS NULL`);
     },
   },
@@ -2557,12 +2430,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 19,
     name: 'backfill_product_cb_percent_and_tags',
     up: () => {
-      // cb_percent/tags were added to createSchema() (CREATE TABLE IF NOT EXISTS)
-      // back when v1-v7 -> v8 was still a destructive dropAllTables()+recreate
-      // migration. Once migrations became incremental (non-destructive), no
-      // ALTER TABLE ever backfilled these columns onto pre-v8 installs that
-      // updated straight through — so POST /products 500s with "table products
-      // has no column named cb_percent" on any DB that never got the columns.
+      // Ensure cb_percent and tags columns exist on pre-v8 installs.
       const productColumns = getColumns(db, 'products');
       if (!productColumns.includes('cb_percent')) {
         db.exec(`ALTER TABLE products ADD COLUMN cb_percent REAL DEFAULT 0`);
@@ -2576,9 +2444,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 20,
     name: 'add_tables_is_active',
     up: () => {
-      // Tables were hard-deleted, orphaning orders.table_id/held_orders.table_id
-      // on any historical order still pointing at them. Add is_active so tables
-      // can be deactivated (like products/categories/staff) instead of destroyed.
+      // Add is_active column to support deactivating tables without deleting history.
       const tableColumns = getColumns(db, 'tables');
       if (!tableColumns.includes('is_active')) {
         db.exec(`ALTER TABLE tables ADD COLUMN is_active INTEGER DEFAULT 1`);
@@ -2589,12 +2455,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 21,
     name: 'clear_legacy_loyalty_expiry',
     up: () => {
-      // v14 turned off expiry for new loyalty points, but left expires_at on
-      // pre-existing ledger rows untouched. Since wallet balance nets all-time
-      // debits against only unexpired credits, a legacy credit hitting its old
-      // expiry date silently drops out of the credit sum while the debits that
-      // already spent it stay — collapsing the customer's balance. Clearing
-      // expires_at retroactively aligns legacy rows with the non-expiry policy.
+      // Align legacy loyalty ledger rows with non-expiry policy.
       db.exec(`UPDATE loyalty_ledger SET expires_at = NULL WHERE expires_at IS NOT NULL`);
     },
   },
@@ -2618,13 +2479,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 23,
     name: 'normalize_customer_phones',
     up: () => {
-      // country_code only exists in createSchema()'s CREATE TABLE, which is
-      // a no-op (IF NOT EXISTS) for any install whose customers table
-      // predates that column being added — this migration is the first
-      // thing to actually read/write it, and was crashing with "no such
-      // column: country_code" on every such upgrade (reported on a fresh
-      // Windows install of v1.9.7). Guard it here instead of assuming it's
-      // there.
+      // Ensure country_code column exists before running normalization.
       if (!getColumns(db, 'customers').includes('country_code')) {
         db.exec(`ALTER TABLE customers ADD COLUMN country_code TEXT DEFAULT '+91'`);
       }
@@ -2750,14 +2605,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 25,
     name: 'add_order_item_addons_table',
     up: () => {
-      // Selected addons are snapshotted as JSON on order_items.addons. That
-      // works for print/receipt display but makes addon reporting ("addons
-      // sold by day/product/station") require JSON parsing instead of
-      // indexed SQL, and ambiguous parsed-vs-raw-JSON typing already caused
-      // a KOT print failure (see 02a511e). Add a normalized snapshot table
-      // and backfill it from existing rows. order_items.addons stays the
-      // read-path source of truth for now — this migration only adds the
-      // table and starts populating it; see issue #125.
+      // Add a normalized table for selected order item add-ons and backfill existing rows.
       db.exec(`
         CREATE TABLE IF NOT EXISTS order_item_addons (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2807,9 +2655,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 27,
     name: 'add_station_printer_link_and_user_stations',
     up: () => {
-      // Links a kitchen station to a printer row instead of duplicating
-      // ip/port/name inline, and lets a staff login (or shared counter
-      // login) be assigned to one or more stations. See issue #134.
+      // Link kitchen stations to printer rows and assign staff logins to stations.
       const stationColumns = getColumns(db, 'kitchen_stations');
       if (!stationColumns.includes('printer_id')) {
         db.exec(`ALTER TABLE kitchen_stations ADD COLUMN printer_id TEXT REFERENCES printers(id) ON DELETE SET NULL`);
@@ -2830,10 +2676,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 28,
     name: 'seed_telemetry_settings',
     up: () => {
-      // Installs that ran first-run setup before telemetry was added (v1.9.4)
-      // never had these rows written — loadInstallDefaults() only runs on a
-      // fresh DB. INSERT OR IGNORE is safe: fresh installs already have them.
-      // All default to off so existing installs stay opted-out.
+      // Seed default telemetry settings as disabled for pre-telemetry installs.
       const t = now();
       db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('anonymous_data_consent', 'false', ?)`).run(t);
       db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('telemetry_enabled', 'false', ?)`).run(t);
@@ -2852,14 +2695,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 30,
     name: 'drop_order_items_addons_json_column',
     up: () => {
-      // order_item_addons (v25) has been the sole write target for selected
-      // addons for a while now, and every read path was moved onto it in the
-      // same release this migration ships in — order_items.addons is no
-      // longer written or read anywhere in the app. This is the cleanup: one
-      // more backfill sweep (belt-and-braces — v25 already ran, but this
-      // catches anything created between then and the dual-write existing,
-      // or any hand-edited row), then drop the column outright rather than
-      // leave a dead, unused JSON copy sitting in the schema. See issue #125.
+      // Backfill any remaining addons into order_item_addons and drop the legacy JSON column.
       const columns = getColumns(db, 'order_items');
       if (!columns.includes('addons')) return; // already dropped (idempotent re-run)
 
@@ -2909,13 +2745,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 31,
     name: 'add_customers_tag_counts_column',
     up: () => {
-      // tag_counts, like country_code (fixed in v23's guard above), only
-      // ever existed in createSchema()'s CREATE TABLE — no migration added
-      // it for installs whose customers table predates it. Unlike
-      // country_code this isn't just a startup-migration crash: it's read
-      // and written on every order for a returning customer
-      // (routes/orders.ts), so any affected install would crash there
-      // instead, mid-use rather than at launch.
+      // Ensure customers.tag_counts exists on legacy installs.
       if (!getColumns(db, 'customers').includes('tag_counts')) {
         db.exec(`ALTER TABLE customers ADD COLUMN tag_counts TEXT DEFAULT NULL`);
       }
@@ -2925,10 +2755,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 32,
     name: 'add_kds_and_kot_printing_toggles',
     up: () => {
-      // Independent on/off switches for the Kitchen Display System and for
-      // KOT ticket printing (issue #133) — not every business runs both.
-      // Default 'true' on both to match the pre-toggle always-on behavior
-      // existing installs already have.
+      // Add independent on/off settings for KDS and KOT printing (defaulting to true).
       insertSettingIfMissing('kds_enabled', 'true');
       insertSettingIfMissing('kot_printing_enabled', 'true');
     },
@@ -2946,10 +2773,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 34,
     name: 'add_order_items_voided_at',
     up: () => {
-      // Issue #150: voiding an in-progress (preparing/ready) item marks it
-      // status='voided' instead of hard-cancelling it, so the kitchen display
-      // can show it struck-through for a grace period before it drops off the
-      // board. voided_at is that timestamp anchor.
+      // Timestamp anchor for showing voided kitchen items struck-through before removal.
       if (!getColumns(db, 'order_items').includes('voided_at')) {
         db.exec(`ALTER TABLE order_items ADD COLUMN voided_at TEXT DEFAULT NULL`);
       }
@@ -3126,10 +2950,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 39,
     name: 'add_users_tokens_valid_after',
     up: () => {
-      // Backs the JWT-revocation-on-credential-change fix (#173): requireAuth
-      // rejects any token whose `iat` predates this `tokens_valid_after`, so changing a
-      // password/PIN can invalidate every outstanding session for that user
-      // without maintaining a per-token blocklist across devices.
+      // Invalidate outstanding JWT sessions when user credentials change.
       if (!getColumns(db, 'users').includes('tokens_valid_after')) {
         db.exec(`ALTER TABLE users ADD COLUMN tokens_valid_after TEXT DEFAULT NULL`);
       }
@@ -3180,24 +3001,14 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     name: 'add_global_cashback_percent',
     up: () => {
       insertSettingIfMissing('global_cashback_percent', '0');
-      // Existing cb_percent values are deliberately left alone. Under the
-      // tri-state, 0 means "earns nothing" and NULL means "inherit the global
-      // rate" — and the old schema default was 0, so rewriting 0 to NULL here
-      // would silently opt every product a merchant had excluded back into
-      // earning the moment they set a global rate. Products created from here
-      // on default to NULL; existing ones adopt the global rate only through
-      // the explicit bulk action on the products screen.
+      // Existing product cb_percent values are preserved; null inherits global rate.
     },
   },
   {
     version: 43,
     name: 'telemetry_default_on_for_new_installs',
     up: () => {
-      // INSERT OR IGNORE, deliberately: an existing merchant's choice must
-      // survive, including an earlier opt-out. Only installs that predate the
-      // setting entirely pick up the new default here — every build released
-      // so far shipped telemetry on, so this changes nothing for the current
-      // fleet and simply keeps a fresh row consistent with seedInstallDefaults.
+      // Seed default telemetry settings as enabled for newly installed systems.
       const t = now();
       db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('telemetry_enabled', 'true', ?)`).run(t);
       db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('anonymous_data_consent', 'true', ?)`).run(t);
@@ -3208,8 +3019,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 44,
     name: 'store_diagnostics_outbox',
     up: () => {
-      // This setting is migrated to the product default in v47. Keep the
-      // original schema migration safe for databases upgrading through v44.
+      // Seed diagnostics consent setting.
       insertSettingIfMissing('diagnostics_consent', 'true');
       db.exec(`
         CREATE TABLE IF NOT EXISTS store_diagnostics_outbox (
@@ -3230,22 +3040,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     },
   },
   {
-    // Performance fixes for ~100k+ orders (issue #208) plus timestamp
-    // normalization, in one migration because v40 never shipped outside this
-    // PR (upstream's v40-v44 landed first; this is v45). Indexes are all
-    // `IF NOT EXISTS` so reruns are safe. Range queries
-    // (`created_at >= ? AND created_at < ?`) and the composite used by the
-    // orders list pagination both depend on the indexes.
-    //
-    // The normalization: `now()` used to write ISO-8601 (`...T10:00:00.123Z`)
-    // while rows inserted via CURRENT_TIMESTAMP defaults carry SQLite's
-    // `YYYY-MM-DD HH:MM:SS` form. Mixed formats break string range compares
-    // at day boundaries, intra-day ORDER BY, `expires_at > datetime('now')`
-    // expiry checks, and JS `new Date(ts)` parsing (the space form is read as
-    // machine-local time). Normalize every legacy ISO row to the space form
-    // once, so all rows in a column share one sortable, UTC-wall format.
-    // Only rows containing 'T' are touched; each column is verified to exist
-    // before the UPDATE so odd legacy installs cannot crash the migration.
+    // Performance indexes for large order volumes and timestamp normalization (ISO to SQLite format).
     version: 45,
     name: 'add_performance_indexes_and_normalize_timestamps',
     up: () => {
@@ -3260,9 +3055,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         CREATE INDEX IF NOT EXISTS idx_ledger_bill_id_type ON loyalty_ledger(bill_id, type);
         CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
         CREATE INDEX IF NOT EXISTS idx_customers_created_at ON customers(created_at);
-        -- idx_bills_paid_at: payment-method breakdown scans paid_at ranges
-        -- (including NULL for still-open bills); a plain single-column index
-        -- lets the OR optimization use both branches.
+        -- Index on paid_at to support range and null queries in payment breakdowns.
         CREATE INDEX IF NOT EXISTS idx_bills_paid_at ON bills(paid_at);
       `);
       const normalize: [string, string][] = [
@@ -3289,17 +3082,14 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         ['whatsapp_blocklist', 'blocked_at'],
         ['held_orders', 'created_at'], ['held_orders', 'updated_at'],
         ['kds_pairing_tokens', 'expires_at'], ['kds_pairing_tokens', 'created_at'],
-        // Outbox tables (created by migrations v3/v41, before this one): rows
-        // that failed pre-upgrade carry ISO next_attempt_at, which would sort
-        // after space-form `now()` and defer retries by up to a day.
+        // Outbox tables: normalize timestamp formats for retry ordering.
         ['cloud_sync_outbox', 'created_at'], ['cloud_sync_outbox', 'updated_at'], ['cloud_sync_outbox', 'next_attempt_at'],
         ['support_ticket_outbox', 'created_at'], ['support_ticket_outbox', 'updated_at'],
         ['support_ticket_outbox', 'next_attempt_at'], ['support_ticket_outbox', 'delivered_at'],
       ];
       for (const [table, column] of normalize) {
         if (!getColumns(db, table).includes(column)) continue;
-        // '2026-08-01T10:00:00.123Z' -> '2026-08-01 10:00:00' (second precision,
-        // matching now()/CURRENT_TIMESTAMP). Milliseconds are never relied on.
+        // Strip ISO T delimiter to match standard SQLite timestamps.
         db.prepare(
           `UPDATE ${table} SET ${column} = substr(REPLACE(${column}, 'T', ' '), 1, 19) WHERE ${column} LIKE '%T%'`
         ).run();
@@ -3310,14 +3100,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 46,
     name: 'normalize_cloud_enabled_flags_to_01',
     up: () => {
-      // cloud_sync_enabled/cloud_orders_enabled/cloud_reports_enabled/
-      // cloud_command_polling_enabled are meant to mirror FloAdmin's own
-      // `stores` table and are read as a strict '1' check everywhere in
-      // cloud-sync.ts — but both the setup wizard (auth.ts) and the Settings
-      // → Cloud route wrote 'true'/'false' instead, so any store that ever
-      // completed setup or saved that settings page silently never matched
-      // the '1' check: cloud sync, order/report sync, command polling, and
-      // RevFlo pairing's auto-registration all quietly stopped working.
+      // Normalize boolean string settings to '0' and '1' for cloud sync flags.
       const flags = ['cloud_sync_enabled', 'cloud_orders_enabled', 'cloud_reports_enabled', 'cloud_command_polling_enabled'];
       const toOne = db.prepare(`UPDATE settings SET value = '1' WHERE key = ? AND value = 'true'`);
       const toZero = db.prepare(`UPDATE settings SET value = '0' WHERE key = ? AND value = 'false'`);
@@ -3331,8 +3114,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 47,
     name: 'store_diagnostics_enabled_by_default',
     up: () => {
-      // New installs already receive the v44/v47 default. Preserve an existing
-      // false value because it may represent an owner's explicit opt-out.
+      // Preserve existing false setting; default missing rows to true.
       insertSettingIfMissing('diagnostics_consent', 'true');
     },
   },
@@ -3340,9 +3122,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 48,
     name: 'deactivate_reusable_demo_credentials',
     up: () => {
-      // Only the bundled demo identities with the original public password are
-      // affected. A merchant who changed one of these passwords keeps the user
-      // active and retains their account.
+      // Deactivate bundled demo accounts if passwords were never changed.
       const changedAt = now();
       const demoUsers = db.prepare(`SELECT id, password FROM users WHERE id IN ('user-demo-manager', 'user-demo-cashier', 'user-demo-chef')`).all() as { id: string; password: string }[];
       const deactivate = db.prepare('UPDATE users SET is_active = 0, tokens_valid_after = ?, updated_at = ? WHERE id = ?');
@@ -3350,8 +3130,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         try {
           if (bcrypt.compareSync('demo12345', user.password)) deactivate.run(changedAt, changedAt, user.id);
         } catch {
-          // A corrupt legacy hash must not abort the migration or prevent the
-          // rest of the database from opening.
+          // Skip corrupt hashes without failing migration.
           console.warn(`[DB] Could not inspect demo credential for ${user.id}`);
         }
       }
@@ -3476,9 +3255,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 52,
     name: 'restore_method_scoped_transaction_refs',
     up: () => {
-      // v51 temporarily collapsed references by transaction_id. Rebuild from
-      // the authoritative payment snapshots as well as the collapsed table so
-      // duplicate same-method references are audited rather than discarded.
+      // Rebuild method-scoped references and record duplicate conflicts.
       const recordConflict = db.prepare(`
         INSERT INTO payment_transaction_ref_conflicts (method, transaction_id, bill_id, created_at, detected_at)
         VALUES (?, ?, ?, ?, ?)
@@ -3593,9 +3370,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 54,
     name: 'repair_retry_ownership_and_payment_reference_history',
     up: () => {
-      // Repair databases that were opened by an intermediate v53 build before
-      // ownership backfilling was added. Keep the compatibility owner only
-      // when the historical record has no recoverable owner.
+      // Backfill user ownership on legacy payment idempotency rows.
       const paymentRows = db.prepare(`
         SELECT p.idempotency_key,
                CAST(o.user_id AS TEXT) AS user_id
@@ -3638,9 +3413,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         }
       }
 
-      // Reconstruct references from every bill snapshot. This repairs v51/v52
-      // databases where a global transaction-id table collapsed cross-method
-      // rows before method-scoped uniqueness was restored.
+      // Reconstruct method-scoped references from all bill records.
       const existingRefs = db.prepare('SELECT method, transaction_id, bill_id, created_at FROM payment_transaction_refs').all() as { method: string; transaction_id: string; bill_id: string; created_at: string }[];
       const rows = db.prepare('SELECT id, payment_details FROM bills WHERE payment_details IS NOT NULL ORDER BY id').all() as { id: string; payment_details: string }[];
       db.exec(`
@@ -3721,11 +3494,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 57,
     name: 'rename_gstin_to_generic_tax_registration_number',
     up: () => {
-      // "gstin"/"bill_show_gstn" were India-specific names for what is really
-      // a generic tax-registration-number field usable by any country's tax
-      // pack. Copy each business's existing value forward under the new key;
-      // the old row is left in place (harmless) so nothing is lost if a
-      // future build still reads it.
+      // Copy tax identification number settings forward to generic keys.
       const copyIfPresent = (oldKey: string, newKey: string) => {
         const existing = db.prepare('SELECT value FROM settings WHERE key = ?').get(oldKey) as { value: string } | undefined;
         if (existing) {
@@ -3759,8 +3528,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         );
       `);
 
-      // UPI is not a default on new installations. Preserve it only for an
-      // upgrading store that has actually recorded UPI payments before.
+      // Preserve UPI payment method for upgrading stores that have used it previously.
       const legacyUpi = db.prepare(`
         SELECT 1 FROM bills b, json_each(CASE
           WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
@@ -3815,9 +3583,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 60,
     name: 'seed_split_checks_disabled_setting',
     up: () => {
-      // Existing stores were already initialized before split checks existed,
-      // so the first-run setup default never runs for them. Keep the feature
-      // opt-in by inserting the default only when no merchant choice exists.
+      // Default split checks feature to disabled for upgrading stores.
       db.prepare(`
         INSERT OR IGNORE INTO settings (key, value, updated_at)
         VALUES ('split_checks_enabled', 'false', ?)
@@ -3828,8 +3594,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 61,
     name: 'seed_server_app_enabled_setting',
     up: () => {
-      // Match the Server App runtime default for upgraded stores while still
-      // preserving any owner choice if the setting was already created.
+      // Seed server app enabled setting for upgraded stores.
       db.prepare(`
         INSERT OR IGNORE INTO settings (key, value, updated_at)
         VALUES ('server_app_enabled', 'true', ?)
@@ -3840,9 +3605,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 62,
     name: 'normalize_cloud_last_error',
     up: () => {
-      // Older builds persisted upstream error text here. It can contain
-      // reflected credentials, so replace all legacy values before exposing
-      // settings or exporting the database.
+      // Sanitize legacy cloud error text to prevent credential leaks.
       db.prepare(`
         UPDATE settings
         SET value = 'Cloud service request failed', updated_at = ?
@@ -3854,8 +3617,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 63,
     name: 'seed_printer_trim_decimals_setting',
     up: () => {
-      // Keep receipt amount formatting unchanged for upgraded stores unless
-      // the merchant explicitly enables trimmed decimals in printer settings.
+      // Seed default printer decimal trimming setting as disabled.
       db.prepare(`
         INSERT OR IGNORE INTO settings (key, value, updated_at)
         VALUES ('printer_trim_decimals', 'false', ?)
@@ -4001,13 +3763,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 71,
     name: 'repair_durable_token_revocations',
     up: () => {
-      // v55 ("durable_token_revocations") and the v55 GSTIN-rename migration
-      // that shipped in release 2.9.0 briefly collided on the same version
-      // number during a branch merge. Any database that reached v55 while
-      // running 2.9.0 has user_version >= 55 without ever having created
-      // this table, so the real v55 body silently never ran for it. Re-run
-      // it here, idempotently, so both those databases and any that already
-      // have the table (fresh installs, unaffected upgrades) end up correct.
+      // Re-create revoked_tokens table idempotently to fix version collision from v55.
       db.exec(`
         CREATE TABLE IF NOT EXISTS revoked_tokens (
           token_hash TEXT PRIMARY KEY,
@@ -4023,11 +3779,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 72,
     name: 'merchant_print_templates',
     up: () => {
-      // Tenant-owned semantic receipt templates (#447). Deliberately separate
-      // from installed_print_templates (signed compliance-pack artifacts):
-      // merchant rows are ordinary editable documents and carry NO compliance
-      // trust. The embedded database is single-store, so every row is scoped
-      // to the local business tenant (business_id = 'local').
+      // Add tenant-owned editable receipt templates table.
       db.exec(`
         CREATE TABLE IF NOT EXISTS merchant_print_templates (
           id TEXT PRIMARY KEY,
@@ -4050,10 +3802,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           ON merchant_print_templates(business_id, status);
       `);
 
-      // One-time, idempotent upgrade of the bill_template setting to the
-      // structured selection identity ({ source, id } JSON). Only values that
-      // resolve unambiguously today are upgraded; unrecognized legacy strings
-      // are left untouched and keep resolving during the transition.
+      // Migrate bill_template string setting to structured JSON identity format.
       const current = db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as { value: string } | undefined;
       const rawValue = typeof current?.value === 'string' ? current.value.trim() : '';
       if (rawValue.length > 0 && !(rawValue.startsWith('{') && rawValue.endsWith('}'))) {
@@ -4076,17 +3825,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 73,
     name: 'normalize_merchant_template_payloads',
     up: () => {
-      // #448 moved merchant template persistence onto the CANONICAL payload
-      // serialization (recursively key-sorted, whitespace-free): its sha256 is
-      // both the row's `checksum` column and the offline transfer envelope's
-      // integrity value. Rows written by earlier builds kept client key order,
-      // so their stored text — and therefore their checksum and any envelope
-      // they exported — failed canonical verification on import after the
-      // upgrade. Rewrite each intact row once so every stored payload matches
-      // what checksums hash. Rows whose stored text no longer matches their
-      // checksum (possible tampering) or no longer validates under the current
-      // schema are left untouched, so the existing fail-closed paths keep
-      // surfacing them instead of silently healing or destroying data.
+      // Normalize merchant template payloads to canonical serialization and update checksums.
       const rows = db.prepare(`
         SELECT id, payload_json, previous_payload_json, checksum
         FROM merchant_print_templates
@@ -4124,11 +3863,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 74,
     name: 'add_country_packs_disclaimer_ack',
     up: () => {
-      // Backs the community-tax-pack no-liability disclaimer gate: a pack
-      // with sourceType 'community' cannot be activated until an owner
-      // acknowledges it once per pack id (see activateInstalledPack in
-      // routes/tax-packs.ts). Nullable and additive — existing official/local
-      // packs are unaffected.
+      // Support community tax pack disclaimer acknowledgement columns.
       const columns = getColumns(db, 'country_packs');
       if (!columns.includes('disclaimer_acknowledged_at')) {
         db.exec(`ALTER TABLE country_packs ADD COLUMN disclaimer_acknowledged_at TEXT`);
@@ -4151,14 +3886,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 76,
     name: 'add_refunds_and_refund_idempotency',
     up: () => {
-      // Bill-level, amount-based refunds (#278), optionally linked to a
-      // single order_item for the "already prepared, must be pulled off a
-      // paid bill" case. Deliberately not linked to order_items for the
-      // common case — a refund is "amount_cents refunded via original_method
-      // against bill_id", mirroring how payments are recorded as free-form
-      // lines in bills.payment_details rather than tied to line items.
-      // shift_id is nullable with no FK: no `shifts` table exists yet
-      // (day-close/shift reconciliation is deferred to #279).
+      // Add refunds and refund_idempotency tables.
       db.exec(`
         CREATE TABLE IF NOT EXISTS refunds (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4175,9 +3903,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         CREATE INDEX IF NOT EXISTS idx_refunds_bill ON refunds(bill_id);
         CREATE INDEX IF NOT EXISTS idx_refunds_order_item ON refunds(order_item_id);
 
-        -- Mirrors payment_idempotency's FINAL (post v53/v54) user-scoped
-        -- shape directly: this table is brand new, so it never has
-        -- pre-user-scoped rows and needs no 'legacy' compat owner.
+        -- Final user-scoped refund idempotency table.
         CREATE TABLE IF NOT EXISTS refund_idempotency (
           user_id TEXT NOT NULL,
           idempotency_key TEXT NOT NULL,
@@ -4212,9 +3938,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 78,
     name: 'add_online_order_reference',
     up: () => {
-      // #284: 'online' orders (third-party aggregators / web ordering) carry
-      // the platform name + the platform's own order id so the KOT/receipt
-      // can cross-reference it back to the source system.
+      // Add online aggregator platform and external order ID columns.
       const orderColumns = getColumns(db, 'orders');
       if (!orderColumns.includes('online_platform')) {
         db.exec(`ALTER TABLE orders ADD COLUMN online_platform TEXT DEFAULT NULL`);
@@ -4242,28 +3966,10 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 80,
     name: 'migrate_cash_drawer_pulse_to_global_setting',
     up: () => {
-      // Cash-drawer pulse moved from a per-printer flag (v75) to a global
-      // setting. A store whose receipt printer already had it enabled must
-      // keep pulsing after the upgrade — printReceipt only reads the legacy
-      // column while the global setting is unset (main/printers/thermal.ts),
-      // and the settings UI writes 'false' to it the first time the printing
-      // tab is saved for any reason, which would otherwise silently drop the
-      // existing configuration.
-      //
-      // The legacy flag pulsed for every payment method; the new setting's
-      // method filter defaults to ['cash', 'card'], so a migrated store using
-      // UPI or a custom method for cash-drawer payments narrows to that
-      // default instead of carrying its exact prior behavior forward. With
-      // under 100 active installs (mostly testers), that's an acceptable,
-      // easily-reconfigured simplification — not worth a second setting or
-      // sentinel value to preserve exactly.
+      // Migrate per-printer cash drawer pulse flag to global setting.
       const columns = getColumns(db, 'printers');
       if (!columns.includes('cash_drawer_pulse_enabled')) return;
-      // Only the printer printReceipt would actually have dispatched to
-      // (getPrinterConfig's own selection, mirrored here) matters — a flag
-      // left enabled on some other, non-default printer never pulsed a
-      // drawer at print time and migrating it would enable the drawer for
-      // whichever printer happens to be the receipt printer instead.
+      // Mirror default receipt printer selection when migrating setting.
       const receiptPrinter = db.prepare(`
         SELECT cash_drawer_pulse_enabled FROM printers
         WHERE connection_type != 'webusb'
@@ -4312,9 +4018,7 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
           value TEXT
         )
       `);
-      // This snapshot predates the migration about to run. Keep both the
-      // metadata stamp and SQLite header aligned with that older version so
-      // restoring it cannot be misclassified as a current-schema backup.
+      // Record schema version on snapshot so it correctly reflects pre-migration state.
       backupDb.pragma(`user_version = ${fromVersion}`);
       backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('schema_version', String(fromVersion));
       backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('backup_created_at', new Date().toISOString());
@@ -4357,11 +4061,7 @@ function runMigrations(): void {
   const target = MIGRATIONS.length > 0 ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
 
   if (current > target) {
-    // The database has already been migrated by a newer build than this one
-    // (shared/synced DB, or a stale install/shortcut still pointing at this
-    // binary). Proceeding would let old queries reference columns a later
-    // migration already dropped (e.g. order_items.addons, #133) — fail loudly
-    // at startup instead of mid-transaction during business hours.
+    // Fail startup if database schema version is newer than supported by this build.
     throw new SchemaVersionMismatchError(current, target);
   }
 
@@ -4372,18 +4072,7 @@ function runMigrations(): void {
 
   console.log(`[DB] Schema: v${current} → v${target}`);
 
-  // Back up once, up front, before running the whole pending batch — not just
-  // before specific hand-picked versions. An install that's been stuck for a
-  // long time (broken auto-update, offline for months, etc.) can jump through
-  // a dozen+ migrations in a single run; every one of them deserves the same
-  // protection, not just the couple we happened to remember to flag by number.
-  //
-  // Deliberately unconditional, including current === 0: that's NOT a
-  // reliable signal for "nothing to protect" — real old installs can report
-  // user_version 0 if they predate this app's version-tracking pragma (see
-  // tests/fixtures/upgrade-snapshots/pre-migration-scheme-v1.5.0.db), and
-  // those are exactly the installs with the most pending migrations and the
-  // most at stake. A brand-new install just backs up an empty/tiny file.
+  // Create automatic pre-migration backup before running pending batch.
   console.log(`[DB] Triggering auto-backup before migrating v${current} → v${target}...`);
   syncBackupBeforeMigration(current, target);
 
@@ -4399,12 +4088,7 @@ function runMigrations(): void {
   }
 }
 
-// createSchema() only runs for migration v1, i.e. brand-new installs — for
-// any existing install this is a no-op (CREATE TABLE IF NOT EXISTS). If you
-// add a column directly to a CREATE TABLE below, existing installs never
-// get it unless you also add a guarded ALTER migration for it (see v23/v29
-// in MIGRATIONS above for the pattern, and specs/DatabaseMigrations.md).
-// tests/upgrade-path.test.ts exists specifically to catch this class of bug.
+// Initial schema definition for brand-new installs (migration v1).
 function createSchema(): void {
   db.exec(`
     -- ── Master data tables ──────────────────────────────────────────────
@@ -4447,12 +4131,7 @@ function createSchema(): void {
       tax_rate REAL DEFAULT 0,
       tax_category_id TEXT DEFAULT NULL,
       tax_behavior TEXT DEFAULT 'country_default',
-      -- Stays DEFAULT 0 so a fresh install and an upgraded one have an
-      -- identical products table. SQLite cannot alter a column default without
-      -- rebuilding the table, so changing it here would drift every upgraded
-      -- install away from the ideal schema and light up schema-health forever.
-      -- The tri-state does not depend on the default: every insert path passes
-      -- cb_percent explicitly, and NULL is written as NULL.
+      -- Defaults to 0 so fresh and upgraded installs have identical schema.
       cb_percent REAL DEFAULT 0,
       tags TEXT,
       deleted_at TEXT,
@@ -4995,10 +4674,7 @@ function seedCloudSyncDefaults(): void {
   const serverUrl = getSettingValue('cloud_server_url');
   if (!serverUrl) upsertSetting('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
 
-  // Mirrors FloAdmin's own `stores` table defaults (sync + reports on, orders off —
-  // see specs/floadmin.md § api surface). Harmless pre-claim: every send path in
-  // cloud-sync.ts is gated on api_key being present, which only exists after a
-  // human claims the store on FloAdmin, so nothing transmits before then.
+  // Defaults mirror FloAdmin store defaults; actual transmission is gated on api_key.
   insertSettingIfMissing('cloud_sync_enabled', '1');
   insertSettingIfMissing('cloud_orders_enabled', '0');
   insertSettingIfMissing('cloud_reports_enabled', '1');
@@ -5016,8 +4692,7 @@ function seedWhatsAppDefaults(): void {
   insertSettingIfMissing('whatsapp_disclosure_version_acknowledged', '');
   insertSettingIfMissing('whatsapp_connected_phone', '');
   insertSettingIfMissing('whatsapp_disclosure_version', '1');
-  // On by default — no one asks Flo to send a paid bill into a group chat.
-  // Operators who do want group processing have to opt in explicitly.
+  // Group chat filtering is enabled by default to prevent sending receipts to groups.
   insertSettingIfMissing('whatsapp_filter_groups', 'true');
 }
 
@@ -5113,9 +4788,7 @@ function getNextSequence(name: string, date: string): number {
         `).run(name, date);
         return 1;
       } catch (insertError) {
-        // Another concurrent insert won the race, try update again. Preserve
-        // the original insert error so a genuinely stuck sequence row is
-        // diagnosable rather than replaced by a bare retry message.
+        // Retry update if concurrent insert won race; preserve insert error if stuck.
         const retry = db.prepare(`
           UPDATE sequences SET current_value = current_value + 1
           WHERE name = ? AND date = ?
@@ -5194,9 +4867,7 @@ function invoicePeriodSegment(period: InvoiceResetPeriod, timezone: string, star
   return date;
 }
 
-// Settings validation only accepts letters/numbers going forward, but a
-// value saved before that restriction (e.g. "FAC-") would otherwise collide
-// with the "-" separator inserted below and print as "FAC--20260101-0001".
+// Strip non-alphanumeric characters to prevent collision with hyphen separators.
 function sanitizedNumberPrefix(value: string | null | undefined, fallback: string): string {
   return (value ?? fallback).replace(/[^A-Za-z0-9]/g, '');
 }
@@ -5207,9 +4878,7 @@ export function generateOrderNumber(): string {
   const resetDaily = getSettingValue('order_number_reset_daily') !== 'false';
   const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
 
-  // The sequence "bucket": a per-day counter when the series resets at store
-  // midnight, or a single fixed bucket when the series is meant to keep
-  // climbing indefinitely.
+  // Per-day bucket when reset daily, otherwise a single bucket.
   const bucket = resetDaily ? dateStampInTimezone(timezone) : 'ALL';
   const next = getNextSequence('orders', bucket);
 
@@ -5236,22 +4905,11 @@ export function generateBillNumber(): string {
 }
 
 export function now(): string {
-  // Match SQLite's CURRENT_TIMESTAMP format (`YYYY-MM-DD HH:MM:SS`, UTC). The
-  // legacy `new Date().toISOString()` form (with `T`, `Z`, milliseconds) was
-  // mixed into columns whose `CREATE TABLE` defaults use CURRENT_TIMESTAMP, so
-  // range and ordering operations on those columns stopped sorting correctly.
-  // Migration v45 normalized the legacy ISO rows to this format. #208
+  // Returns SQLite CURRENT_TIMESTAMP format (`YYYY-MM-DD HH:MM:SS`, UTC).
   return new Date().toISOString().replace('T', ' ').replace(/\..*$/, '');
 }
 
-/**
- * Parse a DB timestamp into a Date. Columns are stored in UTC wall time in
- * `YYYY-MM-DD HH:MM:SS` (space) form — V8's legacy parser treats that form as
- * machine-LOCAL time, so `new Date(ts)` silently shifts by the host's offset
- * on machines outside UTC. ISO rows (`...T10:00:00.123Z`, pre-v40 data) parse
- * as UTC natively. Use this everywhere a stored timestamp is turned into a
- * Date (reports, receipts, KDS clocks, auth token staleness, telemetry).
- */
+/** Parse DB timestamp into Date, ensuring space-delimited timestamps parse as UTC. */
 export function parseDbTimestamp(ts: string | null | undefined): Date {
   if (!ts) return new Date(NaN);
   // Space form: append a Z so V8 parses it as UTC instead of machine-local.
@@ -5294,11 +4952,7 @@ function timezoneOffsetMilliseconds(instant: Date, timezone: string): number {
   return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - instant.getTime();
 }
 
-/**
- * `[start, end)` half-open UTC ranges for one date in the tenant timezone.
- * The offset is resolved at each boundary so DST transitions retain their
- * actual local midnight rather than assuming every day is 24 hours.
- */
+/** Half-open UTC ranges `[start, end)` for one date in the tenant timezone. */
 export function dayBoundsInTimezone(date: string, timezone: string): [string, string] {
   const [y, m, d] = date.split('-').map(Number);
   const format = (instant: Date) => instant.toISOString().replace('T', ' ').replace(/\..*$/, '');
@@ -5319,11 +4973,7 @@ export function dayBoundsInTimezone(date: string, timezone: string): [string, st
   }
 }
 
-/**
- * `[start, end)` half-open UTC range strings for a UTC calendar date.
- * Bounds are emitted in the space form so string comparisons line up exactly
- * with stored rows (migration v40 normalized all rows to it).
- */
+/** Half-open UTC range strings `[start, end)` for a UTC calendar date. */
 export function utcDayBounds(date: string): [string, string] {
   const [y, m, d] = date.split('-').map(Number);
   const start = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
@@ -5338,19 +4988,10 @@ export function verifyPin(storedHash: string | null | undefined, inputPin: strin
   return bcrypt.compareSync(String(inputPin), storedHash);
 }
 
-// Issue #150: a voided in-progress item stays on the KDS board, struck
-// through, for this long after voiding — long enough for kitchen staff to
-// notice it's been pulled — then drops off like a served item would.
+// Duration a voided in-progress item remains visible on KDS boards before dropping off.
 export const KDS_VOIDED_ITEM_VISIBILITY_MS = 15 * 60 * 1000;
 
-/**
- * Whether a voided order item should still appear on a KDS surface. Only
- * ever called for status='voided' rows; every other status is a normal
- * KDS-visibility decision the caller already makes. The synthetic negative
- * `void_adjustment` bill line this same void flow inserts (main/routes/index.ts)
- * is never a kitchen item and callers should exclude it before this check
- * even runs, not route it through here.
- */
+/** Determines whether a voided order item should still appear on KDS surfaces. */
 export function isVoidedItemKdsVisible(voidedAt: string | null | undefined): boolean {
   if (!voidedAt) return true;
   return Date.now() - parseDbTimestamp(voidedAt).getTime() < KDS_VOIDED_ITEM_VISIBILITY_MS;
@@ -5404,12 +5045,7 @@ export function projectKdsStation(station: any, restricted: boolean, userCategor
   return projected;
 }
 
-/**
- * Snapshots an order item's selected addons into the normalized
- * order_item_addons table — the only place selected addons are stored (see
- * issue #125; order_items.addons was dropped in migration v28). Silently
- * skips entries missing a name.
- */
+/** Snapshots an order item's selected addons into the order_item_addons table. */
 export function insertOrderItemAddons(
   dbInstance: Database.Database,
   orderItemId: number | bigint,
@@ -5424,21 +5060,14 @@ export function insertOrderItemAddons(
   `);
   for (const addon of addons) {
     if (!addon || !addon.name) continue;
-    // addon_id has an FK to addons(id) — if the catalog addon was since
-    // deleted (or the id never matched one, e.g. ad-hoc/legacy data), fall
-    // back to NULL rather than let the FK violation abort order creation.
-    // addon_name/price are the snapshot of record either way.
+    // Fall back to NULL addon_id if missing from catalog to prevent FK failure.
     const linkedAddonId = addon.id && addonExists.get(addon.id) ? addon.id : null;
     const qty = Math.max(1, Math.floor(Number(addon.quantity) || 1));
     insertAddon.run(orderItemId, linkedAddonId, addon.name, addon.price || 0, qty, createdAt);
   }
 }
 
-/** Parse JSON string fields on order_item rows returned from SQLite.
- *  Stored as JSON.stringify(value) — may be "null", "[...]", "{...}" etc.
- *  Returns actual JS value (array / object / null) so the frontend can map/iterate.
- *  addons is not handled here — see attachEffectiveAddons, which resolves it
- *  from the normalized order_item_addons table instead. */
+/** Parse JSON string fields on order_item rows returned from SQLite. */
 export function parseItemJson(item: any): any {
   const tryParse = (val: any) => {
     if (typeof val !== 'string') return val;
@@ -5453,13 +5082,7 @@ export function parseItemJson(item: any): any {
   };
 }
 
-/**
- * Resolves selected addons for a batch of order_items rows from the
- * normalized order_item_addons table — the sole source of truth (see issue
- * #125; order_items.addons was dropped in migration v28). Returns new
- * objects with `addons` set to an array (empty if the item has none); does
- * not mutate the input.
- */
+/** Resolves selected addons for a batch of order_items rows from order_item_addons. */
 export function attachEffectiveAddons<T extends { id: number }>(
   dbInstance: Database.Database,
   items: T[]

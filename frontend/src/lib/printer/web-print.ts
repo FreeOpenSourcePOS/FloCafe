@@ -1,23 +1,4 @@
-/**
- * web-print.ts
- *
- * Thermal-width bill printing using the browser's native print dialog —
- * the fallback path for merchants without an ESC/POS hardware printer.
- * Generates HTML that can be printed silently or shown to user.
- *
- * Since #444 (epic #438) the HTML is rendered from the shared,
- * renderer-independent PrintDocument: raw bill fields are normalized once in
- * `print-document.ts`, and this renderer only walks document blocks.
- * Labels arrive resolved inside the document / via the injected catalog
- * resolver; bidi isolation (`dir`, LTR islands) is driven by the kernel
- * DirectionSpec annotations instead of ad-hoc language checks.
- *
- * Browser receipts are full HTML, not raw ESC/POS bytes, so they never apply
- * the ASCII currency fallback or `ریال → IRR` downgrade used by the thermal
- * encoders. They follow the tenant's locale preferences (currency display,
- * digit mode, calendar) and the resolved receipt language policy, and render RTL with
- * isolated LTR islands for Persian (fa).
- */
+/** Thermal-width bill printing using browser print dialog for merchants without hardware printers. */
 
 import type { Bill, Tenant } from '@/lib/types';
 import toast from 'react-hot-toast';
@@ -72,12 +53,7 @@ export function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-/**
- * Render one kernel-annotated value. Confident LTR islands (phones, invoice
- * numbers, tax IDs — per the direction kernel) are wrapped in a bidi-isolated
- * LTR span when the document base direction is RTL; everything else renders
- * inline in the base direction.
- */
+/** Render one kernel-annotated value with bidi-isolated LTR span when RTL. */
 function directionalValue(value: DirectionalText | null, base: TextDirection): string {
   if (!value) return '';
   if (value.direction === 'ltr' && base === 'rtl') {
@@ -111,19 +87,13 @@ export interface WebPrintOptions {
   languages?: ResolvedPrintLanguages;
 }
 
-/**
- * Tax-id label printed on the receipt. Country-profile labels are acronyms or
- * proper nouns (GSTIN, CUIT, …) and stay as-is; Iran's "Economic Code" is
- * localized so a Persian receipt doesn't show an English phrase.
- */
+/** Resolve tax-id label printed on receipt (special case for Iranian Economic Code). */
 function resolveTaxIdLabel(country: string | undefined, lang: Language): string {
   if (country?.toUpperCase() === 'IR') return printLabelResolver('receipt.economicCode', lang);
   return getCountryByCode(country ?? 'IN')?.taxIdLabel || 'Tax ID';
 }
 
-/**
- * Ensure the requested receipt language messages are loaded in memory (#377).
- */
+/** Ensure the requested receipt language messages are loaded in memory. */
 export async function ensureReceiptMessagesLoaded(lang: Language): Promise<Language[]> {
   try {
     await loadLocaleMessages(lang);
@@ -133,13 +103,7 @@ export async function ensureReceiptMessagesLoaded(lang: Language): Promise<Langu
   }
 }
 
-/**
- * Generate HTML for A4/A5 printing and open print dialog.
- *
- * NOTE: The popup window is opened synchronously within the initiating user gesture
- * to preserve browser user activation (preventing popup blocker suppression), and
- * HTML is written into the window once requested language messages are ready.
- */
+/** Generate HTML for A4/A5 printing and open print dialog. */
 export async function printWebBill(
   bill: Bill,
   tenant: ReceiptTenant,
@@ -154,9 +118,7 @@ export async function printWebBill(
     throw new Error('Popup window was blocked by browser');
   }
 
-  // 2. Ensure every language selected by the canonical print policy is
-  //    available before the synchronous document build. The document uses
-  //    the primary language for this single-language HTML surface.
+  // Ensure print languages are loaded before synchronous document build.
   const failedLanguages = await ensurePrintLanguagesLoaded(languages);
   const warnings: PrintWarning[] = failedLanguages.map((language) => ({
     field: 'receipt language',
@@ -239,18 +201,8 @@ export async function printWebBill(
   }).then(() => warnings);
 }
 
-// ---------------------------------------------------------------------------
 // Document → HTML rendering
-// ---------------------------------------------------------------------------
-
-/**
- * Generate HTML string for the bill (without opening print dialog).
- * Useful for preview or PDF generation.
- *
- * Renders exclusively from the shared PrintDocument (+ context): raw bill
- * fields are normalized once in `print-document.ts`, and every label comes
- * resolved out of the document blocks or the injected catalog resolver.
- */
+/** Generate HTML string for bill (for preview or PDF generation). */
 export function generateBillHtml(
   bill: Bill,
   tenant: ReceiptTenant,
@@ -307,9 +259,7 @@ export function generateBillHtml(
   const payments = getBlock(document, 'payments') as PaymentsBlock | undefined;
   const messages = getBlock(document, 'message') as MessageBlock | undefined;
 
-  // Presentation labels come from the semantic document whenever the
-  // document owns that slot. Surface-only labels use the same injected
-  // catalog resolver as the document builder and thermal renderers.
+  // Presentation labels come from the document or fallback to shared catalog.
   const metaTableLabel = documentLabel(meta?.table?.label, 'pos.tableLabel', lang);
   const L = {
     billNumber: documentLabel(meta?.billNumberLabel, 'receipt.billNumber', lang),
@@ -467,10 +417,7 @@ export function generateBillHtml(
   `;
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
-
 /** Resolve the receipt language list through the shared policy bridge. */
 function resolvePrintLanguages(opts: Pick<WebPrintOptions, 'language' | 'languages'>): ResolvedPrintLanguages {
   return opts.languages ?? resolveBillPrintLanguages(opts.language);
@@ -485,11 +432,7 @@ function documentLabel(
   return label?.primary ?? printLabelResolver(conceptId, lang);
 }
 
-/**
- * Keep the browser's established wording while honoring a semantic label
- * override from an applied merchant document. The default browser concept is
- * still resolved by the shared catalog - it is not a second translation table.
- */
+/** Retain browser wording while honoring semantic label override from merchant document. */
 function surfaceLabel(
   semanticLabel: { primary: string } | null | undefined,
   semanticConceptId: string,
@@ -561,11 +504,7 @@ function getPaperStyles(size: PaperSize): string {
   }
 }
 
-/**
- * Format an amount following the tenant's currency display (Iran rial/toman),
- * digit mode, and `trimDecimals` preference. Browser output uses locale
- * symbols when available and the canonical currency code otherwise.
- */
+/** Format amount per tenant currency display, digit mode, and trimDecimals prefs. */
 function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false): string {
   const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
   const prefs = { currencyDisplay: tenant.currency_display, digits: tenant.number_digits };

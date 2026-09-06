@@ -3,11 +3,8 @@
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 
-/**
- * Returns true iff Flo's WhatsApp integration is enabled and currently
- * connected. Polls /whatsapp/status every 5s. Single boolean — the rest of
- * the status payload is not needed by any current consumer.
- */
+/** Returns true if WhatsApp integration is enabled and connected;
+ * polls /whatsapp/status every 5s. */
 export function useWhatsAppReady(): boolean {
   const [ready, setReady] = useState(false);
   useEffect(() => {

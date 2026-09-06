@@ -1,23 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-// A large Electron version jump (e.g. 31 -> 43) can leave V8 Code Cache and
-// GPU shader cache entries in userData that were built for a different
-// Chromium ABI. When the new Chromium replays that stale state, it can
-// produce a malformed internal message; Chromium's IPC validator rejects it
-// as a bad Mojo message on content.mojom.ChildProcessHost and force-kills
-// the renderer (bad_message.cc, reason 123). Because the crash recovery path
-// immediately recreates the window, it replays the same stale cache and
-// crashes again — an infinite "Renderer process gone: killed" loop.
-//
-// Stamping the running Electron version per userData profile and wiping
-// these caches whenever it doesn't match what's recorded avoids replaying
-// cache built for a different engine build. A *missing* marker is treated
-// the same as a mismatch (not skipped): it's what every profile that
-// predates this check looks like on its first launch under the new code —
-// exactly the upgrade path this exists to fix. Clearing is harmless when
-// there's nothing to clear (rmSync with force:true is a no-op on paths that
-// don't exist).
+// Clears V8 and GPU caches on Electron version changes to prevent stale ABI crashes.
 export const STALE_RENDER_CACHE_DIRS = [
   'Code Cache',
   'GPUCache',
@@ -28,9 +12,7 @@ export const STALE_RENDER_CACHE_DIRS = [
 
 const VERSION_MARKER_FILENAME = '.electron-version';
 
-// debug/warn only — matches every other electron-log call site in this
-// codebase (log.debug/log.error/log.warn; log.log/log.info are never used),
-// and what the startup-failure test harness's electron-log stub implements.
+// Minimal logger interface matching electron-log usage.
 interface Logger {
   debug: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
@@ -54,9 +36,7 @@ export function clearStaleRenderCachesOnVersionChange(
   try {
     previousVersion = fsOps.readFileSync(versionFile, 'utf8').toString().trim();
   } catch {
-    // No marker yet: either a brand-new profile (nothing to clear) or an
-    // existing profile from before this check existed (needs clearing).
-    // Fall through and let the mismatch branch below handle both.
+    // Missing marker treated as mismatch to clear caches on first upgrade launch.
   }
 
   if (previousVersion !== currentElectronVersion) {

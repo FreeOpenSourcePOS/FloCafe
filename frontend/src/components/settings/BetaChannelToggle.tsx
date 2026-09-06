@@ -1,16 +1,7 @@
 'use client';
 
-/**
- * Beta/pre-release update channel toggle for the Settings → Updates panel
- * (#463). Feature-detects the `updates:get-beta-channel` /
- * `updates:set-beta-channel` IPC contract owned by the beta-release-channel
- * workstream: when the exposed `electronAPI` lacks those methods, the toggle
- * renders visibly disabled with a short explanation instead of failing.
- *
- * Persisted state lives in the main process; this component only reflects
- * what `getBetaChannel` returns and optimistically updates after a
- * successful `setBetaChannel`.
- */
+/** Beta update channel toggle with IPC feature detection; reflects state
+ * managed by main process. */
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'use-intl';

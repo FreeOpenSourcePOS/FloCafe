@@ -4,13 +4,7 @@ export interface BackendPorts {
   serverApp: number;
 }
 
-/**
- * Confirms all three owned HTTP services actually answer, rather than trusting
- * isServerRunning()/isKdsServerRunning()/isServerAppRunning() alone — those only
- * check a non-null module reference, not real liveness (none of the servers
- * attach an 'error' listener, so a died-but-not-nulled server would still
- * report "running").
- */
+/** Confirms all three owned HTTP services answer on /api/health for real liveness. */
 export async function probeBackendHealth(ports: BackendPorts, timeoutMs = 1500): Promise<boolean> {
   const endpoints = [
     `http://127.0.0.1:${ports.server}/api/health`,

@@ -1,16 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-/**
- * Detects input from a USB/Bluetooth barcode scanner acting as a "keyboard
- * wedge" — the common case, needing no special driver or WebUSB/serial API.
- * A scanner types the barcode's digits far faster than a human can, then
- * sends Enter. Distinguishes that from normal typing/keyboard shortcuts by
- * the gap between keystrokes, not by which element has focus, since a scan
- * can land while any input is focused (or none).
- *
- * See issue #137 — written to be reusable as-is for FloRetail/FloSalon, not
- * POS-specific.
- */
+/** Detects keyboard-wedge barcode scanner input based on rapid keystroke intervals. */
 const MAX_INTER_KEY_MS = 60;
 const MIN_CODE_LENGTH = 4;
 
@@ -34,10 +24,8 @@ export function useBarcodeScanner(onScan: (code: string) => void, enabled: boole
       if (e.key === 'Enter') {
         const code = bufferRef.current;
         bufferRef.current = '';
-        // A focused text field handles its own Enter (e.g. a search/barcode
-        // box that does an exact-match lookup regardless of typing speed) —
-        // defer to it instead of also firing here, or a real scanner typing
-        // into a focused field would trigger both.
+        // Defer Enter handling when a text input is focused to avoid
+        // firing duplicate scans.
         const target = e.target as HTMLElement | null;
         const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
         if (!isTextInput && code.length >= MIN_CODE_LENGTH) {

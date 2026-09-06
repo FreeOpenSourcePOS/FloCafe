@@ -11,15 +11,7 @@ type ApprovableUsbDevice = {
   manufacturerName?: string;
 };
 
-/**
- * vendorId+productId+serialNumber is the only combination that reliably
- * identifies one physical device — many printers share generic VID/PID pairs
- * from the same USB-to-serial chipset, so vendorId+productId alone can match
- * a different physical unit. Returns null when the device has no serial
- * number, meaning it has no identity trustworthy enough to persist or match
- * across restarts (mirrors how browsers scope WebUSB's own persisted-grant
- * store to devices that report a serial number).
- */
+/** Identifies unique physical USB device via vendorId, productId, and serialNumber. */
 function persistableDeviceKey(device: ApprovableUsbDevice): string | null {
   return device.serialNumber ? `${device.vendorId}:${device.productId}:${device.serialNumber}` : null;
 }
@@ -46,35 +38,7 @@ function savePersistedApprovals(keys: Set<string>): void {
   }
 }
 
-/**
- * Wires up Electron's main-process USB device permission handlers, which a
- * Chromium embed (unlike a standard browser) requires before
- * `navigator.usb.requestDevice()`/`getDevices()` can resolve at all. Without
- * this, PrinterService's WebUSB connect flow has no device picker to select
- * from and silently never resolves in the packaged desktop app (issue #534).
- *
- * Electron has no built-in device-chooser UI (unlike Chrome), so this shows
- * a native confirmation dialog naming the specific device the first time it
- * is offered — restoring the same user-mediated, per-device authorization a
- * real browser's picker provides, rather than auto-granting access.
- *
- * A device that reports a serial number gets a durable approval persisted to
- * disk (see persistableDeviceKey), so PrinterService's silent startup
- * reconnect keeps working across app restarts without re-prompting. A
- * device without a serial number has no identity that safely survives a
- * restart — persisting a bare vendorId+productId match would let a
- * different physical unit sharing that pair silently inherit another
- * device's approval — so it only gets a session-scoped approval (keyed by
- * Electron's own per-session deviceId) and must be re-confirmed after every
- * restart.
- *
- * Both handlers are also scoped to `trustedOrigin` (the app's own served
- * origin, e.g. `http://localhost:<port>`) — this app never intentionally
- * loads third-party content, but nothing else in the renderer's security
- * model stops a compromised dependency or a stray external navigation from
- * requesting USB access, so any request from another origin is refused
- * outright rather than reaching the dialog at all.
- */
+/** Registers Electron USB permission handlers scoped to the trusted origin. */
 export function registerUsbDevicePermissions(session: Session, trustedOrigin: string): void {
   const persistedApprovedKeys = loadPersistedApprovals();
   const sessionApprovedDeviceIds = new Set<string>();

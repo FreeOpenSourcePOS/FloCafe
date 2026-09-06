@@ -1,9 +1,4 @@
-/**
- * Unified Print Receipt Service
- *
- * Logs print actions (receipt/reprint) to the print_logs table
- * and updates the bill's printed_at timestamp.
- */
+/** Logs print actions to print_logs and updates the bill's printed_at timestamp. */
 
 import { getDatabase, withTxn, now } from '../db';
 

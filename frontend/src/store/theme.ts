@@ -12,10 +12,8 @@ interface ThemeState {
   markUserSelected: () => void;
 }
 
-/**
- * Renderer-owned theme state (default 'system'; persistence lives in the
- * writers — Settings tab — so the store stays pure state).
- */
+/** Renderer-owned theme state ('light' | 'dark' | 'system').
+ * Persistence is handled by writers to keep store pure. */
 export const useThemeMode = create<ThemeState>((set) => ({
   mode: 'system',
   userSelected: false,

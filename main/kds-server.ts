@@ -41,9 +41,7 @@ export function isKdsServerRunning(): boolean {
   return kdsServer !== null;
 }
 
-/**
- * Locate the static export directory.
- */
+/** Locate the static export directory. */
 function getStaticDir(): string | null {
   const candidates = [
     // Development / unpackaged: relative to dist/main/ (compiled output of
@@ -60,10 +58,7 @@ function getStaticDir(): string | null {
   return null;
 }
 
-/**
- * Helper to rewrite dotted Next.js static segment file requests to nested paths on Windows.
- * E.g., /products/__next.!KGRhc2hib2FyZCk.products.__PAGE__.txt -> /products/__next.!KGRhc2hib2FyZCk/products/__PAGE__.txt
- */
+/** Helper to rewrite dotted Next.js static segment file requests on Windows. */
 function rewriteNextExportPath(reqPath: string): string {
   const nextIndex = reqPath.indexOf('__next.');
   if (nextIndex === -1) return reqPath;
@@ -95,9 +90,7 @@ export function startKdsServer(): Promise<void> {
       next();
     });
     app.use(express.json());
-    // body-parser 2.x (bundled with Express 5) leaves req.body undefined
-    // instead of {} when a request has no parseable body -- restore the
-    // old default so route handlers can destructure req.body directly.
+    // Restore empty body default for Express 5 compatibility.
     app.use((req: Request, _res: Response, next: NextFunction) => {
       if (req.body === undefined) req.body = {};
       next();
@@ -159,14 +152,9 @@ export function startKdsServer(): Promise<void> {
       });
     });
 
-    // Public tenant metadata — language + KDS defaults.
-    // No auth: the standalone KDS needs this on first paint, before login,
-    // and lives on a different origin than the main API.
+    // Public tenant metadata: language and KDS defaults for pre-login display.
     app.get('/api/kds/info', (_req: Request, res: Response) => {
-      // Disabled KDS → pretend the endpoint doesn't exist rather than
-      // confirming it's just off; this is the first thing a standalone KDS
-      // device fetches, pre-login, so it's the least info a stale/
-      // misconfigured device on the LAN should get (issue #133).
+      // Return 404 when disabled to avoid revealing KDS presence to unauthorized LAN clients.
       if (!isKdsEnabled()) {
         return res.status(404).json({ error: 'Not found' });
       }
@@ -328,8 +316,7 @@ export function startKdsServer(): Promise<void> {
           allowedProductIds = new Set(productRows.map((p) => p.id));
         }
 
-        // Batch item and addon fetches across all active orders (issue #226)
-        // instead of running one items query and one addons pass per order.
+        // Batch item and addon fetches across all active orders to avoid N+1 queries.
         const orderIds = (orders as any[]).map((o: any) => o.id);
         const itemsByOrder: Record<string, any[]> = {};
         if (orderIds.length > 0) {
@@ -526,9 +513,6 @@ export function startKdsServer(): Promise<void> {
       console.log(`[KDS Server] Serving static files from: ${staticDir}`);
 
       // Middleware to patch Windows-specific Next.js static export path nesting.
-      // On Windows, the Next.js static export uses dotted segments (e.g.
-      // __next.!KGRhc2hib2FyZCk.products.__PAGE__.txt) instead of nested
-      // directories. This rewrite is only needed when the app runs on Windows.
       if (process.platform === 'win32') {
         app.use(staticRouteRateLimit(), (req: Request, res: Response, next: NextFunction) => {
           if (req.path.includes('__next.')) {
@@ -602,9 +586,7 @@ export function startKdsServer(): Promise<void> {
         console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
 
         if (listeningServer) {
-          // noServer + a manual 'upgrade' handler so a disabled KDS can 404 the
-          // upgrade instead of completing it — see main/server.ts for the same
-          // pattern on the primary API server (issue #133).
+          // Manual upgrade handler allows rejecting WebSocket connections when KDS is disabled.
           const wss = new WebSocketServer({ noServer: true });
           kdsWss = wss;
           setupKdsWebSocket(wss);

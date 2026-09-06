@@ -1,22 +1,4 @@
-/**
- * Per-document renderer readiness lifecycle for the main POS window.
- *
- * The window starts hidden and is shown once the current document confirms
- * its window-control surface is present (native overlay confirmed, or HTML
- * fallback controls committed). Readiness is bound to an epoch token so the
- * lifecycle is coherent across reloads:
- *
- * - Every full-document main-frame navigation (`did-start-navigation`,
- *   including the initial load) begins a new epoch, which invalidates any
- *   report from the previous document and re-arms a bounded fail-safe. Same-
- *   document Next.js route changes do not reset readiness.
- * - The renderer learns the current epoch from `get-status` and reports
- *   readiness bound to it; stale-epoch or malformed reports are ignored.
- * - If the current epoch's document never confirms (renderer crash before
- *   mount, getStatus() rejection, hung load), the fail-safe fires and shows
- *   the window anyway: a visible window without verified controls beats an
- *   invisible POS forever, and the path taken is logged loudly.
- */
+/** Manages per-document renderer readiness and fail-safe window display. */
 
 const RENDERER_READINESS_FAILSAFE_MS = 10_000;
 const DOCUMENT_NONCE_PATTERN =
@@ -46,14 +28,7 @@ function clearReadinessFailSafe(): void {
   }
 }
 
-/**
- * Begins a fresh readiness epoch for an incoming document. Called on window
- * creation and before each full-document main-frame navigation; invalidates
- * prior documents' readiness reports and arms the fail-safe for this one.
- * The epoch starts before the new preload runs, so clearing the nonce here
- * cannot race the incoming document's synchronous registration. Same-document
- * Next.js route changes never call this function.
- */
+/** Begins a fresh readiness epoch and arms the window display fail-safe. */
 export function beginRendererDocument(): number {
   rendererReadinessEpoch += 1;
   readyEpoch = null;
@@ -103,11 +78,7 @@ export function getRendererDocumentNonce(): string | null {
   return rendererDocumentNonce;
 }
 
-/**
- * Records a readiness report bound to an epoch. Returns true only when the
- * report is well-formed and matches the current epoch; stale documents'
- * reports are rejected so a reload can never inherit readiness.
- */
+/** Records a valid readiness report matching the current epoch. */
 export function markWindowRendererReady(epoch: unknown, documentNonce: unknown): boolean {
   if (typeof epoch !== 'number' || !Number.isInteger(epoch) || epoch < 1) return false;
   if (epoch !== rendererReadinessEpoch) return false;

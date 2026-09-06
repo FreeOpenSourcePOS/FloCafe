@@ -1,14 +1,4 @@
-/**
- * Anonymous usage telemetry — independent of cloud sync (sends whether or
- * not this store has cloud sync configured, since it's a separate concern).
- * Enabled by default for new installs. The owner can switch it off at any
- * time in Settings > Privacy. Tier 2 store diagnostics is a separate,
- * explicit opt-in and is never bundled into this stream.
- *
- * anon_id is a random UUID persisted locally (see db.ensureTelemetryAnonId),
- * never a store id, device id, or anything else that ties back to a business.
- * See specs/floadmin.md § Anonymous telemetry for the endpoint contract.
- */
+/** Anonymous usage telemetry using a randomized local UUID, independent of cloud sync. */
 
 import { app } from 'electron';
 import { readCountryProvenance } from './country-provenance';
@@ -41,11 +31,7 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
 
   try {
     const anonId = ensureTelemetryAnonId();
-    // Only a confirmed country is reported. settings.country is seeded to 'IN'
-    // at install, so sending it unconditionally filed every install that had
-    // not finished setup under India — and because the field was always
-    // present, FloAdmin's IP-geolocation fallback for a missing country never
-    // once fired. Omitting it is what lets that fallback do its job.
+    // Report only user-confirmed country so FloAdmin IP geolocation fallback can operate.
     const provenance = readCountryProvenance();
     const country = provenance.country ?? undefined;
     const response = await fetch(TELEMETRY_URL, {

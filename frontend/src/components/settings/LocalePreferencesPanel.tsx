@@ -14,10 +14,8 @@ interface Props {
 
 type SettingsKey = keyof AppConfig['Messages']['settings'];
 
-// Option labels keyed by value. The panel itself is region-agnostic: which
-// controls (and which options within them) are rendered is driven entirely by
-// the country profile's `localeOptions`, so a region without locale options
-// never sees this panel.
+// Option labels keyed by value; rendering is driven by country profile
+// localeOptions.
 const CURRENCY_DISPLAY_LABELS = {
   rial: 'iranCurrencyDisplayRial',
   toman: 'iranCurrencyDisplayToman',

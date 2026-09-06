@@ -35,9 +35,7 @@ function getKdsUserCategoryIds(db: ReturnType<typeof getDatabase>, req: Request)
   return hasRole(user.role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(user.category_ids);
 }
 
-// KDS disabled → 404 the pairing surface, checked before the role gate below
-// so a request from an authenticated-but-wrong-role user doesn't leak that
-// the route exists either (issue #133).
+// Return 404 on pairing endpoints when KDS is disabled before checking roles.
 router.use('/pairing', requireKdsEnabledOr404);
 
 router.use(requireRole(...ROLE_ACCESS.kitchen));
@@ -85,12 +83,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       `).all(...userCategoryIds) as { id: string | number }[];
       allowedProductIds = new Set(productRows.map((product) => String(product.id)));
     }
-    // A prepaid order is marked 'completed' the moment its bill is fully
-    // paid, which can happen before the kitchen has prepared anything — so
-    // a completed order still belongs here if it has items the kitchen
-    // hasn't served yet. #208: rewrite the OR EXISTS scan as a CTE-anchored
-    // subquery that hits idx_orders_status + idx_order_items_order instead
-    // of scanning all orders with a correlated subquery.
+    // Include active orders and completed orders with items still being prepared.
     let query = `
       WITH active_ids AS (
         SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
@@ -222,9 +215,7 @@ router.post('/pairing', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     }
 
     const token = crypto.randomBytes(32).toString('hex');
-    // Space form, same as every other DB timestamp (v45 normalized the
-    // column) — a consumer comparing expires_at against a space-form now
-    // would see ISO-Z tokens sort after it and treat them as never expired.
+    // Emits space-form timestamp aligned with DB column formatting.
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString().replace('T', ' ').replace(/\..*$/, '');
     const tokenId = randomUUID();
 
@@ -297,12 +288,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       : (userCategoryIds.length > 0 ? userCategoryIds : null);
     const restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
 
-    // #150: 'void_adjustment' is a bill-only reversal line, never a kitchen
-    // item — excluded outright. A voided item itself stays visible, struck
-    // through, until voided_at ages past the same grace period every other
-    // KDS surface uses (main/db.ts's isVoidedItemKdsVisible). The cutoff is
-    // emitted in the DB's space form — an ISO-Z bound would sort after every
-    // space-form row of the same day and hide voided items immediately.
+    // Keep recently voided items visible until grace period expires; exclude void_adjustment lines.
     const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
     let itemsQuery = `
       SELECT oi.*, o.id as order_id, o.order_number, o.type, o.status as order_status,

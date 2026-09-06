@@ -12,10 +12,7 @@ import { asyncHandler } from '../middleware/async-handler';
 
 const MAX_FETCH_BYTES = 10 * 1024 * 1024;
 
-/**
- * Resolves a hostname and rejects it if any resolved address is a
- * loopback/private/link-local/metadata/reserved IP (vuln-0003 SSRF guard).
- */
+/** Resolves hostname and rejects loopback/private/metadata/reserved IPs (SSRF guard). */
 async function resolvePublicHostname(hostname: string, signal: AbortSignal): Promise<string> {
   const directAddress = hostname.replace(/^\[|\]$/g, '');
   if (net.isIP(directAddress)) {
@@ -118,9 +115,7 @@ function fetchPinnedHttps(
       signal,
       lookup: ((_hostname, options, callback) => {
         const family = net.isIP(resolvedAddress);
-        // Node 20+ may ask custom lookups for all candidate addresses while it
-        // chooses an address family. We intentionally permit only the single
-        // IP that passed the SSRF check, so return it in the requested shape.
+        // Restrict lookup strictly to the verified SSRF-safe address.
         if (options.all) {
           callback(null, [{ address: resolvedAddress, family }]);
           return;
@@ -154,15 +149,7 @@ function fetchPinnedHttps(
   });
 }
 
-/**
- * Validate that an image_url value is a valid Base64 data URI or null.
- * Enforces: type check, data:image/ prefix, supported formats (webp/png/jpeg),
- * and max length of 50,000 characters (~36.6 KB decoded).
- *
- * Called at write time — the GET /:id/image endpoint trusts this validation
- * and does NOT re-encode to verify (re-encode rejects valid images with
- * minor encoding variations like trailing newlines).
- */
+/** Validates image data URI format (webp/png/jpeg) and length limit. */
 function validateImageUrl(imageUrl: any): { valid: boolean; error?: string } {
   if (imageUrl === null || imageUrl === undefined) {
     return { valid: true }; // null means "clear the image"
@@ -183,13 +170,7 @@ function validateImageUrl(imageUrl: any): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-/**
- * Load category and addon groups for a batch of products.
- * Returns a Map<productId, { category, addon_groups }> for O(1) lookup.
- *
- * Uses batch queries instead of N+1 — loads all categories and addon groups
- * in 3 queries regardless of product count.
- */
+/** Batch loads category and addon group relations for a list of products. */
 function loadProductRelationsBatch(db: any, products: any[]) {
   if (products.length === 0) return new Map();
 
@@ -455,9 +436,7 @@ function validateAddonGroupIds(db: any, rawIds: unknown): { ids?: string[]; erro
   return { ids: uniqueIds };
 }
 
-// ── GET / — bulk product list ───────────────────────────────────────────
-// Uses explicit column list to avoid loading Base64 blobs into Node.js memory.
-// Computes has_image flag in SQL so the frontend knows which products have images.
+// Bulk product list; computes has_image in SQL to avoid loading Base64 blobs into memory.
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -520,9 +499,8 @@ router.get('/', (req: Request, res: Response) => {
   }
 });
 
-// ── GET /:id — single product with relations ───────────────────────────
+// GET /:id/image — serves decoded image data URI.
 router.get('/:id/image', asyncHandler(async (req: Request, res: Response) => {
-  // Image endpoint — must be defined BEFORE /:id to avoid route conflict
   try {
     const db = getDatabase();
     const row = db.prepare(
@@ -535,20 +513,14 @@ router.get('/:id/image', asyncHandler(async (req: Request, res: Response) => {
 
     const imageUrl = row.image_url as string;
 
-    // Legacy external image URLs are not redirected. This endpoint is public
-    // for <img> tags, so redirecting database values would create an open
-    // redirect. Re-upload legacy images as validated Base64 data URIs.
+    // Reject non-data URIs to prevent open redirects on public image route.
     if (!imageUrl.startsWith('data:')) {
       return res.status(404).json({ error: 'No image' });
     }
 
-    // Parse the data URI: "data:image/webp;base64,AAAA..."
-    // Only allow formats that validateImageUrl accepts (webp/png/jpeg/jpg)
-    // to prevent SVG or other dangerous content types from being served
+    // Parse data URI and restrict to permitted image mime types.
     const match = imageUrl.match(/^data:(image\/(webp|png|jpeg|jpg));base64,(.+)$/);
     if (!match) {
-      // Not a server error — it's invalid stored data. Return 404 so the
-      // frontend falls back to the initials tile without creating noisy 500 logs.
       return res.status(404).json({ error: 'No image' });
     }
 
@@ -601,10 +573,7 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
-// ── POST /fetch-url — CORS proxy for external image URLs ────────────────
-// When a user pastes an https:// URL, the backend fetches the image and
-// returns it as a Base64 data URI. The frontend then runs it through the
-// same crop → compress pipeline as a local upload.
+// Fetches external https image URL and returns Base64 data URI.
 router.post('/fetch-url', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { url } = req.body;
@@ -618,9 +587,7 @@ router.post('/fetch-url', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler
       return res.status(400).json({ error: 'Only HTTPS URLs are supported' });
     }
 
-    // Follow redirects manually (capped) so each hop's hostname/IP is
-    // re-validated — fetch()'s automatic redirect handling would otherwise
-    // let an allowed URL 302 into an internal address (vuln-0003).
+    // Follow redirects manually to re-validate host and IP on each hop.
     const MAX_REDIRECTS = 5;
     let currentUrl = url;
     // Named to avoid colliding with Express's Response type imported above.
@@ -1065,14 +1032,7 @@ router.post('/:id/stock', requireRole(...ROLE_ACCESS.ownerManager), (req: Reques
   }
 });
 
-// Every product created before the tri-state loyalty rates carries
-// cb_percent = 0, which now reads as "earns nothing" — so an owner who sets a
-// global rate on an upgraded install sees nothing happen. Migration 42
-// deliberately does not rewrite those rows: "never configured" and
-// "deliberately excluded" are indistinguishable in the old data, and guessing
-// would silently start paying out on products a merchant had excluded. These
-// two routes are the explicit, counted alternative — the owner sees how many
-// products are affected, then chooses.
+// Exposes zero-rate products so the merchant can review and opt into global loyalty.
 router.get('/loyalty/global-rate-candidates', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
     const row = getDatabase().prepare(

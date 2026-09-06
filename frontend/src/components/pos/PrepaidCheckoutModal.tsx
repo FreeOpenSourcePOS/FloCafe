@@ -174,9 +174,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       .catch(() => setCustomMethods([]));
   }, []);
 
-  // Reset the stale balance the moment the customer changes, read directly during render
-  // (React's recommended pattern for "adjusting state when a prop changes") so there's no
-  // flash of the previous customer's balance; the actual fetch stays in the effect below.
+  // Reset stale wallet balance during render when customer changes
+  // to avoid flashing previous customer balance.
   const [syncedCustomerId, setSyncedCustomerId] = useState(customer?.id ?? null);
   if ((customer?.id ?? null) !== syncedCustomerId) {
     setSyncedCustomerId(customer?.id ?? null);
@@ -214,10 +213,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
   const remaining = preview?.total ?? 0;
 
-  // Auto-fill payment splits to match the net payable amount, but only until the cashier
-  // manually edits an amount — after that, discount/wallet edits must not silently rewrite
-  // amounts they've already typed in. Read directly during render (same pattern as above)
-  // so we only react when the net total itself changes, not on every render.
+  // Auto-fill splits to match net total during render when total changes,
+  // unless cashier has already edited inputs manually.
   const [syncedRemaining, setSyncedRemaining] = useState(remaining);
   if (preview && !paymentsTouched && remaining !== syncedRemaining) {
     setSyncedRemaining(remaining);

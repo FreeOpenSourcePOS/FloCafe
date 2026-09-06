@@ -72,10 +72,7 @@ function LoginContent() {
   }, [selectTenant, t]);
 
   useEffect(() => {
-    // Single-tenant sessions are already auto-selected by the auth store —
-    // login() and loadFromStorage() set currentTenant when tenants.length === 1.
-    // Deliberately no auto-select here: it raced manual selection through
-    // selectTenant() and the shared loading flag for one login attempt (#229).
+    // Navigate to landing page once user and tenant are selected (auto-selection handled in auth store).
     if (user && currentTenant) {
       router.push(getLandingPage());
     }

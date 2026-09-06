@@ -1,10 +1,7 @@
 'use client';
 
-/**
- * UpdateBadge — subtle in-app indicator for silent background updates (#58).
- * Hidden entirely unless there's a download in progress or a restart pending;
- * never shows a native OS dialog.
- */
+/** UpdateBadge: subtle in-app indicator shown only when background update
+ * download is in progress or restart is pending. */
 
 import { Download, Sparkles } from 'lucide-react';
 import { useState } from 'react';

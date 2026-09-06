@@ -23,13 +23,8 @@ const cancellableSleep = (ms: number, isCancelled: () => boolean): Promise<void>
     }
   });
 
-/**
- * Renderer-side theme engine. Source precedence: DB > param > mirror > OS.
- * Owner windows hydrate from SQLite and own the mirror; followers seed from
- * the param, the mirror, or an authed fetch — an OS-guess never writes the
- * mirror. Boot setMode is skipped once the user chooses in this window.
- * Pushes are fire-and-forget; a failed follower fetch schedules one re-check.
- */
+/** Renderer theme engine with precedence DB > param > mirror > OS.
+ * Syncs theme state across windows and avoids overwriting user choices. */
 export function ThemeSync() {
   const mode = useThemeMode((s) => s.mode);
   const setMode = useThemeMode((s) => s.setMode);
@@ -99,9 +94,8 @@ export function ThemeSync() {
         }
         const paramResolved = isThemeModeValue(fromUrl) ? fromUrl : null;
 
-        // Token gate: without a POS token the fetch is a guaranteed 401
-        // and api.ts's interceptor hard-redirects to /auth/login. KDS
-        // windows have no token, so the ?theme= param carries the truth.
+        // Without POS token, avoid 401 redirect loop; KDS windows rely on
+        // the ?theme= URL param instead.
         if (hasPosToken) {
           dbMode = await fetchThemeMode(() => cancelled);
           dbAttempted = true;
@@ -116,9 +110,8 @@ export function ThemeSync() {
           }
         }
 
-        // Authoritative marking: DB and param always; a mirror seed only
-        // when no fetch was attempted (a mirror read after a failed fetch
-        // paints but never writes back — it may be stale).
+        // DB and param are authoritative; mirror seed is only authoritative
+        // when no fetch was attempted.
         if (!userHasChosen()) {
           if (dbMode) {
             authoritative.current = true;

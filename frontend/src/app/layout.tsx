@@ -12,9 +12,7 @@ import { I18nProvider } from "@/components/providers/I18nProvider";
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
-  // Standalone routes can initially render a loading shell with no text,
-  // so let the font load when it is actually used instead of preloading it
-  // on every route and triggering Firefox's unused-preload warning.
+  // Avoid font preload warnings on standalone routes that initially render without text.
   preload: false,
 });
 

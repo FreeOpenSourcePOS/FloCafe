@@ -135,13 +135,11 @@ type Calculation = {
   }>;
 };
 
-// Manual tax builder — a category is just a bucket of named rate components
-// (e.g. "Standard" -> Tax 1 2.5% + Tax 2 2.5%) that all apply together. See
-// buildManualPack in main/routes/tax-packs.ts for the server-side mirror.
+// Manual tax builder: category groups rate components that apply together.
+// See buildManualPack in main/routes/tax-packs.ts for server mirror.
 type ManualComponent = { key: string; label: string; type: 'percent' | 'fixed'; value: string };
 type ManualCategory = { tempId: string; label: string; components: ManualComponent[] };
-// No "addon" default: an add-on is always taxed as part of its parent item's
-// subtotal (see calculateItemTax in main/services/tax.ts), never its own line.
+// Add-ons are taxed with parent item subtotal, never as standalone lines.
 type ManualDefaults = { product: string; packaging: string; delivery: string; service_charge: string };
 type ManualPackDefinition = {
   inclusivePricingDefault: boolean;
@@ -178,9 +176,8 @@ const pluginRequestSettingKey = (country: string) => `tax_plugin_request:${count
 
 async function loadPluginRequestId(country: string): Promise<string | null> {
   try {
-    // The bulk settings list never 404s for a key that hasn't been written
-    // yet (unlike GET /settings/:key), so a store that has never filed a
-    // plugin request doesn't spam the console with an expected-but-noisy 404.
+    // Bulk /settings doesn't 404 on unwritten keys, avoiding console noise
+    // for stores that haven't filed plugin requests.
     const response = await api.get('/settings');
     return response.data?.settings?.[pluginRequestSettingKey(country)] || null;
   } catch {
@@ -340,9 +337,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
 
   const loadManualDetail = useCallback(async (country: string, knownPacks: PackSummary[]) => {
     if (!country) return;
-    // Only fetch if a manual-<country> pack row actually exists — otherwise
-    // this always 404s on a store that has never saved one (normal, but
-    // noisy in the console for no reason).
+    // Only fetch if a manual-<country> pack exists to avoid 404 console noise.
     const packId = `manual-${country.toLowerCase()}`;
     if (!knownPacks.some((pack) => pack.id === packId)) return;
     try {
@@ -431,11 +426,8 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     return () => { cancelled = true; };
   }, [loadManualDetail, t]);
 
-  // Best-effort only: greys out "Official Tax Pack" when we're confident no
-  // plugin exists for this country. An already-installed pack (even inactive)
-  // answers this without a network call; otherwise we ask the catalog once.
-  // A failed/offline catalog check leaves it `null` (unknown) rather than
-  // wrongly disabled — FloCafe must keep working without internet access.
+  // Best-effort check to disable "Official Tax Pack" when no plugin exists;
+  // offline/failed catalog checks preserve neutral state.
   const officialPackInstalled = useMemo(
     () => packs.some((pack) => pack.country === storeCountry && pack.publisher !== 'local'),
     [packs, storeCountry],
@@ -477,20 +469,13 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
 
   const selectedPack = packs.find((pack) => pack.id === selectedPackId);
   const activePackPublisher = packs.find((pack) => pack.active_for_store)?.publisher;
-  // Reflects the real, saved backend state — only changes once something is
-  // actually activated (enableCountryTaxes / saveManualConfig / turnTaxesOff).
+  // Real backend tax state; only changes once configuration is activated.
   const taxMode: 'off' | 'official' | 'manual' = !taxesEnabled ? 'off' : activePackPublisher === 'local' ? 'manual' : 'official';
   const manualBuilderVisible = manualBuilderOpen || taxMode === 'manual';
-  // Only meaningful while an official (non-local) pack is active — gate at
-  // render time rather than resetting packUpdate from an effect, so a stale
-  // result from a previously active pack never leaks into a different mode.
+  // Check updates only when official (non-local) tax pack is active.
   const pluginUpdateApplicable = taxMode === 'official' && detail?.pack.publisher !== 'local';
   const activePluginUpdate = pluginUpdateApplicable ? packUpdate : null;
-  // The segment control's *displayed* selection: opening the manual editor
-  // is its own state even before anything is saved, so it must outrank
-  // taxMode here — otherwise "Turn Off Tax" (or "Official") stays lit at the
-  // same time purely because the backend hasn't changed yet, which reads as
-  // two segments active at once.
+  // Opening manual builder displays 'manual' segment before backend saves.
   const activeSegment: 'off' | 'official' | 'manual' = manualBuilderOpen ? 'manual' : taxMode;
   const targetOptions = entityType === 'product'
     ? detail?.targets.products || []
@@ -523,9 +508,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     }
   }
 
-  // Silent, best-effort check whenever the active official pack changes —
-  // e.g. right after the settings page loads. Never surfaces an error toast;
-  // a failed/offline check just leaves the update banner hidden.
+  // Silent, best-effort check for official pack updates on mount/change.
   useEffect(() => {
     if (!pluginUpdateApplicable || !detail?.pack.id) return;
     let cancelled = false;
@@ -563,11 +546,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       }
       toast.success(t('updatedTo', { version: update.latestVersion }));
       setPackUpdate(null);
-      // installed.packId can differ from the pack that was active before
-      // (e.g. a catalog rename, official-in -> official-india) — switch the
-      // selection explicitly rather than relying on loadList's "keep current
-      // selection if it still exists" default, which would keep showing the
-      // now-inactive old pack.
+      // Switch selection explicitly to installed pack ID in case catalog renamed it.
       setSelectedPackId(installed.packId);
       await Promise.all([loadList(), loadAudit(), loadDetail(installed.packId)]);
     } catch (error) {
@@ -577,12 +556,8 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     }
   }
 
-  // Re-downloads the currently-active plugin version in place and re-derives
-  // its categories, rules, and bundled billing template. For the case where a
-  // plugin shows as installed/active but its billing template never appeared
-  // under Printers > Bill Template (e.g. after a database restore) — the
-  // version number doesn't change, so the normal update flow has nothing to
-  // offer here.
+  // Re-downloads active plugin in place to restore categories and bill templates
+  // without changing the version number.
   async function reinstallPlugin() {
     const packId = detail?.pack.id;
     const versionId = detail?.active_version?.id;
@@ -604,9 +579,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     }
   }
 
-  // Gives the community-pack disclaimer's "report any issue immediately" an
-  // actual in-app path, reusing the same support-ticket outbox already used
-  // for country-plugin-unavailable requests above.
+  // File support ticket for community tax pack issues.
   async function reportCommunityPackIssue() {
     const pack = detail?.pack;
     const version = detail?.active_version;

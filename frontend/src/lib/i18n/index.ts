@@ -1,10 +1,5 @@
-/**
- * Core i18n subsystem barrel export.
- *
- * Provides central access to the language registry, dynamic chunk loader,
- * BCP-47 browser language detection, server synchronization utilities,
- * and exhaustively typed domain enum translation maps.
- */
+/** Core i18n barrel exporting registry, chunk loader,
+ * detection utilities, and domain enum mappings. */
 
 export {
   LANGUAGES,

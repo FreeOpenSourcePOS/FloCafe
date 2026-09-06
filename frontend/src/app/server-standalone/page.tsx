@@ -51,18 +51,14 @@ function money(value: number | string) {
 }
 
 export default function ServerStandalonePage() {
-  // The Server App inherits the tenant language from `/api/server-app/info`,
-  // the same way the standalone KDS inherits it from `/api/kds/info` — no
-  // separate language store, just the shared usePosSettingsStore.
+  // Syncs tenant language preference from /api/server-app/info.
   useSyncServerLanguage('/api/server-app/info');
   const t = useTranslations('serverApp');
   const tAuth = useTranslations('auth');
   const tOrders = useTranslations('orders');
   const tTables = useTranslations('tables');
 
-  // toastApiError (shared legacy helper) resolves `apiError.<code>` dotted keys;
-  // server-app errors have no such keys, so bridge with a no-op that always
-  // falls back to the caller-supplied localized message.
+  // Fall back to caller-supplied localized message for server-app errors without dotted error codes.
   const apiErrorT = (key: string): string => key;
   const api = useMemo(() => (typeof window !== 'undefined' ? createApi() : null), []);
   const [loading, setLoading] = useState(true);

@@ -4,9 +4,8 @@ import { useLocale } from 'use-intl';
 import { formatDateForTenant } from '@/lib/countries';
 import { parseDbTimestamp } from '@/lib/utils';
 
-// String timestamps arrive in the DB's UTC space form (`YYYY-MM-DD HH:MM:SS`);
-// V8's legacy parser reads that form as machine-local, so only Date/number
-// inputs may use `new Date` directly.
+// String timestamps arrive in DB UTC format (YYYY-MM-DD HH:MM:SS);
+// use parseDbTimestamp to avoid machine-local interpretation.
 function toDate(date: string | Date | number): Date {
   return typeof date === 'string' ? parseDbTimestamp(date) : new Date(date);
 }

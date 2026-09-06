@@ -102,7 +102,7 @@ export default function AppSidebar() {
   const businessType = currentTenant?.business_type || 'restaurant';
   const navItems = ALL_NAV_ITEMS.filter((item) => {
     if (item.href === '/tables' && !tablesRequired) return false;
-    // KDS disabled → hide the nav entry entirely (issue #133).
+    // Hide KDS settings navigation when KDS is disabled.
     if (item.href === '/settings?tab=kds' && !kdsEnabled) return false;
     // WhatsApp integration not enabled on this tenant → hide the nav entry.
     if (item.href === '/whatsapp' && !whatsappEnabled) return false;
@@ -121,10 +121,8 @@ export default function AppSidebar() {
     api.get('/settings/kds_enabled')
       .then((res) => setKdsEnabled(res.data.setting?.value !== 'false'))
       .catch(() => { });
-    // Sync the WhatsApp enabled flag from the backend so the sidebar shows
-    // the nav entry only when the integration is actually enabled on this
-    // tenant. The WhatsApp page also writes the store on enable/disable so
-    // the sidebar updates without a refetch when the user toggles.
+    // Sync WhatsApp status from backend so sidebar only shows the entry
+    // when integration is enabled on this tenant.
     api.get('/whatsapp/status')
       .then((res) => setWhatsappEnabled(!!res.data?.enabled))
       .catch(() => { });

@@ -8,15 +8,7 @@ interface ApiErrorBody {
   code?: string;
 }
 
-/**
- * Resolves a backend error into a localized user-facing message.
- *
- * Backend `error` strings are deliberately kept in English (for logs, support
- * tickets, and telemetry) and are never shown verbatim to the customer.
- * Resolution priority:
- *   1. A stable `reason`/`code` mapped to `<namespace>.<code>`.
- *   2. The caller-supplied localized fallback.
- */
+// Resolves backend error into a localized user message via reason/code before fallback.
 export function apiErrorText(
   err: unknown,
   fallback: string,

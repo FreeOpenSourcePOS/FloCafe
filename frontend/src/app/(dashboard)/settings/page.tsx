@@ -148,11 +148,7 @@ function invoicePreviewSegment(period: InvoiceResetPeriod, month: number, day: n
   return `${yyyy}${mm}${dd}`;
 }
 
-// A prefix stored before the letters/numbers-only rule existed (e.g. "FAC-")
-// would otherwise round-trip unchanged into the form and then fail this same
-// page's own save-time validation the next time ANY order-numbering field is
-// saved — blocking unrelated changes until the user also happens to fix the
-// prefix. Sanitize on load so a legacy value never re-enters the form dirty.
+// Sanitize prefix on load to alphanumeric characters so legacy values pass save validation.
 function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
@@ -280,7 +276,6 @@ export default function SettingsPage() {
   const posSettings = usePosSettingsStore();
   const whatsappEnabled = posSettings.whatsappEnabled;
   const { printMethod, setPrintMethod, refreshHardwarePrinter } = usePrinterStore();
-  // Synced at the dashboard layout level now (issue #534).
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
   const locale = useLocale();
@@ -322,10 +317,7 @@ export default function SettingsPage() {
 
   const searchParams = useSearchParams();
   const requestedTab = searchParams?.get('tab') || 'store';
-  // ── DB tools: master PIN, health check, initialize ──────────────────────
-  // activeTab/healthCheckOpen/initializeDbOpen/pinGate read their initial value from the
-  // ?tab=/?action= deep-link params directly. activeTab also stays synchronized below when
-  // the sidebar changes the query string without remounting this page.
+  // Deep-link query param state for active tab and database actions.
   const [activeTab, setActiveTab] = useState(requestedTab);
   const [masterPinStatus, setMasterPinStatus] = useState<{ available: boolean; isSet: boolean; schemaVersion: number | null }>({ available: false, isSet: false, schemaVersion: null });
   const [healthCheckOpen, setHealthCheckOpen] = useState(() => searchParams?.get('action') === 'health-check');
@@ -338,9 +330,7 @@ export default function SettingsPage() {
   const setThemeMode = useThemeMode((s) => s.setMode);
   const markUserSelectedTheme = useThemeMode((s) => s.markUserSelected);
 
-  // Last value known to be persisted — initialized from hydration, updated
-  // on every successful save. Rollbacks land here, not on the captured
-  // render-time value, which can be stale across rapid clicks.
+  // Last persisted theme value used as rollback target on failed saves.
   const lastCommitted = useRef<ThemeMode>('system');
   // Set the moment the user touches a control; hydration must not clobber a
   // later user choice with the stale DB row.
@@ -351,9 +341,7 @@ export default function SettingsPage() {
   const needsServerTruth = useRef(false);
   const [savingTheme, setSavingTheme] = useState(false);
 
-  // Absent row (404) → keep 'system'. Never an error toast on missing key.
-  // setMode stays blocked by userTouched; lastCommitted moves only when no
-  // save raced this fetch, so the rollback baseline stays trustworthy.
+  // Hydrate theme_mode from server; missing setting defaults to 'system'.
   useEffect(() => {
     let cancelled = false;
     const seqAtFetch = saveSeq.current;
@@ -364,18 +352,11 @@ export default function SettingsPage() {
         if (!userTouched.current || needsServerTruth.current) {
           setThemeMode(raw);
         }
-        // lastCommitted may be updated even when userTouched is true, but
-        // only if no save started after this fetch began. If a save did
-        // race in, its own lastCommitted update (success) or its
-        // server-truth restore (failure, below) is authoritative — the
-        // fetch response at that point reflects the pre-save DB row.
+        // Only update committed baseline if no subsequent save was initiated.
         if (saveSeq.current === seqAtFetch) {
           lastCommitted.current = raw;
         }
-        // The needsServerTruth arm is consumed exactly once: a save that
-        // failed (and whose recovery GET also failed) armed it, this
-        // hydration response is the first authoritative signal since,
-        // so we apply + clear. A subsequent user click re-arms as needed.
+        // Consume server truth flag after failed save recovery.
         if (needsServerTruth.current) {
           needsServerTruth.current = false;
         }
@@ -386,13 +367,7 @@ export default function SettingsPage() {
     return () => { cancelled = true; };
   }, [setThemeMode]);
 
-  // Optimistic save: mirrors saveTelemetry (page's established pattern). The
-  // store flip is instant — ThemeSync reacts and re-themes immediately. If
-  // the PUT fails, rollback to the last persisted value + existing saveFailed
-  // toast. savingTheme guards against overlapping PUTs; userTouched blocks a
-  // late hydration fetch from clobbering a newer user choice.
-  //
-  // Optimistic; on failure restore server truth (lastCommitted is the baseline).
+  // Optimistically updates theme store and rolls back on API failure.
   const saveThemeMode = async (next: ThemeMode) => {
     if (savingTheme) return;
     const previous = lastCommitted.current;
@@ -428,9 +403,7 @@ export default function SettingsPage() {
     }
   };
 
-  // Sidebar links can change only the query string while this page stays mounted.
-  // Keep the rendered Settings tab in sync with those deep-link changes (including
-  // returning to the default Store tab when ?tab= is removed).
+  // Sync active settings tab when query string changes while mounted.
   useEffect(() => {
     // This is navigation state arriving from Next.js, not an async data effect.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -707,11 +680,7 @@ export default function SettingsPage() {
     setPinGate({ mode: 'backup' });
   };
 
-  // Lets the owner pick a custom save location (external drive, cloud-synced
-  // folder, etc.) via the same native save dialog the File menu's "Export
-  // Backup" action already uses. A backup saved this way does not appear in
-  // the Backup History list below — same as it never has for the menu
-  // action — since it's outside the managed backups/ directory. See #120.
+  // Prompt native file dialog to export a backup to a custom directory.
   const handleChooseBackupLocation = async () => {
     if (masterPinStatus.available && !masterPinStatus.isSet) {
       toast.error(t('masterPinRequiredForBackup'));
@@ -804,9 +773,8 @@ export default function SettingsPage() {
     qr_data_url: string | null;
     ips_data?: { ip: string; url: string; qr_data: string | null }[];
   } | null>(null);
-  // The mount effect below always fetches this unconditionally, so this starts true rather
-  // than being set synchronously inside that effect (fetchKdsInfo, used by the manual
-  // "refresh" button, still sets it explicitly for that path).
+  // Starts true as mount effect fetches unconditionally; fetchKdsInfo
+  // sets it explicitly for manual refresh.
   const [kdsInfoLoading, setKdsInfoLoading] = useState(true);
 
   const fetchKdsInfo = () => {
@@ -921,9 +889,8 @@ export default function SettingsPage() {
   const [savingPrinter, setSavingPrinter] = useState(false);
   const [testingPrinterId, setTestingPrinterId] = useState<string | null>(null);
   const [detectedPrinters, setDetectedPrinters] = useState<DetectedPrinter[]>([]);
-  // The mount effect below always detects printers unconditionally, so this starts true
-  // rather than being set synchronously inside that effect (fetchDetectedPrinters, used by
-  // the manual "refresh" button, still sets it explicitly for that path).
+  // Starts true as mount effect detects unconditionally; fetchDetectedPrinters
+  // sets it explicitly for manual refresh.
   const [detectingPrinters, setDetectingPrinters] = useState(true);
   const [addingDetectedName, setAddingDetectedName] = useState<string | null>(null);
   const [installedPrintersOpen, setInstalledPrintersOpen] = useState(false);
@@ -941,9 +908,8 @@ export default function SettingsPage() {
     return t('printColumnsShort', { cols });
   };
 
-  // Printer failures carry a specific, actionable reason from the backend
-  // (wrong OS queue name, offline, out of paper, etc.) — showing only a
-  // generic toast forces a support ticket for what the app already knows.
+  // Surface specific printer failure reasons from backend instead of
+  // a generic toast when available.
   const printerErrorMessage = (err: unknown, fallback: string): string => {
     if (axios.isAxiosError(err)) {
       const apiError = err.response?.data?.error;
@@ -1190,11 +1156,8 @@ export default function SettingsPage() {
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
   const [pairingQrDataUrl, setPairingQrDataUrl] = useState<string | null>(null);
-  // Defaults to true (not false) so the "Generate Pairing Code" button can't
-  // render — and be clicked — before the /settings/cloud fetch below has told
-  // us whether this store is actually registered. Clicking it in that window
-  // used to hit the backend while registration status was still unknown and
-  // fail with a generic error even on stores that end up fully registered.
+  // Defaults true so button cannot be clicked before registration status
+  // is known from /settings/cloud.
   const [pairingUnavailable, setPairingUnavailable] = useState(true);
   const [rotatingCode, setRotatingCode] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -1208,11 +1171,8 @@ export default function SettingsPage() {
   // Printing local state (buffered — saved only on explicit Save)
   type PrintingForm = {
     printerEnabled: boolean; printerPaperSize: PaperSize;
-    // undefined until loaded or explicitly toggled — see the load effect and
-    // savePrinting below. FloCafe has under 100 active installs, so a v80
-    // migration losing the legacy per-printer flag on upgrade (the original
-    // bug) is worth guarding against; the exact scenario of a save racing
-    // that one-time load, on a product this size, is not.
+    // Undefined until loaded or explicitly toggled to avoid overwriting
+    // existing setting on save.
     cashDrawerPulseEnabled: boolean | undefined;
     cashDrawerPulseMethods: string[];
     printMethod: 'escpos' | 'browser';
@@ -1296,9 +1256,8 @@ export default function SettingsPage() {
     posSettings.setBillShowCustomerPhone(printingForm.billShowCustomerPhone);
     posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
     await Promise.all([
-      // Skipped while still undefined — not yet loaded and never explicitly
-      // toggled — so a save can't send a guessed value over whatever a v80
-      // migration (or the user, on another device) already set.
+      // Skip while undefined so save does not overwrite existing setting
+      // before load completes.
       ...(printingForm.cashDrawerPulseEnabled !== undefined ? [
         api.put('/settings/cash_drawer_pulse_enabled', { value: printingForm.cashDrawerPulseEnabled ? 'true' : 'false' }),
         api.put('/settings/cash_drawer_pulse_methods', { value: JSON.stringify(printingForm.cashDrawerPulseMethods) }),
@@ -1322,10 +1281,8 @@ export default function SettingsPage() {
   };
   const resetPrinting = () => setPrintingForm(savedPrinting);
 
-  // Bill template local state. billTemplateSource carries the resolved
-  // selection identity alongside the bare id so a pack template_id that
-  // collides with a core name (classic/compact) keeps its {source: 'pack'}
-  // qualifier through both display-selection and save round-trips (#447).
+  // Bill template local state; billTemplateSource preserves pack
+  // qualifier if ID collides with core template names.
   type BillTemplateForm = {
     billTemplate: BillTemplate;
     billTemplateSource: BillTemplateSelectionSource;
@@ -1343,10 +1300,8 @@ export default function SettingsPage() {
     posSettings.setBillTemplate(billForm.billTemplate);
     posSettings.setBillTemplateSource(billForm.billTemplateSource);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
-    // Persist the resolved selection identity captured at selection time
-    // (NOT re-derived by first-id match, which a colliding pack id would
-    // fail): bare id for core templates, structured { source, id } for
-    // pack and merchant.
+    // Persist bare ID for core templates, structured { source, id }
+    // for pack and merchant templates.
     const templateValue = billForm.billTemplateSource === 'core'
       ? billForm.billTemplate
       : JSON.stringify({ source: billForm.billTemplateSource, id: billForm.billTemplate });
@@ -1381,24 +1336,16 @@ export default function SettingsPage() {
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
-  // Server-resolved: the active country tax pack's format if it declares
-  // one, else the static countries.ts fallback, else null. The backend is
-  // authoritative; this drives immediate warning feedback below the field.
+  // Server-resolved tax format from country tax pack or static fallback;
+  // drives immediate warning feedback below the field.
   const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
   const [taxIdFormatCountryCode, setTaxIdFormatCountryCode] = useState('');
-  // check 25 (main/routes/tax-packs.ts) rejects the textbook nested-
-  // quantifier ReDoS shape at pack-activation time, but that's a known-shape
-  // heuristic, not a formal safety proof. This runs on every keystroke, so
-  // cap the input actually tested as a backstop too: the longest real
-  // registration-number scheme is 15 chars (India GSTIN), so 24 leaves
-  // generous headroom while bounding a worst-case pattern's backtracking to
-  // low milliseconds instead of freezing the tab.
+  // Cap regex evaluation length to 24 chars to avoid ReDoS freezing the UI
+  // on worst-case backtracking patterns.
   const TAX_ID_WARNING_MAX_LENGTH = 24;
   const taxIdWarning = (() => {
     const value = form.taxRegistrationNumber.trim();
-    // Do not show a format against a country other than the one for which the
-    // server resolved it. This also keeps a rejected country-change response
-    // visible for the submitted country without mislabeling it after a revert.
+    // Only validate against pattern if country matches server-resolved country.
     if (!taxIdFormat || !value || form.countryCode !== taxIdFormatCountryCode) return null;
     if (value.length > TAX_ID_WARNING_MAX_LENGTH) return null;
     try {
@@ -1512,8 +1459,7 @@ export default function SettingsPage() {
   const [backingUpGoogleDrive, setBackingUpGoogleDrive] = useState(false);
   const [savingGoogleDrivePrefs, setSavingGoogleDrivePrefs] = useState(false);
 
-  // Kitchen workflow toggles (issue #133) — independent on/off switches,
-  // default true to match pre-toggle always-on behavior.
+  // Kitchen workflow toggle states (defaults to enabled).
   const [kdsEnabledSetting, setKdsEnabledSetting] = useState(true);
   const [savingKdsEnabled, setSavingKdsEnabled] = useState(false);
   const [serverAppEnabledSetting, setServerAppEnabledSetting] = useState(true);
@@ -1757,9 +1703,8 @@ export default function SettingsPage() {
         const methods = JSON.parse(res.data.setting?.value || '[]');
         if (!Array.isArray(methods)) return;
         const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
-        // A non-empty array that contains no valid strings (corrupt/legacy
-        // value) restores the safe defaults; an intentionally empty array —
-        // every method deselected — stays empty.
+        // Restore safe defaults if non-empty array had no valid strings;
+        // keep empty array if user intentionally deselected all methods.
         const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
         setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
         setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
@@ -1804,9 +1749,8 @@ export default function SettingsPage() {
         selectionSource: 'pack' as const,
         description: `${template.country} tax template · ${template.paperColumns.join(', ')} columns`,
       }));
-      // Merchant templates (#447): provenance is informational only — a
-      // cloned origin references a compliance-pack template WITHOUT any
-      // trust claim; the copy is an ordinary editable document.
+      // Merchant templates: provenance is informational only without
+      // trust claims; the copy is an ordinary editable document.
       const merchantCards: TemplateCard[] = (templatesResponse?.data?.merchant || [])
         .filter((template: { status: string }) => template.status === 'active')
         .map((template: {
@@ -1829,11 +1773,8 @@ export default function SettingsPage() {
         }));
       const cards = [...TEMPLATE_CARDS, ...pluginCards, ...merchantCards];
       setBillTemplateCards(cards);
-      // The persisted value may be a legacy bare id or a structured
-      // { source, id } JSON string (#447). Resolve it back to a picker card,
-      // preferring the card whose selection source matches the stored source
-      // so a pack template_id that collides with a core name keeps its
-      // qualifier on the next save.
+      // Resolve stored bare ID or JSON { source, id } back to matching card,
+      // preserving selection source if pack ID collides with core name.
       let storedId: unknown = templateResponse?.data.setting?.value;
       let storedSource: string | null = null;
       if (typeof storedId === 'string' && storedId.trim().startsWith('{')) {
@@ -2130,10 +2071,7 @@ export default function SettingsPage() {
     }
   };
 
-  // Kitchen workflow toggles (issue #133) — saved immediately on toggle
-  // (not batched with the rest of the form) since turning KDS off also
-  // invalidates outstanding pairing tokens server-side; a stale local
-  // "unsaved" toggle would be misleading about that security-relevant effect.
+  // Saved immediately because turning KDS off invalidates pairing tokens server-side.
   const saveKdsEnabled = async (enabled: boolean) => {
     const previous = kdsEnabledSetting;
     setKdsEnabledSetting(enabled);
@@ -2560,9 +2498,8 @@ export default function SettingsPage() {
                              const previousCountry = getCountryByCode(p.countryCode);
                              const timezoneWasDefault = !previousCountry || p.timezone === previousCountry.timezone;
                              const options = country?.localeOptions;
-                             // Re-evaluate locale display preferences against the
-                             // newly selected country (#390): keep supported values
-                             // and reset unsupported ones to their neutral defaults.
+                             // Keep supported locale preferences for selected country; reset
+                             // unsupported values to neutral defaults.
                              const currencyDisplay = (options?.currencyDisplay?.includes(p.currencyDisplay) || p.currencyDisplay === 'rial')
                                ? p.currencyDisplay
                                : 'rial';
@@ -3160,7 +3097,7 @@ export default function SettingsPage() {
         {/* Kitchen Display — own tab under Operations */}
         <TabsContent value="kds">
           <div className="pb-6 max-w-3xl space-y-6">
-            {/* KDS on/off (issue #133) — not every business runs a Kitchen Display. */}
+            {/* Kitchen Display System enable toggle */}
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -4646,9 +4583,8 @@ export default function SettingsPage() {
 
                       const overwrite = await confirm(t('importOverwriteConfirm'), { confirmLabel: t('replaceAll') });
 
-                      // A schema-mismatch import takes the same destructive
-                      // delete-and-replace path as an overwrite, so it needs the
-                      // same Master PIN confirmation (GHSA-xxv4-gm82-4639).
+                      // Schema-mismatch import deletes and replaces data like an overwrite,
+                      // requiring Master PIN confirmation.
                       const rawImportVersion = String(data.schema_version ?? '');
                       const importVersion = /^(?:0|[1-9]\d*)$/.test(rawImportVersion) ? Number(rawImportVersion) : null;
                       const schemaMismatch = masterPinStatus.schemaVersion != null

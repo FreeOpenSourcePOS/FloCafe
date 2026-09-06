@@ -1,11 +1,7 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { trackHttpRequestWork } from '../shutdown';
 
-/**
- * Wrap an async Express handler so rejected promises flow to the global
- * error handler at main/server.ts:198 instead of crashing the request.
- * Saves a try/catch boilerplate per route.
- */
+/** Wrap async Express handler so rejected promises flow to the global error handler. */
 export function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
 ): RequestHandler {

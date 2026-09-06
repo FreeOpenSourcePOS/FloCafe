@@ -1,19 +1,4 @@
-/**
- * print-document.ts
- *
- * Frontend bridge between the raw Bill/Order rows and the shared,
- * renderer-independent PrintDocument model (#444, epic #438).
- *
- * This is the ONLY step in the frontend print paths allowed to touch raw
- * bill/order fields. It normalizes them into the authoritative `PrintData`
- * snapshot (printed truth, no recomputation beyond the legacy addon-line
- * extension documented below) and builds the `PrintContext` (resolved
- * languages from the kernel policy, registry-derived base direction, locale
- * formatting prefs, and a pure label resolver backed by the shared locale
- * loader cache). Renderers (receipt-encoder, web-print) then consume only
- * document blocks + context — no bill field reads, no label literals.
- */
-
+/** Frontend bridge between raw Bill/Order rows and shared PrintDocument model. */
 import {
   buildBillDocument,
   buildKotDocument,
@@ -35,11 +20,7 @@ import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@cou
 import { resolveTaxComponents } from './tax-components';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 
-/**
- * Business/contact facts + receipt show-flags for one print run. Mirrors the
- * flags the print dialogs have always passed alongside the bill; builders
- * apply them so renderers receive final content only.
- */
+/** Business contact facts and visibility flags for one bill print run. */
 export interface BillBusinessOptions {
   businessName?: string;
   address?: string;
@@ -76,11 +57,7 @@ export function resolveActiveUiLanguage(language?: Language): Language {
   }
 }
 
-/**
- * Ordered receipt languages for this client: kernel policy resolution over
- * the tenant-synced `billLanguagePolicy` (#441) with the UI language as the
- * `inherit` fallback.
- */
+/** Ordered receipt languages for client resolved against billLanguagePolicy. */
 export function resolveBillPrintLanguages(uiLanguage?: Language): ResolvedPrintLanguages {
   let policy: ReceiptLanguagePolicy = defaultPrintLanguagePolicy();
   try {
@@ -106,12 +83,7 @@ function translatorFor(language: Language | string): ((key: string) => string) |
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
 }
 
-/**
- * Pure label-catalog lookup for PrintContext: concepts are the stable i18n
- * keys the generated backend catalog (#440) is derived from, resolved here
- * through the same shared messages with English fallback so a receipt never
- * renders raw keys.
- */
+/** Pure label-catalog lookup for PrintContext backed by shared messages. */
 export const printLabelResolver: LabelResolver = (conceptId: string, language: string) => {
   const primary = translatorFor(language);
   if (primary) {
@@ -122,14 +94,7 @@ export const printLabelResolver: LabelResolver = (conceptId: string, language: s
   return fallback ? fallback(conceptId) : conceptId;
 };
 
-/**
- * Ensure every requested receipt language's messages are loaded in memory
- * before a synchronous document build (#377). Locale loads are allowed to
- * fail (offline-first: printing must never block on a message bundle), but
- * the failed language codes are RETURNED so callers can surface a warning
- * through the established print-warning path instead of silently falling
- * back to English (Greptile P1, PR #474).
- */
+/** Loads requested receipt language message bundles into memory before building documents. */
 export async function ensurePrintLanguagesLoaded(languages: ResolvedPrintLanguages): Promise<PrintLanguageCode[]> {
   const outcomes = await Promise.allSettled(
     languages.map((language) => loadLocaleMessages(language as Language)),
@@ -155,16 +120,7 @@ function parsePaymentDetails(raw: Bill['payment_details']): Array<{ method: stri
   }));
 }
 
-/**
- * Normalize a Bill (+ nested Order) into authoritative PrintData. The ONLY
- * place frontend print paths read raw rows. Tax components come from the
- * persisted snapshots/breakdowns via the shared reconciler — no tax math is
- * recomputed here.
- *
- * Addon lines: the legacy WebUSB classic layout prints an addon's extended
- * amount (`price × addonQty × itemQty`) as printed truth, so that value is
- * materialized here — renderers never repeat the multiplication.
- */
+/** Normalize a Bill and nested Order into authoritative PrintData. */
 export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): PrintData {
   const order = bill.order;
   const billCustomer = (bill as Bill & { customer?: { name?: unknown; phone?: unknown; country_code?: unknown } }).customer;
@@ -244,11 +200,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
   };
 }
 
-/**
- * Build the PrintContext for a frontend bill document: paper columns,
- * resolved languages, registry-derived direction, and locale/currency
- * presentation prefs from the existing regionalization helpers.
- */
+/** Build PrintContext for frontend bill document: paper columns, languages, and locale prefs. */
 /** Tenant fields the frontend print context needs for presentation prefs. */
 export interface FrontendTenantPrefs {
   currency?: string | null;

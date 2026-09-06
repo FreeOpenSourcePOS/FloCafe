@@ -253,9 +253,7 @@ export default function POSPage() {
   const shouldTakePaymentNow = billingIsPrepaid;
 
   const printKotIfEnabled = async (order: Order) => {
-    // kot_printing_enabled is coarser than auto_print_kot: when it's off, no
-    // KOT print command should go out at all, regardless of the auto-print
-    // preference (issue #133).
+    // Master kot_printing_enabled check gates both manual and automatic prints.
     if (!kotPrintingEnabled) return;
     if (!autoPrintKot) return;
 
@@ -362,9 +360,7 @@ export default function POSPage() {
     } catch { /* ignore */ }
   };
 
-  // A full renderer reload resets the Zustand cart. Recovering the persisted
-  // request here lets a committed-but-response-lost append replay itself even
-  // before the cashier reconstructs the cart or selects the table again.
+  // Replay persisted append attempt on reload to recover lost in-flight responses.
   useEffect(() => {
     if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
 
@@ -397,8 +393,7 @@ export default function POSPage() {
     }).catch(() => {
       toast.error(t('addItemsFailed'));
     });
-  // The recovery runs once per authenticated renderer and intentionally uses
-  // the persisted attempt rather than the transient cart state.
+  // Runs once per user session to recover persisted append state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUserId]);
 
@@ -712,9 +707,7 @@ export default function POSPage() {
       }
       const orderId = orderData.order.id;
 
-      // Apply discount before bill generation so the bill uses the discounted
-      // totals (tax recalculated on the net payable amount). Repeating this SET
-      // operation is safe if its response was lost.
+      // Apply discount before bill generation so bill totals reflect discounted net amounts.
       const effectiveDiscount = attempt.discount;
       const discountForRequest = effectiveDiscount && currentDiscount
         && discountFingerprint(effectiveDiscount) === discountFingerprint(currentDiscount)

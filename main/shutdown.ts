@@ -1,11 +1,7 @@
 import type * as http from 'node:http';
 import { WebSocket, type WebSocketServer } from 'ws';
 
-/**
- * A shutdown operation is allowed to drain normally, but a broken resource
- * must not hold the process forever. The timeout is deliberately long enough
- * for ordinary requests while still providing an observable emergency bound.
- */
+/** Maximum duration allowed for clean shutdown before forceful termination. */
 export const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 export function createShutdownCancellationError(label: string): Error & { code: string } {
@@ -158,9 +154,7 @@ export async function closeHttpServer(server: http.Server, label: string, timeou
           resolve();
         }
       });
-      // Node closes idle keep-alive sockets as part of close() on modern
-      // runtimes. Call the explicit compatibility hook as well so older
-      // supported runtimes do not hold shutdown open on idle clients.
+      // Compatibility hook to ensure older runtimes do not hang on idle clients.
       closableServer.closeIdleConnections?.();
     } catch (error) {
       if (isAlreadyClosedError(error)) resolve();
@@ -348,10 +342,7 @@ export async function runShutdownSteps(
   }
 }
 
-/**
- * Create an idempotent shutdown operation. Concurrent callers share the same
- * promise, so signal, tray, and Electron quit paths cannot race cleanup.
- */
+/** Creates an idempotent shutdown coordinator sharing a single execution promise. */
 export function createShutdownCoordinator(
   getSteps: () => readonly ShutdownStep[],
   options: ShutdownCoordinatorOptions = {},

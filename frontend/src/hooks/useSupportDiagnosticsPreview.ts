@@ -3,18 +3,11 @@
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
 
-/**
- * The system diagnostics fields FloCafe's local backend attaches to a
- * support ticket on submit (device, app version, cloud sync status, etc).
- * Fetched from the same code path the submit route uses, so a "here's
- * exactly what gets sent" preview can never drift from what's actually sent.
- */
+/** Fetches system diagnostics preview attached to support tickets. */
 export function useSupportDiagnosticsPreview(category: string | null): Record<string, unknown> | null {
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
 
-  // Reset synchronously when category changes, read directly during render
-  // (React's recommended pattern for "adjusting state when a prop changes")
-  // rather than inside the effect below.
+  // Reset synchronously during render when category changes.
   const [trackedCategory, setTrackedCategory] = useState(category);
   if (category !== trackedCategory) {
     setTrackedCategory(category);

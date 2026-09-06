@@ -9,29 +9,13 @@ export type WindowControlAction = 'minimize' | 'toggle-maximize' | 'close';
 
 export type BrowserWindowConstructor = new (options: BrowserWindowConstructorOptions) => BrowserWindow;
 
-// macOS traffic-light buttons are 12px tall; y = (40 - 12) / 2 centers them in
-// the 40px title bar. x keeps the standard inset margin from the window edge.
-// Exported for the platform-matrix runtime probe (tests/platform-titlebar-runtime-probe.cjs)
-// so the macOS hands-on row can assert the exact centered values.
+// Centers 12px macOS traffic-light buttons in the 40px custom title bar.
 export const MAC_TRAFFIC_LIGHT_POSITION = { x: 16, y: 14 } as const;
 
-/**
- * Window Controls Overlay APIs became dependable across our supported
- * platforms from Electron 33 onward; older builds can end up hidden-with-
- * no-controls when the overlay silently fails, so they fall back.
- */
+/** Minimum Electron major version with dependable Window Controls Overlay APIs. */
 const MIN_OVERLAY_ELECTRON_MAJOR = 33;
 
-/**
- * Decides whether the main window can rely on Electron's native
- * titleBarOverlay caption buttons (or macOS hiddenInset traffic lights), or
- * whether the renderer must draw HTML fallback controls.
- *
- * Deliberately defensive: macOS always resolves to 'native-overlay'; on Windows
- * and Linux, an unknown platform, a pre-33 Electron, or a missing runtime
- * overlay API all resolve to 'html-fallback' so the window never ends up
- * frameless with no visible way to minimize/close it.
- */
+/** Resolves whether to use native titleBarOverlay or fallback to HTML caption buttons. */
 export function resolveTitleBarMode(probe: {
   platform: NodeJS.Platform;
   electronVersion: string;
@@ -98,11 +82,7 @@ export type WindowControlTarget = Pick<
   setFullScreen?: (flag: boolean) => void;
 };
 
-/**
- * Applies one validated window-control action. 'close' intentionally goes
- * through `win.close()` so it fires the same 'close' event as the native
- * caption button, preserving close-to-tray semantics.
- */
+/** Applies a window action (minimize, toggle-maximize, close) preserving close-to-tray. */
 export function applyWindowControlAction(
   win: WindowControlTarget,
   action: unknown,

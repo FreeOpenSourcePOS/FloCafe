@@ -1,9 +1,4 @@
-/**
- * Root i18n barrel re-exporting the modular i18n subsystem.
- *
- * Legacy custom translation engine and compatibility bridge have been
- * completely removed (#381).
- */
+/** Root i18n barrel re-exporting the modular i18n subsystem. */
 
 export {
   LANGUAGES,

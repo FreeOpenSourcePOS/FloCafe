@@ -1,16 +1,4 @@
-/**
- * warnings.ts
- *
- * Shared "skip unsupported characters, keep printing" logic for the browser
- * ESC/POS encoders (receipt-encoder.ts, kot-encoder.ts, tax-bill-encoder.ts).
- * Mirrors the equivalent check in the desktop path (main/printers/thermal.ts)
- * so both printing paths apply the same selected-capability policy: a line
- * whose characters the thermal profile cannot represent (Arabic, CJK, emoji,
- * etc.) is skipped rather than sent as garbage bytes, and the caller is told
- * which line and why. Financial rows are marked so receipt callers can refuse
- * before transport instead of sending a partial receipt.
- */
-
+/** Shared logic to skip unsupported characters and preserve printing on ESC/POS encoders. */
 import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeThermalText } from './unicode';
 import {
   isArabicShapingSafeLine as isCapabilityArabicShapingSafeLine,
@@ -45,12 +33,7 @@ export function hasArabicScript(text: string): boolean {
   return ARABIC_SCRIPT_RE.test(text);
 }
 
-/**
- * True when a line contains nothing but ASCII plus Arabic/Persian script, so
- * a printer whose firmware shapes Arabic can render it (#437). Mirrors the
- * backend buildEscPos arabic-only rule: any other non-ASCII script on the
- * same line still blocks it, even with shaping enabled.
- */
+/** True when a line contains only ASCII plus Arabic/Persian script for shaping printers. */
 export const isArabicShapingSafeLine = isCapabilityArabicShapingSafeLine;
 
 export function makePrintWarning(text: string, isStoreName = false): PrintWarning {
@@ -124,21 +107,7 @@ function boundShapedText(text: string, maxCols?: number): string {
   return bounded + ellipsis;
 }
 
-/**
- * Writes `value` to an ESC/POS encoder only if the selected thermal
- * capabilities can represent every character; otherwise records a warning
- * and skips it entirely so the rest of the receipt/ticket still prints and
- * cuts normally. Callers mark financial rows so the receipt can be refused
- * before transport.
- *
- * When `arabicShaping` is true (printer firmware shapes Arabic/Persian,
- * #437), pure ASCII+Arabic lines pass through instead of being skipped —
- * mirroring the desktop path's profile/request override.
- *
- * `centerCols` gives the printable column budget for a centered line so the
- * raw byte path can reproduce the encoder's centering (raw() bypasses layout).
- * Pass `Math.floor(cols / 2)` when the caller switched on double-width text.
- */
+/** Writes value to an encoder if characters are representable, recording a warning otherwise. */
 export function safePrinterText<T extends { text(value: string): T }>(
   enc: T,
   value: string,
@@ -212,12 +181,7 @@ export function safePrinterText<T extends { text(value: string): T }>(
   return enc.text(printerValue);
 }
 
-/**
- * Extracts the most informative error string from an unknown error or API Axios response.
- *
- * @param err - The caught error object, which may be an Error instance or Axios response.
- * @returns The resolved error message string.
- */
+/** Extracts error string from an unknown error or API Axios response. */
 export function extractPrinterErrorMessage(err: unknown): string {
   if (!err) return '';
   const maybeAxios = err as { response?: { data?: { detail?: unknown; error?: unknown } }; message?: unknown };
@@ -231,13 +195,7 @@ export function extractPrinterErrorMessage(err: unknown): string {
   return typeof err === 'string' ? err.trim() : '';
 }
 
-/**
- * Formats a user-facing receipt print error message with operational detail when available.
- *
- * @param detail - Optional raw error detail or message from the backend or encoder.
- * @param fallbackTranslation - Localized fallback text to display if no operational detail exists.
- * @returns Formatted user-facing error string suitable for toast display.
- */
+/** Formats a user-facing receipt print error message with operational detail when available. */
 export function formatReceiptErrorToast(detail?: string, fallbackTranslation = 'Receipt print failed'): string {
   const msg = String(detail || '').trim();
   if (msg.startsWith('Receipt not printed:')) return msg;
@@ -247,13 +205,7 @@ export function formatReceiptErrorToast(detail?: string, fallbackTranslation = '
   return fallbackTranslation;
 }
 
-/**
- * Formats a user-facing KOT print error message with operational detail when available.
- *
- * @param detail - Optional raw error detail or message from the backend or encoder.
- * @param fallbackTranslation - Localized fallback text to display if no operational detail exists.
- * @returns Formatted user-facing error string suitable for toast display.
- */
+/** Formats a user-facing KOT print error message with operational detail when available. */
 export function formatKotErrorToast(detail?: string, fallbackTranslation = 'KOT print failed'): string {
   const msg = String(detail || '').trim();
   if (msg && msg !== 'print failed' && msg !== 'KOT print failed') {

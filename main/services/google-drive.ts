@@ -1,24 +1,4 @@
-/**
- * Optional Google Drive integration for automated, off-device DB backups (#129).
- *
- * Follows the same explicit-opt-in shape as cloud-sync.ts: nothing in this
- * module ever talks to Google until the owner clicks "Connect" in
- * Settings > Integrations > Google Drive. Until then `start()` only arms a
- * timer that no-ops (readTokens() returns null) — no network call, no
- * background request.
- *
- * OAuth: standard "installed app" loopback flow (Google's recommended
- * pattern for desktop apps) — open the consent screen in the system browser
- * via shell.openExternal and catch the redirect on a local HTTP server bound
- * to a random port, rather than embedding a webview. Scope is restricted to
- * `drive.file` (least privilege — the app only ever sees files it created).
- *
- * Tokens are OS-encrypted via Electron's safeStorage (same pattern as
- * master-pin.ts) and stored in their own file — never in the SQLite DB.
- *
- * Backups reuse `createBackup()` from db.ts unmodified — no second export
- * path that could skip the redaction already applied to /api/db/export.
- */
+/** Optional Google Drive integration for automated, off-device DB backups via OAuth loopback. */
 
 import { app, shell, safeStorage } from 'electron';
 import { isSafeExternalUrl } from '../security/url-allowlist';
@@ -31,10 +11,7 @@ import { auth as googleAuth, drive } from '@googleapis/drive';
 import { getDatabase, now, createBackup } from '../db';
 import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
 
-// @googleapis/drive re-exports the OAuth2 client used by its Drive client —
-// use that constructor rather than depending on a separately resolved
-// `google-auth-library` package, which can otherwise create structural typing
-// mismatches between two auth-library copies.
+// Use OAuth2 constructor from @googleapis/drive to avoid version mismatches.
 type OAuth2Client = InstanceType<typeof googleAuth.OAuth2>;
 
 export const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -189,11 +166,7 @@ function isSecureStorageAvailable(): boolean {
   }
 }
 
-/**
- * Pure retention math, split out from applyRetention() so it's unit
- * testable without a real Drive client: given the app-folder's files
- * (oldest-first) and how many to keep, returns the ids to delete.
- */
+/** Computes which file IDs to delete based on retention limit and file timestamps. */
 export function computeFilesToDelete(
   files: { id: string; createdTime: string }[],
   retentionCount: number
@@ -203,10 +176,7 @@ export function computeFilesToDelete(
   return sorted.slice(0, sorted.length - retentionCount).map((f) => f.id);
 }
 
-/**
- * Pure scheduling check, split out for unit testing: is a new Drive backup
- * due given the last successful backup time and the configured frequency?
- */
+/** Determines if a scheduled backup is due based on interval and last backup timestamp. */
 export function isBackupDue(lastBackupAtIso: string | null, frequency: BackupFrequency, nowMs = Date.now()): boolean {
   if (!lastBackupAtIso) return true;
   const last = new Date(lastBackupAtIso).getTime();
@@ -364,12 +334,7 @@ class GoogleDriveService {
     return this.getStatus();
   }
 
-  /**
-   * Explicit opt-in entry point: user clicked "Connect" in Settings. Opens
-   * the consent screen in the system browser and waits for the loopback
-   * redirect. Throws with a user-facing message if this build has no
-   * client credentials configured, or secure storage isn't available.
-   */
+  /** Connects to Google Drive using a loopback browser OAuth flow. */
   async connect(signal?: AbortSignal): Promise<GoogleDriveStatus> {
     if (this.stopping) throw new Error('Google Drive is stopping');
     const operationSignal = signal
@@ -539,9 +504,7 @@ class GoogleDriveService {
 
     const client = new googleAuth.OAuth2(creds.clientId, creds.clientSecret);
     client.setCredentials(tokens);
-    // google-auth-library refreshes the access token transparently using the
-    // refresh_token when it's expired; persist whatever it hands back so the
-    // next scheduled run doesn't have to refresh again.
+    // Persist refreshed OAuth tokens emitted transparently by google-auth-library.
     client.on('tokens', (refreshed) => {
       if (this.stopping || this.terminalCleanup || signal?.aborted) return;
       const merged = { ...this.readTokens(), ...refreshed };

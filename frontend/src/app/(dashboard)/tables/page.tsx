@@ -255,9 +255,7 @@ export default function TablesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutMode]);
 
-  // Clear stale orders the moment details get hidden, read directly during render (React's
-  // recommended pattern for "adjusting state when a prop changes") so the effect below only
-  // needs to own the polling subscription.
+  // Clear stale order list immediately when details panel is hidden.
   const [syncedShowDetails, setSyncedShowDetails] = useState(showDetails);
   if (showDetails !== syncedShowDetails) {
     setSyncedShowDetails(showDetails);

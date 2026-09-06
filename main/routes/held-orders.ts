@@ -172,10 +172,7 @@ router.post('/', heldOrderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (re
       db.prepare('UPDATE tables SET status = ?, updated_at = ? WHERE id = ?').run(TABLE_STATUS_HELD, now(), tableId);
     });
 
-    // Returning the current row identity lets a client prove that its cached
-    // snapshot is still the row it is consuming. Replacing a held order gets
-    // a new identity, so an older terminal receives deleted:false instead of
-    // deleting the replacement.
+    // Return held order identity so clients can verify snapshot validity on deletion.
     res.json({ success: true, id: heldOrderId });
   } catch (error: any) {
     console.error("[API] Hold order error:", error);
@@ -206,9 +203,7 @@ router.delete('/:tableId', heldOrderWriteRateLimit, requireRole(...ROLE_ACCESS.s
       }
     });
 
-    // Deletion is intentionally idempotent. A held order may have been resumed
-    // or deleted by another terminal between the UI's last refresh and this
-    // request; that is already the desired end state, not an application error.
+    // Deletion is idempotent; concurrent resumption or deletion is treated as success.
     res.json({ success: true, deleted });
   } catch (error: any) {
     console.error("[API] Delete held order error:", error);

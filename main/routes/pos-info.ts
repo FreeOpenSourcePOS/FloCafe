@@ -1,9 +1,4 @@
-/**
- * GET /api/pos-info
- * Returns the POS access URLs (mDNS + local IP) so the app can render a QR code.
- * A second cashier scans this from Settings → POS Workflow to open the same
- * POS on another device on the local network.
- */
+/** Returns POS local network access URLs (mDNS and local IP) for QR code generation. */
 import { Router, Request, Response } from 'express';
 import QRCode from 'qrcode';
 import { getLocalIP, getAllLocalIPs, getServerPort } from '../server';

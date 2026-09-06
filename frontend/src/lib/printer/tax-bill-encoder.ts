@@ -1,18 +1,4 @@
-/**
- * tax-bill-encoder.ts
- *
- * Detailed tax billing receipt encoder for ESC/POS thermal printers.
- * Supports both 58mm (2.5") and 80mm (3.5") paper widths.
- * Includes: tax registration number, HSN/reference codes, and item tax details.
- *
- * LEGACY-FROZEN (#444 decision, epic #438): this diagnostic encoder is only
- * reachable from the print-test page ('tax' mode). It is deliberately NOT
- * migrated onto the shared PrintDocument model and keeps its historical
- * raw-bill rendering; this is a documented exemption, not an endorsement —
- * it must not gain new business behavior. The browser path of the same test
- * surface renders through the document-driven web-print pipeline.
- */
-
+/** Detailed tax billing receipt encoder for ESC/POS thermal printers. */
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
@@ -53,11 +39,7 @@ export interface TaxBillOptions {
   rawEscPos?: boolean;
   /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
   trimDecimals?: boolean;
-  /**
-   * Printer firmware performs Arabic/Persian contextual shaping (#437).
-   * Lets pure ASCII+Arabic lines through the unsupported-character guard.
-   * Default: false.
-   */
+  /** Printer firmware performs Arabic/Persian contextual shaping. Default: false. */
   arabicShaping?: boolean;
   /** Print language resolved from the receipt language policy. */
   language?: string;
@@ -80,17 +62,13 @@ function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
     .align('left');
 }
 
-/**
- * Mask phone number for receipt display — shows only last 4 digits.
- */
+/** Mask phone number for receipt display — shows only last 4 digits. */
 function maskPhoneOnReceipt(phone: string): string {
   if (!phone || phone.length < 4) return phone;
   return 'x'.repeat(phone.length - 4) + phone.slice(-4);
 }
 
-/**
- * Build a detailed tax bill byte array from a Bill object.
- */
+/** Build a detailed tax bill byte array from a Bill object. */
 function resolveEncoderCurrency(rawCurrency: string, currencyCode: string, useUnicode: boolean, rawEscPos: boolean, capabilities?: ThermalPrinterCapabilities): string {
   const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
   const asciiFallback = normalizeCurrencyToAscii(normalizedCurrency);
@@ -109,10 +87,7 @@ function resolveEncoderCurrency(rawCurrency: string, currencyCode: string, useUn
   if (!rawEscPos) {
     return padCurrencyPrefix(hasSymbol && useUnicode ? rawCurrency : fallbackCurrency);
   }
-  // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS
-  // printers cannot shape that token, so normalize this known currency even
-  // when the caller requests Unicode. Preserve the existing useUnicode
-  // behavior for every other currency value.
+  // Normalize known currency tokens like IRR (ریال) that generic ESC/POS cannot shape.
   return padCurrencyPrefix(
     hasSymbol && useUnicode ? normalizedCurrency : fallbackCurrency,
   );
@@ -358,10 +333,7 @@ export function buildTaxBillBytes(
   return enc.encode();
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
-
 function padRowForLanguage(left: string, right: string, cols: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {
   const normalizedLeft = normalizeThermalText(left, capabilities);
   const normalizedRight = normalizeThermalText(right, capabilities);

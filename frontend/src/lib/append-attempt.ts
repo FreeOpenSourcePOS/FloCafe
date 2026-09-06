@@ -250,11 +250,8 @@ interface AppendAttemptOptions {
   maxAgeMs?: number;
 }
 
-/**
- * Match the request shape used by POST /orders/:id/items. The fingerprint is
- * local state only; the server still validates the actual request body against
- * its Idempotency-Key record.
- */
+/** Matches request shape for POST /orders/:id/items;
+ * server validates request body against Idempotency-Key. */
 export function buildAppendItemsFingerprint(
   orderId: number | string,
   items: unknown[],
@@ -682,10 +679,8 @@ export function readAppendAttempt(
   return readUserAttempt(storage, options.userId, now, maxAgeMs)?.attempt || null;
 }
 
-/**
- * Recover the durable attempt for the same logical append. A conflicting
- * pending attempt is retained until it is completed or expires.
- */
+/** Recovers durable attempt for the same logical append;
+ * retains conflicting attempts until expiry. */
 export function getOrCreateAppendAttempt(
   storage: AppendAttemptStorage,
   options: AppendAttemptOptions,

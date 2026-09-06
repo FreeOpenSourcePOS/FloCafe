@@ -489,10 +489,13 @@ exit 0
   assert.ok(buildMatrixJob, 'nightly-release.yml must define build-matrix job');
   const linuxRow = buildMatrixJob.strategy?.matrix?.include?.find((entry: any) => entry.name === 'linux-x64');
   assert.ok(linuxRow, 'nightly-release.yml matrix must define linux-x64 row');
-  assert.match(linuxRow['extra-deps'], /\bxvfb\b/, 'linux-x64 matrix row must install xvfb in extra-deps');
+  assert.match(linuxRow['extra-deps'], /apt-get\s+install(?:-[a-z]+)*\s+.*?\bxvfb\b/, 'linux-x64 matrix row must install xvfb via apt-get in extra-deps');
   const testStep = buildMatrixJob.steps.find((step: any) => step.name === 'Run full platform test suite');
   assert.ok(testStep, 'nightly-release.yml must define full platform test suite step');
-  assert.match(testStep.run, /\bxvfb-run\b/, 'full platform test suite step must run under xvfb-run on Linux');
+  assert.strictEqual(testStep.shell, 'bash', 'Run full platform test suite step must explicitly use bash shell for cross-platform compatibility');
+  assert.match(testStep.run, /if\s+\[\s*"\${{\s*runner\.os\s*}}"\s*=\s*"Linux"\s*\];\s*then/, 'test step must check for Linux runner OS');
+  assert.match(testStep.run, /xvfb-run\s+-a\s+--server-args='-screen 0 1280x800x24'\s+npm test/, 'test step must execute npm test under xvfb-run on Linux');
+  assert.match(testStep.run, /else\s+npm test\s+fi/, 'test step must execute direct npm test fallback on non-Linux');
 
   console.log('✓ Nightly full cross-platform matrix Linux xvfb configuration verified');
 

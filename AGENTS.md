@@ -62,6 +62,7 @@ FloCafe currently has fewer than 100 active installs, almost all of them testers
 - **Discovered issues:** If you encounter an adjacent bug or potential improvement during a task, note it in your report rather than expanding implementation scope.
 - **No unapproved mutations:** Do not create, edit, close, label, or assign GitHub issues or pull requests unless the task specifically instructs issue maintenance. Do not commit, tag, or push without instruction.
 - **Changelog & commit governance:** Use Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`, `ci:`). Release notes and `CHANGELOG.md` are automated via `git-cliff` (`npm run changelog`) and CI; do not manually draft or invent ad-hoc changelog formats.
+- **Code comments:** Code should be self-explanatory; write comments only when strictly necessary to explain non-obvious intent or rationale. Keep comments concise (1-2 lines maximum), and avoid historical tags (PR/issue numbers, phases) or redundant descriptions of what the code is doing.
 - **Dependencies:** Evaluate built-in Node/Electron/browser APIs and existing project packages before proposing new dependencies.
 
 ## Commands

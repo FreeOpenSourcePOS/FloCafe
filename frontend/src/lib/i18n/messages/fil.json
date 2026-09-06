@@ -269,6 +269,8 @@
     "variance": "Pagkakaiba",
     "printZReport": "I-print ang Z",
     "reprintZ": "I-print muli ang Z",
+    "reprintAddsMarker": "Ang I-print muli ay nagdadagdag ng linyang REIMPRESION",
+    "printPreviewCols": "{n} hanay",
     "printPreview": "I-preview ang print",
     "alreadyClosed": "Nakasara na ang araw na ito",
     "noPriorCloseHint": "Hindi nakasara ang nakaraang araw — naka-default ang pondo sa 0",

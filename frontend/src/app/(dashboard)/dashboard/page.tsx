@@ -489,9 +489,12 @@ export default function DashboardPage() {
       })
       .catch((err: unknown) => {
         if (axios.isCancel(err) || (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) return;
+        // F3: store the actual error so the preview card can render the
+        // server-side message inline. Toast dropped — the inline message
+        // already tells the operator why the preview cannot be fetched,
+        // and a separate toast duplicates the text.
         const msg = axios.isAxiosError(err) ? err.response?.data?.error || err.message : (err instanceof Error ? err.message : 'Preview failed');
         setPreviewError(msg);
-        toast.error(tCommon('somethingWrong'));
       })
       .finally(() => {
         if (!controller.signal.aborted) setPreviewLoading(false);
@@ -914,13 +917,18 @@ export default function DashboardPage() {
                       <p className="text-xs font-medium">{t('printPreview')}</p>
                     </div>
                     <div className="flex items-center gap-2 text-zinc-400">
-                      <span className="text-[10px] uppercase tracking-wider">{previewColumns} cols</span>
+                      <span className="text-[10px] uppercase tracking-wider">{t('printPreviewCols', { n: previewColumns })}</span>
                       {previewLoading && <Loader2 size={12} className="animate-spin" />}
                     </div>
                   </div>
                   <div className="max-h-72 overflow-y-auto px-3 py-2">
                     {previewError && (
-                      <p className="text-xs text-red-300">{tCommon('somethingWrong')}</p>
+                      // F3: surface the actual error from the preview endpoint
+                      // instead of the generic "something wrong" copy. The
+                      // toast was dropped: the inline message is enough to
+                      // tell the operator the preview cannot be fetched, and
+                      // a separate toast duplicates the same text.
+                      <p className="text-xs text-red-300">{previewError}</p>
                     )}
                     {!previewError && previewText !== null && (
                       <pre
@@ -933,6 +941,16 @@ export default function DashboardPage() {
                       <p className="text-xs text-zinc-500">{tCommon('loading')}</p>
                     )}
                   </div>
+                  {/* F2: muted hint that Reimprimir adds the REIMPRESION marker,
+                      so the operator knows the preview doesn't show it
+                      because the preview always renders a fresh (non-reprint)
+                      body. Stays inside the preview card to keep the hint
+                      adjacent to the only place where it matters. */}
+                  {!previewError && previewText !== null && (
+                    <div className="border-t border-zinc-800 px-3 py-1.5 text-[10px] text-zinc-500">
+                      {t('reprintAddsMarker')}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -269,6 +269,8 @@
     "variance": "Fark",
     "printZReport": "Z yazdır",
     "reprintZ": "Z'yi yeniden yazdır",
+    "reprintAddsMarker": "Yeniden yazdırma bir REIMPRESION satırı ekler",
+    "printPreviewCols": "{n} sütun",
     "printPreview": "Yazdırma önizlemesi",
     "alreadyClosed": "Bu gün zaten kapatıldı",
     "noPriorCloseHint": "Önceki gün kapatılmadı — açılış kasası 0 olarak ayarlandı",

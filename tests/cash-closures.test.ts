@@ -1305,6 +1305,14 @@ async function main() {
       const zId = sectionThreePost.id;
       const sectionThreeDate = sectionThreePost.business_date;
 
+      // F1: seed a default printer so the preview reflects the same columns
+      // the on-paper print would use (mirrors the section-15a/b/c pattern:
+      // DELETE-then-INSERT to guarantee a single default). 80mm on the generic
+      // 80-column profile resolves to 42 columns.
+      db.prepare(`DELETE FROM printers`).run();
+      db.prepare(`INSERT INTO printers (id, name, connection_type, ip_address, port, is_default, paper_width, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`).run('printer-15e', '15e Preview Printer', 'network', '127.0.0.1', 9100, '80mm', now(), now());
+      const previewExpectedColumns = 42;
+
       // Manager (ownerManager only): 200.
       const mgr = await request(app)
         .get(`/api/cash-closures/${zId}/preview`)
@@ -1313,7 +1321,7 @@ async function main() {
       assertEqual(mgr.body?.id, zId, `preview response carries id (got ${mgr.body?.id})`);
       assertEqual(typeof mgr.body?.text, 'string', `preview response.text is a string (got ${typeof mgr.body?.text})`);
       assert(mgr.body?.text.length > 0, 'preview response.text is non-empty');
-      assertEqual(mgr.body?.columns, 48, `preview columns = 48 by spec (got ${mgr.body?.columns})`);
+      assertEqual(mgr.body?.columns, previewExpectedColumns, `preview columns = ${previewExpectedColumns} from default-printer profile (got ${mgr.body?.columns})`);
       assertEqual(mgr.body?.businessDate, sectionThreeDate, `preview response.businessDate = ${sectionThreeDate}`);
       assertEqual(mgr.body?.zNumber, sectionThreePost?.z_number,
         `preview response.zNumber matches the stored Z (got ${mgr.body?.zNumber} vs ${sectionThreePost?.z_number})`);
@@ -1332,6 +1340,57 @@ async function main() {
         .set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(owner.status, 200, `preview: owner reads (got ${owner.status})`);
       assertEqual(owner.body?.text, mgr.body?.text, 'preview text is deterministic (owner ≡ manager)');
+
+      const thermalModule = require('../main/printers/thermal');
+      const profilesModule = require('../main/printers/profiles');
+      // Read the row directly from the DB and let `shapeZReportSnapshot`
+      // resolve `closed_by_name` exactly the way the endpoint does — that
+      // is the user-id-to-display-name substitution that produces
+      // `Owner` instead of the raw `owner-close` id. Without this step the
+      // parity build prints the raw id and diverges at the operator line.
+      const freshRow = db.prepare(`SELECT * FROM cash_closures WHERE id = ?`).get(zId) as any;
+      const snapshotShape = (() => {
+        // Inline equivalent of the route's shapeZReportSnapshot — small
+        // enough to keep here without exporting the helper just for tests.
+        const userRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(freshRow.closed_by) as { name: string } | undefined;
+        const safeJson = (raw: string | null | undefined): any[] => {
+          if (!raw) return [];
+          try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; } catch { return []; }
+        };
+        return {
+          ...freshRow,
+          closed_by_name: userRow?.name ?? freshRow.closed_by,
+          payment_methods: safeJson(freshRow.payment_methods_json),
+          staff_sales: safeJson(freshRow.staff_sales_json),
+          tax_components: safeJson(freshRow.tax_components_json),
+          __isReprint: false,
+        };
+      })();
+      const shapedRow = snapshotShape;
+      // Resolve the same profile the endpoint resolves to keep the parity
+      // honest: a profile swap would make this assertion a false-positive
+      // failure rather than a passing tie.
+      const previewPrinter = db.prepare(`SELECT * FROM printers WHERE is_default = 1`).get() as any;
+      let parityColumns = previewExpectedColumns;
+      let parityCapabilities: any = undefined;
+      if (previewPrinter) {
+        const profile = profilesModule.resolvePrinterProfile(previewPrinter);
+        parityCapabilities = profilesModule.getPrinterCapabilities(profile);
+      }
+      const localBody = thermalModule.buildZReportBody(shapedRow, undefined, { columns: parityColumns, capabilities: parityCapabilities });
+      const localText = thermalModule.escPosToText(Buffer.from(localBody));
+      // F6: preview text must match the byte-decoded body the printer
+      // receives for the same shaped row. Locks the no-drift guarantee that
+      // the modal relies on. Diagnostic suffix helps triage future drifts
+      // by showing what differs.
+      if (localText !== mgr.body?.text) {
+        const a = localText.split('\n'); const b = mgr.body?.text.split('\n') || [];
+        const diffIdx = a.findIndex((line, i) => line !== b[i]);
+        const ctx = (arr: string[]) => `[${Math.max(0, (diffIdx - 2))}..${Math.min(arr.length, (diffIdx + 4))}] ${JSON.stringify(arr.slice(Math.max(0, diffIdx - 2), Math.min(arr.length, diffIdx + 4)))}`;
+        assertEqual(localText, mgr.body?.text, `F6 preview text matches buildZReportBody/escPosToText on the same row (first divergence at line ${diffIdx}, local=${ctx(a)}, preview=${ctx(b)})`);
+      } else {
+        assertEqual(localText, mgr.body?.text, 'F6 preview text matches buildZReportBody/escPosToText on the same row');
+      }
 
       // Cashier: 403.
       const cashier = await request(app)

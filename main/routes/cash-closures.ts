@@ -38,6 +38,7 @@ import { getCurrencyMinorUnitFactor } from '../countries';
 import { getOrdersWithItemsForBills } from './bills';
 import { getHttpRequestSignal } from '../shutdown';
 import { tenantLanguage as resolveTenantLanguage } from './printers';
+import { resolvePrinterProfile, getPrinterCapabilities } from '../printers/profiles';
 import {
   DisplayTaxComponent,
   aggregateTaxComponents,
@@ -119,7 +120,13 @@ function shapeZReportSnapshot(db: ReturnType<typeof getDatabase>, row: any, isRe
     try {
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : fallback;
-    } catch {
+    } catch (err) {
+      // F5: a corrupt JSON column on an immutable financial document must
+      // surface, not silently mask as an empty section. The handler that
+      // built the row already validated input; if we reach here the stored
+      // data is the problem and the operator deserves to know which section
+      // is empty so they can verify against the live report before reissuing.
+      console.warn('[CashClosures] safeJson: corrupt stored JSON, falling back:', err instanceof Error ? err.message : err);
       return fallback;
     }
   };
@@ -547,7 +554,14 @@ router.post('/:id/print', requireRole(...ROLE_ACCESS.owner), async (req: Request
 // (no REIMPRESION mark). Decoded via the same `escPosToText` the test
 // uses, so the preview text and the bytes the printer receives are byte
 // for byte identical (modulo the `__isReprint` flag, which is metadata).
-const PREVIEW_COLUMNS = 48;
+//
+// F1: columns and capabilities are resolved against the default printer
+// the same way POST /:id/print does. When no default printer is
+// configured (preview is a read, not a write), fall back to 80mm / 48
+// columns with the generic capabilities so the operator can still see
+// the would-be output. The chosen columns are echoed back so the badge
+// in the modal shows the real width.
+const PREVIEW_FALLBACK_COLUMNS = 48;
 
 router.get('/:id/preview', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
@@ -559,14 +573,36 @@ router.get('/:id/preview', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     const row = db.prepare(`SELECT * FROM cash_closures WHERE id = ?`).get(id) as any;
     if (!row) return res.status(404).json({ error: 'Cash closure not found' });
     const snapshot = shapeZReportSnapshot(db, row, false);
+    // Resolve the default printer profile exactly as POST /:id/print does
+    // (the printable body shape depends on columns and code-page handling).
+    // Preview is a read; missing default printer → fall back rather than 409.
+    const printer = db.prepare(`SELECT * FROM printers WHERE is_default = 1`).get() as any;
+    let columns = PREVIEW_FALLBACK_COLUMNS;
+    let capabilities: any = undefined;
+    if (printer) {
+      const profile = resolvePrinterProfile(printer);
+      const paperWidth = printer.paper_width || profile.defaultPaperWidth || '80mm';
+      // Inline cols-by-paper-width resolution (same regex/switch as
+      // `main/printers/thermal.ts` `columnsForPaperWidth`, kept private).
+      // Profile-driven code-page selection via capabilities keeps the screen
+      // preview aligned with the on-paper shape (matching POST /:id/print's
+      // `printZReport` invariant at `main/printers/thermal.ts:2333-2336`).
+      const colsMatch = String(paperWidth).match(/^cols-(3[2-9]|4[0-8])$/);
+      if (colsMatch) columns = Number(colsMatch[1]);
+      else if (paperWidth === '58mm') columns = 32;
+      else if (paperWidth === '58mm-36') columns = 36;
+      else if (paperWidth === '80mm-42') columns = 42;
+      else columns = profile.fontAColumns || PREVIEW_FALLBACK_COLUMNS;
+      capabilities = getPrinterCapabilities(profile);
+    }
     const { buildZReportBody, escPosToText } = require('../printers/thermal');
-    const body = buildZReportBody(snapshot, undefined, { columns: PREVIEW_COLUMNS });
+    const body = buildZReportBody(snapshot, undefined, { columns, capabilities });
     const text = escPosToText(Buffer.from(body));
     res.json({
       id: row.id,
       businessDate: row.business_date,
       zNumber: row.z_number,
-      columns: PREVIEW_COLUMNS,
+      columns,
       text,
     });
   } catch (error: any) {

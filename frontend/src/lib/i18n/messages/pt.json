@@ -269,6 +269,8 @@
     "variance": "Diferença",
     "printZReport": "Imprimir Z",
     "reprintZ": "Reimprimir Z",
+    "reprintAddsMarker": "Reimprimir adiciona uma linha REIMPRESION",
+    "printPreviewCols": "{n} colunas",
     "printPreview": "Pré-visualização",
     "alreadyClosed": "Este dia já está fechado",
     "noPriorCloseHint": "O dia anterior não foi fechado — fundo inicial definido como 0",

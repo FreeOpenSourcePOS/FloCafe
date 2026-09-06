@@ -269,6 +269,8 @@
     "variance": "Difference",
     "printZReport": "Print Z",
     "reprintZ": "Reprint Z",
+    "reprintAddsMarker": "Reprint adds a REIMPRESION line",
+    "printPreviewCols": "{n} cols",
     "printPreview": "Print preview",
     "alreadyClosed": "This day is already closed",
     "noPriorCloseHint": "Previous day not closed — float defaulting to 0",

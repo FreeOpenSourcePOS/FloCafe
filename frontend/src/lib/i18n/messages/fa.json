@@ -269,6 +269,8 @@
     "variance": "اختلاف",
     "printZReport": "چاپ Z",
     "reprintZ": "چاپ مجدد Z",
+    "reprintAddsMarker": "چاپ مجدد یک خط REIMPRESION اضافه می‌کند",
+    "printPreviewCols": "{n} ستون",
     "printPreview": "پیش‌نمایش چاپ",
     "alreadyClosed": "این روز قبلاً بسته شده است",
     "noPriorCloseHint": "روز قبل بسته نشده — موجودی اولیه روی ۰ تنظیم شد",

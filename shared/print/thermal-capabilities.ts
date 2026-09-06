@@ -55,6 +55,13 @@ export const GENERIC_THERMAL_CAPABILITIES: ThermalPrinterCapabilities = {
   raster: { enabled: false, widthDots: 0, maxBandHeight: 0, modes: [] },
 };
 
+export const LATIN_THERMAL_CAPABILITIES: ThermalPrinterCapabilities = {
+  ...GENERIC_THERMAL_CAPABILITIES,
+  encoding: { codePages: ['cp437', 'cp850', 'cp858', 'windows1252', 'ascii'], preferredCodePage: 'cp437' },
+  representability: { scripts: ['ascii', 'latin'] },
+  transliteration: { enabled: true },
+};
+
 // The shipped fallback preserves the established German thermal transliteration
 // without claiming quality coverage for every accented locale.
 const LATIN_ASCII_MAP: Record<string, string> = {
@@ -75,8 +82,20 @@ const THERMAL_CURRENCY_TOKEN_RE = new RegExp(`(?:${CURRENCY_TOKEN_PATTERN})`, 'g
 const LATIN_LETTER_RE = /\p{Script=Latin}/u;
 const LETTER_RE = /\p{Letter}/u;
 
+function codePageCanRepresent(text: string, codePage: ThermalCodePage): boolean {
+  if (codePage === 'ascii') return !/[^\x00-\x7F]/.test(text);
+  const characters = CODE_PAGE_CHARACTERS[codePage];
+  return [...text].every((character) => character <= '\x7F' || characters.includes(character));
+}
+
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities): string {
   if (!capabilities.transliteration.enabled) return text;
+  if (capabilities.representability.scripts.includes('latin')) {
+    const hasNativeCodePage = capabilities.encoding.codePages.some(
+      (codePage) => codePage !== 'ascii' && codePageCanRepresent(text, codePage),
+    );
+    if (hasNativeCodePage) return text;
+  }
   return text.replace(/[À-ÿ]/g, (character) => LATIN_ASCII_MAP[character] ?? character);
 }
 
@@ -90,12 +109,6 @@ export function isArabicShapingSafeLine(text: string): boolean {
   return !/[^\x00-\x7F]/.test(
     textWithoutCurrency.replace(ARABIC_SCRIPT_GLOBAL_RE, '').replace(SHAPING_ALLOWED_GLOBAL_RE, ''),
   );
-}
-
-function codePageCanRepresent(text: string, codePage: ThermalCodePage): boolean {
-  if (codePage === 'ascii') return !/[^\x00-\x7F]/.test(text);
-  const characters = CODE_PAGE_CHARACTERS[codePage];
-  return [...text].every((character) => character <= '\x7F' || characters.includes(character));
 }
 
 export function selectThermalCodePage(text: string, capabilities: ThermalPrinterCapabilities): ThermalCodePage | null {

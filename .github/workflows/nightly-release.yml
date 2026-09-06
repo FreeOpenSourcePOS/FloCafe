@@ -28,7 +28,7 @@ jobs:
             os: ubuntu-latest
             arch: x64
             target: --linux
-            extra-deps: sudo apt-get update -qq && sudo apt-get install -y fakeroot dpkg
+            extra-deps: sudo apt-get update -qq && sudo apt-get install -y fakeroot dpkg xvfb
           # better-sqlite3 >= v13 ships prebuilt binaries for all platforms,
           # so no native cross-compilation is needed. Both builds run on the
           # same ARM64 runner; electron-builder packages the correct prebuild
@@ -79,7 +79,13 @@ jobs:
         run: npm run build
 
       - name: Run full platform test suite
-        run: npm test
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a --server-args='-screen 0 1280x800x24' npm test
+          else
+            npm test
+          fi
 
       - name: Package (unpacked directory, no installer)
         run: npx electron-builder ${{ matrix.target }} --dir --publish never

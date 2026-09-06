@@ -2,6 +2,12 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.7.1] - 2026-09-06
+
+### Fixed
+
+- downgrade CFPropertyList to unblock Ruby 3.3 on the MAS publish runner (#662)
+
 ## [3.7.0] - 2026-09-06
 
 ### Added

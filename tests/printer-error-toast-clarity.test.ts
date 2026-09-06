@@ -68,8 +68,18 @@ function runTests(): void {
     extractPrinterErrorMessage(new Error("Printer paper out")),
     "Printer paper out",
   );
+  // Non-string detail/error responses should not throw or return object strings
+  assert.equal(
+    extractPrinterErrorMessage({ response: { data: { detail: { nested: "object" } } } }),
+    "",
+  );
+  assert.equal(
+    extractPrinterErrorMessage({ response: { data: { error: 12345 } } }),
+    "",
+  );
   assert.equal(extractPrinterErrorMessage(null), "");
   assert.equal(extractPrinterErrorMessage(undefined), "");
+  assert.equal(extractPrinterErrorMessage({}), "");
 
   console.log("✓ All printer error toast clarity tests passed.");
 }

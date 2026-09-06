@@ -220,12 +220,15 @@ export function safePrinterText<T extends { text(value: string): T }>(
  */
 export function extractPrinterErrorMessage(err: unknown): string {
   if (!err) return '';
-  const maybeAxios = err as { response?: { data?: { detail?: string; error?: string } }; message?: string };
-  return (
-    maybeAxios.response?.data?.detail ||
-    maybeAxios.response?.data?.error ||
-    (err instanceof Error ? err.message : String(err))
-  ).trim();
+  const maybeAxios = err as { response?: { data?: { detail?: unknown; error?: unknown } }; message?: unknown };
+  const detail = maybeAxios.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  const error = maybeAxios.response?.data?.error;
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  if (err instanceof Error && typeof err.message === 'string' && err.message.trim()) {
+    return err.message.trim();
+  }
+  return typeof err === 'string' ? err.trim() : '';
 }
 
 /**

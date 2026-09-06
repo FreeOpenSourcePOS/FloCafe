@@ -43,16 +43,13 @@ const LEGEND: Table['status'][] = ['available', 'occupied', 'reserved', 'cleanin
 
 const ALL_FLOORS = '__all__';
 
-// Fixed virtual coordinate space for the canvas: positions are percentages
-// of this width, so tables, labels, and aisles scale down proportionally
-// on narrow terminals instead of overlapping.
+// Virtual canvas coordinate space (percentage of width) ensuring proportional
+// scaling on narrow screens.
 const VIRTUAL_WIDTH = 1000;
 
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
-// Table geometry by seating: round for couples, square for four, rectangles
-// for bigger parties, banquet for the very large. Chairs split across the
-// long edges of rects, ring around circles.
+// Table geometry and dimensions based on seating capacity.
 function shapeFor(capacity: number, s = 1) {
   if (capacity <= 2) return { w: 78 * s, h: 78 * s, round: true };
   if (capacity <= 4) return { w: 96 * s, h: 96 * s, round: false };
@@ -99,10 +96,8 @@ interface TableForm {
 
 const EMPTY_FORM: TableForm = { name: '', capacity: '4', floor: '', section: '' };
 
-// Auto-fit canvas aspect ratio to the bounding box of placed tables (uses saved
-// positions only — pending edits are excluded so the canvas stays stable during
-// drag and "settles" to its fit size after Save). A 4-table cafe no longer gets
-// a 16:10 sea of dots; a packed fine-dining room keeps its full grid.
+// Auto-fit canvas aspect ratio to bounding box of placed tables
+// using saved positions to maintain drag stability.
 function computeCanvasAspect(placed: Table[]): number {
   if (placed.length === 0) return 4 / 3;
   let minX = 100, maxX = 0, minY = 100, maxY = 0;
@@ -121,9 +116,8 @@ function computeCanvasAspect(placed: Table[]): number {
   return aspect;
 }
 
-// Approximate table "radius" in canvas-percent units, by seat count. Used for
-// grid-based overlap detection when auto-placing new tables and finding free
-// corners. Generous on purpose — better to leave a gap than to stack tables.
+// Approximate table radius in canvas-percent units by seat count
+// used for grid overlap detection.
 function tableRadius(capacity: number): number {
   if (capacity <= 2) return 7;
   if (capacity <= 4) return 9;
@@ -209,9 +203,8 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
   const [floorFormSaving, setFloorFormSaving] = useState(false);
   const [actionTable, setActionTable] = useState<Table | null>(null);
 
-  // Drop a stale action-sheet selection when entering edit mode so it never
-  // pops up unexpectedly on the way back to service mode (render-time
-  // adjustment, same pattern as prevFloor below).
+  // Drop stale action-sheet selection when entering edit mode
+  // so it does not pop up when returning to service mode.
   const [wasEdit, setWasEdit] = useState(edit);
   if (wasEdit !== edit) {
     setWasEdit(edit);
@@ -506,9 +499,8 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
         });
         toast.success(t('tableUpdated'), { position: 'top-center' });
       } else {
-        // Auto-place on the canvas at the next free grid corner so the new
-        // table appears ready-to-use instead of dumping into the tray. Skip if
-        // the user is in the Unassigned bucket (no floor → no placement yet).
+        // Auto-place on canvas at next free grid corner;
+        // skip if unassigned (no floor selected).
         let position_x: number | null = null;
         let position_y: number | null = null;
         if (floor) {
@@ -547,9 +539,7 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     if (!name || !tableName || !Number.isFinite(capacity) || capacity < 1) return;
     setFloorFormSaving(true);
     try {
-      // First table of a brand-new floor — drop it at the top-left grid corner
-      // so the new floor starts with a placed table, not an empty tray.
-      // The floor is brand-new, so the collision set is empty by definition.
+      // Place first table of brand-new floor at top-left corner.
       const pos = findNextFreePosition(capacity, []);
       await api.post('/tables', {
         number: tableName,
@@ -1244,9 +1234,8 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
           position_y: p ? p.y : null,
         })),
       });
-      // Keep edits until the refetch lands: the render-time prune drops
-      // entries as the tables prop converges, so the dirty badge stays
-      // truthful through failures instead of clearing optimistically.
+      // Keep edits until refetch lands so dirty badge accurately reflects
+      // state through any save failures.
       onSaved?.();
       toast.success(t('floorplanSaved'), { position: 'top-center' });
     } catch {

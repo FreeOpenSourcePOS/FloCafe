@@ -24,9 +24,7 @@ export default function RecoverAccessPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  // null = still checking, true/false = known. Checked proactively on load
-  // so "the PIN isn't available on this device" is told upfront, not only
-  // discovered after filling in the whole form and hitting submit.
+  // Master PIN availability status (null = checking, true/false = resolved).
   const [pinAvailable, setPinAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {

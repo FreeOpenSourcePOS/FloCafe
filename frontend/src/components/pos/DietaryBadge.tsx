@@ -1,8 +1,7 @@
 import { useTranslations, type AppConfig } from 'use-intl';
 
-// Normalise a raw tag string to its canonical key used in TAG_CONFIG.
-// Handles case, spaces, hyphens, underscores and common spelling variants so
-// that "Non-Veg", "nonveg", "NON VEG", "non_veg" all map to "non_veg".
+// Normalize raw tag strings (case, spacing, separators)
+// to canonical keys used in TAG_CONFIG.
 function normalizeTag(raw: string): string {
   const s = raw.toLowerCase().replace(/[\s\-_]+/g, '');
   if (s === 'nonveg' || s === 'nonvegetarian' || s === 'nonveg.')  return 'non_veg';

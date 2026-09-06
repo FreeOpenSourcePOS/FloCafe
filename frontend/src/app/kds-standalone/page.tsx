@@ -53,9 +53,7 @@ export default function KdsStandalonePage() {
   const t = useTranslations('kds');
   // Lazy-init the axios instance — must not run during SSR prerender.
   const api = useMemo(() => (typeof window !== 'undefined' ? createStandaloneApi() : null), []);
-  // kds-server.ts (this page's backend, a separate Express app from the main
-  // server) exposes a smaller, differently-named route set than the
-  // dashboard-embedded KDS talks to — override the hook's main-server defaults.
+  // Standalone KDS server endpoint routes overriding dashboard defaults.
   const standaloneEndpoints = {
     login: '/api/auth/login',
     me: '/api/auth/me',

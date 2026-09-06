@@ -4,26 +4,8 @@ import { ToastBar, Toaster } from 'react-hot-toast';
 import { useLocale } from 'use-intl';
 import { getLanguageDirection, getLanguageFromLocale } from '@/lib/i18n';
 
-/**
- * Direction-aware toast host with bottom time-drain progress bar.
- *
- * react-hot-toast's `position` prop is physical (`top-right` / `top-left`),
- * so it must follow the active document direction: RTL languages (Persian)
- * place toasts at the inline-end (top-left) while LTR languages keep the
- * existing top-right placement. Direction comes from the active loaded
- * locale in the i18n context (`useLocale`), not a hard-coded language
- * check — and only flips after the locale's bundle has actually loaded
- * (#375/#376). Toast content direction itself is inherited from
- * `<html dir>` via HtmlLangSync.
- *
- * The `key` below forces a full unmount/remount when direction flips
- * instead of updating `position` on a live Toaster instance:
- * react-hot-toast repositions its toast-group DOM in place on a
- * `position` prop change, and toast removal runs on timers outside
- * React's render cycle, so a toast that's showing/exiting during the
- * flip can crash with a DOM `insertBefore` `NotFoundError`. Remounting
- * avoids that race.
- */
+/** Direction-aware toast host with drain progress bar; remounts on direction
+ * flip to safely position toasts inline-end without DOM racing. */
 export function DirectionalToaster() {
   const locale = useLocale();
   const language = getLanguageFromLocale(locale) ?? 'en';

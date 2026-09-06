@@ -163,11 +163,7 @@ function StatusStepper({ status }: { status: string }) {
   );
 }
 
-/**
- * Translate a backend lastError by its reason code. Falls back to the raw
- * English message when no reason is set (legacy / unknown), then to the
- * localized generic cooldown line if the raw is also empty.
- */
+/** Translates backend lastError by reason code, falling back to raw message. */
 function translateLastError(
   reason: string | null | undefined,
   raw: string | null | undefined,
@@ -233,12 +229,7 @@ export default function WhatsAppPage() {
   const [blockPhone, setBlockPhone] = useState('');
   const [blockReason, setBlockReason] = useState('');
 
-  // The user's chosen tab, or null if they have never clicked one. Persisted
-  // in localStorage so the choice survives remounts — previously this was two
-  // parallel useState + two localStorage keys (`tab` + `tabInitialized`) and
-  // a remount could reset the flag to false and bounce the user from Inbox
-  // back to Sent. Collapsed to one nullable string: null = never picked =
-  // fall through to the connection-state default below.
+  // Selected tab persisted in localStorage; null falls back to connection-state default.
   const [userTab, setUserTab] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     return window.localStorage.getItem('whatsapp.activeTab');

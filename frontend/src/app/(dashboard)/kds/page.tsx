@@ -11,10 +11,7 @@ import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations } from 'use-intl';
 import type { KdsViewMode } from '@/hooks/useKdsView';
 
-// Reads the kds_enabled setting directly (not the cached posSettings copy) so
-// this route reflects the current state even if the sidebar hasn't refreshed
-// its own copy yet. `null` = still loading. Never throws — a fetch failure
-// falls back to "enabled" so a network hiccup doesn't lock owners out.
+// Checks live kds_enabled setting directly from API; defaults to enabled on fetch errors.
 function useKdsEnabledCheck(): boolean | null {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   useEffect(() => {
@@ -27,10 +24,7 @@ function useKdsEnabledCheck(): boolean | null {
   return enabled;
 }
 
-// Dashboard `/kds` runs on the main API origin (port 3001), which has
-// `/api/settings/kds` but not `/api/kds/info` (that one lives on the
-// standalone KDS server). Fetch the default view from the main API instead
-// of `useServerKdsInfo` so chef toggles reflect admin-set defaults here.
+// Fetches KDS default view from main API (port 3001) instead of standalone server.
 function useDashboardKdsDefault(): KdsViewMode | null {
   const [view, setView] = useState<KdsViewMode | null>(null);
   useEffect(() => {

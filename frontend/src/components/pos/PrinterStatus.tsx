@@ -1,17 +1,7 @@
 'use client';
 
-/**
- * PrinterStatus — toolbar button that shows printer connection state and
- * exposes connect / disconnect actions.
- *
- * Place it in the POS page header or sidebar header alongside other toolbar
- * icons.  Example:
- *
- *   <PrinterStatus currency={currency} />
- *
- * The `navigator.usb.requestDevice` picker is only opened on an explicit user
- * click, satisfying the browser's "transient user activation" requirement.
- */
+/** PrinterStatus: toolbar button showing connection state and exposing
+ * connect/disconnect actions with user-activation device picker. */
 
 import {
   Printer,

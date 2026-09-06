@@ -5,15 +5,8 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLanguageDirection, getLanguageLocale } from '@/lib/i18n';
 import { loadLocaleMessages } from '@/lib/i18n/loader';
 
-/**
- * Syncs the KDS standalone document's `<html lang>` and `<html dir>` with the
- * active UI language.
- *
- * Direction and locale come from the shared language metadata, so RTL
- * languages are handled automatically rather than hard-coded. #375: lang/dir
- * are applied atomically only after the locale's messages have actually
- * loaded, so the document direction never flips ahead of message resolution.
- */
+/** Syncs document <html lang> and <html dir> with active UI language
+ * atomically after locale messages have loaded. */
 export function KdsHtmlLang() {
   const language = usePosSettingsStore((s) => s.language);
   useEffect(() => {

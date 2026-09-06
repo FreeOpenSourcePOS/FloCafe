@@ -42,10 +42,8 @@ function statusOf(item: KdsOrderItem): KitchenStatus {
   return normalizeKitchenStatus(item.status);
 }
 
-// The 4 draggable stages, as opposed to the locked 'voided' status (issue
-// #150) which gets its own read-only, non-draggable section below — never a
-// dnd-kit column, so a card can never be dragged into "voided" as a bypass
-// for the manager-PIN void flow.
+// The 4 draggable stages; 'voided' is read-only and non-draggable
+// to preserve manager-PIN void requirements.
 type BoardStatus = Exclude<KitchenStatus, 'voided'>;
 
 export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanbanBoardProps) {

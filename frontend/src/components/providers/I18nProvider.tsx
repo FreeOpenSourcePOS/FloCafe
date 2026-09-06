@@ -6,21 +6,8 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { LANGUAGES, getBrowserLanguage, isLanguage, type Language } from '@/lib/i18n';
 import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
 
-/**
- * Wraps the application in use-intl's `IntlProvider` so `useTranslations`,
- * `createTranslator`, and the ICU formatters resolve against the active
- * language's messages.
- *
- * #375: messages are lazy-loaded. English is always available synchronously
- * (packaged cold-boot fallback), so the app renders immediately; the active
- * locale's bundle is fetched on demand and applied atomically when ready.
- * Rapid language switches ignore stale loads (latest request wins), and a
- * failed switch keeps the current language and reverts the store request.
- *
- * Supplies a resolved system timeZone (or UTC) to `IntlProvider` and suppresses
- * `ENVIRONMENT_FALLBACK` error codes during SSR/development pre-rendering while
- * forwarding other formatting errors to `console.error`.
- */
+/** Wraps application in use-intl's IntlProvider with lazy-loaded messages,
+ * packaged English fallback, and atomic locale switching. */
 function resolveInitialLanguage(): Language {
   if (typeof window !== 'undefined') {
     try {
@@ -41,20 +28,13 @@ function resolveInitialLanguage(): Language {
   return 'en';
 }
 
-/**
- * Error handler passed to `IntlProvider` to suppress benign `ENVIRONMENT_FALLBACK`
- * warnings in SSR while forwarding all genuine translation and formatting errors
- * to `console.error`.
- */
+/** Error handler for IntlProvider suppressing ENVIRONMENT_FALLBACK warnings. */
 export function handleI18nError(error: { code?: string; message?: string } | Error) {
   if ('code' in error && error.code === 'ENVIRONMENT_FALLBACK') return;
   console.error(error);
 }
 
-/**
- * Resolves the default runtime timezone for `IntlProvider` using the host's
- * Intl API when available, falling back to `'UTC'`.
- */
+/** Resolves default host runtime timezone, falling back to 'UTC'. */
 export function getDefaultTimeZone(): string {
   return typeof Intl !== 'undefined'
     ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -66,10 +46,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState<Language>('en');
   const activeRef = useRef<Language>('en');
 
-  // One-time: resolve the deterministic initial language (persisted store
-  // preference → browser match against selectable languages → packaged
-  // English) and sync the store so non-React and standalone consumers render
-  // the same language as the provider.
+  // Resolve deterministic initial language (persisted > browser > en)
+  // and synchronize with posSettingsStore.
   useEffect(() => {
     const initial = resolveInitialLanguage();
     if (initial !== usePosSettingsStore.getState().language) {
@@ -77,10 +55,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Keep the rendered messages + active locale in sync with the requested
-  // store language. Stale loads are ignored (effect cleanup + latest-wins
-  // guard), and failed switches keep the current language rendered while
-  // reverting the store request.
+  // Sync rendered messages with store language; ignore stale loads
+  // and revert store on failed fetch.
   useEffect(() => {
     if (language === activeRef.current) return;
     let cancelled = false;

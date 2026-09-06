@@ -15,25 +15,18 @@ export default function DashboardError({ error, reset }: { error: Error & { dige
   const [reportStatus, setReportStatus] = useState<'pending' | 'sent' | 'failed'>('pending');
 
   useEffect(() => {
-    // React re-invokes this effect on every reset()->re-throw cycle with a
-    // fresh error, but a flaky reload can hand back the identical error twice
-    // in a row — dedupe on digest so one crash isn't reported repeatedly.
+    // Deduplicate error reporting across resets using error digest.
     const digest = error.digest ?? error.message;
     if (reportedDigest.current !== digest) {
       reportedDigest.current = digest;
       setReportStatus('pending');
       void reportRendererError(error).then((sent) => {
-        // A newer error may have started (and possibly already finished) its
-        // own report while this one was in flight — don't let this stale
-        // completion overwrite that newer status.
+        // Avoid overwriting status if a newer error occurred while in flight.
         if (reportedDigest.current === digest) setReportStatus(sent ? 'sent' : 'failed');
       });
     }
 
-    // One bounded, silent recovery attempt: most render exceptions here come
-    // from a transient bad state (a stale fetch mid-navigation, a race on
-    // first mount) that a plain re-render clears. If it recurs, stop and let
-    // the person decide instead of looping.
+    // Perform a single automatic retry on transient render exceptions before showing manual actions.
     if (!hasAutoRetried.current) {
       hasAutoRetried.current = true;
       setAutoRetrying(true);

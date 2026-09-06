@@ -254,9 +254,8 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         style={{
-          // Under Electron the fixed sidebar starts below the custom title
-          // bar (see --flo-sidebar-block-start in globals.css); browsers/LAN
-          // resolve both to the viewport-top geometry.
+          // Under Electron, sidebar starts below custom title bar;
+          // browsers and LAN clients resolve to viewport top.
           insetBlockStart: 'var(--flo-sidebar-block-start, 0px)',
           blockSize: 'calc(100svh - var(--flo-sidebar-block-start, 0px))',
         }}

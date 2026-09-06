@@ -32,9 +32,8 @@ export default function WindowControls() {
       ?.getStatus()
       .then((status) => {
         if (cancelled) return;
-        // Resolve the mode and bind this document's readiness report to the
-        // epoch main issued for it. An unrecognized/missing mode keeps native-
-        // overlay behavior so an older main never gets duplicate controls.
+        // Resolve title-bar mode and bind readiness report to epoch;
+        // fallback to native-overlay for unrecognized modes.
         setResolved({
           mode: status?.titleBarMode === 'html-fallback' ? 'html-fallback' : 'native-overlay',
           epoch: typeof status?.titleBarEpoch === 'number' ? status.titleBarEpoch : Number.NaN,
@@ -44,9 +43,7 @@ export default function WindowControls() {
         });
       })
       .catch((error) => {
-        // Deliberately no readiness report on failure: main cannot trust a
-        // control-surface confirmation from a document whose status read
-        // failed. Main's bounded fail-safe shows the window instead.
+        // Skip readiness report on failure so main triggers bounded fail-safe.
         console.error('[WindowControls] Unable to resolve title-bar mode:', error);
       });
 
@@ -55,12 +52,7 @@ export default function WindowControls() {
     };
   }, [isElectron]);
 
-  // Readiness report: fires only once this document knows its epoch AND the
-  // control surface it reports for actually exists. For native-overlay the
-  // caption buttons are always present; for html-fallback this effect runs
-  // after the commit that mounted the fallback buttons below. Stale or
-  // malformed epochs are rejected by main, so a reload can never inherit a
-  // previous document's confirmation.
+  // Report window readiness once title-bar controls are mounted and epoch is valid.
   useEffect(() => {
     if (!isElectron || !resolved) return;
     if (!Number.isInteger(resolved.epoch) || resolved.epoch < 1 || !resolved.documentNonce) return;

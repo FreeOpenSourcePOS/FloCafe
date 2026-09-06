@@ -4,11 +4,8 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { getElapsedMinutes, getTurnoverTier, splitHoursMinutes, TURNOVER_TIER_CLASSES } from '@/lib/table-timing';
 
-/**
- * Live "seated for Nm" pill. Owns its own 60s tick so the parent grid/modal
- * doesn't have to re-render or refetch just to keep the clock live (mirrors
- * ElapsedTime.tsx's KDS badge, at minute rather than second granularity).
- */
+/** Live "seated for Nm" badge with local 60s tick to avoid
+ * parent component re-renders. */
 export function TableTurnoverBadge({ seatedAt }: { seatedAt: string }) {
   const tCommon = useTranslations('common');
   const [, setTick] = useState(0);

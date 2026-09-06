@@ -32,9 +32,8 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
   
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const cropAreaRef = useRef<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
-  // Cache-busting query param for the existing-image URL below. Lazy-initialized once per
-  // mount (the form modal remounts this component each time it opens) instead of calling
-  // Date.now() directly during render, which would refetch the image on every re-render.
+  // Lazy cache-busting timestamp initialized once per mount to prevent
+  // refetching image on every render.
   const [cacheBust] = useState(() => Date.now());
 
   const processFile = useCallback(async (file: File) => {

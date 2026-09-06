@@ -140,9 +140,7 @@ function formatHourLabel(hour: number, locale: string): string {
 
 /** Formats a 0=Sunday..6=Saturday index as a locale-appropriate weekday name. */
 function formatWeekdayLabel(dayIndex: number, locale: string): string {
-  // Jan 2, 2000 was a Sunday — using local-time Date math (no timeZone
-  // needed here, the hour/day bucketing already resolved to the tenant's
-  // local calendar server-side).
+  // Reference Sunday date for locale weekday formatting.
   const reference = new Date(2000, 0, 2 + dayIndex);
   return new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(reference);
 }
@@ -214,9 +212,7 @@ export default function DashboardPage() {
     }
   }, [currentTenant, isOwner, router]);
 
-  // Show the spinner again as soon as isOwner/selectedDate change, read directly during
-  // render (React's recommended pattern for "adjusting state when a prop changes") so the
-  // effect below only needs to own the async fetch and its own completion state.
+  // Reset loading state during render when query parameters change.
   const syncKey = `${isOwner}:${periodMode}:${range.startDate}:${range.endDate}`;
   const [syncedKey, setSyncedKey] = useState(syncKey);
   if (syncKey !== syncedKey) {
@@ -268,10 +264,7 @@ export default function DashboardPage() {
   const paymentMethods = financialSummary?.paymentMethods ?? [];
   const paymentMethodsTotal = paymentMethods.reduce((sum, pm) => sum + Number(pm.total), 0);
 
-  // Running/Pending Orders and Tables Occupied are live, "right now" concepts
-  // that don't retroactively apply to a past date (an order isn't "pending"
-  // in history — it has a final status). When viewing a past date, swap them
-  // for the day's actual totals from /reports/summary instead.
+  // Live counters (running orders, occupied tables) only apply to today; past dates use daily totals.
   const dateScopedTiles = periodMode === 'month'
     ? [
         {

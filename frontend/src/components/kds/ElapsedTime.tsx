@@ -15,11 +15,8 @@ function formatElapsed(dateStr: string): string {
   return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-/**
- * Renders the elapsed time for a single order and owns its own 1-second tick,
- * so the parent board/tabs don't re-run their filtering and grouping work
- * every second just to keep the clock display live (#226).
- */
+/** Renders elapsed time for an order with a local 1-second tick,
+ * avoiding parent re-renders every second. */
 export function ElapsedTime({ dateStr }: { dateStr: string }) {
   const [, setTick] = useState(0);
   useEffect(() => {

@@ -29,9 +29,7 @@ const SERVICE_MODELS: Array<{ value: ServiceModel }> = [
   { value: 'finedine' },
 ];
 
-// Exhaustively typed leaf-key maps for the setup profile / service model
-// cards (use-intl resolves leaf keys within the namespace scope — no
-// template-literal dynamic key construction).
+// Typed message keys for setup profile and service model cards.
 type SetupKey = keyof AppConfig['Messages']['setup'];
 
 const SETUP_PROFILE_KEYS = {
@@ -78,9 +76,7 @@ export default function SetupPage() {
   const [showConfirmMasterPin, setShowConfirmMasterPin] = useState(false);
   const [profile, setProfile] = useState<SetupProfile>('express');
   const [serviceModel, setServiceModel] = useState<ServiceModel>('qsr');
-  // The wizard's language follows the shared store so the atomic provider
-  // (and therefore useTranslations below) renders the chosen language
-  // immediately — the #375 manual loadedLanguage gate is no longer needed.
+  // Wizard language follows shared store to update translations immediately.
   const language = usePosSettingsStore((s) => s.language);
   const setStoreLanguage = usePosSettingsStore((s) => s.setLanguage);
   const [browserLanguage] = useState<Language>(() => getBrowserLanguage());
@@ -131,9 +127,7 @@ export default function SetupPage() {
       .then(({ data }) => {
         if (!mounted) return;
         setMasterPinAvailable(!!data.masterPinAvailable);
-        // An owner already exists — /auth/setup/initialize is disabled server-side,
-        // so bail out immediately instead of letting the user fill the whole wizard
-        // and only find out at the final submit.
+        // Redirect to login if setup was already completed.
         if (!data.needsSetup) {
           toast.error(t('alreadyCompleted'));
           window.location.replace('/auth/login');
@@ -341,9 +335,7 @@ export default function SetupPage() {
                         onClick={() => {
                           const previousCountry = getCountryByCode(country);
                           setCountry(c.code);
-                          // Only follow the new country's default timezone while
-                          // the current value is still the previous country's
-                          // default — never clobber an explicit override.
+                          // Update default timezone when switching countries unless user has manually customized it.
                           if (!previousCountry || timezone === previousCountry.timezone) {
                             setTimezone(c.timezone || timezone);
                           }

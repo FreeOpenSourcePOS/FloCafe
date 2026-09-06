@@ -1,18 +1,7 @@
 'use client';
 
-/**
- * Restart-to-install confirmation guard (#463).
- *
- * Every UI path that can restart the app to install a downloaded update must
- * go through this dialog. It shows a prominent RED warning that all systems
- * go down while the update installs, and requires an explicit manager or
- * owner PIN confirmation before the restart is requested.
- *
- * The PIN is verified in the main process (`authorizeMasterPin` inside the
- * `restart-and-install` handler); a wrong PIN, a rate limit, or cancelling
- * the dialog simply keeps the app running — there is no path from this
- * dialog to `quitAndInstall` without an approved PIN.
- */
+/** Restart-to-install confirmation guard requiring manager/owner PIN
+ * before requesting main process app restart. */
 
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';

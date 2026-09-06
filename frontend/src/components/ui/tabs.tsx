@@ -14,10 +14,8 @@ function Tabs({
   dir,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Root>) {
-  // Radix defaults `dir` to "ltr", which pins tab layouts (and their flex
-  // columns, e.g. the Settings left nav) to LTR even inside RTL (Persian)
-  // documents. Follow the active UI language direction instead so the tabs
-  // mirror with the rest of the page. An explicit `dir` prop still wins.
+  // Mirror tabs layout with active UI language direction unless an explicit
+  // dir prop is provided (overriding Radix's hardcoded "ltr" default).
   const language = usePosSettingsStore((s) => s.language);
   const direction = dir ?? getLanguageDirection(language);
   return (

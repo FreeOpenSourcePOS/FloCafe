@@ -3,12 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { reportRendererError } from '@/lib/report-renderer-error';
 
-/**
- * Catches an exception thrown by the root layout itself (e.g. I18nProvider,
- * AuthGuard) — the one place a render error would otherwise produce a blank
- * white window with no recovery path at all. Must render its own <html>/
- * <body>: this replaces the root layout entirely while active.
- */
+/** Root error boundary catching layout-level exceptions;
+ * renders dedicated html/body wrapper. */
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   const reportedDigest = useRef<string | undefined>(undefined);
   const [reportStatus, setReportStatus] = useState<'pending' | 'sent' | 'failed'>('pending');
@@ -19,9 +15,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
       reportedDigest.current = digest;
       setReportStatus('pending');
       void reportRendererError(error).then((sent) => {
-        // A newer error may have started (and possibly already finished) its
-        // own report while this one was in flight — don't let this stale
-        // completion overwrite that newer status.
+        // Avoid overwriting status if a newer error occurred while in flight.
         if (reportedDigest.current === digest) setReportStatus(sent ? 'sent' : 'failed');
       });
     }

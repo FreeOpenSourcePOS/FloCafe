@@ -18,7 +18,7 @@ import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currenc
 import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
-import { formatReceiptErrorToast } from '@/lib/printer/warnings';
+import { formatReceiptErrorToast, extractPrinterErrorMessage } from '@/lib/printer/warnings';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useRouter } from 'next/navigation';
@@ -564,7 +564,7 @@ export default function OrdersPage() {
         showPrintWarningsToast(printWarnings);
         await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : '';
+        const msg = extractPrinterErrorMessage(err);
         toast.error(formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint')));
       }
     }
@@ -601,7 +601,7 @@ export default function OrdersPage() {
       showPrintWarningsToast(printWarnings);
       fetchPrintHistory(billId);
     } catch (err) {
-      const detail = err instanceof Error ? err.message : undefined;
+      const detail = extractPrinterErrorMessage(err);
       toast.error(formatReceiptErrorToast(detail, tOrders('printReceiptFailed')));
     } finally {
       setPrintingBillId(null);

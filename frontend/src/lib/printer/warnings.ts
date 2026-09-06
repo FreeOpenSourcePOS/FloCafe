@@ -213,7 +213,27 @@ export function safePrinterText<T extends { text(value: string): T }>(
 }
 
 /**
+ * Extracts the most informative error string from an unknown error or API Axios response.
+ *
+ * @param err - The caught error object, which may be an Error instance or Axios response.
+ * @returns The resolved error message string.
+ */
+export function extractPrinterErrorMessage(err: unknown): string {
+  if (!err) return '';
+  const maybeAxios = err as { response?: { data?: { detail?: string; error?: string } }; message?: string };
+  return (
+    maybeAxios.response?.data?.detail ||
+    maybeAxios.response?.data?.error ||
+    (err instanceof Error ? err.message : String(err))
+  ).trim();
+}
+
+/**
  * Formats a user-facing receipt print error message with operational detail when available.
+ *
+ * @param detail - Optional raw error detail or message from the backend or encoder.
+ * @param fallbackTranslation - Localized fallback text to display if no operational detail exists.
+ * @returns Formatted user-facing error string suitable for toast display.
  */
 export function formatReceiptErrorToast(detail?: string, fallbackTranslation = 'Receipt print failed'): string {
   const msg = String(detail || '').trim();
@@ -226,6 +246,10 @@ export function formatReceiptErrorToast(detail?: string, fallbackTranslation = '
 
 /**
  * Formats a user-facing KOT print error message with operational detail when available.
+ *
+ * @param detail - Optional raw error detail or message from the backend or encoder.
+ * @param fallbackTranslation - Localized fallback text to display if no operational detail exists.
+ * @returns Formatted user-facing error string suitable for toast display.
  */
 export function formatKotErrorToast(detail?: string, fallbackTranslation = 'KOT print failed'): string {
   const msg = String(detail || '').trim();

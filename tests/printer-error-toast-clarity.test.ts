@@ -20,7 +20,7 @@ function loadFrontendWarnings(): typeof import("../frontend/src/lib/printer/warn
   }
 }
 
-const { formatReceiptErrorToast, formatKotErrorToast } = loadFrontendWarnings();
+const { formatReceiptErrorToast, formatKotErrorToast, extractPrinterErrorMessage } = loadFrontendWarnings();
 
 function runTests(): void {
   // 1. Receipt formatting: financial refusal is passed as-is without double-wrapping
@@ -54,6 +54,22 @@ function runTests(): void {
   assert.equal(formatKotErrorToast("KOT print failed", "KOT print failed"), "KOT print failed");
   assert.equal(formatKotErrorToast("", "KOT print failed"), "KOT print failed");
   assert.equal(formatKotErrorToast(undefined, "KOT print failed"), "KOT print failed");
+
+    // 6. extractPrinterErrorMessage extracts from Axios response objects and standard errors
+  assert.equal(
+    extractPrinterErrorMessage({ response: { data: { detail: "Driver disconnected" } } }),
+    "Driver disconnected",
+  );
+  assert.equal(
+    extractPrinterErrorMessage({ response: { data: { error: "Network error" } } }),
+    "Network error",
+  );
+  assert.equal(
+    extractPrinterErrorMessage(new Error("Printer paper out")),
+    "Printer paper out",
+  );
+  assert.equal(extractPrinterErrorMessage(null), "");
+  assert.equal(extractPrinterErrorMessage(undefined), "");
 
   console.log("✓ All printer error toast clarity tests passed.");
 }

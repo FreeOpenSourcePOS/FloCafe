@@ -83,7 +83,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const [syncedCustomerId, setSyncedCustomerId] = useState(customer?.id ?? null);
   if ((customer?.id ?? null) !== syncedCustomerId) {
     setSyncedCustomerId(customer?.id ?? null);
-    if (!customer) setLoyaltyPoints(null);
+    setLoyaltyPoints(null);
   }
 
   useEffect(() => {

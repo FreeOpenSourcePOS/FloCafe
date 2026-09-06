@@ -210,15 +210,27 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
 
-    const hashedPassword = password ? bcrypt.hashSync(password, 10) : member.password;
+    const passwordChanged = Boolean(password && (!member.password || !bcrypt.compareSync(password, member.password)));
+    const hashedPassword = passwordChanged
+      ? bcrypt.hashSync(password, 10)
+      : member.password;
+
+    const pinChanged = isOperationalRole(targetRole)
+      ? Boolean(member.pin_hash)
+      : pin !== undefined && (
+          hasNonEmptyPin(pin)
+            ? (!member.pin_hash || !bcrypt.compareSync(String(pin), member.pin_hash))
+            : Boolean(member.pin_hash)
+        );
+
     const hashedPin = isOperationalRole(targetRole)
       ? null
       : pin !== undefined
-        ? (hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null)
+        ? (hasNonEmptyPin(pin) ? (pinChanged ? bcrypt.hashSync(String(pin), 10) : member.pin_hash) : null)
         : member.pin_hash;
 
     // Revoke outstanding sessions only when credentials actually change.
-    const credentialsChanged = hashedPassword !== member.password || hashedPin !== member.pin_hash;
+    const credentialsChanged = passwordChanged || pinChanged;
     const tokensValidAfter = credentialsChanged ? now() : member.tokens_valid_after;
 
     const demotesActiveOwner = member.role === 'owner' && member.is_active === 1 && targetRole !== 'owner';

@@ -99,9 +99,50 @@ export type PrintFailureClass =
   | 'unsupported'
   | 'unknown';
 
+const XML_ENTITIES: Record<string, string> = {
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&apos;': "'",
+  '&amp;': '&',
+};
+
+/** Strips PowerShell CLIXML serialization envelopes and extracts clean error text. */
+export function sanitizePowerShellStderr(stderr?: string): string {
+  if (!stderr) return '';
+  const raw = String(stderr).trim();
+  if (!raw.includes('#< CLIXML')) {
+    return raw;
+  }
+
+  const errorMatches: string[] = [];
+  const regex = /<S S="Error">(.*?)<\/S>/gs;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(raw)) !== null) {
+    const text = match[1]
+      .replace(/_x000D__x000A_/g, '\n')
+      .replace(/_x([0-9a-fA-F]{4})_/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+      .replace(/&(?:lt|gt|quot|apos|amp);/g, (entity) => XML_ENTITIES[entity] ?? entity)
+      .trim();
+    if (text && !text.startsWith('At line:') && !text.startsWith('+ ')) {
+      errorMatches.push(text);
+    }
+  }
+
+  if (errorMatches.length > 0) {
+    return errorMatches.join('\n').trim();
+  }
+
+  return raw
+    .replace(/^#<\s*CLIXML[\r\n]*/i, '')
+    .replace(/_x000D__x000A_/g, '\n')
+    .replace(/_x([0-9a-fA-F]{4})_/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .trim();
+}
+
 /** Stable, privacy-safe classification for fleet telemetry. */
 export function classifyPrintFailure(detail?: string): PrintFailureClass {
-  const value = String(detail || '').toLowerCase();
+  const value = sanitizePowerShellStderr(detail).toLowerCase();
   if (!value) return 'unknown';
   if (value.includes('no printer configured') || value.includes('no windows printer configured')) return 'not_configured';
   if (value.includes('offline') || value.includes('use printer offline') || value.includes('disconnected')) return 'offline';
@@ -2764,7 +2805,9 @@ async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: A
     console.log(`[Printer] Windows raw print accepted for "${printerName}" (${String(stdout).trim()})`);
     return { ok: true, ...metadata };
   } catch (err: any) {
-    const detail = String(err.stderr || err.message || '').trim();
+    const rawStderr = String(err.stderr || '').trim();
+    const cleanStderr = sanitizePowerShellStderr(rawStderr);
+    const detail = cleanStderr || String(err.message || '').trim();
     console.error(`[Printer] Windows raw print failed for "${printerName}": ${detail}`);
     return {
       ok: false,

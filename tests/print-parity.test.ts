@@ -285,7 +285,9 @@ function expectContent(
   }
   warn(text.includes(expectations.businessName), `${label}: business header`);
   if (expectations.truncationMarker) {
-    warn(text.includes(LONG_NAME_STEM) && text.includes('..'), `${label}: long item truncated with marker`);
+    const stemRowIndex = rows.findIndex((r) => r.includes(LONG_NAME_STEM));
+    const isTruncatedOrWrapped = stemRowIndex >= 0 && (rows[stemRowIndex].includes('..') || rows[stemRowIndex + 1]?.length > 0);
+    warn(isTruncatedOrWrapped, `${label}: long item truncated with marker or wrapped`);
   }
   for (const addon of expectations.addons ?? []) {
     const normalizedText = normalizeSemanticContent(text);

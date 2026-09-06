@@ -43,7 +43,15 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontBColumns: 64,
     printWidthMm: 72,
     cutMode: 'partial',
-    capabilities: LATIN_THERMAL_CAPABILITIES,
+    capabilities: {
+      ...LATIN_THERMAL_CAPABILITIES,
+      raster: {
+        enabled: true,
+        widthDots: 576,
+        maxBandHeight: 200,
+        modes: ['mixed', 'whole-receipt'],
+      },
+    },
     notes: '80mm ESC/POS receipt printer. Vendor specs list 72mm print width, 576 dots/line, Font A 42/48 columns, Font B 56/64 columns.',
   },
   {
@@ -57,7 +65,15 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     fontAColumns: 48,
     fontBColumns: 64,
     cutMode: 'partial',
-    capabilities: LATIN_THERMAL_CAPABILITIES,
+    capabilities: {
+      ...LATIN_THERMAL_CAPABILITIES,
+      raster: {
+        enabled: true,
+        widthDots: 576,
+        maxBandHeight: 200,
+        modes: ['mixed', 'whole-receipt'],
+      },
+    },
   },
   {
     id: 'generic-escpos-80',
@@ -73,6 +89,12 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     capabilities: {
       ...GENERIC_THERMAL_CAPABILITIES,
       encoding: { codePages: ['ascii'], preferredCodePage: 'ascii' },
+      raster: {
+        enabled: true,
+        widthDots: 576,
+        maxBandHeight: 200,
+        modes: ['mixed', 'whole-receipt'],
+      },
     },
   },
   {
@@ -89,6 +111,12 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     capabilities: {
       ...GENERIC_THERMAL_CAPABILITIES,
       encoding: { codePages: ['ascii'], preferredCodePage: 'ascii' },
+      raster: {
+        enabled: true,
+        widthDots: 384,
+        maxBandHeight: 200,
+        modes: ['mixed', 'whole-receipt'],
+      },
     },
   },
 ];

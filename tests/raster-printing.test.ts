@@ -105,7 +105,7 @@ async function run(): Promise<void> {
   assert.equal(rasterWebUsbPathEnabled(caps, true, undefined), false);
   assert.equal(rasterWebUsbPathEnabled(caps, true, 'validated-profile'), true);
   assert.equal(rasterCapabilityEnabled(GENERIC_THERMAL_CAPABILITIES), false);
-  assert.equal(getSupportedPrinterProfiles().every((profile) => profile.capabilities.raster.enabled === false), true);
+  assert.equal(getSupportedPrinterProfiles().every((profile) => profile.capabilities.raster.enabled === true), true);
   assert.equal(isPrintDocument({
     version: 1,
     direction: { base: 'ltr', document: 'ltr', block: 'ltr', value: 'ltr' },

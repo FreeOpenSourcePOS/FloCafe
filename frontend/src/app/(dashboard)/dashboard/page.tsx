@@ -497,15 +497,24 @@ export default function DashboardPage() {
   // Convert a display-amount input string to integer cents. The adapter's
   // `toStored` returns the value in MAJOR units (Rial for IRR/Toman — the
   // adapter folds the Toman-to-Rial ratio itself), so multiplying by the
-  // storage minor factor gives integer cents. Empty/invalid → 0.
-  const displayToCents = (raw: string): number => {
+  // storage minor factor gives integer cents. Empty/invalid/negative →
+  // null: the operator can type `-5` and the input would render `-5`
+  // while submit sent 0, leaving a misleading variance preview and a
+  // 400 on a row that is about to become immutable. The X already
+  // exposes `expectedCashCents` in cents and the submit gate now reads
+  // `amountsValid`, so we can return null and let the caller decide.
+  const displayToCents = (raw: string): number | null => {
+    if (raw.trim() === '') return null;
     const n = Number(raw);
-    if (!Number.isFinite(n) || n < 0) return 0;
+    if (!Number.isFinite(n) || n < 0) return null;
     return Math.round(unitAdapter.toStored(n) * minorFactor);
   };
 
-  const openingFloatCents = displayToCents(openingFloatInput);
-  const countedCashCents = displayToCents(countedInput);
+  const openingFloatCentsOrNull = displayToCents(openingFloatInput);
+  const countedCashCentsOrNull = displayToCents(countedInput);
+  const openingFloatCents = openingFloatCentsOrNull ?? 0;
+  const countedCashCents = countedCashCentsOrNull ?? 0;
+  const amountsValid = openingFloatCentsOrNull !== null && countedCashCentsOrNull !== null;
   const expectedCashTotalCents = xReport ? xReport.expectedCashCents + openingFloatCents : 0;
   const varianceCents = countedCashCents - expectedCashTotalCents;
 
@@ -990,7 +999,7 @@ export default function DashboardPage() {
                   <X size={14} />
                   {tCommon('cancel')}
                 </Button>
-                <Button onClick={submitClose} disabled={submittingClose || !xReport || countedInput === '' || xReport.alreadyClosed || alreadyClosedOverride}>
+                <Button onClick={submitClose} disabled={submittingClose || !xReport || !amountsValid || xReport.alreadyClosed || alreadyClosedOverride}>
                   {submittingClose ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
                   {t('closeShift')}
                 </Button>

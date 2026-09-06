@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
-const { ChromiumRasterRenderer } = require('../dist/main/printers/raster-renderer.js');
+const { ChromiumRasterRenderer, getSharedRasterRenderer, destroySharedRasterRenderer } = require('../dist/main/printers/raster-renderer.js');
 
 const font = { family: 'FloRaster', dataUrl: 'data:font/woff2;base64,AA==' };
 
@@ -81,6 +81,8 @@ async function run() {
     });
     assert.equal(normal.ok, true);
     assert.equal(styled.ok, true);
+    const fontCount = await surface.webContents.executeJavaScript('document.fonts.size');
+    assert.equal(fontCount, 1);
     assert.equal(normal.unit.complete, true);
     assert.equal(styled.unit.complete, true);
     assert.equal(normal.unit.bands[0].widthDots, 120);
@@ -115,8 +117,21 @@ async function run() {
       detail: 'Raster renderer process exited',
     });
     console.log('Chromium raster surface rendered styled RTL output.');
+
+    // Verify shared singleton operates cleanly under real Electron
+    destroySharedRasterRenderer();
+    const shared1 = getSharedRasterRenderer({
+      preloadPath: path.join(__dirname, '../dist/main/raster-preload.js'),
+    });
+    assert.equal(shared1.isDestroyed(), false);
+    const shared2 = getSharedRasterRenderer();
+    assert.equal(shared1, shared2);
+    destroySharedRasterRenderer();
+    assert.equal(shared1.isDestroyed(), true);
+    console.log('Warm Chromium raster singleton lifecycle passed.');
   } finally {
     renderer.destroy();
+    destroySharedRasterRenderer();
     if (app.isReady()) app.quit();
   }
 }

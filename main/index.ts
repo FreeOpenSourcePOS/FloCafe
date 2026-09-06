@@ -14,6 +14,7 @@ import { googleDrive } from './services/google-drive';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter } from './printers/thermal';
+import { destroySharedRasterRenderer } from './printers/raster-renderer';
 import { registerIpcHandlers, isTrustedSender } from './ipc';
 import { authorizeMasterPin } from './services/master-pin';
 import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
@@ -1575,6 +1576,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
       if (currentTray) currentTray.destroy();
     },
   },
+  { name: 'raster surface', run: () => destroySharedRasterRenderer() },
   // The Server App can be forwarding an active request to the main API, so
   // drain it before closing the API listener it depends on.
   { name: 'Server App', run: () => stopServerApp(), blocksDatabase: true },

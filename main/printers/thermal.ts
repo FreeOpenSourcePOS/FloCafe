@@ -1145,11 +1145,11 @@ async function rasterizeDocumentLines(
     });
     return { data: Buffer.alloc(0), warnings, rasterSelected: false, rasterFailed: true };
   };
-  let renderer: Pick<import('./raster-renderer').ChromiumRasterRenderer, 'render' | 'destroy'> | undefined;
+  let renderer: Pick<import('./raster-renderer').ChromiumRasterRenderer, 'render'> | undefined;
   let result = failureResult(new Error('Raster renderer was not initialized'));
   try {
-    const { ChromiumRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
-    renderer = new ChromiumRasterRenderer();
+    const { getSharedRasterRenderer, renderUnsupportedRasterLines } = await import('./raster-renderer');
+    renderer = getSharedRasterRenderer();
     const raster = await renderUnsupportedRasterLines(renderer, lines, options.capabilities, options.requestPrefix, rasterGroups);
     selectedFinancial = raster.units.some((unit) => unit.unit.financial) || raster.failures.some((failure) => failure.financial);
     const warnings = sourceWarnings.filter((warning) => warning.kind !== 'line' && warning.kind !== 'financial');
@@ -1173,13 +1173,6 @@ async function rasterizeDocumentLines(
     result = { data, warnings, rasterSelected: raster.units.length > 0, rasterFailed: raster.failures.length > 0 || warnings.some((warning) => warning.kind === 'line' || warning.kind === 'financial') };
   } catch (error) {
     result = failureResult(error);
-  }
-  if (renderer) {
-    try {
-      renderer.destroy();
-    } catch (error) {
-      result = failureResult(error);
-    }
   }
   return result;
 }

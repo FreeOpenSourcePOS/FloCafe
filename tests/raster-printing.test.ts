@@ -1009,6 +1009,7 @@ async function run(): Promise<void> {
   assert.deepEqual(await renderPromise, { version: 1, requestId: request.requestId, ok: true, unit });
   renderer.destroy();
   assert.equal(isRasterRenderRequest(request), true);
+  assert.equal(isRasterRenderRequest({ ...request, bundledFont: undefined }), true);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: 'https://example.invalid/font.woff2' } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: null } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, family: 'bad;url(x)' } }), false);
@@ -1068,6 +1069,28 @@ async function run(): Promise<void> {
   assert.equal(sharedRenderer4.isDestroyed(), false);
   destroySharedRasterRenderer();
   assert.equal(sharedRenderer4.isDestroyed(), true);
+
+  // Test fontless raster capability where bundledFont is omitted and system fonts are used
+  const fontlessCapabilities: ThermalPrinterCapabilities = {
+    ...caps,
+    raster: {
+      enabled: true,
+      widthDots: 384,
+      maxBandHeight: 200,
+      modes: ['mixed'],
+    },
+  };
+  const fontlessRequests: any[] = [];
+  const fontlessResult = await renderUnsupportedRasterLines({
+    render: async (req) => {
+      fontlessRequests.push(req);
+      return { version: 1, requestId: (req as any).requestId, ok: true, unit: { unitId: (req as any).requestId, financial: false, complete: true, bands: [twoRows] } };
+    },
+  }, ['چای 1 $550', '煎饼 1 $550'], fontlessCapabilities, 'fontless');
+  assert.equal(fontlessResult.failures.length, 0);
+  assert.equal(fontlessRequests.length, 2);
+  assert.equal(fontlessRequests[0].bundledFont, undefined);
+  assert.equal(fontlessRequests[1].bundledFont, undefined);
 
   console.log('Raster encoder and mixed-mode contract checks passed.');
 }

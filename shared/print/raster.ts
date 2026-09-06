@@ -64,8 +64,8 @@ export interface RasterRenderRequest {
   readonly styles?: readonly RasterStyle[];
   readonly financial: boolean;
   readonly maxLines: number;
-  /** A data: URL for a font bundled by the application, never a network URL. */
-  readonly bundledFont: { readonly family: string; readonly dataUrl: string };
+  /** An optional data: URL for a font bundled by the application, never a network URL. */
+  readonly bundledFont?: { readonly family: string; readonly dataUrl: string };
 }
 
 export type RasterRenderResult =
@@ -274,9 +274,11 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
       && request.styles.every((style) => ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(style))))
     && typeof request.financial === 'boolean'
     && Number.isSafeInteger(request.maxLines) && (request.maxLines as number) > 0 && (request.maxLines as number) <= 256
-    && !!request.bundledFont && typeof request.bundledFont.family === 'string'
-    && /^[A-Za-z0-9 _-]{1,64}$/.test(request.bundledFont.family)
-    && isBundledFontDataUrl(request.bundledFont.dataUrl);
+    && (request.bundledFont === undefined || (
+      typeof request.bundledFont.family === 'string'
+      && /^[A-Za-z0-9 _-]{1,64}$/.test(request.bundledFont.family)
+      && isBundledFontDataUrl(request.bundledFont.dataUrl)
+    ));
 }
 
 function isRasterBand(value: unknown): value is RasterBand {

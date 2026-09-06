@@ -67,18 +67,7 @@ import {
   type ShutdownEntrypointProcess,
 } from './shutdown';
 
-// ── GPU compatibility ────────────────────────────────────────────────────────
-// On Windows, some systems hit "GPU process exited unexpectedly" (exit code
-// 0xC0000135 = STATUS_DLL_NOT_FOUND) because the GPU sandbox can't find
-// required DLLs (outdated drivers, missing Vulkan, etc.).  Disabling the GPU
-// sandbox lets the renderer fall back to software/Skia rendering which is
-// slower but reliable.  This is a no-op on macOS/Linux.
-//
-// Trade-off: this removes Chromium's GPU isolation for ALL Windows users,
-// not just those with the DLL crash.  For a local desktop POS app the attack
-// surface is already large (server binds 0.0.0.0), so the practical risk is
-// low.  A conditional approach (detect crash, store flag, re-launch with
-// sandbox disabled) adds complexity for minimal security gain here.
+// Disable GPU sandbox on Windows to avoid DLL crash fallback
 if (process.platform === 'win32') {
   app.commandLine.appendSwitch('disable-gpu-sandbox');
 }
@@ -89,9 +78,7 @@ const isMasBuild =
   process.env.MAS_BUILD === '1' ||
   (process as NodeJS.Process & { mas?: boolean }).mas === true;
 
-// Microsoft Store (MSIX) builds: Electron has no process.msix equivalent.
-// MSIX apps are always installed under C:\Program Files\WindowsApps\ so
-// checking the executable path is the most reliable runtime detection.
+// MSIX apps install under WindowsApps; check path for runtime detection.
 const isMsixBuild =
   process.platform === 'win32' &&
   process.execPath.toLowerCase().includes('windowsapps');
@@ -106,9 +93,7 @@ log.transports.console.level = 'debug';
 const logPath = log.transports.file.getFile().path.replace(/[^\/\\]+$/, '');
 console.log('[Log] Log files location:', logPath);
 
-// Single persisted update state (#467): every transition (including one-shot
-// startup states and failures) goes through here so a renderer reload can
-// recover the truth via get-update-status instead of racing push events.
+// Persisted update state: transitions are routed here for status recovery.
 let storedUpdateStatus: StoredUpdateStatus = initialUpdateState();
 let updaterPhase: UpdateErrorPhase = 'check';
 let stagedUpdateReady = false;
@@ -116,10 +101,7 @@ let startupFailure = false;
 let isInstallingUpdate = false;
 let betaChannelTransitionTail: Promise<void> = Promise.resolve();
 
-// Beta-channel opt-in persistence (#463, decision #503). The preference lives
-// in the same SQLite settings store as the rest of the app configuration so it
-// survives restarts; failures degrade to "stable" (the safe default) instead
-// of breaking the updater.
+// Beta channel opt-in stored in SQLite settings; defaults to stable on error.
 function readBetaChannelEnabled(): boolean {
   try {
     const row = getDatabase()
@@ -156,17 +138,13 @@ function configureAutoUpdaterChannel(betaOptInOverride?: boolean): void {
 
   autoUpdater.channel = resolved.channel;
   autoUpdater.allowPrerelease = resolved.allowPrerelease;
-  // Downgrade is only enabled for beta builds remaining on the beta feed;
-  // opting out or running stable disables downgrades to safely graduate on
-  // the next matching or newer stable release.
+  // Allow downgrade only for beta builds remaining on beta feed.
   autoUpdater.allowDowngrade = resolved.allowDowngrade;
 
   if (resolved.channel) {
     log.info(`[Update] Opted into ${resolved.channel} release channel`);
   } else if (versionChannel) {
-    // Do not let an unsupported prerelease (nightly stamp, local alpha, ...)
-    // accidentally subscribe an installation to an untracked channel (#503:
-    // nightly releases are rejected; such installs get stable updates).
+    // Unsupported prerelease channels fall back to stable updates.
     log.warn(`[Update] Unsupported prerelease channel ${versionChannel}; using stable updates only`);
   }
 }
@@ -183,9 +161,7 @@ function setUpdateStatus(next: StoredUpdateStatus): void {
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
   configureAutoUpdaterChannel();
-  // Downloading is harmless and lets the user see a ready-to-install build,
-  // but installation must always be an explicit action. A POS may be closed
-  // while a payment, printer job, or end-of-day workflow is still in flight.
+  // Auto-download update packages silently, but require explicit user confirmation to install.
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = false;
 
@@ -256,11 +232,8 @@ function checkForUpdates(): void {
     return;
   }
 
-  // Linux: only AppImage supports self-update via electron-updater (it sets
-  // the APPIMAGE env var at launch). deb/rpm/snap are managed by their
-  // package manager / the snap daemon instead — electron-updater can't
-  // update those, so tell the renderer and stop instead of letting
-  // "Check for Updates" sit there doing nothing forever when clicked.
+  // Linux: only AppImage supports self-update via electron-updater;
+  // package manager installs are notified accordingly.
   if (process.platform === 'linux' && !process.env.APPIMAGE) {
     log.info('[Update] Linux non-AppImage install — updates managed by package manager');
     setUpdateStatus(oneShotUpdateState('linux-managed'));
@@ -324,17 +297,12 @@ function checkForUpdates(): void {
   updaterPhase = 'check';
   setUpdateStatus({ status: 'checking' });
   autoUpdater.checkForUpdates().catch((err) => {
-    // The `error` event above records the honest classified state; this
-    // catch only prevents an unhandled promise rejection.
+    // Record error state; catch prevents unhandled rejection.
     console.error('[Update] Check failed:', err);
   });
 }
 
-// Separate from the app self-updater above: tax packs are the only plugin
-// type FloCafe currently supports, installed from the FloCafe-Plugins GitHub
-// Releases catalog rather than through electron-updater. This is a
-// best-effort, network-optional check — a store must keep working offline,
-// so a failure here only logs and never blocks startup.
+// Best-effort startup check for tax pack plugin updates.
 async function checkTaxPackUpdatesOnStartup(): Promise<void> {
   try {
     const remote = await fetchRemoteTaxPackCatalog();
@@ -363,13 +331,7 @@ async function checkTaxPackUpdatesOnStartup(): Promise<void> {
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-// createWindow() can run more than once per app lifetime after a renderer
-// crash or window destruction. Activation and recovery are gated below so a
-// new window is never created against a stopped runtime. Every window shares
-// the same default session (no partition/session is set in webPreferences) —
-// registering again on each call would stack duplicate 'select-usb-device'
-// listeners on that shared session, firing multiple confirmation dialogs per
-// request.
+// Track USB device permissions registration so listeners are not duplicated across windows.
 let usbDevicePermissionsRegistered = false;
 
 // Title-bar capability reported to the renderer via get-status; updated each
@@ -385,26 +347,14 @@ let activationPending = false;
 let windowLoadRecoveryAttempted = false;
 let windowRecoveryInProgress = false;
 let runtimeRelaunchRequested = false;
-// Last did-fail-load detail captured for the runtime-stuck diagnostic dialog
-// (see requestRuntimeRelaunch below). Cleared on the next successful load so
-// a stale error from an earlier, unrelated failure is never reported.
+// Last did-fail-load detail captured for diagnostic dialog; cleared on successful load.
 let lastWindowLoadFailure: { errorCode: number; errorDescription: string; validatedURL?: string } | null = null;
-// Self-healing GPU fallback: repeated GPU-process crashes (child-process-gone
-// with type 'GPU'), or repeated renderer crashes of unknown cause, set this
-// and actively request a relaunch — a bad GPU/driver is the most common
-// reason a renderer keeps dying only inside Electron's bundled Chromium and
-// not in the machine's regular browser. performAppRelaunch() appends
-// --disable-gpu on that relaunch (and every one after, while the flag or the
-// command-line switch itself is already set) since disabling hardware
-// acceleration is a process-startup decision a running window can't apply.
+// Self-healing GPU fallback: relaunch with --disable-gpu after repeated crashes.
 let shouldDisableGpuOnRelaunch = false;
 let consecutiveRendererCrashes = 0;
 let consecutiveGpuCrashes = 0;
 const GPU_FALLBACK_CRASH_THRESHOLD = 2;
-// A replacement window's own did-finish-load must not erase the crash count
-// that got it created — that would mean a renderer that crashes, reloads,
-// and crashes again immediately can never reach GPU_FALLBACK_CRASH_THRESHOLD.
-// Only a load that stays up for this long counts as genuine recovery.
+// Reset crash counters only after a window stays up for this duration.
 const RENDERER_STABILITY_RESET_MS = 30_000;
 let rendererStabilityResetTimer: NodeJS.Timeout | null = null;
 function clearRendererStabilityResetTimer(): void {
@@ -483,35 +433,22 @@ function recoverFailedWindow(failedWindow: BrowserWindow): void {
   }
 }
 
-// createRelaunchGate() only bounds relaunches within a single process's
-// lifetime — a relaunched process gets a fresh gate. Bound repeat relaunches
-// across process restarts too (e.g. a permanently occupied port would
-// otherwise make every new instance immediately detect the same failure and
-// relaunch again): the relaunched process's own argv carries this flag, so a
-// second failure shows a native dialog instead of looping.
+// Flag passed in argv to prevent infinite relaunch loops across process restarts.
 const RUNTIME_RELAUNCH_ATTEMPT_FLAG = '--flo-runtime-relaunch-attempt';
 
 function hasAlreadyAttemptedRuntimeRelaunch(): boolean {
   return hasRelaunchAttemptFlag(process.argv, RUNTIME_RELAUNCH_ATTEMPT_FLAG);
 }
 
-// Gates repeat relaunches across process restarts (see hasAlreadyAttemptedRuntimeRelaunch
-// above), but only until this process's runtime first recovers — see
-// createRelaunchAttemptGuard for why an outright process-lifetime check is wrong.
+// Gates repeat relaunches across process restarts until runtime recovers.
 const relaunchAttemptGuard = createRelaunchAttemptGuard(hasAlreadyAttemptedRuntimeRelaunch());
 
 function performAppRelaunch(): void {
-  // Self-healing GPU fallback (see shouldDisableGpuOnRelaunch): once armed,
-  // every subsequent relaunch keeps --disable-gpu, including across the
-  // process-restart boundary, since app.commandLine.hasSwitch('disable-gpu')
-  // below reads it back from this process's own argv.
+  // Preserve --disable-gpu flag on relaunch if GPU fallback was triggered.
   const wantsGpuDisabled = shouldDisableGpuOnRelaunch || app.commandLine.hasSwitch('disable-gpu');
   if (process.defaultApp || !app.isPackaged) {
     const relaunchArgs = process.argv.slice(1).map((arg) => (arg === '.' ? process.cwd() : arg));
-    // Playwright applies Chromium switches through app.commandLine, and its
-    // Electron loader removes those injected switches from process.argv. Read
-    // the effective command line so a Linux relaunch retains the sandbox flags
-    // it needs to start under CI.
+    // Retain sandbox and display flags required under Playwright/CI.
     if (app.commandLine.hasSwitch('no-sandbox') && !relaunchArgs.includes('--no-sandbox')) {
       relaunchArgs.push('--no-sandbox');
     }
@@ -533,13 +470,7 @@ function performAppRelaunch(): void {
   }
 }
 
-/**
- * Last-resort dialog shown when the runtime has already relaunched once
- * across process restarts and failed again (see hasAlreadyAttemptedRuntimeRelaunch).
- * Explains what happened in plain language and offers to send the details
- * that would otherwise only live in the local log file, via the same
- * anonymous telemetry channel already used for startup failures.
- */
+// Dialog shown when runtime repeatedly fails after a restart.
 async function showRuntimeStuckDialog(reason: string): Promise<void> {
   const services = getRuntimeServices();
   const detailLines = [
@@ -638,18 +569,12 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let gotSingleInstanceLock = false;
 
-// ── Single-instance lock ──────────────────────────────────────────────────────
-// Prevent multiple instances of the app from running simultaneously.
-// This is especially important on Linux where the AppImage can be launched
-// multiple times without the OS preventing it.
+// Single-instance lock: prevent duplicate app instances.
 if (process.env.FLO_E2E_USER_DATA_DIR) {
-  // Native Playwright supplies a disposable profile so Electron's single
-  // instance lock, caches, and session storage cannot collide with a user or
-  // another test run. Normal launches retain their platform-specific paths.
+  // Use isolated profile directory in E2E tests.
   app.setPath('userData', path.resolve(process.env.FLO_E2E_USER_DATA_DIR));
 } else if (process.platform === 'linux') {
-  // Explicitly set app name and userData path to prevent Electron from
-  // resolving them inside temporary mount paths (e.g. /tmp/.mount_FloXXXXXX)
+  // Set explicit paths on Linux to avoid temporary mount directories.
   app.name = 'flo-desktop';
   app.setPath('userData', path.join(os.homedir(), '.config', 'flo-desktop'));
 }
@@ -684,23 +609,16 @@ function createWindow(): void {
     return;
   }
 
-  // Runs on every call, not just the initial one. Window recreation is routed
-  // through handleMainWindowActivation(), which verifies the runtime before
-  // allowing this function to create a new renderer.
+  // Clear stale GPU/code caches when Electron version upgrades.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
-  // Readiness lifecycle: register the fail-safe show path and begin the first
-  // document epoch before anything loads. Every subsequent full-document
-  // navigation re-begins via the did-start-navigation hook below.
+  // Initialize readiness fail-safe and start document epoch.
   initWindowReadiness(() => {
     showMainWindow();
   });
   beginRendererDocument();
 
-  // Decide once per window whether the native titleBarOverlay can be relied
-  // on (platform + Electron >= 33 + the overlay API actually present). When
-  // it cannot, the window ships without overlay options and the renderer
-  // mounts HTML fallback controls so we never end up hidden-with-no-controls.
+  // Resolve whether native title bar overlay is supported or if fallback is required.
   resolvedTitleBarMode = resolveTitleBarMode({
     platform: process.platform,
     electronVersion: process.versions.electron,
@@ -734,10 +652,7 @@ function createWindow(): void {
     }
   });
 
-  // Begin epochs before the new document's preload runs. Unlike
-  // did-start-loading, did-start-navigation exposes whether a navigation is
-  // same-document, so Next.js pushState route changes keep the current
-  // readiness report while reloads and full navigations invalidate it.
+  // Track full navigations to begin new readiness epochs.
   mainWindow.webContents.on('did-start-navigation', (_event, _url, isSameDocument, isMainFrame) => {
     if (isFullDocumentMainFrameNavigation({ isSameDocument, isMainFrame })) {
       beginRendererDocument();
@@ -771,9 +686,7 @@ function createWindow(): void {
     });
   });
 
-  // Required for the renderer's WebUSB printer flow (PrinterService.connect())
-  // to resolve at all — see usb-device-permissions.ts. Registered at most
-  // once per app lifetime; see usbDevicePermissionsRegistered above.
+  // Register WebUSB permissions for direct thermal printer connection.
   if (!usbDevicePermissionsRegistered) {
     registerUsbDevicePermissions(mainWindow.webContents.session, `http://localhost:${getServerPort()}`);
     usbDevicePermissionsRegistered = true;
@@ -823,15 +736,9 @@ function createWindow(): void {
     console.error('[Window] Renderer process gone:', details.reason);
 
     if (details.reason !== 'clean-exit') {
-      // A crash means the window was never actually stable — cancel any
-      // pending reset so this crash still counts toward the threshold below,
-      // even though the replacement window's own did-finish-load already
-      // armed a fresh timer for itself.
+      // Crash invalidated stability; cancel reset timer.
       clearRendererStabilityResetTimer();
-      // Best-effort and independent of the recovery dialog below: this is the
-      // only signal we get for a hard renderer crash (as opposed to a caught
-      // render exception, which reports itself via report-renderer-error), so
-      // it must not depend on the user dismissing anything first.
+      // Report telemetry event for hard renderer crash.
       void sendTelemetryEvent('renderer_process_gone', {
         reason: details.reason,
         exitCode: details.exitCode,
@@ -941,20 +848,11 @@ async function handleMainWindowActivation(): Promise<void> {
   requestRuntimeRelaunchOnce(`activation-runtime-unavailable-${runtimeState}`);
 }
 
-// ── Sleep/wake repaint recovery ─────────────────────────────────────────────
-// macOS/Chromium's GPU compositor can fail to repaint after the display goes
-// to sleep and wakes back up, leaving the window fully white until the user
-// force-quits it. No crash occurs — render-process-gone never fires because
-// the renderer is still alive, it just stops painting. Nudging the window
-// size by a pixel forces the native compositor to recompute and redraw
-// without touching webContents (no reload, no loss of in-progress renderer
-// state). Registered once; mainWindow is re-read from the module-level `let`
-// on every resume, so it stays correct across window recreation.
+// Sleep/wake recovery: nudge window dimensions on resume to force GPU compositor repaint.
 function registerPowerMonitorRecovery(): void {
   powerMonitor.on('resume', () => {
     console.log('[Window] System resumed from sleep, forcing repaint');
-    // The display/GPU pipeline isn't necessarily back immediately on resume;
-    // give it a moment before nudging so the repaint has something to show.
+    // Allow display pipeline to wake before nudging.
     setTimeout(() => {
       if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return;
       const [width, height] = mainWindow.getSize();
@@ -964,29 +862,18 @@ function registerPowerMonitorRecovery(): void {
   });
 }
 
-// Registered once at startup. A GPU-process crash never fires webContents'
-// render-process-gone (that's the renderer, a separate process) — this is
-// the only way to see it at all, and a bad GPU driver is a common cause of
-// "the app crashes on this Windows machine but the same page is fine in a
-// regular browser" reports, since the browser's own GPU/driver workarounds
-// don't apply to Electron's bundled, independently-versioned Chromium.
+// Track child process crashes and trigger GPU fallback relaunch on GPU crash.
 function registerChildProcessCrashTelemetry(): void {
   app.on('child-process-gone', (_event, details) => {
     log.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
     console.error('[Process] Child process gone:', details.type, details.reason, details.exitCode);
-    // clean-exit means the process exited with code 0 (e.g. normal shutdown
-    // teardown) — not a crash, and never grounds for arming --disable-gpu or
-    // relaunching. Also skip recovery entirely once quitting/shutdown is
-    // already underway, so a GPU process winding down as part of a deliberate
-    // quit can't trigger a relaunch that fights the quit in progress.
+    // Ignore normal shutdown/clean-exit signals.
     const isGpuFailure = details.type === 'GPU'
       && details.reason !== 'clean-exit'
       && !isQuitting
       && !isShutdownRequested();
     if (isGpuFailure) {
-      // Cancel any pending stability reset — a GPU crash means the current
-      // window's graphics pipeline was not actually stable, even if the
-      // renderer itself never reported render-process-gone.
+      // Cancel stability reset timer and increment GPU crash count.
       clearRendererStabilityResetTimer();
       consecutiveGpuCrashes++;
     }
@@ -1000,11 +887,7 @@ function registerChildProcessCrashTelemetry(): void {
       log.error('[Process] Failed to report child-process failure:', error);
     });
     if (isGpuFailure) {
-      // Unlike a renderer crash (which could have many causes, so it waits
-      // for GPU_FALLBACK_CRASH_THRESHOLD occurrences before assuming GPU is
-      // to blame), Electron has already told us definitively this is the GPU
-      // process — no need to wait for a repeat to be confident. Relaunch on
-      // the first one.
+      // Hardware acceleration fallback after GPU process crash.
       shouldDisableGpuOnRelaunch = true;
       log.error('[Process] GPU process crashed — requesting relaunch with hardware acceleration disabled.');
       requestRuntimeRelaunchOnce('gpu-process-crashed');
@@ -1014,13 +897,7 @@ function registerChildProcessCrashTelemetry(): void {
 
 function createTray(): void {
   if (process.platform === 'linux') {
-    // ── Linux system tray ────────────────────────────────────────────────────
-    // On Linux the window close button hides the window (same as other
-    // platforms), but there is no native macOS-style dock or Windows taskbar
-    // integration to bring it back. A system-tray icon gives Linux users a
-    // persistent, discoverable way to show the window or fully quit the app
-    // (which triggers the existing quit handler that tears down DB, servers,
-    // mDNS, etc.).
+    // Linux tray: provides persistent icon to restore or quit the app.
     const linuxIconPath = isDev
       ? path.join(__dirname, '../../assets/icon-512.png')
       : path.join(process.resourcesPath, 'assets/icon-512.png');
@@ -1054,9 +931,7 @@ function createTray(): void {
                 tray.destroy();
                 tray = null;
               }
-              // will-quit owns the same awaited cleanup sequence as every
-              // other Electron entrypoint. Do not force-exit while resources
-              // are still draining.
+              // Defer quit so context menu can close and drain resources cleanly.
               app.quit();
             }, 100);
           },
@@ -1348,9 +1223,7 @@ async function initialize(): Promise<void> {
     });
 
     ipcMain.handle('updates:get-beta-channel', () =>
-      // Persisted preference only — whether beta releases are *offered* is
-      // decided by resolveUpdateChannel at check time, so this stays honest
-      // even if the running version forces a specific channel.
+      // Returns persisted beta channel preference.
       withDatabaseRequest(() => readBetaChannelEnabled())
     );
 
@@ -1359,9 +1232,7 @@ async function initialize(): Promise<void> {
         return { success: false, error: 'enabled must be a boolean' };
       }
       return enqueueBetaChannelTransition(() => withDatabaseRequest(async () => {
-        // #467 honest-state model: never swap feeds underneath an in-flight or
-        // staged update. The renderer surfaces the refusal as a real state
-        // instead of silently masking what the updater is doing.
+        // Prevent channel switch if an update check/download is active or staged.
         if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
           return { success: false, error: 'A downloaded update is waiting to be installed — install it before switching channels' };
         }
@@ -1375,9 +1246,7 @@ async function initialize(): Promise<void> {
           return { success: false, error: 'Could not save the channel preference' };
         }
         log.info(`[Update] Beta channel ${enabled ? 'enabled' : 'disabled'} by user`);
-        // Re-derive allowPrerelease/channel for the running install, then reset
-        // to the real pre-check state and immediately re-check against the new
-        // feed — the renderer sees genuine states, not a fabricated answer.
+        // Reconfigure channel settings and initiate immediate update re-check.
         configureAutoUpdaterChannel(enabled);
         setUpdateStatus(initialUpdateState());
         checkForUpdates();
@@ -1385,19 +1254,7 @@ async function initialize(): Promise<void> {
       }));
     });
 
-    // #463: restarting to install takes the whole POS down (server, KDS,
-    // printing) until the app comes back up, so it is gated behind manager or
-    // owner PIN approval. The PIN check runs here in the main process — the
-    // same authorizeMasterPin used by every other master-PIN-gated IPC
-    // handler — so no renderer path can bypass the guard.
-    //
-    // Cleanup runs *before* quitAndInstall so the shutdown coordinator's
-    // will-quit handler sees cleanupFinished=true and exits immediately,
-    // allowing the platform installer hook (Squirrel.Mac / NSIS / AppImage)
-    // to relaunch the new version. Without this ordering, the coordinator
-    // calls event.preventDefault() on the first will-quit (blocking the
-    // installer's relaunch), then calls app.quit() a second time as a plain
-    // quit with no relaunch - the new version is never launched.
+    // Requires master PIN authorization and runs cleanup before quitAndInstall.
     ipcMain.handle('restart-and-install', createRestartAndInstallHandler({
       isInstallReady: () => isInstallReady(storedUpdateStatus, stagedUpdateReady),
       authorize: (pin) => authorizeMasterPin(pin, 'ipc:restart-and-install'),
@@ -1433,10 +1290,7 @@ async function initialize(): Promise<void> {
     relaunchAttemptGuard.markRuntimeRecovered();
     log.info('[Lifecycle] Runtime is ready');
     ipcMain.handle('set-theme-effective', (event, isDark: unknown) => {
-      // gh-513 F8: validate the sender — the ipc.ts handle() wrapper applies
-      // this guard to its registered handlers; this raw ipcMain.handle sits
-      // outside that wrapper and would otherwise accept any LAN-rendered
-      // sender. Same guard semantics (main/ipc.ts isTrustedSender).
+      // Validate sender origin matches trusted local window.
       if (!isTrustedSender(event)) {
         return { success: false, error: 'Untrusted sender' };
       }
@@ -1446,8 +1300,7 @@ async function initialize(): Promise<void> {
       currentEffectiveIsDark = isDark;
       if (mainWindow && !mainWindow.isDestroyed()) {
         applyTitleBarOverlayTheme(mainWindow, isDark, process.platform);
-        // Background base matches the overlay tokens so resize/gap edges
-        // never flash the wrong palette.
+        // Match window background to overlay token to prevent border flashing.
         mainWindow.setBackgroundColor(resolveTitleBarOverlayColors(isDark).color);
       }
       return { success: true };
@@ -1458,18 +1311,14 @@ async function initialize(): Promise<void> {
     registerChildProcessCrashTelemetry();
     createTray();
     createMenu();
-    // Auto-updater: wired up on every non-store platform, including Linux now
-    // (#58) — checkForUpdates() itself decides whether Linux's build format
-    // (AppImage vs deb/rpm/snap) actually supports self-update.
+    // Auto-updater configured on non-store platforms.
     if (!isStoreBuild) {
       if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
         setupAutoUpdater();
         setTimeout(() => checkForUpdates(), 5000);
       }
     } else {
-      // Store builds skip electron-updater entirely; seed the persisted state
-      // so the renderer shows honest "managed by the store" status from the
-      // first load instead of a stale never-checked default (#467).
+      // Store builds skip auto-updater and report store-managed status.
       setUpdateStatus(oneShotUpdateState('store-managed'));
     }
     if (process.env.FLO_E2E_SKIP_OPTIONAL_NETWORK !== '1') {
@@ -1496,10 +1345,7 @@ async function initialize(): Promise<void> {
     }
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
 
-    // Best-effort: report the fatal startup failure so support can see which
-    // installs are stuck on a stale build without waiting for a user to
-    // describe the error message themselves. The cleanup below remains safe
-    // even when initialization failed before the database or listeners opened.
+    // Report fatal startup error to telemetry on a best-effort basis.
     try {
       const payload: Record<string, unknown> = {
         error_message: String(error instanceof Error ? error.message : error).slice(0, 500),
@@ -1572,8 +1418,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
     },
   },
   { name: 'raster surface', run: () => destroySharedRasterRenderer() },
-  // The Server App can be forwarding an active request to the main API, so
-  // drain it before closing the API listener it depends on.
+  // Drain Server App before shutting down main API.
   { name: 'Server App', run: () => stopServerApp(), blocksDatabase: true },
   { name: 'Main server', run: () => stopServer(), blocksDatabase: true },
   { name: 'KDS server', run: () => stopKdsServer(), blocksDatabase: true },
@@ -1585,14 +1430,11 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork(), blocksDatabase: true },
   { name: 'database admission', run: () => beginDatabaseShutdown(), blocksDatabase: true },
   { name: 'database requests', run: () => waitForDatabaseRequests(), blocksDatabase: true },
-  // Database closure is deliberately last: all HTTP and WebSocket work must
-  // have settled before handlers can lose access to SQLite.
+  // Close database after all in-flight handlers have finished.
   { name: 'database', run: () => closeDatabase(), databaseClose: true },
 ], {
   onFatalTimeout: () => {
-    // When shutting down to install an update, do not force-kill the process
-    // via app.exit(1) on a timeout; let runCleanup() reject and hand off to
-    // autoUpdater.quitAndInstall() so the update can still proceed.
+    // Avoid exit(1) on timeout during update installation so updater can hand off.
     if (!isInstallingUpdate && !runtimeRelaunchRequested) {
       app.exit(1);
     }

@@ -25,7 +25,6 @@ import { sendEvent as sendTelemetryEvent } from './services/telemetry';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
-// Sensitive keys (jwt_secret, cloud_api_key, cloud_*, tax_registration_number, etc.) are excluded.
 const ALLOWED_IPC_KEYS = new Set([
   'business_name', 'timezone', 'currency', 'country',
   'state_code', 'business_address', 'business_phone',
@@ -67,12 +66,7 @@ function isValidRasterColumns(value: unknown): value is number {
     && value <= MAX_RASTER_COLUMNS;
 }
 
-/**
- * The only window permitted to invoke privileged IPC is the main POS renderer,
- * which the embedded server serves from localhost/127.0.0.1. The KDS window is
- * LAN-served HTTP content and must not reach these handlers, so non-PIN-gated
- * handlers verify the sender's origin before doing anything.
- */
+/** Verifies that IPC sender origin is the localhost-served POS renderer. */
 export function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender'>): boolean {
   try {
     const url = event.sender?.getURL?.() ?? '';
@@ -95,13 +89,7 @@ interface IpcPrinterInput {
   is_default?: boolean | number;
 }
 
-/**
- * The preload can run before Chromium has committed the localhost URL. In
- * that narrow interval origin is unavailable, so accept only the expected
- * POS BrowserWindow (and still require the current top-level frame below).
- * Every other pre-navigation sender fails closed; once a URL exists the
- * normal localhost origin check remains mandatory.
- */
+/** Preload origin check before Chromium has committed localhost URL. */
 function isEarlyMainWindowSender(
   event: Pick<Electron.IpcMainEvent, 'sender'>,
   getMainWindow?: MainWindowGetter,
@@ -323,12 +311,7 @@ export function registerIpcHandlers(
     }
   });
 
-  // Narrow window-control surface for the renderer title bar's HTML fallback
-  // controls (only mounted when main reports 'html-fallback'). The trusted-
-  // sender wrapper above already restricts this to the localhost-served POS
-  // renderer; KDS/print popups carry no preload bridge. 'close' routes through
-  // BrowserWindow.close() so it fires the same event as the native caption
-  // button and honors close-to-tray behavior.
+  // Window-control surface for renderer title bar HTML fallback controls.
   handle('window-action', (event, action: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return { error: 'Window unavailable' };
@@ -356,9 +339,7 @@ export function registerIpcHandlers(
     if (!isCurrentRendererFrame(event.senderFrame, currentFrame)) {
       return { success: false, error: 'Stale or invalid readiness report' };
     }
-    // Reports are bound to the readiness epoch of the document that sent them
-    // (see main/window-readiness.ts). Stale or malformed reports are ignored:
-    // a previous document must never mark the current one ready.
+    // Verify readiness report epoch/nonce before showing window.
     const reported = payload as { epoch?: unknown; documentNonce?: unknown } | null | undefined;
     if (!markWindowRendererReady(reported?.epoch, reported?.documentNonce)) {
       return { success: false, error: 'Stale or invalid readiness report' };
@@ -447,9 +428,7 @@ export function registerIpcHandlers(
       activeKdsWindow = null;
     });
 
-    // Confine the KDS window to its own origin and deny new windows so a
-    // modified or unexpected document cannot navigate away and reach other
-    // local services or content.
+    // Confine KDS window to its own origin and deny external navigation/windows.
     activeKdsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     activeKdsWindow.webContents.on('will-navigate', (event, url) => {
       let allowed = false;
@@ -461,9 +440,7 @@ export function registerIpcHandlers(
       if (!allowed) event.preventDefault();
     });
 
-    // gh-513: KDS window has no preload and a LAN-IP origin — it learns the
-    // current palette from the URL param (read by the root-layout FOUC
-    // script), since it can't share the main window's localStorage mirror.
+    // KDS window has no preload; learns palette from URL param.
     const kdsUrl = appendThemeQueryParam(
       `${kdsOrigin}/kds`,
       getCurrentEffectiveIsDark ? getCurrentEffectiveIsDark() : false,
@@ -481,9 +458,7 @@ export function registerIpcHandlers(
     };
   });
 
-  // Reports a caught renderer-side render exception (see the dashboard error
-  // boundary) via the existing anonymous telemetry channel — sendEvent
-  // already respects the telemetry_enabled setting and never throws.
+  // Reports a caught renderer-side exception via anonymous telemetry.
   handle('report-renderer-error', async (event, report: unknown) => {
     const r = report as { message?: unknown; stack?: unknown; digest?: unknown; route?: unknown } | null;
     const clamp = (value: unknown, max: number): string | undefined =>

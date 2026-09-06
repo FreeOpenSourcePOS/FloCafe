@@ -1,13 +1,4 @@
-/**
- * Receipt/KOT language policy settings (#441, epic #438).
- *
- * Bridges the neutral shared print kernel to the tenant settings store.
- * The kernel stays registry-independent: this module injects the backend's
- * registry-derived view — the generated print-label language table
- * (main/print/print-labels.generated.ts). The print-label generation workflow
- * owns that backend view; no language union is hardcoded here.
- */
-
+/** Receipt and KOT language policy settings bridge to tenant settings store. */
 import { PRINT_LABEL_LANGUAGES } from '../print/print-labels.generated';
 import {
   defaultPrintLanguagePolicy,
@@ -42,11 +33,7 @@ export type LanguagePolicyValidation =
   | { ok: true; stored: string }
   | { ok: false; error: string };
 
-/**
- * Validate an untrusted policy value for a language-policy settings key.
- * Accepts a JSON string or an already-parsed object; returns the canonical
- * JSON to persist. Invalid payloads are rejected with a reason.
- */
+/** Validate an untrusted policy value for a language-policy settings key. */
 export function validateLanguagePolicySetting(
   key: string,
   value: unknown,
@@ -77,11 +64,7 @@ export function validateLanguagePolicySetting(
 
 export type StoredPrintLanguagePolicy = ReceiptLanguagePolicy | KotLanguagePolicy;
 
-/**
- * Lenient read-side parse of a stored policy. Malformed or invalid stored
- * values fall back to the inherit/none default so a bad row can never break
- * printing; writers are the strict path.
- */
+/** Lenient read-side parse of a stored policy, falling back to default. */
 export function parseStoredLanguagePolicy(
   key: string,
   stored: string | undefined,

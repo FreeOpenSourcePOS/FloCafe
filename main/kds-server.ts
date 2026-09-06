@@ -41,9 +41,7 @@ export function isKdsServerRunning(): boolean {
   return kdsServer !== null;
 }
 
-/**
- * Locate the static export directory.
- */
+/** Locate the static export directory. */
 function getStaticDir(): string | null {
   const candidates = [
     // Development / unpackaged: relative to dist/main/ (compiled output of
@@ -60,10 +58,7 @@ function getStaticDir(): string | null {
   return null;
 }
 
-/**
- * Helper to rewrite dotted Next.js static segment file requests to nested paths on Windows.
- * E.g., /products/__next.!KGRhc2hib2FyZCk.products.__PAGE__.txt -> /products/__next.!KGRhc2hib2FyZCk/products/__PAGE__.txt
- */
+/** Helper to rewrite dotted Next.js static segment file requests on Windows. */
 function rewriteNextExportPath(reqPath: string): string {
   const nextIndex = reqPath.indexOf('__next.');
   if (nextIndex === -1) return reqPath;
@@ -95,9 +90,7 @@ export function startKdsServer(): Promise<void> {
       next();
     });
     app.use(express.json());
-    // body-parser 2.x (bundled with Express 5) leaves req.body undefined
-    // instead of {} when a request has no parseable body -- restore the
-    // old default so route handlers can destructure req.body directly.
+    // Restore empty body default for Express 5 compatibility.
     app.use((req: Request, _res: Response, next: NextFunction) => {
       if (req.body === undefined) req.body = {};
       next();
@@ -520,9 +513,6 @@ export function startKdsServer(): Promise<void> {
       console.log(`[KDS Server] Serving static files from: ${staticDir}`);
 
       // Middleware to patch Windows-specific Next.js static export path nesting.
-      // On Windows, the Next.js static export uses dotted segments (e.g.
-      // __next.!KGRhc2hib2FyZCk.products.__PAGE__.txt) instead of nested
-      // directories. This rewrite is only needed when the app runs on Windows.
       if (process.platform === 'win32') {
         app.use(staticRouteRateLimit(), (req: Request, res: Response, next: NextFunction) => {
           if (req.path.includes('__next.')) {

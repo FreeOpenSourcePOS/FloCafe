@@ -472,7 +472,16 @@ jobs:
             --file "$SNAP_EVIDENCE"
 
   release-mac:
-    runs-on: macos-latest
+    # Self-hosted: the release signing keychain has repeatedly failed to
+    # unlock on GitHub-hosted macos-latest runners with
+    # "SecKeychainUnlock: The user name or passphrase you entered is not
+    # correct" during `security set-key-partition-list`, even against
+    # freshly re-exported, locally-verified-working certs/password (the
+    # exact same `security import` + `set-key-partition-list` sequence
+    # succeeds reliably on the signing Mac itself). Building here sidesteps
+    # whatever host-specific keychain behavior causes that on the hosted
+    # image.
+    runs-on: [self-hosted, macOS]
     needs: create-release
     if: needs.create-release.outputs.promotion_only != 'true'
     # Was two parallel 60-minute matrix jobs (one per arch); now one job builds,

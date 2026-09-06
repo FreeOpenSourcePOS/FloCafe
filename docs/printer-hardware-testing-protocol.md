@@ -36,7 +36,7 @@ Physical validation ensures that real-world thermal printers reliably handle:
 - **Pass criteria:**
   - Printer emits header, 32/42/48-column alignment rulers matching physical paper edges.
   - Receipt cuts cleanly (full or partial cut as configured).
-  - Cash drawer fires if **Open cash drawer on checkout** is enabled.
+  - Cash drawer behavior is not exercised by **Test Print**; validate drawer pulse during an actual checkout when **Open cash drawer on checkout** is enabled.
 
 ### Test 2: Large buffer network throttling (Raster / Multilingual)
 1. Configure a network thermal printer (`<IP>:9100`).

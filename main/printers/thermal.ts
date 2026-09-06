@@ -2412,26 +2412,74 @@ function decodeThermalPreviewBytes(bytes: number[], codePage: ThermalCodePage | 
   return bytes.map((byte) => byte < 0x80 ? String.fromCharCode(byte) : highHalf[byte - 0x80] ?? '\uFFFD').join('');
 }
 
+export const NETWORK_PRINT_CHUNK_SIZE = 4096;
+export const NETWORK_PRINT_CHUNK_DELAY_MS = 10;
+
 export async function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
   return new Promise((resolve) => {
     const client = new net.Socket();
     let settled = false;
+    let timer: NodeJS.Timeout | null = null;
+
     const onAbort = (): void => {
+      if (timer) clearTimeout(timer);
       client.destroy();
       finish({ ok: false, detail: 'Print cancelled during shutdown' });
     };
     const finish = (result: DispatchResult): void => {
       if (settled) return;
       settled = true;
+      if (timer) clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);
       resolve(result);
     };
 
     client.connect(port, ip, () => {
-      client.write(data, () => {
-        client.end();
-        finish({ ok: true });
-      });
+      // For small payloads (typical text receipts <4KB), write directly in a single pass.
+      if (data.length <= NETWORK_PRINT_CHUNK_SIZE) {
+        client.write(data, () => {
+          client.end();
+          finish({ ok: true });
+        });
+        return;
+      }
+
+      // For large payloads (e.g. raster graphics, multi-language bitmaps), chunk to avoid overrunning
+      // small microcontroller receive buffers on budget thermal printers.
+      let offset = 0;
+      const sendNextChunk = (): void => {
+        if (settled) return;
+        if (offset >= data.length) {
+          client.end();
+          finish({ ok: true });
+          return;
+        }
+
+        const chunk = data.subarray(offset, offset + NETWORK_PRINT_CHUNK_SIZE);
+        offset += chunk.length;
+
+        const scheduleNext = (): void => {
+          if (settled) return;
+          if (offset < data.length) {
+            timer = setTimeout(sendNextChunk, NETWORK_PRINT_CHUNK_DELAY_MS);
+          } else {
+            client.end();
+            finish({ ok: true });
+          }
+        };
+
+        const canContinue = client.write(chunk, () => {
+          if (canContinue) {
+            scheduleNext();
+          }
+        });
+
+        if (!canContinue) {
+          client.once('drain', scheduleNext);
+        }
+      };
+
+      sendNextChunk();
     });
 
     client.on('error', (err) => {

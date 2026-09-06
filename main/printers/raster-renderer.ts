@@ -54,7 +54,8 @@ export function rasterRendererHtml(): string {
       const lineHeight = logicalLineHeight * scaleY;
       const fontSize = styles.includes('font-b') ? 12 : 16;
       const weight = styles.includes('bold') ? '700' : '400';
-      context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
+      const fontFallback = ', -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans", sans-serif';
+      context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family) + fontFallback;
       context.textBaseline = 'top';
       context.direction = request.direction;
       context.textAlign = request.align === 'center' ? 'center' : 'left';
@@ -116,7 +117,7 @@ export function rasterRendererHtml(): string {
       canvas.height = Math.max(1, renderLines.length * lineHeight);
       // Resizing a canvas resets its drawing state, so restore the measured
       // font and bidi direction before painting the final pixels.
-      context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family);
+      context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family) + fontFallback;
       context.textBaseline = 'top';
       context.direction = request.direction;
       context.textAlign = request.align === 'center' ? 'center' : 'left';
@@ -162,6 +163,7 @@ export interface RasterRendererOptions {
   readonly windowFactory?: (options: Electron.BrowserWindowConstructorOptions) => RasterSurface;
   readonly ipc?: Pick<Electron.IpcMain, 'on' | 'removeListener'>;
   readonly timeoutMs?: number;
+  readonly onActivity?: () => void;
 }
 
 /** Main-process owner for the dedicated, hidden Chromium raster surface. */
@@ -169,6 +171,7 @@ export class ChromiumRasterRenderer {
   private readonly surface: RasterSurface;
   private readonly timeoutMs: number;
   private readonly ipc: Pick<Electron.IpcMain, 'on' | 'removeListener'>;
+  private readonly onActivity?: () => void;
   private readonly pending = new Map<string, { resolve: (result: RasterRenderResult) => void; timer: ReturnType<typeof setTimeout> }>();
   private ready: Promise<void>;
   private readyResolve!: () => void;
@@ -208,6 +211,7 @@ export class ChromiumRasterRenderer {
   constructor(options: RasterRendererOptions = {}) {
     this.timeoutMs = options.timeoutMs ?? RENDER_TIMEOUT_MS;
     this.ipc = options.ipc ?? ipcMain;
+    this.onActivity = options.onActivity;
     this.ready = new Promise<void>((resolve) => { this.readyResolve = resolve; });
     const windowFactory = options.windowFactory ?? ((windowOptions) => new BrowserWindow(windowOptions));
     this.surface = windowFactory({
@@ -261,6 +265,7 @@ export class ChromiumRasterRenderer {
     if (this.destroyed || this.surface.isDestroyed()) {
       return { version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: 'Raster surface is unavailable' };
     }
+    this.onActivity?.();
     await this.ready;
     if (this.readyError) return { version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: this.readyError };
     return await new Promise<RasterRenderResult>((resolve) => {
@@ -289,6 +294,10 @@ export class ChromiumRasterRenderer {
     });
   }
 
+  isDestroyed(): boolean {
+    return this.destroyed || this.surface.isDestroyed();
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -299,6 +308,62 @@ export class ChromiumRasterRenderer {
     this.surface.webContents.removeListener('render-process-gone', this.onRenderProcessGone);
     this.failSurface('Raster surface was closed');
     if (!this.surface.isDestroyed()) this.surface.close();
+  }
+}
+
+export const DEFAULT_RASTER_IDLE_TIMEOUT_MS = 300_000;
+
+let sharedRasterRenderer: ChromiumRasterRenderer | null = null;
+let sharedRasterIdleTimer: ReturnType<typeof setTimeout> | null = null;
+let sharedRasterIdleTimeoutMs = DEFAULT_RASTER_IDLE_TIMEOUT_MS;
+
+function resetSharedRasterIdleTimer(): void {
+  if (sharedRasterIdleTimer) {
+    clearTimeout(sharedRasterIdleTimer);
+    sharedRasterIdleTimer = null;
+  }
+  if (sharedRasterRenderer && !sharedRasterRenderer.isDestroyed()) {
+    sharedRasterIdleTimer = setTimeout(() => {
+      destroySharedRasterRenderer();
+    }, sharedRasterIdleTimeoutMs);
+  }
+}
+
+/**
+ * Obtain the warm shared Chromium raster singleton.
+ * If the instance does not exist or has been destroyed/closed, a new one is instantiated.
+ * The singleton automatically tears down after an idle timeout.
+ */
+export function getSharedRasterRenderer(options?: RasterRendererOptions & { idleTimeoutMs?: number }): ChromiumRasterRenderer {
+  if (options?.idleTimeoutMs !== undefined) {
+    sharedRasterIdleTimeoutMs = options.idleTimeoutMs;
+  }
+  if (!sharedRasterRenderer || sharedRasterRenderer.isDestroyed()) {
+    const userOnActivity = options?.onActivity;
+    sharedRasterRenderer = new ChromiumRasterRenderer({
+      ...options,
+      onActivity: () => {
+        userOnActivity?.();
+        resetSharedRasterIdleTimer();
+      },
+    });
+  }
+  resetSharedRasterIdleTimer();
+  return sharedRasterRenderer;
+}
+
+/**
+ * Teardown the shared raster singleton if active.
+ */
+export function destroySharedRasterRenderer(): void {
+  if (sharedRasterIdleTimer) {
+    clearTimeout(sharedRasterIdleTimer);
+    sharedRasterIdleTimer = null;
+  }
+  if (sharedRasterRenderer) {
+    const renderer = sharedRasterRenderer;
+    sharedRasterRenderer = null;
+    renderer.destroy();
   }
 }
 

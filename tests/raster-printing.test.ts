@@ -22,7 +22,14 @@ import { buildTestPage } from '../main/printers/thermal';
 import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
 import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from '../main/printers/document-classic';
 import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from '../main/printers/document-compact';
-import { ChromiumRasterRenderer, renderRasterSemanticUnit, renderUnsupportedRasterLines } from '../main/printers/raster-renderer';
+import {
+  ChromiumRasterRenderer,
+  getSharedRasterRenderer,
+  destroySharedRasterRenderer,
+  rasterRendererHtml,
+  renderRasterSemanticUnit,
+  renderUnsupportedRasterLines,
+} from '../main/printers/raster-renderer';
 
 function loadFrontendRasterEncoder(): typeof import('../frontend/src/lib/printer/raster-encoder') {
   const path = require('node:path') as typeof import('node:path');
@@ -1007,6 +1014,49 @@ async function run(): Promise<void> {
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, family: 'bad;url(x)' } }), false);
   assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: true }), false);
   assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: false, code: 'render-failed', detail: 'failed' }), true);
+
+  // Verify raster HTML includes system CJK fallbacks
+  const html = rasterRendererHtml();
+  assert.ok(html.includes('PingFang SC'));
+  assert.ok(html.includes('Microsoft YaHei'));
+  assert.ok(html.includes('Noto Sans CJK SC'));
+
+  // Test shared raster renderer lifecycle and idle teardown
+  destroySharedRasterRenderer();
+  let activityCount = 0;
+  const sharedRenderer1 = getSharedRasterRenderer({
+    timeoutMs: 100,
+    idleTimeoutMs: 50,
+    ipc: ipc as any,
+    windowFactory: () => surface as any,
+    onActivity: () => { activityCount++; },
+  });
+  assert.equal(sharedRenderer1.isDestroyed(), false);
+  const sharedRenderer2 = getSharedRasterRenderer();
+  assert.equal(sharedRenderer1, sharedRenderer2);
+
+  // Render on shared renderer to exercise onActivity
+  ipc.emit('flo:raster-ready', { sender: webContents });
+  const sharedRenderPromise = sharedRenderer1.render(request);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  ipc.emit('flo:raster-result', { sender: webContents }, { version: 1, result: { version: 1, requestId: request.requestId, ok: true, unit } });
+  assert.deepEqual(await sharedRenderPromise, { version: 1, requestId: request.requestId, ok: true, unit });
+  assert.equal(activityCount, 1);
+
+  // Wait for idle teardown
+  await new Promise<void>((resolve) => setTimeout(resolve, 80));
+  assert.equal(sharedRenderer1.isDestroyed(), true);
+
+  // Re-requesting after idle teardown spawns a new instance
+  const sharedRenderer3 = getSharedRasterRenderer({
+    timeoutMs: 100,
+    ipc: ipc as any,
+    windowFactory: () => surface as any,
+  });
+  assert.notEqual(sharedRenderer1, sharedRenderer3);
+  assert.equal(sharedRenderer3.isDestroyed(), false);
+  destroySharedRasterRenderer();
+  assert.equal(sharedRenderer3.isDestroyed(), true);
 
   console.log('Raster encoder and mixed-mode contract checks passed.');
 }

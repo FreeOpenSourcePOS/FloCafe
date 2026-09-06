@@ -1289,6 +1289,69 @@ async function main() {
       assert(multiGross > singleGross, `multi-day gross (${multiGross}) > single-day gross (${singleGross}); the trailing bind is end-of-endDate, not end-of-startDate`);
     }
 
+    console.log('\n15e. GET /api/cash-closures/:id/preview — printable text before dispatch (#649)');
+    {
+      // The preview endpoint must be reachable to anyone who can read the
+      // stored Z (ownerManager — the modal itself stays owner-only for the
+      // close + print actions) and returns the exact ESC/POS-decoded text
+      // the print primitive would dispatch. No printer I/O and no DB write.
+      // Section-3 closes a unique business_date 30 days back (not today's).
+      // Use the section-3 row id we captured at POST time so we hit the
+      // right row regardless of the test clock, regardless of how many
+      // same-date closes earlier sections left in the DB, and regardless of
+      // which `z_number` the partial index handed us.
+      assert(typeof sectionThreePost?.id === 'number',
+        `preview section-15e precondition: sectionThreePost.id was captured (got ${JSON.stringify(sectionThreePost?.id)})`);
+      const zId = sectionThreePost.id;
+      const sectionThreeDate = sectionThreePost.business_date;
+
+      // Manager (ownerManager only): 200.
+      const mgr = await request(app)
+        .get(`/api/cash-closures/${zId}/preview`)
+        .set('Authorization', `Bearer ${managerToken}`);
+      assertEqual(mgr.status, 200, `preview: manager reads (got ${mgr.status})`);
+      assertEqual(mgr.body?.id, zId, `preview response carries id (got ${mgr.body?.id})`);
+      assertEqual(typeof mgr.body?.text, 'string', `preview response.text is a string (got ${typeof mgr.body?.text})`);
+      assert(mgr.body?.text.length > 0, 'preview response.text is non-empty');
+      assertEqual(mgr.body?.columns, 48, `preview columns = 48 by spec (got ${mgr.body?.columns})`);
+      assertEqual(mgr.body?.businessDate, sectionThreeDate, `preview response.businessDate = ${sectionThreeDate}`);
+      assertEqual(mgr.body?.zNumber, sectionThreePost?.z_number,
+        `preview response.zNumber matches the stored Z (got ${mgr.body?.zNumber} vs ${sectionThreePost?.z_number})`);
+      // The previewed text must surface the operator-visible figures the
+      // printed ticket carries — not just a verbatim blob.
+      assert(/Z REPORT/.test(mgr.body.text),
+        `preview text includes the report header (got first line: ${mgr.body.text.split('\n')[0]})`);
+      assert(new RegExp(`Z#\\s*${sectionThreePost?.z_number}\\b`).test(mgr.body.text),
+        `preview text includes the Z number ${sectionThreePost?.z_number} in Z# form (got text: ${JSON.stringify(mgr.body.text)})`);
+      assert(/Variance/.test(mgr.body.text) || /Difference/.test(mgr.body.text),
+        `preview text includes the variance label (got ${mgr.body.text.includes('Variance')}, ${mgr.body.text.includes('Difference')})`);
+
+      // Owner: 200 (same parity as GET /api/reports/z-report).
+      const owner = await request(app)
+        .get(`/api/cash-closures/${zId}/preview`)
+        .set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(owner.status, 200, `preview: owner reads (got ${owner.status})`);
+      assertEqual(owner.body?.text, mgr.body?.text, 'preview text is deterministic (owner ≡ manager)');
+
+      // Cashier: 403.
+      const cashier = await request(app)
+        .get(`/api/cash-closures/${zId}/preview`)
+        .set('Authorization', `Bearer ${cashierToken}`);
+      assertEqual(cashier.status, 403, `preview: cashier forbidden (got ${cashier.status})`);
+
+      // Unknown id: 404.
+      const missing = await request(app)
+        .get(`/api/cash-closures/999999/preview`)
+        .set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(missing.status, 404, `preview: unknown id → 404 (got ${missing.status})`);
+
+      // Non-integer id: 400.
+      const bad = await request(app)
+        .get(`/api/cash-closures/notanint/preview`)
+        .set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(bad.status, 400, `preview: non-integer id → 400 (got ${bad.status})`);
+    }
+
     console.log('\n16. F4: direct no-I/O printZReport coverage + route 409/502 (#649)');
     {
       const thermalModule = require('../main/printers/thermal');

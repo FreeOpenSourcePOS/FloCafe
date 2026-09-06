@@ -269,6 +269,7 @@
     "variance": "Differenz",
     "printZReport": "Z drucken",
     "reprintZ": "Z erneut drucken",
+    "printPreview": "Druckvorschau",
     "alreadyClosed": "Dieser Tag ist bereits abgeschlossen",
     "noPriorCloseHint": "Vorheriger Tag nicht abgeschlossen — Anfangsbestand auf 0 gesetzt",
     "paymentsCount": "{count} Zahlungen",

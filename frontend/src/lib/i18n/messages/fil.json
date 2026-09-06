@@ -269,6 +269,7 @@
     "variance": "Pagkakaiba",
     "printZReport": "I-print ang Z",
     "reprintZ": "I-print muli ang Z",
+    "printPreview": "I-preview ang print",
     "alreadyClosed": "Nakasara na ang araw na ito",
     "noPriorCloseHint": "Hindi nakasara ang nakaraang araw — naka-default ang pondo sa 0",
     "paymentsCount": "{count} na bayad",

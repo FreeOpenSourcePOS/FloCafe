@@ -97,6 +97,42 @@ function validateCents(raw: unknown, field: string, allowZero = true): number {
   return raw;
 }
 
+/**
+ * Shape a stored `cash_closures` row into the snapshot the print primitive
+ * (and the preview endpoint) consume. Single source of truth so the
+ * preview text and the bytes the printer receives are guaranteed to match
+ * the operator's screen byte for byte:
+ *  - `closed_by_name` resolves the operator's `users.name`, falling back
+ *    to the raw id when the row was orphaned (staff deletion, etc.).
+ *  - JSON columns (`payment_methods_json`, `staff_sales_json`,
+ *    `tax_components_json`) are parsed into typed arrays; empty / invalid
+ *    JSON becomes `[]` so the body builder renders "(none)" rather
+ *    than blowing up.
+ *  - `__isReprint` is the synthetic flag the body builder uses to add
+ *    the REIMPRESION marker. The preview endpoint always passes
+ *    `false` so the screen shows what a fresh print would say.
+ */
+function shapeZReportSnapshot(db: ReturnType<typeof getDatabase>, row: any, isReprint: boolean): any {
+  const userRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(row.closed_by) as { name: string } | undefined;
+  const safeJson = (raw: string | null | undefined, fallback: any[] = []): any[] => {
+    if (!raw) return fallback;
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  return {
+    ...row,
+    closed_by_name: userRow?.name ?? row.closed_by,
+    payment_methods: safeJson(row.payment_methods_json, []),
+    staff_sales: safeJson(row.staff_sales_json, []),
+    tax_components: safeJson(row.tax_components_json, []),
+    __isReprint: isReprint,
+  };
+}
+
 interface PaymentMethodRow {
   method: string;
   count: number;
@@ -470,17 +506,7 @@ router.post('/:id/print', requireRole(...ROLE_ACCESS.owner), async (req: Request
     // printed Z shows the operator (not the raw user id). Falls back to the
     // id string when the user row is missing (e.g. historical data after a
     // staff deletion).
-    const userRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(row.closed_by) as { name: string } | undefined;
-    // Shape the snapshot for the body builder; the route carries the reprint
-    // marker as a synthetic field the print primitive recognizes.
-    const snapshot = {
-      ...row,
-      closed_by_name: userRow?.name ?? row.closed_by,
-      payment_methods: JSON.parse(row.payment_methods_json || '[]'),
-      staff_sales: JSON.parse(row.staff_sales_json || '[]'),
-      tax_components: JSON.parse(row.tax_components_json || '[]'),
-      __isReprint: isReprint,
-    };
+    const snapshot = shapeZReportSnapshot(db, row, isReprint);
     // Resolve the default receipt printer server-side so the WebUSB branch
     // is reachable end-to-end (mirrors `main/routes/printers.ts:304-339`,
     // bytes branch `:329-331`). `getPrinterConfig()` inside the helper
@@ -508,6 +534,43 @@ router.post('/:id/print', requireRole(...ROLE_ACCESS.owner), async (req: Request
     res.json({ success: true, isReprint });
   } catch (error: any) {
     console.error('[CashClosures] Print error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /:id/preview — operator-facing preview of the printable Z text ────
+// `requireRole(...ROLE_ACCESS.ownerManager)` matches GET /api/reports/z-report:
+// the modal's own close + print actions stay owner-only, but any owner or
+// manager looking at a closed day can read the printable representation.
+// Same snapshot shaping as `/:id/print` (shared `shapeZReportSnapshot`),
+// `__isReprint` always false so the on-screen text mirrors a fresh print
+// (no REIMPRESION mark). Decoded via the same `escPosToText` the test
+// uses, so the preview text and the bytes the printer receives are byte
+// for byte identical (modulo the `__isReprint` flag, which is metadata).
+const PREVIEW_COLUMNS = 48;
+
+router.get('/:id/preview', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'id must be a positive integer' });
+    }
+    const row = db.prepare(`SELECT * FROM cash_closures WHERE id = ?`).get(id) as any;
+    if (!row) return res.status(404).json({ error: 'Cash closure not found' });
+    const snapshot = shapeZReportSnapshot(db, row, false);
+    const { buildZReportBody, escPosToText } = require('../printers/thermal');
+    const body = buildZReportBody(snapshot, undefined, { columns: PREVIEW_COLUMNS });
+    const text = escPosToText(Buffer.from(body));
+    res.json({
+      id: row.id,
+      businessDate: row.business_date,
+      zNumber: row.z_number,
+      columns: PREVIEW_COLUMNS,
+      text,
+    });
+  } catch (error: any) {
+    console.error('[CashClosures] Preview error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

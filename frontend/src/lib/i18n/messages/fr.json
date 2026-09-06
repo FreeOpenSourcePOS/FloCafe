@@ -269,6 +269,7 @@
     "variance": "Écart",
     "printZReport": "Imprimer Z",
     "reprintZ": "Réimprimer Z",
+    "printPreview": "Aperçu avant impression",
     "alreadyClosed": "Cette journée est déjà clôturée",
     "noPriorCloseHint": "La journée précédente n'a pas été clôturée — fond de caisse par défaut à 0",
     "paymentsCount": "{count} paiements",

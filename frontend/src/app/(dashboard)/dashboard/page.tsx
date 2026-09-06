@@ -6,7 +6,7 @@ import Link from 'next/link';
 import axios from 'axios';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
-import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass, CalendarDays, Lock, Loader2, Printer, AlertTriangle, X } from 'lucide-react';
+import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass, CalendarDays, Lock, Loader2, Printer, AlertTriangle, X, Eye } from 'lucide-react';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import toast from 'react-hot-toast';
@@ -363,6 +363,15 @@ export default function DashboardPage() {
   const [closedZ, setClosedZ] = useState<ZReport | null>(null);
   const [printingZ, setPrintingZ] = useState(false);
   const [hasPrintedFresh, setHasPrintedFresh] = useState(false);
+  // Printable-Z preview. Lazy: only fetched after the closed-Z view mounts,
+  // never at modal-open time (the modal might be X'd out before any preview
+  // is needed, and the bytes are never required if the operator never
+  // reaches the print buttons). Cleared whenever the modal closes or the
+  // displayed Z changes so stale text can't haunt a re-opened view.
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [previewColumns, setPreviewColumns] = useState<number>(48);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const unitAdapter = useCurrencyUnitAdapter();
   // Storage minor-unit factor (`Math.pow(10, fractionDigits)`) is the cents
   // denominator; the adapter's `maxDecimals` would be wrong for IRR/Toman
@@ -449,6 +458,49 @@ export default function DashboardPage() {
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closeOpen, openToken, businessDate]);
+
+  // Lazy printable-Z preview. Fires when the closed-Z view mounts and the
+  // Z id is known (after X reports alreadyClosed and the Z GET hydrates
+  // `closedZ`). The bytes come back via the dedicated preview endpoint so
+  // the screen shows the exact ESC/POS-decoded text the printer would
+  // receive — no second code path to drift. Errors surface as a toast;
+  // the print buttons stay disabled while loading so the operator can't
+  // dispatch the same Z twice while a refetch is in flight.
+  useEffect(() => {
+    if (!closeOpen || !closedZ?.id) {
+      // Gate closed: clear the stale preview and skip the fetch. Setting
+      // state in the effect cleanup branch (effectively a sync render path
+      // keyed off props) is the React 18-blessed pattern for "adjust
+      // state when a prop changes" — mirrors the existing `syncKey` /
+      // `setSyncedKey` pattern in this file.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPreviewText(null); setPreviewColumns(48); setPreviewError(null); setPreviewLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setPreviewLoading(true);
+    setPreviewError(null);
+    api.get(`/cash-closures/${closedZ.id}/preview`, { signal: controller.signal })
+      .then((res) => {
+        if (!controller.signal.aborted) {
+          setPreviewText(res.data?.text ?? '');
+          setPreviewColumns(Number(res.data?.columns) || 48);
+        }
+      })
+      .catch((err: unknown) => {
+        if (axios.isCancel(err) || (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) return;
+        const msg = axios.isAxiosError(err) ? err.response?.data?.error || err.message : (err instanceof Error ? err.message : 'Preview failed');
+        setPreviewError(msg);
+        toast.error(tCommon('somethingWrong'));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setPreviewLoading(false);
+      });
+    return () => controller.abort();
+  // The state setters are stable; `closedZ?.id` is the actual dependency.
+  // `tCommon` and `toast` are constants from this module's hooks.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closeOpen, closedZ?.id]);
 
   // Reset modal state at the start of each new open (React-recommended
   // pattern for "adjusting state when a prop changes" — the equivalent of
@@ -849,6 +901,39 @@ export default function DashboardPage() {
                     <p className="text-sm text-foreground whitespace-pre-wrap">{closedZ.notes}</p>
                   </div>
                 )}
+                {/* Printable-Z preview. Monospace, ticket-style card so the
+                    operator reads the exact receipt that would come out of
+                    the printer — not a re-styled summary. The text comes
+                    from the server's preview endpoint, so screen and
+                    printer agree byte for byte. Print is always a separate
+                    explicit button below; nothing auto-prints. */}
+                <div className="rounded-lg border border-border overflow-hidden bg-zinc-950">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
+                    <div className="flex items-center gap-2 text-zinc-300">
+                      <Eye size={14} />
+                      <p className="text-xs font-medium">{t('printPreview')}</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-zinc-400">
+                      <span className="text-[10px] uppercase tracking-wider">{previewColumns} cols</span>
+                      {previewLoading && <Loader2 size={12} className="animate-spin" />}
+                    </div>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto px-3 py-2">
+                    {previewError && (
+                      <p className="text-xs text-red-300">{tCommon('somethingWrong')}</p>
+                    )}
+                    {!previewError && previewText !== null && (
+                      <pre
+                        className="font-mono text-[11px] leading-tight text-zinc-100 whitespace-pre"
+                        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}
+                        aria-label={t('printPreview')}
+                      >{previewText}</pre>
+                    )}
+                    {!previewError && previewText === null && !previewLoading && (
+                      <p className="text-xs text-zinc-500">{tCommon('loading')}</p>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 

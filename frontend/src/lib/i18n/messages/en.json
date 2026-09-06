@@ -269,6 +269,7 @@
     "variance": "Difference",
     "printZReport": "Print Z",
     "reprintZ": "Reprint Z",
+    "printPreview": "Print preview",
     "alreadyClosed": "This day is already closed",
     "noPriorCloseHint": "Previous day not closed — float defaulting to 0",
     "paymentsCount": "{count} payments",

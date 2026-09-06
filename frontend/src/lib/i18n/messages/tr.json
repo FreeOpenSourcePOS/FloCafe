@@ -269,6 +269,7 @@
     "variance": "Fark",
     "printZReport": "Z yazdır",
     "reprintZ": "Z'yi yeniden yazdır",
+    "printPreview": "Yazdırma önizlemesi",
     "alreadyClosed": "Bu gün zaten kapatıldı",
     "noPriorCloseHint": "Önceki gün kapatılmadı — açılış kasası 0 olarak ayarlandı",
     "paymentsCount": "{count} ödeme",

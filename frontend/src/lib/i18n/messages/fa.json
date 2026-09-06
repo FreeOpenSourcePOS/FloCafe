@@ -269,6 +269,7 @@
     "variance": "اختلاف",
     "printZReport": "چاپ Z",
     "reprintZ": "چاپ مجدد Z",
+    "printPreview": "پیش‌نمایش چاپ",
     "alreadyClosed": "این روز قبلاً بسته شده است",
     "noPriorCloseHint": "روز قبل بسته نشده — موجودی اولیه روی ۰ تنظیم شد",
     "paymentsCount": "{count} پرداخت",

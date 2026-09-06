@@ -626,7 +626,12 @@ exit 1
     fakeCommands: { gh: fakeGh },
   });
   assert.equal(publishStable.status, 0, publishStable.stderr);
-  assert.match(publishStable.log, /-F draft=false -F prerelease=false -F make_latest=false/);
+  assert.match(publishStable.log, /-F draft=false -F prerelease=false -f make_latest=false/);
+  assert.doesNotMatch(
+    publishStable.log,
+    /-F make_latest=false/,
+    'GitHub make_latest is a string enum and must not be encoded as a JSON boolean',
+  );
   assert.doesNotMatch(publishStable.log, /make_latest=true/);
 
   const publishBeta = executeWorkflowStep(publishStep, {
@@ -642,7 +647,12 @@ exit 1
     fakeCommands: { gh: fakeGh },
   });
   assert.equal(publishBeta.status, 0, publishBeta.stderr);
-  assert.match(publishBeta.log, /-F draft=false -F prerelease=true -F make_latest=false/);
+  assert.match(publishBeta.log, /-F draft=false -F prerelease=true -f make_latest=false/);
+  assert.doesNotMatch(
+    publishBeta.log,
+    /-F make_latest=false/,
+    'GitHub make_latest is a string enum and must not be encoded as a JSON boolean',
+  );
   assert.doesNotMatch(publishBeta.log, /make_latest=true/);
 
   const promoteStep = findStep(promoteJob, 'Promote published stable release to GitHub Latest');
@@ -656,7 +666,12 @@ exit 1
     fakeCommands: { gh: fakeGh, jq: fakeJq },
   });
   assert.equal(promoteStable.status, 0, promoteStable.stderr);
-  assert.match(promoteStable.log, /-F make_latest=true/);
+  assert.match(promoteStable.log, /-f make_latest=true/);
+  assert.doesNotMatch(
+    promoteStable.log,
+    /-F make_latest=true/,
+    'GitHub make_latest is a string enum and must not be encoded as a JSON boolean',
+  );
 
   const promoteBeta = executeWorkflowStep(promoteStep, {
     env: { RELEASE_TAG: '3.3.1-beta.1', RELEASE_CHANNEL: 'beta' },

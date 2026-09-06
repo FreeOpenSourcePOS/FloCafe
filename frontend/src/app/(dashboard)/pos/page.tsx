@@ -26,6 +26,7 @@ import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from 
 import PosTopbar from '@/components/pos/PosTopbar';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
+import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -270,7 +271,7 @@ export default function POSPage() {
         message: t('kotPrintFailed'),
         payload: { event_code: code, message: msg, category: 'printer', diagnostics: { order_id: order.id, stage: 'kot_print' } },
       });
-      toast.error(t('kotPrintFailed'));
+      toast.error(formatKotErrorToast(msg, t('kotPrintFailed')));
     }
   };
 
@@ -349,7 +350,7 @@ export default function POSPage() {
         message: t('receiptPrintFailed'),
         payload: { event_code: code, message: supportMessage, category: 'printer', diagnostics: { bill_id: bill.id, stage: 'receipt_print' } },
       });
-      toast.error(t('receiptPrintFailed'));
+      toast.error(formatReceiptErrorToast(msg, t('receiptPrintFailed')));
     }
   };
 

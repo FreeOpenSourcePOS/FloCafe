@@ -18,6 +18,7 @@ import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currenc
 import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
+import { formatReceiptErrorToast, extractPrinterErrorMessage } from '@/lib/printer/warnings';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useRouter } from 'next/navigation';
@@ -561,9 +562,12 @@ export default function OrdersPage() {
           { isReprint: false }
         );
         showPrintWarningsToast(printWarnings);
-        await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
-      } catch {
-        toast.error(tOrders('receiptPrintFailedHint'));
+        try {
+          await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
+        } catch { /* best-effort history tracking */ }
+      } catch (err) {
+        const msg = extractPrinterErrorMessage(err);
+        toast.error(formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint')));
       }
     }
   };
@@ -594,13 +598,15 @@ export default function OrdersPage() {
         },
         { isReprint }
       );
-      await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
       toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
       showPrintWarningsToast(printWarnings);
-      fetchPrintHistory(billId);
+      try {
+        await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
+        fetchPrintHistory(billId);
+      } catch { /* best-effort history tracking */ }
     } catch (err) {
-      const detail = err instanceof Error ? err.message : undefined;
-      toast.error(detail ? `${tOrders('printReceiptFailed')}: ${detail}` : tOrders('printReceiptFailed'));
+      const detail = extractPrinterErrorMessage(err);
+      toast.error(formatReceiptErrorToast(detail, tOrders('printReceiptFailed')));
     } finally {
       setPrintingBillId(null);
       setConfirmPrintBillId(null);

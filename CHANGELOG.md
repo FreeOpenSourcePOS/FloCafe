@@ -2,6 +2,28 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.7.0] - 2026-09-06
+
+### Added
+
+- support native Latin code pages in thermal profiles (#652)
+- support fontless raster rendering with system fonts (#654)
+- multi-line item wrapping, raster font scaling, and code page preservation (#659)
+
+### Changed
+
+- warm Chromium raster singleton and system CJK font fallbacks (#653)
+- add physical hardware validation matrix and testing protocol (#658)
+
+### Fixed
+
+- harden print models and currency handling (#648)
+- exit process cleanly after cleanup on quit (#644) (#650)
+- run Linux matrix test suite under xvfb (#651)
+- sanitize PowerShell CLIXML stderr in Windows print failures (#655)
+- surface detailed printer error messages in user toasts (#656)
+- throttle large network print buffers to prevent microcontroller overrun (#657)
+
 ## [3.5.7] - 2026-09-06
 
 ### Added

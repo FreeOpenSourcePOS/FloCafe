@@ -43,27 +43,12 @@ export function createRelaunchGate(onRelaunch: (reason: string) => void): (reaso
   };
 }
 
-/**
- * createRelaunchGate() only bounds relaunches within a single process's
- * lifetime — a relaunched process gets a fresh gate on module load. This
- * checks whether the CURRENT process's own argv already carries the marker
- * a prior relaunch attempt appended, so a persistent failure (e.g. a
- * permanently occupied port) degrades to a clear dialog after one relaunch
- * instead of looping indefinitely across process restarts.
- */
+/** Checks if current process argv carries relaunch flag to prevent infinite relaunch loops. */
 export function hasRelaunchAttemptFlag(argv: readonly string[], attemptFlag: string): boolean {
   return argv.includes(attemptFlag);
 }
 
-/**
- * Bounds hasRelaunchAttemptFlag() to the window between process start and the
- * runtime's first successful recovery, rather than the whole process
- * lifetime. Without this, a process that carries the attempt marker (because
- * it is itself the result of a relaunch) would treat every later relaunch
- * request as a second failed attempt forever — even hours after that relaunch
- * succeeded and the runtime ran healthy — and show the manual-restart dialog
- * instead of trying to recover from a new, unrelated failure.
- */
+/** Limits the attempt flag check until the runtime first successfully recovers. */
 export function createRelaunchAttemptGuard(processCarriesAttemptFlag: boolean): {
   hasExhaustedAttempt: () => boolean;
   markRuntimeRecovered: () => void;

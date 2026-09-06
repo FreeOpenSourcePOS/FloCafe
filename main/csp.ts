@@ -1,15 +1,9 @@
 import { Request } from 'express';
 
-/**
- * Matches a safe Host header (hostname, IPv4, or IPv6 with optional port).
- * Malformed headers fall back to 'self' to prevent directive smuggling.
- */
+/** Matches a safe Host header to prevent directive smuggling. */
 const SAFE_HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::\d{1,5})?$/;
 
-/**
- * Builds Content-Security-Policy header, deriving connect-src from the Host header
- * so LAN companion devices can connect over HTTP and WebSocket alongside 'self'.
- */
+/** Builds CSP header, allowing LAN devices to connect via connect-src. */
 export function buildCspHeader(req: Request): string {
   const host = req.get('Host');
   const connectSrc = host && SAFE_HOST.test(host)

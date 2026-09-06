@@ -1,19 +1,4 @@
-/**
- * Update-state model for the app self-updater (#467, child of epic #463).
- *
- * This module is intentionally pure (no Electron imports) so the state
- * machine can be unit-tested exhaustively. `main/index.ts` owns the single
- * `StoredUpdateStatus` instance and persists/broadcasts every transition
- * through it.
- *
- * Invariants enforced here:
- *  - An error is NEVER classified as `up-to-date`. The historical substring
- *    mask ("404" / "Cannot find latest" / "ENOENT" => up to date) hid real
- *    check failures from users; those now map to honest failure states.
- *  - One-shot startup states (`store-managed`, `linux-managed`, `dev-mode`)
- *    live in the same stored state as runtime states, so a renderer reload
- *    recovers them via `get-update-status` instead of racing a push event.
- */
+/** Update-state model and error classification for the app self-updater. */
 
 /** Every state the updater can be in. Do not add states beyond this list without an approved issue. */
 export const UPDATE_STATES = [
@@ -45,11 +30,7 @@ export function isDevelopmentOrUnpackedArtifact(artifact: RuntimeArtifactDescrip
 /** Why a check or download failed, when known. */
 export type UpdateFailureReason = 'manifest-missing' | 'download-failed' | 'unknown';
 
-/**
- * Which updater phase an error occurred in. electron-updater funnels both
- * check-time and download-time failures into its single `error` event, so
- * the caller tracks the current phase to disambiguate them.
- */
+/** Phase in which an error occurred to disambiguate check vs download errors. */
 export type UpdateErrorPhase = 'check' | 'download';
 
 export interface StoredUpdateStatus {
@@ -71,10 +52,7 @@ export interface ClassifiedUpdateError {
   detail: string;
 }
 
-/**
- * Node/network error codes that mean "we could not reach the update server".
- * electron-updater surfaces underlying HTTP/DNS failures with these codes.
- */
+/** Node/network error codes indicating an unreachable update server. */
 const NETWORK_ERROR_CODES: ReadonlySet<string> = new Set([
   'ENOTFOUND',
   'EAI_AGAIN',
@@ -116,12 +94,7 @@ export function isMissingUpdateConfigError(err: unknown): boolean {
   return errorCode(err) === 'ENOENT';
 }
 
-/**
- * Classify an electron-updater error into an honest user-facing state.
- *
- * Network errors are classified before phase-specific failures, and download
- * failures are classified before check-time manifest failures.
- */
+/** Classify an electron-updater error into an honest user-facing state. */
 export function classifyUpdateError(err: unknown, phase: UpdateErrorPhase = 'check'): ClassifiedUpdateError {
   const detail = errorMessage(err);
   const code = errorCode(err);
@@ -165,12 +138,7 @@ export function isOneShotUpdateState(state: UpdateState): state is OneShotUpdate
   return (ONE_SHOT_STATES as readonly string[]).includes(state);
 }
 
-/**
- * Build the stored state for a one-shot startup detection (store build,
- * Linux package-manager install, dev/unpacked build). These states persist
- * until something explicitly replaces them and must survive renderer
- * reloads, which is why they go through the same store as runtime states.
- */
+/** Build stored state for a one-shot startup detection that persists across reloads. */
 export function oneShotUpdateState(state: OneShotUpdateState): StoredUpdateStatus {
   return { status: state };
 }
@@ -199,11 +167,7 @@ export interface IpcUpdateStatusPayload {
   info: { version: string };
 }
 
-/**
- * Derive the IPC response from the stored state. The renderer recovers the
- * real persisted state (including one-shot states and failures) on every
- * load instead of waiting for the next push event.
- */
+/** Derives the IPC response payload from the stored update state. */
 export function toIpcUpdateStatus(stored: StoredUpdateStatus, currentVersion: string): IpcUpdateStatusPayload {
   return {
     status: stored.status,

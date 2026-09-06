@@ -11,15 +11,7 @@ type ApprovableUsbDevice = {
   manufacturerName?: string;
 };
 
-/**
- * vendorId+productId+serialNumber is the only combination that reliably
- * identifies one physical device — many printers share generic VID/PID pairs
- * from the same USB-to-serial chipset, so vendorId+productId alone can match
- * a different physical unit. Returns null when the device has no serial
- * number, meaning it has no identity trustworthy enough to persist or match
- * across restarts (mirrors how browsers scope WebUSB's own persisted-grant
- * store to devices that report a serial number).
- */
+/** Identifies unique physical USB device via vendorId, productId, and serialNumber. */
 function persistableDeviceKey(device: ApprovableUsbDevice): string | null {
   return device.serialNumber ? `${device.vendorId}:${device.productId}:${device.serialNumber}` : null;
 }
@@ -46,10 +38,7 @@ function savePersistedApprovals(keys: Set<string>): void {
   }
 }
 
-/**
- * Registers Electron USB device permission handlers scoped to the trusted origin.
- * Prompts user confirmation on first connection and persists approvals with serial numbers.
- */
+/** Registers Electron USB permission handlers scoped to the trusted origin. */
 export function registerUsbDevicePermissions(session: Session, trustedOrigin: string): void {
   const persistedApprovedKeys = loadPersistedApprovals();
   const sessionApprovedDeviceIds = new Set<string>();

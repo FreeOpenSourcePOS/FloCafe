@@ -7,11 +7,7 @@ export interface TaxIdFormat {
   description: string;
 }
 
-/**
- * Which locale display preferences a country supports. The Settings UI only
- * renders these controls when a country's profile declares them, so
- * region-specific options never appear (or bloat) other regions' UI.
- */
+// Locale display preferences supported by a country's profile.
 export interface CountryLocaleOptions {
   currencyDisplay?: ('rial' | 'toman' | 'toman_short')[];
   digits?: ('locale' | 'latin')[];
@@ -27,10 +23,7 @@ export interface Country {
   locale: string;
   taxIdLabel?: string;
   taxName?: string;
-  // Only enforced when an official (non-local) tax pack is active for this
-  // country — see resolveTaxIdFormat() in services/tax.ts. Left undefined
-  // for countries we haven't verified a format for; unset means no format
-  // is enforced, never "reject everything".
+  // Format enforced only when an official tax pack is active (undefined = no format enforced).
   taxIdFormat?: TaxIdFormat;
   // Locale display preferences available for this country (undefined = none).
   localeOptions?: CountryLocaleOptions;
@@ -256,22 +249,7 @@ export const getCurrencySymbol = (currency: string, locale = 'en-US'): string =>
   }
 };
 
-/**
- * Iran/Persian display preferences. Storage is never affected: monetary
- * values are always persisted in the tenant's currency code (IRR for Iran,
- * i.e. Rial) and these options only change how values are *rendered*.
- *
- * - `currencyDisplay`: `rial` (default) renders the stored unit verbatim;
- *   `toman` divides by 10 (1 Toman = 10 Rial) and suffixes `تومان`;
- *   `toman_short` divides by 10 and suffixes `ت`/`T` (Persian/Latin digits).
- * - `digits`: `locale` (default) follows the locale's native digits
- *   (Persian for `fa-IR`); `latin` forces Western digits.
- * - `calendar`: `locale` (default) follows the locale's calendar (Shamsi for
- *   `fa-IR`); `persian` forces Shamsi; `gregorian` forces Gregorian.
- *
- * Storage is canonical: monetary amounts persist in the tenant currency (Rial / IRR),
- * and `getCurrencyUnitAdapter` translates UI payment modal inputs to/from the display unit.
- */
+// Iran/Persian display preferences (rendering only; stored amounts remain canonical IRR/Rial).
 export type CurrencyDisplay = 'rial' | 'toman' | 'toman_short';
 export type DigitMode = 'locale' | 'latin';
 export type CalendarMode = 'locale' | 'persian' | 'gregorian';
@@ -300,11 +278,7 @@ export const formatCurrency = (amount: number, currency: string, locale = 'en-US
   }
 };
 
-/**
- * Currency display with the Iran `currencyDisplay`/`digits` preferences
- * applied. Non-IRR currencies and the `rial` mode behave like
- * `formatCurrency` (plus the optional Latin-digit override).
- */
+// Currency display with Iran currencyDisplay/digits preferences applied.
 export const formatMoney = (
   amount: number,
   currency: string,
@@ -354,10 +328,7 @@ export interface CurrencyUnitAdapter {
   formatInput: (displayAmount: number) => string;
 }
 
-/**
- * Resolves standard ISO 4217 decimal fraction digits for a currency code using
- * native Intl.NumberFormat metadata, falling back safely to 2 decimals.
- */
+// Resolves ISO 4217 decimal fraction digits for a currency code, falling back to 2.
 export function getCurrencyFractionDigits(currency: string): number {
   if (!currency || typeof currency !== 'string') return 2;
   if (currency === 'IRR') return 2;
@@ -369,17 +340,12 @@ export function getCurrencyFractionDigits(currency: string): number {
   }
 }
 
-/**
- * Resolves the minor-unit factor (e.g. 1 for JPY, 100 for USD) for currency arithmetic.
- */
+// Resolves the minor-unit factor (e.g. 1 for JPY, 100 for USD) for currency arithmetic.
 export function getCurrencyMinorUnitFactor(currency: string): number {
   return Math.pow(10, getCurrencyFractionDigits(currency));
 }
 
-/**
- * Returns a centralized adapter for handling input/display unit conversions
- * across all currencies and tenant display preferences (e.g. Rial vs Toman).
- */
+// Centralized adapter for input/display conversions across currencies and display preferences.
 export const getCurrencyUnitAdapter = (
   currency: string,
   countryCode?: string,
@@ -434,12 +400,7 @@ export const formatCurrencyForTenant = (
   prefs?: LocalePreferences,
 ): string => formatMoney(amount, currency, getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US', prefs);
 
-/**
- * Formats a plain (non-currency) number using the given locale's digits and
- * grouping (e.g. `1234.5` → `۱٬۲۳۴٫۵` in `fa-IR`). Used for counts, points,
- * and other bare numbers so they follow the tenant locale instead of the
- * browser's default locale.
- */
+// Formats a plain number using the given locale's digits and grouping.
 export const formatNumber = (value: number, locale = 'en-US', numberingSystem?: string): string => {
   try {
     return new Intl.NumberFormat(locale, numberingSystem ? { numberingSystem } : undefined).format(value);
@@ -448,10 +409,7 @@ export const formatNumber = (value: number, locale = 'en-US', numberingSystem?: 
   }
 };
 
-/**
- * Formats a plain number using the tenant's country locale and digit
- * preference. Mirrors `formatCurrencyForTenant` for non-monetary values.
- */
+// Formats a plain number using tenant locale and digit preferences.
 export const formatNumberForTenant = (
   value: number,
   countryCode: string | undefined,
@@ -471,11 +429,7 @@ function calendarOption(calendar: CalendarMode): 'gregory' | 'persian' | undefin
   return undefined;
 }
 
-/**
- * Formats a date with the tenant's timezone, calendar/digit preferences, and
- * an optional UI locale override (falling back to the tenant country's locale).
- * Dates are stored as UTC timestamps; this is display-only.
- */
+// Formats a date with tenant timezone, preferences, and optional UI locale override.
 export const formatDateForTenant = (
   date: Date,
   countryCode: string | undefined,
@@ -488,10 +442,7 @@ export const formatDateForTenant = (
   const tenantLocale = getCountryByCode(countryCode ?? 'IN')?.locale || 'en-US';
   const locale = localeOverride || tenantLocale;
   try {
-    // `locale` preferences belong to the tenant profile, not to the selected
-    // UI language. Resolve them from the tenant locale before applying a UI
-    // locale override so an Iran tenant keeps Persian digits/calendar in an
-    // English UI, for example.
+    // Tenant preferences belong to the tenant profile; resolve defaults before UI override.
     const tenantDateDefaults = new Intl.DateTimeFormat(tenantLocale).resolvedOptions();
     const tenantNumberDefaults = new Intl.NumberFormat(tenantLocale).resolvedOptions();
     const numberingSystem = digits === 'latin' ? 'latn' : tenantNumberDefaults.numberingSystem;
@@ -509,29 +460,18 @@ export const formatDateForTenant = (
 
 export const countryName = (code: string): string => dn.of(code.toUpperCase()) ?? code;
 
-/**
- * Canonical IANA timezone identifiers available on this platform, sourced
- * exclusively from the native Intl API (no external timezone data or
- * network access). Used to populate the editable timezone selector without
- * shipping a bundled tz database.
- */
+// Sourced via native Intl API (offline-first, no bundled tz database).
 export const listTimeZones = (): string[] => {
   try {
     const zones = Intl.supportedValuesOf('timeZone');
     return Array.isArray(zones) ? zones.slice().sort() : [];
   } catch {
-    // Extremely old runtimes may not expose supportedValuesOf; degrade to an
-    // empty list. The selected value is still rendered as a fallback option.
+    // Degrade to empty list if unsupported; selected value remains rendered as fallback.
     return [];
   }
 };
 
-/**
- * Validates an IANA timezone identifier using native Intl.DateTimeFormat.
- * Mirrors the offline-first contract: no bundled tz data, no network calls.
- * Legacy aliases accepted by Intl (e.g. US/Eastern) remain valid here, which
- * keeps existing persisted values working during upgrades.
- */
+// Validates IANA timezone identifier using native Intl.DateTimeFormat (offline-first).
 export const isValidTimeZone = (value: unknown): boolean => {
   if (typeof value !== 'string' || value.length === 0 || value.length > 100) return false;
   try {

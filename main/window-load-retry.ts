@@ -60,13 +60,7 @@ export interface WindowLoadRetryController {
   reset: () => void;
 }
 
-/**
- * Attaches main-frame auto-retry listeners to a window's webContents to recover from
- * transient connection errors (e.g. ERR_CONNECTION_REFUSED (-102), ERR_NAME_NOT_RESOLVED
- * (-105), ERR_INTERNET_DISCONNECTED (-106), ERR_CONNECTION_TIMED_OUT (-118)) during fast
- * restarts or updater relaunches before the embedded server finishes socket binding.
- * Once the bounded retry budget is exhausted, the caller receives a terminal callback.
- */
+/** Retries window loads after transient connection failures up to a bounded budget. */
 export function setupWindowLoadRetry(
   window: RetryableWindow,
   getTargetUrl: () => string,

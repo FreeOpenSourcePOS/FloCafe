@@ -97,23 +97,24 @@ function resolveEncoderCurrency(rawCurrency: string, currencyCode: string, useUn
   const fallbackCurrency = normalizedCurrency === '¥' && currencyCode !== 'JPY'
     ? currencyCode
     : /^[\x00-\x7F]+$/.test(asciiFallback) ? asciiFallback : currencyCode;
+  const hasSymbol = normalizedCurrency.trim().length > 0;
   if (capabilities) {
     const normalizedForCapabilities = normalizeThermalText(normalizedCurrency, capabilities);
     return padCurrencyPrefix(
-      selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
+      hasSymbol && selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
         ? normalizedForCapabilities
         : fallbackCurrency,
     );
   }
   if (!rawEscPos) {
-    return padCurrencyPrefix(useUnicode ? rawCurrency : fallbackCurrency);
+    return padCurrencyPrefix(hasSymbol && useUnicode ? rawCurrency : fallbackCurrency);
   }
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS
   // printers cannot shape that token, so normalize this known currency even
   // when the caller requests Unicode. Preserve the existing useUnicode
   // behavior for every other currency value.
   return padCurrencyPrefix(
-    useUnicode ? normalizedCurrency : fallbackCurrency,
+    hasSymbol && useUnicode ? normalizedCurrency : fallbackCurrency,
   );
 }
 

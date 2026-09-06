@@ -225,16 +225,17 @@ function resolveEncoderCurrency(rawCurrency: string, currencyCode: string, useUn
   const fallbackCurrency = normalizedCurrency === '¥' && currencyCode !== 'JPY'
     ? currencyCode
     : /^[\x00-\x7F]+$/.test(asciiFallback) ? asciiFallback : currencyCode;
+  const hasSymbol = normalizedCurrency.trim().length > 0;
   if (capabilities) {
     const normalizedForCapabilities = normalizeThermalText(normalizedCurrency, capabilities);
     return padCurrencyPrefix(
-      selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
+      hasSymbol && selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
         ? normalizedForCapabilities
         : fallbackCurrency,
     );
   }
   return padCurrencyPrefix(
-    useUnicode ? normalizedCurrency : fallbackCurrency,
+    hasSymbol && useUnicode ? normalizedCurrency : fallbackCurrency,
   );
 }
 

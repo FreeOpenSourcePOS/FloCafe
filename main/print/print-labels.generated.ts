@@ -21,7 +21,7 @@ export type PrintLabelLanguage = (typeof PRINT_LABEL_LANGUAGES)[number];
 type PrintLabelTable = Record<PrintConceptId, string>;
 
 const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
-  en: {
+  "en": {
     'print.taxInvoiceTitle': "TAX INVOICE",
     'print.invoiceTitle': "INVOICE",
     'print.invoiceNumber': "Invoice #:",
@@ -87,7 +87,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.methodCard': "Card",
     'pos.methodWallet': "Wallet",
   },
-  es: {
+  "es": {
     'print.taxInvoiceTitle': "FACTURA CON IMPUESTOS",
     'print.invoiceTitle': "FACTURA",
     'print.invoiceNumber': "Factura N.º:",
@@ -153,7 +153,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.methodCard': "Tarjeta",
     'pos.methodWallet': "Billetera",
   },
-  de: {
+  "de": {
     'print.taxInvoiceTitle': "STEUERRECHNUNG",
     'print.invoiceTitle': "Rechnung",
     'print.invoiceNumber': "Rechnung Nr.",
@@ -219,7 +219,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.methodCard': "Karte",
     'pos.methodWallet': "Guthaben / Wallet",
   },
-  tr: {
+  "tr": {
     'print.taxInvoiceTitle': "VERGİ FATURASI",
     'print.invoiceTitle': "FATURA / FİŞ",
     'print.invoiceNumber': "Fatura No:",
@@ -285,7 +285,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.methodCard': "Kart",
     'pos.methodWallet': "Cüzdan",
   },
-  fil: {
+  "fil": {
     'print.taxInvoiceTitle': "TAX INVOICE",
     'print.invoiceTitle': "INVOICE / BILL",
     'print.invoiceNumber': "Invoice No:",
@@ -351,7 +351,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.methodCard': "Card",
     'pos.methodWallet': "Wallet",
   },
-  fr: {
+  "fr": {
     'print.taxInvoiceTitle': "FACTURE FISCALE",
     'print.invoiceTitle': "FACTURE",
     'print.invoiceNumber': "N° de facture :",
@@ -417,7 +417,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.methodCard': "Carte",
     'pos.methodWallet': "Portefeuille",
   },
-  pt: {
+  "pt": {
     'print.taxInvoiceTitle': "FATURA COM IMPOSTOS",
     'print.invoiceTitle': "FATURA",
     'print.invoiceNumber': "Fatura N.º:",
@@ -483,7 +483,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.methodCard': "Cartão",
     'pos.methodWallet': "Carteira",
   },
-  fa: {
+  "fa": {
     'print.taxInvoiceTitle': "صورتحساب مالیاتی",
     'print.invoiceTitle': "صورتحساب",
     'print.invoiceNumber': "شماره صورتحساب:",

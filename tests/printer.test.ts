@@ -24,6 +24,7 @@ import {
 } from '../main/printers/thermal';
 import { matchSupportedPrinterProfile } from '../main/printers/profiles';
 import { getCountryByCode, getCurrencySymbol } from '../main/countries';
+import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -628,6 +629,7 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
   );
   assert('backend BHD receipt falls back to the canonical code', !hasFinancialPrintWarning(bhdWarnings) && escPosToText(bhdReceipt).includes('BHD'));
   assert('currency prefix fallback uses the supplied canonical code', resolveCurrencyPrefix('د.ب.', false, undefined, false, 'BHD').includes('BHD'));
+  assert('currency prefix fallback uses the supplied canonical code for empty symbol with capabilities', resolveCurrencyPrefix('', false, GENERIC_THERMAL_CAPABILITIES, false, 'USD') === 'USD');
 
   const xafWarnings: any[] = [];
   const xafReceipt = formatReceipt(

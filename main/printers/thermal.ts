@@ -2063,10 +2063,10 @@ export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capab
     ? fallbackCurrency
     : (CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency);
   const rawPrefix = capabilities
-    ? (selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
+    ? (normalizedSymbol.trim().length > 0 && selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
       ? normalizedForCapabilities
       : mappedFallback)
-    : (useUnicode || isAsciiSafe)
+    : (normalizedSymbol.trim().length > 0 && (useUnicode || isAsciiSafe))
       ? normalizedSymbol
       : mappedFallback;
   const prefix = rawPrefix;

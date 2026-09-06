@@ -216,7 +216,7 @@ function generateTypeScript(tables) {
   lines.push('');
   lines.push('const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {');
   for (const lang of LANGUAGES) {
-    lines.push(`  ${lang}: {`);
+    lines.push(`  ${JSON.stringify(lang)}: {`);
     for (const key of ALL_CONCEPTS) {
       lines.push(`    '${key}': ${JSON.stringify(tables[lang][key])},`);
     }

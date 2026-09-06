@@ -20,41 +20,10 @@ import {
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
 
-// Currency fallbacks are kept to two or three ASCII characters so receipt
-// amount columns remain bounded for common symbols and ISO-style tokens.
-export const CURRENCY_ASCII_MAP: Record<string, string> = {
-  '₹': 'Rs', // Indian Rupee
-  '₨': 'Rs', // Rupee sign
-  '€': 'EUR',
-  '£': 'GBP',
-  '¥': 'Yen',
-  '₩': 'KRW',
-  '₺': 'TRY',
-  '₫': 'VND',
-  '₪': 'ILS',
-  '₽': 'RUB',
-  '฿': 'THB',
-  '₱': 'PHP',
-  '₴': 'UAH',
-  '₦': 'NGN',
-  '₵': 'GHS',
-  '₡': 'CRC',
-  '₲': 'PYG',
-  'د.إ': 'AED',
-  '﷼': 'SAR',
-  'ریال': 'IRR',
-  '৳': 'BDT',
-  'E£': 'EGP',
-};
+export { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii } from '@print/currency';
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
   return normalizeThermalTextByCapabilities(text, capabilities);
-}
-
-export function normalizeCurrencyToAscii(text: string): string {
-  return Object.entries(CURRENCY_ASCII_MAP)
-    .sort(([left], [right]) => right.length - left.length)
-    .reduce((value, [sym, ascii]) => value.split(sym).join(ascii), text);
 }
 
 /**

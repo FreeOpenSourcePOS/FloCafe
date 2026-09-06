@@ -110,7 +110,7 @@ async function run(): Promise<void> {
     order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', items: [] },
     bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
     business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
   assert.equal(isPrintDocument(printDocument), true);
   assert.equal(isPrintDocument({ ...printDocument, blocks: printDocument.blocks.slice(0, -1) }), false);
   assert.equal(isPrintDocument({ ...printDocument, blocks: [...printDocument.blocks, printDocument.blocks[0]] }), false);
@@ -121,7 +121,7 @@ async function run(): Promise<void> {
     order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: '', externalOrderId: '', items: [{ productName: 'فارسی محصول', quantity: 1, unitPrice: 1, total: 1, addons: [{ name: longAddon, price: 1, quantity: 1 }], specialInstructions: longInstruction }] },
     bill: { billNumber: '', subtotal: 1, discountAmount: 0, taxAmount: 0, total: 1, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
     business: { name: '', address: '', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: '', customerName: '', customerPhone: '', showName: true, showAddress: false, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
   const sourceGroups: any[] = [];
   const sourceLines = renderBillDocumentToClassicLines(sourceDocument, {
     columns: 42,
@@ -153,7 +153,7 @@ async function run(): Promise<void> {
     order: { orderNumber: '', createdAt: '', tableName: '', onlinePlatform: 'کافه', externalOrderId: 'K-7', items: [] },
     bill: { billNumber: '', subtotal: 0, discountAmount: 0, taxAmount: 0, total: 0, taxComponents: [], payments: [], pointsEarned: 0, pointsRedeemed: 0, pointsBalance: null },
     business: { name: 'فروشگاه فارسی', address: 'آدرس فارسی', phone: '', taxRegistrationNumber: '', taxIdLabel: '', instagramHandle: '', footerNote: 'پیام فارسی', customerName: '', customerPhone: '', showName: true, showAddress: true, showPhone: false, showTaxId: 'never', showTaxBreakdown: false, showTableNumber: false, showCustomerName: false, showCustomerPhone: false },
-  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
+  }, { columns: 42, languages: ['en'], baseDirection: 'ltr', locale: 'en-US', currency: 'USD', currencySymbol: '$', trimDecimals: false, resolveLabel: (conceptId) => conceptId });
   const compactGroups: any[] = [];
   renderBillDocumentToCompactLines(compactDocument, {
     columns: 42,
@@ -339,6 +339,7 @@ async function run(): Promise<void> {
     languages: ['fa'],
     baseDirection: 'rtl',
     locale: 'fa-IR',
+    currency: '',
     currencySymbol: '',
     trimDecimals: false,
     resolveLabel: (conceptId) => conceptId,
@@ -464,6 +465,12 @@ async function run(): Promise<void> {
   const diagnosticPage = buildTestPage('80mm', 'partial', 'en-US', undefined, { ...caps, raster: { ...caps.raster, maxBandHeight: 32, widthDots: 17 } });
   assert.equal(diagnosticPage.includes(0x1D) && diagnosticPage.includes(0x76), true);
   assert.deepEqual(Array.from(diagnosticPage.slice(-7)), Array.from(encodeRasterFeedAndCut('partial')));
+  const disabledShapingDiagnostic = buildTestPage('80mm', 'partial', 'fa', 'UTC', {
+    ...caps,
+    shaping: { arabic: false },
+    raster: { ...caps.raster, maxBandHeight: 32, widthDots: 17 },
+  });
+  assert.equal(/[\u0600-\u06ff]/u.test(disabledShapingDiagnostic.toString('utf8')), false);
   const narrowRasterCapabilities = { ...caps, raster: { ...caps.raster, widthDots: 16 } };
   assert.equal(rasterCapabilityEnabled(narrowRasterCapabilities), true);
   assert.equal(buildRasterDiagnosticBands(16, 32)[0].widthDots, 16);
@@ -691,6 +698,7 @@ async function run(): Promise<void> {
     languages: ['fa'],
     baseDirection: 'rtl',
     locale: 'fa-IR',
+    currency: '',
     currencySymbol: '',
     trimDecimals: false,
     resolveLabel: (conceptId) => conceptId === 'pos.orderNumber' ? 'Order #: {number}' : conceptId,
@@ -710,7 +718,7 @@ async function run(): Promise<void> {
   const jpyReceipt = renderCompactReceiptViaDocument(
     { items: [] },
     { total: 12.34, subtotal: 12.34, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
-    { country: 'JP', raster_currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
+    { country: 'JP', currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
     { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
   );
   assert.equal(jpyReceipt.lines.some((line) => line.includes('12.34')), false);
@@ -733,7 +741,7 @@ async function run(): Promise<void> {
   const jpyClassicReceipt = renderClassicReceiptViaDocument(
     { items: [] },
     { total: 12.34, subtotal: 12.34, discount_amount: 0, tax_amount: 0, delivery_charge: 0, packaging_charge: 0, payment_details: '[]' },
-    { country: 'JP', raster_currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
+    { country: 'JP', currency: 'JPY', currency_symbol: '¥', name: 'Cafe', customer_name: '', customer_phone: '' },
     { columns: 42, language: 'en', isReprint: false, useUnicode: true, arabicShaping: false, cutMode: 'full', capabilities: caps },
   );
   assert.equal(jpyClassicReceipt.lines.some((line) => line.includes('12.34')), false);

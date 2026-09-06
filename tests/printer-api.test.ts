@@ -244,6 +244,12 @@ async function runTests() {
     assert(previewRes.body.columns === 42 || previewRes.body.columns === 48, `preview generation returns valid 80mm columns (got ${previewRes.body.columns})`);
     assert(typeof previewRes.body.text === 'string' && previewRes.body.text.length > 0, 'preview contains formatted receipt text');
 
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('currency', 'xxx', ?)").run(now());
+    const arbitraryCurrencyPreview = await request(app).post('/api/printers/print-bill').send({ billId, preview: true });
+    assert(arbitraryCurrencyPreview.status === 200, `preview accepts a syntactically valid arbitrary currency code (got ${arbitraryCurrencyPreview.status})`);
+    assert(arbitraryCurrencyPreview.body.text.includes('XXX'), 'route preview emits the arbitrary currency code as ASCII');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('currency', 'INR', ?)").run(now());
+
     // Real hardware print request without preview should still reject with 400
     const realPrintRes = await request(app).post('/api/printers/print-bill').send({ billId, preview: false });
     assert(realPrintRes.status === 400, `direct hardware print with 0 printers fails with 400 (got ${realPrintRes.status})`);

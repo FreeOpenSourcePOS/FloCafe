@@ -43,9 +43,10 @@ import type {
 // ---------------------------------------------------------------------------
 
 /**
- * Stable concept identifier from the print-label catalog (kernel C, #440).
- * Structural string on purpose: the set of valid concepts is owned by the
- * generated label tables at call sites, not by the kernel.
+ * Stable concept identifier from a print catalog (kernel C, #440).
+ * The shared catalog type is used by generated locale views, while semantic
+ * documents remain structural so legacy/browser-only concepts can cross the
+ * same boundary without a second untyped catalog.
  */
 export type LabelConceptId = string;
 
@@ -220,7 +221,9 @@ export interface PrintContext {
   readonly baseDirection: TextDirection;
   /** BCP-47 locale used for date/number formatting (e.g. `en-IN`). */
   readonly locale: string;
-  /** Currency symbol as configured for the business. */
+  /** Canonical three-letter tenant currency code used for formatting. KOT rendering does not read this field. */
+  readonly currency: string;
+  /** Currency symbol as configured for the business. KOT rendering does not read this field. */
   readonly currencySymbol: string;
   /** Whether trailing `.00` decimals are trimmed on amounts. */
   readonly trimDecimals: boolean;

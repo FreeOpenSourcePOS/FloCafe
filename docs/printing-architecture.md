@@ -27,7 +27,8 @@ Companion documents:
         ▼
  PrintData snapshot + PrintContext          (shared/print/document.ts)
  (printed truth, no recomputation)          (columns, languages, direction,
-        │                                    locale, label resolver)
+        │                                    locale, currency, currency symbol,
+        │                                    label resolver)
         ├── buildBillDocument() → PrintDocument v1
         │          │
         │          └── receipt-only optional transform:
@@ -108,13 +109,16 @@ restrictions over [`shared/`](../shared/).
 | [`policy.ts`](../shared/print/policy.ts) | resolution + validation of receipt/KOT language policies; max-2 receipts enforced at type level | [#441](https://github.com/FreeOpenSourcePOS/FloCafe/issues/441) |
 | [`direction.ts`](../shared/print/direction.ts) | per-scope direction spec, conservative LTR-island classification | [#441](https://github.com/FreeOpenSourcePOS/FloCafe/issues/441) |
 | [`bilingual.ts`](../shared/print/bilingual.ts) | `BilingualLabel`, width-fit strategies (`inline` vs `stacked`) | [#441](https://github.com/FreeOpenSourcePOS/FloCafe/issues/441) |
-| [`document.ts`](../shared/print/document.ts) | `PrintDocument` v1 / `KotDocument` v1 models + pure builders | [#442](https://github.com/FreeOpenSourcePOS/FloCafe/issues/442)/[#443](https://github.com/FreeOpenSourcePOS/FloCafe/issues/443) |
+| [`concepts.ts`](../shared/print/concepts.ts) | Typed `PrintConceptId` catalog boundary shared by semantic documents and generated locale views | Phase 10 |
+| [`currency.ts`](../shared/print/currency.ts) | Shared ASCII currency fallback tokens and three-letter code validation | Phase 10 |
+| [`document.ts`](../shared/print/document.ts) | `PrintDocument` v1 / `KotDocument` v1 models + pure builders, including typed currency context | [#442](https://github.com/FreeOpenSourcePOS/FloCafe/issues/442)/[#443](https://github.com/FreeOpenSourcePOS/FloCafe/issues/443) |
 | [`merchant-template.ts`](../shared/print/merchant-template.ts) | semantic merchant template payload validation, offline transfer envelope, `applyMerchantTemplate` | [#447](https://github.com/FreeOpenSourcePOS/FloCafe/issues/447)/[#448](https://github.com/FreeOpenSourcePOS/FloCafe/issues/448) |
 | [`thermal-capabilities.ts`](../shared/print/thermal-capabilities.ts) | capability-driven thermal normalization, representability, code-page selection, shaping, and warning policy | Phase 8 |
 
 Dependency direction is one-way: registry → call site → kernel. The central
 language registry ([frontend/src/lib/i18n/languages.ts](../frontend/src/lib/i18n/languages.ts))
-is authoritative; both consumers inject their own view of "registered and
+is authoritative; the generator derives backend print-language data from its
+entry order, and both consumers inject their own view of "registered and
 selectable" via `LanguageRegistryFacts`:
 
 - frontend validates stored policies against `selectable` in
@@ -168,6 +172,8 @@ Invariants every consumer may rely on:
   of the same concept. Literal data labels — such as tax-ID text, tax
   component titles, and unknown payment methods — intentionally omit
   `conceptId`; renderers still decide how language variants share a line.
+- **Currency is typed context, not a raster side channel.** `PrintContext.currency` carries the tenant's uppercase three-letter code and `currencySymbol` carries its display token. Tenant settings accept syntactically valid three-letter codes and persist them uppercase; codes absent from the country registry remain supported with `Intl`'s two-decimal fallback and print as the code when no symbol is available. ASCII thermal fallback tokens are defined once in [`shared/print/currency.ts`](../shared/print/currency.ts), so fallback changes never alter financial values or the native output of representable text.
+- **Print concepts cross a shared typed boundary.** `PrintConceptId` and the catalog list live in [`shared/print/concepts.ts`](../shared/print/concepts.ts); the generated backend locale view imports that type rather than defining a second union.
 - **Text fields represented as `DirectionalText` carry their resolved
   direction**; the browser HTML renderer uses it to isolate LTR islands.
   ESC/POS renderers do not currently consume those annotations. Quantities,
@@ -273,15 +279,16 @@ Invalid or missing settings fall back to the store language; printing never
 fails because of a malformed policy ([`main/lib/print-language-settings.ts`](../main/lib/print-language-settings.ts),
 [`tests/print-language-settings.test.ts`](../tests/print-language-settings.test.ts)).
 
-Settings are registry-driven through two synchronized views: the frontend
-renders print-language options from [`LANGUAGES`](../frontend/src/lib/i18n/languages.ts),
+Settings are registry-driven: the frontend renders print-language options from
+[`LANGUAGES`](../frontend/src/lib/i18n/languages.ts),
 with controls filtered in [`settings/page.tsx`](<../frontend/src/app/(dashboard)/settings/page.tsx>)
 and stored-policy checks in [`print-language-policies.ts`](../frontend/src/lib/print-language-policies.ts);
 backend policy validation accepts only languages present in
 [`PRINT_LABEL_LANGUAGES`](../main/print/print-labels.generated.ts), wired through
 [`main/lib/print-language-settings.ts`](../main/lib/print-language-settings.ts)
-and checked by [`shared/print/policy.ts`](../shared/print/policy.ts).
-Both registries must be updated when a language gains print coverage.
+and checked by [`shared/print/policy.ts`](../shared/print/policy.ts). The
+generated backend view follows the frontend registry order; update the frontend
+registry and locale messages, then regenerate the derived file.
 
 ### Canonical i18n label flow (kernel C, [#440](https://github.com/FreeOpenSourcePOS/FloCafe/issues/440))
 
@@ -289,11 +296,11 @@ Canonical locale messages are the single translation source:
 
 ```text
 frontend/src/lib/i18n/messages/<lang>.json      (canonical, 100% parity with en.json)
-        │  npm run generate:print-labels   (scripts/generate-print-labels.cjs)
+        │  npm run generate:print-labels   (scripts/generate-print-labels.cjs reads LANGUAGES)
         ▼
 main/print/print-labels.generated.ts            (committed derived view)
         │  printLabel(lang, conceptId)  — unknown language falls back to English;
-        │                                  conceptId is a generated union
+        │                                  conceptId is the shared `PrintConceptId` union
         ▼
 backend renderers + backend registry facts for policy validation
 ```
@@ -577,7 +584,8 @@ name, but not every omitted update is automatically detected.
 2. Register the concept id in [`scripts/generate-print-labels.cjs`](../scripts/generate-print-labels.cjs):
    append to `PRINT_NAMESPACE_KEYS` (new `print.*` key) or `BORROWED_KEYS`
    (existing key reused verbatim — prefer this when the UI already has the
-   string).
+   string). Add the same concept to [`shared/print/concepts.ts`](../shared/print/concepts.ts)
+   in the matching `ALL_CONCEPTS` order.
 3. Run `npm run generate:print-labels` and commit the regenerated
    [`main/print/print-labels.generated.ts`](../main/print/print-labels.generated.ts) together with the message edits.
    Builds never regenerate tracked sources; drift fails `npm run i18n:check`.
@@ -601,14 +609,11 @@ Then close the print loop:
    correct `direction` and `selectable` value. This registry drives the
    frontend print-language dropdowns; add the matching locale message file
    through the workflow in [i18n.md](i18n.md).
-2. Add the language code to the separate `LANGUAGES` array in
-   [`scripts/generate-print-labels.cjs`](../scripts/generate-print-labels.cjs) (stable generation order). This keeps
-   the generated backend print-label registry in sync with the frontend
-   registry; it does not populate the frontend dropdown.
-3. Regenerate and commit [`main/print/print-labels.generated.ts`](../main/print/print-labels.generated.ts) — this table is the
+2. Regenerate and commit [`main/print/print-labels.generated.ts`](../main/print/print-labels.generated.ts) — the generator reads the
+   frontend registry in canonical order, and this table is the
    backend's selectable-print-language registry view used by policy validation
    ([`main/lib/print-language-settings.ts`](../main/lib/print-language-settings.ts)).
-4. Extend [`tests/print-labels.test.ts`](../tests/print-labels.test.ts) expectations if the suite enumerates
+3. Extend [`tests/print-labels.test.ts`](../tests/print-labels.test.ts) expectations if the suite enumerates
    languages, and add the language to the parity harness's localized-label
    sections if it introduces a new direction/script.
 

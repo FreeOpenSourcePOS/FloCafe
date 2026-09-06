@@ -12,7 +12,8 @@
  */
 
 import { parseDbTimestamp } from '../db';
-import { printLabel, type PrintConceptId } from '../print/print-labels.generated';
+import { printLabel } from '../print/print-labels.generated';
+import type { PrintConceptId } from '../../shared/print/concepts';
 import type { PrinterCutMode } from './profiles';
 import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
@@ -108,6 +109,7 @@ export function buildKotPrintContext(opts: {
     languages: [opts.language],
     baseDirection: detectPrintLanguageDirection(opts.language),
     locale: 'en-US',
+    currency: '',
     currencySymbol: '',
     trimDecimals: false,
     ...(opts.timezone !== undefined ? { timezone: opts.timezone } : {}),

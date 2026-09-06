@@ -6,7 +6,7 @@ import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, getPrinterCapabilities, SupportedPrinterProfile } from './profiles';
-import { getCountryByCode, getCurrencyFractionDigits } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
 import { renderMerchantReceiptViaDocument } from './document-merchant';
@@ -16,7 +16,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
 import CodepageEncoder from '@point-of-sale/codepage-encoder';
 import { printLabel, isGeneratedPrintLanguage } from '../print/print-labels.generated';
-import type { PrintConceptId } from '../print/print-labels.generated';
+import type { PrintConceptId } from '../../shared/print/concepts';
 import {
   declaredTemplateChargeRows,
   fitTemplateLabel,
@@ -41,6 +41,7 @@ import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippP
 import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled, type RasterSemanticUnit } from '../../shared/print/raster';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
+import { CURRENCY_ASCII_MAP, CURRENCY_TOKEN_PATTERN, normalizeCurrencyToAscii } from '../../shared/print/currency';
 
 export type PrintResult = {
   ok: boolean;
@@ -1077,7 +1078,6 @@ function receiptDocumentLines(
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
   const rasterBiz = {
     ...biz,
-    ...(biz.raster_currency ? { currency: biz.raster_currency, currency_symbol: biz.raster_currency_symbol || biz.currency_symbol } : {}),
     ...(biz.customer_phone ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) } : {}),
   };
   const selection = parseBillTemplateSelection(template);
@@ -1428,10 +1428,11 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const date = parseDbTimestamp(order.created_at);
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode, capabilities);
-  const fractionDigits = getCurrencyFractionDigits(biz.currency || 'INR');
+  const currency = resolveTenantCurrency(biz.currency, biz.country);
+  const fractionDigits = getCurrencyFractionDigits(currency);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
+  const prefix = resolveCurrencyPrefix(biz.currency_symbol || getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
   const normalize = (text: string): string => normalizeThermalText(text, capabilities);
   const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
@@ -2007,7 +2008,15 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     '{CUT}',
   ];
   if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang });
-  const textData = buildEscPos(lines.slice(0, -1), false, { cutMode, language: lang, capabilities });
+  // The diagnostic raster probe is capability-gated independently from text
+  // shaping. Keep the selected profile's shaping fact explicit so a raster
+  // profile cannot accidentally pass unsupported Arabic through the text leg.
+  const textData = buildEscPos(lines.slice(0, -1), false, {
+    cutMode,
+    language: lang,
+    capabilities,
+    arabicShaping: capabilities.shaping.arabic,
+  });
   const rasterData = encodeRasterUnits([{
     unitId: 'diagnostic-test-page',
     financial: false,
@@ -2017,23 +2026,9 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
   return Buffer.concat([textData, Buffer.from(rasterData), Buffer.from(encodeRasterFeedAndCut(cutMode))]);
 }
 
-// Every ASCII fallback is no wider than 3 characters, so currency labels such
-// as USD/EUR/INR have a stable reserved slot in receipt amount columns.
-const CURRENCY_ASCII_MAP: Record<string, string> = {
-  '₹': 'Rs', '₨': 'Rs', '€': 'EUR', '£': 'GBP', '¥': 'Yen',
-  '₩': 'KRW', '₺': 'TRY', '₫': 'VND', '₪': 'ILS', '₽': 'RUB',
-  '฿': 'THB', '₱': 'PHP', '₴': 'UAH', '₦': 'NGN', '₵': 'GHS',
-  '₡': 'CRC', '₲': 'PYG', 'د.إ': 'AED', '﷼': 'SAR', 'ریال': 'IRR', '৳': 'BDT',
-  'E£': 'EGP',
-};
-
-const CURRENCY_TOKEN_RE = new RegExp(
-  Object.keys(CURRENCY_ASCII_MAP)
-    .sort((left, right) => right.length - left.length)
-    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|'),
-  'g',
-);
+// Known ASCII fallbacks and canonical currency codes stay bounded for receipt
+// amount columns; representable localized symbols retain their full label.
+const CURRENCY_TOKEN_RE = new RegExp(`(?:${CURRENCY_TOKEN_PATTERN})`, 'g');
 
 const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
 
@@ -2047,18 +2042,12 @@ export function maskPhoneOnReceipt(phone: string): string {
   return 'x'.repeat(phone.length - 4) + phone.slice(-4);
 }
 
-function normalizeCurrencyToAscii(text: string): string {
-  return Object.entries(CURRENCY_ASCII_MAP)
-    .sort(([left], [right]) => right.length - left.length)
-    .reduce((value, [symbol, fallback]) => value.split(symbol).join(fallback), text);
-}
-
 // Resolves the currency symbol into the exact text that will be printed,
-// padded to a fixed 3-column slot (leading spaces for shorter symbols/codes).
+// padded to a minimum 3-column slot (leading spaces for shorter symbols/codes).
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
 // symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
 // pushes trailing digits onto the next line.
-export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities, preserveConfiguredSymbol = false): string {
+export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities, preserveConfiguredSymbol = false, currencyCode?: string): string {
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS printers
   // cannot shape that token, so normalize this known currency even when the
   // caller requests Unicode. Preserve the existing useUnicode behavior for
@@ -2069,14 +2058,18 @@ export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capab
   const normalizedForCapabilities = capabilities
     ? normalizeThermalTextByCapabilities(normalizedSymbol, capabilities)
     : normalizedSymbol;
+  const fallbackCurrency = currencyCode || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs';
+  const mappedFallback = normalizedSymbol === '¥' && currencyCode && currencyCode !== 'JPY'
+    ? fallbackCurrency
+    : (CURRENCY_ASCII_MAP[normalizedSymbol] || fallbackCurrency);
   const rawPrefix = capabilities
-    ? (selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
+    ? (normalizedSymbol.trim().length > 0 && selectThermalCodePage(normalizedForCapabilities, capabilities) !== null
       ? normalizedForCapabilities
-      : (CURRENCY_ASCII_MAP[normalizedSymbol] || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs'))
-    : (useUnicode || isAsciiSafe)
+      : mappedFallback)
+    : (normalizedSymbol.trim().length > 0 && (useUnicode || isAsciiSafe))
       ? normalizedSymbol
-      : (CURRENCY_ASCII_MAP[normalizedSymbol] || normalizedSymbol.slice(0, 3).toUpperCase() || 'Rs');
-  const prefix = rawPrefix.length > 3 ? rawPrefix.slice(0, 3) : rawPrefix;
+      : mappedFallback;
+  const prefix = rawPrefix;
   return prefix.length >= 3 ? prefix : ' '.repeat(3 - prefix.length) + prefix;
 }
 

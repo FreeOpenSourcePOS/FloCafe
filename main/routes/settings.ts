@@ -15,6 +15,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { CORE_BILL_TEMPLATES, isAvailableBillTemplate, listInstalledPrintTemplates, upgradeBillTemplateValue } from '../services/print-templates';
 import { listMerchantPrintTemplates } from '../services/merchant-print-templates';
+import { isSyntacticallyValidCurrencyCode } from '../../shared/print/currency';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
@@ -59,7 +60,7 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
 
 function validBusinessLocation(timezone: unknown, currency: unknown, country: unknown): boolean {
   if (timezone !== undefined && !isValidTimeZone(timezone)) return false;
-  if (currency !== undefined && (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency))) return false;
+  if (currency !== undefined && !isSyntacticallyValidCurrencyCode(currency)) return false;
   if (country !== undefined && (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country))) return false;
   return true;
 }
@@ -225,15 +226,16 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
       currency_display, number_digits, calendar } = req.body;
+    const normalizedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
 
-    if (!validBusinessLocation(timezone, currency, country)) {
+    if (!validBusinessLocation(timezone, normalizedCurrency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
     }
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
     const effectiveCountry = country || currentSettings.country || 'IN';
-    const effectiveCurrency = currency || currentSettings.currency || 'INR';
+    const effectiveCurrency = normalizedCurrency || currentSettings.currency || 'INR';
 
     // Validate explicitly supplied locale preferences against the effective
     // country's declared options, and normalize stale legacy values (e.g. a
@@ -274,8 +276,8 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     }
 
     upsertSettings(db, {
-      business_name, timezone, currency, country, language,
-      currency_symbol: (currency !== undefined || country !== undefined)
+      business_name, timezone, currency: normalizedCurrency, country, language,
+      currency_symbol: (normalizedCurrency !== undefined || country !== undefined)
         ? deriveCurrencySymbol(effectiveCurrency, effectiveCountry)
         : undefined,
       tax_registration_number, state_code, business_address,
@@ -983,6 +985,12 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
       return res.status(400).json({ error: 'Invalid theme_mode value' });
     }
     let valueToPersist: unknown = value;
+    if (req.params.key === 'currency') {
+      valueToPersist = typeof value === 'string' ? value.trim().toUpperCase() : value;
+      if (!isSyntacticallyValidCurrencyCode(valueToPersist)) {
+        return res.status(400).json({ error: 'Invalid currency' });
+      }
+    }
     if (req.params.key === 'bill_template') {
       valueToPersist = upgradeBillTemplateValue(value);
     }

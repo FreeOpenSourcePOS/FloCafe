@@ -11,6 +11,7 @@ import {
   formatReceipt,
   formatKOT,
   buildEscPos,
+  resolveCurrencyPrefix,
   buildTestPage,
   escPosToText,
   detectConnectedPrinters,
@@ -23,6 +24,7 @@ import {
 } from '../main/printers/thermal';
 import { matchSupportedPrinterProfile } from '../main/printers/profiles';
 import { getCountryByCode, getCurrencySymbol } from '../main/countries';
+import { GENERIC_THERMAL_CAPABILITIES } from '../shared/print/thermal-capabilities';
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -611,19 +613,89 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
   );
   assert('backend accented item labels are treated as financial content', hasFinancialPrintWarning(accentedWarnings));
 
-  const { receiptEncoder, warnings: frontendWarnings } = loadFrontendPrinterModules();
-  const unsupportedTenant = { business_name: 'Cafe', currency: 'XXX', country: 'IN' };
+  const bhdWarnings: any[] = [];
+  const bhdReceipt = formatReceipt(
+    fixtureOrder,
+    fixtureBill,
+    { ...fixtureBusiness, country: 'BH', currency: 'BHD', currency_symbol: getCurrencySymbol('BHD', 'ar-BH'), show_tax_breakdown: false },
+    'classic',
+    48,
+    false,
+    false,
+    'full',
+    bhdWarnings,
+    false,
+    'en',
+  );
+  assert('backend BHD receipt falls back to the canonical code', !hasFinancialPrintWarning(bhdWarnings) && escPosToText(bhdReceipt).includes('BHD'));
+  assert('currency prefix fallback uses the supplied canonical code', resolveCurrencyPrefix('د.ب.', false, undefined, false, 'BHD').includes('BHD'));
+  assert('currency prefix fallback uses the supplied canonical code for empty symbol with capabilities', resolveCurrencyPrefix('', false, GENERIC_THERMAL_CAPABILITIES, false, 'USD') === 'USD');
+
+  const xafWarnings: any[] = [];
+  const xafReceipt = formatReceipt(
+    fixtureOrder,
+    fixtureBill,
+    { ...fixtureBusiness, country: 'CM', currency: 'XAF', currency_symbol: getCurrencySymbol('XAF', 'fr-CM'), show_tax_breakdown: false },
+    'classic',
+    48,
+    false,
+    false,
+    'full',
+    xafWarnings,
+    false,
+    'en',
+  );
+  assert('backend XAF receipt preserves its full representable symbol', !hasFinancialPrintWarning(xafWarnings) && escPosToText(xafReceipt).includes('FCFA'));
+
+  const cnyWarnings: any[] = [];
+  const cnyReceipt = formatReceipt(
+    fixtureOrder,
+    fixtureBill,
+    { ...fixtureBusiness, country: 'CN', currency: 'CNY', currency_symbol: '¥', show_tax_breakdown: false },
+    'classic',
+    48,
+    false,
+    false,
+    'full',
+    cnyWarnings,
+    false,
+    'en',
+  );
+  assert('backend CNY receipt preserves its canonical code on ASCII output', !hasFinancialPrintWarning(cnyWarnings) && escPosToText(cnyReceipt).includes('CNY'));
+
+  const { receiptEncoder, taxBillEncoder, warnings: frontendWarnings } = loadFrontendPrinterModules();
+  const arbitraryCodeTenant = { business_name: 'Cafe', currency: 'XXX', country: 'IN' };
   for (const template of ['classic', 'compact'] as const) {
     for (const paperWidth of [58, 80] as const) {
       const warnings: any[] = [];
       const builder = template === 'classic'
-        ? receiptEncoder.buildClassicReceiptBytes(unsupportedBill as any, unsupportedTenant as any, { paperWidth, languages: ['fa'] as any }, warnings)
-        : receiptEncoder.buildCompactReceiptBytes(unsupportedBill as any, unsupportedTenant as any, { paperWidth, languages: ['fa'] as any }, warnings);
-      assert(`WebUSB ${template}/${paperWidth}mm: financial warning is identified`, frontendWarnings.hasFinancialPrintWarning(warnings));
-      assert(`WebUSB ${template}/${paperWidth}mm: refusal is explicit`, frontendWarnings.makeFinancialPrintRefusalMessage(warnings).includes('Receipt not printed'));
-      assert(`WebUSB ${template}/${paperWidth}mm: unsupported currency is not silently accepted`, warnings.some((warning: any) => warning.kind === 'financial'));
-      assert(`WebUSB ${template}/${paperWidth}mm: builder remains paperless`, builder.length > 0);
+        ? receiptEncoder.buildClassicReceiptBytes(unsupportedBill as any, arbitraryCodeTenant as any, { paperWidth, languages: ['en'] as any }, warnings)
+        : receiptEncoder.buildCompactReceiptBytes(unsupportedBill as any, arbitraryCodeTenant as any, { paperWidth, languages: ['en'] as any }, warnings);
+      assert(`WebUSB ${template}/${paperWidth}mm: arbitrary three-letter currency code is printable`, !frontendWarnings.hasFinancialPrintWarning(warnings));
+      assert(`WebUSB ${template}/${paperWidth}mm: arbitrary currency code is emitted`, Buffer.from(builder).toString().includes('XXX'));
     }
+  }
+
+  const cnyFrontendTenant = { business_name: 'Cafe', currency: 'CNY', country: 'CN' };
+  for (const paperWidth of [58, 80] as const) {
+    const receiptWarnings: any[] = [];
+    const receipt = receiptEncoder.buildClassicReceiptBytes(unsupportedBill as any, cnyFrontendTenant as any, { paperWidth, languages: ['en'] as any }, receiptWarnings);
+    assert(`WebUSB classic/${paperWidth}mm: CNY preserves its canonical code`, !frontendWarnings.hasFinancialPrintWarning(receiptWarnings) && Buffer.from(receipt).toString().includes('CNY'));
+
+    const taxWarnings: any[] = [];
+    const taxBill = taxBillEncoder.buildTaxBillBytes(unsupportedBill as any, cnyFrontendTenant as any, { paperWidth, language: 'en' }, taxWarnings);
+    assert(`WebUSB tax/${paperWidth}mm: CNY preserves its canonical code`, !frontendWarnings.hasFinancialPrintWarning(taxWarnings) && Buffer.from(taxBill).toString().includes('CNY'));
+  }
+
+  const bhdFrontendTenant = { business_name: 'Cafe', currency: 'BHD', country: 'BH' };
+  for (const paperWidth of [58, 80] as const) {
+    const receiptWarnings: any[] = [];
+    const receipt = receiptEncoder.buildClassicReceiptBytes(unsupportedBill as any, bhdFrontendTenant as any, { paperWidth, languages: ['en'] as any }, receiptWarnings);
+    assert(`WebUSB classic/${paperWidth}mm: BHD falls back to its canonical code`, !frontendWarnings.hasFinancialPrintWarning(receiptWarnings) && Buffer.from(receipt).toString().includes('BHD'));
+
+    const taxWarnings: any[] = [];
+    const taxBill = taxBillEncoder.buildTaxBillBytes(unsupportedBill as any, bhdFrontendTenant as any, { paperWidth, language: 'en' }, taxWarnings);
+    assert(`WebUSB tax/${paperWidth}mm: BHD falls back to its canonical code`, !frontendWarnings.hasFinancialPrintWarning(taxWarnings) && Buffer.from(taxBill).toString().includes('BHD'));
   }
 }
 
@@ -1266,6 +1338,12 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   const browserTaxHtml = generateBillHtml(frontendBill as any, frontendTenant, { useUnicode: false });
   assert('browser tax-bill printing preserves Persian Rial output', browserTaxHtml.includes('ریال') && !browserTaxHtml.includes('IRR'));
   assert('browser tax-bill printing preserves Persian numeric output', /[۰-۹]/.test(browserTaxHtml));
+  const browserArbitraryCurrencyHtml = generateBillHtml(
+    frontendBill as any,
+    { ...frontendTenant, country: 'US', currency: 'XXX' },
+    { useUnicode: false },
+  );
+  assert('browser printing uses the arbitrary currency code instead of Intl placeholder', browserArbitraryCurrencyHtml.includes('XXX') && !browserArbitraryCurrencyHtml.includes('¤'));
   const browserTomanHtml = generateBillHtml(
     frontendBill as any,
     { ...frontendTenant, currency_display: 'toman' },

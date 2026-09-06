@@ -85,6 +85,31 @@ async function main() {
     const stored = db.prepare("SELECT value FROM settings WHERE key = 'timezone'").get() as { value: string };
     assert.equal(stored.value, 'America/Vancouver', 'settings.timezone row persists the custom timezone');
 
+    const lowercaseCurrencyRes = await api(baseUrl, '/api/settings/business', {
+      method: 'PUT',
+      body: { currency: 'xxx' },
+      headers: owner.authHeader,
+    });
+    assert.equal(lowercaseCurrencyRes.status, 200, 'PUT /api/settings/business accepts lowercase currency codes');
+    assert.equal(lowercaseCurrencyRes.data.currency, 'XXX', 'business settings response canonicalizes currency codes');
+    const storedCurrency = db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as { value: string };
+    assert.equal(storedCurrency.value, 'XXX', 'settings.currency row persists the canonical uppercase code');
+
+    const wildcardCurrencyRes = await api(baseUrl, '/api/settings/currency', {
+      method: 'PUT',
+      body: { value: 'jpy' },
+      headers: owner.authHeader,
+    });
+    assert.equal(wildcardCurrencyRes.status, 200, 'wildcard currency settings accept lowercase input');
+    assert.equal(wildcardCurrencyRes.data.setting.value, 'JPY', 'wildcard currency settings canonicalize input');
+
+    const invalidWildcardCurrencyRes = await api(baseUrl, '/api/settings/currency', {
+      method: 'PUT',
+      body: { value: 'US' },
+      headers: owner.authHeader,
+    });
+    assert.equal(invalidWildcardCurrencyRes.status, 400, 'wildcard currency settings reject invalid codes');
+
     // ── Invalid IANA timezone → documented 400 shape ──
     const badRes = await api(baseUrl, '/api/settings/business', {
       method: 'PUT',

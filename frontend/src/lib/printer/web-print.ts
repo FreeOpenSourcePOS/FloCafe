@@ -25,6 +25,7 @@ import type { PrintWarning } from './warnings';
 import {
   getCountryByCode,
   getCurrencyFractionDigits,
+  getCurrencySymbol,
   formatCurrencyForTenant,
   formatNumberForTenant,
   formatDateForTenant,
@@ -98,7 +99,7 @@ export interface WebPrintOptions {
   showCustomerName?: boolean;
   showCustomerPhone?: boolean;
   showTableNumber?: boolean;
-  /** Ignored for browser receipts: HTML always renders Unicode currency symbols. */
+  /** Ignored for browser receipts: HTML uses locale currency formatting and code fallback. */
   useUnicode?: boolean;
   /** Show a large "REPRINT" banner so a reprinted bill can't be mistaken for the original. */
   isReprint?: boolean;
@@ -562,7 +563,8 @@ function getPaperStyles(size: PaperSize): string {
 
 /**
  * Format an amount following the tenant's currency display (Iran rial/toman),
- * digit mode, and `trimDecimals` preference. Browser output is always Unicode.
+ * digit mode, and `trimDecimals` preference. Browser output uses locale
+ * symbols when available and the canonical currency code otherwise.
  */
 function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false): string {
   const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -578,11 +580,12 @@ function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false
   if (trimDecimals && !hasDecimals && !isToman) {
     const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
     const numberingSystem = tenant.number_digits === 'latin' ? 'latn' : undefined;
+    const currency = tenant.currency || 'INR';
     try {
       return new Intl.NumberFormat(locale, {
         style: 'currency',
-        currency: tenant.currency || 'INR',
-        currencyDisplay: 'narrowSymbol',
+        currency,
+        currencyDisplay: getCurrencySymbol(currency, locale) === currency ? 'code' : 'narrowSymbol',
         ...(numberingSystem ? { numberingSystem } : {}),
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,

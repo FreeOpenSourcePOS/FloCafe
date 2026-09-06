@@ -26,8 +26,11 @@ import {
 } from '../main/printers/thermal';
 import {
   printLabel,
+  PRINT_LABEL_LANGUAGES,
 } from '../main/print/print-labels.generated';
+import { LANGUAGES } from '../frontend/src/lib/i18n/languages';
 import { renderCompactReceiptViaDocument } from '../main/printers/document-compact';
+import { renderClassicReceiptViaDocument } from '../main/printers/document-classic';
 
 let passed = 0;
 let failed = 0;
@@ -117,6 +120,12 @@ function run(): void {
   assert('tr resolves borrowed pos.subtotal', printLabel('tr', 'pos.subtotal') === 'Ara Toplam');
   assert('fil resolves borrowed pos.subtotal', printLabel('fil', 'pos.subtotal') === 'Subtotal');
   assert('de resolves borrowed pos.subtotal', printLabel('de', 'pos.subtotal') === 'Zwischensumme');
+  const localeCodes = Object.keys(LANGUAGES);
+  assert('generated print locales derive from the canonical registry', JSON.stringify(PRINT_LABEL_LANGUAGES) === JSON.stringify(localeCodes));
+  for (const locale of localeCodes) {
+    const totalLabel = printLabel(locale, 'print.grandTotal');
+    assert(`${locale} resolves a runtime print concept`, totalLabel.length > 0 && totalLabel !== 'print.grandTotal');
+  }
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {
@@ -135,6 +144,17 @@ function run(): void {
     assert('de classic renders German grand total', deText.includes('GESAMTSUMME'));
     assert('de classic renders German subtotal', deText.includes('Zwischensumme'));
     assert('unknown language keeps English output', escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'classic', 48, false, false, undefined, [], false, 'xx')).includes('Invoice #:'));
+    for (const locale of localeCodes) {
+      const localized = renderClassicReceiptViaDocument(buildOrder(), buildBill(), buildBusiness(), {
+        columns: 48,
+        language: locale,
+        isReprint: false,
+        useUnicode: false,
+        arabicShaping: locale === 'fa',
+        cutMode: 'full',
+      }).lines.join('\n');
+      assert(`${locale} classic runtime matrix resolves grand total`, localized.includes(printLabel(locale, 'print.grandTotal')));
+    }
   }
 
   console.log('\n✅ Test 3: compact receipt honors language');

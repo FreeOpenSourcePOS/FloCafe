@@ -675,7 +675,7 @@ export const printerRoutes = router;
  * Tenant-configured language for print label selection (#440). Defaults to
  * 'en' when unset; unknown values fall back to English at render time.
  */
-function tenantLanguage(db: ReturnType<typeof getDatabase>): string {
+export function tenantLanguage(db: ReturnType<typeof getDatabase>): string {
   try {
     const row = db.prepare("SELECT value FROM settings WHERE key = 'language'").get() as { value?: string } | undefined;
     return row?.value || 'en';

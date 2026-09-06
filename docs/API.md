@@ -883,12 +883,266 @@ The response includes gross and net collections, refund totals and count, bill c
 ---
 
 ### GET `/api/reports/x-report`
-X Report (current shift).
+
+Live day report (cierre de caja, issue #649). Recomputes the day's aggregates on every read using the same snapshot pipeline that backs the stored Z, so the live X and the stored Z never drift apart. The opening float is **not** captured here — float is only recorded at close — so `expectedCashCents` is the cash-sales-only expectation (cash sales by `bills.paid_at` minus cash refunds by `refunds.created_at`), not the drawer expectation you'll see on the stored Z.
+
+**Role:** owner, manager
+
+**Headers:** `Authorization: Bearer <owner-or-manager-token>`
+
+**Query params:** `?date=YYYY-MM-DD` — tenant-local calendar day (defaults to tenant-local current day)
+
+**Response (200):**
+```json
+{
+  "xReport": {
+    "businessDate": "2025-03-31",
+    "periodStart": "2025-03-30 18:30:00",
+    "periodEnd": "2025-03-31 18:30:00",
+    "grossCollected": 15000,
+    "refunded": 250,
+    "netCollected": 14750,
+    "billCount": 45,
+    "refundCount": 2,
+    "paymentMethods": [
+      { "method": "cash", "count": 30, "total": 9000 },
+      { "method": "card", "count": 15, "total": 6000 }
+    ],
+    "staffSales": [
+      { "user_id": "chef-1", "name": "Chef One", "role": "chef", "revenue": 8000, "orderCount": 22 }
+    ],
+    "taxComponents": [
+      { "title": "CGST", "amount": 187.5, "rate": 0.025 }
+    ],
+    "expectedCashCents": 875000,
+    "alreadyClosed": false
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `grossCollected`, `refunded`, `netCollected`, `paymentMethods[].total`, `staffSales[].revenue`, `taxComponents[].amount` | number | **Display major units** (minor-factor-divided; matches `financial-summary` / tax-components). |
+| `expectedCashCents` | integer | **INTEGER cents.** Cash sales by `bills.paid_at` minus cash refunds by `refunds.created_at`. Excludes the opening float. The consuming client must convert any counted-cash input to cents before comparing. |
+| `businessDate` / `periodStart` / `periodEnd` | string | `businessDate` is a tenant-local `YYYY-MM-DD`. `periodStart` and `periodEnd` are UTC bounds of that tenant-local day, formatted `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`, no `Z`, no millis — produced by `dayBoundsInTimezone()` and matching the SQLite `CURRENT_TIMESTAMP` family). |
+| `alreadyClosed` | boolean | `true` when a `cash_closures` row exists for the day. |
+| `priorClosedCashCents` | integer \| null | INTEGER cents counted-cash from the most recent prior `scope='day'` `cash_closures` row (used to default the next day's opening float). `null` when no prior day close exists. |
+| `priorBusinessDate` | string \| null | `business_date` of that prior close (`YYYY-MM-DD`). `null` when no prior day close exists. |
+| `zNumber` | integer \| absent | Field is **omitted from the JSON** while `alreadyClosed` is `false`; present and an integer once the day is closed. |
+
+The per-method `count` is the row count in the UNION'd `paymentMethodBreakdown` view (paid payment lines **plus** refund lines as negative-amount rows — paymentMethodBreakdown UNION semantics, same as `financial-summary`). UI labels that derive "N payments" from these counts therefore include the day's refund lines in the total; use `refundCount` to subtract.
+
+The canonical "cash" identity is the literal `method === 'cash'` filter — custom payment-method names are not joined into the cash-only expected figure.
+
+**Convention — paid bills survive cancellation.** A paid bill counts toward the day's aggregates (`paymentMethods`, `taxComponents`, `grossCollected`, `staffSales`) even when its order is later cancelled: the cash left in the drawer is real, and the X uses the same aggregator the Z uses at close. Note this is **broader** than the live `/api/reports/tax-components` endpoint, which excludes cancelled orders (`main/routes/reports.ts:255-262`); the X intentionally follows the Z's drawer-reality convention so the live and stored views of the same day agree. Refunds recorded against a paid bill reverse the cash via the refunds UNION in `paymentMethodBreakdown`.
+
+**Convention — staff and tax sections follow the paid day.** The X and Z key `staffSales` and `taxComponents` by `b.paid_at` (the day cash was collected) so every section of the immutable Z reconciles to the same window as `grossCollected`, `paymentMethods`, and `expectedCashCents`. On a cross-midnight day (order created Day 1, paid Day 2), staff revenue and tax components land in Day 2's snapshot. This **differs** from `/api/reports/insights` (`topStaff`, keyed by `orders.created_at`) and `/api/reports/tax-components` (keyed by `bills.created_at`) on cross-midnight days; the divergence is intentional — the Z must be internally reconcilable, while those live views prioritize the order's creation day. `staffSales[].orderCount` counts paid bills (not orders), so split checks multiply it; `/api/reports/insights` `topStaff.orderCount` counts orders instead.
 
 ---
 
 ### GET `/api/reports/z-report`
-Z Report (close shift).
+
+Stored day-close snapshot. Reads the immutable `cash_closures` row for the requested business date. The stored Z is the closed day's authoritative figure — late refunds against a closed day keep their existing live-report behaviour but never rewrite the row. No reopen endpoint exists in v1; corrections are operator notes, not mutations.
+
+**Role:** owner, manager
+
+**Headers:** `Authorization: Bearer <owner-or-manager-token>`
+
+**Query params:** `?date=YYYY-MM-DD` — tenant-local calendar day (defaults to tenant-local current day)
+
+**Response (200):**
+```json
+{
+  "zReport": {
+    "id": 17,
+    "scope": "day",
+    "business_date": "2025-03-31",
+    "period_start": "2025-03-30 18:30:00",
+    "period_end": "2025-03-31 18:30:00",
+    "opening_float_cents": 50000,
+    "expected_cash_cents": 925000,
+    "counted_cash_cents": 925000,
+    "variance_cents": 0,
+    "gross_collected_cents": 1500000,
+    "refunded_cents": 25000,
+    "net_collected_cents": 1475000,
+    "bill_count": 45,
+    "refund_count": 2,
+    "payment_methods": [
+      { "method": "cash", "count": 30, "total_cents": 900000 },
+      { "method": "card", "count": 15, "total_cents": 600000 }
+    ],
+    "staff_sales": [
+      { "user_id": "chef-1", "name": "Chef One", "role": "chef", "revenue_cents": 800000, "orderCount": 22 }
+    ],
+    "tax_components": [
+      { "title": "CGST", "amount": 187.5, "rate": 0.025 }
+    ],
+    "z_number": 17,
+    "closed_by": "owner-1",
+    "notes": null,
+    "created_at": "2025-04-01 01:23:45"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| All `*_cents` fields | integer | **INTEGER cents.** `expected_cash_cents` includes the opening float: `expected = opening_float + cash_sales − cash_refunds(created_at)`. The same-day X and Z expected values therefore differ by exactly `opening_float_cents` — consumers must not compare them directly. |
+| `payment_methods[].total_cents`, `staff_sales[].revenue_cents` | integer | INTEGER cents (storage shape; converted to display major units at the X read edge). |
+| `tax_components[].amount` | number | **Display major units** — identical to the X response's `taxComponents`, not cents. The Z stores the same `aggregateTaxComponents` output verbatim and serves it without conversion. |
+| `variance_cents` | integer | `counted_cash_cents − expected_cash_cents`. May be negative. |
+| `z_number` | integer | Monotonic, allocated from `nextZNumber()` at close time. |
+| `closed_by` | string | `users.id` of the operator who closed. |
+| `closed_by_name` | string | Display name of that operator (`users.name`), with `closed_by` used as fallback when the user row is missing. Resolved server-side on read for the Z JSON and on print for the receipt body. |
+| `notes` | string \| null | Free-form operator notes from the close request, or `null` if none were provided. |
+| `created_at` | string | UTC close timestamp, formatted `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`, no `Z`, no millis — matches `db.now()` and SQLite `CURRENT_TIMESTAMP`). |
+| `business_date` / `period_start` / `period_end` | string | `business_date` is a tenant-local `YYYY-MM-DD`. `period_start` and `period_end` are UTC bounds of that tenant-local day, formatted `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`, no `Z`, no millis — produced by `dayBoundsInTimezone()` and matching the SQLite `CURRENT_TIMESTAMP` family). |
+
+**Error (404):** the day is not yet closed.
+```json
+{ "error": "Day not closed", "alreadyClosed": false, "businessDate": "2025-03-31" }
+```
+
+---
+
+## Cash Closures
+
+### POST `/api/cash-closures`
+
+Close the current tenant-local day (cierre de caja, issue #649). One close per day per store. The backend recomputes every aggregate server-side — it never trusts client totals — and stores one immutable row in `cash_closures` inside a single transaction. The stored Z is the closed day's authoritative figure; no reopen endpoint exists in v1.
+
+**Role:** owner (manager / cashier / server → 403)
+
+**Headers:** `Authorization: Bearer <owner-token>`
+
+**Request:**
+```json
+{
+  "business_date": "2025-03-31",
+  "opening_float_cents": 50000,
+  "counted_cash_cents": 925000,
+  "notes": "Late drawer count"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `business_date` | string | Tenant-local `YYYY-MM-DD`. Must be a real calendar date (regex match is not enough — `2026-02-30` is rejected). Not in the future relative to tenant-local today. |
+| `opening_float_cents` | integer | INTEGER cents, `>= 0`. Cash float the operator is starting the day with. |
+| `counted_cash_cents` | integer | INTEGER cents, `>= 0`. Cash the operator counted in the drawer at close. |
+| `notes` | string \| optional | Free-form notes, ≤ 500 characters. |
+
+Snapshot math (verbatim from spec):
+```
+expected_cash_cents = opening_float_cents
+                    + cash_sales_cents
+                    − cash_refunds_by_created_at_cents
+variance_cents      = counted_cash_cents − expected_cash_cents
+```
+
+The canonical "cash" identity is the literal `method === 'cash'` filter — custom payment-method names are not joined into the cash-only expected figure. Refunds are attributed by `refunds.created_at` for the drawer-reality split; display totals attribute refunds to the original bill's `paid_at` (matching `financial-summary`).
+
+**Response (201):**
+```json
+{
+  "zReport": {
+    "id": 17,
+    "scope": "day",
+    "business_date": "2025-03-31",
+    "period_start": "2025-03-30 18:30:00",
+    "period_end": "2025-03-31 18:30:00",
+    "opening_float_cents": 50000,
+    "expected_cash_cents": 925000,
+    "counted_cash_cents": 925000,
+    "variance_cents": 0,
+    "gross_collected_cents": 1500000,
+    "refunded_cents": 25000,
+    "net_collected_cents": 1475000,
+    "bill_count": 45,
+    "refund_count": 2,
+    "payment_methods": [
+      { "method": "cash", "count": 30, "total_cents": 900000 },
+      { "method": "card", "count": 15, "total_cents": 600000 }
+    ],
+    "staff_sales": [
+      { "user_id": "chef-1", "name": "Chef One", "role": "chef", "revenue_cents": 800000, "orderCount": 22 }
+    ],
+    "tax_components": [
+      { "title": "CGST", "amount": 187.5, "rate": 0.025 }
+    ],
+    "z_number": 17,
+    "closed_by": "owner-1",
+    "notes": "Late drawer count",
+    "created_at": "2025-04-01 01:23:45"
+  }
+}
+```
+
+The response field shape matches `GET /api/reports/z-report` except it omits `closed_by_name`, which is resolved server-side on the Z read — the stored row is the source of truth for both reads.
+
+**Error (400):** malformed body, non-integer / negative cents, future date, notes too long, or invalid calendar date. The `error` message names the offending field, e.g. `business_date is not a real calendar date`, `counted_cash_cents must be >= 0`, `notes is too long`.
+
+**Error (409):** the day is already closed (duplicate `POST` against the same `business_date`).
+```json
+{ "error": "This day is already closed" }
+```
+A concurrent winner of a double-`POST` race still returns 409 — the partial unique index `cash_closures_one_day ... WHERE scope = 'day'` is the safety net behind the SELECT-then-INSERT.
+
+---
+
+### POST `/api/cash-closures/:id/print`
+
+Dispatch the stored Z to the default receipt printer. The forced drawer pulse is appended server-side (bypassing bill-bound `shouldPulseForPayment`, which can never fire for a bill-less Z) and is **not** filtered through `cash_drawer_pulse_methods`: the Z is the document the merchant prints while counting the drawer. The stored row is never mutated by printing.
+
+**Role:** owner (manager / cashier / server → 403)
+
+**Headers:** `Authorization: Bearer <owner-token>`
+
+**Path params:** `:id` — positive integer, the `cash_closures.id` returned by `POST /api/cash-closures` or `GET /api/reports/z-report`.
+
+**Request:**
+```json
+{ "isReprint": false }
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `isReprint` | boolean \| optional | When `true`, the printed body shows a `REPRINT` marker next to the Z number. Defaults to `false`. |
+
+The route resolves the default receipt printer server-side (the WebUSB branch is reachable end-to-end this way; helpers that exclude WebUSB would otherwise skip it). The body is built with English literals; the `language` argument is currently reserved/unused on this path.
+
+**Response (200, WebUSB):** the renderer dispatches the bytes itself.
+```json
+{ "success": true, "webusb": true, "isReprint": false, "bytes": [27, 64, 27, 112, 0, 25, 250] }
+```
+
+**Response (200, network / USB):**
+```json
+{ "success": true, "isReprint": false }
+```
+
+**Error (400):** invalid id.
+```json
+{ "error": "id must be a positive integer" }
+```
+
+**Error (404):** no row for that id.
+```json
+{ "error": "Cash closure not found" }
+```
+
+**Error (409):** no default printer is configured.
+```json
+{ "error": "No default printer configured" }
+```
+
+**Error (502):** the printer did not respond or the dispatch failed.
+```json
+{ "error": "<detail>", "detail": "<detail>" }
+```
+
+Printed Z layout, in spec order: header (business name, address, tax id — **branch omitted: no branch data source exists in the schema**) → Z number + business date + period start/end → opening float → sales by payment method → refunds → tax breakdown → staff sales → expected / counted / variance (variance emphasized) → operator + signature line → footer. The forced drawer pulse is appended after the footer.
 
 ---
 

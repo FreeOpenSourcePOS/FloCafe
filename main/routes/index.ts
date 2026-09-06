@@ -9,6 +9,7 @@ import { orderRoutes } from './orders';
 import { orderItemRoutes } from './order-items';
 import { billRoutes, syncUnpaidBillsForOrder, getTenantCurrency } from './bills';
 import { refundRoutes } from './refunds';
+import { cashClosureRoutes } from './cash-closures';
 import { tableRoutes } from './tables';
 import { kitchenStationRoutes } from './kitchen-stations';
 import { kitchenRoutes } from './kitchen';
@@ -87,6 +88,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/kitchen', kitchenRoutes);
   app.use('/api/bills', billRoutes);
   app.use('/api/refunds', refundRoutes);
+  app.use('/api/cash-closures', cashClosureRoutes);
   app.use('/api/tables', tableRoutes);
   app.use('/api/kitchen-stations', kitchenStationRoutes);
   app.use('/api/customers', customerRoutes);

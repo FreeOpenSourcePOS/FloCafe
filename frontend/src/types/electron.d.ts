@@ -1,7 +1,4 @@
-/**
- * Shared type definitions for Electron API exposed via preload.ts.
- * Used across frontend components to avoid `any` casts on window.electronAPI.
- */
+/** Shared type definitions for Electron API exposed via preload.ts. */
 
 export interface ElectronAPI {
   // Menu
@@ -34,9 +31,7 @@ export interface ElectronAPI {
   // App info
   getAppInfo: () => Promise<ElectronAppInfo | ElectronIpcError>;
 
-  // Diagnostics: reports a caught renderer render exception (see the
-  // dashboard error boundary) to anonymous telemetry via main. Best-effort —
-  // failures are swallowed by the caller.
+  // Reports caught renderer errors to anonymous telemetry via main process.
   reportRendererError?: (report: { message?: string; stack?: string; digest?: string; route?: string }) => Promise<ElectronActionResult>;
 
   // Printers
@@ -64,9 +59,7 @@ export interface ElectronAPI {
 
   // Status
   getStatus: () => Promise<ElectronStatus>;
-  // Renderer readiness report, used after either native-overlay or HTML
-  // fallback controls are available. Reports are bound to the document epoch
-  // from getStatus() so main can reject stale reports.
+  // Reports renderer readiness to main with epoch validation.
   windowReady: (payload: { epoch: number }) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // Updates

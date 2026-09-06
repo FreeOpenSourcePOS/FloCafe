@@ -5,10 +5,7 @@ export interface LoginFailure {
   lockoutMinutes: number | undefined;
 }
 
-/**
- * Normalizes an unknown login rejection into a structured failure shape.
- * Unstructured rejections return undefined status, treated as network/availability issues.
- */
+/** Normalizes unknown login rejections into structured failure objects. */
 export function parseLoginFailure(err: unknown): LoginFailure {
   const empty: LoginFailure = {
     status: undefined,

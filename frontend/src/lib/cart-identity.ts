@@ -1,10 +1,6 @@
 import type { Addon, CartItem } from './types';
 
-/**
- * Serialize the cart identity as typed, sorted structure rather than as a
- * delimiter-joined string. JSON-like values are escaped and tagged so values
- * such as `1` and `"001"` cannot become the same identity.
- */
+/** Serializes cart identity into a typed, sorted canonical representation. */
 function canonicalize(value: unknown): string {
   if (value === null) return 'null';
   if (value === undefined) return 'undefined';
@@ -40,11 +36,7 @@ function canonicalize(value: unknown): string {
   }
 }
 
-/**
- * Build the stable identity used by the cart store for merging equivalent
- * lines. Add-on arrays are order-insensitive, while every selected add-on
- * field and the exact note text remain part of the identity.
- */
+/** Builds order-insensitive, typed cart identity for merging equivalent items. */
 export function generateCartItemId(productId: number | string, addons: Addon[], specialInstructions: string): string {
   const normalizedAddons = addons.map((addon) => ({
     ...addon,

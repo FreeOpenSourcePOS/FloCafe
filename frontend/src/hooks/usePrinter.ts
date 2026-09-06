@@ -220,10 +220,8 @@ export const usePrinterStore = create<PrinterState>()(
             }
           }
 
-          // A silent reconnect kicked off at app startup may still be in
-          // flight (e.g. a print triggered moments after launch) — wait for
-          // it to settle before trusting isConnected, or a printer that's
-          // about to reattach would wrongly fall back to browser print.
+          // Await startup silent reconnect before checking isConnected
+          // to avoid premature browser print fallbacks.
           await printerService.awaitPendingReconnect();
 
           if (get().printMethod === 'browser' || (!hw && !printerService.isConnected && get().printMethod === 'escpos')) {
@@ -455,9 +453,8 @@ export const usePrinterStore = create<PrinterState>()(
           const kotLanguage = resolveKotTicketLanguage();
           const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
 
-          // A startup silent-reconnect attempt may still be in flight (e.g.
-          // KOT auto-print firing on the first order right after launch) —
-          // wait for it to settle before trusting isConnected.
+          // Await startup silent reconnect before checking isConnected
+          // to avoid premature browser print fallbacks.
           await printerService.awaitPendingReconnect();
           if (get().printMethod === 'escpos' && printerService.isConnected) {
             const { paperWidth } = get();

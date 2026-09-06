@@ -8,14 +8,8 @@ export type ServerInfo = {
   kdsDefaultView: 'tabs' | 'kanban' | null;
 };
 
-/**
- * Fetch the tenant's preferred language + KDS defaults from a public info
- * endpoint (default `/api/kds/info`; the Server App uses
- * `/api/server-app/info`, which exposes the same `language`/`country`
- * fields). Never throws: on timeout/error returns empty info, so callers
- * fall back to local heuristics. 1500ms is generous for a LAN; this must
- * not block first paint of the login screen.
- */
+/** Fetches tenant preferred language and KDS defaults from public info
+ * endpoint with 1.5s timeout, returning empty defaults on failure. */
 export async function fetchServerInfo(
   baseUrl = '',
   timeoutMs = 1500,
@@ -45,18 +39,8 @@ export async function fetchServerInfo(
   }
 }
 
-/**
- * On mount, fetches the tenant's preferred language from a public info
- * endpoint and pushes it into the global `usePosSettingsStore`. Cross-origin
- * tabs (KDS standalone, Server App standalone) inherit the language set on
- * the dashboard.
- *
- * `infoPath` defaults to `/api/kds/info` and can be pointed at the Server
- * App's `/api/server-app/info`, which exposes the same `language` field.
- *
- * Idempotent: only sets language if the server actually returned one.
- * Best-effort: never throws, never blocks the UI.
- */
+/** Fetches tenant preferred language on mount and updates posSettingsStore;
+ * safe best-effort sync for standalone views. */
 export function useSyncServerLanguage(infoPath = '/api/kds/info'): void {
   const setLanguage = usePosSettingsStore((s) => s.setLanguage);
   useEffect(() => {

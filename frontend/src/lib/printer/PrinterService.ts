@@ -1,11 +1,4 @@
-/**
- * PrinterService — WebUSB ESC/POS thermal printer driver.
- *
- * Real usage (WebUSB):  await printerService.connect();
- *                        await printerService.print(bytes);
- *
- * Browser fallback:     Use window.print() with thermal-optimized CSS
- */
+/** WebUSB ESC/POS thermal printer driver with browser print fallback. */
 
 export type PrinterStatus =
   | 'disconnected'
@@ -92,29 +85,17 @@ class PrinterService {
     { vendorId: 0x0922 },
   ];
 
-  /**
-   * Opens (or re-opens) a device that has already been granted, claiming its
-   * ESC/POS interface. Shared by connect() (fresh grant) and tryReconnect()
-   * (silent re-grant), which differ only in how they obtain `device`.
-   */
+  /** Opens (or re-opens) a device and claims its ESC/POS interface. */
   private async openDevice(device: USBDevice): Promise<void> {
     if (this.device) {
-      // The Web USB API has no persistent device-id field — vendorId +
-      // productId + serialNumber is the closest thing to a stable identity
-      // for "is this the same physical device".
+      // Check if this is the exact same physical device.
       const sameDevice = this.device.vendorId === device.vendorId
         && this.device.productId === device.productId
         && this.device.serialNumber === device.serialNumber;
       if (sameDevice) {
-        // Already open on this exact device (e.g. tryReconnect() and a
-        // concurrent connect() both resolved to the same printer) — nothing
-        // to do.
         return;
       }
-      // A different device is already connected (e.g. tryReconnect()
-      // succeeded while the user's picker was still open and they picked
-      // another device) — release its claim/interface before switching,
-      // rather than overwriting the reference and leaking the old claim.
+      // Release claim/interface on the previously connected device before switching.
       await this.disconnect();
     }
     this.device = device;
@@ -155,14 +136,7 @@ class PrinterService {
     navigator.usb.addEventListener('disconnect', this.handleDisconnect);
   }
 
-  // Serializes only the openDevice() step (connect() and tryReconnect() alike)
-  // so at most one attempt is ever mutating `this.device`/interface state at
-  // a time — a claim failure in one would otherwise run openDevice()'s
-  // disconnect() cleanup and tear down a connection the other just
-  // established. requestDevice() itself must NOT wait on this lock: it needs
-  // to run on the same tick as the user's click (transient activation expires
-  // quickly), so queuing it behind an in-flight tryReconnect() could make the
-  // browser reject it with SecurityError and the picker would never open.
+  // Serializes openDevice() to prevent concurrent mutations of device/interface state.
   private connectLock: Promise<unknown> = Promise.resolve();
 
   private async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -172,10 +146,7 @@ class PrinterService {
     return run;
   }
 
-  /**
-   * Opens the browser's USB device picker and connects to a thermal printer.
-   * Must be called from a user-gesture handler (click, etc.).
-   */
+  /** Opens the browser's USB device picker and connects to a thermal printer. */
   async connect(): Promise<void> {
     if (this._printMode === 'browser') {
       return;
@@ -193,10 +164,7 @@ class PrinterService {
     try {
       device = await navigator.usb.requestDevice({ filters: PrinterService.DEVICE_FILTERS });
     } catch (err: unknown) {
-      // A concurrent tryReconnect() can finish and set this.device while the
-      // picker is still open (requestDevice() intentionally isn't gated by
-      // connectLock — see above). Don't stomp that real connection's status
-      // just because this particular request was cancelled or failed.
+      // Don't overwrite an existing connection if this request was cancelled or failed.
       if (err instanceof DOMException && err.name === 'NotFoundError') {
         if (!this.device) this.setStatus('disconnected');
         return;
@@ -210,18 +178,7 @@ class PrinterService {
 
   private reconnectPromise: Promise<boolean> | null = null;
 
-  /**
-   * Silently re-attaches to a printer the user already granted permission
-   * for in a previous session, using the non-prompting getDevices() API.
-   * Safe to call on every app start/reload — never shows a picker and never
-   * throws; returns whether a device was reattached. Without this, the
-   * WebUSB connection is lost on every reload/relaunch and print() throws
-   * "Printer is not connected" until the user manually reconnects.
-   *
-   * Concurrent calls (and calls made while one is already in flight) share
-   * the same in-flight promise rather than racing multiple getDevices()/open()
-   * attempts against each other.
-   */
+  /** Silently re-attaches to a printer granted permission in a previous session. */
   async tryReconnect(): Promise<boolean> {
     if (this.reconnectPromise) return this.reconnectPromise;
     if (this._printMode === 'browser' || this.device || !navigator.usb) {
@@ -249,14 +206,7 @@ class PrinterService {
     return this.reconnectPromise;
   }
 
-  /**
-   * Waits for a silent reconnect already in flight (started at app startup)
-   * to settle, without starting a new one. Callers that gate on `isConnected`
-   * right before printing should await this first — otherwise a print
-   * triggered moments after startup (e.g. KOT auto-print on the first order)
-   * can read `isConnected` as false and fall back to browser print even
-   * though the WebUSB printer reconnects a beat later.
-   */
+  /** Waits for an in-flight silent reconnect to settle before caller checks connection. */
   async awaitPendingReconnect(): Promise<void> {
     if (this.reconnectPromise) await this.reconnectPromise;
   }
@@ -284,10 +234,7 @@ class PrinterService {
     this.setStatus('disconnected');
   }
 
-  /**
-   * Send raw ESC/POS bytes to the printer via WebUSB.
-   * Throws if not connected or in browser print mode.
-   */
+  /** Send raw ESC/POS bytes to the printer via WebUSB. */
   async print(data: Uint8Array): Promise<void> {
     if (this._printMode === 'browser') {
       throw new Error('Browser print mode is active. Use window.print() instead.');
@@ -298,8 +245,7 @@ class PrinterService {
     }
 
     try {
-      // Copy to a fresh ArrayBuffer covering exactly the encoder's bytes,
-      // which avoids sending garbage if the Uint8Array is a subarray view.
+      // Copy to fresh ArrayBuffer to avoid subarray view issues.
       const buf = new Uint8Array(data).buffer as ArrayBuffer;
       await this.device.transferOut(this.endpointOut, buf);
     } catch (err) {
@@ -307,11 +253,7 @@ class PrinterService {
     }
   }
 
-  /**
-   * Print using browser's print dialog with thermal-optimized styles.
-   * @param htmlContent - The HTML to print
-   * @param paperWidth - Paper width in mm (58 or 80)
-   */
+  /** Print using browser's print dialog with thermal-optimized styles. */
   async printViaBrowser(htmlContent: string, paperWidth: 58 | 80): Promise<void> {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -341,8 +283,7 @@ class PrinterService {
     `;
     printWindow.document.head.appendChild(style);
 
-    // Parse receipt markup in an inert document, then remove executable and
-    // javascript-bearing nodes before importing it into the print window.
+    // Parse receipt markup and strip executable/script nodes before printing.
     const parsed = new DOMParser().parseFromString(htmlContent, 'text/html');
     parsed.querySelectorAll('script, link, meta, base, iframe, object, embed, form').forEach((node) => node.remove());
     parsed.querySelectorAll('*').forEach((element) => {

@@ -204,9 +204,7 @@ function documentLegacyComponents(
 }
 
 export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent[] {
-  // A split bill carries child-specific snapshot amounts. The order-item rows
-  // are shared by every child and retain source-order amounts, so using them
-  // here would misattribute item tax against the full charge-tax snapshot.
+  // Split bills carry child snapshot amounts; order items retain full source amounts.
   if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
     const splitSnapshot = snapshotComponents(document.tax_snapshot);
     if (splitSnapshot.present) {

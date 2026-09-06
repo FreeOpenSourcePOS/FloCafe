@@ -21,25 +21,8 @@ interface ConfirmState {
   resolve: (value: boolean) => void;
 }
 
-/**
- * Promise-based confirmation hook — replaces window.confirm() which breaks
- * keyboard focus on Windows after the native dialog closes.
- *
- * Usage:
- *   const { confirm, ConfirmDialog } = useConfirm();
- *
- *   const handleDelete = async (id: number) => {
- *     if (!await confirm('Delete this item?')) return;
- *     await api.delete(`/items/${id}`);
- *   };
- *
- *   return (
- *     <>
- *       {ConfirmDialog}
- *       <button onClick={() => handleDelete(1)}>Delete</button>
- *     </>
- *   );
- */
+/** Promise-based confirmation hook replacing native window.confirm()
+ * to preserve keyboard focus state. */
 export function useConfirm() {
   const t = useTranslations('common');
   const [state, setState] = useState<ConfirmState | null>(null);

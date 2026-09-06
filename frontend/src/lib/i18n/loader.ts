@@ -3,22 +3,8 @@ import { LANGUAGES, type Language } from './languages';
 
 export type Messages = Record<string, unknown>;
 
-/**
- * Shared locale message loader + cache (#375).
- *
- * - English is primed synchronously at module load: it is the packaged
- *   cold-boot fallback, so the application can always render without
- *   waiting for any network or chunk resolution.
- * - All other locales are fetched on demand via each language's dynamic
- *   chunk loader and shared between React (`I18nProvider`) and non-React
- *   consumers (print helpers, lang/dir sync, standalone pages).
- * - In-flight loads are deduplicated: concurrent callers for the same
- *   language share a single promise, and failed loads are retried on the
- *   next request (the failed promise is removed from the in-flight map).
- *
- * All chunks are packaged local assets served by FloCafe's embedded
- * localhost server — zero external translation network calls.
- */
+/** Shared locale message loader and cache with bundled English cold-boot
+ * fallback and deduplicated in-flight dynamic chunk fetches. */
 const messageCache = new Map<Language, Messages>();
 const inFlightPromises = new Map<Language, Promise<Messages>>();
 
@@ -34,12 +20,8 @@ export function isLocaleLoaded(lang: Language): boolean {
   return messageCache.has(lang);
 }
 
-/**
- * Load (and cache) the messages for a language. Returns the cached copy for
- * already-loaded languages and deduplicates concurrent in-flight requests.
- * Unknown/unsupported languages fall back to the packaged English loader so
- * callers never throw on registry drift.
- */
+/** Loads and caches messages for a language, deduplicating in-flight
+ * requests and falling back to English for unknown locales. */
 export function loadLocaleMessages(lang: Language): Promise<Messages> {
   const cached = messageCache.get(lang);
   if (cached) return Promise.resolve(cached);

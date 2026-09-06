@@ -9,19 +9,8 @@ export interface LanguageConfig {
   readonly load: () => Promise<{ default: Record<string, unknown> }>;
 }
 
-/**
- * Single source of truth for supported UI languages, BCP-47 locale tags,
- * native display names, text directions, user-facing selectability, and
- * dynamic chunk loaders.
- *
- * Message bundles are NOT statically imported here: each language is loaded
- * on demand through `load()` and shared via `loader.ts`, so only the active
- * locale bundle ships in the startup payload (#375).
- *
- * `as const satisfies Record<string, LanguageConfig>` preserves the literal
- * keys/types (so `Language` and `Locale` can be derived) while still
- * enforcing that every entry conforms to {@link LanguageConfig}.
- */
+/** Single source of truth for supported UI languages, BCP-47 locale tags,
+ * display names, directions, and dynamic chunk loaders. */
 export const LANGUAGES = {
   en: {
     locale: 'en',
@@ -92,12 +81,7 @@ export function isLanguage(value: unknown): value is Language {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(LANGUAGES, value);
 }
 
-/**
- * Reverse lookup: BCP-47 locale tag (as configured in {@link LANGUAGES})
- * → registered language. Used by components that read the active locale
- * from the i18n context (e.g. `useLocale()`) and need the language key to
- * resolve direction or message metadata.
- */
+/** Reverse map: BCP-47 locale tag to registered language key. */
 const LOCALE_TO_LANGUAGE: Record<string, Language> = Object.fromEntries(
   (Object.keys(LANGUAGES) as Language[]).map((lang) => [LANGUAGES[lang].locale, lang]),
 );

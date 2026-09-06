@@ -1,12 +1,4 @@
-/**
- * warnings-toast.ts
- *
- * Amber toast shown after a print job skipped lines it could not render.
- * Messages are localized in the active UI language (#437) so a Persian
- * merchant, for example, can read why items were missing and which setting
- * fixes it; the skipped line contents themselves are raw receipt data
- * (item names etc.) and are listed as-is.
- */
+/** Toast shown after a print job skipped lines it could not render. */
 
 import toast from 'react-hot-toast';
 import { createTranslator } from 'use-intl/core';

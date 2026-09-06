@@ -3,9 +3,7 @@ import api from '@/lib/api';
 import type { User, Tenant } from '@/lib/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { THEME_REHYDRATION_EVENT } from './theme';
-// Keep this registry import relative: auth tests load the store without the
-// frontend alias resolver, and language validation does not need the legacy
-// i18n module or its React/store dependencies.
+// Keep registry import relative for auth tests running without alias resolver.
 import { isLanguage, type Language } from '../lib/i18n/languages';
 import { syncPrintPoliciesAtBootstrap } from '../lib/print-policy-bootstrap';
 
@@ -46,12 +44,8 @@ export class StorageUnavailableError extends Error {
   }
 }
 
-/**
- * Persists the session token (and optional tenant). `localStorage` can throw
- * in private browsing, when storage is disabled, or at quota — the write is
- * what keeps the user signed in across reloads, so a failure here must surface
- * instead of leaving the renderer logged out after a successful server login.
- */
+/** Persists session token and optional tenant in localStorage;
+ * throws StorageUnavailableError if storage is disabled or unavailable. */
 function persistSession(token: string, tenant: Tenant | null): void {
   try {
     localStorage.setItem('token', token);

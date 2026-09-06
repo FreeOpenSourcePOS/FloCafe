@@ -15,15 +15,11 @@ export type BillTemplate = CoreBillTemplate | (string & {});
 export interface PosSettingsState {
   showProductImages: boolean;
   customerMandatory: boolean;
-  // When enabled, the POS auto-advances focus from phone → name as soon as
-  // the typed digits form a valid number for the tenant's country, so
-  // cashiers don't have to tab/click over manually.
+  // Auto-advances phone to name when typed digits form a valid number.
   enforcePhoneLength: boolean;
   billingType: 'postpaid' | 'prepaid';
   tablesRequired: boolean;
-  // UI language for i18n routing. Synced from tenant on auth load.
-  // Initial value reads the browser locale; persist middleware overrides
-  // on reload, so user choices persist across sessions.
+  // UI language synced from tenant on auth load with browser default fallback.
   language: Language;
   // Printer settings
   printerPaperSize: PaperSize;
@@ -139,10 +135,8 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       printerTrimDecimals: false,
       kdsEnabled: true,
       kotPrintingEnabled: true,
-      // Default false so the sidebar hides the WhatsApp nav entry until the
-      // tenant actually enables the integration. Synced from /api/whatsapp/status
-      // on auth load (see Sidebar.tsx) and updated by the WhatsApp page after
-      // a successful enable/disable toggle.
+      // Default false so sidebar hides WhatsApp nav until tenant enables it.
+      // Synced from /api/whatsapp/status on auth load.
       whatsappEnabled: false,
       // Print language policies default to inherit/none until synced from
       // the backend settings API (#441).
@@ -187,23 +181,11 @@ export const usePosSettingsStore = create<PosSettingsState>()(
     }),
     {
       name: 'pos-settings',
-      // Don't persist whatsappEnabled or the print language policies — both
-      // are always synced from the backend. Stale persisted values would mask
-      // the real state for tenants who change settings across devices.
+      // Exclude backend-synced fields (WhatsApp, print policies) from persistence.
       partialize: (s) => Object.fromEntries(
         Object.entries(s).filter(([k]) => k !== 'whatsappEnabled' && k !== 'billLanguagePolicy' && k !== 'kotLanguagePolicy'),
       ) as PosSettingsState,
-      // v1: billGstin/billShowGstn (India-specific names) renamed to the
-      // generic billTaxRegistrationNumber/billShowTaxId. Carry existing
-      // browsers' saved values forward under the new keys instead of
-      // silently resetting them.
-      // v2: A4/A5 web-print support was removed entirely (PaperSize is now
-      // thermal58/thermal80 only, frontend/src/lib/printer/web-print.ts) —
-      // negligible real-world usage didn't justify keeping a second paper
-      // layout alive. A browser that saved 'a4'/'a5' before the removal
-      // would otherwise keep a value nothing in the app still recognizes.
-      // v3: web print now shares the main printerPaperSize setting, and bill
-      // content controls gained explicit customer/table/tax-breakdown flags.
+      // Migrates legacy store keys (GSTIN rename, removed A4/A5 paper sizes).
       version: 3,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;

@@ -35,12 +35,8 @@ function parsePolicy(value: string | null | undefined, kind: 'receipt' | 'kot'):
   }
 }
 
-/**
- * Apply authenticated tenant print policies and warm every selected locale
- * before auth bootstrap releases the dashboard. Failed packaged chunks are
- * returned for the print warning path; they never become a different locale's
- * English output without an explicit failure signal.
- */
+/** Applies tenant print policies and warms selected locales at auth bootstrap;
+ * returns any locales that failed to load. */
 export async function syncPrintPoliciesAtBootstrap(
   tenant: Tenant,
   settingsStore: PosSettingsActions,

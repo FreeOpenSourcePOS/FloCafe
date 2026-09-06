@@ -8,12 +8,8 @@ import api from '@/lib/api';
 
 const CYCLE: readonly ThemeMode[] = ['light', 'dark', 'system'];
 
-/**
- * Quick theme-mode control for chrome (e.g. the sidebar): optimistically
- * flips the shared store and persists it, rolling back on a failed save.
- * Settings > Appearance owns its own hydration/race handling independently;
- * this hook only ever writes, so the two never contend over the same state.
- */
+/** Theme toggle for app chrome; optimistically updates store
+ * and rolls back on persistence failure. */
 export function useThemeModeToggle() {
   const t = useTranslations('settings');
   const mode = useThemeMode((s) => s.mode);

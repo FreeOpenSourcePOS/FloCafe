@@ -18,9 +18,8 @@ type Equal<Actual, Expected> =
   (<T>() => T extends Expected ? 1 : 2) ? true : false;
 type Expect<T extends true> = T;
 
-// Keep the renderer declaration tied to the exact preload-facing contracts.
-// These aliases intentionally have no runtime output; the frontend type-check is
-// the regression test and fails if a method is removed or widened/narrowed.
+// Type-level regression assertions matching renderer ElectronAPI
+// against preload-facing IPC contracts without runtime output.
 export type ElectronApiContractChecks = [
   Expect<Equal<ElectronAPI['dbApplySafeFixes'], (findingIds?: string[]) => Promise<ElectronDbSafeFixesResult | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getMasterPinStatus'], () => Promise<ElectronMasterPinStatus | ElectronIpcError>>>,

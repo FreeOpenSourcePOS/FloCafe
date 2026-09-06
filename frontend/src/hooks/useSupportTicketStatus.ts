@@ -11,19 +11,13 @@ export interface SupportTicketDelivery {
 const POLL_INTERVAL_MS = 4000;
 const MAX_POLLS = 20;
 
-/**
- * Submission is fire-and-forget into FloCafe's local outbox — the real
- * support_code only exists once FloAdmin has accepted the ticket. Polls the
- * local status route until delivery is confirmed (or gives up after
- * MAX_POLLS, leaving the outbox's own retry/backoff to keep trying).
- */
+/** Polls local status route until ticket delivery is confirmed
+ * or max retry threshold is reached. */
 export function useSupportTicketStatus(clientTicketId: string | null): SupportTicketDelivery {
   const [state, setState] = useState<SupportTicketDelivery>({ status: null, supportCode: null });
   const pollsRef = useRef(0);
 
-  // Reset synchronously when the tracked ticket changes, read directly during
-  // render (React's recommended pattern for "adjusting state when a prop
-  // changes") rather than inside the effect below.
+  // Reset synchronously during render when tracked ticket changes.
   const [trackedId, setTrackedId] = useState(clientTicketId);
   if (clientTicketId !== trackedId) {
     setTrackedId(clientTicketId);

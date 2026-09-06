@@ -6,9 +6,8 @@ import type { AxiosInstance } from 'axios';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
 
-// Bounded exponential backoff for KDS WebSocket reconnects: 1s, 2s, 4s, ...
-// capping at 30s so a prolonged outage doesn't hammer the server while a brief
-// blip still reconnects promptly.
+// Exponential backoff for KDS WebSocket reconnects (1s to 30s)
+// preventing server hammering during outages.
 const KDS_RECONNECT_BASE_MS = 1000;
 const KDS_RECONNECT_MAX_MS = 30000;
 function kdsReconnectDelay(attempt: number): number {
@@ -146,11 +145,7 @@ export interface UseKdsConnectionEndpoints {
 
 export interface UseKdsConnectionOptions {
   api: AxiosInstance;
-  /**
-   * Overrides the default (main-server) endpoint paths. The standalone KDS
-   * device page talks to kds-server.ts, which exposes a different, smaller
-   * route set than the main server the dashboard-embedded KDS talks to.
-   */
+  /** Overrides endpoint paths for standalone KDS device page (:3002). */
   endpoints?: UseKdsConnectionEndpoints;
 }
 
@@ -210,11 +205,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const [user, setUser] = useState<KdsUser | null>(null);
   const [orders, setOrders] = useState<KdsOrder[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  // Keep the initial render deterministic between the static server output and
-  // the browser. A saved token is only visible in the browser, so deriving
-  // this initial value from localStorage would hydrate a spinner over the
-  // server-rendered login form. The initial spinner is cleared asynchronously
-  // when there is no session to restore.
+  // Keep initial render deterministic with static server output;
+  // cleared asynchronously when no stored session exists.
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>(null);
@@ -233,10 +225,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const reconnectAttemptRef = useRef(0);
   const sessionGenerationRef = useRef(0);
   const updatingIdsRef = useRef(new Set<number>());
-  // Holds the latest tryWebSocket so its own reconnect timer can call it recursively without
-  // referencing the useCallback-bound identifier before it's declared (which the compiler
-  // can't safely memoize). Kept in sync via the unconditional assignment right after the
-  // useCallback definition below.
+  // Mutable ref allowing reconnect timer to invoke latest tryWebSocket recursively.
   const tryWebSocketRef = useRef<(token: string, retryDuringMaintenance?: boolean) => void>(() => {});
 
   const stopRestPolling = useCallback(() => {
@@ -310,12 +299,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       }
     }
   }, [api, ordersPath, stopRestPolling, t]);
-  // connectionMode is already 'rest' by the time this runs (it's only invoked from the
-  // effect below, guarded on that condition), and `connected` is owned by fetchOrdersRest's
-  // own success/failure handling — so this only needs to (re)start the polling loop. The
-  // initial fetch is deferred a tick (setTimeout 0) rather than called synchronously, since
-  // this is invoked directly from that effect and its state updates must not land in the
-  // same commit.
+  // Re-starts polling loop; initial fetch is deferred a tick (setTimeout 0)
+  // so state updates do not land in the invoking effect commit.
   const startRestPolling = useCallback(() => {
     stopRestPolling();
     restInitialFetchRef.current = setTimeout(() => {
@@ -426,9 +411,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       }
 
       const apiBase = api.defaults.baseURL || '';
-      // Derive WS host from the axios baseURL so dashboard KDS in dev
-      // (next dev on :3000, backend on :3001) reaches the right server.
-      // Falls back to the page origin for absolute-path baseURLs.
+      // Derive WS host from axios baseURL so dev proxy reaches correct backend;
+      // falls back to page origin.
       let wsHost = window.location.host;
       try {
         if (apiBase) {
@@ -512,9 +496,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           if (msg.type === 'auth_success' && msg.user) {
             authenticated = true;
             reconnectAttemptRef.current = 0;
-            // A REST fallback request may still be in flight when the socket
-            // authenticates. Invalidate it before accepting the snapshot so a
-            // late REST response cannot overwrite newer WebSocket state.
+            // Invalidate any in-flight REST response before accepting WebSocket snapshot.
             stopRestPolling();
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             setUser((prev) => (prev ? { ...prev, ...msg.user, token: prev.token } : null));

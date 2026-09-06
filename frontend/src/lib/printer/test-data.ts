@@ -1,15 +1,7 @@
-/**
- * Print Test Utilities
- * 
- * This file provides test data and utilities to verify the printing
- * capabilities without needing actual orders/bills.
- */
-
+/** Print test data and utilities to verify printing without live orders. */
 import type { Bill, Order, Tenant, Customer, OrderItem, Table } from '@/lib/types';
 
-/**
- * Generate a test bill for printing tests
- */
+/** Generate a test bill for printing tests. */
 export function createTestBill(overrides?: Partial<Bill>): Bill {
   const testOrder = createTestOrder();
   
@@ -39,9 +31,7 @@ export function createTestBill(overrides?: Partial<Bill>): Bill {
   };
 }
 
-/**
- * Generate a test order for KOT tests
- */
+/** Generate a test order for KOT tests. */
 export function createTestOrder(overrides?: Partial<Order>): Order {
   const testTable: Table = {
     id: '1',
@@ -142,9 +132,7 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
   };
 }
 
-/**
- * Generate a test tenant for printing
- */
+/** Generate a test tenant for printing. */
 export function createTestTenant(overrides?: Partial<Tenant>): Tenant {
   return {
     id: 1,
@@ -161,9 +149,7 @@ export function createTestTenant(overrides?: Partial<Tenant>): Tenant {
   };
 }
 
-/**
- * Generate a test customer for WhatsApp sharing
- */
+/** Generate a test customer for WhatsApp sharing. */
 export function createTestCustomer(overrides?: Partial<Customer>): Customer {
   return {
     id: 1,

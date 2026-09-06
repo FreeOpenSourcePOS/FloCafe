@@ -1,19 +1,4 @@
-/**
- * unicode.ts
- *
- * Fallback map for Unicode currency symbols on ESC/POS thermal printers.
- *
- * ESC/POS thermal printers render bytes against a fixed code page
- * (typically CP437 / CP850 / CP1252), none of which contain modern
- * currency symbols like ₹ (U+20B9, added to Unicode in 2010). When the
- * printer firmware cannot render a symbol, the 2–3 UTF-8 bytes that
- * encode it print as garbage glyphs.
- *
- * Legacy callers that do not supply profile capabilities can request this
- * ASCII fallback with the non-Unicode option. Capability-aware encoders use
- * the shared policy to select a declared code page before falling back.
- */
-
+/** Fallback map and normalizer for Unicode currency symbols on ESC/POS thermal printers. */
 import {
   GENERIC_THERMAL_CAPABILITIES,
   normalizeThermalText as normalizeThermalTextByCapabilities,
@@ -26,11 +11,7 @@ export function normalizeThermalText(text: string, capabilities: ThermalPrinterC
   return normalizeThermalTextByCapabilities(text, capabilities);
 }
 
-/**
- * Pads a resolved currency symbol to a fixed 2-character slot when it is
- * shorter than two characters. Three-character fallbacks such as IRR remain
- * unchanged.
- */
+/** Pads a resolved currency symbol to a fixed 2-character slot when shorter than 2 chars. */
 export function padCurrencyPrefix(prefix: string): string {
   return prefix.length >= 2 ? prefix : ' '.repeat(2 - prefix.length) + prefix;
 }

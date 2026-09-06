@@ -1,8 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-/**
- * Detects keyboard-wedge barcode scanner input based on rapid inter-keystroke intervals.
- */
+/** Detects keyboard-wedge barcode scanner input based on rapid keystroke intervals. */
 const MAX_INTER_KEY_MS = 60;
 const MIN_CODE_LENGTH = 4;
 
@@ -26,10 +24,8 @@ export function useBarcodeScanner(onScan: (code: string) => void, enabled: boole
       if (e.key === 'Enter') {
         const code = bufferRef.current;
         bufferRef.current = '';
-        // A focused text field handles its own Enter (e.g. a search/barcode
-        // box that does an exact-match lookup regardless of typing speed) —
-        // defer to it instead of also firing here, or a real scanner typing
-        // into a focused field would trigger both.
+        // Defer Enter handling when a text input is focused to avoid
+        // firing duplicate scans.
         const target = e.target as HTMLElement | null;
         const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
         if (!isTextInput && code.length >= MIN_CODE_LENGTH) {

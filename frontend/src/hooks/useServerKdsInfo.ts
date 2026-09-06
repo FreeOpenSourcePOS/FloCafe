@@ -11,13 +11,8 @@ export interface ServerKdsInfo {
 
 const EMPTY: ServerKdsInfo = { language: null, country: null, kdsDefaultView: null };
 
-/**
- * Read tenant KDS metadata once on mount. Single source for both views
- * (dashboard embedded + standalone on :3002). Never throws.
- *
- * Pass `baseUrl` as empty string for relative fetch (dashboard on same origin),
- * or a full origin (standalone KDS) to target its own backend.
- */
+/** Reads tenant KDS metadata once on mount for dashboard and
+ * standalone views without throwing. */
 export function useServerKdsInfo(baseUrl = ''): ServerKdsInfo {
   const [info, setInfo] = useState<ServerKdsInfo>(EMPTY);
 

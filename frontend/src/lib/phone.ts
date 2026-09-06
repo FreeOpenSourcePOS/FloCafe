@@ -36,11 +36,8 @@ export function parsePhone(
   }
 }
 
-/**
- * Normalizes an optional phone number input.
- * If input is empty, null, or whitespace-only, returns valid with null fields.
- * If input is provided, parses and validates against defaultCountry.
- */
+/** Normalizes optional phone input; returns valid with null fields
+ * when empty, or validates against defaultCountry. */
 export function normalizeOptionalPhone(
   input: unknown,
   defaultCountry: string = 'IN'

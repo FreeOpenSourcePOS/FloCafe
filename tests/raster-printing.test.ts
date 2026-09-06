@@ -1055,8 +1055,19 @@ async function run(): Promise<void> {
   });
   assert.notEqual(sharedRenderer1, sharedRenderer3);
   assert.equal(sharedRenderer3.isDestroyed(), false);
-  destroySharedRasterRenderer();
+
+  // Terminal failure disposes instance and next acquisition spawns fresh renderer
+  webContents.emit('render-process-gone');
   assert.equal(sharedRenderer3.isDestroyed(), true);
+  const sharedRenderer4 = getSharedRasterRenderer({
+    timeoutMs: 100,
+    ipc: ipc as any,
+    windowFactory: () => surface as any,
+  });
+  assert.notEqual(sharedRenderer3, sharedRenderer4);
+  assert.equal(sharedRenderer4.isDestroyed(), false);
+  destroySharedRasterRenderer();
+  assert.equal(sharedRenderer4.isDestroyed(), true);
 
   console.log('Raster encoder and mixed-mode contract checks passed.');
 }

@@ -81,6 +81,8 @@ async function run() {
     });
     assert.equal(normal.ok, true);
     assert.equal(styled.ok, true);
+    const fontCount = await surface.webContents.executeJavaScript('document.fonts.size');
+    assert.equal(fontCount, 1);
     assert.equal(normal.unit.complete, true);
     assert.equal(styled.unit.complete, true);
     assert.equal(normal.unit.bands[0].widthDots, 120);

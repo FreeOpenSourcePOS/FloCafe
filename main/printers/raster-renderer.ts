@@ -32,17 +32,23 @@ export function rasterRendererHtml(): string {
   if (!api) return;
   const familyName = (value) => /^[A-Za-z0-9 _-]{1,64}$/.test(value);
   const makeFailure = (request, code, detail) => ({ version: 1, requestId: request.requestId, ok: false, code, detail });
+  const loadedFonts = new Map();
   const render = async (request) => {
     if (!request || request.version !== 1 || typeof request.text !== 'string' || typeof request.financial !== 'boolean' || !familyName(request.bundledFont?.family)) {
       return makeFailure(request || { requestId: '' }, 'invalid-request', 'Raster request failed validation');
     }
     try {
-      const font = new FontFace(request.bundledFont.family, 'url(' + request.bundledFont.dataUrl + ')');
-      try {
-        await font.load();
-        document.fonts.add(font);
-      } catch (error) {
-        return makeFailure(request, 'font-unavailable', error instanceof Error ? error.message : String(error));
+      const fontKey = request.bundledFont.family + '|' + request.bundledFont.dataUrl;
+      let font = loadedFonts.get(fontKey);
+      if (!font) {
+        font = new FontFace(request.bundledFont.family, 'url(' + request.bundledFont.dataUrl + ')');
+        try {
+          await font.load();
+          document.fonts.add(font);
+          loadedFonts.set(fontKey, font);
+        } catch (error) {
+          return makeFailure(request, 'font-unavailable', error instanceof Error ? error.message : String(error));
+        }
       }
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d', { alpha: false });
@@ -247,12 +253,23 @@ export class ChromiumRasterRenderer {
   }
 
   private failSurface(detail: string): void {
+    this.destroyed = true;
     this.settleReady(detail);
     for (const [requestId, entry] of this.pending.entries()) {
       clearTimeout(entry.timer);
       entry.resolve({ version: 1, requestId, ok: false, code: 'render-failed', detail });
     }
     this.pending.clear();
+    this.ipc.removeListener('flo:raster-ready', this.onReady);
+    this.ipc.removeListener('flo:raster-result', this.onResult);
+    this.surface.removeListener('closed', this.onSurfaceClosed);
+    this.surface.webContents.removeListener('did-fail-load', this.onLoadFailure);
+    this.surface.webContents.removeListener('render-process-gone', this.onRenderProcessGone);
+    if (!this.surface.isDestroyed()) {
+      try {
+        this.surface.close();
+      } catch {}
+    }
   }
 
   async render(request: unknown): Promise<RasterRenderResult> {
@@ -263,7 +280,13 @@ export class ChromiumRasterRenderer {
       return { version: 1, requestId, ok: false, code: 'invalid-request', detail: 'Raster request failed validation' };
     }
     if (this.destroyed || this.surface.isDestroyed()) {
-      return { version: 1, requestId: request.requestId, ok: false, code: 'render-failed', detail: 'Raster surface is unavailable' };
+      return {
+        version: 1,
+        requestId: request.requestId,
+        ok: false,
+        code: 'render-failed',
+        detail: this.readyError ?? 'Raster surface is unavailable',
+      };
     }
     this.onActivity?.();
     await this.ready;
@@ -300,14 +323,7 @@ export class ChromiumRasterRenderer {
 
   destroy(): void {
     if (this.destroyed) return;
-    this.destroyed = true;
-    this.ipc.removeListener('flo:raster-ready', this.onReady);
-    this.ipc.removeListener('flo:raster-result', this.onResult);
-    this.surface.removeListener('closed', this.onSurfaceClosed);
-    this.surface.webContents.removeListener('did-fail-load', this.onLoadFailure);
-    this.surface.webContents.removeListener('render-process-gone', this.onRenderProcessGone);
     this.failSurface('Raster surface was closed');
-    if (!this.surface.isDestroyed()) this.surface.close();
   }
 }
 

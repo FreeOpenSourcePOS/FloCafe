@@ -2,7 +2,7 @@
 
 FloCafe prints receipts and kitchen order tickets from the desktop app. Configure printers in **Settings → Printers**, then use **Test Print** before service.
 
-> Contributors: for the print pipeline architecture (shared kernel, PrintDocument model, renderer/transport map, language policy, testing guide) see [printing-architecture.md](printing-architecture.md).
+> Contributors: for the print pipeline architecture (shared kernel, PrintDocument model, renderer/transport map, language policy, testing guide) see [printing-architecture.md](printing-architecture.md). For the physical hardware validation matrix and testing procedures across platforms, see [printer-hardware-testing-protocol.md](printer-hardware-testing-protocol.md).
 
 ## Connection types
 

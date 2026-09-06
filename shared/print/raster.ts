@@ -275,7 +275,9 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
     && typeof request.financial === 'boolean'
     && Number.isSafeInteger(request.maxLines) && (request.maxLines as number) > 0 && (request.maxLines as number) <= 256
     && (request.bundledFont === undefined || (
-      typeof request.bundledFont.family === 'string'
+      !!request.bundledFont
+      && typeof request.bundledFont === 'object'
+      && typeof request.bundledFont.family === 'string'
       && /^[A-Za-z0-9 _-]{1,64}$/.test(request.bundledFont.family)
       && isBundledFontDataUrl(request.bundledFont.dataUrl)
     ));

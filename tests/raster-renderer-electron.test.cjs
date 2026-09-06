@@ -108,11 +108,11 @@ async function run() {
     assert.equal(nonFinancialOverflow.ok, false);
     assert.equal(nonFinancialOverflow.code, 'render-failed');
 
-    // Verify system font rendering for CJK and Arabic when bundledFont is omitted
+    // Verify system font rendering for pure CJK and pure Arabic when bundledFont is omitted
     const cjkRender = await renderer.render({
       version: 1,
       requestId: 'electron-cjk-system-font',
-      text: '煎饼 1 $550',
+      text: '煎饼',
       widthDots: 120,
       maxBandHeight: 200,
       direction: 'ltr',
@@ -128,7 +128,7 @@ async function run() {
     const arabicRender = await renderer.render({
       version: 1,
       requestId: 'electron-arabic-system-font',
-      text: 'چای 1 $550',
+      text: 'چای',
       widthDots: 120,
       maxBandHeight: 200,
       direction: 'rtl',

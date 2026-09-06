@@ -1010,6 +1010,7 @@ async function run(): Promise<void> {
   renderer.destroy();
   assert.equal(isRasterRenderRequest(request), true);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: undefined }), true);
+  assert.equal(isRasterRenderRequest({ ...request, bundledFont: null }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: 'https://example.invalid/font.woff2' } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: null } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, family: 'bad;url(x)' } }), false);

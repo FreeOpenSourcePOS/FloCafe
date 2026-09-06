@@ -34,7 +34,7 @@ export function rasterRendererHtml(): string {
   const makeFailure = (request, code, detail) => ({ version: 1, requestId: request.requestId, ok: false, code, detail });
   const loadedFonts = new Map();
   const render = async (request) => {
-    if (!request || request.version !== 1 || typeof request.text !== 'string' || typeof request.financial !== 'boolean' || (request.bundledFont !== undefined && !familyName(request.bundledFont?.family))) {
+    if (!request || request.version !== 1 || typeof request.text !== 'string' || typeof request.financial !== 'boolean' || (request.bundledFont !== undefined && (!request.bundledFont || !familyName(request.bundledFont.family)))) {
       return makeFailure(request || { requestId: '' }, 'invalid-request', 'Raster request failed validation');
     }
     try {

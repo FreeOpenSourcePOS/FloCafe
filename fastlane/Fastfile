@@ -1,5 +1,10 @@
 default_platform(:mac)
 
+# fastlane always runs lanes with the working directory set to this
+# `fastlane/` folder, not the repo root — every path below must be
+# resolved against ROOT explicitly rather than assumed relative.
+ROOT = File.expand_path("..", __dir__)
+
 def env_bool(name, default)
   value = ENV[name]
   return default if value.nil? || value.strip.empty?
@@ -17,8 +22,8 @@ end
 platform :mac do
   desc "Build and publish the Mac App Store package through App Store Connect"
   lane :publish_mas do
-    version = sh("node -p \"require('./package.json').version\"", log: false).strip
-    notes_path = ENV.fetch("MAS_RELEASE_NOTES_PATH", "release/mas-release-notes.txt")
+    version = Dir.chdir(ROOT) { sh("node -p \"require('./package.json').version\"", log: false) }.strip
+    notes_path = File.expand_path(ENV.fetch("MAS_RELEASE_NOTES_PATH", "release/mas-release-notes.txt"), ROOT)
     notes = File.read(notes_path).strip
 
     UI.user_error!("Mac App Store release notes are empty: #{notes_path}") if notes.empty?
@@ -32,10 +37,12 @@ platform :mac do
       duration: 1200
     )
 
-    sh("npm run build:mas") unless env_bool("SKIP_MAS_BUILD", false)
+    Dir.chdir(ROOT) { sh("npm run build:mas") } unless env_bool("SKIP_MAS_BUILD", false)
 
-    pkg = Dir["release/*.pkg"].max_by { |path| File.mtime(path) }
-    UI.user_error!("No Mac App Store .pkg was produced in release/") if pkg.nil?
+    release_dir = File.join(ROOT, "release")
+    pkg_name = Dir.glob("*.pkg", base: release_dir).max_by { |name| File.mtime(File.join(release_dir, name)) }
+    UI.user_error!("No Mac App Store .pkg was produced in release/") if pkg_name.nil?
+    pkg = File.join(release_dir, pkg_name)
 
     deliver(
       api_key: api_key,

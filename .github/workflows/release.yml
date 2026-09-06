@@ -944,7 +944,7 @@ jobs:
           gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
             -F draft=false \
             -F prerelease="${PRERELEASE}" \
-            -F make_latest=false
+            -f make_latest=false
           node scripts/release-gate/published-readiness.cjs \
             --repo "${{ github.repository }}" \
             --tag "$VERSION" \
@@ -1012,7 +1012,7 @@ jobs:
             exit 1
           fi
           RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")
-          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -F make_latest=true
+          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -f make_latest=true
           echo "Promoted ${RELEASE_TAG} to GitHub Latest"
         env:
           GH_TOKEN: ${{ github.token }}

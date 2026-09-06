@@ -2459,6 +2459,7 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
         offset += chunk.length;
 
         const scheduleNext = (): void => {
+          if (settled) return;
           if (offset < data.length) {
             timer = setTimeout(sendNextChunk, NETWORK_PRINT_CHUNK_DELAY_MS);
           } else {
@@ -2474,9 +2475,7 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
         });
 
         if (!canContinue) {
-          client.once('drain', () => {
-            scheduleNext();
-          });
+          client.once('drain', scheduleNext);
         }
       };
 

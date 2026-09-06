@@ -143,11 +143,49 @@ async function testAbortSignalCancelsPrint(): Promise<void> {
   }
 }
 
+async function testAbortBeforeDrain(): Promise<void> {
+  const originalSocket = net.Socket;
+  let mock: MockSocket | null = null;
+  (net as any).Socket = function () {
+    mock = new MockSocket();
+    // Do not immediately emit drain; stay paused in backpressure
+    mock.write = function (chunk: Buffer, cb?: () => void): boolean {
+      this.writtenChunks.push(Buffer.from(chunk));
+      if (cb) process.nextTick(cb);
+      return false; // Backpressured, awaiting drain
+    };
+    return mock;
+  };
+
+  try {
+    const controller = new AbortController();
+    const largePayload = Buffer.alloc(10000, 0xdd);
+    const printPromise = printViaNetwork("192.168.1.100", 9100, largePayload, controller.signal);
+
+    // Let the first chunk write happen
+    await new Promise((r) => setImmediate(r));
+    assert.equal(mock!.writtenChunks.length, 1);
+
+    // Abort before drain fires
+    controller.abort();
+    const result = await printPromise;
+    assert.equal(result.ok, false);
+
+    // Emitting drain after settlement must be a no-op and must not trigger another chunk write
+    mock!.emit("drain");
+    await new Promise((r) => setTimeout(r, 25));
+    assert.equal(mock!.writtenChunks.length, 1);
+  } finally {
+    (net as any).Socket = originalSocket;
+  }
+}
+
 async function run(): Promise<void> {
   await testSmallPayloadDirectSend();
   await testLargePayloadChunkedSend();
   await testLargePayloadWithBackpressure();
   await testAbortSignalCancelsPrint();
+  await testAbortBeforeDrain();
   console.log("✓ All network print chunking tests passed.");
 }
 

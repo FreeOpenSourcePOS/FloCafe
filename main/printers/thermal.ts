@@ -1832,24 +1832,63 @@ export function itemAmountWidth(
 export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
   const qtyW = 4;
   const productName = normalizeThermalText(item.product_name, capabilities);
-  const name = truncate(productName, nameLen, language, capabilities).padEnd(nameLen);
-  const qty = String(item.quantity).padEnd(qtyW);
-  const label = name + qty;
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
-  const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (amount.length <= inlineWidth) return [label + rightAlign(amount, cols - label.length)];
-  return [label.trimEnd(), ...wrapValue(amount, cols)];
+  const qty = String(item.quantity).padEnd(qtyW);
+
+  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(productName, capabilities)) {
+    const name = productName.padEnd(nameLen);
+    const label = name + qty;
+    return [label + rightAlign(amount, Math.max(amtLen, cols - label.length))];
+  }
+
+  if (productName.length <= nameLen) {
+    const label = productName.padEnd(nameLen) + qty;
+    return [label + rightAlign(amount, Math.max(amtLen, cols - label.length))];
+  }
+
+  const nameLines = wrapText(productName, nameLen);
+  const firstLineName = (nameLines[0] || '').padEnd(nameLen);
+  const firstRowLabel = firstLineName + qty;
+  const firstRow = firstRowLabel + rightAlign(amount, Math.max(amtLen, cols - firstRowLabel.length));
+
+  const result = [firstRow];
+  for (let i = 1; i < nameLines.length; i++) {
+    result.push(nameLines[i]);
+  }
+  return result;
 }
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
   const addonName = normalizeThermalText(addon.name, capabilities);
   const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
-  const label = truncate('  + ' + addonName + quantity, nameLen, language, capabilities).padEnd(nameLen);
-  if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
+  const fullName = '  + ' + addonName + quantity;
+
+  if (!addon.price) {
+    const lines = wrapText(fullName, cols);
+    return lines.map((l) => l + ' '.repeat(Math.max(0, cols - l.length)));
+  }
+
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits);
-  const inlineWidth = Math.max(1, cols - label.length - 1);
-  if (price.length <= inlineWidth) return [label + rightAlign(price, cols - label.length)];
-  return [label.trimEnd(), ...wrapValue(price, cols)];
+
+  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(addonName, capabilities)) {
+    const label = fullName.padEnd(nameLen);
+    return [label + rightAlign(price, Math.max(amtLen, cols - label.length))];
+  }
+
+  if (fullName.length <= nameLen) {
+    const label = fullName.padEnd(nameLen);
+    return [label + rightAlign(price, Math.max(amtLen, cols - label.length))];
+  }
+
+  const nameLines = wrapText(fullName, nameLen);
+  const firstLine = (nameLines[0] || '').padEnd(nameLen);
+  const firstRow = firstLine + rightAlign(price, Math.max(amtLen, cols - firstLine.length));
+
+  const result = [firstRow];
+  for (let i = 1; i < nameLines.length; i++) {
+    result.push('    ' + nameLines[i]);
+  }
+  return result;
 }
 
 export function financialRows(label: string, value: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): string[] {

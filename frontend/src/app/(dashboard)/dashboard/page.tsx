@@ -500,9 +500,6 @@ export default function DashboardPage() {
         if (!controller.signal.aborted) setPreviewLoading(false);
       });
     return () => controller.abort();
-  // The state setters are stable; `closedZ?.id` is the actual dependency.
-  // `tCommon` and `toast` are constants from this module's hooks.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closeOpen, closedZ?.id]);
 
   // Reset modal state at the start of each new open (React-recommended

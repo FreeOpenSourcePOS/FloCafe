@@ -1307,11 +1307,13 @@ async function main() {
 
       // F1: seed a default printer so the preview reflects the same columns
       // the on-paper print would use (mirrors the section-15a/b/c pattern:
-      // DELETE-then-INSERT to guarantee a single default). 80mm on the generic
-      // 80-column profile resolves to 42 columns.
+      // DELETE-then-INSERT to guarantee a single default). The generic-escpos-80
+      // profile used by resolvePrinterProfile has no fixed paper width, so
+      // `columnsForPaperWidth('80mm')` returns null and the print primitive
+      // falls back to 48 — same value the live POST /:id/print dispatches.
       db.prepare(`DELETE FROM printers`).run();
       db.prepare(`INSERT INTO printers (id, name, connection_type, ip_address, port, is_default, paper_width, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`).run('printer-15e', '15e Preview Printer', 'network', '127.0.0.1', 9100, '80mm', now(), now());
-      const previewExpectedColumns = 42;
+      const previewExpectedColumns = 48;
 
       // Manager (ownerManager only): 200.
       const mgr = await request(app)
@@ -1369,28 +1371,27 @@ async function main() {
       const shapedRow = snapshotShape;
       // Resolve the same profile the endpoint resolves to keep the parity
       // honest: a profile swap would make this assertion a false-positive
-      // failure rather than a passing tie.
+      // failure rather than a passing tie. Columns are derived from the
+      // exact print-path formula (`columnsForPaperWidth(...) || 48`,
+      // mirrored at `main/printers/thermal.ts:2333-2336` and at the preview
+      // route handler) so the parity assertion is not tautological: any
+      // future drift between the route's column source and the print path's
+      // column source will surface as a failure here.
       const previewPrinter = db.prepare(`SELECT * FROM printers WHERE is_default = 1`).get() as any;
       let parityColumns = previewExpectedColumns;
       let parityCapabilities: any = undefined;
       if (previewPrinter) {
         const profile = profilesModule.resolvePrinterProfile(previewPrinter);
-        parityCapabilities = profilesModule.getPrinterCapabilities(profile);
+        const paperWidth = previewPrinter.paper_width || profile.defaultPaperWidth || '80mm';
+        parityColumns = thermalModule.columnsForPaperWidth(paperWidth) || previewExpectedColumns;
+        parityCapabilities = profilesModule.getPrinterCapabilities(profile, false);
       }
       const localBody = thermalModule.buildZReportBody(shapedRow, undefined, { columns: parityColumns, capabilities: parityCapabilities });
       const localText = thermalModule.escPosToText(Buffer.from(localBody));
       // F6: preview text must match the byte-decoded body the printer
       // receives for the same shaped row. Locks the no-drift guarantee that
-      // the modal relies on. Diagnostic suffix helps triage future drifts
-      // by showing what differs.
-      if (localText !== mgr.body?.text) {
-        const a = localText.split('\n'); const b = mgr.body?.text.split('\n') || [];
-        const diffIdx = a.findIndex((line, i) => line !== b[i]);
-        const ctx = (arr: string[]) => `[${Math.max(0, (diffIdx - 2))}..${Math.min(arr.length, (diffIdx + 4))}] ${JSON.stringify(arr.slice(Math.max(0, diffIdx - 2), Math.min(arr.length, diffIdx + 4)))}`;
-        assertEqual(localText, mgr.body?.text, `F6 preview text matches buildZReportBody/escPosToText on the same row (first divergence at line ${diffIdx}, local=${ctx(a)}, preview=${ctx(b)})`);
-      } else {
-        assertEqual(localText, mgr.body?.text, 'F6 preview text matches buildZReportBody/escPosToText on the same row');
-      }
+      // the modal relies on.
+      assertEqual(localText, mgr.body?.text, 'F6 preview text matches buildZReportBody/escPosToText on the same row');
 
       // Cashier: 403.
       const cashier = await request(app)

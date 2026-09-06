@@ -1021,7 +1021,7 @@ function nativeFallbackCapabilities(capabilities: ThermalPrinterCapabilities): T
     : capabilities;
 }
 
-function columnsForPaperWidth(paperWidth: string): number | null {
+export function columnsForPaperWidth(paperWidth: string): number | null {
   const colsMatch = String(paperWidth || '').match(/^cols-(3[2-9]|4[0-8])$/);
   if (colsMatch) return Number(colsMatch[1]);
 

@@ -581,19 +581,18 @@ router.get('/:id/preview', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     let capabilities: any = undefined;
     if (printer) {
       const profile = resolvePrinterProfile(printer);
+      // Exact same resolution as POST /:id/print (`printZReport`,
+      // `main/printers/thermal.ts:2333-2336`): `columnsForPaperWidth` yields
+      // a number for fixed-width labels (58mm / 58mm-36 / 80mm-42 / cols-N),
+      // `null` for the generic 80mm case (the print primitive falls back to
+      // 48, mirroring its own `|| 48`). Capabilities are resolved with
+      // `arabicShapingOverride=false` to match `printZReport`'s call shape
+      // exactly so the previewed bytes line up byte-for-byte with what the
+      // printer will receive on POST /:id/print.
       const paperWidth = printer.paper_width || profile.defaultPaperWidth || '80mm';
-      // Inline cols-by-paper-width resolution (same regex/switch as
-      // `main/printers/thermal.ts` `columnsForPaperWidth`, kept private).
-      // Profile-driven code-page selection via capabilities keeps the screen
-      // preview aligned with the on-paper shape (matching POST /:id/print's
-      // `printZReport` invariant at `main/printers/thermal.ts:2333-2336`).
-      const colsMatch = String(paperWidth).match(/^cols-(3[2-9]|4[0-8])$/);
-      if (colsMatch) columns = Number(colsMatch[1]);
-      else if (paperWidth === '58mm') columns = 32;
-      else if (paperWidth === '58mm-36') columns = 36;
-      else if (paperWidth === '80mm-42') columns = 42;
-      else columns = profile.fontAColumns || PREVIEW_FALLBACK_COLUMNS;
-      capabilities = getPrinterCapabilities(profile);
+      const { columnsForPaperWidth } = require('../printers/thermal');
+      columns = columnsForPaperWidth(paperWidth) || PREVIEW_FALLBACK_COLUMNS;
+      capabilities = getPrinterCapabilities(profile, false);
     }
     const { buildZReportBody, escPosToText } = require('../printers/thermal');
     const body = buildZReportBody(snapshot, undefined, { columns, capabilities });

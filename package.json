@@ -96,7 +96,7 @@
     "test:merchant-template-transfer": "ts-node --transpile-only -P tests/tsconfig.json tests/merchant-template-import-export.test.ts",
     "test:print-document": "ts-node --transpile-only -P tests/tsconfig.json tests/print-document.test.ts",
     "test:print-kernel": "ts-node --transpile-only -P tests/tsconfig.json tests/print-kernel.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/kernel-purity.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/print-language-settings.test.ts",
-    "test:thermal-capabilities": "ts-node --transpile-only -P tests/tsconfig.json tests/thermal-capabilities.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/windows-print-stderr.test.ts",
+    "test:thermal-capabilities": "ts-node --transpile-only -P tests/tsconfig.json tests/thermal-capabilities.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/windows-print-stderr.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/printer-error-toast-clarity.test.ts",
     "test:raster": "ts-node --transpile-only -P tests/tsconfig.json tests/raster-printing.test.ts && npm run test:raster-electron",
     "test:raster-electron": "npm run build && electron --no-sandbox tests/raster-renderer-electron.test.cjs",
     "test:cancel-override": "node tests/run-electron-node-test.cjs tests/cancel-override.test.ts && node tests/run-electron-node-test.cjs tests/manager-pin-rate-limit-bypass.test.ts",

@@ -210,13 +210,12 @@ export const usePrinterStore = create<PrinterState>()(
               const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-bill', { billId: bill.id, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping, isReprint });
               return response.data.warnings || [];
             } catch (err: unknown) {
-              const e = err as { response?: { data?: { error?: string } }; message?: string };
-              const errorMsg = e.response?.data?.error || e.message || 'Print failed';
+              const e = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
+              const errorMsg = e.response?.data?.error || e.response?.data?.detail || e.message || 'Print failed';
               if (errorMsg.includes('No default printer configured')) {
                 toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
                 return await executeBrowserPrint();
               }
-              if (errorMsg.startsWith('Receipt not printed:')) toast.error(errorMsg);
               throw new Error(errorMsg);
             }
           }
@@ -460,8 +459,8 @@ export const usePrinterStore = create<PrinterState>()(
               const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, items: opts?.items, stationName: opts?.stationName, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping });
               return response.data.warnings || [];
             } catch (err: unknown) {
-              const e = err as { response?: { data?: { error?: string } }; message?: string };
-              throw new Error(e.response?.data?.error || e.message || 'KOT print failed');
+              const e = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
+              throw new Error(e.response?.data?.error || e.response?.data?.detail || e.message || 'KOT print failed');
             }
           }
 

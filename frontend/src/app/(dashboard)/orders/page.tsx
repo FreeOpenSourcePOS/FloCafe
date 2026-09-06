@@ -18,6 +18,7 @@ import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currenc
 import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
+import { formatReceiptErrorToast } from '@/lib/printer/warnings';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useRouter } from 'next/navigation';
@@ -562,8 +563,9 @@ export default function OrdersPage() {
         );
         showPrintWarningsToast(printWarnings);
         await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
-      } catch {
-        toast.error(tOrders('receiptPrintFailedHint'));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        toast.error(formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint')));
       }
     }
   };

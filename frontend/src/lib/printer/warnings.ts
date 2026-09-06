@@ -211,3 +211,27 @@ export function safePrinterText<T extends { text(value: string): T }>(
   }
   return enc.text(printerValue);
 }
+
+/**
+ * Formats a user-facing receipt print error message with operational detail when available.
+ */
+export function formatReceiptErrorToast(detail?: string, fallbackTranslation = 'Receipt print failed'): string {
+  const msg = String(detail || '').trim();
+  if (msg.startsWith('Receipt not printed:')) return msg;
+  if (msg && msg !== 'print failed' && msg !== 'Print failed') {
+    return `${fallbackTranslation} (${msg})`;
+  }
+  return fallbackTranslation;
+}
+
+/**
+ * Formats a user-facing KOT print error message with operational detail when available.
+ */
+export function formatKotErrorToast(detail?: string, fallbackTranslation = 'KOT print failed'): string {
+  const msg = String(detail || '').trim();
+  if (msg && msg !== 'print failed' && msg !== 'KOT print failed') {
+    return `${fallbackTranslation}: ${msg}`;
+  }
+  return fallbackTranslation;
+}
+

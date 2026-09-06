@@ -482,6 +482,20 @@ exit 0
 
   console.log('✓ Windows uninstaller CI boundary avoids application postinstall');
 
+  // Validate nightly-release.yml full matrix workflow configuration
+  const nightlyPath = path.join(rootDir, '.github/workflows/nightly-release.yml');
+  const nightlyConfig = YAML.load(fs.readFileSync(nightlyPath, 'utf8')) as any;
+  const buildMatrixJob = nightlyConfig.jobs['build-matrix'];
+  assert.ok(buildMatrixJob, 'nightly-release.yml must define build-matrix job');
+  const linuxRow = buildMatrixJob.strategy?.matrix?.include?.find((entry: any) => entry.name === 'linux-x64');
+  assert.ok(linuxRow, 'nightly-release.yml matrix must define linux-x64 row');
+  assert.match(linuxRow['extra-deps'], /\bxvfb\b/, 'linux-x64 matrix row must install xvfb in extra-deps');
+  const testStep = buildMatrixJob.steps.find((step: any) => step.name === 'Run full platform test suite');
+  assert.ok(testStep, 'nightly-release.yml must define full platform test suite step');
+  assert.match(testStep.run, /\bxvfb-run\b/, 'full platform test suite step must run under xvfb-run on Linux');
+
+  console.log('✓ Nightly full cross-platform matrix Linux xvfb configuration verified');
+
   console.log('All dev tooling script tests passed cleanly!');
 }
 

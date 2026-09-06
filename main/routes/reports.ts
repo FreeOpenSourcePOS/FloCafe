@@ -7,6 +7,7 @@ import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
+import { computeDayAggregates, paymentMethodBreakdown } from './cash-closures';
 
 const router = Router();
 
@@ -57,63 +58,6 @@ function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { 
   }
 
   return { hourCounts, dayCounts };
-}
-
-/**
- * Return payment lines in a UTC half-open range using SQLite JSON1. Keeping
- * expansion in SQL avoids loading every bill and tolerates both the current
- * array shape, legacy top-level objects, and invalid JSON.
- */
-function paymentMethodBreakdown(
-  db: ReturnType<typeof getDatabase>,
-  startDate: string,
-  endDate = startDate,
-  paidOnly = false,
-  attributeRefundsToBillDate = false,
-) {
-  const start = reportDayBounds(startDate)[0];
-  const end = reportDayBounds(endDate)[1];
-  const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-  return db.prepare(`
-    WITH payment_lines AS (
-      SELECT b.paid_at, b.created_at, je.value AS line
-      FROM bills b
-      JOIN json_each(CASE
-        WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array'
-          THEN b.payment_details
-        WHEN json_valid(b.payment_details)
-          THEN json_array(b.payment_details)
-        ELSE '[]'
-      END) je
-      WHERE b.payment_details IS NOT NULL
-        AND b.created_at < ?
-        AND (b.paid_at IS NULL OR b.paid_at >= ?)
-        AND (? = 0 OR b.paid_at IS NOT NULL)
-        AND json_type(je.value) = 'object'
-    ), normalized AS (
-      SELECT
-        COALESCE(NULLIF(json_extract(line, '$.method'), ''), 'unknown') AS method,
-        CAST(json_extract(line, '$.payment_method_id') AS INTEGER) AS payment_method_id,
-        json_extract(line, '$.amount') AS amount,
-        COALESCE(
-          datetime(NULLIF(json_extract(line, '$.timestamp'), '')),
-          datetime(NULLIF(paid_at, '')),
-          datetime(NULLIF(created_at, ''))
-        ) AS payment_time
-      FROM payment_lines
-      UNION ALL
-      SELECT r.method, NULL, -(CAST(r.amount_cents AS REAL) / ?),
-        datetime(CASE WHEN ? = 1 THEN b.paid_at ELSE r.created_at END)
-      FROM refunds r
-      JOIN bills b ON b.id = r.bill_id
-    )
-    SELECT COALESCE(pm.name, normalized.method) AS method, COUNT(*) AS count,
-      COALESCE(SUM(CASE WHEN typeof(amount) IN ('integer', 'real') THEN amount ELSE 0 END), 0) AS total
-    FROM normalized LEFT JOIN payment_methods pm ON pm.id = normalized.payment_method_id
-    WHERE payment_time >= datetime(?) AND payment_time < datetime(?)
-    GROUP BY COALESCE(pm.name, normalized.method)
-    ORDER BY total DESC
-  `).all(end, start, paidOnly ? 1 : 0, minorFactor, attributeRefundsToBillDate ? 1 : 0, start, end);
 }
 
 /** argmax/argmin over counts, restricted to indices where include(count) is true. Returns null if nothing qualifies. */
@@ -650,6 +594,138 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /x-report — live day report (cierre de caja, issue #649) ──────
+// Reuses the snapshot pipeline from `cash-closures.ts` so the X read and
+// the stored Z snapshot never drift apart. Same role gate as the other
+// owner/manager reports. Refund attribution matches financial-summary
+// (paid_at) for display totals; the cash-only expected figure uses refunds
+// by `refunds.created_at` for drawer reality.
+//
+// UNIT CONVENTIONS for the X envelope (do not rename fields):
+//   * grossCollected, refunded, netCollected, paymentMethods[].total,
+//     staffSales[].revenue, taxComponents are DISPLAY MAJOR UNITS
+//     (minorFactor-divided, matching financial-summary / tax-components).
+//   * expectedCashCents is INTEGER CENTS (drawer math; the consuming
+//     client must convert the counted input to cents before subtracting).
+//
+// X vs Z expected (deliberate gap, not a bug):
+//   X's expectedCashCents excludes the opening float — the float is only
+//   captured at close. Same-day X and Z expected values therefore differ
+//   by exactly opening_float_cents. Consumers must not compare them
+//   directly; X is the live drawer expectation, Z is the point-in-time
+//   snapshot that bakes in the float.
+router.get('/x-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const today = reportToday();
+    const date = reportDate(req.query.date, today);
+    const db = getDatabase();
+    const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+    const [periodStart, periodEnd] = reportDayBounds(date);
+
+    const aggregates = computeDayAggregates(db, date);
+
+    const closedRow = db.prepare(
+      `SELECT z_number FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`
+    ).get(date) as { z_number: number } | undefined;
+
+    // F3: most recent prior closed day for this business date, used by the
+    // modal to prefill the opening float (server-side one-shot query; the
+    // frontend no longer walks back day-by-day).
+    const priorRow = db.prepare(
+      `SELECT business_date, counted_cash_cents FROM cash_closures
+         WHERE business_date < ? AND scope = 'day'
+         ORDER BY business_date DESC LIMIT 1`
+    ).get(date) as { business_date: string; counted_cash_cents: number } | undefined;
+
+    res.json({
+      xReport: {
+        businessDate: date,
+        periodStart,
+        periodEnd,
+        grossCollected: aggregates.grossCollectedCents / minorFactor,
+        refunded: aggregates.refundedCents / minorFactor,
+        netCollected: aggregates.netCollectedCents / minorFactor,
+        billCount: aggregates.billCount,
+        refundCount: aggregates.refundCount,
+        paymentMethods: aggregates.paymentMethods.map((row) => ({
+          method: row.method,
+          count: row.count,
+          total: row.total_cents / minorFactor,
+        })),
+        staffSales: aggregates.staffSales.map((row) => ({
+          user_id: row.user_id,
+          name: row.name,
+          role: row.role,
+          revenue: row.revenue_cents / minorFactor,
+          orderCount: row.orderCount,
+        })),
+        taxComponents: aggregates.taxComponents,
+        expectedCashCents: aggregates.cashSalesCents - aggregates.cashRefundsByCreatedAtCents,
+        // F3: server-resolved prior close; null fields when no prior close
+        // exists. The frontend only shows the "no prior close" hint when
+        // this is genuinely null (never on transport error).
+        priorClosedCashCents: priorRow?.counted_cash_cents ?? null,
+        priorBusinessDate: priorRow?.business_date ?? null,
+        alreadyClosed: !!closedRow,
+        zNumber: closedRow?.z_number,
+      },
+    });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ── GET /z-report — stored day-close snapshot (cierre de caja, issue #649) ──────
+// Reads the immutable `cash_closures` row for the requested business date.
+// 404 with `{ alreadyClosed: false }` when no day-close row exists yet.
+// Same role gate as /x-report.
+router.get('/z-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const today = reportToday();
+    const date = reportDate(req.query.date, today);
+    const db = getDatabase();
+    const row = db.prepare(
+      `SELECT * FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`
+    ).get(date) as any;
+    if (!row) {
+      return res.status(404).json({ error: 'Day not closed', alreadyClosed: false, businessDate: date });
+    }
+    // F6: resolve the operator's display name (id -> name) for the response.
+    // Falls back to the raw id when the user row is missing.
+    const userRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(row.closed_by) as { name: string } | undefined;
+    res.json({
+      zReport: {
+        id: row.id,
+        scope: row.scope,
+        business_date: row.business_date,
+        period_start: row.period_start,
+        period_end: row.period_end,
+        opening_float_cents: row.opening_float_cents,
+        expected_cash_cents: row.expected_cash_cents,
+        counted_cash_cents: row.counted_cash_cents,
+        variance_cents: row.variance_cents,
+        gross_collected_cents: row.gross_collected_cents,
+        refunded_cents: row.refunded_cents,
+        net_collected_cents: row.net_collected_cents,
+        bill_count: row.bill_count,
+        refund_count: row.refund_count,
+        payment_methods: JSON.parse(row.payment_methods_json || '[]'),
+        staff_sales: JSON.parse(row.staff_sales_json || '[]'),
+        tax_components: JSON.parse(row.tax_components_json || '[]'),
+        z_number: row.z_number,
+        closed_by: row.closed_by,
+        closed_by_name: userRow?.name ?? row.closed_by,
+        notes: row.notes,
+        created_at: row.created_at,
+      },
+    });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

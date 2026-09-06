@@ -4278,6 +4278,48 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 81,
+    name: 'add_cash_closures',
+    up: () => {
+      // Cierre de caja (day close, #649). All money columns are INTEGER
+      // minor units to match the codebase convention (`refunds.amount_cents`);
+      // display conversion happens at the API boundary.
+      //
+      // Extension door: the day-close invariant ("one close per
+      // business_date") lives in the partial index below, not on the
+      // column, so future `scope='session'` rows for the same date do not
+      // collide. The `period_start/period_end` window also serves a future
+      // sessions feature without schema change.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS cash_closures (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          scope TEXT NOT NULL DEFAULT 'day' CHECK (scope IN ('day', 'session')),
+          business_date TEXT NOT NULL CHECK (business_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+          period_start TEXT NOT NULL,
+          period_end TEXT NOT NULL,
+          opening_float_cents INTEGER NOT NULL DEFAULT 0 CHECK (opening_float_cents >= 0),
+          expected_cash_cents INTEGER NOT NULL,
+          counted_cash_cents INTEGER NOT NULL CHECK (counted_cash_cents >= 0),
+          variance_cents INTEGER NOT NULL,
+          gross_collected_cents INTEGER NOT NULL,
+          refunded_cents INTEGER NOT NULL,
+          net_collected_cents INTEGER NOT NULL,
+          bill_count INTEGER NOT NULL,
+          refund_count INTEGER NOT NULL,
+          payment_methods_json TEXT NOT NULL DEFAULT '[]',
+          staff_sales_json TEXT NOT NULL DEFAULT '[]',
+          tax_components_json TEXT NOT NULL DEFAULT '[]',
+          z_number INTEGER UNIQUE NOT NULL,
+          closed_by TEXT NOT NULL REFERENCES users(id),
+          notes TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS cash_closures_one_day
+          ON cash_closures(business_date) WHERE scope = 'day';
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5094,6 +5136,17 @@ export function generateShortId(table: string, length = 6): string {
     if (!db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(id)) return id;
   }
   throw new Error(`generateShortId: could not find unique id for ${table} after 20 attempts`);
+}
+
+/**
+ * Per-install lifetime Z counter used by the day-close (cierre de caja)
+ * snapshot. Uses a single, non-date-bucketed `sequences` row with
+ * `name='z_report', date='ALL'` so the counter stays outside the daily
+ * sequences used by orders/bills and preserves conventional single-store
+ * Z numbering.
+ */
+export function nextZNumber(): number {
+  return getNextSequence('z_report', 'ALL');
 }
 
 /** Atomically get the next sequence value for a given name and date. */

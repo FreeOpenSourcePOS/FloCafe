@@ -3,18 +3,24 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import axios from 'axios';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
-import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass, CalendarDays } from 'lucide-react';
+import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass, CalendarDays, Lock, Loader2, Printer, AlertTriangle, X } from 'lucide-react';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import toast from 'react-hot-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
+import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
+import { getCurrencyMinorUnitFactor } from '@/lib/countries';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { ORDER_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 import { splitHoursMinutes } from '@/lib/table-timing';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { printerService } from '@/lib/printer/PrinterService';
 
 interface PaymentMethodBreakdown {
   method: string | null;
@@ -105,6 +111,62 @@ interface HourBucket {
 interface DayBucket {
   dayIndex: number;
   orderCount: number;
+}
+
+/** Live day aggregates returned by GET /api/reports/x-report. Display totals
+ *  are in tenant major units (minorFactor-divided); expectedCashCents is the
+ *  integer-cents drawer expected figure. Do not rename fields — the backend
+ *  contract is fixed by main/routes/reports.ts. */
+interface XReport {
+  businessDate: string;
+  periodStart: string;
+  periodEnd: string;
+  grossCollected: number;
+  refunded: number;
+  netCollected: number;
+  billCount: number;
+  refundCount: number;
+  paymentMethods: { method: string | null; count: number; total: number }[];
+  staffSales: { user_id: string; name: string; role: string; revenue: number; orderCount: number }[];
+  taxComponents: unknown[];
+  /** Drawer expected figure in INTEGER cents (no opening float — the float
+   *  is captured at close). Cash-only raw filter, refunds by created_at. */
+  expectedCashCents: number;
+  /** F3: server-resolved prior close (most recent scope='day' row with
+   *  business_date < this.businessDate). Both fields are null when no
+   *  prior close exists. The frontend ONLY shows the "no prior close"
+   *  hint when priorBusinessDate === null AND the X fetch succeeded —
+   *  never on a transport error, so a network blip cannot be confused
+   *  with a clean store history. */
+  priorClosedCashCents: number | null;
+  priorBusinessDate: string | null;
+  alreadyClosed: boolean;
+}
+
+/** Immutable close-of-day snapshot returned by POST /api/cash-closures and
+ *  GET /api/reports/z-report. Money fields are integer cents. */
+interface ZReport {
+  id: number;
+  scope: string;
+  business_date: string;
+  period_start: string;
+  period_end: string;
+  opening_float_cents: number;
+  expected_cash_cents: number;
+  counted_cash_cents: number;
+  variance_cents: number;
+  gross_collected_cents: number;
+  refunded_cents: number;
+  net_collected_cents: number;
+  bill_count: number;
+  refund_count: number;
+  payment_methods: { method: string; count: number; total_cents: number }[];
+  staff_sales: { user_id: string; name: string; role: string; revenue_cents: number; orderCount: number }[];
+  tax_components: unknown[];
+  z_number: number;
+  closed_by: string;
+  notes: string | null;
+  created_at: string;
 }
 
 interface Insights {
@@ -262,6 +324,255 @@ export default function DashboardPage() {
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, periodMode, selectedDate, selectedMonth]);
+
+  // ── Close-day modal state ────────────────────────────────────────────────
+  // Modal flow: open → load X (live aggregates) + prior-day Z (default float)
+  // → operator edits float + counted → POST /cash-closures → immutable Z view
+  // → optional print. Currency math stays in INTEGER cents end-to-end (the
+  // backend stores cents and returns display totals; we convert to cents at
+  // the POST boundary via the unit adapter, and back to display for the
+  // preview).
+  const [closeOpen, setCloseOpen] = useState(false);
+  // Bumping this token is how we re-trigger the load effect on each open.
+  // Reset of the form fields happens during render via the token comparison
+  // below (React-recommended idiom for "adjusting state when a prop
+  // changes" — mirrors the existing `syncKey`/`setSyncedKey` pattern above).
+  const [openToken, setOpenToken] = useState(0);
+  const [businessDate, setBusinessDate] = useState(todayLocal);
+  const [xReport, setXReport] = useState<XReport | null>(null);
+  const [xLoading, setXLoading] = useState(false);
+  const [xError, setXError] = useState<string | null>(null);
+  // F3: derive a token from `openToken + businessDate`. The render-time
+  // `if (closeOpen && xToken !== refXToken)` block wipes stale X-report
+  // state when the token changes (modal open OR operator picks a different
+  // date). Derives from existing state instead of carrying a separate
+  // counter so the wipe is automatic — same pattern as the `syncKey`
+  // block above (recommended by React for "adjusting state when a prop
+  // changes" and avoids the cascading-renders ESLint rule).
+  const xToken = `${openToken}:${businessDate}`;
+  const [refXToken, setRefXToken] = useState(xToken);
+  const [openingFloatInput, setOpeningFloatInput] = useState('');
+  const [countedInput, setCountedInput] = useState('');
+  const [submittingClose, setSubmittingClose] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // F4: local override of `xReport.alreadyClosed` for the case where the
+  // operator's POST hits a 409 (the X report still says alreadyClosed:false
+  // until it re-fetches, so the Submit button would stay enabled and the
+  // pre-existing 409 path would loop). Mirrors the X-report flag locally.
+  const [alreadyClosedOverride, setAlreadyClosedOverride] = useState(false);
+  const [closedZ, setClosedZ] = useState<ZReport | null>(null);
+  const [printingZ, setPrintingZ] = useState(false);
+  const [hasPrintedFresh, setHasPrintedFresh] = useState(false);
+  const unitAdapter = useCurrencyUnitAdapter();
+  // Storage minor-unit factor (`Math.pow(10, fractionDigits)`) is the cents
+  // denominator; the adapter's `maxDecimals` would be wrong for IRR/Toman
+  // (where display has 3 decimals but storage is still Rial-cents, factor 100).
+  const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || 'INR');
+
+  // Prior business date = day before the modal's date. ISO date arithmetic on
+  // the YYYY-MM-DD string is timezone-safe — no need for `localDateInTimezone`
+  // in the renderer.
+  const shiftDate = (yyyymmdd: string, deltaDays: number): string => {
+    const d = new Date(`${yyyymmdd}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + deltaDays);
+    return d.toISOString().slice(0, 10);
+  };
+
+  useEffect(() => {
+    if (!closeOpen) return;
+    const controller = new AbortController();
+    const isActive = () => !controller.signal.aborted;
+    // Use the operator-selected date so past-day closes work.
+    api.get('/reports/x-report', { params: { date: businessDate }, signal: controller.signal })
+      .then((res) => {
+        if (!isActive()) return;
+        setXReport(res.data.xReport);
+        const xr = res.data.xReport;
+        // F3: prior close is now part of the X envelope. Prefill the
+        // opening-float input ONLY on a clean X fetch (xError stays null
+        // here) and ONLY when the backend reports a prior close. The
+        // GET /reports/x-report route returns null fields when no prior
+        // close exists; we use that as the explicit "no prior close"
+        // signal — transport errors set xError, leaving priorBusinessDate
+        // null WITHOUT triggering the noPriorCloseHint (F7 discipline).
+        if (!xError && xr) {
+          if (xr.priorClosedCashCents !== null && xr.priorBusinessDate) {
+            // F2: convert to display units via the adapter (Toman/Rial etc.)
+            setOpeningFloatInput(unitAdapter.toDisplay(xr.priorClosedCashCents / minorFactor).toString());
+            setAlreadyClosedOverride(false);
+          } else {
+            // F1: no prior close for this date — reset the prefill so a
+            // POST cannot submit a stale value from a previously-closed
+            // day, and clear any stale alreadyClosed override (a 409 on
+            // day A must not leave a false closed banner + disabled
+            // submit on unclosed day B).
+            setOpeningFloatInput('');
+            setAlreadyClosedOverride(false);
+          }
+        }
+        // F4: if the day is already closed, hydrate the closed-Z view so
+        // the operator can read/reprint the snapshot without POSTing a
+        // second close.
+        if (xr?.alreadyClosed) {
+          return api.get('/reports/z-report', { params: { date: businessDate }, signal: controller.signal })
+            .then((zRes) => {
+              if (!isActive()) return;
+              if (zRes.data?.zReport) {
+                setClosedZ(zRes.data.zReport);
+                setHasPrintedFresh(false);
+              }
+            })
+            .catch((err: unknown) => {
+              if (axios.isCancel(err) || (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) return;
+              if (!isActive()) return;
+              // 404 means the X said closed but Z is missing — fall back
+              // to the banner. Any other error is logged and toasted because
+              // the X envelope alone already gave us the alreadyClosed banner
+              // content but the operator should know the printed Z could
+              // not be hydrated (reprint/snapshot-read).
+              if (axios.isAxiosError(err) && err.response?.status === 404) return;
+              const msg = axios.isAxiosError(err) ? err.response?.data?.error || err.message : (err instanceof Error ? err.message : 'Failed to load closed Z');
+              console.warn('[cierre] hydrate z-report failed:', msg);
+              toast.error(tCommon('somethingWrong'));
+            });
+        }
+        return undefined;
+      })
+      .catch((err: unknown) => {
+        if (axios.isCancel(err) || (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) return;
+        if (!isActive()) return;
+        setXError(axios.isAxiosError(err) ? err.response?.data?.error || err.message : (err instanceof Error ? err.message : 'Failed to load day'));
+      })
+      .finally(() => {
+        if (isActive()) setXLoading(false);
+      });
+    return () => controller.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [closeOpen, openToken, businessDate]);
+
+  // Reset modal state at the start of each new open (React-recommended
+  // pattern for "adjusting state when a prop changes" — the equivalent of
+  // a class component's `getDerivedStateFromProps`; mirrors the existing
+  // `syncKey` / `setSyncedKey` pattern in this file).
+  const [resetToken, setResetToken] = useState(0);
+  if (closeOpen && resetToken !== openToken) {
+    setResetToken(openToken);
+    setXLoading(true);
+    setXError(null);
+    setXReport(null);
+    // (priorFloatCents removed: the backend's xReport.priorBusinessDate is
+    // the unambiguous source of truth for the no-prior-close hint.)
+    setAlreadyClosedOverride(false);
+    setBusinessDate(todayLocal);
+    setOpeningFloatInput('');
+    setCountedInput('');
+    setSubmitError(null);
+    setClosedZ(null);
+    setHasPrintedFresh(false);
+  }
+  // F3: render-time wipe of stale X state when the operator changes the
+  // business date inside the modal. Token derives from openToken +
+  // businessDate so it changes on either event. Same pattern as the
+  // `syncKey` block above (recommended by React for "adjusting state when
+  // a prop changes" and avoids the cascading-renders ESLint rule).
+  // F1/F2: also reset counted/submit-error/closed-Z/printed-fresh so a
+  // value typed for day A cannot carry into day B's immutable close (F1)
+  // and so changing dates after closing day A leaves no stale Z in view (F2).
+  if (closeOpen && xToken !== refXToken) {
+    setRefXToken(xToken);
+    setXLoading(true);
+    setXError(null);
+    setXReport(null);
+    setCountedInput('');
+    setSubmitError(null);
+    setClosedZ(null);
+    setHasPrintedFresh(false);
+  }
+
+  const openCloseModal = () => {
+    setOpenToken((n) => n + 1);
+    setCloseOpen(true);
+  };
+
+  // Convert a display-amount input string to integer cents. The adapter's
+  // `toStored` returns the value in MAJOR units (Rial for IRR/Toman — the
+  // adapter folds the Toman-to-Rial ratio itself), so multiplying by the
+  // storage minor factor gives integer cents. Empty/invalid → 0.
+  const displayToCents = (raw: string): number => {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return Math.round(unitAdapter.toStored(n) * minorFactor);
+  };
+
+  const openingFloatCents = displayToCents(openingFloatInput);
+  const countedCashCents = displayToCents(countedInput);
+  const expectedCashTotalCents = xReport ? xReport.expectedCashCents + openingFloatCents : 0;
+  const varianceCents = countedCashCents - expectedCashTotalCents;
+
+  const submitClose = async () => {
+    if (!xReport) return;
+    setSubmittingClose(true);
+    setSubmitError(null);
+    try {
+      const res = await api.post('/cash-closures', {
+        business_date: businessDate,
+        opening_float_cents: openingFloatCents,
+        counted_cash_cents: countedCashCents,
+      });
+      setClosedZ(res.data.zReport);
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        // The backend's 409 carries alreadyClosed; surface the message and
+        // keep the form so the operator can retry once they have the prior Z.
+        setSubmitError(t('alreadyClosed'));
+        // F4: the X report still says alreadyClosed:false until it re-fetches.
+        // Set the local override so the Submit button disables immediately and
+        // the alreadyClosed banner shows without waiting for a re-fetch.
+        setAlreadyClosedOverride(true);
+      } else {
+        const msg = axios.isAxiosError(err)
+          ? err.response?.data?.error || err.message
+          : (err instanceof Error ? err.message : 'Close failed');
+        setSubmitError(msg);
+      }
+    } finally {
+      setSubmittingClose(false);
+    }
+  };
+
+  // POST /cash-closures/:id/print. Mirrors main/routes/cash-closures.ts:471-505:
+  // network/usb printers print server-side and return { success, isReprint };
+  // webusb printers return { success, webusb: true, isReprint, bytes } and the
+  // renderer dispatches the bytes through printerService.print().
+  // F5: returns true on the first successful print so the caller can flip
+  // the hasPrintedFresh flag. The button must NOT flip on failure — a
+  // failed first print should still offer "Print Z" (not "Reprint"), so the
+  // operator can see it never actually printed.
+  const printZ = async (z: ZReport, isReprint = false): Promise<boolean> => {
+    setPrintingZ(true);
+    try {
+      const res = await api.post(`/cash-closures/${z.id}/print`, { isReprint });
+      if (res.data?.webusb && Array.isArray(res.data.bytes)) {
+        await printerService.print(Uint8Array.from(res.data.bytes));
+        toast.success(t(isReprint ? 'reprintZ' : 'printZReport'));
+        return true;
+      } else if (res.data?.success) {
+        toast.success(t(isReprint ? 'reprintZ' : 'printZReport'));
+        return true;
+      } else {
+        toast.error(tCommon('somethingWrong'));
+        return false;
+      }
+    } catch (err: unknown) {
+      const msg = axios.isAxiosError(err)
+        ? err.response?.data?.error || err.response?.data?.detail || err.message
+        : (err instanceof Error ? err.message : 'Print failed');
+      toast.error(msg);
+      return false;
+    } finally {
+      setPrintingZ(false);
+    }
+  };
 
   if (!isOwner) return null;
 
@@ -458,8 +769,236 @@ export default function DashboardPage() {
               </button>
             </div>
           )}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={openCloseModal}
+            className="h-9"
+          >
+            <Lock size={14} />
+            {t('closeShift')}
+          </Button>
         </div>
       </div>
+
+      {/* ── Close-day modal ─────────────────────────────────────────────── */}
+      <Dialog open={closeOpen} onOpenChange={(next) => {
+        // Block mid-submit close so the operator can't drop a POST in flight.
+        if (!next && submittingClose) return;
+        setCloseOpen(next);
+      }}>
+        <DialogContent
+          className="sm:max-w-lg max-h-[90vh] flex flex-col"
+          // The browser-native date picker popup renders outside the Radix
+          // portal; without this, clicking a day closes the modal and the
+          // date selection is swallowed. Spec requires past-date late closes.
+          onInteractOutside={(e) => e.preventDefault()}
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Lock size={18} className="text-foreground" />
+              {t('closeShift')}
+              {xReport && !closedZ && (
+                <span className="ms-2 text-sm font-normal text-muted-foreground"><Ltr>{xReport.businessDate}</Ltr></span>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {closedZ ? t('zReport') : t('xReport')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4">
+            {/* ── Closed Z view ── */}
+            {closedZ && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">{t('openingFloat')}</p>
+                    <p className="text-base font-semibold text-foreground"><Ltr>{fmt(closedZ.opening_float_cents / minorFactor)}</Ltr></p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">{t('expectedCash')}</p>
+                    <p className="text-base font-semibold text-foreground"><Ltr>{fmt(closedZ.expected_cash_cents / minorFactor)}</Ltr></p>
+                  </div>
+                  <div className="rounded-lg border border-border p-3">
+                    <p className="text-xs text-muted-foreground">{t('countedCash')}</p>
+                    <p className="text-base font-semibold text-foreground"><Ltr>{fmt(closedZ.counted_cash_cents / minorFactor)}</Ltr></p>
+                  </div>
+                  <div className={`rounded-lg border p-3 ${closedZ.variance_cents === 0 ? 'border-border' : closedZ.variance_cents < 0 ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+                    <p className="text-xs text-muted-foreground">{t('variance')}</p>
+                    <p className={`text-base font-semibold ltr-island ${closedZ.variance_cents === 0 ? 'text-foreground' : closedZ.variance_cents < 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                      <Ltr>{fmt(closedZ.variance_cents / minorFactor)}</Ltr>
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border p-3 bg-muted/40">
+                  <p className="text-sm font-medium text-foreground">{t('billsCount', { count: closedZ.bill_count })}</p>
+                </div>
+                {closedZ.notes && (
+                  <div className="rounded-lg border border-border p-3 bg-muted/40">
+                    <p className="text-xs text-muted-foreground">{t('closureNotes')}</p>
+                    <p className="text-sm text-foreground whitespace-pre-wrap">{closedZ.notes}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Form / X-loading view ── */}
+            {!closedZ && (
+              <>
+                {xLoading && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
+                    <Loader2 size={16} className="animate-spin" />
+                    {tCommon('loading')}
+                  </div>
+                )}
+                {xError && (
+                  <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                    <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                    <span>{xError}</span>
+                  </div>
+                )}
+                {xReport && (
+                  <>
+                    <div>
+                      <label htmlFor="business-date" className="block text-sm text-muted-foreground mb-1">
+                        {t('businessDateLabel')}
+                      </label>
+                      <input
+                        id="business-date"
+                        type="date"
+                        value={businessDate}
+                        min={shiftDate(todayLocal, -365)}
+                        max={todayLocal}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
+                          // Client guardrail: backend remains the authority and
+                          // will 400 a future date; this just keeps the picker
+                          // honest.
+                          if (next > todayLocal) return;
+                          setBusinessDate(next);
+                        }}
+                        className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
+                      />
+                    </div>
+                    {(xReport.alreadyClosed || alreadyClosedOverride) && !closedZ && (
+                      <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+                        <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                        <span>{t('alreadyClosed')}</span>
+                      </div>
+                    )}
+                    <div className="rounded-lg border border-border p-3 bg-muted/40">
+                      <p className="text-xs text-muted-foreground">{t('expectedCashSalesOnly')}</p>
+                      <p className="text-lg font-semibold text-foreground"><Ltr>{fmt(xReport.expectedCashCents / minorFactor)}</Ltr></p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {t('billsCount', { count: xReport.billCount })}
+                        {' · '}
+                        {t('paymentsCount', { count: xReport.paymentMethods.reduce((sum, pm) => sum + pm.count, 0) - xReport.refundCount })}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label htmlFor="opening-float" className="block text-sm text-muted-foreground mb-1">
+                        {t('openingFloat')}
+                      </label>
+                      <input
+                        id="opening-float"
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        step={unitAdapter.step}
+                        value={openingFloatInput}
+                        onChange={(e) => setOpeningFloatInput(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
+                      />
+                      {xReport.priorBusinessDate === null && !xReport.alreadyClosed && (
+                        <p className="text-xs text-amber-700 mt-1">{t('noPriorCloseHint')}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label htmlFor="counted-cash" className="block text-sm text-muted-foreground mb-1">
+                        {t('countedCash')}
+                      </label>
+                      <input
+                        id="counted-cash"
+                        type="number"
+                        inputMode="decimal"
+                        min={0}
+                        step={unitAdapter.step}
+                        value={countedInput}
+                        onChange={(e) => setCountedInput(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {t('expectedCash')}: <Ltr>{fmt(expectedCashTotalCents / minorFactor)}</Ltr>
+                      </p>
+                    </div>
+
+                    <div className={`rounded-lg border p-3 ${varianceCents === 0 ? 'border-border bg-muted/40' : varianceCents < 0 ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+                      <p className="text-xs text-muted-foreground">{t('variance')}</p>
+                      <p className={`text-lg font-semibold ltr-island ${varianceCents === 0 ? 'text-foreground' : varianceCents < 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                        <Ltr>{fmt(varianceCents / minorFactor)}</Ltr>
+                      </p>
+                    </div>
+
+                    {submitError && (
+                      <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                        <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                        <span>{submitError}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            {closedZ ? (
+              <>
+                <Button variant="outline" onClick={() => setCloseOpen(false)}>
+                  {tCommon('close')}
+                </Button>
+                {hasPrintedFresh ? (
+                  <Button onClick={() => printZ(closedZ, true)} disabled={printingZ}>
+                    {printingZ ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                    {t('reprintZ')}
+                  </Button>
+                ) : (
+                  <Button onClick={async () => {
+                    // F5: only flip to "Reprint" after the first print succeeds.
+                    // A failed first print leaves the operator with another
+                    // "Print Z" attempt, not a misleading "Reprint" button.
+                    // Hydrate ceiling (v1): a hydrated Z (page-load view of an
+                    // already-closed day) cannot be distinguished from a fresh
+                    // print, so it is sent as `isReprint=false`. True print
+                    // history (count, last-printer, last-time) is untracked in
+                    // v1 by design; revisit when v2 adds print audit columns.
+                    const ok = await printZ(closedZ, false);
+                    if (ok) setHasPrintedFresh(true);
+                  }} disabled={printingZ}>
+                    {printingZ ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />}
+                    {t('printZReport')}
+                  </Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setCloseOpen(false)} disabled={submittingClose}>
+                  <X size={14} />
+                  {tCommon('cancel')}
+                </Button>
+                <Button onClick={submitClose} disabled={submittingClose || !xReport || countedInput === '' || xReport.alreadyClosed || alreadyClosedOverride}>
+                  {submittingClose ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}
+                  {t('closeShift')}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

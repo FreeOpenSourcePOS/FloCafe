@@ -41,7 +41,7 @@ import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippP
 import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled, type RasterSemanticUnit } from '../../shared/print/raster';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
-import { CURRENCY_ASCII_MAP, CURRENCY_TOKEN_PATTERN, normalizeCurrencyToAscii } from '../../shared/print/currency';
+import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii } from '../../shared/print/currency';
 
 export type PrintResult = {
   ok: boolean;
@@ -2089,9 +2089,287 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
   return Buffer.concat([textData, Buffer.from(rasterData), Buffer.from(encodeRasterFeedAndCut(cutMode))]);
 }
 
-// Known ASCII fallbacks and canonical currency codes stay bounded for receipt
-// amount columns; representable localized symbols retain their full label.
-const CURRENCY_TOKEN_RE = new RegExp(`(?:${CURRENCY_TOKEN_PATTERN})`, 'g');
+/**
+ * Build the ESC/POS bytes for a Z-report (cierre de caja) from a stored
+ * `cash_closures` row. Day-close, no bill — sections in spec print order:
+ * header → Z number + business date + period → opening float → sales by
+ * payment method → refunds → tax breakdown → staff sales → expected /
+ * counted / variance (variance emphasized) → operator + signature → footer.
+ * The byte builder never touches the drawer pulse; that is appended by
+ * `printZReport` (the route layer) so the byte form is reusable for the
+ * WebUSB `bytes: number[]` branch where the renderer dispatches.
+ */
+export function buildZReportBody(z: any, language?: string, printer?: { columns?: number; capabilities?: ThermalPrinterCapabilities }): Buffer {
+  // F3: thread `columns` + `capabilities` from the resolved printer/profile
+  // so non-80mm widths and profiles with native code pages render correctly
+  // (also fixes F2 — the GENERIC ascii-only profile silently dropped the
+  // U+00B7 footer separator, blanking the line).
+  const cols = printer?.columns || columnsForPaperWidth('80mm') || 48;
+  const lang = normalizePrintLanguage(language);
+  const tz = getSettingValue('timezone') || 'Asia/Kolkata';
+  // F8: drop the swallow-and-fallback. The settings table is a key/value
+  // store (see `main/db.ts:4723-4727`); an unguarded read 500s like the
+  // `print-bill` path's settings read does, so a real DB error surfaces
+  // instead of silently defaulting to INR/100 for every money column.
+  const settingsRows = getDatabase()
+    .prepare('SELECT key, value FROM settings')
+    .all() as { key: string; value: string }[];
+  const settings: Record<string, string> = Object.fromEntries(
+    settingsRows.map((r) => [r.key, r.value]),
+  );
+  // F5: resolve the currency through `resolveTenantCurrency` (settings +
+  // country-pack fallback) so country-only configs (no `settings.currency`)
+  // pick the right symbol and minor factor. The legacy `settings.currency
+  // || 'INR'` fallback silently defaulted every country-only store to INR.
+  const currency = resolveTenantCurrency(settings.currency, settings.country);
+  const fractionDigits = getCurrencyFractionDigits(currency);
+  const factor = 10 ** fractionDigits;
+  // F5: resolve the currency symbol through the same code path as the
+  // receipt-printer pipeline (`main/routes/printers.ts:451-452`); fall back
+  // to `settings.currency_symbol` only when neither is set (legacy stores
+  // that hand-wrote their own symbol).
+  const countryCode = settings.country;
+  const locale = getCountryByCode(countryCode)?.locale ?? 'en-US';
+  // Mirror the receipt-printer pipeline at main/routes/printers.ts:451 —
+  // country-pack symbol is authoritative; `getCurrencySymbol` returns a
+  // non-empty string for any resolved code, so no `settings.currency_symbol`
+  // fallback is needed.
+  const prefix = resolveCurrencyPrefix(
+    getCurrencySymbol(currency, locale),
+    false,
+  );
+  const trimDecimals = false;
+  // locale already resolved above (F5: getCurrencySymbol needs the locale
+  // for the country's symbol form).
+  const label = (text: string): string => normalizeThermalText(String(text));
+  const centsToAmount = (cents: number): number => (Number(cents) || 0) / factor;
+  const formatAmount = (cents: number): string => formatCurrency(centsToAmount(cents), prefix, locale, trimDecimals, fractionDigits);
+  const localTime = (iso: string): string => {
+    try {
+      const d = parseDbTimestamp(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toLocaleString('en-US-u-nu-latn', tz ? { timeZone: tz } : undefined);
+    } catch {
+      return iso;
+    }
+  };
+  // F5: `localDate` removed — `localTime` above already returns both date
+  // and time components, and the body builder only ever needed the combined
+  // string for `period_start` / `period_end`.
+  const bar = '='.repeat(cols);
+  const dash = '-'.repeat(cols);
+  const zNumber = z?.z_number ?? 0;
+  const businessDate = String(z?.business_date || '');
+  const periodStart = localTime(z?.period_start);
+  const periodEnd = localTime(z?.period_end);
+  const isReprint = !!z?.__isReprint;
+  // Spec requires the Spanish reprint banner. The body labels are English
+  // by convention, but the spec for the day-close Z explicitly mandates
+  // "REIMPRESION" as the reprint marker.
+  const reprintMarker = isReprint ? label('REIMPRESION') : '';
+
+  const sections: string[] = [];
+  sections.push('{INIT}');
+
+  // F4: header (business name + address + tax id) prints BEFORE the Z number
+  // so the document leads with the identifying block, matching the spec
+  // sequence (header → Z number/date/period → ...).
+  sections.push('{CENTER}{BOLD}' + label(settings.business_name || '') + '{/BOLD}{/CENTER}');
+  if (settings.business_address) sections.push('{CENTER}' + label(settings.business_address) + '{/CENTER}');
+  if (settings.tax_registration_number) sections.push('{CENTER}' + label(settings.tax_registration_number) + '{/CENTER}');
+  sections.push('');
+
+  sections.push('{CENTER}{BOLD}' + label('Z REPORT') + ' #' + String(zNumber) + (reprintMarker ? ' (' + reprintMarker + ')' : '') + '{/BOLD}{/CENTER}');
+  sections.push('');
+
+  sections.push(bar);
+  // F2: width-aware period labels. The previous fixed `'Date:' + ' '` /
+  // `'Period start:' + ' '` / `'Period end:' + '   '` concatenation produced
+  // label columns of 6/14/13 chars plus a value column — a 32-col width
+  // overflows the timestamp tail. Right-align the timestamp so the label
+  // can grow until it eats the row, mirroring the column budget the
+  // payment-method rows use below.
+  const periodLine = (key: string, value: string): string => {
+    // F9: head cap tracks the longest label in this block ("Period start:",
+    // 13 chars) so the head never silently truncates to "Period s". Still
+    // bounded by `cols - minValueWidth - 1` so the value column keeps at
+    // least `minValueWidth` chars; the head only shrinks below the label
+    // length when even that minimum value column cannot fit (32-col edge).
+    const longestLabel = 13;
+    const minValueWidth = 12;
+    const headBudget = Math.max(1, Math.min(longestLabel, cols - minValueWidth - 1));
+    const head = label(key).slice(0, headBudget);
+    const valueBudget = Math.max(1, cols - head.length - 1);
+    const total = label(value).slice(0, valueBudget);
+    return head + rightAlign(total, valueBudget);
+  };
+  sections.push(periodLine('Date:', businessDate));
+  sections.push(periodLine('Period start:', periodStart));
+  sections.push(periodLine('Period end:', periodEnd));
+  sections.push(bar);
+  sections.push('');
+
+  sections.push('{BOLD}' + label('Opening float') + '{/BOLD}');
+  sections.push(rightAlign(formatAmount(z?.opening_float_cents), cols));
+  sections.push('');
+
+  sections.push('{BOLD}' + label('Sales by payment method') + '{/BOLD}');
+  const paymentMethods = Array.isArray(z?.payment_methods) ? z.payment_methods : [];
+  if (paymentMethods.length === 0) {
+    sections.push('  ' + label('(none)'));
+  } else {
+    for (const row of paymentMethods as any[]) {
+      const method = String(row.method || '');
+      const total = formatAmount(row.total_cents ?? row.total ?? 0);
+      const count = String(row.count ?? 0);
+      // F1: previous formula padded `cols + 2` wide (the leading `'  '` plus
+      // the right-alignment to `cols`). Cap `head` and the right-alignment
+      // to the same budget so the total column lands at `cols - 2`, mirroring
+      // the existing `financialRows` convention (`thermal.ts:1820-1828`).
+      const headBudget = Math.max(8, cols - 2 - total.length - 1);
+      const head = (label(method) + ' x' + count).slice(0, headBudget);
+      sections.push('  ' + head + rightAlign(total, Math.max(8, cols - 2 - head.length)));
+    }
+  }
+  sections.push('');
+
+  sections.push('{BOLD}' + label('Refunds') + '{/BOLD}');
+  sections.push(label('Count:') + ' ' + String(z?.refund_count ?? 0));
+  sections.push(label('Total:') + ' ' + formatAmount(z?.refunded_cents));
+  sections.push('');
+
+  sections.push('{BOLD}' + label('Tax breakdown') + '{/BOLD}');
+  const tax = Array.isArray(z?.tax_components) ? z.tax_components : [];
+  if (tax.length === 0) {
+    sections.push('  ' + label('(none)'));
+  } else {
+    for (const row of tax as any[]) {
+      const title = String(row.title || row.label || '');
+      // F1: `row.amount` from aggregateTaxComponents is already in major units
+      // (it sums `bills.tax_amount` which is also major units — see
+      // `main/services/tax-components.ts`). Feeding it through `formatAmount`
+      // would divide by `factor` again, printing 100× too small (₹50 → ₹0.50).
+      // Render the major-unit number directly via `formatCurrency`.
+      const total = formatCurrency(Number(row.amount ?? 0), prefix, locale, trimDecimals, fractionDigits);
+      // F1: same width convention as payment methods (see above).
+      const headBudget = Math.max(8, cols - 2 - total.length - 1);
+      const head = (label(title) || label('Tax')).slice(0, headBudget);
+      sections.push('  ' + head + rightAlign(total, Math.max(8, cols - 2 - head.length)));
+    }
+  }
+  sections.push('');
+
+  sections.push('{BOLD}' + label('Staff sales') + '{/BOLD}');
+  const staff = Array.isArray(z?.staff_sales) ? z.staff_sales : [];
+  if (staff.length === 0) {
+    sections.push('  ' + label('(none)'));
+  } else {
+    for (const row of staff as any[]) {
+      const name = String(row.name || row.user_id || '');
+      const total = formatAmount(row.revenue_cents ?? row.revenue ?? 0);
+      const orders = String(row.orderCount ?? row.orders ?? 0);
+      // F1: same width convention as payment methods (see above).
+      const headBudget = Math.max(8, cols - 2 - total.length - 1);
+      const head = (label(name) + ' x' + orders).slice(0, headBudget);
+      sections.push('  ' + head + rightAlign(total, Math.max(8, cols - 2 - head.length)));
+    }
+  }
+  sections.push('');
+
+  sections.push(bar);
+  sections.push('{BOLD}' + label('Expected cash') + '{/BOLD}');
+  sections.push(rightAlign(formatAmount(z?.expected_cash_cents), cols));
+  sections.push('{BOLD}' + label('Counted cash') + '{/BOLD}');
+  sections.push(rightAlign(formatAmount(z?.counted_cash_cents), cols));
+  sections.push(bar);
+  sections.push('{CENTER}{BOLD}' + label('Variance') + '  ' + formatAmount(z?.variance_cents) + '{/BOLD}{/CENTER}');
+  sections.push(dash);
+  sections.push('');
+
+  // F6: the route resolves `closed_by_name` via users(id -> name); render
+  // the resolved name when present and fall back to the raw id otherwise.
+  const closedByLabel = String(z?.closed_by_name || z?.closed_by || '');
+  sections.push(label('Closed by:') + ' ' + label(closedByLabel));
+  // F9: signature underscore row exceeds cols at 32 chars (cols=48 leaves 16
+  // chars for the label + spaces, so 32 underscores overflow). Width to
+  // F1: signature underscore row must be ≤ cols. Budget = cols − label.length
+  // − 1 (the separator space); clamp at 0 so narrow widths drop the
+  // underscores instead of overflowing.
+  sections.push(label('Operator signature:') + ' ' + '_'.repeat(Math.max(0, cols - 'Operator signature:'.length - 1)));
+  sections.push('');
+
+  sections.push('{CENTER}' + label('Generated by FloCafe') + '{/CENTER}');
+  // F2: the U+00B7 separator was silently dropped by the GENERIC ascii-only
+  // profile (whole line skipped, leaving a gap before the footer). Use an
+  // ASCII hyphen so all profiles render this line.
+  sections.push('{CENTER}Z#' + String(zNumber) + ' - ' + label(businessDate) + '{/CENTER}');
+  sections.push('{CUT}');
+
+  // F3: pass `columns` + `capabilities` into the byte builder so non-80mm
+  // widths and profiles with native code pages render correctly (also
+  // fixes F2 on those profiles).
+  return buildEscPos(sections, false, { cutMode: 'full', language: lang, columns: cols, capabilities: printer?.capabilities });
+}
+
+/**
+ * Dispatch the Z report to the configured printer. The pulse is forced on Z
+ * print (bypassing bill-bound `shouldPulseForPayment` and the
+ * `cash_drawer_pulse_methods` filter): the Z is the document the merchant
+ * prints while counting the drawer.
+ */
+export async function printZReport(z: any, language?: string, signal?: AbortSignal, targetPrinter?: any): Promise<DispatchResult & { bytes?: Buffer; connection_type?: string }> {
+  try {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
+    // The route resolves the default receipt printer so it can pick the
+    // WebUSB branch server-side (`main/routes/printers.ts:329-331`). The
+    // helper's own fallback uses getPrinterConfig() (which excludes webusb,
+    // so default lookups never see a WebUSB printer).
+    const printer = targetPrinter || getPrinterConfig();
+    if (!printer) return { ok: false, detail: 'No printer configured' };
+    // F3: resolve the printer's profile so `buildZReportBody` can use the
+    // right columns and capabilities (58mm/36/42 cols, profile-specific
+    // code pages, etc.). Same pattern as `prepareReceipt` (`:1043-1056`).
+    const profile = resolvePrinterProfile(printer);
+    const columns = columnsForPaperWidth(printer.paper_width || profile.defaultPaperWidth) || 48;
+    const capabilities = getPrinterCapabilities(profile, false);
+    const lang = normalizePrintLanguage(language);
+    const zWithMarker = { ...z, __isReprint: !!z?.__isReprint };
+    const baseBody = buildZReportBody(zWithMarker, lang, { columns, capabilities });
+    const data = appendCashDrawerPulse(baseBody);
+    let result: DispatchResult;
+    switch (printer.connection_type) {
+      case 'network':
+        result = await printViaNetwork(printer.ip_address, printer.port || 9100, data, signal);
+        break;
+      case 'usb':
+        result = await printViaUSB(data, printer.name, signal);
+        break;
+      case 'webusb':
+        // Backend never dispatches WebUSB; return the FULL bytes (including
+        // the appended drawer pulse) for the renderer. The route maps this to
+        // `bytes: number[]` per the test-page endpoint contract.
+        return { ok: true, bytes: data, connection_type: 'webusb' };
+      default:
+        result = { ok: false, detail: `Unsupported connection type: ${printer.connection_type}` };
+    }
+    return { ...result, bytes: data, connection_type: printer.connection_type };
+  } catch (error: any) {
+    console.error('[Printer] Z-report dispatch failed:', error);
+    return { ok: false, detail: error?.message };
+  }
+}
+
+// Every ASCII fallback is no wider than 3 characters, so currency labels such
+// as USD/EUR/INR have a stable reserved slot in receipt amount columns.
+// CURRENCY_ASCII_MAP is imported from shared/print/currency.
+
+const CURRENCY_TOKEN_RE = new RegExp(
+  Object.keys(CURRENCY_ASCII_MAP)
+    .sort((left, right) => right.length - left.length)
+    .map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|'),
+  'g',
+);
 
 const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
 

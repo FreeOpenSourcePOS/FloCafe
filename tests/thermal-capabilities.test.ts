@@ -104,6 +104,13 @@ function run(): void {
   assert.ok(epsonCamaronBytes.length > 0);
   assert.equal(escPosToText(epsonCamaronBytes).includes('Burrito de Camarón'), true);
 
+  assert.equal(normalizeThermalText('Küche', epson.capabilities), 'Küche');
+  assert.equal(normalizeThermalText('Straße', epson.capabilities), 'Straße');
+  assert.equal(selectThermalCodePage('Küche', epson.capabilities), 'cp437');
+  assert.equal(selectThermalCodePage('Straße', epson.capabilities), 'cp437');
+  const epsonKuecheBytes = buildEscPos(['{INIT}', 'Küche Straße'], false, { capabilities: epson.capabilities });
+  assert.equal(escPosToText(epsonKuecheBytes).includes('Küche Straße'), true);
+
   assert.equal(selectThermalCodePage('Cafe', latinCodePageCapabilities), 'cp437');
   assert.equal(selectThermalCodePage('√2', latinCodePageCapabilities), 'cp437');
   assert.equal(selectThermalCodePage('π', latinCodePageCapabilities), 'cp437');

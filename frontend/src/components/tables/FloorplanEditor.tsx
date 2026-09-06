@@ -1,8 +1,6 @@
 'use client';
 
-// Floorplan editor for issue #356: drag tables onto a canvas, persist X/Y per
-// floor as percent coordinates (dnd-kit is sortable-list semantics — wrong tool
-// for free 2D placement; native pointer events instead).
+// Floorplan canvas editor: drag tables and persist X/Y coordinates per floor as percentages.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '@/lib/api';

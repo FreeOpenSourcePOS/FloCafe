@@ -764,11 +764,7 @@ export function isDiagnosticsConsentEnabled(): boolean {
   return getSettingValue('diagnostics_consent') !== 'false';
 }
 
-/**
- * Kitchen Display System on/off switch (issue #133). Defaults to enabled
- * (missing/anything but the literal 'false') so pre-existing installs that
- * predate this setting keep their current always-on behavior.
- */
+/** Kitchen Display System on/off switch. Defaults to enabled. */
 export function isKdsEnabled(): boolean {
   return getSettingValue('kds_enabled') !== 'false';
 }
@@ -781,12 +777,7 @@ export function isServerAppEnabled(): boolean {
   return getSettingValue('server_app_enabled') !== 'false';
 }
 
-/**
- * KOT ticket printing on/off switch (issue #133) — coarser than
- * `auto_print_kot` (which only gates *automatic* printing on order
- * placement). When this is off, no KOT print command may be sent,
- * automatic or manual. Defaults to enabled, same reasoning as isKdsEnabled.
- */
+/** KOT ticket printing on/off switch (gates automatic and manual prints). Defaults to enabled. */
 export function isKotPrintingEnabled(): boolean {
   return getSettingValue('kot_printing_enabled') !== 'false';
 }
@@ -2750,14 +2741,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 25,
     name: 'add_order_item_addons_table',
     up: () => {
-      // Selected addons are snapshotted as JSON on order_items.addons. That
-      // works for print/receipt display but makes addon reporting ("addons
-      // sold by day/product/station") require JSON parsing instead of
-      // indexed SQL, and ambiguous parsed-vs-raw-JSON typing already caused
-      // a KOT print failure (see 02a511e). Add a normalized snapshot table
-      // and backfill it from existing rows. order_items.addons stays the
-      // read-path source of truth for now — this migration only adds the
-      // table and starts populating it; see issue #125.
+      // Add a normalized table for selected order item add-ons and backfill existing rows.
       db.exec(`
         CREATE TABLE IF NOT EXISTS order_item_addons (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2807,9 +2791,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 27,
     name: 'add_station_printer_link_and_user_stations',
     up: () => {
-      // Links a kitchen station to a printer row instead of duplicating
-      // ip/port/name inline, and lets a staff login (or shared counter
-      // login) be assigned to one or more stations. See issue #134.
+      // Link kitchen stations to printer rows and assign staff logins to stations.
       const stationColumns = getColumns(db, 'kitchen_stations');
       if (!stationColumns.includes('printer_id')) {
         db.exec(`ALTER TABLE kitchen_stations ADD COLUMN printer_id TEXT REFERENCES printers(id) ON DELETE SET NULL`);
@@ -2852,14 +2834,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 30,
     name: 'drop_order_items_addons_json_column',
     up: () => {
-      // order_item_addons (v25) has been the sole write target for selected
-      // addons for a while now, and every read path was moved onto it in the
-      // same release this migration ships in — order_items.addons is no
-      // longer written or read anywhere in the app. This is the cleanup: one
-      // more backfill sweep (belt-and-braces — v25 already ran, but this
-      // catches anything created between then and the dual-write existing,
-      // or any hand-edited row), then drop the column outright rather than
-      // leave a dead, unused JSON copy sitting in the schema. See issue #125.
+      // Backfill any remaining addons into order_item_addons and drop the legacy JSON column.
       const columns = getColumns(db, 'order_items');
       if (!columns.includes('addons')) return; // already dropped (idempotent re-run)
 
@@ -2925,10 +2900,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 32,
     name: 'add_kds_and_kot_printing_toggles',
     up: () => {
-      // Independent on/off switches for the Kitchen Display System and for
-      // KOT ticket printing (issue #133) — not every business runs both.
-      // Default 'true' on both to match the pre-toggle always-on behavior
-      // existing installs already have.
+      // Add independent on/off settings for KDS and KOT printing (defaulting to true).
       insertSettingIfMissing('kds_enabled', 'true');
       insertSettingIfMissing('kot_printing_enabled', 'true');
     },
@@ -2946,10 +2918,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 34,
     name: 'add_order_items_voided_at',
     up: () => {
-      // Issue #150: voiding an in-progress (preparing/ready) item marks it
-      // status='voided' instead of hard-cancelling it, so the kitchen display
-      // can show it struck-through for a grace period before it drops off the
-      // board. voided_at is that timestamp anchor.
+      // Timestamp anchor for showing voided kitchen items struck-through before removal.
       if (!getColumns(db, 'order_items').includes('voided_at')) {
         db.exec(`ALTER TABLE order_items ADD COLUMN voided_at TEXT DEFAULT NULL`);
       }
@@ -3230,22 +3199,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     },
   },
   {
-    // Performance fixes for ~100k+ orders (issue #208) plus timestamp
-    // normalization, in one migration because v40 never shipped outside this
-    // PR (upstream's v40-v44 landed first; this is v45). Indexes are all
-    // `IF NOT EXISTS` so reruns are safe. Range queries
-    // (`created_at >= ? AND created_at < ?`) and the composite used by the
-    // orders list pagination both depend on the indexes.
-    //
-    // The normalization: `now()` used to write ISO-8601 (`...T10:00:00.123Z`)
-    // while rows inserted via CURRENT_TIMESTAMP defaults carry SQLite's
-    // `YYYY-MM-DD HH:MM:SS` form. Mixed formats break string range compares
-    // at day boundaries, intra-day ORDER BY, `expires_at > datetime('now')`
-    // expiry checks, and JS `new Date(ts)` parsing (the space form is read as
-    // machine-local time). Normalize every legacy ISO row to the space form
-    // once, so all rows in a column share one sortable, UTC-wall format.
-    // Only rows containing 'T' are touched; each column is verified to exist
-    // before the UPDATE so odd legacy installs cannot crash the migration.
+    // Performance indexes for large order volumes and timestamp normalization (ISO to SQLite format).
     version: 45,
     name: 'add_performance_indexes_and_normalize_timestamps',
     up: () => {
@@ -5338,19 +5292,10 @@ export function verifyPin(storedHash: string | null | undefined, inputPin: strin
   return bcrypt.compareSync(String(inputPin), storedHash);
 }
 
-// Issue #150: a voided in-progress item stays on the KDS board, struck
-// through, for this long after voiding — long enough for kitchen staff to
-// notice it's been pulled — then drops off like a served item would.
+// Duration a voided in-progress item remains visible on KDS boards before dropping off.
 export const KDS_VOIDED_ITEM_VISIBILITY_MS = 15 * 60 * 1000;
 
-/**
- * Whether a voided order item should still appear on a KDS surface. Only
- * ever called for status='voided' rows; every other status is a normal
- * KDS-visibility decision the caller already makes. The synthetic negative
- * `void_adjustment` bill line this same void flow inserts (main/routes/index.ts)
- * is never a kitchen item and callers should exclude it before this check
- * even runs, not route it through here.
- */
+/** Determines whether a voided order item should still appear on KDS surfaces. */
 export function isVoidedItemKdsVisible(voidedAt: string | null | undefined): boolean {
   if (!voidedAt) return true;
   return Date.now() - parseDbTimestamp(voidedAt).getTime() < KDS_VOIDED_ITEM_VISIBILITY_MS;
@@ -5405,10 +5350,7 @@ export function projectKdsStation(station: any, restricted: boolean, userCategor
 }
 
 /**
- * Snapshots an order item's selected addons into the normalized
- * order_item_addons table — the only place selected addons are stored (see
- * issue #125; order_items.addons was dropped in migration v28). Silently
- * skips entries missing a name.
+ * Snapshots an order item's selected addons into the order_item_addons table.
  */
 export function insertOrderItemAddons(
   dbInstance: Database.Database,
@@ -5454,11 +5396,7 @@ export function parseItemJson(item: any): any {
 }
 
 /**
- * Resolves selected addons for a batch of order_items rows from the
- * normalized order_item_addons table — the sole source of truth (see issue
- * #125; order_items.addons was dropped in migration v28). Returns new
- * objects with `addons` set to an array (empty if the item has none); does
- * not mutate the input.
+ * Resolves selected addons for a batch of order_items rows from the order_item_addons table.
  */
 export function attachEffectiveAddons<T extends { id: number }>(
   dbInstance: Database.Database,

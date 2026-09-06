@@ -102,7 +102,7 @@ export default function AppSidebar() {
   const businessType = currentTenant?.business_type || 'restaurant';
   const navItems = ALL_NAV_ITEMS.filter((item) => {
     if (item.href === '/tables' && !tablesRequired) return false;
-    // KDS disabled → hide the nav entry entirely (issue #133).
+    // Hide KDS settings navigation when KDS is disabled.
     if (item.href === '/settings?tab=kds' && !kdsEnabled) return false;
     // WhatsApp integration not enabled on this tenant → hide the nav entry.
     if (item.href === '/whatsapp' && !whatsappEnabled) return false;

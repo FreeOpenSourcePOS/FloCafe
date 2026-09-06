@@ -280,7 +280,6 @@ export default function SettingsPage() {
   const posSettings = usePosSettingsStore();
   const whatsappEnabled = posSettings.whatsappEnabled;
   const { printMethod, setPrintMethod, refreshHardwarePrinter } = usePrinterStore();
-  // Synced at the dashboard layout level now (issue #534).
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
   const locale = useLocale();
@@ -1512,8 +1511,7 @@ export default function SettingsPage() {
   const [backingUpGoogleDrive, setBackingUpGoogleDrive] = useState(false);
   const [savingGoogleDrivePrefs, setSavingGoogleDrivePrefs] = useState(false);
 
-  // Kitchen workflow toggles (issue #133) — independent on/off switches,
-  // default true to match pre-toggle always-on behavior.
+  // Kitchen workflow toggle states (defaults to enabled).
   const [kdsEnabledSetting, setKdsEnabledSetting] = useState(true);
   const [savingKdsEnabled, setSavingKdsEnabled] = useState(false);
   const [serverAppEnabledSetting, setServerAppEnabledSetting] = useState(true);
@@ -2130,10 +2128,7 @@ export default function SettingsPage() {
     }
   };
 
-  // Kitchen workflow toggles (issue #133) — saved immediately on toggle
-  // (not batched with the rest of the form) since turning KDS off also
-  // invalidates outstanding pairing tokens server-side; a stale local
-  // "unsaved" toggle would be misleading about that security-relevant effect.
+  // Saved immediately because turning KDS off invalidates pairing tokens server-side.
   const saveKdsEnabled = async (enabled: boolean) => {
     const previous = kdsEnabledSetting;
     setKdsEnabledSetting(enabled);
@@ -3160,7 +3155,7 @@ export default function SettingsPage() {
         {/* Kitchen Display — own tab under Operations */}
         <TabsContent value="kds">
           <div className="pb-6 max-w-3xl space-y-6">
-            {/* KDS on/off (issue #133) — not every business runs a Kitchen Display. */}
+            {/* Kitchen Display System enable toggle */}
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">

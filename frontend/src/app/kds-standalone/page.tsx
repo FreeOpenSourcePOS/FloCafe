@@ -9,11 +9,7 @@ import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations } from 'use-intl';
 import { useEffect, useMemo, useState } from 'react';
 
-// `/api/kds/info` 404s when kds_enabled is off (issue #133) — that's the
-// signal this route uses to make itself unreachable. Distinguishes a real
-// 404 from a network error (offline/unreachable server), which should not
-// lock the device out — that's a connectivity problem, not a disabled
-// feature, and the login form below already surfaces connection failures.
+// Check whether KDS is disabled (endpoint returns 404) without locking out network errors.
 function useKdsDisabledCheck(baseUrl: string): boolean {
   const [disabled, setDisabled] = useState(false);
   useEffect(() => {

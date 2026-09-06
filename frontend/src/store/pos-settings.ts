@@ -51,22 +51,16 @@ export interface PosSettingsState {
   billShowTableNumber: boolean;
   // Thermal printer unicode support
   printerUseUnicode: boolean;
-  // Printer firmware performs Arabic/Persian contextual shaping and
-  // bidirectional ordering (#437). Off by default so generic ESC/POS
-  // hardware never receives unshaped Persian bytes.
+  // Printer firmware Arabic/Persian shaping; disabled by default for generic hardware.
   printerArabicShaping: boolean;
   // Receipt amount formatting
   printerTrimDecimals: boolean;
-  // Kitchen workflow toggles (issue #133) — business-level settings, synced
-  // from the backend (default true, matching pre-toggle always-on behavior).
+  // Kitchen workflow toggles synced from backend settings.
   kdsEnabled: boolean;
   kotPrintingEnabled: boolean;
-  // Whether the WhatsApp integration is enabled on this tenant. Synced from
-  // the backend on auth load so the sidebar can hide the nav entry when the
-  // feature is off, and updated by the WhatsApp page after the user toggles.
+  // Whether WhatsApp messaging is enabled for this tenant.
   whatsappEnabled: boolean;
-  // Print language policies (#441). Backend-authoritative tenant settings
-  // mirrored here for renderer-side reads (renderers adopt them in #442+).
+  // Print language policies synced from backend settings.
   billLanguagePolicy: ReceiptLanguagePolicy;
   kotLanguagePolicy: KotLanguagePolicy;
   // Actions

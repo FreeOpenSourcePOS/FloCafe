@@ -38,12 +38,7 @@ interface AuthState {
   updateCurrentTenant: (updates: Partial<Tenant>) => void;
 }
 
-/**
- * Thrown when the browser refuses to persist the session token/tenant after the
- * server has already authenticated the user (issue #229). Distinct from a
- * network error so the login UI can show the right recovery message instead of
- * silently leaving a server-authenticated-but-unpersisted session.
- */
+/** Thrown when browser local storage is unavailable to persist session tokens. */
 export class StorageUnavailableError extends Error {
   constructor() {
     super('Browser storage is unavailable');

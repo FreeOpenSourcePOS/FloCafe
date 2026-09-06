@@ -253,9 +253,7 @@ export default function POSPage() {
   const shouldTakePaymentNow = billingIsPrepaid;
 
   const printKotIfEnabled = async (order: Order) => {
-    // kot_printing_enabled is coarser than auto_print_kot: when it's off, no
-    // KOT print command should go out at all, regardless of the auto-print
-    // preference (issue #133).
+    // Master kot_printing_enabled check gates both manual and automatic prints.
     if (!kotPrintingEnabled) return;
     if (!autoPrintKot) return;
 

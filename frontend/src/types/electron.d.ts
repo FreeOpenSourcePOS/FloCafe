@@ -120,16 +120,13 @@ export interface ElectronStatus {
   memory: { heapUsed: number; heapTotal: number; rss: number };
   uptime: number;
   port: number;
-  /** How main supplies the window caption controls. Optional so a newer
-   * renderer against an older main keeps native-overlay Phase 1 behavior. */
+  /** How main supplies window caption controls. */
   titleBarMode?: TitleBarMode;
-  /** Current readiness epoch of the loaded document; bind windowReady reports
-   * to it. Optional for the same older-main compatibility reason. */
+  /** Current readiness epoch of the loaded document. */
   titleBarEpoch?: number;
   /** Opaque document-scoped readiness nonce, paired with titleBarEpoch. */
   titleBarDocumentNonce?: string;
-  /** Effective palette main last applied to the overlay; optional for
-   * older-main compatibility (gh-513). */
+  /** Effective palette main last applied to the overlay. */
   effectiveTheme?: 'light' | 'dark';
 }
 

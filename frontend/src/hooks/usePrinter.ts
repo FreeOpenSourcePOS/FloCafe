@@ -233,14 +233,11 @@ export const usePrinterStore = create<PrinterState>()(
             return await executeBrowserPrint();
           }
 
-          // ESC/POS thermal path — labels are resolved from the receipt
-          // language policy through the shared PrintDocument (#444), so the
-          // requested language bundles must be in memory first.
+          // ESC/POS thermal path: load requested language bundles before resolving labels.
           const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
           const languages = opts?.languages ?? resolveBillPrintLanguages();
           const failedLanguages = await ensurePrintLanguagesLoaded(languages);
-          // A locale bundle that failed to load degrades to English labels;
-          // surface that through the established warning path (Greptile P1).
+          // Surface failed locale loads as warnings when labels fall back to English.
           const warnings: PrintWarning[] = failedLanguages.map((language) => ({
             field: 'receipt language',
             text: language,
@@ -356,22 +353,15 @@ export const usePrinterStore = create<PrinterState>()(
             ? [opts.language as Language] as const
             : resolveBillPrintLanguages();
 
-          // No backend route exists for tax-bill printing, so this path only
-          // has the WebUSB transport for 'escpos' — unlike printBill/printKot,
-          // it can't fall back to a backend hardware printer. Without a
-          // connected WebUSB device it must fall back to browser print
-          // instead of throwing "Printer is not connected" (issue #534).
-          // A startup silent-reconnect attempt may still be in flight — wait
-          // for it to settle before trusting isConnected.
+          // Fall back to browser print when no WebUSB thermal transport is connected.
+          // Await any in-flight startup reconnect before checking connection status.
           await printerService.awaitPendingReconnect();
           const noThermalTransport = !printerService.isConnected && get().printMethod === 'escpos';
           if (get().printMethod === 'browser' || noThermalTransport) {
             if (noThermalTransport) {
               toast('No thermal printer connected — printing via system print', { icon: 'ℹ️' });
             }
-            // Browser / A4 print path: render real HTML instead of decoding
-            // raw ESC/POS bytes (which would strip Persian digits/ریال to
-            // printer ASCII). Mirrors the printBill browser path.
+            // Render HTML directly for browser printing to preserve Unicode glyphs.
             const { printWebBill } = await import('@/lib/printer/web-print');
             const browserWarnings = await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
@@ -438,10 +428,7 @@ export const usePrinterStore = create<PrinterState>()(
 
       printKot: async (order, opts) => {
         set({ lastError: null });
-        // Single choke point for every KOT print path (auto + manual): when
-        // kot_printing_enabled is off, no KOT print command may ever go out
-        // (issue #133) — coarser than auto_print_kot, which only gates
-        // automatic printing on order placement.
+        // Enforce master kot_printing_enabled toggle for all automatic and manual prints.
         const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
         const tenant = useAuthStore.getState().currentTenant;
         const tenantTimezone = tenant?.timezone;
@@ -558,21 +545,13 @@ export const usePrinterStore = create<PrinterState>()(
             ] as PrintWarning[];
           }
 
-          // Browser fallback: no backend hardware printer and no WebUSB
-          // device connected — render semantic KOT HTML instead of decoding
-          // raw ESC/POS bytes (#444). The ticket is built from the order's
-          // fields with resolved labels and kernel direction annotations.
-          // Greptile P1 (PR #474): when a fixed KOT language differs from the
-          // active UI language after a cold start, its message bundle is not
-          // in the loader cache yet - load it before generating so labels
-          // don't silently fall back to English.
+          // Browser fallback: render semantic KOT HTML when hardware or WebUSB is unavailable.
+          // Ensure target KOT language bundle is loaded to avoid fallback to English labels.
           const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
           const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
           const html = generateKotHtml(orderForPrint, { paperWidth, language: kotLanguage, stationName: opts?.stationName ?? 'Kitchen', timezone: tenantTimezone ?? opts?.timezone });
           await printerService.printViaBrowser(html, paperWidth);
-          // A failed locale load degrades to English labels; surface it
-          // through the established warning path instead of staying silent
-          // (Greptile P1, PR #474).
+          // Surface failed locale loads as warnings when falling back to English labels.
           return failedLanguages.map((language) => ({
             field: 'kot language',
             text: language,
@@ -642,9 +621,7 @@ export function usePrinterStatusSync(): void {
     });
 
     store.refreshHardwarePrinter();
-    // Best-effort: re-attach to a WebUSB printer the user already granted
-    // permission for, so a reload/relaunch doesn't require re-clicking
-    // Connect before the next print (see issue #534).
+    // Re-attach to previously authorized WebUSB printer across reloads.
     printerService.tryReconnect();
 
     const unsub = printerService.onStatusChange((status, info) => {

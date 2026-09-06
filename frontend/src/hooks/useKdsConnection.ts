@@ -15,9 +15,7 @@ function kdsReconnectDelay(attempt: number): number {
   return Math.min(KDS_RECONNECT_MAX_MS, KDS_RECONNECT_BASE_MS * (2 ** attempt));
 }
 
-// 'voided' is a terminal, locked status a manager sets via the Orders page
-// PIN flow (issue #150) — it is never a target of the normal advance/revert
-// flow below, so it's deliberately excluded from STATUS_ORDER.
+// 'voided' is a locked terminal status excluded from sequential status progressions.
 export type KitchenStatus = 'pending' | 'preparing' | 'ready' | 'served' | 'voided';
 export type ConnectionMode = 'websocket' | 'rest' | null;
 

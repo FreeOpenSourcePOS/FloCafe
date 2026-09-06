@@ -123,12 +123,8 @@ export const printLabelResolver: LabelResolver = (conceptId: string, language: s
 };
 
 /**
- * Ensure every requested receipt language's messages are loaded in memory
- * before a synchronous document build (#377). Locale loads are allowed to
- * fail (offline-first: printing must never block on a message bundle), but
- * the failed language codes are RETURNED so callers can surface a warning
- * through the established print-warning path instead of silently falling
- * back to English (Greptile P1, PR #474).
+ * Loads requested receipt language message bundles into memory before building documents.
+ * Returns any failed language codes so callers can surface appropriate print warnings.
  */
 export async function ensurePrintLanguagesLoaded(languages: ResolvedPrintLanguages): Promise<PrintLanguageCode[]> {
   const outcomes = await Promise.allSettled(

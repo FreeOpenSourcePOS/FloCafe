@@ -330,13 +330,7 @@ export function requireRole(...roles: readonly string[]) {
   };
 }
 
-/**
- * Gates authenticated KDS REST endpoints behind the `kds_enabled` setting
- * (issue #133). These are only reachable by an already-authenticated
- * kitchen-staff/manager/owner session, so a clear, explicit error is fine —
- * there's no LAN-probing concern here the way there is for the pairing
- * endpoints and WebSocket upgrade (see requireKdsEnabledOr404).
- */
+/** Gates authenticated KDS REST endpoints behind the kds_enabled setting. */
 export function requireKdsEnabled(req: Request, res: Response, next: () => void) {
   if (!isKdsEnabled()) {
     return res.status(403).json({ error: 'KDS is disabled for this business' });
@@ -344,12 +338,7 @@ export function requireKdsEnabled(req: Request, res: Response, next: () => void)
   next();
 }
 
-/**
- * Gates KDS pairing/discovery surface behind the `kds_enabled` setting,
- * returning 404 instead of 403 (issue #133). A stale or misconfigured KDS
- * device on the LAN should get no confirmation the feature even exists once
- * it's been turned off.
- */
+/** Gates KDS pairing endpoints behind kds_enabled, returning 404 when disabled. */
 export function requireKdsEnabledOr404(req: Request, res: Response, next: () => void) {
   if (!isKdsEnabled()) {
     return res.status(404).json({ error: 'Not found' });

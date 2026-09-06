@@ -81,18 +81,13 @@ export default function PrintTestPage() {
           }
           break;
         case 'kot':
-          // Manual "Print KOT" test action — must be blocked here too, since
-          // the browser-print path below never goes through the printKot()
-          // choke point that enforces kot_printing_enabled (issue #133).
+          // Block manual KOT test print when KOT printing is disabled.
           if (!kotPrintingEnabled) {
             toast.error(t('failedWithReason', { message: t('kotDisabled') }));
             break;
           }
           if (printMethod === 'browser') {
-            // Semantic KOT HTML (#444): resolved labels + kernel direction
-            // annotations instead of decoded ESC/POS bytes. Preload the
-            // ticket locale so a fixed KOT language ≠ UI language still
-            // renders translated labels on cold start (mirrors usePrinter).
+            // Render semantic KOT HTML and preload ticket locale if different from UI language.
             const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
             const kotLanguage = resolveKotTicketLanguage();
             const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);

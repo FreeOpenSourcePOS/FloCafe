@@ -67,8 +67,7 @@ const STATUS_CONFIG: Record<
 };
 
 export default function PrinterStatus() {
-  // Synced at the dashboard layout level now, so status/hardwarePrinter are
-  // already fresh by the time this mounts (issue #534).
+  // Printer status and hardware configuration are synced at the dashboard layout level.
   const {
     status, deviceInfo, lastError,
     connect, disconnect, clearError,

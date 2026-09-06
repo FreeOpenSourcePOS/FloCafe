@@ -448,8 +448,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       phone: settings.business_phone || '',
       taxRegistrationNumber: settings.tax_registration_number || '',
       currency,
-      // Derive from the resolved currency before the stored symbol: legacy settings
-      // can retain a stale symbol after a currency change (issue #266).
+      // Derive from resolved currency before stored symbol to avoid stale currency symbols.
       currency_symbol: getCurrencySymbol(currency, getCountryByCode(country)?.locale) || settings.currency_symbol || currency,
       country,
       instagram_handle: settings.instagram_handle || '',
@@ -579,15 +578,13 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
 
 // POST /api/printers/print-kot — print KOT via backend (desktop app)
 router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
-  // Coarser than auto_print_kot — when this is off, no KOT print command
-  // should ever be sent, automatic or manual (issue #133).
+  // Enforce master KOT printing toggle for all automatic and manual print requests.
   if (!isKotPrintingEnabled()) {
     return res.status(403).json({ error: 'KOT printing is disabled for this business' });
   }
   try {
     const { orderId, stationName, items, useUnicode = false } = req.body;
-    // Renderer's global "Arabic/Persian shaping" setting (#437). Only an
-    // explicit boolean overrides the printer profile's declared capability.
+    // Global text shaping setting; explicit boolean overrides printer profile capability.
     const arabicShapingOverride = typeof req.body?.arabicShaping === 'boolean' ? req.body.arabicShaping : undefined;
 
     if (!orderId) {

@@ -903,18 +903,13 @@ async function handleMainWindowActivation(): Promise<void> {
   );
 
   if (action === 'show') {
-    // getRuntimeServices() only checks isServerRunning()-style non-null
-    // references, which stay true even if a server's HTTP listener died
-    // silently (none of the three attach an 'error' listener) — exactly the
-    // scenario issue #548 reported. Confirm the backend is actually
-    // answering before trusting that check to show an existing window.
+    // Confirm backend HTTP listeners are actively responding before showing window.
     const reallyHealthy = await probeBackendHealth({
       server: getServerPort(),
       kds: getKdsPort(),
       serverApp: getServerAppPort(),
     });
-    // Shutdown or update installation may have started while the probe was
-    // in flight — a stale failure must not request a relaunch mid-shutdown.
+    // Ignore probe results if shutdown or update was initiated while probing.
     if (isQuitting || isShutdownRequested()) return;
     if (!reallyHealthy) {
       requestRuntimeRelaunchOnce('activation-health-probe-failed');

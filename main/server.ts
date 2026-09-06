@@ -295,10 +295,7 @@ export function startServer(): Promise<void> {
         console.log(`[Server] HTTP server running on http://localhost:${activePort}`);
 
         if (listeningServer) {
-          // noServer + a manual 'upgrade' handler (rather than passing `server`
-          // straight to WebSocketServer) so a disabled KDS can 404 the upgrade
-          // instead of completing it — checked fresh on every request since
-          // kds_enabled can change at runtime without a restart (issue #133).
+          // Manual upgrade handler allows checking runtime KDS enablement dynamically per connection.
           const websocketServer = new WebSocketServer({ noServer: true });
           wss = websocketServer;
           setupKdsWebSocket(websocketServer);
@@ -318,9 +315,7 @@ export function startServer(): Promise<void> {
             }
 
             if (!isKdsEnabled()) {
-              // Pretend the endpoint doesn't exist rather than confirming it's
-              // just disabled — less to probe from a stale/misconfigured KDS
-              // device on the LAN (issue #133).
+              // Return 404 when disabled to avoid revealing KDS presence to LAN clients.
               socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
               socket.destroy();
               return;

@@ -1019,9 +1019,7 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
       valueToPersist = phoneRes.e164 || '';
     }
 
-    // KDS turning off → invalidate any outstanding pairing tokens. Without
-    // this, a token minted while KDS was on would still let a device pair
-    // in after it's been switched off (issue #133).
+    // Invalidate outstanding pairing tokens when KDS is disabled.
     if (req.params.key === 'kds_enabled') {
       const wasEnabled = getAllSettings(db).kds_enabled !== 'false';
       const turningOff = boolFlag(value) === 'false';

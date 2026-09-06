@@ -35,9 +35,7 @@ function getKdsUserCategoryIds(db: ReturnType<typeof getDatabase>, req: Request)
   return hasRole(user.role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(user.category_ids);
 }
 
-// KDS disabled → 404 the pairing surface, checked before the role gate below
-// so a request from an authenticated-but-wrong-role user doesn't leak that
-// the route exists either (issue #133).
+// Return 404 on pairing endpoints when KDS is disabled before checking roles.
 router.use('/pairing', requireKdsEnabledOr404);
 
 router.use(requireRole(...ROLE_ACCESS.kitchen));

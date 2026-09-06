@@ -728,10 +728,10 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   assert('renders UPI payment', text.includes('UPI') && text.includes('₹450.00'));
   assert('renders tax registration number', text.includes('TAXID-0001'));
   assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flopos.com'));
-  assert('long product name wraps cleanly onto multiple lines', text.includes('Very Long Product Name That') && text.includes('Truncated By Formatter'));
-  assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x00]));
-
   const rowLines = visiblePreview(buf, 48).split('\n');
+  const longRowIndex = rowLines.findIndex((l) => l.includes('Very Long Product Name That'));
+  assert('long product name wraps cleanly onto multiple lines', longRowIndex >= 0 && rowLines[longRowIndex + 1]?.includes('Truncated By Formatter'));
+  assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x00]));
   const cheeseLine = rowLines.find((l) => l.startsWith('Cheeseburger') && l.includes('₹540'));
   assert('item row columns are aligned (no smashed qty)', !!cheeseLine && !/Cheeseburger\d/.test(cheeseLine), cheeseLine);
   assert('item row right-edge total lines up at col 48', !!cheeseLine && cheeseLine.length <= 48);

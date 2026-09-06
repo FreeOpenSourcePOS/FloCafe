@@ -217,10 +217,8 @@ export async function detectConnectedPrinters(signal?: AbortSignal): Promise<Pri
   }
 
   if (isMasBuild) {
-    // The App Sandbox blocks the `lpstat`/`lpoptions` shell-outs detectMacOSPrinters
-    // relies on, but CUPS's own local IPP server (127.0.0.1:631, always listening)
-    // is reachable with the network-client entitlement already granted — see
-    // ipp-client.ts for why this works where shelling out doesn't.
+    // In sandboxed MAS build, access local CUPS daemon via loopback IPP
+    // instead of shelling out to lpstat/lpoptions.
     return process.platform === 'darwin' ? await detectPrintersViaIpp(signal) : printers;
   }
 
@@ -336,12 +334,7 @@ async function detectPrintersViaIpp(signal?: AbortSignal): Promise<PrinterInfo[]
       }));
     }
 
-    // CUPS-Get-Default reports the server-level default, which most desktop
-    // installs never set — the "default" shown in System Settings/`lpstat -d`
-    // is a user-level lpoptions preference IPP has no operation for, and it
-    // is outside a sandboxed app's readable container. A single configured
-    // printer is the common case for a small POS setup and unambiguous, so
-    // fall back to it rather than leaving every printer's isDefault false.
+    // When CUPS-Get-Default is unset, fall back to the single configured printer.
     if (!defaultName && printers.length === 1) {
       printers[0].isDefault = true;
     }
@@ -459,11 +452,7 @@ async function isMacOSDefaultPrinter(name: string, signal?: AbortSignal): Promis
   }
 }
 
-// wmic.exe was removed from Windows 11 24H2+, so it can no longer be relied
-// on to enumerate printers. Get-CimInstance talks to the same WMI class
-// (Win32_Printer) through the still-supported CIM cmdlets, and -EncodedCommand
-// (rather than a .ps1) survives a GPO-locked ExecutionPolicy the same way the
-// raw-print helper below does.
+// Enumerate printers via Get-CimInstance (Win32_Printer) using -EncodedCommand.
 const DETECT_WINDOWS_PRINTERS_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 try {
@@ -775,11 +764,7 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
   }
 }
 
-/**
- * Decide whether a paid bill contains a payment method selected for drawer
- * opening. The setting is intentionally evaluated here, immediately before
- * dispatch, so every receipt path shares the same backend-authoritative rule.
- */
+/** Determine whether paid bill contains a payment method configured to open cash drawer. */
 function shouldPulseForPayment(bill: any): boolean {
   const configured = getSettingValue('cash_drawer_pulse_methods');
   let methods: string[] = ['cash', 'card'];
@@ -787,10 +772,7 @@ function shouldPulseForPayment(bill: any): boolean {
     const parsed = configured ? JSON.parse(configured) : methods;
     if (Array.isArray(parsed)) {
       const valid = parsed.filter((value): value is string => typeof value === 'string');
-      // A non-empty array that contains no valid strings (corrupt/legacy
-      // value) restores the safe defaults; an intentionally empty array —
-      // every method deselected — stays empty. Mirrors the settings page's
-      // hydration of the same setting.
+      // Non-empty array without valid strings restores defaults; empty array stays empty.
       methods = parsed.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
     }
   } catch { /* Keep the safe cash/card defaults. */ }
@@ -832,9 +814,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const tzOptions = { timeZone: timezone };
 
     const warnings: PrintWarning[] = [];
-    // A request-body override (from the renderer's global shaping setting)
-    // wins over the profile default so the merchant's explicit choice (#437)
-    // applies even when the matched profile leaves the flag unset.
+    // Request-body shaping override takes precedence over profile default.
     const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
     const nativeCapabilities = nativeFallbackCapabilities(capabilities);
     let data: Buffer;
@@ -893,13 +873,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
   }
 }
 
-/**
- * Reports a print failure on both telemetry tiers: an anonymous, aggregate
- * Tier 1 event (specs/floadmin.md § 6.1) and, only where the merchant has
- * given the separate opt-in, a Tier 2 store-attributed diagnostic event
- * (§ 6.2). Both are best-effort and must never affect the caller's result —
- * a slow or unreachable telemetry endpoint cannot make checkout wait.
- */
+/** Report print failure via telemetry tiers (best-effort, non-blocking). */
 function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void {
   let connectionType = 'unknown';
   try {
@@ -941,9 +915,7 @@ function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void 
       occurred_at: new Date().toISOString(),
     });
   } catch (err) {
-    // Never let a diagnostics-plumbing error (e.g. a mid-migration DB) turn a
-    // printer failure into an unhandled rejection — the caller must still get
-    // back the real PrintResult so the cashier sees the actual printer error.
+    // Ignore telemetry errors to avoid masking the real printer failure.
     console.error('[Printer] reportDiagnostic failed (non-fatal):', err);
   }
 }
@@ -1090,9 +1062,7 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   const profile = resolvePrinterProfile(printer);
   const columns = getColumnsForPrinter(printer, profile);
   const warnings: PrintWarning[] = [];
-  // A request-body override (from the renderer's global shaping setting)
-  // wins over the profile default (#437); absent override keeps the
-  // profile's declared capability.
+  // Request-body shaping override takes precedence over profile default.
   const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
   const nativeCapabilities = nativeFallbackCapabilities(capabilities);
   const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, nativeCapabilities.shaping.arabic, language, additionalLanguage, nativeCapabilities);
@@ -1355,11 +1325,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
 
   const lang = normalizePrintLanguage(language);
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
-  // Structured selection identity (#447): the persisted bill_template value
-  // may be a structured { source, id } JSON string or any legacy bare value.
-  // Merchant templates resolve through the document pipeline; pack templates
-  // keep their compliance renderer; unknown values fall through to the core
-  // classic/compact name matching below (unchanged behavior).
+  // Merchant templates resolve through document pipeline; pack templates use compliance renderer.
   const selection = parseBillTemplateSelection(template);
   const templateCapabilities = selection?.source === 'pack' || selection?.source === 'merchant'
     ? capabilities && { ...capabilities, raster: { ...capabilities.raster, enabled: false } }
@@ -1472,10 +1438,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
   const hasTax = Number(bill.tax_amount) !== 0
     || taxComponents.some((component) => component.amount !== 0);
-  // Pack-supplied strings (#445 review): sanitized against reserved printer
-  // tokens ({CUT}/{FEED}/{INIT} and styling braces) and clamped to the selected
-  // width profile before they reach the receipt builder; the localized resolver
-  // fallback applies the same treatment.
+  // Sanitize pack strings against reserved tokens and clamp to selected width profile.
   const title = hasTax
     ? fitTemplateLabel(normalize(String(payload?.header?.taxTitleWhenTaxPresent || '')), cols) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'taxInvoice', lang)), cols)
     : fitTemplateLabel(normalize(String(payload?.header?.titleWhenTaxAbsent || '')), cols) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'invoice', lang)), cols);
@@ -1520,10 +1483,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   }
 
   lines.push(dash);
-  // Row labels share their line with a right-aligned amount, so they are
-  // clamped to the width profile minus the same 12-column amount reserve the
-  // payment-method rows already use; title/footer labels clamp to the full
-  // width (#445 review F2).
+  // Row labels share line with right-aligned amount; clamped with 12-column reserve.
   const rowLabelWidth = Math.max(8, cols - 12);
   if (payload?.totals?.showSubtotal !== false) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'subtotal', lang)), rowLabelWidth);
@@ -1543,9 +1503,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)), rowLabelWidth);
     pushFinancialLines(financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
-  // `chargeRows` is an explicit capability declaration. Its order is not
-  // presentation authority: country/legal rows remain in this stable order,
-  // and zero-valued persisted charges stay absent.
+  // chargeRows capability declaration preserves stable country/legal row order.
   const chargeAmounts: Record<TemplateChargeRowId, number> = {
     serviceCharge: Number(bill.service_charge) || 0,
     deliveryCharge: Number(bill.delivery_charge) || 0,
@@ -1558,10 +1516,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
   }
   lines.push(bar);
-  // Label precedence (#445): the author's structural literal (e.g.
-  // totals.grandTotalLabel) is most specific and wins first; the additive
-  // payload-root `labels` map overrides next; otherwise the built-in default
-  // resolves localized through the canonical print-labels catalog (#440).
+  // Label precedence: template literal wins, then labels map, then localized catalog.
   const totalLabel = fitTemplateLabel(normalize(String(payload?.totals?.grandTotalLabel || '')), rowLabelWidth) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'total', lang)), rowLabelWidth);
   pushFinancialLines(financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
 
@@ -1602,10 +1557,7 @@ export function appendPoweredByFooter(lines: string[]): void {
   lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
 }
 
-/**
- * Compact thermal receipt (#443): builds a PrintDocument from normalized
- * print data and renders it through the document pipeline (document-compact).
- */
+/** Compact thermal receipt: builds PrintDocument and renders via document-compact pipeline. */
 export function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
   const result = renderCompactReceiptViaDocument(order, bill, biz, {
     columns: cols,
@@ -1621,11 +1573,7 @@ export function formatCompactReceipt(order: any, bill: any, biz: any, cols: numb
   return result.data;
 }
 
-/**
- * Classic thermal receipt (#443): builds a PrintDocument from normalized
- * print data and renders it through the document pipeline (document-classic).
- * Token-line emission stays an implementation detail of the ESC/POS renderer.
- */
+/** Classic thermal receipt: builds PrintDocument and renders via document-classic pipeline. */
 export function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
   const result = renderClassicReceiptViaDocument(order, bill, biz, {
     columns: cols,
@@ -1799,10 +1747,7 @@ function truncateCell(text: string, length: number, ellipsis: boolean): string {
 }
 
 // Item row layout: [ name (nameLen) ][ qty (4) ][ amount right-aligned (amtLen) ].
-// Item rows keep [ name ][ qty ][ amount ] inline when the value fits; an
-// oversized amount continues on full-width lines. Tax components belong in
-// the document-level breakdown, not a redundant per-item column derived from
-// deprecated product tax fields.
+// Inline layout with overflow handled on full-width lines.
 export function itemNameWidth(cols: number, amtLen: number): number {
   return Math.max(1, cols - 4 - amtLen);
 }
@@ -1944,10 +1889,7 @@ export function truncateShapedLine(text: string, length: number, arabicShaping: 
   return arabicShaping && hasArabicScript(normalizedText) ? truncate(normalizedText, Math.max(1, length), language, capabilities) : normalizedText;
 }
 
-/**
- * Receipt label language resolution (#440). Unknown or ungenerated languages
- * fall back to English so receipts always render real labels.
- */
+/** Resolve receipt label language; falls back to English for unknown languages. */
 export function normalizePrintLanguage(language?: string): string {
   return language && isGeneratedPrintLanguage(language) ? language : 'en';
 }
@@ -2022,11 +1964,7 @@ export function pushCenteredWrapped(lines: string[], text: string, cols: number,
   for (const line of wrapText(normalized, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
-/**
- * Kitchen order ticket (#443): builds a KotDocument (single-language policy
- * resolved by the caller through the kernel) and renders it via the document
- * pipeline (document-kot).
- */
+/** Kitchen order ticket: builds KotDocument and renders via document-kot pipeline. */
 export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, capabilities?: ThermalPrinterCapabilities): Buffer {
   const lang = normalizePrintLanguage(language);
   const result = renderKotViaDocument(order, items, stationName, {
@@ -2071,9 +2009,7 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     '{CUT}',
   ];
   if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang });
-  // The diagnostic raster probe is capability-gated independently from text
-  // shaping. Keep the selected profile's shaping fact explicit so a raster
-  // profile cannot accidentally pass unsupported Arabic through the text leg.
+  // Explicit shaping capability prevents raster profile passing unshaped Arabic to text.
   const textData = buildEscPos(lines.slice(0, -1), false, {
     cutMode,
     language: lang,
@@ -2105,16 +2041,10 @@ export function maskPhoneOnReceipt(phone: string): string {
   return 'x'.repeat(phone.length - 4) + phone.slice(-4);
 }
 
-// Resolves the currency symbol into the exact text that will be printed,
-// padded to a minimum 3-column slot (leading spaces for shorter symbols/codes).
-// symbol). Must run BEFORE rightAlign() computes padding — swapping the
-// symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
-// pushes trailing digits onto the next line.
+// Resolves currency symbol into printed text padded to minimum 3-column slot.
+// Must run before rightAlign() computes padding.
 export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capabilities?: ThermalPrinterCapabilities, preserveConfiguredSymbol = false, currencyCode?: string): string {
-  // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS printers
-  // cannot shape that token, so normalize this known currency even when the
-  // caller requests Unicode. Preserve the existing useUnicode behavior for
-  // every other currency value.
+  // Normalize fa-IR IRR token to avoid unshaped output on generic ESC/POS printers.
   const normalizedSymbol = preserveConfiguredSymbol ? symbol : (symbol === 'ریال' ? 'IRR' : symbol);
   if (preserveConfiguredSymbol) return normalizedSymbol;
   const isAsciiSafe = /^[\x00-\x7F]+$/.test(normalizedSymbol);
@@ -2136,11 +2066,7 @@ export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capab
   return prefix.length >= 3 ? prefix : ' '.repeat(3 - prefix.length) + prefix;
 }
 
-// Arabic (incl. Persian) Unicode blocks: Arabic, Arabic Supplement, Arabic
-// Extended-A, Arabic Presentation Forms-A/B. These scripts require contextual
-// shaping and bidirectional ordering that generic ESC/POS firmware does not
-// implement — the selected profile capability (or legacy request override)
-// must declare Arabic shaping before they are passed through unchanged.
+// Arabic/Persian scripts require contextual shaping; allowed only when profile declares support.
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
 const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
 const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;
@@ -2162,10 +2088,7 @@ export function appendCashDrawerPulse(data: Buffer): Buffer {
   return Buffer.concat([data, Buffer.from([0x1B, 0x70, 0x00, 0x19, 0xFA])]);
 }
 
-/**
- * Build ESC/POS bytes and classify unsupported financial rows for the receipt
- * transport guard. Receipt renderers mark amount-bearing lines with the
- */
+/** Build ESC/POS bytes and classify unsupported financial rows for transport guard. */
 export interface RasterLineUnit {
   readonly lineIndex: number;
   readonly lineCount?: number;
@@ -2296,9 +2219,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const textWithoutSupportedCurrency = printableLine.replace(CURRENCY_TOKEN_RE, '');
     const selectedCodePage = selectThermalCodePage(textWithoutSupportedCurrency, capabilities);
     if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
-      // Allow Arabic/Persian script through only when the printer profile
-      // explicitly declares Arabic shaping support AND the line contains no
-      // other non-ASCII script. Otherwise skip it — never emit unshaped text.
+      // Emit Arabic/Persian script only when profile declares shaping support and line has no other non-ASCII.
       const arabicOnly = capabilities.shaping.arabic
         && hasArabicScript(printableLine)
         && !/[^\x00-\x7F]/.test(
@@ -2541,9 +2462,7 @@ export async function printViaUSB(data: Buffer, printerName?: string, signal?: A
   return { ok: false, detail: `Unsupported platform: ${process.platform}` };
 }
 
-// MAS-build counterpart to printViaCups: submits the same raw ESC/POS bytes
-// to the same CUPS queue, over local IPP instead of shelling out to `lp`
-// (blocked by the App Sandbox). See ipp-client.ts for the rationale.
+// MAS-build counterpart to printViaCups: submits raw bytes to CUPS via local IPP.
 async function printViaLocalIpp(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
   if (!printerName) {
     return { ok: false, detail: 'No printer configured' };
@@ -2559,9 +2478,7 @@ async function printViaLocalIpp(data: Buffer, printerName?: string, signal?: Abo
     }
   } catch (err) {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
-    // Mirrors describeCupsQueueProblem: an unreachable/unknown queue check
-    // should not itself block the print — let Print-Job below surface the
-    // real failure if there is one.
+    // Mirrors describeCupsQueueProblem: unreachable queue check does not block print.
     console.log(`[Printer] IPP pre-flight check failed for "${printerName}":`, err);
   }
 
@@ -2580,14 +2497,7 @@ async function printViaLocalIpp(data: Buffer, printerName?: string, signal?: Abo
   }
 }
 
-// `lp` exits 0 as soon as CUPS accepts the job into the queue, so a queue that
-// is disabled — which is what CUPS does once the backend fails, e.g. after the
-// printer is unplugged — would otherwise be reported to the cashier as a
-// successful print. Mirrors the GetPrinter pre-flight on the Windows path.
-//
-// Returns a human-readable problem, or null to proceed. Anything unexpected
-// (no CUPS, unknown queue) returns null so `lp` still gets its chance: this
-// check only ever turns a silent failure into a visible one.
+// Pre-flight check whether CUPS queue is disabled; returns problem description or null.
 async function describeCupsQueueProblem(printerName?: string, signal?: AbortSignal): Promise<string | null> {
   if (!printerName) return null;
 
@@ -2645,19 +2555,8 @@ async function printViaCups(data: Buffer, printerName?: string, signal?: AbortSi
   }
 }
 
-// Raw ESC/POS on Windows has to bypass the print driver: node-thermal-printer's
-// `printer:<name>` interface and PowerShell's `Start-Process -Verb PrintTo` both
-// hand the document to a driver that must already understand it, and a thermal
-// printer's driver does not. Writing to the spooler with datatype RAW is the
-// documented way to get bytes through untouched.
-//
-// Kept as C# compiled at run time by Add-Type rather than a native addon so the
-// app stays free of per-Electron-ABI prebuilds. Uses the *W entry points so
-// printer names outside ASCII survive marshalling.
-//
-// NOTE: no backslash escapes, backticks, or `${` may appear in this source — it
-// is embedded in a TS template literal and then in a single-quoted PowerShell
-// here-string, and both would rewrite it.
+// Write raw ESC/POS directly to Windows spooler via runtime-compiled C# (Add-Type).
+// NOTE: no backslash escapes, backticks, or template expressions allowed in source.
 const WINSPOOL_HELPER_SOURCE = `
 using System;
 using System.Runtime.InteropServices;
@@ -2791,11 +2690,8 @@ public static class FloRawPrinter {
 }
 `;
 
-// Delivered as -EncodedCommand rather than a .ps1: ExecutionPolicy governs script
-// files only, and a GPO-set policy silently overrides -ExecutionPolicy Bypass, so
-// a script file would fail on exactly the managed machines a POS runs on.
-// The printer name and payload path travel in the child environment, so neither
-// is ever parsed as script text.
+// Executed as -EncodedCommand to bypass ExecutionPolicy restrictions on script files.
+// Arguments passed via environment variables to avoid script parsing issues.
 const WINSPOOL_HELPER_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 try {

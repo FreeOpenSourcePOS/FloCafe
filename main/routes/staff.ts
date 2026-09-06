@@ -1,9 +1,4 @@
-/**
- * /api/staff  — alias for /api/users, kept for frontend compatibility.
- * All user records live in the `users` table.
- * Roles: owner | manager | cashier | server | chef
- * The chef role is used by KDS displays.
- */
+/** Staff management API (alias for /api/users). */
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
@@ -222,9 +217,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
         ? (hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null)
         : member.pin_hash;
 
-    // Revoke this user's outstanding sessions only when a credential actually
-    // changed (not on a bare name/email/role edit) — matches auth.ts's
-    // password/change and recover-password (#173).
+    // Revoke outstanding sessions only when credentials actually change.
     const credentialsChanged = hashedPassword !== member.password || hashedPin !== member.pin_hash;
     const tokensValidAfter = credentialsChanged ? now() : member.tokens_valid_after;
 
@@ -264,11 +257,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
   }
 });
 
-// ── Activate / Deactivate ─────────────────────────────────────────────────────
-// Staff are never hard-deleted — orders.user_id and print_logs.user_id reference
-// them, and losing the row would orphan historical order/print records.
-// Deactivating is the only removal path.
-
+// Staff are deactivated rather than hard-deleted to preserve order and print log references.
 router.post('/:id/deactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();

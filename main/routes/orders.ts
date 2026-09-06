@@ -67,10 +67,7 @@ const PIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 export function checkPinRateLimit(key: string): boolean {
   const now = Date.now();
-  // Bound the in-memory table. Sweep expired entries once it grows past a
-  // threshold so abandoned keys cannot accumulate without limit
-  // (GHSA-9jjq-2fmw-x3mw). The keys are per-client/per-action, so the map is
-  // naturally small, but this keeps a long-running process from drifting.
+  // Sweep expired rate limit entries when map grows beyond threshold.
   if (pinAttempts.size > 500) {
     for (const [k, v] of pinAttempts.entries()) {
       if (now > v.resetAt) pinAttempts.delete(k);
@@ -104,14 +101,7 @@ function syncCustomerTagCounts(db: any, customerId: string, items: { product_id:
     .run(JSON.stringify(counts), now(), customerId);
 }
 
-/**
- * Resolves and validates a submitted order item's add-ons against the catalog
- * (GHSA-jmxx-39wh-4cjx). Client-supplied name/price are never trusted: every
- * add-on must resolve by ID to an active catalog add-on whose group is linked
- * to the product (via addon_group_product). Returns the canonical add-on list
- * (catalog id/name/price + client quantity) used for both subtotal and the
- * order_item_addons snapshot.
- */
+/** Resolves and validates item add-ons against catalog to enforce authoritative pricing. */
 function resolveItemAddons(
   db: ReturnType<typeof getDatabase>,
   productId: string,
@@ -201,11 +191,7 @@ router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Req
       wheres.push('type = ?');
       params.push(req.query.type);
     }
-    // #208: `today` is the UTC day, as a range filter (was UTC date() that
-    // wrapped the column and blocked `idx_orders_created_at`). `start_date` /
-    // `end_date` add a range filter so the UI can actually load older pages
-    // — combined with the cursor, this is what gives us real pagination
-    // instead of "latest 50 forever".
+    // Filter by UTC day or date range across indexed created_at column.
     if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
       const [s, e] = utcDayBounds(utcTodayDate());
       wheres.push('created_at >= ? AND created_at < ?');
@@ -242,9 +228,7 @@ router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Req
     }
 
     const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
-    // #208: cap page size even when clients omit per_page (the original
-    // "unbounded" default made GET /orders on the tables page load the entire
-    // active-order history with the N+1 below).
+    // Limit per-page items with default 50 and maximum 500.
     const requestedPerPage = req.query.per_page ? parseInt(req.query.per_page as string, 10) : NaN;
     const perPage = Number.isInteger(requestedPerPage) && requestedPerPage > 0
       ? Math.min(requestedPerPage, 500)
@@ -262,8 +246,7 @@ router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Req
     const pageOrders = hasMore ? orders.slice(0, perPage) : orders;
     const nextCursor = hasMore ? pageOrders[pageOrders.length - 1].id : null;
 
-    // #208: replace the per-order N+1 (5 queries × N) with one IN() per
-    // relation, then assemble. Measured ~300+ queries per poll → ~6.
+    // Batch hydrate relations for page orders.
     const ordersWithRelations = batchHydrateOrders(db, pageOrders);
 
     res.json({
@@ -276,17 +259,10 @@ router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Req
   }
 });
 
-/**
- * Batch the relations (items+addons, table, customer, bill+loyalty) for a
- * page of orders into 5 IN() queries instead of N per-order prepared calls.
- * Used by GET /orders and kept here so the orders route owns its own data
- * shape. #208
- */
+/** Batches order relations (items, table, customer, bill) into IN queries. */
 function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   if (orders.length === 0) return [];
-  // Normalize JSON text columns (tax_breakdown/tax_snapshot on orders and
-  // items) so the list endpoint matches GET /orders/:id. parseRowJson is
-  // idempotent, so the /:id path passing an already-parsed row is fine.
+  // Normalize JSON text columns on orders and items.
   const parsedOrders = orders.map(parseRowJson);
   const ids = parsedOrders.map((o) => o.id);
   const tableIds = Array.from(new Set(parsedOrders.map((o: any) => o.table_id).filter(Boolean)));
@@ -294,9 +270,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
 
   const orderIdsCsv = `(${ids.map(() => '?').join(',')})`;
   const itemsRows = db.prepare(`SELECT * FROM order_items WHERE order_id IN ${orderIdsCsv} ORDER BY order_id, id`).all(...ids).map(parseItemJson);
-  // #208: a single call to attachEffectiveAddons batches all addons across
-  // all items into one IN() query against order_item_addons. Re-group the
-  // result back by order_id for the per-order payload below.
+  // Attach resolved addons and regroup by order_id.
   const itemsWithAddons = attachEffectiveAddons(db, itemsRows as any[]);
   const itemsByOrder = new Map<number, any[]>();
   for (const it of itemsWithAddons) {
@@ -394,9 +368,7 @@ router.get('/:id', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: 
       return res.status(403).json({ error: 'Servers can only view their own orders' });
     }
 
-    // #208: collapse the per-order N+1 (5 queries: items/addons/table/customer/bill/loyalty)
-    // into the same batchHydrateOrders used by the list endpoint. Previously
-    // 6 prepared calls per single detail click.
+    // Hydrate relations using batchHydrateOrders.
     const [hydrated] = batchHydrateOrders(db, [order]);
     res.json({ order: hydrated });
   } catch (error: any) {
@@ -409,20 +381,13 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
   try {
     const body = req.body || {};
     const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id } = body;
-    // Settings supplies only service-charge tax treatment. The explicit amount
-    // is accepted once here, validated, and then carried by the order/bill;
-    // missing means zero until a product decision defines an automatic policy.
+    // Carries optional service charge without automatic calculation policy.
     const idempotencyKey = orderIdempotencyKey(req);
     const idempotencyUserId = String((req as any).user.userId);
     const requestHash = idempotencyKey
       ? createHash('sha256').update(JSON.stringify(body)).digest('hex')
       : null;
-    // Always the authenticated caller, never client-supplied — trusting a
-    // client-sent user_id would let staff spoof order attribution, and the
-    // frontend has in fact never sent one, so every order got user_id=NULL.
-    // That silently broke servers' own order visibility (GET /orders scopes
-    // servers to `user_id = <their id>`, which NULL can never match) and any
-    // per-staff sales attribution.
+    // Always use authenticated user ID to ensure correct server visibility and attribution.
     const authenticatedUserId = (req as any).user.userId;
 
     if (!items || items.length === 0) {
@@ -559,9 +524,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
 
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
-        // item.discount_amount is intentionally ignored here — discounts are only
-        // applied through the dedicated PATCH discount endpoints, which enforce
-        // discount_mode/max_percentage/max_amount/approval (vuln-0002).
+        // Item discounts are applied via dedicated discount routes, not creation.
         const itemDiscount = 0;
 
         // Validate quantity and price
@@ -699,9 +662,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       return res.status(403).json({ error: 'Servers can only modify their own orders' });
     }
 
-    // Replay before any mutable-order guard. A response-loss retry must return
-    // the committed result even if the order was split or its validation state
-    // changed after the original append.
+    // Return stored idempotent replay if already processed.
     if (idempotencyKey && requestHash) {
       const replayResponse = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash);
       if (replayResponse) return res.json(replayResponse);
@@ -726,9 +687,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
     };
 
     const result = withTxn(() => {
-      // Re-fetch and re-validate under the transaction lock: another request (e.g. a
-      // cashier completing/cancelling the order) can race the checks above, which run
-      // before this lock is acquired (#175).
+      // Re-fetch and re-validate order state inside transaction to prevent concurrency races.
       const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
@@ -737,9 +696,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
       }
 
-      // Re-check idempotency under the transaction lock in case the early
-      // lookup raced the first request. This must remain before mutable-order
-      // guards so a committed append always has a replay path.
+      // Re-check idempotency under transaction lock.
       if (idempotencyKey && requestHash) {
         const replayResponse = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash);
         if (replayResponse) return { replayResponse };
@@ -784,9 +741,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
 
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
-        // item.discount_amount is intentionally ignored here — discounts are only
-        // applied through the dedicated PATCH discount endpoints, which enforce
-        // discount_mode/max_percentage/max_amount/approval (vuln-0002).
+        // Item discounts are applied via dedicated discount routes, not creation.
         const itemDiscount = 0;
 
         // Validate quantity and price
@@ -950,9 +905,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
     // reason is optional for cancellation
 
     const db = getDatabase();
-    // Keep the pre-transaction lookup limited to not-found reporting. All
-    // order/item-dependent authorization and policy decisions are repeated
-    // from currentOrder inside the authoritative transaction below.
+    // Validate order existence before beginning authoritative transaction.
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -1016,9 +969,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
         }
 
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-        // Key is per-client/per-action, deliberately NOT per-order: a caller
-        // must not get a fresh attempt window by rotating order identifiers
-        // (GHSA-9jjq-2fmw-x3mw).
+        // Rate-limit cancellation attempts per client.
         const rateLimitKey = `pin:${clientIp}:order-cancel`;
         if (!checkPinRateLimit(rateLimitKey)) {
           throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
@@ -1281,11 +1232,9 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       currency: getTenantCurrency(),
       taxes_enabled: getSettingValue('taxes_enabled') === 'true',
     };
-    // BUG #6 FIX: Wrap discount + tax + bill sync in a transaction
+    // Wrap discount, tax recalculation, and bill sync in transaction.
     const result = withTxn(() => {
-      // Re-fetch and re-validate under the transaction lock: another request (e.g. a
-      // concurrent item add/void, or the order being completed/cancelled) can race the
-      // checks above and change status/subtotal before this lock is acquired (#175).
+      // Re-fetch and re-validate under transaction lock to prevent races with concurrent edits.
       const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
@@ -1312,9 +1261,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         discountAmount = Number(discountAmount.toFixed(decimals));
       }
 
-      // Always recalculate tax from item-level data (not by scaling the already-discounted
-      // order.tax_amount from the DB), otherwise repeated discount updates compound the
-      // reduction each time this endpoint is called.
+      // Recalculate tax from item-level data to avoid compounding on repeated discount edits.
       const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(req.params.id) as any[];
       let freshTax = 0;
       let exclusiveTax = 0;
@@ -1529,10 +1476,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
         newTaxSnapshotJson, taxResult.tax_type, newTotal, now(), req.params.itemId,
       );
 
-      // Update order totals (preserve existing order-level discount)
-      // Note: status != 'cancelled' — a cancelled item's tax must not re-enter
-      // the order total here, same filter every other recompute site in this
-      // file already uses (BUG #3 FIX above, index.ts cancel/restore below).
+      // Update order totals excluding cancelled, voided, or refunded items.
       const allItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')").all(req.params.id) as any[];
       let orderSubtotal = 0;
       let orderTax = 0;

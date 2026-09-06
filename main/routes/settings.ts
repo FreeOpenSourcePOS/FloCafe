@@ -86,9 +86,7 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   currency_display: 'rial',
   number_digits: 'locale',
   calendar: 'locale',
-  // No row until the user first changes it; 'system' is the renderer's own
-  // default (frontend/src/store/theme.ts), so a GET before that point should
-  // return it rather than 404.
+  // Returns 'system' if not yet explicitly saved by the user.
   theme_mode: 'system',
 };
 
@@ -114,9 +112,7 @@ function boolFlag(value: unknown): string | undefined {
   return value ? 'true' : 'false';
 }
 
-// Country-scoped locale display preferences (#390). A region without declared
-// localeOptions supports only the neutral default for each group: canonical
-// currency unit (rial), locale digits, and locale calendar.
+// Neutral fallback preferences for locales without specific options.
 const NEUTRAL_LOCALE_PREFERENCES = {
   currency_display: 'rial',
   number_digits: 'locale',
@@ -146,9 +142,7 @@ function resolveStoredLocalePreference(key: LocalePreferenceKey, stored: string 
   return NEUTRAL_LOCALE_PREFERENCES[key];
 }
 
-// cloud_sync_enabled/cloud_orders_enabled/cloud_reports_enabled/cloud_command_polling_enabled
-// mirror FloAdmin's own `stores` table and are read elsewhere (cloud-sync.ts) as a strict
-// '1' check, not boolFlag()'s 'true'/'false' — keep this route's writes on that convention.
+// Flags stored as strict '1'/'0' to match cloud database conventions.
 function bool01Flag(value: unknown): string | undefined {
   const flag = boolFlag(value);
   return flag === undefined ? undefined : flag === 'true' ? '1' : '0';
@@ -188,9 +182,7 @@ function businessShape(s: Record<string, string>) {
     currency_display: resolveStoredLocalePreference('currency_display', s.currency_display, s.country || 'IN'),
     number_digits: resolveStoredLocalePreference('number_digits', s.number_digits, s.country || 'IN'),
     calendar: resolveStoredLocalePreference('calendar', s.calendar, s.country || 'IN'),
-    // Informational only — the active country pack's format if it declares
-    // one, else the static main/countries.ts fallback, else null. Never
-    // blocks the save; the UI uses this to show a non-blocking warning.
+    // Non-blocking informational tax format description for the UI.
     tax_id_format: resolveTaxIdFormat(s.country || 'IN'),
   };
 }
@@ -237,9 +229,7 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     const effectiveCountry = country || currentSettings.country || 'IN';
     const effectiveCurrency = normalizedCurrency || currentSettings.currency || 'INR';
 
-    // Validate explicitly supplied locale preferences against the effective
-    // country's declared options, and normalize stale legacy values (e.g. a
-    // Toman/Persian preference left behind by an IR -> US transition).
+    // Validate locale preferences against country options, normalizing unsupported legacy values.
     const localeUpdates: Record<string, string> = {};
     for (const { key, submitted } of [
       { key: 'currency_display', submitted: currency_display },
@@ -287,9 +277,7 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
       ...localeUpdates,
-      // This form PUTs every field, so a merchant saving their phone number
-      // re-sends the country untouched. Only a country that actually changed
-      // is evidence anyone chose it.
+      // Only mark country as user-confirmed if it actually changed in this submission.
       ...countryConfirmationPatch(country, currentSettings.country, req.body.country_selected),
     });
     cloudSync.refreshRegistrationProfile();
@@ -455,10 +443,7 @@ router.put('/discount', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
 // ─── KDS settings (must come BEFORE /:key wildcard) ─────────────────────────
 
-// The public `/api/kds/info` already exposes `kds_default_view`, but it lives
-// on the KDS server (different origin) and isn't reachable from the
-// dashboard's settings page. This is the dashboard-side mirror — read-only
-// from the client's perspective; the PUT below is the only mutator.
+// Mirrors KDS default view for the dashboard settings page.
 router.get('/kds', (_req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
@@ -507,9 +492,7 @@ function orderNumberingShape(s: Record<string, string>) {
   };
 }
 
-// Letters and numbers only: the "-" separator between prefix, period segment,
-// and sequence is always inserted automatically, so allowing "-"/"_" here let
-// a saved prefix like "FAC-" collide with it and print as "FAC--20260101-0001".
+// Alphanumeric only to avoid collisions with automatic hyphen separators.
 const ORDER_NUMBER_PREFIX_PATTERN = /^[A-Za-z0-9]{0,12}$/;
 const INVOICE_RESET_PERIODS = new Set(['never', 'daily', 'monthly', 'financial_year']);
 
@@ -796,11 +779,7 @@ router.post('/cloud/delete-data/cancel', requireRole(...ROLE_ACCESS.owner), requ
   }
 }));
 
-// ─── Google Drive backups (must come BEFORE /:key wildcard) ─────────────────
-// See #129. Off by default — connect/disconnect/backup-now are the only
-// actions that ever touch Google's API, and only owner can trigger them
-// (mirrors how database.ts gates the raw backup/restore actions).
-
+// Google Drive backups — owner only, off by default.
 router.get('/google-drive', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     res.json(googleDrive.getStatus());
@@ -923,9 +902,7 @@ router.get('/bill-templates', requireRole(...ROLE_ACCESS.ownerManager), (_req: R
         packVersionId: template.pack_version_id,
       };
     });
-    // Merchant templates (#447): provenance is informational only — a cloned
-    // origin references a compliance-pack template id WITHOUT transferring
-    // any compliance trust. Only active rows are selectable.
+    // Active merchant print templates for receipt formatting.
     const merchant = listMerchantPrintTemplates().map((template) => ({
       id: template.id,
       displayName: template.name,
@@ -974,10 +951,7 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
     if (value === undefined) {
       return res.status(400).json({ error: 'Value is required' });
     }
-    // bill_template accepts every legacy bare value AND the structured
-    // { source, id } form; whichever the client sends, the canonical
-    // structured JSON is persisted — legacy strings upgrade transparently on
-    // their next save (#447).
+    // Upgrades legacy string values to canonical structured JSON on save.
     if (req.params.key === 'bill_template' && !isAvailableBillTemplate(value)) {
       return res.status(400).json({ error: 'Unsupported bill template' });
     }
@@ -1033,9 +1007,7 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(req.params.key, valueToPersist as string, now());
 
-    // Keep the legacy setting as a compatibility mirror. The canonical runtime
-    // switch is telemetry_enabled; this route is the only user-facing writer,
-    // so both stay aligned whenever the owner changes the toggle.
+    // Sync legacy anonymous_data_consent mirror with canonical telemetry_enabled.
     if (req.params.key === 'telemetry_enabled') {
       db.prepare(`
         INSERT INTO settings (key, value, updated_at) VALUES ('anonymous_data_consent', ?, ?)
@@ -1043,9 +1015,7 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
       `).run(value, now());
     }
 
-    // Tell FloAdmin the merchant's current choice so stores.diagnostics_consent
-    // matches in both directions, not just inferred from "an event arrived."
-    // Best-effort — never blocks the setting save on cloud reachability.
+    // Best-effort push of diagnostics consent to FloAdmin.
     if (req.params.key === 'diagnostics_consent') {
       void cloudSync.setDiagnosticsConsent(boolFlag(value) === 'true');
     }

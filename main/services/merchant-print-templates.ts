@@ -1,22 +1,4 @@
-/**
- * Merchant print templates service (#447, epic #438).
- *
- * CRUD + lifecycle for tenant-owned semantic receipt templates stored in the
- * dedicated `merchant_print_templates` table. This table is deliberately
- * SEPARATE from `installed_print_templates` (signed compliance-pack
- * artifacts): merchant rows are ordinary editable documents and must never
- * touch the pack trust model.
- *
- * Lifecycle: draft -> active -> archived, with single-step rollback via
- * `previous_payload_json`. Every write revalidates the payload against the
- * shared kernel validator (fail-closed) and recomputes `checksum`
- * (sha256 of the exact persisted payload text). Rollback verifies the
- * current checksum first so tampering is detected before a swap.
- *
- * Provenance: `origin` distinguishes created | imported | cloned; a cloned
- * row may carry `derived_from` pointing at a compliance-pack template id for
- * USER INFORMATION ONLY — no compliance trust transfers (see #447).
- */
+/** Lifecycle, CRUD, and offline transfer for tenant-owned semantic receipt templates. */
 
 import { createHash, randomUUID } from 'crypto';
 import { getDatabase, now } from '../db';
@@ -70,11 +52,7 @@ export class MerchantTemplateError extends Error {
   }
 }
 
-/**
- * The local SQLite file is single-store, so every row is scoped to the local
- * business tenant (`business_id = 'local'`), matching how the rest of the
- * embedded database scopes implicitly to one store.
- */
+// Local SQLite is single-store, so business_id scopes to 'local'.
 const LOCAL_BUSINESS_ID = 'local';
 
 function computeChecksum(payloadJson: string): string {
@@ -227,11 +205,7 @@ export function createMerchantPrintTemplate(input: {
   return loadMerchantPrintTemplateRow(id)!;
 }
 
-/**
- * Update name and/or payload. Draft rows are freely editable; editing an
- * ACTIVE row snapshots its current payload into `previous_payload_json`
- * (single-step rollback) before applying the change.
- */
+/** Updates name or payload; active rows snapshot current payload for rollback. */
 export function updateMerchantPrintTemplate(
   id: string,
   input: { name?: unknown; payload?: unknown },
@@ -300,12 +274,7 @@ function verifyChecksum(row: MerchantPrintTemplateRow): void {
   }
 }
 
-/**
- * Single-step rollback: restores `previous_payload_json` after verifying the
- * CURRENT row's checksum (tamper detection), then swaps payloads and clears
- * the rollback point. The restored payload is revalidated fail-closed so a
- * payload written by a newer schema version cannot sneak back in.
- */
+/** Restores previous_payload_json after verifying checksum and validating content. */
 export function rollbackMerchantPrintTemplate(id: string, actorId: string | null): MerchantPrintTemplateRow {
   const row = loadMerchantPrintTemplateRow(id);
   if (!row) throw new MerchantTemplateError('Template not found', 404);
@@ -335,24 +304,8 @@ export function rollbackMerchantPrintTemplate(id: string, actorId: string | null
   return loadMerchantPrintTemplateRow(id)!;
 }
 
-// ---------------------------------------------------------------------------
-// Offline import/export (#448, epic #438)
-//
-// Templates travel as self-describing `.json` envelopes:
-//   { format: 'flocafe-merchant-template', schemaVersion, exportedAt,
-//     appVersion?, origin?, checksum, template }
-//
-// `checksum` is the sha256 of the CANONICAL payload text
-// (serializeMerchantTemplatePayload: recursively key-sorted, no whitespace) —
-// the same integrity value the table stores, so a round-tripped file
-// re-verifies against the persisted row and reformatting never breaks it.
-// Import treats the file as untrusted input: size-capped,
-// single JSON document, structurally validated envelope, then the SAME
-// fail-closed payload validator as every write path, then checksum
-// verification. Imports ALWAYS land as a new draft row (fresh uuid,
-// `origin: 'imported'`) — never auto-activated, never overwriting an
-// existing identity. Fully offline: no network, no registry, no fetches.
-// ---------------------------------------------------------------------------
+// Offline import/export: templates travel as self-describing JSON envelopes
+// with canonical checksums, landing as new draft rows upon validated import.
 
 const EXPORT_FILE_SUFFIX = '.flocafe-template.json';
 
@@ -383,15 +336,7 @@ function sanitizeClientFileName(value: unknown): string | null {
   return cleaned.slice(0, 255);
 }
 
-/**
- * Build the portable transfer envelope for a template. Exportable states are
- * `active` and `archived`; drafts are deliberately excluded (they have never
- * passed activation, which is the checksum-verified review point). The row's
- * checksum is verified BEFORE export so a tampered payload can never be
- * distributed as a trusted-looking file, and the serialized envelope is held
- * to the same byte cap import enforces, so an install can never mint a
- * transfer file it would refuse to read back.
- */
+/** Builds portable transfer envelope for active or archived templates with checksum verification. */
 export function exportMerchantPrintTemplateFile(id: string): MerchantTemplateExportFile {
   const row = loadMerchantPrintTemplateRow(id);
   if (!row) throw new MerchantTemplateError('Template not found', 404);
@@ -431,13 +376,7 @@ export function exportMerchantPrintTemplateFile(id: string): MerchantTemplateExp
   return { fileName: exportFileName(row.name), json };
 }
 
-/**
- * Import a transfer file: full fail-closed validation pipeline, then land as
- * a NEW draft with `origin: 'imported'` and `derived_from` provenance
- * recording the source artifact (sha256 of the exact envelope text, plus the
- * sanitized file name when provided). Duplicate names are allowed — identity
- * is the fresh uuid, never the source id recorded in the envelope.
- */
+/** Imports a transfer file as a new draft template with verified checksum provenance. */
 export function importMerchantPrintTemplateFile(input: {
   file?: unknown;
   name?: unknown;

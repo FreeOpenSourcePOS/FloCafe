@@ -1,8 +1,4 @@
-/**
- * GET /api/server-app-info
- * Returns Server App access URLs so Settings can render QR codes for tablets
- * and phones on the same local network.
- */
+/** Returns Server App local network access URLs for settings QR code rendering. */
 import { Router, Request, Response } from 'express';
 import QRCode from 'qrcode';
 import { getLocalIP, getAllLocalIPs } from '../server';

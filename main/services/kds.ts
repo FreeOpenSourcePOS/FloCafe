@@ -186,9 +186,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
   activeWebSocketServers += 1;
   if (!heartbeat) {
     heartbeat = setInterval(() => {
-      // The voided-item expiry marker is a global value, not per-client —
-      // compute it once per tick instead of repeating the query for every
-      // connected kitchen terminal.
+      // Compute voided-item expiry marker once per tick for all connected clients.
       const sharedExpiredVoidMarker = getExpiredVoidMarker();
       clients.forEach((client, ws) => {
         if (isDatabaseMaintenanceActive()) {
@@ -456,21 +454,10 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
   }
 }
 
-/**
- * An order can be marked 'completed' the moment its bill is fully paid
- * (see bills.ts), which for a prepaid order happens before the kitchen has
- * even started — payment and kitchen fulfillment are independent and can
- * finish in either order. So "still needs the kitchen's attention" isn't
- * just `status NOT IN ('completed','cancelled')`: a completed-by-payment
- * order still belongs on KDS as long as it has items the kitchen hasn't
- * served yet. Non-completed orders (pending/preparing/ready/served) are
- * always included, matching the original behavior for the normal flow.
- */
+/** Returns SQL condition for orders needing kitchen attention or unserved items. */
 function activeOrdersCondition(): string {
   if (!isKdsEnabled()) return `o.status NOT IN ('completed', 'cancelled')`;
-  // #208: replace the OR EXISTS scan with a CTE anchored on the status and
-  // item-status indexes — keeps the active-orders payload fast as the
-  // orders table grows past ~100k rows.
+  // Fast indexed CTE query matching active orders or unserved items.
   return `o.id IN (
     SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
     UNION

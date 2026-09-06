@@ -379,9 +379,7 @@ router.delete('/:id', addonGroupWriteRateLimit, requireRole(...ROLE_ACCESS.owner
       return res.status(404).json({ error: 'Addon group not found' });
     }
 
-    // Soft delete — order_items already snapshot chosen addons as JSON at order
-    // time, but keeping the row lets historical orders/product editors resolve
-    // addon_group_id without a dangling reference.
+    // Soft delete to avoid dangling references in historical records.
     db.prepare('UPDATE addon_groups SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     res.json({ message: 'Addon group deleted' });
   } catch (error: any) {

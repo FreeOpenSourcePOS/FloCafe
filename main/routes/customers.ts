@@ -128,11 +128,7 @@ router.get('/alerts', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), 
 router.get('/', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    // #208: the previous version ran 4 correlated subqueries per customer
-    // (visits, spent, wallet credits, wallet debits, last visit) and never
-    // hit any index for `WHERE o.customer_id = c.id`. The equivalent join
-    // uses the new `idx_orders_customer` and groups once. Aggregates across
-    // customers sit in three CTEs so each scans its index once.
+    // Aggregate customer order and wallet stats using CTEs and indexes.
     let query = `
       WITH order_stats AS (
         SELECT customer_id,
@@ -215,10 +211,7 @@ router.get('/', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: 
       const limit = Math.min(parsed, 500);
       query += ` LIMIT ${limit}`;
     } else {
-      // #208: unbounded default meant every customers list response fanned
-      // the full backend on each search keystroke. Cap at 200 as a sensible
-      // first-page default; clients that need more can page (cursor support
-      // is a follow-up).
+      // Default to 200 customers when per_page is omitted.
       query += ` LIMIT 200`;
     }
 
@@ -456,9 +449,5 @@ router.put('/:id', customerWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManag
   }
 });
 
-// Customers are never deletable — not even soft-deleted — by design: every
-// row is permanently referenced by orders/bills/loyalty_ledger with no FK,
-// and losing a customer's history/loyalty standing is worse than a stale
-// record. There is intentionally no DELETE /:id route.
-
+// Customers are never deleted to preserve historical order, bill, and loyalty references.
 export const customerRoutes = router;

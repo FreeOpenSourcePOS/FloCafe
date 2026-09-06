@@ -35,12 +35,7 @@ const VALID_SETUP_PROFILES = new Set(['empty', 'express', 'demo']);
 const VALID_SERVICE_MODELS = new Set(['qsr', 'finedine']);
 const LOCAL_SETUP_HOSTS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
-/**
- * Lazy-loaded JWT secret. On first access, reads from the settings table.
- * If no secret exists (first launch), generates a random 32-byte hex string
- * and persists it. This ensures every install gets a unique secret without
- * requiring manual configuration.
- */
+/** Lazy-loaded JWT secret stored in settings table, generated on first launch. */
 let _jwtSecret: string | null = null;
 
 export function clearJWTSecretCache(): void {
@@ -79,11 +74,7 @@ export function getJWTSecret(): string {
   return _jwtSecret;
 }
 
-/**
- * Build a synthetic "tenant" object from local settings.
- * FloDesktop is single-tenant — there is always exactly one "business".
- * The frontend expects this shape to determine routing (chef → KDS, others → POS).
- */
+/** Build synthetic tenant object from local settings for frontend routing. */
 function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) {
   const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
   const s: Record<string, string> = Object.fromEntries(rows.map(r => [r.key, r.value]));
@@ -99,9 +90,7 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
     currency_symbol: getCurrencySymbol(s.currency || 'INR', getCountryByCode(s.country)?.locale) || '₹',
     timezone: s.timezone || 'Asia/Kolkata',
     language: s.language || 'en',
-    // Include print policies in the authenticated tenant snapshot so the
-    // renderer can bootstrap them before the first print, without requiring a
-    // visit to Settings.
+    // Include print policies in tenant snapshot so renderer bootstraps them before first print.
     bill_language_policy: s.bill_language_policy || null,
     kot_language_policy: s.kot_language_policy || null,
     service_model: s.service_model || 'finedine',
@@ -132,9 +121,7 @@ export function parseCategoryIds(value: unknown): string[] {
   }
 }
 
-// RFC 5321 caps a mailbox at 254 octets. Bound the length before applying the
-// email regex so an attacker-supplied email cannot drive `[^\s@]+` backtracking
-// into super-linear time (CodeQL js/polynomial-redos).
+// Cap mailbox at RFC 5321 length (254 octets) before regex evaluation to avoid ReDoS.
 export const MAX_EMAIL_LENGTH = 254;
 
 export function isValidEmail(email: string): boolean {
@@ -373,9 +360,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     insertTable(db, 'tbl-demo-4', `${tableLabel}4`, 2);
   }
 
-  // Country selection is independent from UI language. When callers omit it,
-  // use the setup country's default (India) rather than deriving a country from
-  // the language selected for the setup wizard.
+  // Default to setup country (IN) if unspecified; country is independent of UI language.
   const demoCountry = country || 'IN';
   const dialCode = dialCodeFor(demoCountry);
   if (lang === 'es') {
@@ -414,9 +399,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     : lang === 'de' ? 'Demo-Kassierer' : lang === 'tr' ? 'Demo Kasiyer' : lang === 'fa' ? 'صندوقدار نمایشی' : 'Demo Cashier';
   const chefName = lang === 'es' ? 'Cocinero Demo' : lang === 'fr' ? 'Chef Démo' : lang === 'pt' ? 'Cozinheiro Demo'
     : lang === 'de' ? 'Demo-Koch' : lang === 'tr' ? 'Demo Aşçı' : lang === 'fa' ? 'آشپز نمایشی' : 'Demo Chef';
-  // Demo staff remains useful as localized sample rows, but must never ship with
-  // a reusable public credential. The inactive rows can be explicitly replaced
-  // by an owner during setup if staff access is wanted.
+  // Demo staff accounts are inactive with random passwords to prevent usable default credentials.
   insertStaffUser(db, 'user-demo-manager', managerName, 'manager@flo.local', 'manager', randomBytes(32).toString('hex'), 0);
   insertStaffUser(db, 'user-demo-cashier', cashierName, 'cashier@flo.local', 'cashier', randomBytes(32).toString('hex'), 0);
   insertStaffUser(db, 'user-demo-chef', chefName, 'chef@flo.local', 'chef', randomBytes(32).toString('hex'), 0);
@@ -774,21 +757,7 @@ router.post('/password/change', authRateLimit(), (req: Request, res: Response) =
 });
 
 // ── POST /api/auth/recover-password ───────────────────────────────────────────
-// Local, unauthenticated-but-PIN-gated recovery for a locked-out owner (#127).
-//
-// Deliberately does NOT require a JWT/session — that's the whole point: the
-// owner has no working credentials. Local proof of ownership is the Master
-// PIN instead (see main/services/master-pin.ts). When no active owner remains,
-// this endpoint restores owner role to one active account. It can never create,
-// reinitialize, or wipe anything — that stays behind /api/db-tools/initialize
-// (owner session + Master PIN + explicit confirmation phrase).
-//
-// No remote backdoor: nothing here lets a Flo cloud server or anyone without
-// physical/local access to this machine set the password. See #128 for the
-// signup-time copy explaining this to the owner, and the scope note in this
-// PR for why the optional cloud/email identity-verification tier described in
-// the issue is intentionally NOT implemented here (no cloud server exists in
-// this repo to issue the short-lived signed grant safely).
+// Local password recovery for locked-out owner gated by Master PIN; requires no active JWT.
 
 router.post('/recover-password', authRateLimit(), (req: Request, res: Response) => {
   try {
@@ -811,9 +780,7 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
 
-    // Rate-limit key is IP-scoped only (not email-scoped) so an attacker can't
-    // reset the Master PIN attempt counter simply by guessing a different
-    // email address on each request.
+    // Rate-limit key is IP-scoped to prevent resetting attempt counters with varying emails.
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const pinResult = authorizeMasterPin(master_pin, `auth:recover-password:${ip}`);
     if (!pinResult.ok) {
@@ -850,11 +817,7 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     }
     invalidateUserAuthCache(user.id);
 
-    // Local audit trail — this codebase has no dedicated audit-events table,
-    // so we follow its existing convention: a tagged console log (grep-able
-    // in the app's log file) plus a timestamp/identity pair in `settings`,
-    // the same generic key/value mechanism already used for e.g.
-    // `telemetry_last_ping_at`.
+    // Record recovery timestamp and user ID in settings table for audit purposes.
     upsertSettings(db, {
       last_password_recovery_at: now(),
       last_password_recovery_user_id: String(user.id),
@@ -903,9 +866,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
   try {
     if (!requireLocalSetup(req, res)) return;
 
-    // Guard the disabled-setup state before any payload validation: once an
-    // owner exists this endpoint must always answer 403, and an invalid field
-    // (e.g. a bad timezone) must not downgrade that to a 400.
+    // Reject request if setup is already complete before running payload validation.
     const db = getDatabase();
     if (getUserCount(db) > 0) {
       return res.status(403).json({ error: 'Setup already complete. This endpoint is disabled.' });
@@ -994,8 +955,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid service model' });
     }
 
-    // Cloud v2 registers the POS automatically on first boot. There is no
-    // pending/claim step, so new installs start with cloud coordination on.
+    // New installs start with cloud coordination enabled.
     const cloudSyncEnabled = true;
     let normalizedCloudServerUrl: string | undefined;
     if (cloudSyncEnabled) {
@@ -1009,9 +969,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     let userId = '';
     const hashedPassword = bcrypt.hashSync(password, 10);
 
-    // Persist the external Master PIN before committing the owner transaction.
-    // A keyring/filesystem failure must leave setup retryable rather than
-    // returning 500 after the database already contains an owner.
+    // Save Master PIN before committing user transaction so keyring errors leave setup retryable.
     if (masterPinRequired) {
       setMasterPin(String(master_pin));
     }
@@ -1054,10 +1012,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         service_model: normalizedServiceModel,
         setup_profile: normalizedSetupProfile,
         onboarding_completed: 'true',
-        // Completing setup is not by itself a country choice: the wizard
-        // preselects IN and submits it whether or not the picker was touched.
-        // Only a country that differs from the seeded default — or a client
-        // that reports the selection outright — counts.
+        // Confirm country if user explicitly selected it or differed from default.
         ...countryConfirmationPatch(country, getSettingValue('country'), req.body.country_selected),
         anonymous_data_consent: 'true',
         telemetry_enabled: 'true',
@@ -1075,10 +1030,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);
     })();
 
-    // Pick up the cloud settings just written without requiring a restart —
-    // mirrors PUT /api/settings/cloud's own reload() call. Cloud coordination
-    // is best-effort: a network/profile failure must not make a completed local
-    // setup appear to have failed.
+    // Reload cloud sync and registration profile immediately after setup.
     try {
       cloudSync.reload();
     } catch (error) {
@@ -1117,8 +1069,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 });
 
 // ── POST /api/auth/setup/seed ───────────────────────────────────────────────────
-// Legacy endpoint retained only to return a clear error. First-run setup must
-// create the owner through /setup/initialize and pass the selected seed profile.
+// Legacy endpoint retained to direct callers to /api/auth/setup/initialize.
 
 router.post('/setup/seed', (req: Request, res: Response) => {
   res.status(410).json({ error: 'Use /api/auth/setup/initialize with setup_profile and owner details.' });

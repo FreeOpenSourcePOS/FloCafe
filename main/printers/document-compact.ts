@@ -1,16 +1,4 @@
-/**
- * PrintDocument v1 → compact thermal receipt renderer (#443, epic #438).
- *
- * Maps `shared/print` blocks onto the SAME ESC/POS token lines the legacy
- * compact layout (`formatCompactReceipt`) produces, byte for byte, so the
- * compact surface renders through `data → document → lines → bytes` without
- * changing printed semantics.
- *
- * Layering: this module lives in `main/` (transport token syntax + generated
- * label catalog); all SEMANTICS come from the document — no bill/order row
- * is read here beyond the caller's normalization step (`buildBillPrintData`,
- * reused from the classic pipeline).
- */
+/** PrintDocument v1 compact thermal receipt renderer; maps print blocks to ESC/POS token lines. */
 
 import { parseDbTimestamp } from '../db';
 import { getCurrencyFractionDigits } from '../countries';
@@ -51,9 +39,7 @@ import {
   type TotalsBlock,
 } from '../../shared/print';
 
-// ---------------------------------------------------------------------------
-// Document → compact ESC/POS token lines
-// ---------------------------------------------------------------------------
+// Document to compact ESC/POS token lines.
 
 /** Renderer options: physical/locale presentation only, no business data. */
 export interface CompactDocumentRenderOptions {
@@ -103,10 +89,7 @@ function compactItemHeader(block: ItemTableBlock, nameLen: number, amtLen: numbe
   return item + qty + ' '.repeat(Math.max(0, amtLen - amount.length)) + amount;
 }
 
-/**
- * Map a PrintDocument onto the legacy compact token-line layout. Pure with
- * respect to business data: everything rendered comes from the document.
- */
+/** Map a PrintDocument onto compact token-line layout. */
 export function renderBillDocumentToCompactLines(
   document: PrintDocument,
   options: CompactDocumentRenderOptions,
@@ -420,9 +403,7 @@ export function renderBillDocumentToCompactLines(
   return lines;
 }
 
-// ---------------------------------------------------------------------------
-// Entry: data → document → lines → bytes
-// ---------------------------------------------------------------------------
+// Entry: data -> document -> lines -> bytes.
 
 export interface CompactDocumentRenderResult {
   readonly document: PrintDocument;
@@ -432,10 +413,7 @@ export interface CompactDocumentRenderResult {
   readonly rasterGroups: readonly RasterSemanticLineGroup[];
 }
 
-/**
- * Full document-driven compact pipeline: authoritative rows → PrintData /
- * PrintContext → buildBillDocument → compact token lines → buildEscPos.
- */
+/** Full document-driven compact pipeline: data -> document -> lines -> bytes. */
 export function renderCompactReceiptViaDocument(
   order: any,
   bill: any,

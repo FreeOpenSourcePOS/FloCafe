@@ -9,10 +9,7 @@ const router = Router();
 router.use(requireRole(...ROLE_ACCESS.kitchen));
 router.use(requireKdsEnabled);
 
-// Active kitchen orders — the old `OR EXISTS` form forced the planner to
-// SCAN orders and run a correlated subquery per row. The UNION form lets
-// each branch hit an index: status-in check uses `idx_orders_status`, and
-// the live-items branch uses `idx_order_items_order`. #208
+// Query active kitchen orders using indexed UNION query across order and item statuses.
 const ACTIVE_KITCHEN_ORDER_IDS_SQL = `
   SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
   UNION

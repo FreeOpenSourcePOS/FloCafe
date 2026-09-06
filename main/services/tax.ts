@@ -8,10 +8,7 @@ interface TenantInfo {
   business_type: string;
   state_code: string;
   currency?: string;
-  // Read from settings once per request by the caller (main/routes/orders.ts)
-  // and passed in explicitly, rather than read here via getSettingValue —
-  // calculateItemTax's other inputs are all explicit parameters, and isolated
-  // unit tests (tests/tax-engine.test.ts) call it directly with no database.
+  // Passed explicitly by caller to allow isolated unit testing without a database.
   taxes_enabled: boolean;
 }
 
@@ -80,9 +77,7 @@ function round(value: number, decimals: number = 2): number {
   return Number(Math.round(Number(value + 'e' + decimals)) + 'e-' + decimals);
 }
 
-// Same country -> bundled-pack selection used by calculateItemTax below and
-// by the GET /api/tax/categories endpoint (routes/index.ts) — kept as one
-// function so the two never drift apart on which pack is "active".
+// Shared helper to retrieve the active country pack for tax calculation and categories API.
 export function getActiveCountryPack(country: string): CountryPack {
   try {
     const db = getDatabase();
@@ -96,16 +91,12 @@ export function getActiveCountryPack(country: string): CountryPack {
     `).get(country, country) as { pack_json: string } | undefined;
     if (row) return JSON.parse(row.pack_json) as CountryPack;
   } catch {
-    // Database initialization and isolated unit tests can call this before the
-    // migration runner has registered bundled packs. The immutable bundled
-    // JSON remains the required offline fallback.
+    // Fall back to immutable bundled pack JSON if DB migrations haven't run.
   }
   return getBundledCountryPack(country);
 }
 
-// "The taxation module is enabled" means an official (non-local) pack is
-// actually active for this country — the bundled/manual local pack never
-// carries a verified registration-number format, so it never gates entry.
+// Checks if taxation is enabled and backed by an official active country pack.
 export function isTaxModuleActiveForCountry(country: string): boolean {
   if (getSettingValue('taxes_enabled') !== 'true') return false;
   try {
@@ -122,13 +113,7 @@ export function resolveTaxIdFormat(country: string): TaxIdFormat | null {
     || null;
 }
 
-// check 25 (routes/tax-packs.ts) rejects the textbook nested-quantifier
-// ReDoS shape at pack-activation time, but that's a known-shape heuristic,
-// not a formal safety proof — bound the value as a backstop too. The
-// longest real registration-number scheme is 15 chars (India GSTIN), so 24
-// leaves generous headroom while keeping a worst-case pattern's
-// backtracking imperceptible (CodeQL js/polynomial-redos; same
-// bound-before-regex approach as isValidEmail in routes/auth.ts).
+// Bounds input length to 24 chars as a defense-in-depth safeguard against ReDoS backtracking.
 export const MAX_TAX_ID_LENGTH = 24;
 
 export function validateTaxRegistrationNumber(
@@ -148,19 +133,8 @@ export function validateTaxRegistrationNumber(
   return { valid: regex.test(trimmed), format };
 }
 
-// A representative rate for display only (product tax-category picker,
-// products list) — the intrastate/default rule set for this business type,
-// summing every matching percent component (e.g. Tax 1 + Tax 2). Authoritative
-// calculation always goes through TaxEngine.calculate, which also resolves
-// the interstate variant per transaction; this never feeds a checkout total.
-//
-// Rule selection here mirrors calculateRawLine (tax-engine.ts): a rule only
-// counts if the *category* declares it via category.ruleIds, not just if the
-// rule declares the category via rule.categoryIds. A well-formed pack always
-// keeps both sides in sync, but selecting only by rule.categoryIds would show
-// a rate for a rule checkout actually excludes for any pack where they've
-// drifted (e.g. a hand-edited or malformed catalog pack) — showing a price
-// the merchant never actually charges.
+// Computes a display-only preview tax rate for UI category pickers.
+// Authoritative calculation always goes through TaxEngine.calculate.
 export function previewCategoryRate(
   pack: CountryPack,
   businessType: string,
@@ -262,10 +236,7 @@ export function calculateItemTax(
         }],
       });
     } catch (engineError: any) {
-      // A misconfigured category/pack is a data problem, not a server bug —
-      // checkout must block loudly on a bad tax config, never fall through
-      // to charging zero tax. statusCode lets route handlers return 400
-      // instead of a generic 500 (see orders.ts / index.ts catch blocks).
+      // Surface tax configuration errors as 400 bad request instead of 500.
       throw Object.assign(
         new Error(`Tax calculation failed: ${engineError.message}`),
         { statusCode: 400 },
@@ -285,9 +256,7 @@ export function calculateItemTax(
         rate: Number(component.rate || 0),
         amount: Number(component.amount),
       })),
-      // The engine resolves country_default against the active pack. Persist
-      // that effective behavior on the order item so every later total
-      // recomputation knows whether the tax is already included in the price.
+      // Persist resolved tax behavior on the item so subsequent recalculations know if tax is inclusive.
       tax_type: line.taxBehavior === 'exempt' ? 'none' : line.taxBehavior,
       tax_snapshot: {
         ...calculation.snapshot,
@@ -302,9 +271,7 @@ export function calculateItemTax(
     };
   }
 
-  // Tax is opt-in through a resolved category. Legacy product.tax_type and
-  // product.tax_rate columns remain in the schema only for non-destructive
-  // upgrade compatibility; they are not authoritative for new transactions.
+  // Tax is opt-in through resolved categories; legacy columns are not used for new orders.
   return { tax_amount: 0, tax_breakdown: [], tax_type: 'none', tax_snapshot: null };
 }
 
@@ -390,9 +357,7 @@ export function calculateConfiguredChargeTaxes(
   for (const kind of CHARGE_KINDS) {
     const amount = chargeAmount(context, kind);
     const categoryId = chargeCategoryId(context, kind);
-    // NULL means this order remains on the legacy path. Charges were
-    // previously added untaxed, so preserve that behavior until the merchant
-    // explicitly migrates this charge kind in Settings.
+    // Skip unconfigured charges to preserve untaxed legacy behavior.
     if (amount.isZero() || !categoryId) continue;
 
     let calculation;
@@ -477,10 +442,7 @@ export function aggregateTaxBreakdown(itemBreakdowns: TaxBreakdown[][], minorFac
   }));
 }
 
-// Rolls up whichever active order_items carry a per-item engine snapshot
-// (order_items.tax_snapshot, only present for category-driven items — see
-// calculateItemTax above) into the order/bill-level tax_snapshot column.
-// Uncategorized items are tax-free and therefore have no snapshot to roll up.
+// Aggregates item-level tax snapshots into an order/bill-level snapshot array.
 export function aggregateTaxSnapshots(itemSnapshotsJson: (string | null | undefined)[]): string | null {
   const snapshots = itemSnapshotsJson
     .map((raw) => {
@@ -492,9 +454,7 @@ export function aggregateTaxSnapshots(itemSnapshotsJson: (string | null | undefi
   return snapshots.length > 0 ? JSON.stringify(snapshots) : null;
 }
 
-// A prepared-item void is represented by a new negative order_item. Mirror
-// the immutable tax evidence with signed amounts as well, otherwise the
-// order-level snapshot would still claim positive tax after the rows net to 0.
+// Inverts tax snapshot line amounts for negative void/refund adjustment rows.
 export function invertTaxSnapshot(raw: string | null | undefined): string | null {
   if (!raw) return null;
   try {

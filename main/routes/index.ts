@@ -50,12 +50,7 @@ import QRCode from 'qrcode';
 import { asyncHandler } from '../middleware/async-handler';
 import expressRateLimit from 'express-rate-limit';
 
-// "Cloud POS is not registered" (thrown synchronously by cloud-sync.ts's
-// signedFetch, no network call even attempted) means this store was never
-// claimed in FloAdmin — a distinct, actionable state from a genuine
-// connectivity failure reaching FloAdmin, and the two need different status
-// codes/messages so the frontend (and anyone reading server logs) doesn't
-// mistake "not claimed yet" for "FloAdmin is down".
+// Distinguish unregistered store error from cloud connectivity failure.
 function isUnregisteredCloudError(error: any): boolean {
   return typeof error?.message === 'string' && error.message.includes('is not registered');
 }
@@ -116,9 +111,7 @@ export function registerRoutes(app: Express): void {
     calculateTaxPreview(req, res);
   }));
 
-  // Categories available under the store's active country pack — powers the
-  // product-page category selector. Read-only; pack activation/management
-  // (installing/updating a pack) is a separate, later feature.
+  // Returns active tax categories for product configuration.
   app.get('/api/tax/categories', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req, res) => {
     try {
       const { getActiveCountryPack, hasConfiguredTaxCategories, previewCategoryRate } = await import('../services/tax');
@@ -129,9 +122,7 @@ export function registerRoutes(app: Express): void {
       res.json({
         pack_id: pack.id,
         country: pack.country,
-        // The bundled generic pack deliberately has no rules. Exposing its
-        // placeholder categories as assignable would migrate a product from
-        // legacy tax to a zero-tax engine path.
+        // Categories available only when configuration is ready.
         categories: configurationReady
           ? pack.categories.map((category) => {
             const preview = previewCategoryRate(pack, businessType, category.id);
@@ -153,9 +144,7 @@ export function registerRoutes(app: Express): void {
     }
   }));
 
-  // Mobile pairing code — proxies FloAdmin (see cloud-sync.ts generatePairingCode).
-  // Cache-first: repeat GETs (e.g. reopening Settings) must NOT generate a new
-  // code or disconnect paired devices — only a stale/missing cache calls out.
+  // Returns cached mobile pairing code or generates fresh code if missing or expired.
   app.get('/api/mobile/pairing-code', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req, res) => {
     try {
       const cached = getCachedPairingCode();
@@ -287,10 +276,7 @@ export function registerRoutes(app: Express): void {
       if (!actorId) return res.status(403).json({ error: 'Authentication required' });
 
       const db = getDatabase();
-      // Keep these lookups only for the inexpensive not-found response. Every
-      // authorization, policy, and mutation decision is repeated from the
-      // transaction-local rows below so a concurrent writer cannot authorize
-      // against this pre-transaction snapshot.
+      // Look up pre-transaction rows for initial 404 validation.
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
@@ -300,7 +286,7 @@ export function registerRoutes(app: Express): void {
         return res.status(404).json({ error: 'Item not found in this order' });
       }
 
-      // BUG #17 FIX: Wrap cancel + total recalc in transaction
+      // Wrap item cancel and total recalculation in transaction.
       const result = withTxn(() => {
         const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const currentItem = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as any;
@@ -316,9 +302,7 @@ export function registerRoutes(app: Express): void {
           throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
         }
 
-        // A repeated request against an already terminal item is an
-        // intentional idempotent no-op. Check it before the parent terminal
-        // policy so a retry cannot turn a harmless repeat into a new error.
+        // Idempotent no-op for already-terminal items.
         if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {
           if (!hasRole(userRole, ROLE_ACCESS.ownerManager)) {
             throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
@@ -346,17 +330,12 @@ export function registerRoutes(app: Express): void {
           throw Object.assign(new Error('Cannot cancel items on a paid or partially paid order'), { statusCode: 409 });
         }
 
-        // Completed and cancelled orders are terminal. This guard must run
-        // before any item, stock, order, table, or bill mutation.
+        // Completed and cancelled orders are terminal.
         if (['completed', 'cancelled'].includes(currentOrder.status)) {
           throw Object.assign(new Error('Cannot cancel items on completed or cancelled orders'), { statusCode: 400 });
         }
 
-        // #150: an item the kitchen has already started on (preparing/ready)
-        // can't be silently deleted like a pending one — the ingredients are
-        // already consumed. Voiding it instead requires a manager PIN, mirrors
-        // the whole-order-cancel override pattern, and leaves a negative bill
-        // line so the removal stays visible on the bill.
+        // Voiding items in preparation requires manager PIN and records a void adjustment line.
         const isItemVoid = ['preparing', 'ready'].includes(currentItem.status);
         const isPrivilegedRole = hasRole(userRole, ROLE_ACCESS.ownerManager);
         const canUseOverride = hasRole(userRole, ROLE_ACCESS.cashierServer) && isItemVoid;
@@ -369,9 +348,7 @@ export function registerRoutes(app: Express): void {
           }
 
           const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-          // Key is per-client/per-action, deliberately NOT per-item: a caller
-          // must not get a fresh attempt window by rotating item identifiers
-          // (GHSA-9jjq-2fmw-x3mw).
+          // Rate-limit attempts per client rather than per item to prevent brute force attacks.
           const rateLimitKey = `pin:${clientIp}:item-void`;
           if (!checkPinRateLimit(rateLimitKey)) {
             throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
@@ -400,11 +377,7 @@ export function registerRoutes(app: Express): void {
         }
 
         if (isItemVoid) {
-          // Leave the original line alone (it's a true record of what was
-          // ordered and prepared) and add a mirrored negative line instead of
-          // deleting anything — the bill total nets to the refund/comp
-          // automatically via the recalc below, same as a plain cancel would,
-          // but both lines stay on the bill permanently.
+          // Record mirrored negative line to adjust bill total while preserving original item line.
           db.prepare(`
             INSERT INTO order_items (
               order_id, product_id, product_name, product_sku, unit_price, quantity,
@@ -418,11 +391,7 @@ export function registerRoutes(app: Express): void {
             -(currentItem.discount_amount || 0), -currentItem.total,
             currentItem.variant_selection, currentItem.modifier_selection, now(), now(),
           );
-          // #150 Q1-Q4 decision: mark 'voided', not 'cancelled' — a distinct,
-          // terminal status. Item stage-change endpoints reject any further
-          // transition once status is 'voided', and inventory is
-          // deliberately left alone: it was already deducted when the item
-          // was added, and voiding an already-prepared item must not restock it.
+          // Mark item voided without restoring deducted inventory.
           db.prepare("UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?")
             .run(now(), now(), itemId);
         } else {
@@ -509,10 +478,7 @@ export function registerRoutes(app: Express): void {
         const roundOff = 0;
         const total = Number(preRoundTotal.toFixed(decimals));
 
-        // #132 FIX: cancelling the last active item leaves nothing to serve or
-        // bill — treat it as the whole order being cancelled, the same way the
-        // explicit order-level cancel (routes/orders.ts) does: free the table,
-        // and stamp cancelled_at/cancellation_reason. (Item stock was already restored above).
+        // Cancelling the last active item marks the entire order cancelled and frees table.
         const orderCancelled = activeItems.length === 0 && currentOrder.status !== 'cancelled';
 
         if (orderCancelled) {

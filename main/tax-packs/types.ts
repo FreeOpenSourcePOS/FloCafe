@@ -45,11 +45,7 @@ export interface CountryPack {
   schemaVersion: 1;
   id: string;
   publisher: string;
-  // Absent/undefined means 'official'. 'community' marks a pack compiled
-  // from public information rather than a reviewed/authoritative source;
-  // activation then requires an explicit no-liability disclaimer
-  // acknowledgment (see activateInstalledPack in routes/tax-packs.ts).
-  // Never set on a publisher: 'local' pack — validationChecklist rejects that.
+  // 'community' marks public-info pack requiring disclaimer acknowledgement; defaults to 'official'.
   sourceType?: 'official' | 'community';
   version: string;
   country: string;
@@ -62,10 +58,7 @@ export interface CountryPack {
   taxPoint: 'order_created' | 'finalized_at';
   inclusivePricingDefault: boolean;
   registrationNumberLabel: string;
-  // Optional: lets a signed pack update/correct the merchant-facing
-  // registration-number validation pattern without a FloCafe app release.
-  // Additive on schemaVersion 1 — absent on older/local packs, which fall
-  // back to the static main/countries.ts format (see resolveTaxIdFormat).
+  // Optional merchant-facing registration-number validation pattern; falls back to static format.
   registrationNumberFormat?: TaxIdFormat;
   categories: TaxCategory[];
   defaultCategories: Record<TaxLineKind, string>;

@@ -1,12 +1,4 @@
-/**
- * Order notes validation functions.
- *
- * Separated from orders.ts so they can be imported by tests without
- * pulling in Electron, Express, or other heavy dependencies.
- *
- * Both functions accept a `db` parameter (any object with a `.prepare().get()`
- * interface) to stay dependency-free and testable with node:sqlite or better-sqlite3.
- */
+/** Order and item notes validation functions. */
 
 const DEFAULT_MAX_ORDER_NOTES_LENGTH = 200;
 const DEFAULT_MAX_ITEM_NOTES_LENGTH = 100;

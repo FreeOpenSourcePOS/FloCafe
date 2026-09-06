@@ -1,15 +1,4 @@
-/**
- * PrintDocument v1 → kitchen order ticket renderer (#443, epic #438).
- *
- * Maps a `buildKotDocument` KOT document onto the shared ESC/POS token-line
- * layout, so kitchen tickets flow through `data → document → lines → bytes`.
- *
- * Layering: this module lives in `main/` (transport token syntax + generated
- * label catalog); all SEMANTICS come from the document — no order row is
- * read here beyond the caller's normalization step. The KOT language policy
- * is single-primary (kernel `kot_language_policy`) and is resolved by the
- * caller before reaching this renderer.
- */
+/** PrintDocument v1 kitchen order ticket renderer; maps KotDocument onto ESC/POS token-line layout. */
 
 import { parseDbTimestamp } from '../db';
 import { printLabel } from '../print/print-labels.generated';
@@ -44,14 +33,9 @@ import {
   type SemanticLabel,
 } from '../../shared/print';
 
-// ---------------------------------------------------------------------------
-// Normalization (caller-side, main-process layer)
-// ---------------------------------------------------------------------------
+// Normalization (caller-side, main-process layer).
 
-/**
- * Normalize raw order/items/station rows into an authoritative KOT snapshot.
- * This is the ONLY step allowed to touch raw rows so the builder stays pure.
- */
+/** Normalize raw order/items/station rows into an authoritative KOT snapshot. */
 export function buildKotPrintData(order: any, items: any[], stationName: string): KotPrintData {
   const ticketItems = Array.isArray(items)
     ? items.filter((item: any) => isKotItemPending(item?.status))
@@ -93,10 +77,7 @@ function parseKotAddons(value: unknown): Array<{ name: string; quantity?: number
     Boolean(addon) && typeof addon === 'object' && typeof (addon as { name?: unknown }).name === 'string');
 }
 
-/**
- * Build the PrintContext for a kitchen ticket. The language arrives already
- * resolved from `kot_language_policy` through the kernel by the caller.
- */
+/** Build PrintContext for a kitchen ticket using pre-resolved language policy. */
 export function buildKotPrintContext(opts: {
   columns: number;
   /** KOT label language (already resolved from the kitchen policy). */
@@ -117,9 +98,7 @@ export function buildKotPrintContext(opts: {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Document → KOT ESC/POS token lines
-// ---------------------------------------------------------------------------
+// Document to KOT ESC/POS token lines.
 
 /** Renderer options: physical/locale presentation only, no business data. */
 export interface KotDocumentRenderOptions {
@@ -151,9 +130,7 @@ function formatTableLabel(label: SemanticLabel, tableName: string): string {
   return labelOf(label).replace('{name}', tableName);
 }
 
-// Header metadata must stay visible on generic ESC/POS. Keep the localized
-// value when the selected capability can represent it; otherwise use the
-// existing ASCII labels rather than silently losing ticket identity.
+// Use localized header metadata if supported; fallback to ASCII labels.
 const UNSUPPORTED_METADATA_PLACEHOLDER = '[UNSUPPORTED]';
 function thermalSafeText(value: string, fallback: string, language: string, arabicShaping: boolean, capabilities?: ThermalPrinterCapabilities): string {
   const merged = mergeThermalCapabilities(capabilities ?? GENERIC_THERMAL_CAPABILITIES, arabicShaping);
@@ -271,10 +248,7 @@ function addonName(addon: DirectionalText): string {
   return addon.text;
 }
 
-/**
- * Map a KotDocument onto the legacy KOT token-line layout. Pure with
- * respect to business data: everything rendered comes from the document.
- */
+/** Map a KotDocument onto the legacy KOT token-line layout. */
 export function renderKotDocumentToLines(document: KotDocument, options: KotDocumentRenderOptions): string[] {
   const lines: string[] = [];
 
@@ -326,9 +300,7 @@ export function renderKotDocumentToLines(document: KotDocument, options: KotDocu
   return lines;
 }
 
-// ---------------------------------------------------------------------------
-// Entry: data → document → lines → bytes
-// ---------------------------------------------------------------------------
+// Entry: data -> document -> lines -> bytes.
 
 export interface KotDocumentRenderResult {
   readonly document: KotDocument;
@@ -338,10 +310,7 @@ export interface KotDocumentRenderResult {
   readonly rasterGroups: readonly RasterSemanticLineGroup[];
 }
 
-/**
- * Full document-driven KOT pipeline: authoritative rows → KotPrintData /
- * PrintContext → buildKotDocument → KOT token lines → buildEscPos.
- */
+/** Full document-driven KOT pipeline: data -> document -> lines -> bytes. */
 export function renderKotViaDocument(
   order: any,
   items: any[],

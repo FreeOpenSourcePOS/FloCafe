@@ -1,19 +1,4 @@
-/**
- * PrintDocument v1 → classic thermal receipt renderer (#442, epic #438).
- *
- * This is the first document-driven consumer of the shared PrintDocument
- * model: it maps `shared/print` blocks onto the SAME ESC/POS token lines the
- * legacy classic layout (`formatClassicReceipt`) produces, so the preview
- * pipeline can switch to `data → document → lines → bytes` without changing
- * printed semantics.
- *
- * Layering: this module lives in `main/` (it touches transport token syntax
- * and the generated label catalog); all SEMANTICS come from the document —
- * no bill/order row is read here beyond the caller's normalization step
- * (`buildBillPrintData`). Since #443 the classic receipt surface (preview AND
- * actual printing) renders through this pipeline; `formatClassicReceipt`
- * delegates here.
- */
+/** PrintDocument v1 classic thermal receipt renderer; maps print blocks to ESC/POS token lines. */
 
 import { parseDbTimestamp } from '../db';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '../countries';
@@ -58,9 +43,7 @@ import {
   type TotalsBlock,
 } from '../../shared/print';
 
-// ---------------------------------------------------------------------------
-// Direction facts (registry-derived, no language unions)
-// ---------------------------------------------------------------------------
+// Direction facts (registry-derived, no language unions).
 
 /** Concepts whose generated strings are stable enough to reveal script. */
 const DIRECTION_PROBE_CONCEPTS: readonly PrintConceptId[] = [
@@ -71,20 +54,14 @@ const DIRECTION_PROBE_CONCEPTS: readonly PrintConceptId[] = [
   'print.grandTotal',
 ];
 
-/**
- * Derive a language's base direction from its own generated label strings.
- * Registry-derived fact injection: the kernel never hardcodes language
- * unions, and this backend view reads only the generated print-label table.
- */
+/** Derive a language's base direction from its generated label strings. */
 export function detectPrintLanguageDirection(lang: string): TextDirection {
   if (!isGeneratedPrintLanguage(lang)) return 'ltr';
   const sample = DIRECTION_PROBE_CONCEPTS.map((conceptId) => printLabel(lang, conceptId)).join(' ');
   return containsRtlScript(sample) ? 'rtl' : 'ltr';
 }
 
-// ---------------------------------------------------------------------------
-// PrintData / PrintContext normalization (caller-side, main-process layer)
-// ---------------------------------------------------------------------------
+// PrintData / PrintContext normalization (caller-side, main-process layer).
 
 function parsePaymentDetails(raw: unknown): Array<{ method: string; amount: number }> {
   let value: unknown = raw;
@@ -104,12 +81,7 @@ function parsePaymentDetails(raw: unknown): Array<{ method: string; amount: numb
     }));
 }
 
-/**
- * Normalize the raw bill/order/business rows into authoritative PrintData.
- * This is the ONLY step allowed to touch raw rows; it resolves display tax
- * components (persisted snapshots/breakdowns — no recomputation of totals)
- * and parses stored JSON so builders stay pure.
- */
+/** Normalize raw bill/order/business rows into authoritative PrintData. */
 export function buildBillPrintData(order: any, bill: any, business: any, isReprint: boolean): PrintData {
   const items = Array.isArray(order?.items) ? order.items : [];
   return {
@@ -178,11 +150,7 @@ export function buildBillPrintData(order: any, bill: any, business: any, isRepri
   };
 }
 
-/**
- * Build the PrintContext for a classic receipt: paper columns, resolved
- * languages, registry-derived direction, and locale-formatting prefs from
- * the existing regionalization helpers.
- */
+/** Build PrintContext for classic receipt: paper columns, languages, locale prefs. */
 export function buildBillPrintContext(opts: {
   columns: number;
   /** Receipt language (already resolved from settings/policy by the caller). */
@@ -212,9 +180,7 @@ export function buildBillPrintContext(opts: {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Document → classic ESC/POS token lines
-// ---------------------------------------------------------------------------
+// Document to classic ESC/POS token lines.
 
 /** Renderer options: physical/locale presentation only, no business data. */
 export interface ClassicDocumentRenderOptions {
@@ -265,10 +231,7 @@ function classicItemHeader(block: ItemTableBlock, nameLen: number, amtLen: numbe
   return item + qty + ' '.repeat(Math.max(0, amtLen - amount.length)) + amount;
 }
 
-/**
- * Map a PrintDocument onto the legacy classic token-line layout. Pure with
- * respect to business data: everything rendered comes from the document.
- */
+/** Map a PrintDocument onto classic token-line layout. */
 export function renderBillDocumentToClassicLines(
   document: PrintDocument,
   options: ClassicDocumentRenderOptions,
@@ -288,24 +251,8 @@ export function renderBillDocumentToClassicLines(
 
   lines.push('{INIT}');
 
-  // ---------------------------------------------------------------------
-  // Ordered semantic composition (#447): EVERY block-owned line is
-  // generated inside this loop, attributed to its own block, so a
-  // merchant template's ordering/omission moves each block's FULL
-  // content (banner, loyalty, header contact footer, footer note
-  // included) with its position. Nothing is emitted outside the loop
-  // except non-block-owned framing ({INIT}, powered-by, {CUT}).
-  //
-  // Blocks whose legacy layout splits across the receipt (business
-  // header name vs contact footer, totals rows vs loyalty lines,
-  // message banner / thank-you / footer note) contribute ordered
-  // SEGMENTS: pre / main / post. Documents whose selected blocks appear
-  // in the canonical relative order assemble those segments in the
-  // pinned legacy arrangement (explicit canonical parity contract —
-  // byte equality with the oracle); genuinely reordered compositions
-  // emit each block's complete segment group strictly at its template
-  // position.
-  // ---------------------------------------------------------------------
+  // Generate block-owned lines within loop to preserve template ordering.
+  // Assemble canonical blocks in legacy segment arrangement for byte parity.
   interface BlockSegments {
     pre: string[];
     main: string[];
@@ -548,9 +495,7 @@ export function renderBillDocumentToClassicLines(
           const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
           appendFinancial(segment, financialRows(label, value, cols, options.language, options.capabilities), false, rawLabel, value);
         }
-        // Explicit canonical tax/totals parity handling: when the
-        // breakdown FOLLOWS the totals block (non-canonical order), the
-        // bold grand total closes the breakdown segment instead.
+        // When breakdown follows totals, grand total closes the breakdown segment.
         if (
           block.lines.length > 0
           && totalsIndex >= 0
@@ -700,12 +645,7 @@ export function renderBillDocumentToClassicLines(
     }
   }
 
-  // Assemble. Documents whose selected blocks appear in the canonical
-  // relative order use the pinned legacy segment arrangement (byte parity
-  // with the oracle); reordered compositions concatenate each block's
-  // full segment group strictly in template order.
-  // Canonical block sequence of PrintDocument v1 (mirrors buildBillDocument;
-  // asserted in tests/print-document.test.ts).
+  // Assemble canonical blocks in legacy segment arrangement or template order.
   const CANONICAL_LAYOUT: PrintDocumentBlock['kind'][] = [
     'business-header',
     'customer',
@@ -746,9 +686,7 @@ export function renderBillDocumentToClassicLines(
   };
 
   if (isCanonicalRelativeOrder) {
-    // Pinned legacy arrangement (canonical parity contract). With the
-    // canonical totals-before-breakdown sequence, the bold grand total
-    // closes the breakdown segment (see the totals/breakdown cases).
+    // Pinned legacy arrangement where bold grand total closes breakdown segment.
     emit('message', 'pre');
     emit('business-header', 'main');
     emit('customer', 'main');
@@ -779,9 +717,7 @@ export function renderBillDocumentToClassicLines(
   return lines;
 }
 
-// ---------------------------------------------------------------------------
-// Preview entry: data → document → lines → bytes
-// ---------------------------------------------------------------------------
+// Preview entry: data -> document -> lines -> bytes.
 
 export interface ClassicDocumentPreviewResult {
   readonly document: PrintDocument;
@@ -791,13 +727,7 @@ export interface ClassicDocumentPreviewResult {
   readonly rasterGroups: readonly RasterSemanticLineGroup[];
 }
 
-/**
- * Full document-driven classic preview pipeline:
- * authoritative rows → PrintData/PrintContext → buildBillDocument →
- * classic token lines → buildEscPos. Used by the print-bill preview branch and
- * by capability-gated raster printing; native printing retains the legacy
- * output when raster is not selected.
- */
+/** Full document-driven classic preview pipeline: data -> document -> lines -> bytes. */
 export function renderClassicReceiptViaDocument(
   order: any,
   bill: any,

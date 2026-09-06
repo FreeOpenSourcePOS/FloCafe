@@ -64,11 +64,7 @@ export function setMasterPin(pin: string): void {
   savePin(pin);
 }
 
-/**
- * Overwrites the master PIN. Used both by first-run setup and by an
- * already-authenticated owner who forgot their PIN — the owner's normal
- * login session is the credential here, not the old PIN.
- */
+/** Overwrites the master PIN for first-run setup or authenticated owner recovery. */
 export function resetMasterPin(pin: string): void {
   savePin(pin);
 }
@@ -116,15 +112,10 @@ export type MasterPinAuthResult =
   | { ok: true; status?: undefined; error?: undefined }
   | { ok: false; status: number; error: string };
 
-/**
- * Single authorization entry point for both the Express middleware and the
- * ipcMain handlers, so lockout/verification logic lives in exactly one place.
- */
+/** Authorizes master PIN for Express middleware and ipcMain handlers. */
 export function authorizeMasterPin(pin: string | undefined, rateLimitKey: string): MasterPinAuthResult {
   if (!isMasterPinAvailable()) {
-    // No OS-backed encryption on this machine (e.g. headless Linux without a
-    // keyring). Hard-block rather than silently pass — a bypass here would let
-    // any valid owner JWT wipe the database without a PIN on these platforms.
+    // Block operations when OS-backed encryption is unavailable to prevent bypasses.
     return {
       ok: false,
       status: 503,

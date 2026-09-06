@@ -20,13 +20,7 @@ import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
-// Printer names are passed to OS print commands via execFile array args (CUPS)
-// or an environment variable (Windows raw spooler) — never through a shell —
-// so there is no shell-injection risk from the characters themselves. Real OS
-// printer queue names commonly include parentheses, slashes, ampersands, and
-// non-ASCII characters (e.g. "POS-58 (Copy 1)"), so only control characters
-// (which can't appear in a real queue name) and empty/oversized input are
-// rejected, letting a manually-typed name match the actual OS queue name.
+// Allows standard OS printer queue characters while rejecting control characters.
 const PRINTER_NAME_REGEX = /^[^\x00-\x1f\x7f]{1,128}$/;
 const CONNECTION_TYPES = ['network', 'usb', 'webusb'] as const;
 const PRINTER_COLUMN_WIDTHS = ['cols-32', 'cols-36', 'cols-40', 'cols-42', 'cols-44', 'cols-48'] as const;
@@ -91,9 +85,7 @@ function printerShape(printer: any) {
   };
 }
 
-// Keep receipt and KOT callers on one item hydration contract. Database rows
-// may still contain legacy JSON fields, while selected add-ons now live in the
-// normalized order_item_addons table.
+// Hydrates order items with add-ons from normalized order_item_addons.
 export function getEffectiveOrderItems(db: any, orderId: string): any[] {
   return attachEffectiveAddons(
     db,
@@ -153,9 +145,7 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled } = req.body;
-    // Trim accidental leading/trailing whitespace — the OS print queue name
-    // must be matched exactly at dispatch time, and stray whitespace from
-    // copy-pasting a name is a common cause of manual-add mismatches.
+    // Trim accidental whitespace so the name matches the OS print queue exactly.
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : req.body.name;
 
     if (!name) return res.status(400).json({ error: 'name is required' });
@@ -334,9 +324,7 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
     if (result.ok) {
       res.json({ success: true });
     } else {
-      // Surface the actual reason (offline, paper out, name mismatch, driver
-      // rejection, etc.) instead of a generic message — this is the button a
-      // merchant reaches for while troubleshooting, so it should say why.
+      // Surface the specific printer failure reason rather than a generic message.
       res.status(502).json({ error: result.detail || 'Printer did not respond or print failed', detail: result.detail });
     }
   } catch (error: any) {
@@ -474,18 +462,12 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       footer_note: settings.bill_footer_message || '',
     };
     const billTemplate = settings.bill_template;
-    // Receipt label languages (#443): the tenant's `bill_language_policy`
-    // (kernel B) resolves against the tenant `language` setting through the
-    // shared kernel; primary first, optional additional second.
+    // Resolves primary and optional secondary receipt languages from tenant policy.
     const receiptLanguages = resolveTenantReceiptLanguages(db);
     console.log('[Print Bill] Preparing receipt', { template: billTemplate || 'classic' });
 
     if (preview === true) {
-      // Preview and production share one code path (#443): prepareReceipt →
-      // formatReceipt renders through PrintDocument for classic + compact
-      // (plugin templates keep their dedicated renderer). Merchant templates
-      // (#447) resolve through the same document pipeline inside
-      // formatReceipt, so previews need no special-casing here.
+      // Previews and prints share the same document formatting pipeline.
       const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, arabicShapingOverride, receiptLanguages.primary, receiptLanguages.additional);
       return res.json({
         success: true,
@@ -522,11 +504,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
   }
 }));
 
-// Groups order items across active, fully-configured kitchen stations (has both
-// a category allowlist and a linked printer). Items whose category isn't claimed
-// by any station fall back to the default printer under the generic 'Kitchen'
-// label — this is also what happens for the whole order when no station is
-// configured at all, so stores not using stations see no behavior change.
+// Routes items to kitchen stations by category, falling back to default kitchen.
 export function routeItemsToStations(db: any, orderItems: any[]): { stationName: string; printer: any; items: any[] }[] {
   const rawStations = db.prepare(
     `SELECT * FROM kitchen_stations WHERE is_active = 1 AND printer_id IS NOT NULL AND category_ids IS NOT NULL AND category_ids != ''`
@@ -626,10 +604,7 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
       if (customer) order.customer = { name: customer.name };
     }
 
-    // A stationName override prints one ticket. Item overrides without an
-    // explicit station are still routed, which lets running-order append
-    // tickets contain only the newly added rows while preserving station
-    // routing.
+    // Specific station prints one ticket; unassigned item overrides route by station.
     let success = true;
     const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
     let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
@@ -668,10 +643,7 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
 
 export const printerRoutes = router;
 
-/**
- * Tenant-configured language for print label selection (#440). Defaults to
- * 'en' when unset; unknown values fall back to English at render time.
- */
+/** Tenant-configured language for print labels, defaulting to 'en'. */
 function tenantLanguage(db: ReturnType<typeof getDatabase>): string {
   try {
     const row = db.prepare("SELECT value FROM settings WHERE key = 'language'").get() as { value?: string } | undefined;
@@ -690,12 +662,7 @@ function tenantSettingValue(db: ReturnType<typeof getDatabase>, key: string): st
   }
 }
 
-/**
- * Receipt label languages for one print request (#443). The stored
- * `bill_language_policy` is resolved through the shared kernel against the
- * tenant `language` setting; malformed stored values fall back to the
- * inherit/none default (read-side parse never breaks printing).
- */
+/** Resolves primary and optional secondary receipt languages from tenant policy. */
 function resolveTenantReceiptLanguages(db: ReturnType<typeof getDatabase>): { primary: string; additional?: string } {
   const policy = parseStoredLanguagePolicy(
     BILL_LANGUAGE_POLICY_KEY,
@@ -707,10 +674,7 @@ function resolveTenantReceiptLanguages(db: ReturnType<typeof getDatabase>): { pr
     : { primary: languages[0] };
 }
 
-/**
- * Kitchen ticket label language (#443): `kot_language_policy` resolved
- * through the kernel, independently of the receipt language policy.
- */
+/** Resolves kitchen ticket label language from tenant policy. */
 function resolveTenantKotLanguage(db: ReturnType<typeof getDatabase>): string {
   const policy = parseStoredLanguagePolicy(
     KOT_LANGUAGE_POLICY_KEY,

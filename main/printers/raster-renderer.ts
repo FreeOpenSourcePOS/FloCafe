@@ -18,11 +18,7 @@ import {
 
 const RENDER_TIMEOUT_MS = 10_000;
 
-/**
- * The page loaded by this window is intentionally self-contained. It has no
- * navigation, network access, Node integration, or relationship to the POS
- * window. Fonts arrive only as validated data URLs in the typed request.
- */
+/** Self-contained page with no navigation, network access, or Node integration. */
 export function rasterRendererHtml(): string {
   return `<!doctype html><meta charset="utf-8"><title>Flo raster surface</title>
 <style>html,body{margin:0;padding:0;background:#fff}canvas{display:block}</style>
@@ -347,11 +343,7 @@ function resetSharedRasterIdleTimer(): void {
   }
 }
 
-/**
- * Obtain the warm shared Chromium raster singleton.
- * If the instance does not exist or has been destroyed/closed, a new one is instantiated.
- * The singleton automatically tears down after an idle timeout.
- */
+/** Obtain the warm shared Chromium raster singleton, recreating if needed. */
 export function getSharedRasterRenderer(options?: RasterRendererOptions & { idleTimeoutMs?: number }): ChromiumRasterRenderer {
   if (options?.idleTimeoutMs !== undefined) {
     sharedRasterIdleTimeoutMs = options.idleTimeoutMs;
@@ -370,9 +362,7 @@ export function getSharedRasterRenderer(options?: RasterRendererOptions & { idle
   return sharedRasterRenderer;
 }
 
-/**
- * Teardown the shared raster singleton if active.
- */
+/** Teardown the shared raster singleton if active. */
 export function destroySharedRasterRenderer(): void {
   if (sharedRasterIdleTimer) {
     clearTimeout(sharedRasterIdleTimer);

@@ -1,17 +1,4 @@
-/**
- * Merchant template → classic thermal receipt renderer (#447, epic #438).
- *
- * Resolves an ACTIVE merchant template through the PrintDocument pipeline:
- * authoritative rows → PrintData/PrintContext → buildBillDocument →
- * applyMerchantTemplate (semantic block selection/order/label variants) →
- * classic token lines → bytes. Because the template is applied at the
- * SEMANTIC layer, every renderer that consumes the applied document produces
- * the same content — the parity harness asserts this byte-equivalence in
- * merchant-template mode.
- *
- * v1 renders merchant receipt documents through the classic layout pipeline;
- * compact/KOT adoption of merchant docs belongs to their owning issues.
- */
+/** Merchant template to classic thermal receipt renderer; resolves active template through PrintDocument pipeline. */
 
 import { loadActiveMerchantPrintTemplate } from '../services/merchant-print-templates';
 import { validateMerchantTemplate } from '../../shared/print';
@@ -40,12 +27,7 @@ export interface MerchantDocumentRenderResult {
 
 type RawPrintRecord = Record<string, unknown>;
 
-/**
- * Render a bill through a merchant template row. Fail-closed on render too:
- * if the stored payload no longer validates against this build's schema
- * (e.g. written by a newer version), a warning is recorded and the plain
- * classic document is rendered instead of garbage or nothing.
- */
+/** Render bill through merchant template; falls back to classic if invalid. */
 export function renderMerchantReceiptViaDocument(
   order: RawPrintRecord,
   bill: RawPrintRecord,

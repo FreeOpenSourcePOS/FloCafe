@@ -211,7 +211,7 @@ export const usePrinterStore = create<PrinterState>()(
               return response.data.warnings || [];
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
-              const errorMsg = e.response?.data?.error || e.response?.data?.detail || e.message || 'Print failed';
+              const errorMsg = e.response?.data?.detail || e.response?.data?.error || e.message || 'Print failed';
               if (errorMsg.includes('No default printer configured')) {
                 toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
                 return await executeBrowserPrint();
@@ -330,7 +330,6 @@ export const usePrinterStore = create<PrinterState>()(
 
           if (hasFinancialPrintWarning(warnings)) {
             const refusal = makeFinancialPrintRefusalMessage(warnings);
-            toast.error(refusal);
             throw new Error(refusal);
           }
 
@@ -460,7 +459,7 @@ export const usePrinterStore = create<PrinterState>()(
               return response.data.warnings || [];
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
-              throw new Error(e.response?.data?.error || e.response?.data?.detail || e.message || 'KOT print failed');
+              throw new Error(e.response?.data?.detail || e.response?.data?.error || e.message || 'KOT print failed');
             }
           }
 

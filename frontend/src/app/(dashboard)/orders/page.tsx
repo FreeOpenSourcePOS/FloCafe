@@ -602,7 +602,7 @@ export default function OrdersPage() {
       fetchPrintHistory(billId);
     } catch (err) {
       const detail = err instanceof Error ? err.message : undefined;
-      toast.error(detail ? `${tOrders('printReceiptFailed')}: ${detail}` : tOrders('printReceiptFailed'));
+      toast.error(formatReceiptErrorToast(detail, tOrders('printReceiptFailed')));
     } finally {
       setPrintingBillId(null);
       setConfirmPrintBillId(null);

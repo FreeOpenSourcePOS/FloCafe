@@ -107,6 +107,40 @@ async function run() {
     });
     assert.equal(nonFinancialOverflow.ok, false);
     assert.equal(nonFinancialOverflow.code, 'render-failed');
+
+    // Verify system font rendering for pure CJK and pure Arabic when bundledFont is omitted
+    const cjkRender = await renderer.render({
+      version: 1,
+      requestId: 'electron-cjk-system-font',
+      text: '煎饼',
+      widthDots: 120,
+      maxBandHeight: 200,
+      direction: 'ltr',
+      align: 'left',
+      style: 'normal',
+      financial: true,
+      maxLines: 4,
+    });
+    assert.equal(cjkRender.ok, true);
+    assert.equal(cjkRender.unit.complete, true);
+    assert.ok(area(cjkRender.unit) > 0);
+
+    const arabicRender = await renderer.render({
+      version: 1,
+      requestId: 'electron-arabic-system-font',
+      text: 'چای',
+      widthDots: 120,
+      maxBandHeight: 200,
+      direction: 'rtl',
+      align: 'left',
+      style: 'normal',
+      financial: true,
+      maxLines: 4,
+    });
+    assert.equal(arabicRender.ok, true);
+    assert.equal(arabicRender.unit.complete, true);
+    assert.ok(area(arabicRender.unit) > 0);
+
     surface.webContents.emit('render-process-gone');
     const processFailure = await renderer.render({ ...base, requestId: 'electron-process-failure' });
     assert.deepEqual(processFailure, {

@@ -34,20 +34,22 @@ export function rasterRendererHtml(): string {
   const makeFailure = (request, code, detail) => ({ version: 1, requestId: request.requestId, ok: false, code, detail });
   const loadedFonts = new Map();
   const render = async (request) => {
-    if (!request || request.version !== 1 || typeof request.text !== 'string' || typeof request.financial !== 'boolean' || !familyName(request.bundledFont?.family)) {
+    if (!request || request.version !== 1 || typeof request.text !== 'string' || typeof request.financial !== 'boolean' || (request.bundledFont !== undefined && (!request.bundledFont || !familyName(request.bundledFont.family)))) {
       return makeFailure(request || { requestId: '' }, 'invalid-request', 'Raster request failed validation');
     }
     try {
-      const fontKey = request.bundledFont.family + '|' + request.bundledFont.dataUrl;
-      let font = loadedFonts.get(fontKey);
-      if (!font) {
-        font = new FontFace(request.bundledFont.family, 'url(' + request.bundledFont.dataUrl + ')');
-        try {
-          await font.load();
-          document.fonts.add(font);
-          loadedFonts.set(fontKey, font);
-        } catch (error) {
-          return makeFailure(request, 'font-unavailable', error instanceof Error ? error.message : String(error));
+      if (request.bundledFont) {
+        const fontKey = request.bundledFont.family + '|' + request.bundledFont.dataUrl;
+        let font = loadedFonts.get(fontKey);
+        if (!font) {
+          font = new FontFace(request.bundledFont.family, 'url(' + request.bundledFont.dataUrl + ')');
+          try {
+            await font.load();
+            document.fonts.add(font);
+            loadedFonts.set(fontKey, font);
+          } catch (error) {
+            return makeFailure(request, 'font-unavailable', error instanceof Error ? error.message : String(error));
+          }
         }
       }
       const canvas = document.createElement('canvas');
@@ -60,8 +62,11 @@ export function rasterRendererHtml(): string {
       const lineHeight = logicalLineHeight * scaleY;
       const fontSize = styles.includes('font-b') ? 12 : 16;
       const weight = styles.includes('bold') ? '700' : '400';
-      const fontFallback = ', -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans", sans-serif';
-      context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family) + fontFallback;
+      const fontFallback = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans", sans-serif';
+      const fontSpec = request.bundledFont
+        ? JSON.stringify(request.bundledFont.family) + ', ' + fontFallback
+        : fontFallback;
+      context.font = weight + ' ' + fontSize + 'px ' + fontSpec;
       context.textBaseline = 'top';
       context.direction = request.direction;
       context.textAlign = request.align === 'center' ? 'center' : 'left';
@@ -123,7 +128,7 @@ export function rasterRendererHtml(): string {
       canvas.height = Math.max(1, renderLines.length * lineHeight);
       // Resizing a canvas resets its drawing state, so restore the measured
       // font and bidi direction before painting the final pixels.
-      context.font = weight + ' ' + fontSize + 'px ' + JSON.stringify(request.bundledFont.family) + fontFallback;
+      context.font = weight + ' ' + fontSize + 'px ' + fontSpec;
       context.textBaseline = 'top';
       context.direction = request.direction;
       context.textAlign = request.align === 'center' ? 'center' : 'left';
@@ -538,7 +543,7 @@ function requestForRasterLine(
     ...(styles.length > 0 ? { styles } : {}),
     financial,
     maxLines: 256,
-    bundledFont: capabilities.raster.font!,
+    ...(capabilities.raster.font ? { bundledFont: capabilities.raster.font } : {}),
   };
 }
 
@@ -618,23 +623,20 @@ export async function renderUnsupportedRasterLines(
     const financial = ranges.some((range) => range.financial === true);
     const renderedRanges: Array<{ lineIndex: number; lineCount: number; bands: RasterSemanticUnit['bands'] }> = [];
     let failure: RasterLineRenderFailure | null = null;
-    if (!capabilities.raster.font) {
-      failure = { lineIndex: group.lineIndex, lineCount: group.lines.length, text: groupText, financial, code: 'font-unavailable', detail: 'No bundled raster font is configured' };
-    } else {
-      for (const range of ranges) {
-        const renderedUnits: RasterSemanticUnit[] = [];
-        const physicalSourceLines = mapPhysicalSourceLines(range);
-        if (!physicalSourceLines) {
-          failure = {
-            lineIndex: range.lineIndex,
-            lineCount: range.lineCount,
-            text: groupText,
-            financial,
-            code: 'invalid-range',
-            detail: 'Raster semantic source rows do not map to physical print lines',
-          };
-          break;
-        }
+    for (const range of ranges) {
+      const renderedUnits: RasterSemanticUnit[] = [];
+      const physicalSourceLines = mapPhysicalSourceLines(range);
+      if (!physicalSourceLines) {
+        failure = {
+          lineIndex: range.lineIndex,
+          lineCount: range.lineCount,
+          text: groupText,
+          financial,
+          code: 'invalid-range',
+          detail: 'Raster semantic source rows do not map to physical print lines',
+        };
+        break;
+      }
         for (const physicalSourceLine of physicalSourceLines) {
           const sourceText = physicalSourceLine.sourceIndex === undefined ? undefined : range.sourceLines![physicalSourceLine.sourceIndex];
           const layoutFinancial = physicalSourceLine.sourceIndex === undefined
@@ -665,7 +667,6 @@ export async function renderUnsupportedRasterLines(
         if (failure) break;
         renderedRanges.push({ lineIndex: range.lineIndex, lineCount: range.lines.length, bands: renderedUnits.flatMap((unit) => unit.bands) });
       }
-    }
     if (failure) {
       const groupFailure = failure;
       failures.push(...ranges.map((range) => ({ ...groupFailure, lineIndex: range.lineIndex, lineCount: range.lines.length })));

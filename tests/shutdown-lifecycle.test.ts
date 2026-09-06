@@ -416,7 +416,7 @@ async function testEntrypointCoverage(): Promise<void> {
     await entrypoints.runCleanup();
     await delay(0);
     assert.equal(firstWillQuit.prevented, true, `${label} waits for cleanup`);
-    assert.equal(app.quitCount, 1, `${label} resumes Electron quit after cleanup`);
+    assert.deepEqual(app.exitCodes, [0], `${label} exits Electron cleanly after cleanup`);
     assert.equal(cleanupCalls, 1, `${label} runs cleanup once`);
     assert.equal(quittingCalls, trayQuit ? 3 : 2, `${label} marks both quit entrypoints as quitting`);
     assert.equal(windowDestroyCalls, 1, `${label} destroys the window after cleanup`);
@@ -1047,6 +1047,7 @@ async function testQuitAndInstallCleanupOrdering(): Promise<void> {
     await delay(0);
 
     assert.equal(app.quitCount, 0, 'normal quit does not preempt quitAndInstall after cleanup');
+    assert.deepEqual(app.exitCodes, [], 'normal quit does not call app.exit when installing update');
     isInstallingUpdate = false;
   }
 

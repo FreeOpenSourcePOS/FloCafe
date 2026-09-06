@@ -36,7 +36,7 @@ Physical validation ensures that real-world thermal printers reliably handle:
 - **Pass criteria:**
   - Printer emits header, 32/42/48-column alignment rulers matching physical paper edges.
   - Receipt cuts cleanly (full or partial cut as configured).
-  - Cash drawer behavior is not exercised by **Test Print**; validate drawer pulse during an actual checkout when **Open cash drawer on checkout** is enabled.
+  - Cash drawer behavior is not exercised by **Test Print**; validate drawer pulse during an actual checkout using a payment method configured to trigger it when **Open cash drawer on checkout** is enabled.
 
 ### Test 2: Large buffer network throttling (Raster / Multilingual)
 1. Configure a network thermal printer (`<IP>:9100`).
@@ -59,13 +59,14 @@ Physical validation ensures that real-world thermal printers reliably handle:
 - **Pass criteria:**
   - Print operation refuses before transport: `Receipt not printed: a financial row contains unsupported printer text`.
   - Exactly one descriptive error toast is presented (no duplicate popups).
-  - Bill is recorded as unpaid/held or correctly stored in database without emitting a blank/mutilated receipt.
+  - Financial invariant preserved: the paid transaction record is recorded in the database, but no blank, partial, or corrupted paper receipt is emitted to the customer. Subsequent reprints from Orders also cleanly refuse until a capable printer/template is selected.
 
 ### Test 5: Kitchen order ticket (KOT) routing
-1. Configure a Kitchen Station printer mapped to specific food categories.
-2. Place an order containing mixed items (e.g., drinks for Bar, hot meals for Kitchen).
+1. Configure a Kitchen Station printer mapped to specific food categories. Ensure at least one category remains unassigned to any station.
+2. Place an order containing mixed items: assigned station items (e.g., drinks for Bar, hot meals for Kitchen) and unassigned items (e.g., snacks or merchandise).
 - **Pass criteria:**
   - Station printer emits only its assigned category items.
+  - Unassigned category items route and print exactly once on the default kitchen printer route.
   - KOT title and metadata (table number, order number, timestamp) render cleanly in the configured `kot_language_policy`.
 
 ---
@@ -88,11 +89,12 @@ When validating physical hardware, record results using this template and attach
 
 #### Checkpoints
 - [ ] 1. Test Print emits clean alignment ruler to paper margins
-- [ ] 2. Cash drawer pulse triggers on checkout
+- [ ] 2. Cash drawer pulse triggers on checkout with configured payment method
 - [ ] 3. Large raster / multi-language payload prints without dropped lines or stutter
 - [ ] 4. Offline / disconnected printer yields actionable toast message (no CLIXML / raw stack)
 - [ ] 5. Unsupported financial items safely refuse printing with clear operator toast
-- [ ] 6. Photo(s) of physical receipts attached
+- [ ] 6. KOT station routing emits assigned categories to stations and unassigned items to default route
+- [ ] 7. Photo(s) of physical receipts attached
 
 #### Observations / Quirks
 (Note any model-specific density offsets, cutter feed margins, or timing considerations here)

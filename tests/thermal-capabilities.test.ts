@@ -85,6 +85,24 @@ function run(): void {
   assert.deepEqual(generic.capabilities.encoding.codePages, ['ascii']);
   assert.equal(generic.capabilities.warnings.financialText, 'refuse');
   assert.equal(normalizeThermalText('Küche', generic.capabilities), 'Kueche');
+  assert.equal(isThermalTextRepresentable('Burrito de Camarón 1 $550', generic.capabilities), false);
+  const genericCamaronWarnings: any[] = [];
+  const genericCamaronBytes = buildEscPos(['Burrito de Camarón 1 $550'], false, { capabilities: generic.capabilities, financialLineRanges: [{ lineIndex: 0, lineCount: 1 }] }, genericCamaronWarnings);
+  assert.equal(genericCamaronWarnings.length, 1);
+  assert.equal(genericCamaronWarnings[0].kind, 'financial');
+  assert.equal(genericCamaronBytes.length, 0);
+
+  const epson = resolvePrinterProfile({ profile_id: 'epson-tm-series' });
+  const xprinter = resolvePrinterProfile({ profile_id: 'xprinter-xp-v320m-v330m' });
+  assert.equal(epson.capabilities.representability.scripts.includes('latin'), true);
+  assert.equal(xprinter.capabilities.representability.scripts.includes('latin'), true);
+  assert.equal(isThermalTextRepresentable('Burrito de Camarón 1 $550', epson.capabilities), true);
+  assert.equal(selectThermalCodePage('Burrito de Camarón', epson.capabilities), 'cp437');
+  const epsonCamaronWarnings: any[] = [];
+  const epsonCamaronBytes = buildEscPos(['{INIT}', 'Burrito de Camarón 1 $550'], false, { capabilities: epson.capabilities, financialLineRanges: [{ lineIndex: 1, lineCount: 1 }] }, epsonCamaronWarnings);
+  assert.deepEqual(epsonCamaronWarnings, []);
+  assert.ok(epsonCamaronBytes.length > 0);
+  assert.equal(escPosToText(epsonCamaronBytes).includes('Burrito de Camarón'), true);
 
   assert.equal(selectThermalCodePage('Cafe', latinCodePageCapabilities), 'cp437');
   assert.equal(selectThermalCodePage('√2', latinCodePageCapabilities), 'cp437');

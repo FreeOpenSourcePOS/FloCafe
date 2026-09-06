@@ -55,6 +55,13 @@ export const GENERIC_THERMAL_CAPABILITIES: ThermalPrinterCapabilities = {
   raster: { enabled: false, widthDots: 0, maxBandHeight: 0, modes: [] },
 };
 
+export const LATIN_THERMAL_CAPABILITIES: ThermalPrinterCapabilities = {
+  ...GENERIC_THERMAL_CAPABILITIES,
+  encoding: { codePages: ['cp437', 'cp850', 'cp858', 'windows1252', 'ascii'], preferredCodePage: 'cp437' },
+  representability: { scripts: ['ascii', 'latin'] },
+  transliteration: { enabled: true },
+};
+
 // The shipped fallback preserves the established German thermal transliteration
 // without claiming quality coverage for every accented locale.
 const LATIN_ASCII_MAP: Record<string, string> = {

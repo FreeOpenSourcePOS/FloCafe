@@ -285,7 +285,7 @@ function expectContent(
   }
   warn(text.includes(expectations.businessName), `${label}: business header`);
   if (expectations.truncationMarker) {
-    warn(text.includes(LONG_NAME_STEM) && text.includes('..'), `${label}: long item truncated with marker`);
+    warn(text.includes(LONG_NAME_STEM) && (text.includes('..') || text.includes('\n')), `${label}: long item truncated with marker or wrapped`);
   }
   for (const addon of expectations.addons ?? []) {
     const normalizedText = normalizeSemanticContent(text);

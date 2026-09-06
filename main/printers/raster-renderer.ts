@@ -58,9 +58,9 @@ export function rasterRendererHtml(): string {
       const styles = Array.isArray(request.styles) ? request.styles : [request.style];
       const scaleX = styles.includes('double-width') ? 2 : 1;
       const scaleY = styles.includes('double-height') ? 2 : 1;
-      const logicalLineHeight = 24;
+      const logicalLineHeight = 26;
       const lineHeight = logicalLineHeight * scaleY;
-      const fontSize = styles.includes('font-b') ? 14 : 20;
+      const fontSize = styles.includes('font-b') ? 16 : 22;
       const weight = styles.includes('bold') ? '700' : '600';
       const fontFallback = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans", sans-serif';
       const fontSpec = request.bundledFont

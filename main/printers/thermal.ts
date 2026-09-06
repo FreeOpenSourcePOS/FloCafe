@@ -1834,22 +1834,17 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
   const productName = normalizeThermalText(item.product_name, capabilities);
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
   const qty = String(item.quantity).padEnd(qtyW);
+  const maxLine1Name = Math.max(1, nameLen - 1);
 
-  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(productName, capabilities)) {
-    const name = productName.padEnd(nameLen);
-    const label = name + qty;
-    return [label + rightAlign(amount, Math.max(amtLen, cols - label.length))];
-  }
-
-  if (productName.length <= nameLen) {
+  if (productName.length <= maxLine1Name) {
     const label = productName.padEnd(nameLen) + qty;
-    return [label + rightAlign(amount, Math.max(amtLen, cols - label.length))];
+    return [label + rightAlign(amount, cols - label.length)];
   }
 
-  const nameLines = wrapText(productName, nameLen);
+  const nameLines = wrapText(productName, maxLine1Name);
   const firstLineName = (nameLines[0] || '').padEnd(nameLen);
   const firstRowLabel = firstLineName + qty;
-  const firstRow = firstRowLabel + rightAlign(amount, Math.max(amtLen, cols - firstRowLabel.length));
+  const firstRow = firstRowLabel + rightAlign(amount, cols - firstRowLabel.length);
 
   const result = [firstRow];
   for (let i = 1; i < nameLines.length; i++) {
@@ -1870,19 +1865,14 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
 
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits);
 
-  if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(addonName, capabilities)) {
-    const label = fullName.padEnd(nameLen);
-    return [label + rightAlign(price, Math.max(amtLen, cols - label.length))];
-  }
-
   if (fullName.length <= nameLen) {
     const label = fullName.padEnd(nameLen);
-    return [label + rightAlign(price, Math.max(amtLen, cols - label.length))];
+    return [label + rightAlign(price, cols - label.length)];
   }
 
   const nameLines = wrapText(fullName, nameLen);
   const firstLine = (nameLines[0] || '').padEnd(nameLen);
-  const firstRow = firstLine + rightAlign(price, Math.max(amtLen, cols - firstLine.length));
+  const firstRow = firstLine + rightAlign(price, cols - firstLine.length);
 
   const result = [firstRow];
   for (let i = 1; i < nameLines.length; i++) {
@@ -2334,7 +2324,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
       if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
         const maxCols = lineDW ? Math.floor((options.columns as number) / 2) : (options.columns as number);
-        line = truncate(printableLine, Math.max(1, maxCols));
+        line = truncate(printableLine, Math.max(1, maxCols), options.language, capabilities);
       }
     }
 

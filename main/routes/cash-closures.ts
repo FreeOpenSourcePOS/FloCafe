@@ -273,7 +273,7 @@ export function computeDayAggregates(db: ReturnType<typeof getDatabase>, busines
   const staffSalesRows = db.prepare(`
     SELECT u.id AS user_id, u.name AS name, u.role AS role,
       COALESCE(SUM(b.paid_amount), 0) AS revenue,
-      COUNT(DISTINCT b.id) AS orderCount
+      COUNT(b.id) AS orderCount
     FROM bills b
     JOIN orders o ON o.id = b.order_id
     JOIN users u ON u.id = o.user_id

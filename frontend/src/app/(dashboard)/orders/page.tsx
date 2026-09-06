@@ -562,7 +562,9 @@ export default function OrdersPage() {
           { isReprint: false }
         );
         showPrintWarningsToast(printWarnings);
-        await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
+        try {
+          await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
+        } catch { /* best-effort history tracking */ }
       } catch (err) {
         const msg = extractPrinterErrorMessage(err);
         toast.error(formatReceiptErrorToast(msg, tOrders('receiptPrintFailedHint')));
@@ -596,10 +598,12 @@ export default function OrdersPage() {
         },
         { isReprint }
       );
-      await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
       toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
       showPrintWarningsToast(printWarnings);
-      fetchPrintHistory(billId);
+      try {
+        await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
+        fetchPrintHistory(billId);
+      } catch { /* best-effort history tracking */ }
     } catch (err) {
       const detail = extractPrinterErrorMessage(err);
       toast.error(formatReceiptErrorToast(detail, tOrders('printReceiptFailed')));

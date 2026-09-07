@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { ChevronRight, Eye, LayoutGrid, Maximize2, Minimize2, Pencil, Plus, Sparkles, Table2, Trash2, Users } from 'lucide-react';
+import { ChevronRight, Eye, LayoutGrid, Maximize2, Minimize2, MoreHorizontal, Pencil, Plus, Sparkles, Table2, Trash2, Users } from 'lucide-react';
 import type { Order, Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n';
@@ -202,6 +202,12 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
   const [floorForm, setFloorForm] = useState({ name: '', tableName: '', capacity: '4' });
   const [floorFormSaving, setFloorFormSaving] = useState(false);
   const [actionTable, setActionTable] = useState<Table | null>(null);
+  // Floor management state — Issue #646.
+  const [floorMenuFor, setFloorMenuFor] = useState<string | null>(null);
+  const [floorRenameOpen, setFloorRenameOpen] = useState<{ from: string; to: string } | null>(null);
+  const [floorDeleteTarget, setFloorDeleteTarget] = useState<string | null>(null);
+  const [floorActionSaving, setFloorActionSaving] = useState(false);
+  const floorMenuRef = useRef<HTMLDivElement>(null);
 
   // Drop stale action-sheet selection when entering edit mode
   // so it does not pop up when returning to service mode.
@@ -224,10 +230,25 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
       setFormOpen(false);
       setEditingId(null);
       setFloorFormOpen(false);
+      setFloorMenuFor(null);
+      setFloorRenameOpen(null);
+      setFloorDeleteTarget(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Close the per-floor action menu on outside click.
+  useEffect(() => {
+    if (!floorMenuFor) return;
+    const onDocPointer = (e: PointerEvent) => {
+      const node = floorMenuRef.current;
+      if (node && e.target instanceof Node && node.contains(e.target)) return;
+      setFloorMenuFor(null);
+    };
+    window.addEventListener('pointerdown', onDocPointer);
+    return () => window.removeEventListener('pointerdown', onDocPointer);
+  }, [floorMenuFor]);
 
   // Render-time prop adjustment: drop converged or deleted-table overrides.
   const [syncedTables, setSyncedTables] = useState(tables);
@@ -560,6 +581,51 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
     }
   };
 
+  // Rename a floor; backend merges into an existing target if the name collides.
+  const submitFloorRename = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!floorRenameOpen) return;
+    const target = floorRenameOpen.to.trim();
+    if (!target || target === floorRenameOpen.from) {
+      setFloorRenameOpen(null);
+      return;
+    }
+    setFloorActionSaving(true);
+    try {
+      const { from } = floorRenameOpen;
+      await api.patch(`/tables/floors/${encodeURIComponent(from)}`, { newName: target });
+      toast.success(t('floorRenamed'), { position: 'top-center' });
+      setFloorRenameOpen(null);
+      setActiveFloor(target);
+      onSaved?.();
+    } catch {
+      toast.error(t('floorRenameFailed'), { position: 'top-center' });
+    } finally {
+      setFloorActionSaving(false);
+    }
+  };
+
+  // Remove a floor; tables stay, just fall back into the Unassigned bucket.
+  const submitFloorDelete = async () => {
+    if (!floorDeleteTarget) return;
+    setFloorActionSaving(true);
+    try {
+      await api.delete(`/tables/floors/${encodeURIComponent(floorDeleteTarget)}`);
+      toast.success(t('floorDeleted'), { position: 'top-center' });
+      const target = floorDeleteTarget;
+      setFloorDeleteTarget(null);
+      setActiveFloor((cur) => (cur === target ? '' : cur));
+      onSaved?.();
+    } catch {
+      toast.error(t('floorDeleteFailed'), { position: 'top-center' });
+    } finally {
+      setFloorActionSaving(false);
+    }
+  };
+
+  const tablesOnFloor = (floorName: string): number =>
+    tables.filter((tb) => (tb.floor || '') === floorName).length;
+
   const seats = (capacity: number) => (
     <span className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
       <Users size={10} className="text-muted-foreground" />
@@ -709,24 +775,86 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
           {floors.map((f) => {
             const count = floorCounts.get(f) ?? 0;
             const label = f || t('floorplanUnassigned');
+            // Hide the menu trigger on the implicit Unassigned bucket.
+            const isUnassigned = f === '';
+            const menuOpen = floorMenuFor === f;
             return (
-              <button
+              <div
                 key={f || 'unassigned'}
-                onClick={() => setActiveFloor(f)}
-                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-                  !overview && f === floor ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                ref={menuOpen ? floorMenuRef : undefined}
+                className={`relative flex items-center gap-0.5 rounded-lg ${
+                  !overview && f === floor ? 'bg-card shadow-sm' : ''
                 }`}
-                title={f === '' ? t('floorplanUnassignedHint') : undefined}
               >
-                {label}
-                {count > 0 && (
-                  <span className={`rounded-full px-1.5 text-[10px] font-semibold ${
-                    !overview && f === floor ? 'bg-muted text-foreground' : 'bg-card/70 text-muted-foreground'
-                  }`}>
-                    {count}
-                  </span>
+                <button
+                  onClick={() => setActiveFloor(f)}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                    !overview && f === floor ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                  title={f === '' ? t('floorplanUnassignedHint') : undefined}
+                >
+                  {label}
+                  {count > 0 && (
+                    <span className={`rounded-full px-1.5 text-[10px] font-semibold ${
+                      !overview && f === floor ? 'bg-muted text-foreground' : 'bg-card/70 text-muted-foreground'
+                    }`}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+                {edit && !isUnassigned && (
+                  <>
+                    <button
+                      type="button"
+                      data-testid={`floorplan-menu-${f}`}
+                      aria-label={t('floorActions')}
+                      aria-haspopup="menu"
+                      aria-expanded={menuOpen}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFloorMenuFor((cur) => (cur === f ? null : f));
+                      }}
+                      className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                        menuOpen
+                          ? 'bg-muted text-foreground'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                      }`}
+                    >
+                      <MoreHorizontal size={14} />
+                    </button>
+                    {menuOpen && (
+                      <div
+                        role="menu"
+                        data-testid={`floorplan-menu-panel-${f}`}
+                        className="absolute end-0 top-full z-30 mt-1 min-w-[160px] rounded-xl border border-border bg-card p-1 shadow-lg"
+                      >
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setFloorMenuFor(null);
+                            setFloorRenameOpen({ from: f, to: f });
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-foreground hover:bg-muted"
+                        >
+                          <Pencil size={14} /> {t('renameFloor')}
+                        </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setFloorMenuFor(null);
+                            setFloorDeleteTarget(f);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40"
+                        >
+                          <Trash2 size={14} /> {t('deleteFloor')}
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
-              </button>
+              </div>
             );
           })}
           {canManage && (
@@ -1214,6 +1342,73 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {floorRenameOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setFloorRenameOpen(null)}>
+          <div className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()} data-testid="floorplan-floor-rename-form" role="dialog" aria-modal="true">
+            <h2 className="text-lg font-bold mb-1">{t('renameFloorTitle', { name: floorRenameOpen.from })}</h2>
+            <p className="text-xs text-muted-foreground mb-4">{t('renameFloorHint')}</p>
+            <form onSubmit={submitFloorRename} className="space-y-4">
+              <div>
+                <label htmlFor="floorplan-rename-name" className="block text-sm font-medium text-foreground mb-1">
+                  {t('floorName')}
+                </label>
+                <input
+                  id="floorplan-rename-name"
+                  type="text"
+                  value={floorRenameOpen.to}
+                  onChange={(e) => setFloorRenameOpen({ from: floorRenameOpen!.from, to: e.target.value })}
+                  className="w-full px-3 py-2 border border-border bg-card rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  autoFocus
+                  required
+                />
+              </div>
+              {floorRenameOpen.to.trim() && floorRenameOpen.to.trim() !== floorRenameOpen.from && namedFloors.includes(floorRenameOpen.to.trim()) && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                  {t('renameFloorMergeHint', { target: floorRenameOpen.to.trim() })}
+                </div>
+              )}
+              <div className="flex gap-2 pt-1">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setFloorRenameOpen(null)} disabled={floorActionSaving}>
+                  {tCommon('cancel')}
+                </Button>
+                <Button
+                  type="submit"
+                  className="flex-1"
+                  disabled={floorActionSaving || !floorRenameOpen.to.trim() || floorRenameOpen.to.trim() === floorRenameOpen.from}
+                >
+                  {floorActionSaving ? tCommon('saving') : t('renameFloorConfirm')}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {floorDeleteTarget && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setFloorDeleteTarget(null)}>
+          <div className="bg-card text-foreground rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()} data-testid="floorplan-floor-delete-form" role="dialog" aria-modal="true">
+            <h2 className="text-lg font-bold mb-1">{t('deleteFloorTitle', { name: floorDeleteTarget })}</h2>
+            <p className="text-xs text-muted-foreground mb-4">
+              {t('deleteFloorHint', { count: tablesOnFloor(floorDeleteTarget) })}
+            </p>
+            <div className="flex gap-2 pt-1">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setFloorDeleteTarget(null)} disabled={floorActionSaving}>
+                {tCommon('cancel')}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="flex-1"
+                onClick={submitFloorDelete}
+                disabled={floorActionSaving}
+              >
+                {floorActionSaving ? tCommon('saving') : t('deleteFloorConfirm')}
+              </Button>
+            </div>
           </div>
         </div>
       )}

@@ -2085,7 +2085,21 @@
     "floorplanViewPlan": "Plano ng palapag",
     "floorplanViewList": "Listahan",
     "editLayout": "I-edit ang layout",
-    "backToPlan": "Bumalik sa plano"
+    "backToPlan": "Bumalik sa plano",
+    "floorActions": "Mga aksyon sa palapag",
+    "renameFloor": "Palitan ang pangalan ng palapag",
+    "deleteFloor": "Tanggalin ang palapag",
+    "renameFloorTitle": "Palitan ang pangalan ng palapag na {name}",
+    "renameFloorConfirm": "Palitan ang pangalan",
+    "renameFloorMergeHint": "May umiiral nang palapag na {target}. Pagsasamahin ang mga mesa mula sa parehong palapag.",
+    "renameFloorHint": "Mananatili ang mga mesa sa kanilang lugar. Ang pagpapalit ng pangalan sa umiiral na palapag ay nagsasanhi ng pagsasama.",
+    "deleteFloorTitle": "Tanggalin ang palapag na {name}?",
+    "deleteFloorHint": "{count, plural, one {# mesa} other {# mesa}} sa palapag na ito ay ililipat sa Hindi nakatala. Ang mga mesa mismo ay mananatili.",
+    "deleteFloorConfirm": "Tanggalin ang palapag",
+    "floorRenamed": "Pinalitan ang pangalan ng palapag",
+    "floorRenameFailed": "Hindi pinalitan ang pangalan ng palapag",
+    "floorDeleted": "Tinanggal ang palapag",
+    "floorDeleteFailed": "Hindi tinanggal ang palapag"
   },
   "tax": {
     "actionActivate": "Na-activate ang pack",

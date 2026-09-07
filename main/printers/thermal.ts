@@ -176,8 +176,9 @@ const isMasBuild =
   (process as NodeJS.Process & { mas?: boolean }).mas === true;
 const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
-const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
-const RECEIPT_BRANDING_URL = 'https://flopos.com';
+const RECEIPT_BRANDING = 'Powered by FloPOS (flopos.com)';
+const RECEIPT_BRANDING_NAME = RECEIPT_BRANDING;
+const RECEIPT_BRANDING_URL = 'flopos.com';
 export type PrinterColumnWidth = 36 | 42 | 48;
 
 export interface PrinterInfo {
@@ -1576,8 +1577,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 
 export function appendPoweredByFooter(lines: string[]): void {
   lines.push('', '');
-  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_NAME + '{/FONT_B}{/CENTER}');
-  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
+  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING + '{/FONT_B}{/CENTER}');
 }
 
 /** Compact thermal receipt: builds PrintDocument and renders via document-compact pipeline. */

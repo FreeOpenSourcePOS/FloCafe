@@ -2030,13 +2030,14 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     bar,
     '{CUT}',
   ];
-  if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang });
+  if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang, columns: width });
   // Explicit shaping capability prevents raster profile passing unshaped Arabic to text.
   const textData = buildEscPos(lines.slice(0, -1), false, {
     cutMode,
     language: lang,
     capabilities,
     arabicShaping: capabilities.shaping.arabic,
+    columns: width,
   });
   const rasterData = encodeRasterUnits([{
     unitId: 'diagnostic-test-page',
@@ -2553,7 +2554,15 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
 
     line = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
 
-    buf.push(0x1B, 0x61, center ? 0x01 : 0x00);
+    const cols = options.columns;
+    if (center && typeof cols === 'number' && cols > 0 && cols < 48) {
+      const maxSlots = lineDW ? Math.floor(cols / 2) : cols;
+      const padding = Math.max(0, Math.floor((maxSlots - line.length) / 2));
+      line = ' '.repeat(padding) + line;
+      buf.push(0x1B, 0x61, 0x00);
+    } else {
+      buf.push(0x1B, 0x61, center ? 0x01 : 0x00);
+    }
 
     let mode = 0;
     if (lineDH) mode |= 0x10;

@@ -1065,9 +1065,13 @@ async function main() {
         assertWidthBudget(longValueZ, 32, 'print (N3 32-col long value)');
         const longPreview = thermalModule.escPosToText(thermalModule.buildZReportBody(longValueZ, undefined, { columns: 32 }));
         assert(longPreview.includes('Period start:'), 'print (32-col): period start label renders');
+        assert(longPreview.includes('9:15:30 AM'), 'print (32-col): period start timestamp renders intact');
         assert(longPreview.includes('Credit Card (Mastercard) x99'), 'print (32-col): payment method head is not truncated');
         assert(longPreview.includes('State Goods and Services Tax'), 'print (32-col): long tax breakdown wraps');
+        assert(longPreview.includes('(SGST 9%)'), 'print (32-col): wrapped tax component fragment renders');
         assert(longPreview.includes('Alexander Bartholomew-Smith'), 'print (32-col): long staff name wraps');
+        assert(longPreview.includes('Closed by: Alexander'), 'print (32-col): closed_by operator head renders');
+        assert(longPreview.includes('Bartholomew-Smith'), 'print (32-col): closed_by wrapped operator fragment renders');
 
 
         // Printing must NOT mutate the row.

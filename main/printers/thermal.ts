@@ -2129,7 +2129,11 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   sections.push('{INIT}');
 
   // Header block: wrap business name, address, and tax ID within columns.
-  if (settings.business_name) pushCenteredWrapped(sections, '{BOLD}' + label(settings.business_name) + '{/BOLD}', cols, lang, printer?.capabilities);
+  if (settings.business_name) {
+    for (const line of wrapText(label(settings.business_name), cols)) {
+      sections.push('{CENTER}{BOLD}' + line + '{/BOLD}{/CENTER}');
+    }
+  }
   if (settings.business_address) pushCenteredWrapped(sections, label(settings.business_address), cols, lang, printer?.capabilities);
   if (settings.tax_registration_number) pushCenteredWrapped(sections, label(settings.tax_registration_number), cols, lang, printer?.capabilities);
   sections.push('');

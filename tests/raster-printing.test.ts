@@ -1014,6 +1014,45 @@ async function run(): Promise<void> {
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: 'https://example.invalid/font.woff2' } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: null } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, family: 'bad;url(x)' } }), false);
+
+  const baseLayout = {
+    kind: 'financial-item' as const,
+    columns: [
+      { text: 'Item', align: 'left' as const },
+      { text: '10.00', align: 'right' as const },
+    ],
+  };
+  assert.equal(isRasterRenderRequest({ ...request, layout: baseLayout }), true);
+  assert.equal(isRasterRenderRequest({
+    ...request,
+    layout: {
+      ...baseLayout,
+      columns: [
+        { text: 'Item', align: 'left' as const, widthRatio: 0.5 },
+        { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
+      ],
+    },
+  }), true);
+  assert.equal(isRasterRenderRequest({
+    ...request,
+    layout: {
+      ...baseLayout,
+      columns: [
+        { text: 'Item', align: 'left' as const, widthRatio: 0.6 },
+        { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
+      ],
+    },
+  }), true);
+  assert.equal(isRasterRenderRequest({
+    ...request,
+    layout: {
+      ...baseLayout,
+      columns: [
+        { text: 'Item', align: 'left' as const, widthRatio: 0.7 },
+        { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
+      ],
+    },
+  }), false);
   assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: true }), false);
   assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: false, code: 'render-failed', detail: 'failed' }), true);
 

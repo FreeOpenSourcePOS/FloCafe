@@ -270,6 +270,7 @@ export function isRasterRenderRequest(value: unknown): value is RasterRenderRequ
         && column.text.length <= 16_000
         && (column.align === 'left' || column.align === 'right')
         && (column.widthRatio === undefined || (typeof column.widthRatio === 'number' && Number.isFinite(column.widthRatio) && column.widthRatio > 0 && column.widthRatio <= 1)))
+      && request.layout.columns.reduce((sum, col) => sum + (typeof col?.widthRatio === 'number' ? col.widthRatio : 0), 0) <= 1.000001
     ))
     && ['normal', 'bold', 'double-height', 'double-width', 'font-b'].includes(request.style as string)
     && (request.styles === undefined || (Array.isArray(request.styles) && request.styles.length > 0 && request.styles.length <= 4

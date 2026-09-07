@@ -1575,6 +1575,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 }
 
 export function appendPoweredByFooter(lines: string[]): void {
+  lines.push('', '');
   lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_NAME + '{/FONT_B}{/CENTER}');
   lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
 }

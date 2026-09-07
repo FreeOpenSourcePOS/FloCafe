@@ -2085,7 +2085,21 @@
     "floorplanViewPlan": "Plan",
     "floorplanViewList": "Liste",
     "editLayout": "Modifier la disposition",
-    "backToPlan": "Retour au plan"
+    "backToPlan": "Retour au plan",
+    "floorActions": "Actions de l'étage",
+    "renameFloor": "Renommer l'étage",
+    "deleteFloor": "Supprimer l'étage",
+    "renameFloorTitle": "Renommer l'étage {name}",
+    "renameFloorConfirm": "Renommer l'étage",
+    "renameFloorMergeHint": "Un étage nommé {target} existe déjà. Les tables des deux étages seront fusionnées.",
+    "renameFloorHint": "Les tables restent en place. Renommer vers un étage existant les fusionne.",
+    "deleteFloorTitle": "Supprimer l'étage {name} ?",
+    "deleteFloorHint": "{count, plural, one {# table} other {# tables}} de cet étage seront déplacées vers Non attribuées. Les tables elles-mêmes sont conservées.",
+    "deleteFloorConfirm": "Supprimer l'étage",
+    "floorRenamed": "Étage renommé",
+    "floorRenameFailed": "Impossible de renommer l'étage",
+    "floorDeleted": "Étage supprimé",
+    "floorDeleteFailed": "Impossible de supprimer l'étage"
   },
   "tax": {
     "actionActivate": "Module activé",

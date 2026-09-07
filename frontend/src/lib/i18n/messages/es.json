@@ -2085,7 +2085,21 @@
     "floorplanViewPlan": "Plano",
     "floorplanViewList": "Lista",
     "editLayout": "Editar distribución",
-    "backToPlan": "Volver al plano"
+    "backToPlan": "Volver al plano",
+    "floorActions": "Acciones del piso",
+    "renameFloor": "Renombrar piso",
+    "deleteFloor": "Eliminar piso",
+    "renameFloorTitle": "Renombrar piso {name}",
+    "renameFloorConfirm": "Renombrar piso",
+    "renameFloorMergeHint": "Ya existe un piso llamado {target}. Las mesas de ambos pisos se combinarán.",
+    "renameFloorHint": "Las mesas quedan en su lugar. Renombrar a un piso existente las fusiona.",
+    "deleteFloorTitle": "¿Eliminar piso {name}?",
+    "deleteFloorHint": "{count, plural, one {# mesa} other {# mesas}} de este piso se moverán a Sin asignar. Las mesas en sí se conservan.",
+    "deleteFloorConfirm": "Eliminar piso",
+    "floorRenamed": "Piso renombrado",
+    "floorRenameFailed": "No se pudo renombrar el piso",
+    "floorDeleted": "Piso eliminado",
+    "floorDeleteFailed": "No se pudo eliminar el piso"
   },
   "tax": {
     "actionActivate": "Paquete activado",

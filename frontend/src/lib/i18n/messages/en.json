@@ -2085,7 +2085,21 @@
     "floorplanViewPlan": "Floor plan",
     "floorplanViewList": "List",
     "editLayout": "Edit layout",
-    "backToPlan": "Back to floor plan"
+    "backToPlan": "Back to floor plan",
+    "floorActions": "Floor actions",
+    "renameFloor": "Rename floor",
+    "deleteFloor": "Delete floor",
+    "renameFloorTitle": "Rename floor {name}",
+    "renameFloorConfirm": "Rename floor",
+    "renameFloorMergeHint": "A floor named {target} already exists. Tables on both floors will be merged.",
+    "renameFloorHint": "Tables stay in place. Renaming to an existing floor merges them.",
+    "deleteFloorTitle": "Delete floor {name}?",
+    "deleteFloorHint": "{count, plural, one {# table} other {# tables}} on this floor will move to Unassigned. The tables themselves stay.",
+    "deleteFloorConfirm": "Delete floor",
+    "floorRenamed": "Floor renamed",
+    "floorRenameFailed": "Failed to rename floor",
+    "floorDeleted": "Floor deleted",
+    "floorDeleteFailed": "Failed to delete floor"
   },
   "tax": {
     "actionActivate": "Pack activated",

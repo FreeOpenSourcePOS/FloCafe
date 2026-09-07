@@ -11,7 +11,7 @@ import {
   type ReceiptLanguagePolicy,
   isKotItemPending,
 } from '../../shared/print';
-import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
+import { getSupportedPrinterProfiles, resolvePrinterProfile, capabilitiesForPrinter } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '../countries';
@@ -68,6 +68,7 @@ function ensureDefaultPrinter(db: any): void {
 function printerShape(printer: any) {
   if (!printer) return printer;
   const profile = resolvePrinterProfile(printer);
+  const capabilities = capabilitiesForPrinter(profile, printer.paper_width || profile.defaultPaperWidth);
   return {
     id: printer.id,
     name: printer.name,
@@ -81,7 +82,7 @@ function printerShape(printer: any) {
     updated_at: printer.updated_at,
     profile_id: profile.id,
     profile_name: `${profile.make} ${profile.model}`,
-    capabilities: profile.capabilities,
+    capabilities,
   };
 }
 
@@ -299,12 +300,13 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
     const profile = resolvePrinterProfile(printer);
+    const capabilities = capabilitiesForPrinter(profile, printer.paper_width || profile.defaultPaperWidth);
     const testData = buildTestPage(
       printer.paper_width || profile.defaultPaperWidth,
       profile.cutMode,
       tenantLanguage(db),
       tenantSettingValue(db, 'timezone') || 'Asia/Kolkata',
-      req.body?.rasterProbe === true ? profile.capabilities : undefined,
+      req.body?.rasterProbe === true ? capabilities : undefined,
     );
     let result: { ok: boolean; detail?: string } = { ok: false };
 

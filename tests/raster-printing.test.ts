@@ -16,8 +16,8 @@ import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '.
 import { buildBillDocument, buildKotDocument, isKotDocument, isPrintDocument } from '../shared/print/document';
 import { resolveTenantCurrency } from '../main/countries';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
-import { getSupportedPrinterProfiles } from '../main/printers/profiles';
-import { buildEscPos, escPosToText, financialRows, itemRows, normalizeThermalText, dotsForPaperWidth } from '../main/printers/thermal';
+import { getSupportedPrinterProfiles, dotsForPaperWidth, capabilitiesForPrinter } from '../main/printers/profiles';
+import { buildEscPos, escPosToText, financialRows, itemRows, normalizeThermalText, resolvePrinterContext } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
 import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from '../main/printers/document-classic';
@@ -1150,6 +1150,22 @@ async function run(): Promise<void> {
   assert.equal(dotsForPaperWidth('80mm'), null);
   assert.equal(dotsForPaperWidth('cols-48'), 576);
   assert.equal(dotsForPaperWidth('unknown'), null);
+
+  // resolvePrinterContext: reconciles profile, columns, and raster dot width into single context
+  const narrowPrinter = { name: 'XP-58 Test', paper_width: 'cols-32' };
+  const narrowContext = resolvePrinterContext(narrowPrinter);
+  assert.equal(narrowContext.columns, 32);
+  assert.equal(narrowContext.capabilities.raster.widthDots, 384);
+
+  const widePrinter = { name: 'XP-80 Test', paper_width: 'cols-48' };
+  const wideContext = resolvePrinterContext(widePrinter);
+  assert.equal(wideContext.columns, 48);
+  assert.equal(wideContext.capabilities.raster.widthDots, 576);
+
+  const defaultNarrowPrinter = { name: 'Generic 58mm', paper_width: '58mm' };
+  const defaultNarrowContext = resolvePrinterContext(defaultNarrowPrinter);
+  assert.equal(defaultNarrowContext.columns, 32);
+  assert.equal(defaultNarrowContext.capabilities.raster.widthDots, 384);
 
   console.log('Raster encoder and mixed-mode contract checks passed.');
 }

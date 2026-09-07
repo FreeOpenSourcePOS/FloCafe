@@ -5,7 +5,15 @@ import * as path from 'path';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
-import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, getPrinterCapabilities, SupportedPrinterProfile } from './profiles';
+import {
+  PrinterCutMode,
+  resolvePrinterProfile,
+  matchSupportedPrinterProfile,
+  getPrinterCapabilities,
+  SupportedPrinterProfile,
+  dotsForPaperWidth,
+  capabilitiesForPrinter,
+} from './profiles';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
@@ -804,9 +812,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     }
     console.log('[Printer] Using printer:', printer.name, printer.connection_type);
 
-    const profile = resolvePrinterProfile(printer);
-    const cols = getColumnsForPrinter(printer, profile);
-
+    const { profile, columns: cols, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
     const db = getDatabase();
     const biz = db.prepare('SELECT * FROM settings LIMIT 1').get() as any;
     const locale = biz?.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
@@ -814,8 +820,6 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const tzOptions = { timeZone: timezone };
 
     const warnings: PrintWarning[] = [];
-    // Request-body shaping override takes precedence over profile default.
-    const capabilities = capabilitiesForPrinter(profile, printer.paper_width || profile.defaultPaperWidth, arabicShapingOverride);
     const nativeCapabilities = nativeFallbackCapabilities(capabilities);
     let data: Buffer;
     if (rasterCapabilityEnabled(capabilities)) {
@@ -1011,36 +1015,26 @@ export function columnsForPaperWidth(paperWidth: string): number | null {
   }
 }
 
-/**
- * Returns the canonical raster dot width for a paper_width string, or null
- * when the string is unknown. Mirrors columnsForPaperWidth but in dots.
- */
-export function dotsForPaperWidth(paperWidth: string): number | null {
-  const cols = columnsForPaperWidth(paperWidth);
-  if (cols === null) return null;
-  if (cols <= 32) return 384;
-  if (cols <= 36) return 432;
-  if (cols <= 40) return 480;
-  if (cols <= 42) return 512;
-  if (cols <= 44) return 528;
-  return 576;
+export { dotsForPaperWidth, capabilitiesForPrinter };
+
+export interface PrinterContext {
+  profile: SupportedPrinterProfile;
+  columns: number;
+  capabilities: ThermalPrinterCapabilities;
 }
 
 /**
- * Returns capabilities for the printer, capping raster.widthDots to the
- * configured paper_width when the user has set a narrower width than the
- * hardware profile's default. Never increases the profile dot width.
+ * Standardized entrypoint to resolve profile, columns, and capabilities for a printer.
+ * Guarantees that columns and raster widthDots always stay aligned with paper_width.
  */
-function capabilitiesForPrinter(
-  profile: SupportedPrinterProfile,
-  paperWidth: string | null | undefined,
+export function resolvePrinterContext(
+  printer: any,
   arabicShapingOverride?: boolean,
-): ThermalPrinterCapabilities {
-  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
-  if (!capabilities.raster.enabled || !capabilities.raster.widthDots) return capabilities;
-  const configuredDots = dotsForPaperWidth(String(paperWidth || ''));
-  if (configuredDots === null || configuredDots >= capabilities.raster.widthDots) return capabilities;
-  return { ...capabilities, raster: { ...capabilities.raster, widthDots: configuredDots } };
+): PrinterContext {
+  const profile = resolvePrinterProfile(printer);
+  const columns = getColumnsForPrinter(printer, profile);
+  const capabilities = capabilitiesForPrinter(profile, printer?.paper_width || profile.defaultPaperWidth, arabicShapingOverride);
+  return { profile, columns, capabilities };
 }
 
 async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
@@ -1091,11 +1085,8 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
     };
   }
 
-  const profile = resolvePrinterProfile(printer);
-  const columns = getColumnsForPrinter(printer, profile);
+  const { profile, columns, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
   const warnings: PrintWarning[] = [];
-  // Request-body shaping override takes precedence over profile default.
-  const capabilities = capabilitiesForPrinter(profile, printer.paper_width || profile.defaultPaperWidth, arabicShapingOverride);
   const nativeCapabilities = nativeFallbackCapabilities(capabilities);
   const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, nativeCapabilities.shaping.arabic, language, additionalLanguage, nativeCapabilities);
   return { printer, data, warnings, columns };
@@ -1315,8 +1306,7 @@ async function rasterizeReceiptIfEnabled(
   language: string | undefined,
   additionalLanguage: string | undefined,
 ): Promise<ReturnType<typeof prepareReceipt>> {
-  const profile = resolvePrinterProfile(prepared.printer);
-  const capabilities = capabilitiesForPrinter(profile, prepared.printer?.paper_width || profile.defaultPaperWidth, arabicShapingOverride);
+  const { profile, capabilities } = resolvePrinterContext(prepared.printer, arabicShapingOverride);
   if (!rasterCapabilityEnabled(capabilities)) return prepared;
   const document = receiptDocumentLines(
     order,
@@ -2297,9 +2287,7 @@ export async function printZReport(z: any, signal?: AbortSignal, targetPrinter?:
     // F3: resolve the printer's profile so `buildZReportBody` can use the
     // right columns and capabilities (58mm/36/42 cols, profile-specific
     // code pages, etc.). Same pattern as `prepareReceipt` (`:1043-1056`).
-    const profile = resolvePrinterProfile(printer);
-    const columns = columnsForPaperWidth(printer.paper_width || profile.defaultPaperWidth) || 48;
-    const capabilities = getPrinterCapabilities(profile, false);
+    const { profile, columns, capabilities } = resolvePrinterContext(printer, false);
     const zWithMarker = { ...z, __isReprint: !!z?.__isReprint };
     // No language: the Z body is English-literal by design (see the route's
     // F7 note); buildZReportBody falls back to its default language.

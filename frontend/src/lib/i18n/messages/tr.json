@@ -2085,7 +2085,21 @@
     "floorplanViewPlan": "Yerleşim planı",
     "floorplanViewList": "Liste",
     "editLayout": "Düzeni düzenle",
-    "backToPlan": "Plana dön"
+    "backToPlan": "Plana dön",
+    "floorActions": "Kat işlemleri",
+    "renameFloor": "Katı yeniden adlandır",
+    "deleteFloor": "Katı sil",
+    "renameFloorTitle": "{name} katını yeniden adlandır",
+    "renameFloorConfirm": "Katı yeniden adlandır",
+    "renameFloorMergeHint": "{target} adında bir kat zaten var. Her iki kattaki masalar birleştirilecek.",
+    "renameFloorHint": "Masalar yerinde kalır. Var olan bir kata yeniden adlandırmak masaları birleştirir.",
+    "deleteFloorTitle": "{name} katı silinsin mi?",
+    "deleteFloorHint": "Bu kattaki {count, plural, one {# masa} other {# masa}} Atanmamış'a taşınacak. Masaların kendisi kalır.",
+    "deleteFloorConfirm": "Katı sil",
+    "floorRenamed": "Kat yeniden adlandırıldı",
+    "floorRenameFailed": "Kat yeniden adlandırılamadı",
+    "floorDeleted": "Kat silindi",
+    "floorDeleteFailed": "Kat silinemedi"
   },
   "tax": {
     "actionActivate": "Vergi paketi etkinleştirildi",

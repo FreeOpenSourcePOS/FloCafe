@@ -2085,7 +2085,21 @@
     "floorplanViewPlan": "نقشه سالن",
     "floorplanViewList": "فهرست",
     "editLayout": "ویرایش چیدمان",
-    "backToPlan": "بازگشت به نقشه سالن"
+    "backToPlan": "بازگشت به نقشه سالن",
+    "floorActions": "عملیات طبقه",
+    "renameFloor": "تغییر نام طبقه",
+    "deleteFloor": "حذف طبقه",
+    "renameFloorTitle": "تغییر نام طبقهٔ {name}",
+    "renameFloorConfirm": "تغییر نام طبقه",
+    "renameFloorMergeHint": "طبقه‌ای با نام {target} از قبل وجود دارد. میزهای هر دو طبقه ادغام می‌شوند.",
+    "renameFloorHint": "میزها در جای خود می‌مانند. تغییر نام به یک طبقهٔ موجود باعث ادغام می‌شود.",
+    "deleteFloorTitle": "حذف طبقهٔ {name}؟",
+    "deleteFloorHint": "{count, plural, one {# میز} other {# میز}} از این طبقه به دستهٔ بدون طبقه منتقل می‌شوند. خود میزها باقی می‌مانند.",
+    "deleteFloorConfirm": "حذف طبقه",
+    "floorRenamed": "نام طبقه تغییر کرد",
+    "floorRenameFailed": "تغییر نام طبقه ناموفق بود",
+    "floorDeleted": "طبقه حذف شد",
+    "floorDeleteFailed": "حذف طبقه ناموفق بود"
   },
   "tax": {
     "actionActivate": "بسته فعال شد",

@@ -2085,7 +2085,21 @@
     "floorplanViewPlan": "Planta",
     "floorplanViewList": "Lista",
     "editLayout": "Editar layout",
-    "backToPlan": "Voltar à planta"
+    "backToPlan": "Voltar à planta",
+    "floorActions": "Ações do andar",
+    "renameFloor": "Renomear andar",
+    "deleteFloor": "Excluir andar",
+    "renameFloorTitle": "Renomear andar {name}",
+    "renameFloorConfirm": "Renomear andar",
+    "renameFloorMergeHint": "Já existe um andar chamado {target}. As mesas de ambos os andares serão mescladas.",
+    "renameFloorHint": "As mesas permanecem onde estão. Renomear para um andar existente as mescla.",
+    "deleteFloorTitle": "Excluir andar {name}?",
+    "deleteFloorHint": "{count, plural, one {# mesa} other {# mesas}} deste andar serão movidas para Sem andar. As mesas em si são mantidas.",
+    "deleteFloorConfirm": "Excluir andar",
+    "floorRenamed": "Andar renomeado",
+    "floorRenameFailed": "Falha ao renomear o andar",
+    "floorDeleted": "Andar excluído",
+    "floorDeleteFailed": "Falha ao excluir o andar"
   },
   "tax": {
     "actionActivate": "Pacote ativado",

@@ -5,7 +5,15 @@ import * as path from 'path';
 import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, getSettingValue, parseDbTimestamp } from '../db';
-import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, getPrinterCapabilities, SupportedPrinterProfile } from './profiles';
+import {
+  PrinterCutMode,
+  resolvePrinterProfile,
+  matchSupportedPrinterProfile,
+  getPrinterCapabilities,
+  SupportedPrinterProfile,
+  dotsForPaperWidth,
+  capabilitiesForPrinter,
+} from './profiles';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
@@ -168,8 +176,9 @@ const isMasBuild =
   (process as NodeJS.Process & { mas?: boolean }).mas === true;
 const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
-const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
-const RECEIPT_BRANDING_URL = 'https://flopos.com';
+const RECEIPT_BRANDING = 'Powered by FloPOS (flopos.com)';
+const RECEIPT_BRANDING_NAME = RECEIPT_BRANDING;
+const RECEIPT_BRANDING_URL = 'flopos.com';
 export type PrinterColumnWidth = 36 | 42 | 48;
 
 export interface PrinterInfo {
@@ -804,9 +813,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     }
     console.log('[Printer] Using printer:', printer.name, printer.connection_type);
 
-    const profile = resolvePrinterProfile(printer);
-    const cols = getColumnsForPrinter(printer, profile);
-
+    const { profile, columns: cols, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
     const db = getDatabase();
     const biz = db.prepare('SELECT * FROM settings LIMIT 1').get() as any;
     const locale = biz?.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
@@ -814,8 +821,6 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const tzOptions = { timeZone: timezone };
 
     const warnings: PrintWarning[] = [];
-    // Request-body shaping override takes precedence over profile default.
-    const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
     const nativeCapabilities = nativeFallbackCapabilities(capabilities);
     let data: Buffer;
     if (rasterCapabilityEnabled(capabilities)) {
@@ -1011,6 +1016,25 @@ export function columnsForPaperWidth(paperWidth: string): number | null {
   }
 }
 
+export { dotsForPaperWidth, capabilitiesForPrinter };
+
+export interface PrinterContext {
+  profile: SupportedPrinterProfile;
+  columns: number;
+  capabilities: ThermalPrinterCapabilities;
+}
+
+/** Resolves profile, column count, and capabilities aligned with printer paper_width. */
+export function resolvePrinterContext(
+  printer: any,
+  arabicShapingOverride?: boolean,
+): PrinterContext {
+  const profile = resolvePrinterProfile(printer);
+  const columns = getColumnsForPrinter(printer, profile);
+  const capabilities = capabilitiesForPrinter(profile, printer?.paper_width || profile.defaultPaperWidth, arabicShapingOverride);
+  return { profile, columns, capabilities };
+}
+
 async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
   switch (printer.connection_type) {
     case 'network':
@@ -1059,11 +1083,8 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
     };
   }
 
-  const profile = resolvePrinterProfile(printer);
-  const columns = getColumnsForPrinter(printer, profile);
+  const { profile, columns, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
   const warnings: PrintWarning[] = [];
-  // Request-body shaping override takes precedence over profile default.
-  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
   const nativeCapabilities = nativeFallbackCapabilities(capabilities);
   const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, nativeCapabilities.shaping.arabic, language, additionalLanguage, nativeCapabilities);
   return { printer, data, warnings, columns };
@@ -1205,7 +1226,7 @@ export async function rasterizePrintDocumentForWebUsb(
   },
 ): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
+  const capabilities = capabilitiesForPrinter(profile, `cols-${options.columns}`, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = template === 'compact'
@@ -1250,7 +1271,7 @@ export async function rasterizeKotDocumentForWebUsb(
   },
 ): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
+  const capabilities = capabilitiesForPrinter(profile, `cols-${options.columns}`, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = renderKotDocumentToLines(document, {
@@ -1283,8 +1304,7 @@ async function rasterizeReceiptIfEnabled(
   language: string | undefined,
   additionalLanguage: string | undefined,
 ): Promise<ReturnType<typeof prepareReceipt>> {
-  const profile = resolvePrinterProfile(prepared.printer);
-  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+  const { profile, capabilities } = resolvePrinterContext(prepared.printer, arabicShapingOverride);
   if (!rasterCapabilityEnabled(capabilities)) return prepared;
   const document = receiptDocumentLines(
     order,
@@ -1553,8 +1573,8 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 }
 
 export function appendPoweredByFooter(lines: string[]): void {
-  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_NAME + '{/FONT_B}{/CENTER}');
-  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
+  lines.push('', '');
+  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING + '{/FONT_B}{/CENTER}');
 }
 
 /** Compact thermal receipt: builds PrintDocument and renders via document-compact pipeline. */
@@ -2008,13 +2028,14 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     bar,
     '{CUT}',
   ];
-  if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang });
+  if (!capabilities || !rasterCapabilityEnabled(capabilities)) return buildEscPos(lines, false, { cutMode, language: lang, columns: width });
   // Explicit shaping capability prevents raster profile passing unshaped Arabic to text.
   const textData = buildEscPos(lines.slice(0, -1), false, {
     cutMode,
     language: lang,
     capabilities,
     arabicShaping: capabilities.shaping.arabic,
+    columns: width,
   });
   const rasterData = encodeRasterUnits([{
     unitId: 'diagnostic-test-page',
@@ -2265,9 +2286,7 @@ export async function printZReport(z: any, signal?: AbortSignal, targetPrinter?:
     // F3: resolve the printer's profile so `buildZReportBody` can use the
     // right columns and capabilities (58mm/36/42 cols, profile-specific
     // code pages, etc.). Same pattern as `prepareReceipt` (`:1043-1056`).
-    const profile = resolvePrinterProfile(printer);
-    const columns = columnsForPaperWidth(printer.paper_width || profile.defaultPaperWidth) || 48;
-    const capabilities = getPrinterCapabilities(profile, false);
+    const { profile, columns, capabilities } = resolvePrinterContext(printer, false);
     const zWithMarker = { ...z, __isReprint: !!z?.__isReprint };
     // No language: the Z body is English-literal by design (see the route's
     // F7 note); buildZReportBody falls back to its default language.

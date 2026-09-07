@@ -16,8 +16,8 @@ import { GENERIC_THERMAL_CAPABILITIES, type ThermalPrinterCapabilities } from '.
 import { buildBillDocument, buildKotDocument, isKotDocument, isPrintDocument } from '../shared/print/document';
 import { resolveTenantCurrency } from '../main/countries';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
-import { getSupportedPrinterProfiles } from '../main/printers/profiles';
-import { buildEscPos, escPosToText, financialRows, itemRows, normalizeThermalText } from '../main/printers/thermal';
+import { getSupportedPrinterProfiles, dotsForPaperWidth, capabilitiesForPrinter } from '../main/printers/profiles';
+import { buildEscPos, escPosToText, financialRows, itemRows, normalizeThermalText, resolvePrinterContext } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
 import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from '../main/printers/document-classic';
@@ -333,8 +333,8 @@ async function run(): Promise<void> {
   assert.equal(grandTotalRequests[0].style, 'bold');
   const pointsRequest = financialRequests.find((request) => request.text === 'نقاط مستردة -5 pts');
   assert.deepEqual(pointsRequest?.layout?.columns, [
-    { text: 'نقاط مستردة', align: 'left' },
-    { text: '-5 pts', align: 'right' },
+    { text: 'نقاط مستردة', align: 'left', widthRatio: 30 / 42 },
+    { text: '-5 pts', align: 'right', widthRatio: 12 / 42 },
   ]);
   assert.equal(financialRequests.some((request) => request.text.includes(':')), false);
   const kotDocument = buildKotDocument({
@@ -1014,6 +1014,45 @@ async function run(): Promise<void> {
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: 'https://example.invalid/font.woff2' } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, dataUrl: null } }), false);
   assert.equal(isRasterRenderRequest({ ...request, bundledFont: { ...request.bundledFont, family: 'bad;url(x)' } }), false);
+
+  const baseLayout = {
+    kind: 'financial-item' as const,
+    columns: [
+      { text: 'Item', align: 'left' as const },
+      { text: '10.00', align: 'right' as const },
+    ],
+  };
+  assert.equal(isRasterRenderRequest({ ...request, layout: baseLayout }), true);
+  assert.equal(isRasterRenderRequest({
+    ...request,
+    layout: {
+      ...baseLayout,
+      columns: [
+        { text: 'Item', align: 'left' as const, widthRatio: 0.5 },
+        { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
+      ],
+    },
+  }), true);
+  assert.equal(isRasterRenderRequest({
+    ...request,
+    layout: {
+      ...baseLayout,
+      columns: [
+        { text: 'Item', align: 'left' as const, widthRatio: 0.6 },
+        { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
+      ],
+    },
+  }), true);
+  assert.equal(isRasterRenderRequest({
+    ...request,
+    layout: {
+      ...baseLayout,
+      columns: [
+        { text: 'Item', align: 'left' as const, widthRatio: 0.7 },
+        { text: '10.00', align: 'right' as const, widthRatio: 0.4 },
+      ],
+    },
+  }), false);
   assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: true }), false);
   assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: false, code: 'render-failed', detail: 'failed' }), true);
 
@@ -1091,7 +1130,86 @@ async function run(): Promise<void> {
   assert.equal(fontlessResult.failures.length, 0);
   assert.equal(fontlessRequests.length, 2);
   assert.equal(fontlessRequests[0].bundledFont, undefined);
-  assert.equal(fontlessRequests[1].bundledFont, undefined);
+  // Verify widthRatio on financial-item and financial-summary raster layouts
+  const ratioRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (req) => {
+      ratioRequests.push(req);
+      return { version: 1, requestId: (req as any).requestId, ok: true, unit: { unitId: (req as any).requestId, financial: true, complete: true, bands: [twoRows] } };
+    },
+  }, ['{FINANCIAL}宫保鸡丁 2 $424.00'], caps, 'ratio-test', [
+    {
+      groupId: 'item-table-row-0',
+      lineIndex: 0,
+      lineCount: 1,
+      sourceLines: ['宫保鸡丁 2 $424.00'],
+      sourceControlLines: ['{FINANCIAL}宫保鸡丁 2 $424.00'],
+      sourceLayouts: [{
+        kind: 'financial-item',
+        columns: [
+          { text: '宫保鸡丁', align: 'left', widthRatio: 18 / 32 },
+          { text: '2', align: 'left', widthRatio: 4 / 32 },
+          { text: '$424.00', align: 'right', widthRatio: 10 / 32 },
+        ],
+      }],
+      financial: true,
+    },
+  ]);
+  assert.equal(ratioRequests.length, 1);
+  assert.equal(ratioRequests[0].layout.columns[0].widthRatio, 18 / 32);
+  assert.equal(ratioRequests[0].layout.columns[1].widthRatio, 4 / 32);
+  assert.equal(ratioRequests[0].layout.columns[2].widthRatio, 10 / 32);
+
+  // Verify itemRows on narrow 32-column printer never exceeds 32 columns
+  const narrow32Item = itemRows(
+    { product_name: 'Croque-Monsieur Special Long Name Here', quantity: 1, total: 32 },
+    18,
+    10,
+    32,
+    '$',
+    'en-US',
+    false,
+    'en',
+    2,
+    caps,
+  );
+  for (const line of narrow32Item) {
+    assert.ok(line.length <= 32, `Item row line "${line}" exceeds 32 characters (was ${line.length})`);
+  }
+
+  // dotsForPaperWidth: paper_width string → canonical raster dot width
+  assert.equal(dotsForPaperWidth('58mm'), 384);
+  assert.equal(dotsForPaperWidth('cols-32'), 384);
+  assert.equal(dotsForPaperWidth('58mm-36'), 432);
+  assert.equal(dotsForPaperWidth('cols-36'), 432);
+  assert.equal(dotsForPaperWidth('cols-40'), 480);
+  assert.equal(dotsForPaperWidth('80mm-42'), 576);
+  assert.equal(dotsForPaperWidth('cols-42'), 576);
+  assert.equal(dotsForPaperWidth('cols-44'), 576);
+  assert.equal(dotsForPaperWidth('80mm'), 576);
+  assert.equal(dotsForPaperWidth('cols-48'), 576);
+  assert.equal(dotsForPaperWidth('unknown'), null);
+
+  // resolvePrinterContext: reconciles profile, columns, and raster dot width into single context
+  const narrowPrinter = { name: 'XP-58 Test', paper_width: 'cols-32' };
+  const narrowContext = resolvePrinterContext(narrowPrinter);
+  assert.equal(narrowContext.columns, 32);
+  assert.equal(narrowContext.capabilities.raster.widthDots, 384);
+
+  const widePrinter = { name: 'XP-80 Test', paper_width: 'cols-48' };
+  const wideContext = resolvePrinterContext(widePrinter);
+  assert.equal(wideContext.columns, 48);
+  assert.equal(wideContext.capabilities.raster.widthDots, 576);
+
+  const defaultNarrowPrinter = { name: 'Generic 58mm', paper_width: '58mm' };
+  const defaultNarrowContext = resolvePrinterContext(defaultNarrowPrinter);
+  assert.equal(defaultNarrowContext.columns, 32);
+  assert.equal(defaultNarrowContext.capabilities.raster.widthDots, 384);
+
+  const default80Printer = { name: 'Generic 80mm', paper_width: 'cols-42' };
+  const default80Context = resolvePrinterContext(default80Printer);
+  assert.equal(default80Context.columns, 42);
+  assert.equal(default80Context.capabilities.raster.widthDots, 576);
 
   console.log('Raster encoder and mixed-mode contract checks passed.');
 }

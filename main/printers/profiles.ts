@@ -161,3 +161,27 @@ export function getPrinterCapabilities(
 ): ThermalPrinterCapabilities {
   return mergeThermalCapabilities(profile.capabilities || GENERIC_THERMAL_CAPABILITIES, arabicShapingOverride);
 }
+
+/** Maps paper_width string to canonical raster dot width, or null if unrecognized. */
+export function dotsForPaperWidth(paperWidth: string): number | null {
+  const colsMatch = String(paperWidth || '').match(/^cols-(3[2-9]|4[0-8])$/);
+  const cols = colsMatch ? Number(colsMatch[1]) : ({ '58mm': 32, '58mm-36': 36, '80mm-42': 42, '80mm': 48 } as Record<string, number>)[paperWidth] ?? null;
+  if (cols === null) return null;
+  if (cols <= 32) return 384;
+  if (cols <= 36) return 432;
+  if (cols <= 40) return 480;
+  return 576;
+}
+
+/** Returns printer capabilities, capping raster widthDots if paper_width is narrower than hardware. */
+export function capabilitiesForPrinter(
+  profile: SupportedPrinterProfile,
+  paperWidth: string | null | undefined,
+  arabicShapingOverride?: boolean,
+): ThermalPrinterCapabilities {
+  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+  if (!capabilities.raster.enabled || !capabilities.raster.widthDots) return capabilities;
+  const configuredDots = dotsForPaperWidth(String(paperWidth || ''));
+  if (configuredDots === null || configuredDots >= capabilities.raster.widthDots) return capabilities;
+  return { ...capabilities, raster: { ...capabilities.raster, widthDots: configuredDots } };
+}

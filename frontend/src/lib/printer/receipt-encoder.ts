@@ -8,7 +8,7 @@ import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { parseDbTimestamp } from '@/lib/utils';
 import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
-import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
+import { RECEIPT_BRANDING_NAME } from './branding';
 import {
   buildFrontendBillDocument,
   printLabelResolver,
@@ -120,8 +120,6 @@ function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
     .align('center')
     .size('small')
     .text(RECEIPT_BRANDING_NAME)
-    .newline()
-    .text(RECEIPT_BRANDING_URL)
     .newline()
     .size('normal')
     .align('left');

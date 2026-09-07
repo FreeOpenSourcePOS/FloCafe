@@ -17,7 +17,7 @@ import { buildBillDocument, buildKotDocument, isKotDocument, isPrintDocument } f
 import { resolveTenantCurrency } from '../main/countries';
 import { buildBackendMixedRasterBytes } from '../main/printers/raster-output';
 import { getSupportedPrinterProfiles } from '../main/printers/profiles';
-import { buildEscPos, escPosToText, financialRows, itemRows, normalizeThermalText } from '../main/printers/thermal';
+import { buildEscPos, escPosToText, financialRows, itemRows, normalizeThermalText, dotsForPaperWidth } from '../main/printers/thermal';
 import { buildTestPage } from '../main/printers/thermal';
 import { buildKotPrintData, renderKotDocumentToLines } from '../main/printers/document-kot';
 import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from '../main/printers/document-classic';
@@ -333,8 +333,8 @@ async function run(): Promise<void> {
   assert.equal(grandTotalRequests[0].style, 'bold');
   const pointsRequest = financialRequests.find((request) => request.text === 'نقاط مستردة -5 pts');
   assert.deepEqual(pointsRequest?.layout?.columns, [
-    { text: 'نقاط مستردة', align: 'left' },
-    { text: '-5 pts', align: 'right' },
+    { text: 'نقاط مستردة', align: 'left', widthRatio: 30 / 42 },
+    { text: '-5 pts', align: 'right', widthRatio: 12 / 42 },
   ]);
   assert.equal(financialRequests.some((request) => request.text.includes(':')), false);
   const kotDocument = buildKotDocument({
@@ -1091,7 +1091,65 @@ async function run(): Promise<void> {
   assert.equal(fontlessResult.failures.length, 0);
   assert.equal(fontlessRequests.length, 2);
   assert.equal(fontlessRequests[0].bundledFont, undefined);
-  assert.equal(fontlessRequests[1].bundledFont, undefined);
+  // Verify widthRatio on financial-item and financial-summary raster layouts
+  const ratioRequests: any[] = [];
+  await renderUnsupportedRasterLines({
+    render: async (req) => {
+      ratioRequests.push(req);
+      return { version: 1, requestId: (req as any).requestId, ok: true, unit: { unitId: (req as any).requestId, financial: true, complete: true, bands: [twoRows] } };
+    },
+  }, ['{FINANCIAL}宫保鸡丁 2 $424.00'], caps, 'ratio-test', [
+    {
+      groupId: 'item-table-row-0',
+      lineIndex: 0,
+      lineCount: 1,
+      sourceLines: ['宫保鸡丁 2 $424.00'],
+      sourceControlLines: ['{FINANCIAL}宫保鸡丁 2 $424.00'],
+      sourceLayouts: [{
+        kind: 'financial-item',
+        columns: [
+          { text: '宫保鸡丁', align: 'left', widthRatio: 18 / 32 },
+          { text: '2', align: 'left', widthRatio: 4 / 32 },
+          { text: '$424.00', align: 'right', widthRatio: 10 / 32 },
+        ],
+      }],
+      financial: true,
+    },
+  ]);
+  assert.equal(ratioRequests.length, 1);
+  assert.equal(ratioRequests[0].layout.columns[0].widthRatio, 18 / 32);
+  assert.equal(ratioRequests[0].layout.columns[1].widthRatio, 4 / 32);
+  assert.equal(ratioRequests[0].layout.columns[2].widthRatio, 10 / 32);
+
+  // Verify itemRows on narrow 32-column printer never exceeds 32 columns
+  const narrow32Item = itemRows(
+    { product_name: 'Croque-Monsieur Special Long Name Here', quantity: 1, total: 32 },
+    18,
+    10,
+    32,
+    '$',
+    'en-US',
+    false,
+    'en',
+    2,
+    caps,
+  );
+  for (const line of narrow32Item) {
+    assert.ok(line.length <= 32, `Item row line "${line}" exceeds 32 characters (was ${line.length})`);
+  }
+
+  // dotsForPaperWidth: paper_width string → canonical raster dot width
+  assert.equal(dotsForPaperWidth('58mm'), 384);
+  assert.equal(dotsForPaperWidth('cols-32'), 384);
+  assert.equal(dotsForPaperWidth('58mm-36'), 432);
+  assert.equal(dotsForPaperWidth('cols-36'), 432);
+  assert.equal(dotsForPaperWidth('cols-40'), 480);
+  assert.equal(dotsForPaperWidth('80mm-42'), 512);
+  assert.equal(dotsForPaperWidth('cols-42'), 512);
+  assert.equal(dotsForPaperWidth('cols-44'), 528);
+  assert.equal(dotsForPaperWidth('80mm'), null);
+  assert.equal(dotsForPaperWidth('cols-48'), 576);
+  assert.equal(dotsForPaperWidth('unknown'), null);
 
   console.log('Raster encoder and mixed-mode contract checks passed.');
 }

@@ -92,11 +92,21 @@ export function rasterRendererHtml(): string {
           const measured = columns.map((column) => Math.max(1, measure(column.text)));
           const gaps = gapDots * (columns.length - 1);
           const available = Math.max(1, request.widthDots - gaps);
-          const widths = columns.length === 2
-            ? [0, Math.min(Math.max(measured[1] + gapDots, Math.floor(available * 0.25)), Math.floor(available * 0.45))]
-            : [0, Math.min(Math.max(measured[1] + gapDots, Math.floor(available * 0.08)), Math.floor(available * 0.2)), Math.min(Math.max(measured[2] + gapDots, Math.floor(available * 0.22)), Math.floor(available * 0.4))];
-          if (columns.length === 2) widths[0] = Math.max(1, available - widths[1]);
-          else widths[0] = Math.max(1, available - widths[1] - widths[2]);
+          const hasRatios = columns.every((c) => typeof c.widthRatio === 'number' && c.widthRatio > 0);
+          const widths = hasRatios
+            ? (() => {
+              const allocated = columns.map((c) => Math.max(1, Math.round(available * c.widthRatio)));
+              const totalAllocated = allocated.reduce((sum, w) => sum + w, 0);
+              allocated[0] = Math.max(1, allocated[0] + (available - totalAllocated));
+              return allocated;
+            })()
+            : (columns.length === 2
+              ? [0, Math.min(Math.max(measured[1] + gapDots, Math.floor(available * 0.25)), Math.floor(available * 0.45))]
+              : [0, Math.min(Math.max(measured[1] + gapDots, Math.floor(available * 0.08)), Math.floor(available * 0.2)), Math.min(Math.max(measured[2] + gapDots, Math.floor(available * 0.22)), Math.floor(available * 0.4))]);
+          if (!hasRatios) {
+            if (columns.length === 2) widths[0] = Math.max(1, available - widths[1]);
+            else widths[0] = Math.max(1, available - widths[1] - widths[2]);
+          }
           const wrappedColumns = columns.map((column, index) => wrap(column.text, widths[index]));
           const lineCount = Math.max(1, ...wrappedColumns.map((column) => column.length));
           return Array.from({ length: lineCount }, (_, lineIndex) => columns.map((column, columnIndex) => ({

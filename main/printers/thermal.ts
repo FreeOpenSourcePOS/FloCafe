@@ -815,7 +815,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
 
     const warnings: PrintWarning[] = [];
     // Request-body shaping override takes precedence over profile default.
-    const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+    const capabilities = capabilitiesForPrinter(profile, printer.paper_width || profile.defaultPaperWidth, arabicShapingOverride);
     const nativeCapabilities = nativeFallbackCapabilities(capabilities);
     let data: Buffer;
     if (rasterCapabilityEnabled(capabilities)) {
@@ -1011,6 +1011,38 @@ export function columnsForPaperWidth(paperWidth: string): number | null {
   }
 }
 
+/**
+ * Returns the canonical raster dot width for a paper_width string, or null
+ * when the string is unknown. Mirrors columnsForPaperWidth but in dots.
+ */
+export function dotsForPaperWidth(paperWidth: string): number | null {
+  const cols = columnsForPaperWidth(paperWidth);
+  if (cols === null) return null;
+  if (cols <= 32) return 384;
+  if (cols <= 36) return 432;
+  if (cols <= 40) return 480;
+  if (cols <= 42) return 512;
+  if (cols <= 44) return 528;
+  return 576;
+}
+
+/**
+ * Returns capabilities for the printer, capping raster.widthDots to the
+ * configured paper_width when the user has set a narrower width than the
+ * hardware profile's default. Never increases the profile dot width.
+ */
+function capabilitiesForPrinter(
+  profile: SupportedPrinterProfile,
+  paperWidth: string | null | undefined,
+  arabicShapingOverride?: boolean,
+): ThermalPrinterCapabilities {
+  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+  if (!capabilities.raster.enabled || !capabilities.raster.widthDots) return capabilities;
+  const configuredDots = dotsForPaperWidth(String(paperWidth || ''));
+  if (configuredDots === null || configuredDots >= capabilities.raster.widthDots) return capabilities;
+  return { ...capabilities, raster: { ...capabilities.raster, widthDots: configuredDots } };
+}
+
 async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
   switch (printer.connection_type) {
     case 'network':
@@ -1063,7 +1095,7 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   const columns = getColumnsForPrinter(printer, profile);
   const warnings: PrintWarning[] = [];
   // Request-body shaping override takes precedence over profile default.
-  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+  const capabilities = capabilitiesForPrinter(profile, printer.paper_width || profile.defaultPaperWidth, arabicShapingOverride);
   const nativeCapabilities = nativeFallbackCapabilities(capabilities);
   const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, nativeCapabilities.shaping.arabic, language, additionalLanguage, nativeCapabilities);
   return { printer, data, warnings, columns };
@@ -1205,7 +1237,7 @@ export async function rasterizePrintDocumentForWebUsb(
   },
 ): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
+  const capabilities = capabilitiesForPrinter(profile, `cols-${options.columns}`, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = template === 'compact'
@@ -1250,7 +1282,7 @@ export async function rasterizeKotDocumentForWebUsb(
   },
 ): Promise<{ ok: true; data: Buffer; warnings: PrintWarning[]; rasterSelected: boolean; rasterFailed: boolean } | { ok: false; error: string }> {
   const profile = resolvePrinterProfile({ profile_id: profileId });
-  const capabilities = getPrinterCapabilities(profile, options.arabicShaping);
+  const capabilities = capabilitiesForPrinter(profile, `cols-${options.columns}`, options.arabicShaping);
   if (!rasterCapabilityEnabled(capabilities, 'mixed')) return { ok: false, error: 'Raster output is not enabled for this printer profile' };
   const rasterGroups: RasterSemanticLineGroup[] = [];
   const lines = renderKotDocumentToLines(document, {
@@ -1284,7 +1316,7 @@ async function rasterizeReceiptIfEnabled(
   additionalLanguage: string | undefined,
 ): Promise<ReturnType<typeof prepareReceipt>> {
   const profile = resolvePrinterProfile(prepared.printer);
-  const capabilities = getPrinterCapabilities(profile, arabicShapingOverride);
+  const capabilities = capabilitiesForPrinter(profile, prepared.printer?.paper_width || profile.defaultPaperWidth, arabicShapingOverride);
   if (!rasterCapabilityEnabled(capabilities)) return prepared;
   const document = receiptDocumentLines(
     order,

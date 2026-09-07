@@ -259,7 +259,7 @@
     "electron-updater": "^6.8.9",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
-    "@googleapis/drive": "^21.0.0",
+    "@googleapis/drive": "^22.0.0",
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.13.12",
     "pino": "^10.3.1",

@@ -1053,12 +1053,21 @@ async function main() {
         };
         assertWidthBudget(zBefore.body.zReport, 48, 'print (F2 48-col)');
         assertWidthBudget(zBefore.body.zReport, 32, 'print (F2 32-col / 58mm)');
-        // N3: a 24+ char value alone at 32 cols would overflow without the
-        // periodLine clamp; verify the long-value case still fits.
+        // N3: a 24+ char value alone at 32 cols wraps onto line 2 without truncation;
+        // verify the long-value case still fits and preserves timestamps and names.
         const longValueZ = JSON.parse(JSON.stringify(zBefore.body.zReport));
-        longValueZ.period_start = '9999-12-31T23:59:59.999Z';
-        longValueZ.period_end = '9999-12-31T23:59:59.999Z+24';
+        longValueZ.period_start = '2026-09-07T09:15:30.000Z';
+        longValueZ.period_end = '2026-09-07T23:45:15.000Z';
+        longValueZ.payment_methods = [{ method: 'Credit Card (Mastercard)', count: 99, total_cents: 1250000 }];
+        longValueZ.tax_components = [{ title: 'State Goods and Services Tax (SGST 9%)', amount: 112.50 }];
+        longValueZ.staff_sales = [{ name: 'Alexander Bartholomew-Smith', orderCount: 15, revenue_cents: 150000 }];
+        longValueZ.closed_by_name = 'Alexander Bartholomew-Smith';
         assertWidthBudget(longValueZ, 32, 'print (N3 32-col long value)');
+        const longPreview = thermalModule.escPosToText(thermalModule.buildZReportBody(longValueZ, undefined, { columns: 32 }));
+        assert(longPreview.includes('Period start:'), 'print (32-col): period start label renders');
+        assert(longPreview.includes('Credit Card (Mastercard) x99'), 'print (32-col): payment method head is not truncated');
+        assert(longPreview.includes('State Goods and Services Tax'), 'print (32-col): long tax breakdown wraps');
+        assert(longPreview.includes('Alexander Bartholomew-Smith'), 'print (32-col): long staff name wraps');
 
 
         // Printing must NOT mutate the row.

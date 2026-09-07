@@ -2128,47 +2128,50 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   const sections: string[] = [];
   sections.push('{INIT}');
 
-  // F4: header (business name + address + tax id) prints BEFORE the Z number
-  // so the document leads with the identifying block, matching the spec
-  // sequence (header → Z number/date/period → ...).
-  sections.push('{CENTER}{BOLD}' + label(settings.business_name || '') + '{/BOLD}{/CENTER}');
-  if (settings.business_address) sections.push('{CENTER}' + label(settings.business_address) + '{/CENTER}');
-  if (settings.tax_registration_number) sections.push('{CENTER}' + label(settings.tax_registration_number) + '{/CENTER}');
+  // Header block: wrap business name, address, and tax ID within columns.
+  if (settings.business_name) pushCenteredWrapped(sections, '{BOLD}' + label(settings.business_name) + '{/BOLD}', cols, lang, printer?.capabilities);
+  if (settings.business_address) pushCenteredWrapped(sections, label(settings.business_address), cols, lang, printer?.capabilities);
+  if (settings.tax_registration_number) pushCenteredWrapped(sections, label(settings.tax_registration_number), cols, lang, printer?.capabilities);
   sections.push('');
 
   sections.push('{CENTER}{BOLD}' + label('Z REPORT') + ' #' + String(zNumber) + (reprintMarker ? ' (' + reprintMarker + ')' : '') + '{/BOLD}{/CENTER}');
   sections.push('');
 
   sections.push(bar);
-  // F2: width-aware period labels. The previous fixed `'Date:' + ' '` /
-  // `'Period start:' + ' '` / `'Period end:' + '   '` concatenation produced
-  // label columns of 6/14/13 chars plus a value column — a 32-col width
-  // overflows the timestamp tail. Right-align the timestamp so the label
-  // can grow until it eats the row, mirroring the column budget the
-  // payment-method rows use below.
-  const periodLine = (key: string, value: string): string => {
-    // F9: head cap tracks the longest label in this block ("Period start:",
-    // 13 chars) so the head never silently truncates to "Period s". Still
-    // bounded by `cols - minValueWidth - 1` so the value column keeps at
-    // least `minValueWidth` chars; the head only shrinks below the label
-    // length when even that minimum value column cannot fit (32-col edge).
-    const longestLabel = 13;
-    const minValueWidth = 12;
-    const headBudget = Math.max(1, Math.min(longestLabel, cols - minValueWidth - 1));
-    const head = label(key).slice(0, headBudget);
-    const valueBudget = Math.max(1, cols - head.length - 1);
-    const total = label(value).slice(0, valueBudget);
-    return head + rightAlign(total, valueBudget);
+  // Period rows: render inline if label + timestamp fits; otherwise wrap onto two lines.
+  const pushPeriodRow = (key: string, value: string): void => {
+    const keyLabel = label(key);
+    const valLabel = label(value);
+    if (keyLabel.length + 1 + valLabel.length <= cols) {
+      sections.push(keyLabel + rightAlign(valLabel, cols - keyLabel.length));
+    } else {
+      sections.push(keyLabel);
+      sections.push(rightAlign(valLabel, cols));
+    }
   };
-  sections.push(periodLine('Date:', businessDate));
-  sections.push(periodLine('Period start:', periodStart));
-  sections.push(periodLine('Period end:', periodEnd));
+  pushPeriodRow('Date:', businessDate);
+  pushPeriodRow('Period start:', periodStart);
+  pushPeriodRow('Period end:', periodEnd);
   sections.push(bar);
   sections.push('');
 
   sections.push('{BOLD}' + label('Opening float') + '{/BOLD}');
   sections.push(rightAlign(formatAmount(z?.opening_float_cents), cols));
   sections.push('');
+
+  // Row helper: render label and amount inline if space permits; wrap amount to line 2 otherwise.
+  const pushBreakdownRow = (head: string, total: string): void => {
+    const prefix = '  ';
+    const inlineBudget = cols - prefix.length - total.length - 1;
+    if (head.length <= inlineBudget) {
+      sections.push(prefix + head + rightAlign(total, cols - prefix.length - head.length));
+    } else {
+      for (const line of wrapText(head, cols - prefix.length)) {
+        sections.push(prefix + line);
+      }
+      sections.push(rightAlign(total, cols));
+    }
+  };
 
   sections.push('{BOLD}' + label('Sales by payment method') + '{/BOLD}');
   const paymentMethods = Array.isArray(z?.payment_methods) ? z.payment_methods : [];
@@ -2179,13 +2182,8 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
       const method = String(row.method || '');
       const total = formatAmount(row.total_cents ?? row.total ?? 0);
       const count = String(row.count ?? 0);
-      // F1: previous formula padded `cols + 2` wide (the leading `'  '` plus
-      // the right-alignment to `cols`). Cap `head` and the right-alignment
-      // to the same budget so the total column lands at `cols - 2`, mirroring
-      // the existing `financialRows` convention (`thermal.ts:1820-1828`).
-      const headBudget = Math.max(8, cols - 2 - total.length - 1);
-      const head = (label(method) + ' x' + count).slice(0, headBudget);
-      sections.push('  ' + head + rightAlign(total, Math.max(8, cols - 2 - head.length)));
+      const head = label(method) + ' x' + count;
+      pushBreakdownRow(head, total);
     }
   }
   sections.push('');
@@ -2202,16 +2200,9 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   } else {
     for (const row of tax as any[]) {
       const title = String(row.title || row.label || '');
-      // F1: `row.amount` from aggregateTaxComponents is already in major units
-      // (it sums `bills.tax_amount` which is also major units — see
-      // `main/services/tax-components.ts`). Feeding it through `formatAmount`
-      // would divide by `factor` again, printing 100× too small (₹50 → ₹0.50).
-      // Render the major-unit number directly via `formatCurrency`.
       const total = formatCurrency(Number(row.amount ?? 0), prefix, locale, trimDecimals, fractionDigits);
-      // F1: same width convention as payment methods (see above).
-      const headBudget = Math.max(8, cols - 2 - total.length - 1);
-      const head = (label(title) || label('Tax')).slice(0, headBudget);
-      sections.push('  ' + head + rightAlign(total, Math.max(8, cols - 2 - head.length)));
+      const head = label(title) || label('Tax');
+      pushBreakdownRow(head, total);
     }
   }
   sections.push('');
@@ -2225,10 +2216,8 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
       const name = String(row.name || row.user_id || '');
       const total = formatAmount(row.revenue_cents ?? row.revenue ?? 0);
       const orders = String(row.orderCount ?? row.orders ?? 0);
-      // F1: same width convention as payment methods (see above).
-      const headBudget = Math.max(8, cols - 2 - total.length - 1);
-      const head = (label(name) + ' x' + orders).slice(0, headBudget);
-      sections.push('  ' + head + rightAlign(total, Math.max(8, cols - 2 - head.length)));
+      const head = label(name) + ' x' + orders;
+      pushBreakdownRow(head, total);
     }
   }
   sections.push('');
@@ -2243,28 +2232,26 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   sections.push(dash);
   sections.push('');
 
-  // F6: the route resolves `closed_by_name` via users(id -> name); render
-  // the resolved name when present and fall back to the raw id otherwise.
   const closedByLabel = String(z?.closed_by_name || z?.closed_by || '');
-  sections.push(label('Closed by:') + ' ' + label(closedByLabel));
-  // F9: signature underscore row exceeds cols at 32 chars (cols=48 leaves 16
-  // chars for the label + spaces, so 32 underscores overflow). Width to
-  // F1: signature underscore row must be ≤ cols. Budget = cols − label.length
-  // − 1 (the separator space); clamp at 0 so narrow widths drop the
-  // underscores instead of overflowing.
-  sections.push(label('Operator signature:') + ' ' + '_'.repeat(Math.max(0, cols - 'Operator signature:'.length - 1)));
+  const closedByFull = label('Closed by:') + ' ' + label(closedByLabel);
+  for (const line of wrapText(closedByFull, cols)) {
+    sections.push(line);
+  }
+
+  const sigLabel = label('Operator signature:');
+  const remainingSigCols = cols - sigLabel.length - 1;
+  if (remainingSigCols >= 8) {
+    sections.push(sigLabel + ' ' + '_'.repeat(remainingSigCols));
+  } else {
+    sections.push(sigLabel);
+    sections.push('_'.repeat(cols));
+  }
   sections.push('');
 
   sections.push('{CENTER}' + label('Generated by FloCafe') + '{/CENTER}');
-  // F2: the U+00B7 separator was silently dropped by the GENERIC ascii-only
-  // profile (whole line skipped, leaving a gap before the footer). Use an
-  // ASCII hyphen so all profiles render this line.
   sections.push('{CENTER}Z#' + String(zNumber) + ' - ' + label(businessDate) + '{/CENTER}');
   sections.push('{CUT}');
 
-  // F3: pass `columns` + `capabilities` into the byte builder so non-80mm
-  // widths and profiles with native code pages render correctly (also
-  // fixes F2 on those profiles).
   return buildEscPos(sections, false, { cutMode: 'full', language: lang, columns: cols, capabilities: printer?.capabilities });
 }
 

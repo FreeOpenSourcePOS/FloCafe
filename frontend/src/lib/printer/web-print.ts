@@ -19,7 +19,7 @@ import {
   printLabelResolver,
   resolveBillPrintLanguages,
 } from './print-document';
-import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
+import { RECEIPT_BRANDING_NAME } from './branding';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import {
   getBlock,
@@ -405,7 +405,7 @@ export function generateBillHtml(
     <div class="footer">
       ${messages?.footerNote ? `<p>${escapeHtml(messages.footerNote.text)}</p>` : `<p>${escapeHtml(L.thankYou)}</p>`}
       ${hasTax ? `<p>${escapeHtml(L.taxIncluded)}</p>` : ''}
-      <p class="powered-by">${escapeHtml(RECEIPT_BRANDING_NAME)}<br>${escapeHtml(RECEIPT_BRANDING_URL)}</p>
+      <p class="powered-by">${escapeHtml(RECEIPT_BRANDING_NAME)}</p>
     </div>
   </div>
 

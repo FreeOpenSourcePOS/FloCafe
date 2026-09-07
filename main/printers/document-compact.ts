@@ -230,9 +230,9 @@ export function renderBillDocumentToCompactLines(
       const sourceLayouts: Array<RasterTextLayout | undefined> = [{
         kind: 'financial-item',
         columns: [
-          { text: row.name.text, align: 'left' },
-          { text: String(row.quantity), align: 'left' },
-          { text: amount.trimStart(), align: 'right' },
+          { text: row.name.text, align: 'left', widthRatio: nameLen / cols },
+          { text: String(row.quantity), align: 'left', widthRatio: 4 / cols },
+          { text: amount.trimStart(), align: 'right', widthRatio: amtLen / cols },
         ],
       }];
       const financialSourceLines = [true];
@@ -249,8 +249,8 @@ export function renderBillDocumentToCompactLines(
         sourceLayouts.push(addon.price ? {
           kind: 'financial-summary',
           columns: [
-            { text: addonLabel, align: 'left' },
-            { text: addonAmount.trimStart(), align: 'right' },
+            { text: addonLabel, align: 'left', widthRatio: nameLen / cols },
+            { text: addonAmount.trimStart(), align: 'right', widthRatio: (cols - nameLen) / cols },
           ],
         } : undefined);
         financialSourceLines.push(Boolean(addon.price));
@@ -287,8 +287,8 @@ export function renderBillDocumentToCompactLines(
     totalsSourceLayouts.push(sourceLabel !== undefined && sourceValue !== undefined ? {
       kind: 'financial-summary',
       columns: [
-        { text: sourceLabel, align: 'left' },
-        { text: sourceValue.trimStart(), align: 'right' },
+        { text: sourceLabel, align: 'left', widthRatio: Math.max(0.1, (cols - 12) / cols) },
+        { text: sourceValue.trimStart(), align: 'right', widthRatio: Math.min(0.9, 12 / cols) },
       ],
     } : undefined);
   };
@@ -350,8 +350,8 @@ export function renderBillDocumentToCompactLines(
       paymentSourceLayouts.push({
         kind: 'financial-summary',
         columns: [
-          { text: rawMethodLabel, align: 'left' },
-          { text: value.trimStart(), align: 'right' },
+          { text: rawMethodLabel, align: 'left', widthRatio: Math.max(0.1, (cols - 12) / cols) },
+          { text: value.trimStart(), align: 'right', widthRatio: Math.min(0.9, 12 / cols) },
         ],
       });
     }

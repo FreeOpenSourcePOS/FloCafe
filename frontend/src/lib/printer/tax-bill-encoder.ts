@@ -6,7 +6,7 @@ import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolve
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
-import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
+import { RECEIPT_BRANDING_NAME } from './branding';
 import { printLabelResolver } from './print-document';
 import { GENERIC_THERMAL_CAPABILITIES, isThermalTextRepresentable, selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 
@@ -55,8 +55,6 @@ function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
     .align('center')
     .size('small')
     .text(RECEIPT_BRANDING_NAME)
-    .newline()
-    .text(RECEIPT_BRANDING_URL)
     .newline()
     .size('normal')
     .align('left');

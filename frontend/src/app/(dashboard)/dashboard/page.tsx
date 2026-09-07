@@ -5,16 +5,20 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
-import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass, CalendarDays } from 'lucide-react';
+import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass, CalendarDays, Lock } from 'lucide-react';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
+import { CashCloseModal } from '@/components/dashboard/CashCloseModal';
+import { useCashClose } from '@/hooks/useCashClose';
 import toast from 'react-hot-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
+import { Button } from '@/components/ui/button';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { ORDER_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 import { splitHoursMinutes } from '@/lib/table-timing';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+
 
 interface PaymentMethodBreakdown {
   method: string | null;
@@ -106,6 +110,7 @@ interface DayBucket {
   dayIndex: number;
   orderCount: number;
 }
+
 
 interface Insights {
   windowDays: number;
@@ -258,6 +263,10 @@ export default function DashboardPage() {
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, periodMode, selectedDate, selectedMonth]);
+
+  // Day-close wizard lives in useCashClose + CashCloseModal; the page
+  // only opens it and mounts it.
+  const cashClose = useCashClose();
 
   if (!isOwner) return null;
 
@@ -451,8 +460,20 @@ export default function DashboardPage() {
               </button>
             </div>
           )}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={cashClose.openCloseModal}
+            className="h-9"
+          >
+            <Lock size={14} />
+            {t('closeShift')}
+          </Button>
         </div>
       </div>
+
+
+      <CashCloseModal model={cashClose} />
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

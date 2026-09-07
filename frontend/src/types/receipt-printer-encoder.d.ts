@@ -8,6 +8,7 @@ declare module '@point-of-sale/receipt-printer-encoder' {
     initialize(): this;
     align(alignment: 'left' | 'center' | 'right'): this;
     bold(enabled: boolean): this;
+    italic(enabled?: boolean): this;
     width(n: 1 | 2): this;
     height(n: 1 | 2): this;
     size(size: 'normal' | 'small'): this;

@@ -114,6 +114,57 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
+// Rename a floor across every table. Renaming to an existing floor name merges
+// every row from `:name` into the target in one UPDATE. Issue #646.
+router.patch('/floors/:name', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const oldName = String(req.params.name || '');
+    if (!oldName) {
+      return res.status(400).json({ code: 'FLOOR_NAME_REQUIRED', error: 'Floor name is required' });
+    }
+    const newName = normalizeOptionalTableLabel(req.body?.newName);
+    if (newName === undefined || newName === null || !newName) {
+      return res.status(400).json({ code: 'FLOOR_NAME_REQUIRED', error: 'Floor name is required' });
+    }
+    if (newName === oldName) {
+      return res.json({ floor: newName, affected: 0 });
+    }
+
+    const db = getDatabase();
+    const result = db.prepare(`
+      UPDATE tables SET floor = ?, updated_at = ?
+      WHERE floor = ?
+    `).run(newName, now(), oldName);
+
+    res.json({ floor: newName, previousFloor: oldName, affected: result.changes });
+  } catch (error: any) {
+    console.error('[API] Floor rename failed:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Remove a floor label from every table that uses it; tables stay and fall
+// back into the Unassigned bucket. Issue #646.
+router.delete('/floors/:name', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const name = String(req.params.name || '');
+    if (!name) {
+      return res.status(400).json({ code: 'FLOOR_NAME_REQUIRED', error: 'Floor name is required' });
+    }
+
+    const db = getDatabase();
+    const result = db.prepare(`
+      UPDATE tables SET floor = NULL, updated_at = ?
+      WHERE floor = ?
+    `).run(now(), name);
+
+    res.json({ floor: null, removedFloor: name, affected: result.changes });
+  } catch (error: any) {
+    console.error('[API] Floor delete failed:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     // Accept `number` (schema column) or `name` (legacy frontend field)

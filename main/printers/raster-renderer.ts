@@ -54,9 +54,9 @@ export function rasterRendererHtml(): string {
       const styles = Array.isArray(request.styles) ? request.styles : [request.style];
       const scaleX = styles.includes('double-width') ? 2 : 1;
       const scaleY = styles.includes('double-height') ? 2 : 1;
-      const logicalLineHeight = 30;
+      const logicalLineHeight = 32;
       const lineHeight = logicalLineHeight * scaleY;
-      const fontSize = styles.includes('font-b') ? 16 : 22;
+      const fontSize = styles.includes('font-b') ? 17 : 24;
       const topPad = 3;
       const weight = styles.includes('bold') ? '700' : '400';
       const fontFallback = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans", sans-serif';
@@ -481,7 +481,7 @@ function semanticLineGroups(lines: readonly string[]): RasterSemanticLineGroupWi
   return groups;
 }
 
-const RASTER_CONTROL_TOKEN_RE = /\{(?:\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B|ITALIC)|INIT|CUT|FEED|STORE_NAME|FINANCIAL)\}/g;
+const RASTER_CONTROL_TOKEN_RE = /\{(?:\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)|INIT|CUT|FEED|STORE_NAME|FINANCIAL)\}/g;
 
 function stripRasterControlTokens(line: string): string {
   return line.replace(RASTER_CONTROL_TOKEN_RE, '');

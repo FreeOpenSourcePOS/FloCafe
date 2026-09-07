@@ -1577,7 +1577,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 
 export function appendPoweredByFooter(lines: string[]): void {
   lines.push('', '');
-  lines.push('{CENTER}{FONT_B}{ITALIC}' + RECEIPT_BRANDING + '{/ITALIC}{/FONT_B}{/CENTER}');
+  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING + '{/FONT_B}{/CENTER}');
 }
 
 /** Compact thermal receipt: builds PrintDocument and renders via document-compact pipeline. */
@@ -2330,7 +2330,7 @@ const CURRENCY_TOKEN_RE = new RegExp(
   'g',
 );
 
-const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B|ITALIC)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
+const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
   if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) return text;
@@ -2456,7 +2456,6 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
 
   const resetAllStyles = () => {
     buf.push(0x1B, 0x45, 0x00);
-    buf.push(0x1B, 0x34, 0x00);
     buf.push(0x1B, 0x21, 0x00);
     buf.push(0x1B, 0x61, 0x00);
   };
@@ -2517,7 +2516,6 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     const lineDH = line.includes('{DOUBLE_HEIGHT}');
     const lineDW = line.includes('{DOUBLE_WIDTH}');
     const lineFontB = line.includes('{FONT_B}');
-    const lineItalic = line.includes('{ITALIC}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
     const textWithoutSupportedCurrency = printableLine.replace(CURRENCY_TOKEN_RE, '');
     const selectedCodePage = selectThermalCodePage(textWithoutSupportedCurrency, capabilities);
@@ -2557,15 +2555,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
 
     line = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
 
-    const cols = options.columns;
-    if (center && typeof cols === 'number' && cols > 0 && cols < 48) {
-      const maxSlots = lineDW ? Math.floor(cols / 2) : cols;
-      const padding = Math.max(0, Math.floor((maxSlots - line.length) / 2));
-      line = ' '.repeat(padding) + line;
-      buf.push(0x1B, 0x61, 0x00);
-    } else {
-      buf.push(0x1B, 0x61, center ? 0x01 : 0x00);
-    }
+    buf.push(0x1B, 0x61, center ? 0x01 : 0x00);
 
     let mode = 0;
     if (lineDH) mode |= 0x10;
@@ -2581,18 +2571,12 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     if (lineBold) {
       buf.push(0x1B, 0x45, 0x01);
     }
-    if (lineItalic) {
-      buf.push(0x1B, 0x34, 0x01);
-    }
 
     const encodedText = !useLegacyUnicode && selectedCodePage
       ? CodepageEncoder.encode(line, selectedCodePage)
       : Buffer.from(line, 'utf8');
     buf.push(...encodedText);
     buf.push(0x0A);
-    if (lineItalic) {
-      buf.push(0x1B, 0x34, 0x00);
-    }
   }
 
   return financialTextFailure ? Buffer.alloc(0) : Buffer.from(buf);
@@ -2623,7 +2607,7 @@ export function escPosToText(data: Buffer | Uint8Array): string {
         flushLine();
         activeCodePage = THERMAL_CODE_PAGE_BY_ID[bytes[i + 2]] ?? 'utf8';
         i += 3;
-      } else if (command === 0x21 || command === 0x45 || command === 0x61 || command === 0x34) {
+      } else if (command === 0x21 || command === 0x45 || command === 0x61) {
         i += 3;
       } else if (command === 0x64) {
         flushLine();

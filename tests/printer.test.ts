@@ -148,7 +148,7 @@ function visiblePreview(buf: Buffer, cols: number): string {
   let i = 0;
   while (i < buf.length) {
     const b = buf[i];
-    if (b === ESC && (buf[i + 1] === 0x21 || buf[i + 1] === 0x61 || buf[i + 1] === 0x45 || buf[i + 1] === 0x64 || buf[i + 1] === 0x40 || buf[i + 1] === 0x34)) {
+    if (b === ESC && (buf[i + 1] === 0x21 || buf[i + 1] === 0x61 || buf[i + 1] === 0x45 || buf[i + 1] === 0x64 || buf[i + 1] === 0x40)) {
       i += buf[i + 1] === 0x40 ? 2 : 3;
       continue;
     }
@@ -728,7 +728,6 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   assert('renders UPI payment', text.includes('UPI') && text.includes('₹450.00'));
   assert('renders tax registration number', text.includes('TAXID-0001'));
   assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('(flopos.com)'));
-  assert('renders footer with italic ESC sequence', bytesContain(buf, [ESC, 0x34, 0x01]));
   const rowLines = visiblePreview(buf, 48).split('\n');
   const longRowIndex = rowLines.findIndex((l) => l.includes('Very Long Product Name That'));
   assert('long product name wraps cleanly onto multiple lines', longRowIndex >= 0 && rowLines[longRowIndex + 1]?.includes('Truncated By Formatter'));

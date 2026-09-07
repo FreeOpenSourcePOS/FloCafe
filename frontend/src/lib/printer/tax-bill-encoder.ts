@@ -54,9 +54,7 @@ function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
   enc
     .align('center')
     .size('small')
-    .italic(true)
     .text(RECEIPT_BRANDING_NAME)
-    .italic(false)
     .newline()
     .size('normal')
     .align('left');

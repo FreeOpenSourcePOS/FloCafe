@@ -479,7 +479,7 @@ function getPaperStyles(size: PaperSize): string {
     .totals-table td { padding: 6px 8px; }
     .total-row { border-top: 2px solid #333; font-size: 16px; }
     .footer { text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid #ccc; }
-    .powered-by { font-size: 10px; margin-top: 8px; color: #555; }
+    .powered-by { font-size: 10px; margin-top: 8px; color: #555; font-style: italic; }
     .text-end { text-align: end !important; }
     .num { unicode-bidi: isolate; white-space: nowrap; }
     .ltr { direction: ltr; unicode-bidi: isolate; }

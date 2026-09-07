@@ -54,10 +54,11 @@ export function rasterRendererHtml(): string {
       const styles = Array.isArray(request.styles) ? request.styles : [request.style];
       const scaleX = styles.includes('double-width') ? 2 : 1;
       const scaleY = styles.includes('double-height') ? 2 : 1;
-      const logicalLineHeight = 26;
+      const logicalLineHeight = 30;
       const lineHeight = logicalLineHeight * scaleY;
       const fontSize = styles.includes('font-b') ? 16 : 22;
-      const weight = styles.includes('bold') ? '700' : '600';
+      const topPad = 3;
+      const weight = styles.includes('bold') ? '700' : '400';
       const fontFallback = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans", sans-serif';
       const fontSpec = request.bundledFont
         ? JSON.stringify(request.bundledFont.family) + ', ' + fontFallback
@@ -144,7 +145,7 @@ export function rasterRendererHtml(): string {
         line.forEach((cell, cellIndex) => {
           context.textAlign = cell.align === 'center' ? 'center' : cell.align;
           const cellX = cell.align === 'right' ? x + cell.width : cell.align === 'center' ? x + cell.width / 2 : x;
-          context.fillText(cell.text, cellX / scaleX, lineIndex * logicalLineHeight);
+          context.fillText(cell.text, cellX / scaleX, lineIndex * logicalLineHeight + topPad);
           x += cell.width;
           if (cellIndex < line.length - 1) x += gapDots;
         });

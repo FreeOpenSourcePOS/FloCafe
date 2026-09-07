@@ -162,32 +162,18 @@ export function getPrinterCapabilities(
   return mergeThermalCapabilities(profile.capabilities || GENERIC_THERMAL_CAPABILITIES, arabicShapingOverride);
 }
 
-/**
- * Maps a paper_width string to the canonical raster dot width for that paper
- * size, or null when the string is unrecognized. Parallel to columnsForPaperWidth
- * in thermal.ts but in dots rather than characters.
- */
+/** Maps paper_width string to canonical raster dot width, or null if unrecognized. */
 export function dotsForPaperWidth(paperWidth: string): number | null {
   const colsMatch = String(paperWidth || '').match(/^cols-(3[2-9]|4[0-8])$/);
-  const cols = colsMatch ? Number(colsMatch[1]) : ({ '58mm': 32, '58mm-36': 36, '80mm-42': 42, '80mm': null } as Record<string, number | null>)[paperWidth] ?? null;
+  const cols = colsMatch ? Number(colsMatch[1]) : ({ '58mm': 32, '58mm-36': 36, '80mm-42': 42, '80mm': 48 } as Record<string, number>)[paperWidth] ?? null;
   if (cols === null) return null;
   if (cols <= 32) return 384;
   if (cols <= 36) return 432;
   if (cols <= 40) return 480;
-  if (cols <= 42) return 512;
-  if (cols <= 44) return 528;
   return 576;
 }
 
-/**
- * Returns capabilities for a printer, capping raster.widthDots to the dot
- * width implied by the configured paper_width when narrower than the hardware
- * profile default. Never increases the profile dot width.
- *
- * Use this everywhere you need capabilities for an actual print job.
- * getPrinterCapabilities() returns raw hardware capabilities and should only
- * be used internally or when paper_width is irrelevant.
- */
+/** Returns printer capabilities, capping raster widthDots if paper_width is narrower than hardware. */
 export function capabilitiesForPrinter(
   profile: SupportedPrinterProfile,
   paperWidth: string | null | undefined,

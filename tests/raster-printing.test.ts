@@ -1144,10 +1144,10 @@ async function run(): Promise<void> {
   assert.equal(dotsForPaperWidth('58mm-36'), 432);
   assert.equal(dotsForPaperWidth('cols-36'), 432);
   assert.equal(dotsForPaperWidth('cols-40'), 480);
-  assert.equal(dotsForPaperWidth('80mm-42'), 512);
-  assert.equal(dotsForPaperWidth('cols-42'), 512);
-  assert.equal(dotsForPaperWidth('cols-44'), 528);
-  assert.equal(dotsForPaperWidth('80mm'), null);
+  assert.equal(dotsForPaperWidth('80mm-42'), 576);
+  assert.equal(dotsForPaperWidth('cols-42'), 576);
+  assert.equal(dotsForPaperWidth('cols-44'), 576);
+  assert.equal(dotsForPaperWidth('80mm'), 576);
   assert.equal(dotsForPaperWidth('cols-48'), 576);
   assert.equal(dotsForPaperWidth('unknown'), null);
 
@@ -1166,6 +1166,11 @@ async function run(): Promise<void> {
   const defaultNarrowContext = resolvePrinterContext(defaultNarrowPrinter);
   assert.equal(defaultNarrowContext.columns, 32);
   assert.equal(defaultNarrowContext.capabilities.raster.widthDots, 384);
+
+  const default80Printer = { name: 'Generic 80mm', paper_width: 'cols-42' };
+  const default80Context = resolvePrinterContext(default80Printer);
+  assert.equal(default80Context.columns, 42);
+  assert.equal(default80Context.capabilities.raster.widthDots, 576);
 
   console.log('Raster encoder and mixed-mode contract checks passed.');
 }

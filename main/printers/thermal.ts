@@ -1024,10 +1024,7 @@ export interface PrinterContext {
   capabilities: ThermalPrinterCapabilities;
 }
 
-/**
- * Standardized entrypoint to resolve profile, columns, and capabilities for a printer.
- * Guarantees that columns and raster widthDots always stay aligned with paper_width.
- */
+/** Resolves profile, column count, and capabilities aligned with printer paper_width. */
 export function resolvePrinterContext(
   printer: any,
   arabicShapingOverride?: boolean,

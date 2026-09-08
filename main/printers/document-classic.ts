@@ -218,8 +218,7 @@ function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
-function classicBannerLines(label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): string[] {
-  const context: ThermalLayoutContext = { logicalColumns: columns, direction: 'ltr', languages: ['en'], capabilities };
+function classicBannerLines(label: SemanticLabel, context: ThermalLayoutContext): string[] {
   const layout = layoutStyledUnit({
     label: {
       primary: `** ${label.primary} **`,
@@ -230,7 +229,7 @@ function classicBannerLines(label: SemanticLabel, columns: number, capabilities?
   }, context);
   const widthToken = layout.widthMultiplier === 2 ? '{DOUBLE_WIDTH}' : '';
   const closeWidthToken = layout.widthMultiplier === 2 ? '{/DOUBLE_WIDTH}' : '';
-  return layout.lines.map((line) => `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${normalizeThermalText(line, capabilities)}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`);
+  return layout.lines.map((line) => `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${normalizeThermalText(line, context.capabilities)}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`);
 }
 
 /** Column header row, composed from the document's own header labels. */
@@ -626,14 +625,24 @@ export function renderBillDocumentToClassicLines(
       case 'message': {
         const segment = segmentOf('message');
         if (block.reprintBanner) {
-          const bannerLines = classicBannerLines(block.reprintBanner, cols, options.capabilities);
+          const bannerLines = classicBannerLines(block.reprintBanner, {
+            logicalColumns: cols,
+            direction: document.direction.base,
+            languages: document.languages,
+            capabilities: options.capabilities,
+          });
           segment.pre.push(...bannerLines);
           segment.sourceLines.pre.push(...bannerLines.map((line) => line.replace(/\{[^}]+\}/g, '')));
           segment.sourceControlLines.pre.push(...bannerLines);
         }
         if (block.onlineOrderBanner) {
           const banner = block.onlineOrderBanner;
-          const bannerLines = classicBannerLines(banner.label, cols, options.capabilities);
+          const bannerLines = classicBannerLines(banner.label, {
+            logicalColumns: cols,
+            direction: document.direction.base,
+            languages: document.languages,
+            capabilities: options.capabilities,
+          });
           segment.pre.push(...bannerLines);
           segment.sourceLines.pre.push(...bannerLines.map((line) => line.replace(/\{[^}]+\}/g, '')));
           segment.sourceControlLines.pre.push(...bannerLines);

@@ -154,22 +154,22 @@ function numberOrZero(value: unknown): number {
 /** Build a typed, localized Z-report document from stored closure truth. */
 export function buildZReportDocument(data: ZReportPrintData, context: ZReportContext): ZReportDocument {
   const direction = context.baseDirection;
-  const periodLabel = (conceptId: LabelConceptId, value: string): ZReportPeriodRow => ({
+  const periodLabel = (conceptId: LabelConceptId, value: string): ZReportPeriodRow => Object.freeze({
     label: label(context, conceptId),
     value: directionalText(value, direction),
   });
-  const paymentRows = data.paymentMethods.map((row) => ({
+  const paymentRows = data.paymentMethods.map((row) => Object.freeze({
     method: row.method,
     label: paymentLabel(context, row.method),
     countLabel: label(context, 'print.zReport.paymentCount'),
     count: numberOrZero(row.count),
     totalCents: numberOrZero(row.totalCents ?? row.total),
   }));
-  const taxRows = data.taxComponents.map((row) => ({
+  const taxRows = data.taxComponents.map((row) => Object.freeze({
     label: literalLabel(String(row.title ?? row.label ?? '')),
     amount: numberOrZero(row.amount),
   }));
-  const staffRows = data.staffSales.map((row) => ({
+  const staffRows = data.staffSales.map((row) => Object.freeze({
     method: String(row.name ?? row.userId ?? ''),
     label: literalLabel(String(row.name ?? row.userId ?? '')),
     countLabel: label(context, 'print.zReport.paymentCount'),

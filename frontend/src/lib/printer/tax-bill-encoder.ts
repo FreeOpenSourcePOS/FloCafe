@@ -2,7 +2,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
-import { columnsForReceiptPaperSize, fitThermalLine } from '@print/width';
+import { columnsForReceiptPaperSize, displayCellWidth, fitThermalLine } from '@print/width';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -169,7 +169,7 @@ export function buildTaxBillBytes(
     || taxComponents.some((component) => Number(component.amount) !== 0);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
-  const safeFinancialRow = (left: string, right: string): string => {
+  const safeFinancialRows = (left: string, right: string): string[] => {
     const rawFinancialRow = `${left}${right}`;
     const normalizedFinancialRow = normalizeThermalText(rawFinancialRow, opts.capabilities);
     const printerFinancialRow = opts.capabilities
@@ -179,8 +179,13 @@ export function buildTaxBillBytes(
         : normalizeCurrencyToAscii(normalizedFinancialRow);
     return hasUnsupportedPrinterChars(printerFinancialRow)
       && !(arabicShaping && isArabicShapingSafeLine(printerFinancialRow))
-      ? rawFinancialRow
-      : padRow(left, right, cols);
+      ? [rawFinancialRow]
+      : padRowsForLanguage(left, right, cols, opts.capabilities);
+  };
+  const writeSafeFinancialRow = (left: string, right: string): void => {
+    for (const row of safeFinancialRows(left, right)) {
+      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, undefined, language, true).newline();
+    }
   };
 
   // ── Header ────────────────────────────────────────────────────────────────
@@ -233,7 +238,7 @@ export function buildTaxBillBytes(
     const line = `${item.product_name}`;
     const amount = formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos);
 
-    safePrinterText(enc, safeFinancialRow(line, amount), warnings, false, arabicShaping, undefined, undefined, language, true).newline();
+    writeSafeFinancialRow(line, amount);
 
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;
@@ -250,7 +255,8 @@ export function buildTaxBillBytes(
         const addonPrice = addon.price && Number(addon.price) > 0
           ? formatAmount(Number(addon.price) * qty * item.quantity, currency, amountLocale, trimDecimals, rawEscPos)
           : '';
-        safePrinterText(enc, addonPrice ? safeFinancialRow(addonLine, addonPrice) : padRow(addonLine, addonPrice, cols), warnings, false, arabicShaping, undefined, undefined, language, addonPrice.length > 0).newline();
+        if (addonPrice) writeSafeFinancialRow(addonLine, addonPrice);
+        else safePrinterText(enc, padRow(addonLine, addonPrice, cols), warnings, false, arabicShaping, undefined, undefined, language).newline();
       }
     }
   }
@@ -261,17 +267,10 @@ export function buildTaxBillBytes(
   if (showTaxBreakdown && taxComponents.length > 0) {
     safePrinterText(enc, `${labelFor('receipt.taxDetails')}:`, warnings, false, arabicShaping, undefined, undefined, language).newline();
     for (const component of taxComponents) {
-      safePrinterText(
-        enc,
-        safeFinancialRow(formatTaxComponentLabel(component), formatAmount(component.amount, currency, amountLocale, trimDecimals, rawEscPos)),
-        warnings,
-        false,
-        arabicShaping,
-        undefined,
-        undefined,
-        language,
-        true,
-      ).newline();
+      writeSafeFinancialRow(
+        formatTaxComponentLabel(component),
+        formatAmount(component.amount, currency, amountLocale, trimDecimals, rawEscPos),
+      );
     }
   }
 
@@ -299,20 +298,20 @@ export function buildTaxBillBytes(
   }
 
   for (const [label, value] of totals) {
-    safePrinterText(enc, safeFinancialRow(label, value), warnings, false, arabicShaping, undefined, undefined, language, true).newline();
+    writeSafeFinancialRow(label, value);
   }
 
   enc.rule({ style: 'double' });
   enc.bold(true).width(2);
-  safePrinterText(enc, safeFinancialRow(labelFor('print.grandTotal'), formatAmount(bill.total, currency, amountLocale, trimDecimals, rawEscPos)), warnings, false, arabicShaping, undefined, undefined, language, true).width(1);
-  enc.bold(false).newline();
+  writeSafeFinancialRow(labelFor('print.grandTotal'), formatAmount(bill.total, currency, amountLocale, trimDecimals, rawEscPos));
+  enc.width(1).bold(false);
 
   // ── Payment Details ───────────────────────────────────────────────────────
   if (bill.payment_details && bill.payment_details.length > 0) {
     enc.newline();
     safePrinterText(enc, `${labelFor('receipt.payments')}:`, warnings, false, arabicShaping, undefined, undefined, language).newline();
     for (const p of bill.payment_details) {
-      safePrinterText(enc, safeFinancialRow(resolvePaymentLabel(p.method, labelFor), formatAmount(p.amount, currency, amountLocale, trimDecimals, rawEscPos)), warnings, false, arabicShaping, undefined, undefined, language, true).newline();
+      writeSafeFinancialRow(resolvePaymentLabel(p.method, labelFor), formatAmount(p.amount, currency, amountLocale, trimDecimals, rawEscPos));
     }
   }
 
@@ -339,6 +338,35 @@ function padRowForLanguage(left: string, right: string, cols: number, language?:
   const safeRight = normalizedRight.length > cols ? normalizedRight.slice(-cols) : normalizedRight;
   const leftWidth = Math.max(0, cols - safeRight.length - 1);
   return normalizedLeft.slice(0, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
+}
+
+function wrapToDisplayCells(text: string, columns: number): string[] {
+  const width = Math.max(1, Math.floor(columns));
+  const lines: string[] = [];
+  let current = '';
+  for (const character of Array.from(text)) {
+    if (current && displayCellWidth(current + character) > width) {
+      lines.push(current);
+      current = '';
+    }
+    current += character;
+  }
+  if (current || lines.length === 0) lines.push(current);
+  return lines;
+}
+
+function padRowsForLanguage(left: string, right: string, cols: number, capabilities?: ThermalPrinterCapabilities): string[] {
+  const normalizedLeft = normalizeThermalText(left, capabilities);
+  const normalizedRight = normalizeThermalText(right, capabilities);
+  const leftWidth = displayCellWidth(normalizedLeft);
+  const rightWidth = displayCellWidth(normalizedRight);
+  if (leftWidth + 1 + rightWidth <= cols) {
+    return [normalizedLeft + ' '.repeat(cols - leftWidth - rightWidth) + normalizedRight];
+  }
+  return [
+    ...wrapToDisplayCells(normalizedLeft, cols),
+    ...wrapToDisplayCells(normalizedRight, cols).map((line) => ' '.repeat(Math.max(0, cols - displayCellWidth(line))) + line),
+  ];
 }
 
 function truncateForLanguage(str: string, max: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {

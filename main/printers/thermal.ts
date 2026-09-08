@@ -2126,6 +2126,7 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
     baseDirection: containsRtlScript(printLabel(lang, 'print.zReport.title')) ? 'rtl' : 'ltr',
     resolveLabel: (conceptId, languageCode) => printLabel(languageCode, conceptId as PrintConceptId),
   });
+  const zContext = zLayoutContext(cols, zDocument, printer?.capabilities);
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
   const sections: string[] = [];
@@ -2141,58 +2142,58 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
       ? { secondary: `${zDocument.header.title.secondary} #${zDocument.header.zNumber.text}${zDocument.header.reprintMarker?.secondary ? ` (${zDocument.header.reprintMarker.secondary})` : ''}` }
       : {}),
   };
-  for (const line of layoutStyledUnit({ label: titleLabel, field: 'Z report title' }, zLayoutContext(cols, zDocument)).lines) {
+  for (const line of layoutStyledUnit({ label: titleLabel, field: 'Z report title' }, zContext).lines) {
     sections.push('{CENTER}{BOLD}' + normalizeThermalText(line, printer?.capabilities) + '{/BOLD}{/CENTER}');
   }
   sections.push('');
 
   sections.push(bar);
-  for (const row of zDocument.period) pushZReportLabelValue(sections, row.label, row.value.text, cols, printer?.capabilities);
+  for (const row of zDocument.period) pushZReportLabelValue(sections, row.label, row.value.text, zContext);
   sections.push(bar);
   sections.push('');
 
-  pushZReportHeading(sections, zDocument.openingFloat.label, cols, printer?.capabilities);
+  pushZReportHeading(sections, zDocument.openingFloat.label, zContext);
   sections.push(rightAlign(formatAmount(zDocument.openingFloat.cents), cols));
   sections.push('');
 
-  pushZReportSectionHeading(sections, zDocument.payments.heading, cols, printer?.capabilities);
-  if (zDocument.payments.rows.length === 0) pushZReportEmpty(sections, zDocument.payments.none, cols, printer?.capabilities);
+  pushZReportSectionHeading(sections, zDocument.payments.heading, zContext);
+  if (zDocument.payments.rows.length === 0) pushZReportEmpty(sections, zDocument.payments.none, zContext);
   for (const row of zDocument.payments.rows) {
     pushZReportRow(sections, {
       primary: `${row.label.primary} ${row.countLabel.primary.replace('{count}', String(row.count))}`,
       ...(row.label.secondary && row.countLabel.secondary
         ? { secondary: `${row.label.secondary} ${row.countLabel.secondary.replace('{count}', String(row.count))}` }
         : {}),
-    }, formatAmount(row.totalCents), cols, printer?.capabilities);
+    }, formatAmount(row.totalCents), zContext);
   }
   sections.push('');
 
-  pushZReportSectionHeading(sections, zDocument.refunds.heading, cols, printer?.capabilities);
-  pushZReportLabelValue(sections, zDocument.refunds.countLabel, String(zDocument.refunds.count), cols, printer?.capabilities);
-  pushZReportLabelValue(sections, zDocument.refunds.totalLabel, formatAmount(zDocument.refunds.totalCents), cols, printer?.capabilities);
+  pushZReportSectionHeading(sections, zDocument.refunds.heading, zContext);
+  pushZReportLabelValue(sections, zDocument.refunds.countLabel, String(zDocument.refunds.count), zContext);
+  pushZReportLabelValue(sections, zDocument.refunds.totalLabel, formatAmount(zDocument.refunds.totalCents), zContext);
   sections.push('');
 
-  pushZReportSectionHeading(sections, zDocument.tax.heading, cols, printer?.capabilities);
-  if (zDocument.tax.rows.length === 0) pushZReportEmpty(sections, zDocument.tax.none, cols, printer?.capabilities);
-  for (const row of zDocument.tax.rows) pushZReportRow(sections, row.label, formatCurrency(row.amount, prefix, locale, trimDecimals, fractionDigits), cols, printer?.capabilities);
+  pushZReportSectionHeading(sections, zDocument.tax.heading, zContext);
+  if (zDocument.tax.rows.length === 0) pushZReportEmpty(sections, zDocument.tax.none, zContext);
+  for (const row of zDocument.tax.rows) pushZReportRow(sections, row.label, formatCurrency(row.amount, prefix, locale, trimDecimals, fractionDigits), zContext);
   sections.push('');
 
-  pushZReportSectionHeading(sections, zDocument.staff.heading, cols, printer?.capabilities);
-  if (zDocument.staff.rows.length === 0) pushZReportEmpty(sections, zDocument.staff.none, cols, printer?.capabilities);
+  pushZReportSectionHeading(sections, zDocument.staff.heading, zContext);
+  if (zDocument.staff.rows.length === 0) pushZReportEmpty(sections, zDocument.staff.none, zContext);
   for (const row of zDocument.staff.rows) {
     pushZReportRow(sections, {
       primary: `${row.label.primary} ${row.countLabel.primary.replace('{count}', String(row.count))}`,
       ...(row.label.secondary && row.countLabel.secondary
         ? { secondary: `${row.label.secondary} ${row.countLabel.secondary.replace('{count}', String(row.count))}` }
         : {}),
-    }, formatAmount(row.totalCents), cols, printer?.capabilities);
+    }, formatAmount(row.totalCents), zContext);
   }
   sections.push('');
 
   sections.push(bar);
-  pushZReportHeading(sections, zDocument.cash.expected.label, cols, printer?.capabilities);
+  pushZReportHeading(sections, zDocument.cash.expected.label, zContext);
   sections.push(rightAlign(formatAmount(zDocument.cash.expected.cents), cols));
-  pushZReportHeading(sections, zDocument.cash.counted.label, cols, printer?.capabilities);
+  pushZReportHeading(sections, zDocument.cash.counted.label, zContext);
   sections.push(rightAlign(formatAmount(zDocument.cash.counted.cents), cols));
   sections.push(bar);
   for (const line of wrapText(`${zDocument.cash.variance.label.primary}  ${formatAmount(zDocument.cash.variance.cents)}`, cols)) {
@@ -2201,7 +2202,7 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   sections.push(dash);
   sections.push('');
 
-  if (zDocument.operator.name) pushZReportTextValue(sections, zDocument.operator.label, zDocument.operator.name.text, cols, printer?.capabilities);
+  if (zDocument.operator.name) pushZReportTextValue(sections, zDocument.operator.label, zDocument.operator.name.text, zContext);
   const sigLabel = zDocument.operator.signatureLabel.primary;
   const remainingSigCols = cols - thermalDisplayWidth(sigLabel) - 1;
   if (remainingSigCols >= 8) {
@@ -2221,11 +2222,12 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   return buildEscPos(sections, false, { cutMode: 'full', language: lang, columns: cols, capabilities: printer?.capabilities });
 }
 
-function zLayoutContext(columns: number, document: ZReportDocument): ThermalLayoutContext {
+function zLayoutContext(columns: number, document: ZReportDocument, capabilities?: ThermalPrinterCapabilities): ThermalLayoutContext {
   return {
     logicalColumns: columns,
     direction: document.direction.base,
     languages: document.languages,
+    capabilities,
   };
 }
 
@@ -2233,64 +2235,59 @@ function zLabelVariants(label: SemanticLabel, columns: number): string[] {
   return [...bilingualLabelLines(label, selectBilingualFit(label, columns))];
 }
 
-function zLaidOutLabel(label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): string[] {
-  return [...layoutStyledUnit({ label, field: 'Z report label' }, {
-    logicalColumns: Math.max(1, columns),
-    direction: 'ltr',
-    languages: ['en'],
-    capabilities,
-  }).lines];
+function zLaidOutLabel(label: SemanticLabel, context: ThermalLayoutContext): string[] {
+  return [...layoutStyledUnit({ label, field: 'Z report label' }, context).lines];
 }
 
-function pushZReportHeading(lines: string[], label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): void {
-  const layout = layoutStyledUnit({ label, field: 'Z report section' }, {
-    logicalColumns: columns,
-    direction: 'ltr',
-    languages: ['en'],
-    capabilities,
-  });
-  for (const line of layout.lines) lines.push('{BOLD}' + normalizeThermalText(line, capabilities) + '{/BOLD}');
+function pushZReportHeading(lines: string[], label: SemanticLabel, context: ThermalLayoutContext): void {
+  const layout = layoutStyledUnit({ label, field: 'Z report section' }, context);
+  for (const line of layout.lines) lines.push('{BOLD}' + normalizeThermalText(line, context.capabilities) + '{/BOLD}');
 }
 
-function pushZReportSectionHeading(lines: string[], label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): void {
-  pushZReportHeading(lines, label, columns, capabilities);
+function pushZReportSectionHeading(lines: string[], label: SemanticLabel, context: ThermalLayoutContext): void {
+  pushZReportHeading(lines, label, context);
 }
 
-function pushZReportEmpty(lines: string[], label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): void {
-  for (const line of zLaidOutLabel(label, Math.max(1, columns - 2), capabilities)) {
-    lines.push('  ' + normalizeThermalText(line, capabilities));
+function pushZReportEmpty(lines: string[], label: SemanticLabel, context: ThermalLayoutContext): void {
+  const indentedContext = { ...context, logicalColumns: Math.max(1, context.logicalColumns - 2) };
+  for (const line of zLaidOutLabel(label, indentedContext)) {
+    lines.push('  ' + normalizeThermalText(line, context.capabilities));
   }
 }
 
-function pushZReportLabelValue(lines: string[], label: SemanticLabel, value: string, columns: number, capabilities?: ThermalPrinterCapabilities): void {
-  const normalizedValue = normalizeThermalText(value, capabilities);
-  const labelLines = zLaidOutLabel(label, columns, capabilities);
+function pushZReportLabelValue(lines: string[], label: SemanticLabel, value: string, context: ThermalLayoutContext): void {
+  const columns = context.logicalColumns;
+  const normalizedValue = normalizeThermalText(value, context.capabilities);
+  const labelLines = zLaidOutLabel(label, context);
   if (labelLines.length === 1 && thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns) {
-    lines.push(normalizeThermalText(labelLines[0], capabilities) + rightAlign(normalizedValue, columns - thermalDisplayWidth(labelLines[0])));
+    lines.push(normalizeThermalText(labelLines[0], context.capabilities) + rightAlign(normalizedValue, columns - thermalDisplayWidth(labelLines[0])));
     return;
   }
-  for (const line of labelLines) lines.push(normalizeThermalText(line, capabilities));
+  for (const line of labelLines) lines.push(normalizeThermalText(line, context.capabilities));
   for (const line of wrapText(normalizedValue, columns)) lines.push(rightAlign(line, columns));
 }
 
-function pushZReportTextValue(lines: string[], label: SemanticLabel, value: string, columns: number, capabilities?: ThermalPrinterCapabilities): void {
-  const values = [label.primary, ...(label.secondary ? [label.secondary] : [])];
-  for (const variant of values) {
-    for (const line of wrapText(`${variant} ${value}`, columns)) {
-      lines.push(normalizeThermalText(line, capabilities));
-    }
+function pushZReportTextValue(lines: string[], label: SemanticLabel, value: string, context: ThermalLayoutContext): void {
+  const labelWithValue: SemanticLabel = {
+    primary: `${label.primary} ${value}`,
+    ...(label.secondary ? { secondary: `${label.secondary} ${value}` } : {}),
+  };
+  for (const line of zLaidOutLabel(labelWithValue, context)) {
+    lines.push(normalizeThermalText(line, context.capabilities));
   }
 }
 
-function pushZReportRow(lines: string[], label: SemanticLabel, value: string, columns: number, capabilities?: ThermalPrinterCapabilities): void {
+function pushZReportRow(lines: string[], label: SemanticLabel, value: string, context: ThermalLayoutContext): void {
   const prefix = '  ';
-  const normalizedValue = normalizeThermalText(value, capabilities);
-  const labelLines = zLaidOutLabel(label, Math.max(1, columns - prefix.length), capabilities);
+  const columns = context.logicalColumns;
+  const normalizedValue = normalizeThermalText(value, context.capabilities);
+  const labelContext = { ...context, logicalColumns: Math.max(1, columns - prefix.length) };
+  const labelLines = zLaidOutLabel(label, labelContext);
   if (labelLines.length === 1 && prefix.length + thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns) {
     lines.push(prefix + labelLines[0] + rightAlign(normalizedValue, columns - prefix.length - thermalDisplayWidth(labelLines[0])));
     return;
   }
-  for (const line of labelLines) lines.push(prefix + normalizeThermalText(line, capabilities));
+  for (const line of labelLines) lines.push(prefix + normalizeThermalText(line, context.capabilities));
   for (const line of wrapText(normalizedValue, columns)) lines.push(rightAlign(line, columns));
 }
 

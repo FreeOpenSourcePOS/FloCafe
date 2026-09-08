@@ -286,7 +286,13 @@ function expectContent(
   warn(text.includes(expectations.businessName), `${label}: business header`);
   if (expectations.truncationMarker) {
     const stemRowIndex = rows.findIndex((r) => r.includes(LONG_NAME_STEM));
-    const isTruncatedOrWrapped = stemRowIndex >= 0 && (rows[stemRowIndex].includes('.') || rows[stemRowIndex + 1]?.length > 0);
+    const stemRow = stemRowIndex >= 0 ? rows[stemRowIndex] : '';
+    const amountStart = stemRow.search(/(?:Rs|INR|USD|EUR|GBP|\$|\u20b9)?\s*420(?:[.,]00)?\s*$/);
+    const itemNamePortion = amountStart >= 0 ? stemRow.slice(0, amountStart) : stemRow;
+    const hasExplicitMarker = /\.(?:\s+\d+)?\s*$/.test(itemNamePortion) || itemNamePortion.includes('\u2026');
+    const hasWrappedContinuation = stemRowIndex >= 0
+      && rows.slice(stemRowIndex + 1, stemRowIndex + 12).some((row) => row.includes('Drizzle'));
+    const isTruncatedOrWrapped = stemRowIndex >= 0 && (hasExplicitMarker || hasWrappedContinuation);
     warn(isTruncatedOrWrapped, `${label}: long item truncated with marker or wrapped`);
   }
   for (const addon of expectations.addons ?? []) {

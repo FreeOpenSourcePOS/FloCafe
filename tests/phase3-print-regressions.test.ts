@@ -250,6 +250,17 @@ async function run(): Promise<void> {
   }, taxWarnings)).toString('utf8');
   assert.match(taxBillText, /Date: Apr 21, 2026/, 'raw tax bill uses an explicit ASCII-safe fallback for Persian country data');
 
+  const longTaxItemName = 'Extra Long Caramelized Vanilla Bean Creme Frappuccino';
+  const longTaxBillText = Buffer.from(frontend.taxBillEncoder.buildTaxBillBytes({
+    bill_number: 'INV-PHASE3-LONG', subtotal: 123, discount_amount: 0, tax_amount: 0, total: 123,
+    order: { created_at: '2026-04-21 10:30:00', items: [{ product_name: longTaxItemName, quantity: 1, total: 123, addons: [] }] },
+  } as any, { business_name: 'Cafe', country: 'IN', currency: 'INR', timezone: 'UTC' } as any, {
+    paperWidth: 58, rawEscPos: true, useUnicode: false, language: 'en',
+  }, [])).toString('utf8');
+  const longTaxVisibleText = longTaxBillText.replace(/[\x00-\x1F\x7F]/g, '');
+  assert.ok(longTaxVisibleText.includes(longTaxItemName), '58 mm tax bill preserves a long ASCII item name across wrapped rows');
+  assert.match(longTaxVisibleText, /123\.00/, '58 mm tax bill preserves the long item amount');
+
   const germanTaxWarnings: any[] = [];
   const germanTaxText = Buffer.from(frontend.taxBillEncoder.buildTaxBillBytes({
     bill_number: 'INV-PHASE3-003', subtotal: 100, discount_amount: 0, tax_amount: 0, total: 100,

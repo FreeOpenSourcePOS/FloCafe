@@ -31,6 +31,8 @@ import {
   resolveValueDirection,
   selectBilingualFit,
   buildZReportDocument,
+  displayCellWidth,
+  fitThermalLine,
   layoutStyledUnit,
   type ThermalLayoutContext,
 } from '../shared/print';
@@ -266,7 +268,18 @@ const financial = layoutStyledUnit({
   field: 'payment row',
   financial: true,
 }, layoutContext(32));
+assert.ok(financial.lines.every((line) => displayCellWidth(line) <= 32), 'financial text fits within 32 columns');
 assert.equal(financial.lines.join(' '), 'Credit Card (Mastercard) 1234567890', 'financial text wraps without truncation');
+
+const bidiControlled = `\u200f${'A'.repeat(32)}`;
+assert.equal(displayCellWidth(bidiControlled), 32, 'RTL formatting controls consume no display cells');
+assert.equal(fitThermalLine(bidiControlled, 32), bidiControlled, 'final fitting preserves 32 visible cells plus an RTL control');
+const fullWidthText = '商品商品';
+assert.equal(displayCellWidth(fullWidthText), 8, 'full-width glyphs consume two display cells');
+assert.equal(fitThermalLine(fullWidthText, 6), '商品商', 'final fitting truncates full-width glyphs by display cells');
+const fullWidthLayout = layoutStyledUnit({ text: fullWidthText, field: 'full-width text' }, layoutContext(6));
+assert.ok(fullWidthLayout.lines.every((line) => displayCellWidth(line) <= 6), 'semantic layout uses the same display-cell budget');
+assert.equal(fullWidthLayout.lines.join(''), fullWidthText, 'semantic layout wraps full-width glyphs without loss');
 
 const zDocument = buildZReportDocument({
   zNumber: 7,
@@ -297,6 +310,18 @@ assert.equal(zDocument.header.reprintMarker?.conceptId, 'receipt.reprint');
 assert.equal(zDocument.payments.rows[0].label.conceptId, 'pos.methodCash');
 assert.equal(zDocument.payments.rows[0].countLabel.conceptId, 'print.zReport.paymentCount');
 assert.equal(zDocument.cash.variance.cents, -100, 'Z financial truth passes through the semantic document');
+for (const [row, property, replacement] of [
+  [zDocument.period[0], 'value', null],
+  [zDocument.payments.rows[0], 'totalCents', 999],
+  [zDocument.tax.rows[0], 'amount', 999],
+  [zDocument.staff.rows[0], 'totalCents', 999],
+] as const) {
+  const before = (row as Record<string, unknown>)[property];
+  assert.throws(() => {
+    (row as Record<string, unknown>)[property] = replacement;
+  }, TypeError, `frozen Z-report ${property} rejects mutation`);
+  assert.equal((row as Record<string, unknown>)[property], before, `frozen Z-report ${property} remains unchanged`);
+}
 
 console.log('✓ semantic thermal overflow and Z-report contracts');
 

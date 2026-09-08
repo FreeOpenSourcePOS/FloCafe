@@ -2,6 +2,7 @@ import { bilingualLabelLines, selectBilingualFit, type BilingualLabel } from './
 import type { ThermalPrinterCapabilities } from './thermal-capabilities';
 import type { TextDirection, ResolvedPrintLanguages } from './types';
 import type { PrintWarning } from './warnings';
+import { displayCellWidth } from './width';
 
 export interface ThermalLayoutContext {
   readonly logicalColumns: number;
@@ -32,7 +33,7 @@ export interface ThermalLayoutResult {
 }
 
 function displayWidth(text: string): number {
-  return Array.from(text.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]/g, '')).length;
+  return displayCellWidth(text);
 }
 
 function wrapByColumns(text: string, columns: number): string[] {

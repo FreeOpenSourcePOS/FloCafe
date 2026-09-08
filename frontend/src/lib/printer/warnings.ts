@@ -7,13 +7,9 @@ import {
   selectThermalCodePage,
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
+import type { PrintWarning } from '@print/warnings';
 
-export interface PrintWarning {
-  field: string;
-  text: string;
-  message: string;
-  kind?: 'line' | 'financial' | 'configuration' | 'locale';
-}
+export type { PrintWarning } from '@print/warnings';
 
 const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(
   Object.keys(CURRENCY_ASCII_MAP)

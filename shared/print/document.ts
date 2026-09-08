@@ -306,6 +306,7 @@ export interface ItemTableRow {
 export interface ItemTableHeaderLabels {
   readonly item: SemanticLabel;
   readonly quantity: SemanticLabel;
+  readonly rate: SemanticLabel;
   readonly amount: SemanticLabel;
 }
 
@@ -326,6 +327,7 @@ export interface ItemTableBlock {
 export interface TaxBreakdownBlock {
   readonly kind: 'tax-breakdown';
   readonly direction: TextDirection;
+  readonly heading: SemanticLabel;
   readonly lines: readonly {
     readonly label: SemanticLabel;
     readonly rate: number | null;
@@ -360,6 +362,7 @@ export interface TotalsBlock {
 export interface PaymentsBlock {
   readonly kind: 'payments';
   readonly direction: TextDirection;
+  readonly heading: SemanticLabel;
   readonly lines: readonly {
     /** Raw payment-method code (e.g. `cash`). */
     readonly method: string;
@@ -385,6 +388,7 @@ export interface MessageBlock {
   } | null;
   readonly footerNote: DirectionalText | null;
   readonly thankYou: SemanticLabel | null;
+  readonly taxIncluded: SemanticLabel;
 }
 
 /** Ordered union of every PrintDocument v1 block kind. */
@@ -556,6 +560,7 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
     header: Object.freeze({
       item: resolveSemanticLabel(labels, 'receipt.item'),
       quantity: resolveSemanticLabel(labels, 'receipt.qty'),
+      rate: resolveSemanticLabel(labels, 'receipt.rate'),
       amount: resolveSemanticLabel(labels, 'receipt.amount'),
     }),
     noteLabel: resolveSemanticLabel(labels, 'print.note'),
@@ -577,6 +582,7 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
   const breakdown: TaxBreakdownBlock = Object.freeze({
     kind: 'tax-breakdown',
     direction: base,
+    heading: resolveSemanticLabel(labels, 'receipt.taxDetails'),
     lines: Object.freeze((showBreakdown ? taxComponents : []).map((component) => Object.freeze({
       label: literalLabel(component.title),
       rate: component.rate,
@@ -648,6 +654,7 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
   const payments: PaymentsBlock = Object.freeze({
     kind: 'payments',
     direction: base,
+    heading: resolveSemanticLabel(labels, 'receipt.payments'),
     lines: Object.freeze(bill.payments
       .filter((payment) => payment.method.length > 0)
       .map((payment) => Object.freeze({
@@ -671,6 +678,7 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       : null,
     footerNote: business.footerNote.length > 0 ? directionalText(business.footerNote, base) : null,
     thankYou: resolveSemanticLabel(labels, 'print.thankYouShort'),
+    taxIncluded: resolveSemanticLabel(labels, 'receipt.taxIncluded'),
   });
 
   return Object.freeze({
@@ -850,6 +858,7 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
       return isRecord(value.header)
         && isSemanticLabel(value.header.item)
         && isSemanticLabel(value.header.quantity)
+        && isSemanticLabel(value.header.rate)
         && isSemanticLabel(value.header.amount)
         && isSemanticLabel(value.noteLabel)
         && Array.isArray(value.rows)
@@ -866,7 +875,8 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
             && (addon.quantity === undefined || isFiniteNumber(addon.quantity)))
           && isOptionalDirectionalText(row.specialInstructions));
     case 'tax-breakdown':
-      return Array.isArray(value.lines)
+      return isSemanticLabel(value.heading)
+        && Array.isArray(value.lines)
         && value.lines.every((line) => isRecord(line)
           && isSemanticLabel(line.label)
           && (line.rate === null || isFiniteNumber(line.rate))
@@ -878,7 +888,8 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
         && ['discount', 'tax', 'serviceCharge', 'deliveryCharge', 'packagingCharge'].every((key) => value[key] === null || (isRecord(value[key]) && isSemanticLabel(value[key].label) && isFiniteNumber(value[key].amount)))
         && ['pointsRedeemed', 'pointsEarned', 'pointsBalance'].every((key) => value[key] === null || (isRecord(value[key]) && isSemanticLabel(value[key].label) && isFiniteNumber(value[key].points)));
     case 'payments':
-      return Array.isArray(value.lines)
+      return isSemanticLabel(value.heading)
+        && Array.isArray(value.lines)
         && value.lines.every((line) => isRecord(line)
           && typeof line.method === 'string'
           && isSemanticLabel(line.label)
@@ -890,7 +901,8 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
           && isDirectionalText(value.onlineOrderBanner.platform)
           && isDirectionalText(value.onlineOrderBanner.externalOrderId)))
         && isOptionalDirectionalText(value.footerNote)
-        && (value.thankYou === null || isSemanticLabel(value.thankYou));
+        && (value.thankYou === null || isSemanticLabel(value.thankYou))
+        && isSemanticLabel(value.taxIncluded);
     default:
       return false;
   }

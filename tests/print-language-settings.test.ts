@@ -17,6 +17,7 @@ import assert from 'node:assert/strict';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
+  Z_REPORT_LANGUAGE_POLICY_KEY,
   LANGUAGE_POLICY_SETTING_KEYS,
   defaultLanguagePolicySettingJson,
   parseStoredLanguagePolicy,
@@ -26,7 +27,7 @@ import {
 console.log('Testing language-policy settings keys...');
 assert.deepEqual(
   [...LANGUAGE_POLICY_SETTING_KEYS].sort(),
-  ['bill_language_policy', 'kot_language_policy'],
+  ['bill_language_policy', 'kot_language_policy', 'z_report_language_policy'],
 );
 
 console.log('✓ keys registered');
@@ -63,6 +64,9 @@ if (stringPayload.ok) {
 const kotFixed = validateLanguagePolicySetting(KOT_LANGUAGE_POLICY_KEY,
   '{"primary":{"mode":"fixed","language":"pt"},"additional":[]}');
 assert.ok(kotFixed.ok);
+const zFixed = validateLanguagePolicySetting(Z_REPORT_LANGUAGE_POLICY_KEY,
+  '{"primary":{"mode":"fixed","language":"fa"},"additional":["en"]}');
+assert.ok(zFixed.ok);
 
 console.log('✓ canonical storage');
 

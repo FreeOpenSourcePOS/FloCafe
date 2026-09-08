@@ -276,6 +276,10 @@
     "noPriorCloseHint": "Önceki gün kapatılmadı — açılış kasası 0 olarak ayarlandı",
     "billsCount": "{count} fiş",
     "businessDateLabel": "İşlem tarihi",
+    "periodStart": "Dönem başlangıcı",
+    "periodEnd": "Dönem bitişi",
+    "ticketCount": "Sayı",
+    "ticketOperatorSignature": "Operatör imzası",
     "ticketSectionPayments": "Ödeme yöntemleri",
     "ticketSectionRefunds": "İadeler",
     "ticketSectionTax": "Vergi dağılımı",
@@ -792,6 +796,7 @@
       "end": "SON"
     },
     "hsn": "HSN / GTİP",
+    "zReport": { "title": "Z RAPORU", "businessDate": "Tarih:", "periodStart": "Dönem başlangıcı:", "periodEnd": "Dönem bitişi:", "openingFloat": "Açılış kasası", "payments": "Ödeme yöntemine göre satışlar", "refunds": "İadeler", "tax": "Vergi dağılımı", "staff": "Personel satışları", "expectedCash": "Beklenen nakit", "countedCash": "Sayılan nakit", "variance": "Fark", "closedBy": "Kapanışı yapan:", "operatorSignature": "Operatör imzası:", "footer": "FloCafe tarafından üretildi", "none": "(yok)", "paymentCount": "{count} kez", "count": "Sayı:", "amount": "Toplam:" },
     "test": {
       "title": "Flo Yazıcı Testi",
       "networkUsb": "Ağ / USB Test Baskısı",

@@ -476,6 +476,7 @@ function applyLabelOverrides(
         header: Object.freeze({
           item: labels.item !== undefined ? overrideLabel(block.header.item, labels.item) : block.header.item,
           quantity: labels.quantity !== undefined ? overrideLabel(block.header.quantity, labels.quantity) : block.header.quantity,
+          rate: block.header.rate,
           amount: labels.amount !== undefined ? overrideLabel(block.header.amount, labels.amount) : block.header.amount,
         }),
         ...(labels.note !== undefined ? { noteLabel: overrideLabel(block.noteLabel, labels.note) } : {}),

@@ -516,7 +516,9 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   const boundedBackendWarnings: Array<{ field: string; text: string; message: string }> = [];
   const boundedBackend = buildEscPos(['{DOUBLE_WIDTH}این خط فارسی خیلی طولانی است{/DOUBLE_WIDTH}'], true, { arabicShaping: true, columns: 32 }, boundedBackendWarnings);
   const boundedBackendLines = visiblePreview(boundedBackend, 32).split('\n').slice(1, -1);
-  assert('backend shaping bounds raw double-width lines', boundedBackendLines.every((line) => line.length <= 16) && boundedBackendWarnings.length === 0);
+  assert('backend shaping downgrades overlong double-width lines without truncation', boundedBackendLines.every((line) => line.length <= 32)
+    && boundedBackendLines.join('').includes('این خط فارسی خیلی طولانی است')
+    && boundedBackendWarnings.length === 0);
 
   const narrowPersianOrder = {
     ...persianReceiptOrder,

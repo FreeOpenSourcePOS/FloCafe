@@ -37,6 +37,8 @@ import {
   type SemanticLabel,
   type TaxBreakdownBlock,
   type TotalsBlock,
+  layoutStyledUnit,
+  type ThermalLayoutContext,
 } from '../../shared/print';
 
 // Document to compact ESC/POS token lines.
@@ -72,6 +74,21 @@ function paymentLabel(label: SemanticLabel): string {
 
 function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
+function compactBannerLines(label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): string[] {
+  const context: ThermalLayoutContext = { logicalColumns: columns, direction: 'ltr', languages: ['en'], capabilities };
+  const layout = layoutStyledUnit({
+    label: {
+      primary: `** ${label.primary} **`,
+      ...(label.secondary ? { secondary: `** ${label.secondary} **` } : {}),
+    },
+    widthMultiplier: 2,
+    field: 'reprint banner',
+  }, context);
+  const widthToken = layout.widthMultiplier === 2 ? '{DOUBLE_WIDTH}' : '';
+  const closeWidthToken = layout.widthMultiplier === 2 ? '{/DOUBLE_WIDTH}' : '';
+  return layout.lines.map((line) => `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${normalizeThermalText(line, capabilities)}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`);
 }
 
 /** Column header row, composed from the document's own header labels. */
@@ -131,17 +148,19 @@ export function renderBillDocumentToCompactLines(
   const messageSourceLines: string[] = [];
   const messageSourceControlLines: string[] = [];
   if (messages?.reprintBanner) {
-    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(messages.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-    messageSourceLines.push(`** ${labelOf(messages.reprintBanner)} **`);
-    messageSourceControlLines.push(lines.at(-1) ?? '');
+    const bannerLines = compactBannerLines(messages.reprintBanner, cols, options.capabilities);
+    lines.push(...bannerLines);
+    messageSourceLines.push(...bannerLines.map((line) => line.replace(/\{[^}]+\}/g, '')));
+    messageSourceControlLines.push(...bannerLines);
   }
 
   // Online-order banner (#284, MessageBlock).
   if (messages?.onlineOrderBanner) {
     const banner = messages.onlineOrderBanner;
-    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-    messageSourceLines.push(`** ${labelOf(banner.label)} **`);
-    messageSourceControlLines.push(lines.at(-1) ?? '');
+    const bannerLines = compactBannerLines(banner.label, cols, options.capabilities);
+    lines.push(...bannerLines);
+    messageSourceLines.push(...bannerLines.map((line) => line.replace(/\{[^}]+\}/g, '')));
+    messageSourceControlLines.push(...bannerLines);
     if (banner.platform.text) {
       lines.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
       messageSourceLines.push(banner.platform.text);

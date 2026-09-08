@@ -276,6 +276,10 @@
     "noPriorCloseHint": "Hindi nakasara ang nakaraang araw — naka-default ang pondo sa 0",
     "billsCount": "{count} na bill",
     "businessDateLabel": "Petsa ng araw",
+    "periodStart": "Simula ng panahon",
+    "periodEnd": "Wakas ng panahon",
+    "ticketCount": "Bilang",
+    "ticketOperatorSignature": "Lagda ng operator",
     "ticketSectionPayments": "Mga paraan ng pagbabayad",
     "ticketSectionRefunds": "Mga refund",
     "ticketSectionTax": "Buwis na detalye",
@@ -792,6 +796,7 @@
       "end": "WAKAS"
     },
     "hsn": "HSN/SAC",
+    "zReport": { "title": "ULAT Z", "businessDate": "Petsa:", "periodStart": "Simula ng panahon:", "periodEnd": "Wakas ng panahon:", "openingFloat": "Paunang pondo", "payments": "Benta ayon sa paraan ng pagbabayad", "refunds": "Mga refund", "tax": "Buwis na detalye", "staff": "Benta ayon sa staff", "expectedCash": "Inaasahang cash", "countedCash": "Bilang na cash", "variance": "Pagkakaiba", "closedBy": "Isinara ni:", "operatorSignature": "Lagda ng operator:", "footer": "Ginawa ng FloCafe", "none": "(wala)", "paymentCount": "{count} beses", "count": "Bilang:", "amount": "Kabuuan:" },
     "test": {
       "title": "Flo Printer Test",
       "networkUsb": "Network / USB Test Print",

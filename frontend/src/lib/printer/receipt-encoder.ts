@@ -28,6 +28,7 @@ import {
   type TaxBreakdownBlock,
   type TotalsBlock,
 } from '@print/document';
+import { layoutStyledUnit } from '@print/layout';
 import type { ResolvedPrintLanguages } from '@print/types';
 
 export interface ReceiptOptions {
@@ -69,29 +70,39 @@ export interface ReceiptOptions {
 
 function printReprintBanner(
   enc: ReceiptPrinterEncoder,
-  bannerLabel: string,
+  bannerLabel: SemanticLabel,
   warnings: PrintWarning[] | undefined,
   arabicShaping: boolean,
   cols: number,
   language?: string,
 ): void {
+  const layout = layoutStyledUnit({
+    label: {
+      primary: `** ${bannerLabel.primary} **`,
+      ...(bannerLabel.secondary ? { secondary: `** ${bannerLabel.secondary} **` } : {}),
+    },
+    widthMultiplier: 2,
+    field: 'reprint banner',
+  }, { logicalColumns: cols, direction: 'ltr', languages: ['en'] });
+  warnings?.push(...layout.warnings);
   enc
     .align('center')
     .bold(true)
-    .width(2)
+    .width(layout.widthMultiplier)
     .height(2);
-  writeSafePrinterText(enc, `** ${bannerLabel} **`, warnings, false, arabicShaping, Math.floor(cols / 2), undefined, language);
+  for (const line of layout.lines) {
+    writeSafePrinterText(enc, line, warnings, false, arabicShaping, cols, undefined, language).newline();
+  }
   enc
     .width(1)
     .height(1)
     .bold(false)
-    .newline()
     .align('left');
 }
 
 function printOnlineOrderBanner(
   enc: ReceiptPrinterEncoder,
-  bannerLabel: string,
+  bannerLabel: SemanticLabel,
   platform: string,
   externalOrderId: string,
   warnings: PrintWarning[] | undefined,
@@ -99,16 +110,24 @@ function printOnlineOrderBanner(
   cols: number,
   language?: string,
 ): void {
+  const layout = layoutStyledUnit({
+    label: {
+      primary: `** ${bannerLabel.primary} **`,
+      ...(bannerLabel.secondary ? { secondary: `** ${bannerLabel.secondary} **` } : {}),
+    },
+    widthMultiplier: 2,
+    field: 'online order banner',
+  }, { logicalColumns: cols, direction: 'ltr', languages: ['en'] });
+  warnings?.push(...layout.warnings);
   enc
     .align('center')
     .bold(true)
-    .width(2)
+    .width(layout.widthMultiplier)
     .height(2);
-  writeSafePrinterText(enc, `** ${bannerLabel} **`, warnings, false, arabicShaping, Math.floor(cols / 2), undefined, language);
-  enc
-    .width(1)
-    .height(1)
-    .newline();
+  for (const line of layout.lines) {
+    writeSafePrinterText(enc, line, warnings, false, arabicShaping, cols, undefined, language).newline();
+  }
+  enc.width(1).height(1);
   if (platform) writeSafePrinterText(enc, platform, warnings, false, arabicShaping, cols, undefined, language).newline();
   if (externalOrderId) writeSafePrinterText(enc, `#${externalOrderId}`, warnings, false, arabicShaping, cols, undefined, language).newline();
   enc
@@ -398,11 +417,11 @@ export function buildClassicReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols, primaryLang);
+  if (messages?.reprintBanner) printReprintBanner(enc, messages.reprintBanner, warnings, arabicShaping, cols, primaryLang);
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
       enc,
-      labelOf(messages.onlineOrderBanner.label),
+      messages.onlineOrderBanner.label,
       messages.onlineOrderBanner.platform.text,
       messages.onlineOrderBanner.externalOrderId.text,
       warnings,
@@ -623,11 +642,11 @@ export function buildCompactReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols, primaryLang);
+  if (messages?.reprintBanner) printReprintBanner(enc, messages.reprintBanner, warnings, arabicShaping, cols, primaryLang);
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
       enc,
-      labelOf(messages.onlineOrderBanner.label),
+      messages.onlineOrderBanner.label,
       messages.onlineOrderBanner.platform.text,
       messages.onlineOrderBanner.externalOrderId.text,
       warnings,
@@ -810,7 +829,7 @@ export function buildDetailedReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (isReprint) printReprintBanner(enc, 'REPRINT', warnings, arabicShaping, cols, primaryLang);
+  if (isReprint) printReprintBanner(enc, { primary: printLabelResolver('receipt.reprint', primaryLang) }, warnings, arabicShaping, cols, primaryLang);
 
   // Header
   if (showBusinessName && tenant.business_name) {

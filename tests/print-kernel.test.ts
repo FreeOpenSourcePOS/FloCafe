@@ -30,6 +30,9 @@ import {
   resolveScopeDirection,
   resolveValueDirection,
   selectBilingualFit,
+  buildZReportDocument,
+  layoutStyledUnit,
+  type ThermalLayoutContext,
 } from '../shared/print';
 import type { LanguageRegistryFacts } from '../shared/print';
 
@@ -242,5 +245,59 @@ assert.equal(selectBilingualFit({ primary: 'A', secondary: 'B' }, -5), 'stacked'
 assert.equal(selectBilingualFit({ primary: 'A' }, Number.NaN), 'inline');
 
 console.log('✓ bilingual fit strategies');
+
+console.log('Testing semantic thermal overflow and Z-report contracts...');
+const layoutContext = (columns: number): ThermalLayoutContext => ({
+  logicalColumns: columns,
+  direction: 'ltr',
+  languages: ['en'],
+});
+for (const columns of [32, 42, 48]) {
+  const banner = layoutStyledUnit({
+    text: '** receipt.reprint[en] **',
+    widthMultiplier: 2,
+    field: 'reprint banner',
+  }, layoutContext(columns));
+  assert.equal(banner.lines.join(''), '** receipt.reprint[en] **', `complete banner survives ${columns} columns`);
+  assert.equal(banner.widthMultiplier, 1, `banner downgrades style at ${columns} columns`);
+}
+const financial = layoutStyledUnit({
+  text: 'Credit Card (Mastercard) 1234567890',
+  field: 'payment row',
+  financial: true,
+}, layoutContext(32));
+assert.equal(financial.lines.join(' '), 'Credit Card (Mastercard) 1234567890', 'financial text wraps without truncation');
+
+const zDocument = buildZReportDocument({
+  zNumber: 7,
+  businessDate: '2026-09-07',
+  periodStart: '07/09/2026 09:00',
+  periodEnd: '07/09/2026 23:00',
+  openingFloatCents: 1000,
+  paymentMethods: [{ method: 'cash', count: 2, totalCents: 5000 }],
+  refundCount: 1,
+  refundedCents: 500,
+  taxComponents: [{ title: 'GST', amount: 10 }],
+  staffSales: [{ name: 'Amina', orderCount: 2, revenueCents: 5000 }],
+  expectedCashCents: 5500,
+  countedCashCents: 5400,
+  varianceCents: -100,
+  closedByName: 'Amina',
+  businessName: 'Cafe',
+  businessAddress: '',
+  taxRegistrationNumber: '',
+  isReprint: true,
+}, {
+  languages: ['fa', 'en'],
+  baseDirection: 'rtl',
+  resolveLabel: (concept, language) => `${concept}[${language}]`,
+});
+assert.equal(zDocument.version, 1);
+assert.equal(zDocument.header.reprintMarker?.conceptId, 'receipt.reprint');
+assert.equal(zDocument.payments.rows[0].label.conceptId, 'pos.methodCash');
+assert.equal(zDocument.payments.rows[0].countLabel.conceptId, 'print.zReport.paymentCount');
+assert.equal(zDocument.cash.variance.cents, -100, 'Z financial truth passes through the semantic document');
+
+console.log('✓ semantic thermal overflow and Z-report contracts');
 
 console.log('\nAll print kernel tests passed.');

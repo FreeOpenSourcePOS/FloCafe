@@ -41,6 +41,8 @@ import {
   type TaxBreakdownBlock,
   type TextDirection,
   type TotalsBlock,
+  layoutStyledUnit,
+  type ThermalLayoutContext,
 } from '../../shared/print';
 
 // Direction facts (registry-derived, no language unions).
@@ -214,6 +216,21 @@ function paymentLabel(label: SemanticLabel): string {
 
 function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}
+
+function classicBannerLines(label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): string[] {
+  const context: ThermalLayoutContext = { logicalColumns: columns, direction: 'ltr', languages: ['en'], capabilities };
+  const layout = layoutStyledUnit({
+    label: {
+      primary: `** ${label.primary} **`,
+      ...(label.secondary ? { secondary: `** ${label.secondary} **` } : {}),
+    },
+    widthMultiplier: 2,
+    field: 'reprint banner',
+  }, context);
+  const widthToken = layout.widthMultiplier === 2 ? '{DOUBLE_WIDTH}' : '';
+  const closeWidthToken = layout.widthMultiplier === 2 ? '{/DOUBLE_WIDTH}' : '';
+  return layout.lines.map((line) => `{CENTER}{BOLD}{DOUBLE_HEIGHT}${widthToken}${normalizeThermalText(line, capabilities)}${closeWidthToken}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}`);
 }
 
 /** Column header row, composed from the document's own header labels. */
@@ -609,15 +626,17 @@ export function renderBillDocumentToClassicLines(
       case 'message': {
         const segment = segmentOf('message');
         if (block.reprintBanner) {
-          segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(block.reprintBanner)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-          segment.sourceLines.pre.push(`** ${labelOf(block.reprintBanner)} **`);
-          segment.sourceControlLines.pre.push(segment.pre.at(-1) ?? '');
+          const bannerLines = classicBannerLines(block.reprintBanner, cols, options.capabilities);
+          segment.pre.push(...bannerLines);
+          segment.sourceLines.pre.push(...bannerLines.map((line) => line.replace(/\{[^}]+\}/g, '')));
+          segment.sourceControlLines.pre.push(...bannerLines);
         }
         if (block.onlineOrderBanner) {
           const banner = block.onlineOrderBanner;
-          segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + normalize(labelOf(banner.label)) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-          segment.sourceLines.pre.push(`** ${labelOf(banner.label)} **`);
-          segment.sourceControlLines.pre.push(segment.pre.at(-1) ?? '');
+          const bannerLines = classicBannerLines(banner.label, cols, options.capabilities);
+          segment.pre.push(...bannerLines);
+          segment.sourceLines.pre.push(...bannerLines.map((line) => line.replace(/\{[^}]+\}/g, '')));
+          segment.sourceControlLines.pre.push(...bannerLines);
           if (banner.platform.text) {
             segment.pre.push('{CENTER}' + normalize(banner.platform.text) + '{/CENTER}');
             segment.sourceLines.pre.push(banner.platform.text);

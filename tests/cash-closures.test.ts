@@ -1089,7 +1089,7 @@ async function main() {
         assertEqual(reprint.body?.isReprint, true, 'print: response carries isReprint:true');
         assert(captured.length === 1, `print: reprint produced one dispatch (got ${captured.length})`);
         assert(!captured[0].equals(bytes), 'print: reprint body differs from original');
-        assert(captured[0].includes(Buffer.from('REIMPRESION', 'utf8')), 'print: reprint body carries the REIMPRESION marker');
+        assert(captured[0].includes(Buffer.from('REPRINT', 'utf8')), 'print: reprint body carries the localized English marker');
 
         // WebUSB branch: buildZReportBody returns the body without the pulse;
         // the print primitive (printZReport) appends the forced pulse before

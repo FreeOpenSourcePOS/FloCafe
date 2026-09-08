@@ -51,6 +51,19 @@ import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
 import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii } from '../../shared/print/currency';
 import { columnsForPaperWidth as columnsForConfiguredPaperWidth, fitThermalLine } from '../../shared/print/width';
+import {
+  bilingualLabelLines,
+  buildZReportDocument,
+  containsRtlScript,
+  layoutStyledUnit,
+  selectBilingualFit,
+  thermalDisplayWidth,
+  type PrintWarning as SharedPrintWarning,
+  type SemanticLabel,
+  type ThermalLayoutContext,
+  type ZReportDocument,
+  type ZReportPrintData,
+} from '../../shared/print';
 
 export type PrintResult = {
   ok: boolean;
@@ -66,12 +79,7 @@ export type PrintResult = {
   warnings?: PrintWarning[];
 };
 
-export type PrintWarning = {
-  field: string;
-  text: string;
-  message: string;
-  kind?: 'line' | 'financial' | 'configuration';
-};
+export type PrintWarning = SharedPrintWarning;
 
 export function hasFinancialPrintWarning(warnings: readonly PrintWarning[]): boolean {
   return warnings.some((warning) => warning.kind === 'financial');
@@ -2046,48 +2054,28 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
  * WebUSB `bytes: number[]` branch where the renderer dispatches.
  */
 export function buildZReportBody(z: any, language?: string, printer?: { columns?: number; capabilities?: ThermalPrinterCapabilities }): Buffer {
-  // F3: thread `columns` + `capabilities` from the resolved printer/profile
-  // so non-80mm widths and profiles with native code pages render correctly
-  // (also fixes F2 — the GENERIC ascii-only profile silently dropped the
-  // U+00B7 footer separator, blanking the line).
   const cols = printer?.columns || columnsForPaperWidth('80mm') || 48;
-  const lang = normalizePrintLanguage(language);
+  const lang = normalizePrintLanguage(language ?? z?.__language);
+  const additionalLanguage = z?.__additionalLanguage
+    ? normalizePrintLanguage(z.__additionalLanguage)
+    : undefined;
   const tz = getSettingValue('timezone') || 'Asia/Kolkata';
-  // F8: drop the swallow-and-fallback. The settings table is a key/value
-  // store (see `main/db.ts:4723-4727`); an unguarded read 500s like the
-  // `print-bill` path's settings read does, so a real DB error surfaces
-  // instead of silently defaulting to INR/100 for every money column.
   const settingsRows = getDatabase()
     .prepare('SELECT key, value FROM settings')
     .all() as { key: string; value: string }[];
   const settings: Record<string, string> = Object.fromEntries(
     settingsRows.map((r) => [r.key, r.value]),
   );
-  // F5: resolve the currency through `resolveTenantCurrency` (settings +
-  // country-pack fallback) so country-only configs (no `settings.currency`)
-  // pick the right symbol and minor factor. The legacy `settings.currency
-  // || 'INR'` fallback silently defaulted every country-only store to INR.
   const currency = resolveTenantCurrency(settings.currency, settings.country);
   const fractionDigits = getCurrencyFractionDigits(currency);
   const factor = 10 ** fractionDigits;
-  // F5: resolve the currency symbol through the same code path as the
-  // receipt-printer pipeline (`main/routes/printers.ts:451-452`); fall back
-  // to `settings.currency_symbol` only when neither is set (legacy stores
-  // that hand-wrote their own symbol).
   const countryCode = settings.country;
   const locale = getCountryByCode(countryCode)?.locale ?? 'en-US';
-  // Mirror the receipt-printer pipeline at main/routes/printers.ts:451 —
-  // country-pack symbol is authoritative; `getCurrencySymbol` returns a
-  // non-empty string for any resolved code, so no `settings.currency_symbol`
-  // fallback is needed.
   const prefix = resolveCurrencyPrefix(
     getCurrencySymbol(currency, locale),
     false,
   );
   const trimDecimals = false;
-  // locale already resolved above (F5: getCurrencySymbol needs the locale
-  // for the country's symbol form).
-  const label = (text: string): string => normalizeThermalText(String(text));
   const centsToAmount = (cents: number): number => (Number(cents) || 0) / factor;
   const formatAmount = (cents: number): string => formatCurrency(centsToAmount(cents), prefix, locale, trimDecimals, fractionDigits);
   const localTime = (iso: string): string => {
@@ -2099,142 +2087,123 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
       return iso;
     }
   };
-  // F5: `localDate` removed — `localTime` above already returns both date
-  // and time components, and the body builder only ever needed the combined
-  // string for `period_start` / `period_end`.
+  const languages = additionalLanguage && additionalLanguage !== lang
+    ? [lang, additionalLanguage] as const
+    : [lang] as const;
+  const documentData: ZReportPrintData = {
+    zNumber: z?.z_number ?? 0,
+    businessDate: String(z?.business_date || ''),
+    periodStart: localTime(z?.period_start),
+    periodEnd: localTime(z?.period_end),
+    openingFloatCents: Number(z?.opening_float_cents) || 0,
+    paymentMethods: (Array.isArray(z?.payment_methods) ? z.payment_methods : []).map((row: any) => ({
+      method: String(row?.method || ''),
+      count: Number(row?.count) || 0,
+      totalCents: Number(row?.total_cents ?? row?.total) || 0,
+    })),
+    refundCount: Number(z?.refund_count) || 0,
+    refundedCents: Number(z?.refunded_cents) || 0,
+    taxComponents: (Array.isArray(z?.tax_components) ? z.tax_components : []).map((row: any) => ({
+      title: String(row?.title || row?.label || ''),
+      amount: Number(row?.amount) || 0,
+    })),
+    staffSales: (Array.isArray(z?.staff_sales) ? z.staff_sales : []).map((row: any) => ({
+      name: String(row?.name || row?.user_id || ''),
+      orderCount: Number(row?.orderCount ?? row?.orders) || 0,
+      revenueCents: Number(row?.revenue_cents ?? row?.revenue) || 0,
+    })),
+    expectedCashCents: Number(z?.expected_cash_cents) || 0,
+    countedCashCents: Number(z?.counted_cash_cents) || 0,
+    varianceCents: Number(z?.variance_cents) || 0,
+    closedByName: String(z?.closed_by_name || z?.closed_by || ''),
+    businessName: String(settings.business_name || ''),
+    businessAddress: String(settings.business_address || ''),
+    taxRegistrationNumber: String(settings.tax_registration_number || ''),
+    isReprint: !!z?.__isReprint,
+  };
+  const zDocument = buildZReportDocument(documentData, {
+    languages,
+    baseDirection: containsRtlScript(printLabel(lang, 'print.zReport.title')) ? 'rtl' : 'ltr',
+    resolveLabel: (conceptId, languageCode) => printLabel(languageCode, conceptId as PrintConceptId),
+  });
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
-  const zNumber = z?.z_number ?? 0;
-  const businessDate = String(z?.business_date || '');
-  const periodStart = localTime(z?.period_start);
-  const periodEnd = localTime(z?.period_end);
-  const isReprint = !!z?.__isReprint;
-  // Spec requires the Spanish reprint banner. The body labels are English
-  // by convention, but the spec for the day-close Z explicitly mandates
-  // "REIMPRESION" as the reprint marker.
-  const reprintMarker = isReprint ? label('REIMPRESION') : '';
-
   const sections: string[] = [];
   sections.push('{INIT}');
-
-  // Header block: wrap business name, address, and tax ID within columns.
-  if (settings.business_name) {
-    for (const line of wrapText(label(settings.business_name), cols)) {
-      sections.push('{CENTER}{BOLD}' + line + '{/BOLD}{/CENTER}');
-    }
-  }
-  if (settings.business_address) pushCenteredWrapped(sections, label(settings.business_address), cols, lang, printer?.capabilities);
-  if (settings.tax_registration_number) pushCenteredWrapped(sections, label(settings.tax_registration_number), cols, lang, printer?.capabilities);
+  if (zDocument.header.businessName) pushCenteredWrapped(sections, zDocument.header.businessName.text, cols, lang, printer?.capabilities);
+  if (zDocument.header.businessAddress) pushCenteredWrapped(sections, zDocument.header.businessAddress.text, cols, lang, printer?.capabilities);
+  if (zDocument.header.taxRegistrationNumber) pushCenteredWrapped(sections, zDocument.header.taxRegistrationNumber.text, cols, lang, printer?.capabilities);
   sections.push('');
 
-  sections.push('{CENTER}{BOLD}' + label('Z REPORT') + ' #' + String(zNumber) + (reprintMarker ? ' (' + reprintMarker + ')' : '') + '{/BOLD}{/CENTER}');
-  sections.push('');
-
-  sections.push(bar);
-  // Period rows: render inline if label + timestamp fits; otherwise wrap onto two lines.
-  const pushPeriodRow = (key: string, value: string): void => {
-    const keyLabel = label(key);
-    const valLabel = label(value);
-    if (keyLabel.length + 1 + valLabel.length <= cols) {
-      sections.push(keyLabel + rightAlign(valLabel, cols - keyLabel.length));
-    } else {
-      sections.push(keyLabel);
-      sections.push(rightAlign(valLabel, cols));
-    }
+  const titleLabel: SemanticLabel = {
+    primary: `${zDocument.header.title.primary} #${zDocument.header.zNumber.text}${zDocument.header.reprintMarker ? ` (${zDocument.header.reprintMarker.primary})` : ''}`,
+    ...(zDocument.header.title.secondary
+      ? { secondary: `${zDocument.header.title.secondary} #${zDocument.header.zNumber.text}${zDocument.header.reprintMarker?.secondary ? ` (${zDocument.header.reprintMarker.secondary})` : ''}` }
+      : {}),
   };
-  pushPeriodRow('Date:', businessDate);
-  pushPeriodRow('Period start:', periodStart);
-  pushPeriodRow('Period end:', periodEnd);
-  sections.push(bar);
-  sections.push('');
-
-  sections.push('{BOLD}' + label('Opening float') + '{/BOLD}');
-  sections.push(rightAlign(formatAmount(z?.opening_float_cents), cols));
-  sections.push('');
-
-  // Row helper: render label and amount inline if space permits; wrap amount to line 2 otherwise.
-  const pushBreakdownRow = (head: string, total: string): void => {
-    const prefix = '  ';
-    const inlineBudget = cols - prefix.length - total.length - 1;
-    if (head.length <= inlineBudget) {
-      sections.push(prefix + head + rightAlign(total, cols - prefix.length - head.length));
-    } else {
-      for (const line of wrapText(head, cols - prefix.length)) {
-        sections.push(prefix + line);
-      }
-      sections.push(rightAlign(total, cols));
-    }
-  };
-
-  sections.push('{BOLD}' + label('Sales by payment method') + '{/BOLD}');
-  const paymentMethods = Array.isArray(z?.payment_methods) ? z.payment_methods : [];
-  if (paymentMethods.length === 0) {
-    sections.push('  ' + label('(none)'));
-  } else {
-    for (const row of paymentMethods as any[]) {
-      const method = String(row.method || '');
-      const total = formatAmount(row.total_cents ?? row.total ?? 0);
-      const count = String(row.count ?? 0);
-      const head = label(method) + ' x' + count;
-      pushBreakdownRow(head, total);
-    }
-  }
-  sections.push('');
-
-  sections.push('{BOLD}' + label('Refunds') + '{/BOLD}');
-  sections.push(label('Count:') + ' ' + String(z?.refund_count ?? 0));
-  sections.push(label('Total:') + ' ' + formatAmount(z?.refunded_cents));
-  sections.push('');
-
-  sections.push('{BOLD}' + label('Tax breakdown') + '{/BOLD}');
-  const tax = Array.isArray(z?.tax_components) ? z.tax_components : [];
-  if (tax.length === 0) {
-    sections.push('  ' + label('(none)'));
-  } else {
-    for (const row of tax as any[]) {
-      const title = String(row.title || row.label || '');
-      const total = formatCurrency(Number(row.amount ?? 0), prefix, locale, trimDecimals, fractionDigits);
-      const head = label(title) || label('Tax');
-      pushBreakdownRow(head, total);
-    }
-  }
-  sections.push('');
-
-  sections.push('{BOLD}' + label('Staff sales') + '{/BOLD}');
-  const staff = Array.isArray(z?.staff_sales) ? z.staff_sales : [];
-  if (staff.length === 0) {
-    sections.push('  ' + label('(none)'));
-  } else {
-    for (const row of staff as any[]) {
-      const name = String(row.name || row.user_id || '');
-      const total = formatAmount(row.revenue_cents ?? row.revenue ?? 0);
-      const orders = String(row.orderCount ?? row.orders ?? 0);
-      const head = label(name) + ' x' + orders;
-      pushBreakdownRow(head, total);
-    }
+  for (const line of layoutStyledUnit({ label: titleLabel, field: 'Z report title' }, zLayoutContext(cols, zDocument)).lines) {
+    sections.push('{CENTER}{BOLD}' + normalizeThermalText(line, printer?.capabilities) + '{/BOLD}{/CENTER}');
   }
   sections.push('');
 
   sections.push(bar);
-  sections.push('{BOLD}' + label('Expected cash') + '{/BOLD}');
-  sections.push(rightAlign(formatAmount(z?.expected_cash_cents), cols));
-  sections.push('{BOLD}' + label('Counted cash') + '{/BOLD}');
-  sections.push(rightAlign(formatAmount(z?.counted_cash_cents), cols));
+  for (const row of zDocument.period) pushZReportLabelValue(sections, row.label, row.value.text, cols, printer?.capabilities);
   sections.push(bar);
-  for (const line of wrapText('Variance  ' + formatAmount(z?.variance_cents), cols)) {
+  sections.push('');
+
+  pushZReportHeading(sections, zDocument.openingFloat.label, cols, printer?.capabilities);
+  sections.push(rightAlign(formatAmount(zDocument.openingFloat.cents), cols));
+  sections.push('');
+
+  pushZReportSectionHeading(sections, zDocument.payments.heading, cols, printer?.capabilities);
+  if (zDocument.payments.rows.length === 0) pushZReportEmpty(sections, zDocument.payments.none, cols, printer?.capabilities);
+  for (const row of zDocument.payments.rows) {
+    pushZReportRow(sections, {
+      primary: `${row.label.primary} ${row.countLabel.primary.replace('{count}', String(row.count))}`,
+      ...(row.label.secondary && row.countLabel.secondary
+        ? { secondary: `${row.label.secondary} ${row.countLabel.secondary.replace('{count}', String(row.count))}` }
+        : {}),
+    }, formatAmount(row.totalCents), cols, printer?.capabilities);
+  }
+  sections.push('');
+
+  pushZReportSectionHeading(sections, zDocument.refunds.heading, cols, printer?.capabilities);
+  pushZReportLabelValue(sections, zDocument.refunds.countLabel, String(zDocument.refunds.count), cols, printer?.capabilities);
+  pushZReportLabelValue(sections, zDocument.refunds.totalLabel, formatAmount(zDocument.refunds.totalCents), cols, printer?.capabilities);
+  sections.push('');
+
+  pushZReportSectionHeading(sections, zDocument.tax.heading, cols, printer?.capabilities);
+  if (zDocument.tax.rows.length === 0) pushZReportEmpty(sections, zDocument.tax.none, cols, printer?.capabilities);
+  for (const row of zDocument.tax.rows) pushZReportRow(sections, row.label, formatCurrency(row.amount, prefix, locale, trimDecimals, fractionDigits), cols, printer?.capabilities);
+  sections.push('');
+
+  pushZReportSectionHeading(sections, zDocument.staff.heading, cols, printer?.capabilities);
+  if (zDocument.staff.rows.length === 0) pushZReportEmpty(sections, zDocument.staff.none, cols, printer?.capabilities);
+  for (const row of zDocument.staff.rows) {
+    pushZReportRow(sections, {
+      primary: `${row.label.primary} ${row.countLabel.primary.replace('{count}', String(row.count))}`,
+      ...(row.label.secondary && row.countLabel.secondary
+        ? { secondary: `${row.label.secondary} ${row.countLabel.secondary.replace('{count}', String(row.count))}` }
+        : {}),
+    }, formatAmount(row.totalCents), cols, printer?.capabilities);
+  }
+  sections.push('');
+
+  sections.push(bar);
+  pushZReportHeading(sections, zDocument.cash.expected.label, cols, printer?.capabilities);
+  sections.push(rightAlign(formatAmount(zDocument.cash.expected.cents), cols));
+  pushZReportHeading(sections, zDocument.cash.counted.label, cols, printer?.capabilities);
+  sections.push(rightAlign(formatAmount(zDocument.cash.counted.cents), cols));
+  sections.push(bar);
+  for (const line of wrapText(`${zDocument.cash.variance.label.primary}  ${formatAmount(zDocument.cash.variance.cents)}`, cols)) {
     sections.push('{CENTER}{BOLD}' + line + '{/BOLD}{/CENTER}');
   }
   sections.push(dash);
   sections.push('');
 
-  const closedByLabel = String(z?.closed_by_name || z?.closed_by || '');
-  const closedByFull = label('Closed by:') + ' ' + label(closedByLabel);
-  for (const line of wrapText(closedByFull, cols)) {
-    sections.push(line);
-  }
-
-  const sigLabel = label('Operator signature:');
-  const remainingSigCols = cols - sigLabel.length - 1;
+  if (zDocument.operator.name) pushZReportTextValue(sections, zDocument.operator.label, zDocument.operator.name.text, cols, printer?.capabilities);
+  const sigLabel = zDocument.operator.signatureLabel.primary;
+  const remainingSigCols = cols - thermalDisplayWidth(sigLabel) - 1;
   if (remainingSigCols >= 8) {
     sections.push(sigLabel + ' ' + '_'.repeat(remainingSigCols));
   } else {
@@ -2243,11 +2212,86 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   }
   sections.push('');
 
-  sections.push('{CENTER}' + label('Generated by FloCafe') + '{/CENTER}');
-  sections.push('{CENTER}Z#' + String(zNumber) + ' - ' + label(businessDate) + '{/CENTER}');
+  for (const line of bilingualLabelLines(zDocument.footer, selectBilingualFit(zDocument.footer, cols))) {
+    sections.push('{CENTER}' + normalizeThermalText(line, printer?.capabilities) + '{/CENTER}');
+  }
+  sections.push('{CENTER}Z#' + zDocument.header.zNumber.text + ' - ' + normalizeThermalText(documentData.businessDate, printer?.capabilities) + '{/CENTER}');
   sections.push('{CUT}');
 
   return buildEscPos(sections, false, { cutMode: 'full', language: lang, columns: cols, capabilities: printer?.capabilities });
+}
+
+function zLayoutContext(columns: number, document: ZReportDocument): ThermalLayoutContext {
+  return {
+    logicalColumns: columns,
+    direction: document.direction.base,
+    languages: document.languages,
+  };
+}
+
+function zLabelVariants(label: SemanticLabel, columns: number): string[] {
+  return [...bilingualLabelLines(label, selectBilingualFit(label, columns))];
+}
+
+function zLaidOutLabel(label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): string[] {
+  return [...layoutStyledUnit({ label, field: 'Z report label' }, {
+    logicalColumns: Math.max(1, columns),
+    direction: 'ltr',
+    languages: ['en'],
+    capabilities,
+  }).lines];
+}
+
+function pushZReportHeading(lines: string[], label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): void {
+  const layout = layoutStyledUnit({ label, field: 'Z report section' }, {
+    logicalColumns: columns,
+    direction: 'ltr',
+    languages: ['en'],
+    capabilities,
+  });
+  for (const line of layout.lines) lines.push('{BOLD}' + normalizeThermalText(line, capabilities) + '{/BOLD}');
+}
+
+function pushZReportSectionHeading(lines: string[], label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): void {
+  pushZReportHeading(lines, label, columns, capabilities);
+}
+
+function pushZReportEmpty(lines: string[], label: SemanticLabel, columns: number, capabilities?: ThermalPrinterCapabilities): void {
+  for (const line of zLaidOutLabel(label, Math.max(1, columns - 2), capabilities)) {
+    lines.push('  ' + normalizeThermalText(line, capabilities));
+  }
+}
+
+function pushZReportLabelValue(lines: string[], label: SemanticLabel, value: string, columns: number, capabilities?: ThermalPrinterCapabilities): void {
+  const normalizedValue = normalizeThermalText(value, capabilities);
+  const labelLines = zLaidOutLabel(label, columns, capabilities);
+  if (labelLines.length === 1 && thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns) {
+    lines.push(normalizeThermalText(labelLines[0], capabilities) + rightAlign(normalizedValue, columns - thermalDisplayWidth(labelLines[0])));
+    return;
+  }
+  for (const line of labelLines) lines.push(normalizeThermalText(line, capabilities));
+  for (const line of wrapText(normalizedValue, columns)) lines.push(rightAlign(line, columns));
+}
+
+function pushZReportTextValue(lines: string[], label: SemanticLabel, value: string, columns: number, capabilities?: ThermalPrinterCapabilities): void {
+  const values = [label.primary, ...(label.secondary ? [label.secondary] : [])];
+  for (const variant of values) {
+    for (const line of wrapText(`${variant} ${value}`, columns)) {
+      lines.push(normalizeThermalText(line, capabilities));
+    }
+  }
+}
+
+function pushZReportRow(lines: string[], label: SemanticLabel, value: string, columns: number, capabilities?: ThermalPrinterCapabilities): void {
+  const prefix = '  ';
+  const normalizedValue = normalizeThermalText(value, capabilities);
+  const labelLines = zLaidOutLabel(label, Math.max(1, columns - prefix.length), capabilities);
+  if (labelLines.length === 1 && prefix.length + thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns) {
+    lines.push(prefix + labelLines[0] + rightAlign(normalizedValue, columns - prefix.length - thermalDisplayWidth(labelLines[0])));
+    return;
+  }
+  for (const line of labelLines) lines.push(prefix + normalizeThermalText(line, capabilities));
+  for (const line of wrapText(normalizedValue, columns)) lines.push(rightAlign(line, columns));
 }
 
 /**
@@ -2270,8 +2314,8 @@ export async function printZReport(z: any, signal?: AbortSignal, targetPrinter?:
     // code pages, etc.). Same pattern as `prepareReceipt` (`:1043-1056`).
     const { profile, columns, capabilities } = resolvePrinterContext(printer, false);
     const zWithMarker = { ...z, __isReprint: !!z?.__isReprint };
-    // No language: the Z body is English-literal by design (see the route's
-    // F7 note); buildZReportBody falls back to its default language.
+    // The route carries the resolved Z-report language policy in the snapshot;
+    // direct callers retain the English store-language default.
     const baseBody = buildZReportBody(zWithMarker, undefined, { columns, capabilities });
     const data = appendCashDrawerPulse(baseBody);
     let result: DispatchResult;
@@ -2493,9 +2537,18 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     let printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
     const lineBold = line.includes('{BOLD}');
     const lineDH = line.includes('{DOUBLE_HEIGHT}');
-    const lineDW = line.includes('{DOUBLE_WIDTH}');
+    let lineDW = line.includes('{DOUBLE_WIDTH}');
     const lineFontB = line.includes('{FONT_B}');
     const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
+    if (lineDW && Number.isInteger(options.columns) && (options.columns as number) > 0) {
+      const styleText = printableLine.replace(CURRENCY_TOKEN_RE, '');
+      const columns = options.columns as number;
+      if (thermalDisplayWidth(styleText) > Math.floor(columns / 2) && thermalDisplayWidth(styleText) <= columns) {
+        line = line.replace(/\{DOUBLE_WIDTH\}|\{\/DOUBLE_WIDTH\}/g, '');
+        lineDW = false;
+        printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
+      }
+    }
     const textWithoutSupportedCurrency = printableLine.replace(CURRENCY_TOKEN_RE, '');
     const selectedCodePage = selectThermalCodePage(textWithoutSupportedCurrency, capabilities);
     if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {

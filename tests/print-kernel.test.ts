@@ -34,6 +34,7 @@ import {
   displayCellWidth,
   fitThermalLine,
   layoutStyledUnit,
+  wrapToDisplayCells,
   type ThermalLayoutContext,
 } from '../shared/print';
 import type { LanguageRegistryFacts } from '../shared/print';
@@ -280,6 +281,9 @@ assert.equal(fitThermalLine(fullWidthText, 6), '商品商', 'final fitting trunc
 const fullWidthLayout = layoutStyledUnit({ text: fullWidthText, field: 'full-width text' }, layoutContext(6));
 assert.ok(fullWidthLayout.lines.every((line) => displayCellWidth(line) <= 6), 'semantic layout uses the same display-cell budget');
 assert.equal(fullWidthLayout.lines.join(''), fullWidthText, 'semantic layout wraps full-width glyphs without loss');
+const fullWidthHeader = wrapToDisplayCells('商品商品商品商品商品商品商品商品商', 32);
+assert.ok(fullWidthHeader.every((line) => displayCellWidth(line) <= 32), 'full-width header wrapping respects thermal display cells');
+assert.equal(fullWidthHeader.join(''), '商品商品商品商品商品商品商品商品商', 'full-width header wrapping preserves text');
 
 const zDocument = buildZReportDocument({
   zNumber: 7,

@@ -50,7 +50,7 @@ import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, 
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
 import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii } from '../../shared/print/currency';
-import { columnsForPaperWidth as columnsForConfiguredPaperWidth, fitThermalLine } from '../../shared/print/width';
+import { columnsForPaperWidth as columnsForConfiguredPaperWidth, fitThermalLine, wrapToDisplayCells } from '../../shared/print/width';
 import {
   bilingualLabelLines,
   buildZReportDocument,
@@ -1934,33 +1934,7 @@ function capitalize(text: string): string {
 }
 
 export function wrapText(text: string, cols: number): string[] {
-  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = '';
-
-  for (const word of words) {
-    if (word.length > cols) {
-      if (current) {
-        lines.push(current);
-        current = '';
-      }
-      for (let i = 0; i < word.length; i += cols) {
-        lines.push(word.slice(i, i + cols));
-      }
-      continue;
-    }
-
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= cols) {
-      current = candidate;
-    } else {
-      if (current) lines.push(current);
-      current = word;
-    }
-  }
-
-  if (current) lines.push(current);
-  return lines.length > 0 ? lines : [''];
+  return wrapToDisplayCells(text, cols);
 }
 
 export function pushWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {

@@ -340,7 +340,7 @@ function padRowForLanguage(left: string, right: string, cols: number, language?:
   return normalizedLeft.slice(0, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
 }
 
-function wrapToDisplayCells(text: string, columns: number): string[] {
+function wrapFinancialTextToDisplayCells(text: string, columns: number): string[] {
   const width = Math.max(1, Math.floor(columns));
   const lines: string[] = [];
   let current = '';
@@ -364,8 +364,8 @@ function padRowsForLanguage(left: string, right: string, cols: number, capabilit
     return [normalizedLeft + ' '.repeat(cols - leftWidth - rightWidth) + normalizedRight];
   }
   return [
-    ...wrapToDisplayCells(normalizedLeft, cols),
-    ...wrapToDisplayCells(normalizedRight, cols).map((line) => ' '.repeat(Math.max(0, cols - displayCellWidth(line))) + line),
+    ...wrapFinancialTextToDisplayCells(normalizedLeft, cols),
+    ...wrapFinancialTextToDisplayCells(normalizedRight, cols).map((line) => ' '.repeat(Math.max(0, cols - displayCellWidth(line))) + line),
   ];
 }
 

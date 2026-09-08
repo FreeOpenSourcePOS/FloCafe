@@ -68,6 +68,42 @@ export function truncateToDisplayCells(text: string, columns: number): string {
   return result;
 }
 
+/** Wrap whitespace-delimited text without exceeding a thermal display-cell budget. */
+export function wrapToDisplayCells(text: string, columns: number): string[] {
+  const maxColumns = Math.max(1, Math.floor(columns));
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    if (displayCellWidth(word) > maxColumns) {
+      if (current) {
+        lines.push(current);
+        current = '';
+      }
+      for (const character of Array.from(word)) {
+        if (current && displayCellWidth(current + character) > maxColumns) {
+          lines.push(current);
+          current = '';
+        }
+        current += character;
+      }
+      continue;
+    }
+
+    const candidate = current ? `${current} ${word}` : word;
+    if (displayCellWidth(candidate) <= maxColumns) {
+      current = candidate;
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current || lines.length === 0) lines.push(current);
+  return lines;
+}
+
 /** Resolve the configured logical columns used by browser/WebUSB receipt settings. */
 export function columnsForReceiptPaperSize(paperWidth: ReceiptPaperSize): number {
   return paperWidth === 58 ? 32 : 48;

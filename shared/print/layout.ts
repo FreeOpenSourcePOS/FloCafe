@@ -2,7 +2,7 @@ import { bilingualLabelLines, selectBilingualFit, type BilingualLabel } from './
 import type { ThermalPrinterCapabilities } from './thermal-capabilities';
 import type { TextDirection, ResolvedPrintLanguages } from './types';
 import type { PrintWarning } from './warnings';
-import { displayCellWidth } from './width';
+import { displayCellWidth, wrapToDisplayCells } from './width';
 
 export interface ThermalLayoutContext {
   readonly logicalColumns: number;
@@ -34,38 +34,6 @@ export interface ThermalLayoutResult {
 
 function displayWidth(text: string): number {
   return displayCellWidth(text);
-}
-
-function wrapByColumns(text: string, columns: number): string[] {
-  const width = Math.max(1, Math.floor(columns));
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = '';
-  for (const word of words.length > 0 ? words : ['']) {
-    if (displayWidth(word) > width) {
-      if (current) lines.push(current);
-      current = '';
-      let chunk = '';
-      for (const character of Array.from(word)) {
-        if (displayWidth(chunk + character) > width) {
-          lines.push(chunk);
-          chunk = character;
-        } else {
-          chunk += character;
-        }
-      }
-      current = chunk;
-      continue;
-    }
-    const candidate = current ? `${current} ${word}` : word;
-    if (displayWidth(candidate) <= width) current = candidate;
-    else {
-      if (current) lines.push(current);
-      current = word;
-    }
-  }
-  if (current || lines.length === 0) lines.push(current);
-  return lines;
 }
 
 function warningFor(unit: StyledLayoutUnit, message: string): PrintWarning {
@@ -107,7 +75,7 @@ export function layoutStyledUnit(
     warnings.push(warningFor(unit, 'Double-width style was downgraded and the complete text was wrapped.'));
   }
 
-  const lines = variants.flatMap((variant) => wrapByColumns(variant, available));
+  const lines = variants.flatMap((variant) => wrapToDisplayCells(variant, available));
   if (lines.length > variants.length) {
     warnings.push(warningFor(unit, 'Text was wrapped to the printer width without truncation.'));
   }

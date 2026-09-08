@@ -19,6 +19,7 @@ import { isSyntacticallyValidCurrencyCode } from '../../shared/print/currency';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
+  Z_REPORT_LANGUAGE_POLICY_KEY,
   LANGUAGE_POLICY_SETTING_KEYS,
   defaultLanguagePolicySettingJson,
   validateLanguagePolicySetting,
@@ -860,7 +861,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'diagnostics_consent',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',
   'split_checks_enabled',
-  BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY,
+  BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, Z_REPORT_LANGUAGE_POLICY_KEY,
   'currency_display', 'number_digits', 'calendar',
   'theme_mode',
 ]);
@@ -914,6 +915,102 @@ router.get('/bill-templates', requireRole(...ROLE_ACCESS.ownerManager), (_req: R
       updatedAt: template.updated_at,
     }));
     res.json({ core: [...CORE_BILL_TEMPLATES], plugins, merchant });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+const PRINTING_BOOLEAN_KEYS = [
+  'printer_trim_decimals',
+  'bill_show_name',
+  'bill_show_address',
+  'bill_show_phone',
+  'bill_show_tax_id',
+  'bill_show_tax_breakdown',
+  'bill_show_customer_name',
+  'bill_show_customer_phone',
+  'bill_show_table_number',
+] as const;
+
+const PRINTING_BATCH_KEYS = new Set<string>([
+  ...PRINTING_BOOLEAN_KEYS,
+  BILL_LANGUAGE_POLICY_KEY,
+  KOT_LANGUAGE_POLICY_KEY,
+  Z_REPORT_LANGUAGE_POLICY_KEY,
+  'cash_drawer_pulse_enabled',
+  'cash_drawer_pulse_methods',
+]);
+
+router.put('/printing', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const payload = req.body;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return res.status(400).json({ error: 'Printing settings payload must be an object' });
+    }
+
+    const values = payload as Record<string, unknown>;
+    const unknownKey = Object.keys(values).find((key) => !PRINTING_BATCH_KEYS.has(key));
+    if (unknownKey) {
+      return res.status(400).json({ error: `Unknown printing setting: ${unknownKey}` });
+    }
+
+    for (const key of PRINTING_BOOLEAN_KEYS) {
+      if (typeof values[key] !== 'boolean') {
+        return res.status(400).json({ error: `${key} must be a boolean` });
+      }
+    }
+
+    const billLanguagePolicy = validateLanguagePolicySetting(BILL_LANGUAGE_POLICY_KEY, values[BILL_LANGUAGE_POLICY_KEY]);
+    if (!billLanguagePolicy.ok) {
+      return res.status(400).json({ error: billLanguagePolicy.error });
+    }
+    const kotLanguagePolicy = validateLanguagePolicySetting(KOT_LANGUAGE_POLICY_KEY, values[KOT_LANGUAGE_POLICY_KEY]);
+    if (!kotLanguagePolicy.ok) {
+      return res.status(400).json({ error: kotLanguagePolicy.error });
+    }
+    const hasZReportLanguagePolicy = Object.prototype.hasOwnProperty.call(values, Z_REPORT_LANGUAGE_POLICY_KEY);
+    const zReportLanguagePolicy = hasZReportLanguagePolicy
+      ? validateLanguagePolicySetting(Z_REPORT_LANGUAGE_POLICY_KEY, values[Z_REPORT_LANGUAGE_POLICY_KEY])
+      : null;
+    if (zReportLanguagePolicy && !zReportLanguagePolicy.ok) {
+      return res.status(400).json({ error: zReportLanguagePolicy.error });
+    }
+
+    const hasCashDrawerEnabled = Object.prototype.hasOwnProperty.call(values, 'cash_drawer_pulse_enabled');
+    const hasCashDrawerMethods = Object.prototype.hasOwnProperty.call(values, 'cash_drawer_pulse_methods');
+    if (hasCashDrawerEnabled !== hasCashDrawerMethods) {
+      return res.status(400).json({ error: 'Cash drawer settings must be provided together' });
+    }
+    if (hasCashDrawerEnabled && typeof values.cash_drawer_pulse_enabled !== 'boolean') {
+      return res.status(400).json({ error: 'cash_drawer_pulse_enabled must be a boolean' });
+    }
+    if (
+      hasCashDrawerMethods
+      && (!Array.isArray(values.cash_drawer_pulse_methods)
+        || values.cash_drawer_pulse_methods.some((method) => typeof method !== 'string' || method.trim().length === 0))
+    ) {
+      return res.status(400).json({ error: 'cash_drawer_pulse_methods must be a non-empty string array' });
+    }
+
+    const entries: Record<string, string> = {
+      printer_trim_decimals: values.printer_trim_decimals ? 'true' : 'false',
+      [BILL_LANGUAGE_POLICY_KEY]: billLanguagePolicy.stored,
+      [KOT_LANGUAGE_POLICY_KEY]: kotLanguagePolicy.stored,
+    };
+    if (zReportLanguagePolicy?.ok) {
+      entries[Z_REPORT_LANGUAGE_POLICY_KEY] = zReportLanguagePolicy.stored;
+    }
+    for (const key of PRINTING_BOOLEAN_KEYS.slice(1)) {
+      entries[key] = values[key] ? 'true' : 'false';
+    }
+    if (hasCashDrawerEnabled) {
+      entries.cash_drawer_pulse_enabled = values.cash_drawer_pulse_enabled ? 'true' : 'false';
+      entries.cash_drawer_pulse_methods = JSON.stringify(values.cash_drawer_pulse_methods);
+    }
+
+    upsertSettings(getDatabase(), entries);
+    res.json({ settings: entries });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

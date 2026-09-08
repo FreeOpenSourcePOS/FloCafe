@@ -1,4 +1,5 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
+import expressRateLimit from 'express-rate-limit';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import { WebSocketServer } from 'ws';
@@ -153,7 +154,12 @@ export function startKdsServer(): Promise<void> {
     });
 
     // Public tenant metadata: language and KDS defaults for pre-login display.
-    app.get('/api/kds/info', (_req: Request, res: Response) => {
+    app.get('/api/kds/info', expressRateLimit({
+      windowMs: 60 * 1000,
+      limit: 100,
+      standardHeaders: true,
+      legacyHeaders: false,
+    }), (_req: Request, res: Response) => {
       // Return 404 when disabled to avoid revealing KDS presence to unauthorized LAN clients.
       if (!isKdsEnabled()) {
         return res.status(404).json({ error: 'Not found' });

@@ -2027,7 +2027,7 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
  * `printZReport` (the route layer) so the byte form is reusable for the
  * WebUSB `bytes: number[]` branch where the renderer dispatches.
  */
-export function buildZReportBody(z: any, language?: string, printer?: { columns?: number; capabilities?: ThermalPrinterCapabilities }): Buffer {
+export function buildZReportBody(z: any, language?: string, printer?: { columns?: number; capabilities?: ThermalPrinterCapabilities }, warnings?: PrintWarning[]): Buffer {
   const cols = printer?.columns || columnsForPaperWidth('80mm') || 48;
   const lang = normalizePrintLanguage(language ?? z?.__language);
   const additionalLanguage = z?.__additionalLanguage
@@ -2126,8 +2126,8 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   sections.push(bar);
   sections.push('');
 
-  pushZReportHeading(sections, zDocument.openingFloat.label, zContext);
-  sections.push(rightAlign(formatAmount(zDocument.openingFloat.cents), cols));
+  pushZReportHeading(sections, zDocument.openingFloat.label, zContext, true);
+  sections.push('{FINANCIAL}' + rightAlign(formatAmount(zDocument.openingFloat.cents), cols));
   sections.push('');
 
   pushZReportSectionHeading(sections, zDocument.payments.heading, zContext);
@@ -2144,7 +2144,7 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
 
   pushZReportSectionHeading(sections, zDocument.refunds.heading, zContext);
   pushZReportLabelValue(sections, zDocument.refunds.countLabel, String(zDocument.refunds.count), zContext);
-  pushZReportLabelValue(sections, zDocument.refunds.totalLabel, formatAmount(zDocument.refunds.totalCents), zContext);
+  pushZReportLabelValue(sections, zDocument.refunds.totalLabel, formatAmount(zDocument.refunds.totalCents), zContext, true);
   sections.push('');
 
   pushZReportSectionHeading(sections, zDocument.tax.heading, zContext);
@@ -2165,24 +2165,31 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   sections.push('');
 
   sections.push(bar);
-  pushZReportHeading(sections, zDocument.cash.expected.label, zContext);
-  sections.push(rightAlign(formatAmount(zDocument.cash.expected.cents), cols));
-  pushZReportHeading(sections, zDocument.cash.counted.label, zContext);
-  sections.push(rightAlign(formatAmount(zDocument.cash.counted.cents), cols));
+  pushZReportHeading(sections, zDocument.cash.expected.label, zContext, true);
+  sections.push('{FINANCIAL}' + rightAlign(formatAmount(zDocument.cash.expected.cents), cols));
+  pushZReportHeading(sections, zDocument.cash.counted.label, zContext, true);
+  sections.push('{FINANCIAL}' + rightAlign(formatAmount(zDocument.cash.counted.cents), cols));
   sections.push(bar);
-  for (const line of wrapText(`${zDocument.cash.variance.label.primary}  ${formatAmount(zDocument.cash.variance.cents)}`, cols)) {
-    sections.push('{CENTER}{BOLD}' + line + '{/BOLD}{/CENTER}');
+  const varianceLabel: SemanticLabel = {
+    primary: `${zDocument.cash.variance.label.primary}  ${formatAmount(zDocument.cash.variance.cents)}`,
+    ...(zDocument.cash.variance.label.secondary
+      ? { secondary: `${zDocument.cash.variance.label.secondary}  ${formatAmount(zDocument.cash.variance.cents)}` }
+      : {}),
+  };
+  for (const line of zLaidOutLabel(varianceLabel, zContext)) {
+    sections.push('{CENTER}{FINANCIAL}{BOLD}' + normalizeThermalText(line, printer?.capabilities) + '{/BOLD}{/CENTER}');
   }
   sections.push(dash);
   sections.push('');
 
   if (zDocument.operator.name) pushZReportTextValue(sections, zDocument.operator.label, zDocument.operator.name.text, zContext);
-  const sigLabel = zDocument.operator.signatureLabel.primary;
-  const remainingSigCols = cols - thermalDisplayWidth(sigLabel) - 1;
-  if (remainingSigCols >= 8) {
-    sections.push(sigLabel + ' ' + '_'.repeat(remainingSigCols));
+  const signatureLines = zLaidOutLabel(zDocument.operator.signatureLabel, zContext);
+  const inlineSignature = signatureLines.length === 1 ? normalizeThermalText(signatureLines[0], printer?.capabilities) : null;
+  const remainingSigCols = inlineSignature === null ? 0 : cols - thermalDisplayWidth(inlineSignature) - 1;
+  if (inlineSignature !== null && remainingSigCols >= 8) {
+    sections.push(inlineSignature + ' ' + '_'.repeat(remainingSigCols));
   } else {
-    sections.push(sigLabel);
+    for (const line of signatureLines) sections.push(normalizeThermalText(line, printer?.capabilities));
     sections.push('_'.repeat(cols));
   }
   sections.push('');
@@ -2193,7 +2200,7 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   sections.push('{CENTER}Z#' + zDocument.header.zNumber.text + ' - ' + normalizeThermalText(documentData.businessDate, printer?.capabilities) + '{/CENTER}');
   sections.push('{CUT}');
 
-  return buildEscPos(sections, false, { cutMode: 'full', language: lang, columns: cols, capabilities: printer?.capabilities });
+  return buildEscPos(sections, false, { cutMode: 'full', language: lang, columns: cols, capabilities: printer?.capabilities }, warnings);
 }
 
 function zLayoutContext(columns: number, document: ZReportDocument, capabilities?: ThermalPrinterCapabilities): ThermalLayoutContext {
@@ -2213,9 +2220,9 @@ function zLaidOutLabel(label: SemanticLabel, context: ThermalLayoutContext): str
   return [...layoutStyledUnit({ label, field: 'Z report label' }, context).lines];
 }
 
-function pushZReportHeading(lines: string[], label: SemanticLabel, context: ThermalLayoutContext): void {
+function pushZReportHeading(lines: string[], label: SemanticLabel, context: ThermalLayoutContext, financial = false): void {
   const layout = layoutStyledUnit({ label, field: 'Z report section' }, context);
-  for (const line of layout.lines) lines.push('{BOLD}' + normalizeThermalText(line, context.capabilities) + '{/BOLD}');
+  for (const line of layout.lines) lines.push((financial ? '{FINANCIAL}' : '') + '{BOLD}' + normalizeThermalText(line, context.capabilities) + '{/BOLD}');
 }
 
 function pushZReportSectionHeading(lines: string[], label: SemanticLabel, context: ThermalLayoutContext): void {
@@ -2229,16 +2236,16 @@ function pushZReportEmpty(lines: string[], label: SemanticLabel, context: Therma
   }
 }
 
-function pushZReportLabelValue(lines: string[], label: SemanticLabel, value: string, context: ThermalLayoutContext): void {
+function pushZReportLabelValue(lines: string[], label: SemanticLabel, value: string, context: ThermalLayoutContext, financial = false): void {
   const columns = context.logicalColumns;
   const normalizedValue = normalizeThermalText(value, context.capabilities);
   const labelLines = zLaidOutLabel(label, context);
   if (labelLines.length === 1 && thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns) {
-    lines.push(normalizeThermalText(labelLines[0], context.capabilities) + rightAlign(normalizedValue, columns - thermalDisplayWidth(labelLines[0])));
+    lines.push((financial ? '{FINANCIAL}' : '') + normalizeThermalText(labelLines[0], context.capabilities) + rightAlign(normalizedValue, columns - thermalDisplayWidth(labelLines[0])));
     return;
   }
-  for (const line of labelLines) lines.push(normalizeThermalText(line, context.capabilities));
-  for (const line of wrapText(normalizedValue, columns)) lines.push(rightAlign(line, columns));
+  for (const line of labelLines) lines.push((financial ? '{FINANCIAL}' : '') + normalizeThermalText(line, context.capabilities));
+  for (const line of wrapText(normalizedValue, columns)) lines.push((financial ? '{FINANCIAL}' : '') + rightAlign(line, columns));
 }
 
 function pushZReportTextValue(lines: string[], label: SemanticLabel, value: string, context: ThermalLayoutContext): void {
@@ -2258,11 +2265,11 @@ function pushZReportRow(lines: string[], label: SemanticLabel, value: string, co
   const labelContext = { ...context, logicalColumns: Math.max(1, columns - prefix.length) };
   const labelLines = zLaidOutLabel(label, labelContext);
   if (labelLines.length === 1 && prefix.length + thermalDisplayWidth(labelLines[0]) + 1 + thermalDisplayWidth(normalizedValue) <= columns) {
-    lines.push(prefix + labelLines[0] + rightAlign(normalizedValue, columns - prefix.length - thermalDisplayWidth(labelLines[0])));
+    lines.push('{FINANCIAL}' + prefix + labelLines[0] + rightAlign(normalizedValue, columns - prefix.length - thermalDisplayWidth(labelLines[0])));
     return;
   }
-  for (const line of labelLines) lines.push(prefix + normalizeThermalText(line, context.capabilities));
-  for (const line of wrapText(normalizedValue, columns)) lines.push(rightAlign(line, columns));
+  for (const line of labelLines) lines.push('{FINANCIAL}' + prefix + normalizeThermalText(line, context.capabilities));
+  for (const line of wrapText(normalizedValue, columns)) lines.push('{FINANCIAL}' + rightAlign(line, columns));
 }
 
 /**
@@ -2287,7 +2294,11 @@ export async function printZReport(z: any, signal?: AbortSignal, targetPrinter?:
     const zWithMarker = { ...z, __isReprint: !!z?.__isReprint };
     // The route carries the resolved Z-report language policy in the snapshot;
     // direct callers retain the English store-language default.
-    const baseBody = buildZReportBody(zWithMarker, undefined, { columns, capabilities });
+    const warnings: PrintWarning[] = [];
+    const baseBody = buildZReportBody(zWithMarker, undefined, { columns, capabilities }, warnings);
+    if (hasFinancialPrintWarning(warnings)) {
+      return { ok: false, detail: makeFinancialPrintRefusalMessage(warnings), warnings };
+    }
     const data = appendCashDrawerPulse(baseBody);
     let result: DispatchResult;
     switch (printer.connection_type) {
@@ -2301,11 +2312,11 @@ export async function printZReport(z: any, signal?: AbortSignal, targetPrinter?:
         // Backend never dispatches WebUSB; return the FULL bytes (including
         // the appended drawer pulse) for the renderer. The route maps this to
         // `bytes: number[]` per the test-page endpoint contract.
-        return { ok: true, bytes: data, connection_type: 'webusb' };
+        return { ok: true, bytes: data, connection_type: 'webusb', ...(warnings.length > 0 ? { warnings } : {}) };
       default:
         result = { ok: false, detail: `Unsupported connection type: ${printer.connection_type}` };
     }
-    return { ...result, bytes: data, connection_type: printer.connection_type };
+    return { ...result, bytes: data, connection_type: printer.connection_type, ...(warnings.length > 0 ? { warnings } : {}) };
   } catch (error: any) {
     console.error('[Printer] Z-report dispatch failed:', error);
     return { ok: false, detail: error?.message };

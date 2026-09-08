@@ -925,11 +925,13 @@ async function main() {
       const thermalModule = require('../main/printers/thermal');
       const origPrintZReport = thermalModule.printZReport;
       const captured: Buffer[] = [];
+      const capturedSnapshots: any[] = [];
       // The mock mirrors the real `printZReport` shape: when the resolved
       // printer is webusb, the helper returns `bytes` already including the
       // forced pulse tail, and the route emits `{ webusb: true, bytes: [...] }`.
       // For the network/usb path the helper returns `ok: true` with bytes.
       thermalModule.printZReport = async (z: any, _signal?: any, targetPrinter?: any) => {
+        capturedSnapshots.push(z);
         const baseBody = thermalModule.buildZReportBody(z);
         const data = thermalModule.appendCashDrawerPulse(baseBody);
         captured.push(data);
@@ -1078,6 +1080,26 @@ async function main() {
         const zAfter = await request(app).get(`/api/reports/z-report?date=${printDate}`).set('Authorization', `Bearer ${ownerPrintToken}`);
         assertEqual(zAfter.status, 200, `print: GET z-report after print → 200 (got ${zAfter.status})`);
         assertEqual(JSON.stringify(zAfter.body.zReport), JSON.stringify(zBefore.body.zReport), 'print: Z row unchanged after print');
+
+        const originalZPolicy = db.prepare(`SELECT value FROM settings WHERE key = 'z_report_language_policy'`).get() as { value?: string } | undefined;
+        try {
+          db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('z_report_language_policy', ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`)
+            .run(JSON.stringify({ primary: { mode: 'fixed', language: 'fa' }, additional: ['en'] }), now());
+          capturedSnapshots.length = 0;
+          const localized = await request(app)
+            .post(`/api/cash-closures/${zId}/print`)
+            .set('Authorization', `Bearer ${ownerPrintToken}`)
+            .send({});
+          assertEqual(localized.status, 200, `print: configured bilingual Z policy reaches dispatch (got ${localized.status})`);
+          assertEqual(capturedSnapshots[0]?.__language, 'fa', 'print: route resolves configured Z primary language');
+          assertEqual(capturedSnapshots[0]?.__additionalLanguage, 'en', 'print: route resolves configured Z additional language');
+        } finally {
+          if (originalZPolicy?.value !== undefined) {
+            db.prepare(`UPDATE settings SET value = ?, updated_at = ? WHERE key = 'z_report_language_policy'`).run(originalZPolicy.value, now());
+          } else {
+            db.prepare(`DELETE FROM settings WHERE key = 'z_report_language_policy'`).run();
+          }
+        }
 
         // Reprint marks the body but still succeeds.
         captured.length = 0;
@@ -1389,6 +1411,27 @@ async function main() {
       const directTail = directArr.slice(-5);
       assert(JSON.stringify(directTail) === JSON.stringify([0x1B, 0x70, 0x00, 0x19, 0xFA]),
         `F4 direct: forced drawer pulse tail (got ${JSON.stringify(directTail)})`);
+      const { GENERIC_THERMAL_CAPABILITIES } = require('../shared/print/thermal-capabilities');
+      const shapingCapabilities = {
+        ...GENERIC_THERMAL_CAPABILITIES,
+        shaping: { arabic: true },
+      };
+      const bilingualBody = thermalModule.buildZReportBody({
+        ...z,
+        __language: 'fa',
+        __additionalLanguage: 'en',
+      }, undefined, { columns: 48, capabilities: shapingCapabilities }, []);
+      const bilingualPreview = thermalModule.escPosToText(bilingualBody);
+      assert(bilingualPreview.includes('اختلاف') && bilingualPreview.includes('Variance'),
+        'F4 direct: bilingual variance renders both configured languages');
+      assert(bilingualPreview.includes('امضای اپراتور') && bilingualPreview.includes('Operator signature'),
+        'F4 direct: bilingual operator signature renders both configured languages');
+
+      const unsupported = await realPrintZ({ ...z, __language: 'fa' }, undefined, webusbPrinter);
+      assertEqual(unsupported.ok, false, 'F4 direct: unsupported localized financial labels refuse before WebUSB dispatch');
+      assert((unsupported.warnings || []).some((warning: any) => warning.kind === 'financial'),
+        'F4 direct: refusal carries a financial warning');
+      assert(!unsupported.bytes, 'F4 direct: refused Z report does not return partial WebUSB bytes');
       // Non-webusb direct dispatch (network): same shape, no mock — the test
       // server is not actually reachable, so the helper returns ok:false with
       // a socket detail. We assert the contract (bytes present, detail propagated).

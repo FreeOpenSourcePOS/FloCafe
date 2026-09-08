@@ -549,12 +549,12 @@ router.post('/:id/print', requireRole(...ROLE_ACCESS.owner), async (req: Request
     if (printer.connection_type === 'webusb' && result?.bytes) {
       // Return the FULL bytes including the forced drawer pulse; the renderer
       // dispatches them over WebUSB exactly as the test-page endpoint does.
-      return res.json({ success: true, webusb: true, isReprint, bytes: Array.from(result.bytes) });
+      return res.json({ success: true, webusb: true, isReprint, bytes: Array.from(result.bytes), warnings: result.warnings || [] });
     }
     if (!result.ok) {
-      return res.status(502).json({ error: result.detail || 'Printer did not respond or print failed', detail: result.detail });
+      return res.status(502).json({ error: result.detail || 'Printer did not respond or print failed', detail: result.detail, warnings: result.warnings || [] });
     }
-    res.json({ success: true, isReprint });
+    res.json({ success: true, isReprint, warnings: result.warnings || [] });
   } catch (error: any) {
     console.error('[CashClosures] Print error:', error);
     res.status(500).json({ error: 'Internal server error' });

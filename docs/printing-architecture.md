@@ -217,21 +217,21 @@ use width-aware shaping/truncation helpers, but do not consume the kernel's
 direction annotations or provide bidi/LTR-island handling
 ([`main/printers/thermal.ts`](../main/printers/thermal.ts)).
 
-Bilingual presentation is implemented at the model/helper layer, not yet in
-production renderer output. `selectBilingualFit(label, columns)` picks `inline`
+Bilingual presentation is implemented by the model/helper layer and consumed
+by desktop/WebUSB receipt banners and the backend Z-report renderer.
+`selectBilingualFit(label, columns)` picks `inline`
 (primary + 2 separator columns + secondary fits the paper width) or `stacked`
 (one line each), and `bilingualLabelLines` returns the ordered lines
 ([`shared/print/bilingual.ts`](../shared/print/bilingual.ts); width behavior is tested in
-[`tests/print-kernel.test.ts`](../tests/print-kernel.test.ts)). The `PrintDocument` model carries the optional
-secondary label, but current production receipt renderers emit
-`label.primary`; the browser HTML path also builds a single-language document
-([`frontend/src/lib/printer/web-print.ts`](../frontend/src/lib/printer/web-print.ts)). Neither helper has a production
-caller, so bilingual receipt output remains future renderer work rather than a
-shipped capability.
+[`tests/print-kernel.test.ts`](../tests/print-kernel.test.ts)). Most receipt body
+fields and the browser HTML path remain single-language; the browser builds a
+single-language document ([`frontend/src/lib/printer/web-print.ts`](../frontend/src/lib/printer/web-print.ts)).
+The Z-report renderer uses the helpers for its localized labels and preserves
+both configured languages across mandatory sections.
 
 ## 4. Language behavior
 
-Three decoupled domains (see also [i18n.md](i18n.md)):
+Four decoupled domains (see also [i18n.md](i18n.md)):
 
 - **UI language** drives the interface and is the `inherit` fallback for printing.
 - **Receipt language policy** (`bill_language_policy`): `{ primary: inherit | fixed, additional?: [one] }`.
@@ -249,6 +249,10 @@ Three decoupled domains (see also [i18n.md](i18n.md)):
   accepts the resolved KOT language for catalog labels while retaining its
   historical raw-data layout. Raster-enabled WebUSB KOT output uses the typed
   `KotDocument` bridge described in the renderer map below.
+- **Z-report language policy** (`z_report_language_policy`): receipt-shaped
+  primary plus at most one additional language, resolved server-side when a
+  stored cash closure is printed. It defaults to the store language and is
+  configurable independently in Printing settings.
 
 Thermal and browser receipt paths resolve the receipt policy before building the
 document. Browser HTML remains a single-language surface, using the primary

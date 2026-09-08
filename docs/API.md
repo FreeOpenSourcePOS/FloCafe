@@ -1110,16 +1110,16 @@ Dispatch the stored Z to the default receipt printer. The forced drawer pulse is
 |-------|------|-------------|
 | `isReprint` | boolean \| optional | When `true`, the printed body shows a `REPRINT` marker next to the Z number. Defaults to `false`. |
 
-The route resolves the default receipt printer server-side (the WebUSB branch is reachable end-to-end this way; helpers that exclude WebUSB would otherwise skip it). The body is built with English literals; the `language` argument is currently reserved/unused on this path.
+The route resolves the default receipt printer server-side (the WebUSB branch is reachable end-to-end this way; helpers that exclude WebUSB would otherwise skip it). Labels use the independently configured `z_report_language_policy`, which defaults to the store language and supports one additional language.
 
 **Response (200, WebUSB):** the renderer dispatches the bytes itself.
 ```json
-{ "success": true, "webusb": true, "isReprint": false, "bytes": [27, 64, 27, 112, 0, 25, 250] }
+{ "success": true, "webusb": true, "isReprint": false, "bytes": [27, 64, 27, 112, 0, 25, 250], "warnings": [] }
 ```
 
 **Response (200, network / USB):**
 ```json
-{ "success": true, "isReprint": false }
+{ "success": true, "isReprint": false, "warnings": [] }
 ```
 
 **Error (400):** invalid id.
@@ -1139,8 +1139,12 @@ The route resolves the default receipt printer server-side (the WebUSB branch is
 
 **Error (502):** the printer did not respond or the dispatch failed.
 ```json
-{ "error": "<detail>", "detail": "<detail>" }
+{ "error": "<detail>", "detail": "<detail>", "warnings": [] }
 ```
+
+Unsupported text in a financial Z-report unit fails closed before dispatch and
+returns a financial warning in the 502 response. Non-financial skipped text is
+reported in `warnings` without claiming that it printed.
 
 Printed Z layout, in spec order: header (business name, address, tax id — **branch omitted: no branch data source exists in the schema**) → Z number + business date + period start/end → opening float → sales by payment method → refunds → tax breakdown → staff sales → expected / counted / variance (variance emphasized) → operator + signature line → footer. The forced drawer pulse is appended after the footer.
 

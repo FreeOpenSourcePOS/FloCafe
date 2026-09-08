@@ -7,12 +7,14 @@
  *   - invalid payloads are rejected with a reason (unknown language,
  *     duplicate additional entry, >1 additional entry, bad JSON);
  *   - stored values parse leniently and fall back to inherit/none defaults;
- *   - the two settings keys are exposed for the wildcard allowlist.
+ *   - all three settings keys are exposed for the wildcard allowlist.
  *
  * Run: npm run test:print-kernel
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import {
   BILL_LANGUAGE_POLICY_KEY,
@@ -107,4 +109,17 @@ const okStored = parseStoredLanguagePolicy(BILL_LANGUAGE_POLICY_KEY,
 assert.ok('primary' in okStored && okStored.primary.mode === 'fixed');
 
 console.log('✓ lenient reader with safe fallback');
+
+console.log('Testing Z-report policy Settings wiring...');
+const settingsSource = readFileSync(resolve(__dirname, '../frontend/src/app/(dashboard)/settings/page.tsx'), 'utf8');
+for (const expected of [
+  "api.get('/settings/z_report_language_policy')",
+  "api.put('/settings/z_report_language_policy'",
+  'id="z-report-primary-language"',
+  'id="z-report-second-language"',
+]) {
+  assert.ok(settingsSource.includes(expected), `Settings page includes ${expected}`);
+}
+
+console.log('✓ Z-report policy is configurable in Settings');
 console.log('\nAll print-language settings tests passed.');

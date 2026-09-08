@@ -1184,6 +1184,8 @@ export default function SettingsPage() {
     // Print language policies (#441): 'inherit'/'none' sentinels or registry codes.
     receiptPrimaryLanguage: string; // 'inherit' | selectable code
     receiptSecondLanguage: string; // 'none' | selectable code
+    zReportPrimaryLanguage: string; // 'inherit' | selectable code
+    zReportSecondLanguage: string; // 'none' | selectable code
     kotLanguage: string; // 'inherit' | selectable code
     billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
     billShowTaxBreakdown: boolean; billShowCustomerName: boolean; billShowCustomerPhone: boolean; billShowTableNumber: boolean;
@@ -1204,6 +1206,8 @@ export default function SettingsPage() {
       ? posSettings.billLanguagePolicy.primary.language
       : 'inherit',
     receiptSecondLanguage: posSettings.billLanguagePolicy.additional[0] ?? 'none',
+    zReportPrimaryLanguage: 'inherit',
+    zReportSecondLanguage: 'none',
     kotLanguage: posSettings.kotLanguagePolicy.primary.mode === 'fixed'
       ? posSettings.kotLanguagePolicy.primary.language
       : 'inherit',
@@ -1236,6 +1240,16 @@ export default function SettingsPage() {
       primary: printingForm.kotLanguage === 'inherit' ? { mode: 'inherit' } : { mode: 'fixed', language: printingForm.kotLanguage },
       additional: [] as const,
     };
+    const zReportPrimary: PrimaryLanguageSelection = printingForm.zReportPrimaryLanguage === 'inherit'
+      ? { mode: 'inherit' }
+      : { mode: 'fixed', language: printingForm.zReportPrimaryLanguage };
+    const zReportSecond = printingForm.zReportSecondLanguage !== 'none'
+      && !(zReportPrimary.mode === 'fixed' && zReportPrimary.language === printingForm.zReportSecondLanguage)
+      ? printingForm.zReportSecondLanguage
+      : null;
+    const zReportLanguagePolicy: ReceiptLanguagePolicy = zReportSecond !== null
+      ? { primary: zReportPrimary, additional: [zReportSecond] as const }
+      : { primary: zReportPrimary, additional: [] as const };
     posSettings.setPrinterEnabled(printingForm.printerEnabled);
     posSettings.setPrinterPaperSize(printingForm.printerPaperSize);
     setPrintMethod(printingForm.printMethod);
@@ -1265,6 +1279,7 @@ export default function SettingsPage() {
       api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' }),
       api.put('/settings/bill_language_policy', { value: JSON.stringify(billLanguagePolicy) }),
       api.put('/settings/kot_language_policy', { value: JSON.stringify(kotLanguagePolicy) }),
+      api.put('/settings/z_report_language_policy', { value: JSON.stringify(zReportLanguagePolicy) }),
       ...([
         ['bill_show_name', printingForm.billShowName],
         ['bill_show_address', printingForm.billShowAddress],
@@ -1727,6 +1742,16 @@ export default function SettingsPage() {
       posSettings.setKotLanguagePolicy(policy);
       const formPatch = {
         kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+      };
+      setPrintingForm((p) => ({ ...p, ...formPatch }));
+      setSavedPrinting((p) => ({ ...p, ...formPatch }));
+    }).catch(() => {});
+    api.get('/settings/z_report_language_policy').then((res) => {
+      const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
+      if (!policy) return;
+      const formPatch = {
+        zReportPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+        zReportSecondLanguage: policy.additional[0] ?? 'none',
       };
       setPrintingForm((p) => ({ ...p, ...formPatch }));
       setSavedPrinting((p) => ({ ...p, ...formPatch }));
@@ -4195,8 +4220,37 @@ export default function SettingsPage() {
                         ))}
                       </select>
                     </div>
+                    <div>
+                      <label htmlFor="z-report-primary-language" className="block text-sm font-medium text-foreground mb-1">{t('zReportLanguage')}</label>
+                      <select
+                        id="z-report-primary-language"
+                        value={printingForm.zReportPrimaryLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, zReportPrimaryLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="inherit">{t('sameAsStore')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="z-report-second-language" className="block text-sm font-medium text-foreground mb-1">{t('secondZReportLanguage')}</label>
+                      <select
+                        id="z-report-second-language"
+                        value={printingForm.zReportSecondLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, zReportSecondLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="none">{t('secondLanguageNone')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-2">{t('kotPrintLanguageHint')}</p>
+                  <p className="text-xs text-gray-400 mt-1">{t('zReportLanguageHint')}</p>
                 </div>
                 <div className="pt-4 border-t border-border">
                   <p className="font-medium text-foreground mb-1">{t('billContent')}</p>

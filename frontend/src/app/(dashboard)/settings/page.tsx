@@ -1225,6 +1225,7 @@ export default function SettingsPage() {
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
   const [cashDrawerMethodsOpen, setCashDrawerMethodsOpen] = useState(false);
+  const [zReportLanguagePolicyLoaded, setZReportLanguagePolicyLoaded] = useState(false);
   const [savingPrinting, setSavingPrinting] = useState(false);
   const printingSaveInFlight = useRef(false);
   const savePrinting = async (silent: boolean = false) => {
@@ -1261,7 +1262,7 @@ export default function SettingsPage() {
         printer_trim_decimals: formSnapshot.printerTrimDecimals,
         bill_language_policy: billLanguagePolicy,
         kot_language_policy: kotLanguagePolicy,
-        z_report_language_policy: zReportLanguagePolicy,
+        ...(zReportLanguagePolicyLoaded ? { z_report_language_policy: zReportLanguagePolicy } : {}),
         bill_show_name: formSnapshot.billShowName,
         bill_show_address: formSnapshot.billShowAddress,
         bill_show_phone: formSnapshot.billShowPhone,
@@ -1763,7 +1764,11 @@ export default function SettingsPage() {
       };
       setPrintingForm((p) => ({ ...p, ...formPatch }));
       setSavedPrinting((p) => ({ ...p, ...formPatch }));
-    }).catch(() => {});
+      setZReportLanguagePolicyLoaded(true);
+    }).catch((error: unknown) => {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      if (status === 404) setZReportLanguagePolicyLoaded(true);
+    });
     Promise.all([
       api.get('/settings/bill-templates').catch(() => null),
       api.get('/settings/bill_template').catch(() => null),

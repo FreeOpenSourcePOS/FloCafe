@@ -101,6 +101,7 @@ async function main() {
     assert(settingsSource.includes('printingSaveInFlight.current'), 'settings page has a synchronous printing save guard');
     assert(savePrintingBlock.indexOf("await api.put('/settings/printing'") < savePrintingBlock.indexOf('posSettings.setPrinterUseUnicode'), 'device-local settings update only follows a successful batch request');
     assert(savePrintingBlock.includes('setSavedPrinting(formSnapshot)'), 'saved printing snapshot updates from the submitted form only after success');
+    assert(savePrintingBlock.includes('zReportLanguagePolicyLoaded'), 'Z-report policy waits for hydration before batch persistence');
     assert(savePrintingBlock.includes('finally {'), 'printing save guard is released after failed requests');
     assert(settingsSource.includes('savingAllSettingsInFlight.current'), 'global save has a synchronous in-flight guard');
     assert(settingsSource.includes('savingPrinting || savingAllSettings'), 'global save controls disable during printing or overall saves');

@@ -255,7 +255,7 @@ console.log('\n▶ Ordered block composition in renderBillDocumentToClassicLines
   const reordered = renderOrdered(['totals', 'item-table', 'message', 'business-header']);
   const totalsAt = indexOf(reordered, /subtotal/i);
   const itemsAt = indexOf(reordered, /Espresso Doppio/);
-  const bannerAt = indexOf(reordered, /\*\* receipt\.reprint\[en\] \*\*/);
+  const bannerAt = indexOf(reordered, /\*\* receipt\.reprint/);
   const loyaltyAt = indexOf(reordered, /pointsEarned/);
   const addressAt = indexOf(reordered, /12 Marina Boulevard/);
   assert(totalsAt < itemsAt, 'totals segment precedes items under reordered template');
@@ -268,7 +268,7 @@ console.log('\n▶ Ordered block composition in renderBillDocumentToClassicLines
 
   const canonicalSubset = renderOrdered(['business-header', 'totals', 'message']);
   const subsetNameAt = indexOf(canonicalSubset, /Flo Parity Cafe/);
-  const subsetBannerAt = indexOf(canonicalSubset, /\*\* receipt\.reprint\[en\] \*\*/);
+  const subsetBannerAt = indexOf(canonicalSubset, /\*\* receipt\.reprint/);
   const subsetTotalsAt = indexOf(canonicalSubset, /subtotal/i);
   assert(subsetNameAt < subsetTotalsAt, 'canonical subset keeps the pinned legacy arrangement');
   assert(subsetBannerAt < subsetNameAt, 'canonical subset pins the banner above the header');

@@ -248,6 +248,14 @@ async function run() {
     const infoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
     assert(infoRes.status === 200, 'Public info endpoint returns 200');
 
+    // The public endpoint must also throttle LAN clients before repeated database reads.
+    for (let i = 1; i < 100; i += 1) {
+      const allowedInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
+      assert(allowedInfoRes.status === 200, `Public info request ${i + 1} remains within the rate limit`);
+    }
+    const throttledInfoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
+    assert(throttledInfoRes.status === 429, 'Public info endpoint rate-limits repeated LAN requests');
+
     console.log('✅ KDS Integration & Auth Role Contract tests passed!');
   } finally {
     stopKdsServer();

@@ -325,6 +325,8 @@ export default function SettingsPage() {
   const [applyingFixes, setApplyingFixes] = useState(false);
   const [initializeDbOpen, setInitializeDbOpen] = useState(() => searchParams?.get('action') === 'initialize-db');
   const [shakeSaveBar, setShakeSaveBar] = useState(false);
+  const [savingAllSettings, setSavingAllSettings] = useState(false);
+  const savingAllSettingsInFlight = useRef(false);
 
   const themeMode = useThemeMode((s) => s.mode);
   const setThemeMode = useThemeMode((s) => s.setMode);
@@ -1184,6 +1186,8 @@ export default function SettingsPage() {
     // Print language policies (#441): 'inherit'/'none' sentinels or registry codes.
     receiptPrimaryLanguage: string; // 'inherit' | selectable code
     receiptSecondLanguage: string; // 'none' | selectable code
+    zReportPrimaryLanguage: string; // 'inherit' | selectable code
+    zReportSecondLanguage: string; // 'none' | selectable code
     kotLanguage: string; // 'inherit' | selectable code
     billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
     billShowTaxBreakdown: boolean; billShowCustomerName: boolean; billShowCustomerPhone: boolean; billShowTableNumber: boolean;
@@ -1204,6 +1208,8 @@ export default function SettingsPage() {
       ? posSettings.billLanguagePolicy.primary.language
       : 'inherit',
     receiptSecondLanguage: posSettings.billLanguagePolicy.additional[0] ?? 'none',
+    zReportPrimaryLanguage: 'inherit',
+    zReportSecondLanguage: 'none',
     kotLanguage: posSettings.kotLanguagePolicy.primary.mode === 'fixed'
       ? posSettings.kotLanguagePolicy.primary.language
       : 'inherit',
@@ -1219,65 +1225,83 @@ export default function SettingsPage() {
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
   const [cashDrawerMethodsOpen, setCashDrawerMethodsOpen] = useState(false);
+  const [zReportLanguagePolicyLoaded, setZReportLanguagePolicyLoaded] = useState(false);
+  const [savingPrinting, setSavingPrinting] = useState(false);
+  const printingSaveInFlight = useRef(false);
   const savePrinting = async (silent: boolean = false) => {
-    // Build typed policies from the form and mirror them into the store for
-    // renderer-side reads (renderers adopt them in #442+).
-    const receiptPrimary: PrimaryLanguageSelection = printingForm.receiptPrimaryLanguage === 'inherit'
-      ? { mode: 'inherit' }
-      : { mode: 'fixed', language: printingForm.receiptPrimaryLanguage };
-    const dedupedSecond = printingForm.receiptSecondLanguage !== 'none'
-      && !(receiptPrimary.mode === 'fixed' && receiptPrimary.language === printingForm.receiptSecondLanguage)
-      ? printingForm.receiptSecondLanguage
-      : null;
-    const billLanguagePolicy: ReceiptLanguagePolicy = dedupedSecond !== null
-      ? { primary: receiptPrimary, additional: [dedupedSecond] as const }
-      : { primary: receiptPrimary, additional: [] as const };
-    const kotLanguagePolicy: KotLanguagePolicy = {
-      primary: printingForm.kotLanguage === 'inherit' ? { mode: 'inherit' } : { mode: 'fixed', language: printingForm.kotLanguage },
-      additional: [] as const,
-    };
-    posSettings.setPrinterEnabled(printingForm.printerEnabled);
-    posSettings.setPrinterPaperSize(printingForm.printerPaperSize);
-    setPrintMethod(printingForm.printMethod);
-    posSettings.setAutoPrintKot(printingForm.autoPrintKot);
-    posSettings.setAutoPrintBill(printingForm.autoPrintBill);
-    posSettings.setWhatsappShareEnabled(printingForm.whatsappShareEnabled);
-    posSettings.setPrinterUseUnicode(printingForm.printerUseUnicode);
-    posSettings.setPrinterArabicShaping(printingForm.printerArabicShaping);
-    posSettings.setPrinterTrimDecimals(printingForm.printerTrimDecimals);
-    posSettings.setBillLanguagePolicy(billLanguagePolicy);
-    posSettings.setKotLanguagePolicy(kotLanguagePolicy);
-    posSettings.setBillShowName(printingForm.billShowName);
-    posSettings.setBillShowAddress(printingForm.billShowAddress);
-    posSettings.setBillShowPhone(printingForm.billShowPhone);
-    posSettings.setBillShowTaxId(printingForm.billShowTaxId);
-    posSettings.setBillShowTaxBreakdown(printingForm.billShowTaxBreakdown);
-    posSettings.setBillShowCustomerName(printingForm.billShowCustomerName);
-    posSettings.setBillShowCustomerPhone(printingForm.billShowCustomerPhone);
-    posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
-    await Promise.all([
-      // Skip while undefined so save does not overwrite existing setting
-      // before load completes.
-      ...(printingForm.cashDrawerPulseEnabled !== undefined ? [
-        api.put('/settings/cash_drawer_pulse_enabled', { value: printingForm.cashDrawerPulseEnabled ? 'true' : 'false' }),
-        api.put('/settings/cash_drawer_pulse_methods', { value: JSON.stringify(printingForm.cashDrawerPulseMethods) }),
-      ] : []),
-      api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' }),
-      api.put('/settings/bill_language_policy', { value: JSON.stringify(billLanguagePolicy) }),
-      api.put('/settings/kot_language_policy', { value: JSON.stringify(kotLanguagePolicy) }),
-      ...([
-        ['bill_show_name', printingForm.billShowName],
-        ['bill_show_address', printingForm.billShowAddress],
-        ['bill_show_phone', printingForm.billShowPhone],
-        ['bill_show_tax_id', printingForm.billShowTaxId],
-        ['bill_show_tax_breakdown', printingForm.billShowTaxBreakdown],
-        ['bill_show_customer_name', printingForm.billShowCustomerName],
-        ['bill_show_customer_phone', printingForm.billShowCustomerPhone],
-        ['bill_show_table_number', printingForm.billShowTableNumber],
-      ] as const).map(([key, value]) => api.put(`/settings/${key}`, { value: value ? 'true' : 'false' })),
-    ]);
-    setSavedPrinting(printingForm);
-    if (!silent) toast.success(t('printingSettingsSaved'));
+    if (printingSaveInFlight.current) return;
+    printingSaveInFlight.current = true;
+    setSavingPrinting(true);
+    const formSnapshot = printingForm;
+    try {
+      const receiptPrimary: PrimaryLanguageSelection = formSnapshot.receiptPrimaryLanguage === 'inherit'
+        ? { mode: 'inherit' }
+        : { mode: 'fixed', language: formSnapshot.receiptPrimaryLanguage };
+      const dedupedSecond = formSnapshot.receiptSecondLanguage !== 'none'
+        && !(receiptPrimary.mode === 'fixed' && receiptPrimary.language === formSnapshot.receiptSecondLanguage)
+        ? formSnapshot.receiptSecondLanguage
+        : null;
+      const billLanguagePolicy: ReceiptLanguagePolicy = dedupedSecond !== null
+        ? { primary: receiptPrimary, additional: [dedupedSecond] as const }
+        : { primary: receiptPrimary, additional: [] as const };
+      const kotLanguagePolicy: KotLanguagePolicy = {
+        primary: formSnapshot.kotLanguage === 'inherit' ? { mode: 'inherit' } : { mode: 'fixed', language: formSnapshot.kotLanguage },
+        additional: [] as const,
+      };
+      const zReportPrimary: PrimaryLanguageSelection = formSnapshot.zReportPrimaryLanguage === 'inherit'
+        ? { mode: 'inherit' }
+        : { mode: 'fixed', language: formSnapshot.zReportPrimaryLanguage };
+      const zReportSecond = formSnapshot.zReportSecondLanguage !== 'none'
+        && !(zReportPrimary.mode === 'fixed' && zReportPrimary.language === formSnapshot.zReportSecondLanguage)
+        ? formSnapshot.zReportSecondLanguage
+        : null;
+      const zReportLanguagePolicy: ReceiptLanguagePolicy = zReportSecond !== null
+        ? { primary: zReportPrimary, additional: [zReportSecond] as const }
+        : { primary: zReportPrimary, additional: [] as const };
+      const printingPayload = {
+        printer_trim_decimals: formSnapshot.printerTrimDecimals,
+        bill_language_policy: billLanguagePolicy,
+        kot_language_policy: kotLanguagePolicy,
+        ...(zReportLanguagePolicyLoaded ? { z_report_language_policy: zReportLanguagePolicy } : {}),
+        bill_show_name: formSnapshot.billShowName,
+        bill_show_address: formSnapshot.billShowAddress,
+        bill_show_phone: formSnapshot.billShowPhone,
+        bill_show_tax_id: formSnapshot.billShowTaxId,
+        bill_show_tax_breakdown: formSnapshot.billShowTaxBreakdown,
+        bill_show_customer_name: formSnapshot.billShowCustomerName,
+        bill_show_customer_phone: formSnapshot.billShowCustomerPhone,
+        bill_show_table_number: formSnapshot.billShowTableNumber,
+        ...(formSnapshot.cashDrawerPulseEnabled !== undefined ? {
+          cash_drawer_pulse_enabled: formSnapshot.cashDrawerPulseEnabled,
+          cash_drawer_pulse_methods: formSnapshot.cashDrawerPulseMethods,
+        } : {}),
+      };
+      await api.put('/settings/printing', printingPayload);
+      posSettings.setPrinterEnabled(formSnapshot.printerEnabled);
+      posSettings.setPrinterPaperSize(formSnapshot.printerPaperSize);
+      setPrintMethod(formSnapshot.printMethod);
+      posSettings.setAutoPrintKot(formSnapshot.autoPrintKot);
+      posSettings.setAutoPrintBill(formSnapshot.autoPrintBill);
+      posSettings.setWhatsappShareEnabled(formSnapshot.whatsappShareEnabled);
+      posSettings.setPrinterUseUnicode(formSnapshot.printerUseUnicode);
+      posSettings.setPrinterArabicShaping(formSnapshot.printerArabicShaping);
+      posSettings.setPrinterTrimDecimals(formSnapshot.printerTrimDecimals);
+      posSettings.setBillLanguagePolicy(billLanguagePolicy);
+      posSettings.setKotLanguagePolicy(kotLanguagePolicy);
+      posSettings.setBillShowName(formSnapshot.billShowName);
+      posSettings.setBillShowAddress(formSnapshot.billShowAddress);
+      posSettings.setBillShowPhone(formSnapshot.billShowPhone);
+      posSettings.setBillShowTaxId(formSnapshot.billShowTaxId);
+      posSettings.setBillShowTaxBreakdown(formSnapshot.billShowTaxBreakdown);
+      posSettings.setBillShowCustomerName(formSnapshot.billShowCustomerName);
+      posSettings.setBillShowCustomerPhone(formSnapshot.billShowCustomerPhone);
+      posSettings.setBillShowTableNumber(formSnapshot.billShowTableNumber);
+      setSavedPrinting(formSnapshot);
+      if (!silent) toast.success(t('printingSettingsSaved'));
+    } finally {
+      printingSaveInFlight.current = false;
+      setSavingPrinting(false);
+    }
   };
   const resetPrinting = () => setPrintingForm(savedPrinting);
 
@@ -1731,6 +1755,20 @@ export default function SettingsPage() {
       setPrintingForm((p) => ({ ...p, ...formPatch }));
       setSavedPrinting((p) => ({ ...p, ...formPatch }));
     }).catch(() => {});
+    api.get('/settings/z_report_language_policy').then((res) => {
+      const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
+      if (!policy) return;
+      const formPatch = {
+        zReportPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+        zReportSecondLanguage: policy.additional[0] ?? 'none',
+      };
+      setPrintingForm((p) => ({ ...p, ...formPatch }));
+      setSavedPrinting((p) => ({ ...p, ...formPatch }));
+      setZReportLanguagePolicyLoaded(true);
+    }).catch((error: unknown) => {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      if (status === 404) setZReportLanguagePolicyLoaded(true);
+    });
     Promise.all([
       api.get('/settings/bill-templates').catch(() => null),
       api.get('/settings/bill_template').catch(() => null),
@@ -2311,6 +2349,9 @@ export default function SettingsPage() {
   };
 
   const saveAllSettings = async () => {
+    if (savingAllSettingsInFlight.current) return;
+    savingAllSettingsInFlight.current = true;
+    setSavingAllSettings(true);
     try {
       await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
       await savePrinting(true);
@@ -2318,6 +2359,9 @@ export default function SettingsPage() {
       toast.success(t('allSaved'));
     } catch {
       toast.error(t('allSaveFailed'));
+    } finally {
+      savingAllSettingsInFlight.current = false;
+      setSavingAllSettings(false);
     }
   };
 
@@ -4195,8 +4239,37 @@ export default function SettingsPage() {
                         ))}
                       </select>
                     </div>
+                    <div>
+                      <label htmlFor="z-report-primary-language" className="block text-sm font-medium text-foreground mb-1">{t('zReportLanguage')}</label>
+                      <select
+                        id="z-report-primary-language"
+                        value={printingForm.zReportPrimaryLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, zReportPrimaryLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="inherit">{t('sameAsStore')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="z-report-second-language" className="block text-sm font-medium text-foreground mb-1">{t('secondZReportLanguage')}</label>
+                      <select
+                        id="z-report-second-language"
+                        value={printingForm.zReportSecondLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, zReportSecondLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="none">{t('secondLanguageNone')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <p className="text-xs text-gray-400 mt-2">{t('kotPrintLanguageHint')}</p>
+                  <p className="text-xs text-gray-400 mt-1">{t('zReportLanguageHint')}</p>
                 </div>
                 <div className="pt-4 border-t border-border">
                   <p className="font-medium text-foreground mb-1">{t('billContent')}</p>
@@ -5275,8 +5348,8 @@ export default function SettingsPage() {
           <div className={`bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 pointer-events-auto ${shakeSaveBar ? 'animate-shake' : ''}`}>
             <span className="text-sm font-medium">{t('unsavedChanges')}</span>
             <div className="flex items-center gap-2">
-              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('discard')}</button>
-              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering) ? t('saving') : t('saveChanges')}</button>
+              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering || savingPrinting || savingAllSettings} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('discard')}</button>
+              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering || savingPrinting || savingAllSettings} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering || savingPrinting || savingAllSettings) ? t('saving') : t('saveChanges')}</button>
             </div>
           </div>
         </div>

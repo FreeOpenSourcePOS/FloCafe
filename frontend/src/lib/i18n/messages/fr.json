@@ -276,6 +276,10 @@
     "noPriorCloseHint": "La journée précédente n'a pas été clôturée — fond de caisse par défaut à 0",
     "billsCount": "{count} factures",
     "businessDateLabel": "Date d'activité",
+    "periodStart": "Début de période",
+    "periodEnd": "Fin de période",
+    "ticketCount": "Nombre",
+    "ticketOperatorSignature": "Signature de l'opérateur",
     "ticketSectionPayments": "Modes de paiement",
     "ticketSectionRefunds": "Remboursements",
     "ticketSectionTax": "Détail des taxes",
@@ -792,6 +796,7 @@
       "end": "FIN"
     },
     "hsn": "HSN",
+    "zReport": { "title": "RAPPORT Z", "businessDate": "Date :", "periodStart": "Début de période :", "periodEnd": "Fin de période :", "openingFloat": "Fond de caisse initial", "payments": "Ventes par mode de paiement", "refunds": "Remboursements", "tax": "Détail des taxes", "staff": "Ventes par employé", "expectedCash": "Espèces attendues", "countedCash": "Espèces comptées", "variance": "Écart", "closedBy": "Fermé par :", "operatorSignature": "Signature de l'opérateur :", "footer": "Généré par FloCafe", "none": "(aucun)", "paymentCount": "× {count}", "count": "Nombre :", "amount": "Total :" },
     "test": {
       "title": "Test d’imprimante Flo",
       "networkUsb": "Impression de test réseau / USB",
@@ -1626,6 +1631,9 @@
     "scanningForPrinters": "Recherche des imprimantes installées…",
     "secondLanguageNone": "Aucune",
     "secondReceiptLanguage": "Deuxième langue du reçu",
+    "zReportLanguage": "Langue du rapport Z",
+    "secondZReportLanguage": "Deuxième langue du rapport Z",
+    "zReportLanguageHint": "Les rapports Z utilisent la langue de l’établissement, sauf si une langue fixe est choisie.",
     "selectCountry": "Sélectionner un pays...",
     "selectFileAndImport": "Sélectionner un fichier et importer",
     "selectTimezone": "Sélectionner un fuseau horaire…",

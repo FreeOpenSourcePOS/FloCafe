@@ -11,10 +11,12 @@ import {
 
 export const BILL_LANGUAGE_POLICY_KEY = 'bill_language_policy';
 export const KOT_LANGUAGE_POLICY_KEY = 'kot_language_policy';
+export const Z_REPORT_LANGUAGE_POLICY_KEY = 'z_report_language_policy';
 
 export const LANGUAGE_POLICY_SETTING_KEYS: ReadonlySet<string> = new Set([
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
+  Z_REPORT_LANGUAGE_POLICY_KEY,
 ]);
 
 /** Backend registry view: languages with generated print labels. */
@@ -47,7 +49,7 @@ export function validateLanguagePolicySetting(
     }
     return validateLanguagePolicySetting(key, parsed);
   }
-  if (key === BILL_LANGUAGE_POLICY_KEY) {
+  if (key === BILL_LANGUAGE_POLICY_KEY || key === Z_REPORT_LANGUAGE_POLICY_KEY) {
     const result = parsePrintLanguagePolicy(value, REGISTRY_FACTS);
     return result.ok
       ? { ok: true, stored: JSON.stringify(result.policy) }

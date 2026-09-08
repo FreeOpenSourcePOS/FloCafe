@@ -925,11 +925,13 @@ async function main() {
       const thermalModule = require('../main/printers/thermal');
       const origPrintZReport = thermalModule.printZReport;
       const captured: Buffer[] = [];
+      const capturedSnapshots: any[] = [];
       // The mock mirrors the real `printZReport` shape: when the resolved
       // printer is webusb, the helper returns `bytes` already including the
       // forced pulse tail, and the route emits `{ webusb: true, bytes: [...] }`.
       // For the network/usb path the helper returns `ok: true` with bytes.
       thermalModule.printZReport = async (z: any, _signal?: any, targetPrinter?: any) => {
+        capturedSnapshots.push(z);
         const baseBody = thermalModule.buildZReportBody(z);
         const data = thermalModule.appendCashDrawerPulse(baseBody);
         captured.push(data);
@@ -1053,18 +1055,51 @@ async function main() {
         };
         assertWidthBudget(zBefore.body.zReport, 48, 'print (F2 48-col)');
         assertWidthBudget(zBefore.body.zReport, 32, 'print (F2 32-col / 58mm)');
-        // N3: a 24+ char value alone at 32 cols would overflow without the
-        // periodLine clamp; verify the long-value case still fits.
+        // N3: a 24+ char value alone at 32 cols wraps onto line 2 without truncation;
+        // verify the long-value case still fits and preserves timestamps and names.
         const longValueZ = JSON.parse(JSON.stringify(zBefore.body.zReport));
-        longValueZ.period_start = '9999-12-31T23:59:59.999Z';
-        longValueZ.period_end = '9999-12-31T23:59:59.999Z+24';
+        longValueZ.period_start = '2026-09-07T09:15:30.000Z';
+        longValueZ.period_end = '2026-09-07T23:45:15.000Z';
+        longValueZ.payment_methods = [{ method: 'Credit Card (Mastercard)', count: 99, total_cents: 1250000 }];
+        longValueZ.tax_components = [{ title: 'State Goods and Services Tax (SGST 9%)', amount: 112.50 }];
+        longValueZ.staff_sales = [{ name: 'Alexander Bartholomew-Smith', orderCount: 15, revenue_cents: 150000 }];
+        longValueZ.closed_by_name = 'Alexander Bartholomew-Smith';
         assertWidthBudget(longValueZ, 32, 'print (N3 32-col long value)');
+        const longPreview = thermalModule.escPosToText(thermalModule.buildZReportBody(longValueZ, undefined, { columns: 32 }));
+        assert(longPreview.includes('Period start:'), 'print (32-col): period start label renders');
+        assert(longPreview.includes('9:15:30 AM'), 'print (32-col): period start timestamp renders intact');
+        assert(longPreview.includes('Credit Card (Mastercard) x99'), 'print (32-col): payment method head is not truncated');
+        assert(longPreview.includes('State Goods and Services Tax'), 'print (32-col): long tax breakdown wraps');
+        assert(longPreview.includes('(SGST 9%)'), 'print (32-col): wrapped tax component fragment renders');
+        assert(longPreview.includes('Alexander Bartholomew-Smith'), 'print (32-col): long staff name wraps');
+        assert(longPreview.includes('Closed by: Alexander'), 'print (32-col): closed_by operator head renders');
+        assert(longPreview.includes('Bartholomew-Smith'), 'print (32-col): closed_by wrapped operator fragment renders');
 
 
         // Printing must NOT mutate the row.
         const zAfter = await request(app).get(`/api/reports/z-report?date=${printDate}`).set('Authorization', `Bearer ${ownerPrintToken}`);
         assertEqual(zAfter.status, 200, `print: GET z-report after print → 200 (got ${zAfter.status})`);
         assertEqual(JSON.stringify(zAfter.body.zReport), JSON.stringify(zBefore.body.zReport), 'print: Z row unchanged after print');
+
+        const originalZPolicy = db.prepare(`SELECT value FROM settings WHERE key = 'z_report_language_policy'`).get() as { value?: string } | undefined;
+        try {
+          db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('z_report_language_policy', ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at`)
+            .run(JSON.stringify({ primary: { mode: 'fixed', language: 'fa' }, additional: ['en'] }), now());
+          capturedSnapshots.length = 0;
+          const localized = await request(app)
+            .post(`/api/cash-closures/${zId}/print`)
+            .set('Authorization', `Bearer ${ownerPrintToken}`)
+            .send({});
+          assertEqual(localized.status, 200, `print: configured bilingual Z policy reaches dispatch (got ${localized.status})`);
+          assertEqual(capturedSnapshots[0]?.__language, 'fa', 'print: route resolves configured Z primary language');
+          assertEqual(capturedSnapshots[0]?.__additionalLanguage, 'en', 'print: route resolves configured Z additional language');
+        } finally {
+          if (originalZPolicy?.value !== undefined) {
+            db.prepare(`UPDATE settings SET value = ?, updated_at = ? WHERE key = 'z_report_language_policy'`).run(originalZPolicy.value, now());
+          } else {
+            db.prepare(`DELETE FROM settings WHERE key = 'z_report_language_policy'`).run();
+          }
+        }
 
         // Reprint marks the body but still succeeds.
         captured.length = 0;
@@ -1076,7 +1111,7 @@ async function main() {
         assertEqual(reprint.body?.isReprint, true, 'print: response carries isReprint:true');
         assert(captured.length === 1, `print: reprint produced one dispatch (got ${captured.length})`);
         assert(!captured[0].equals(bytes), 'print: reprint body differs from original');
-        assert(captured[0].includes(Buffer.from('REIMPRESION', 'utf8')), 'print: reprint body carries the REIMPRESION marker');
+        assert(captured[0].includes(Buffer.from('REPRINT', 'utf8')), 'print: reprint body carries the localized English marker');
 
         // WebUSB branch: buildZReportBody returns the body without the pulse;
         // the print primitive (printZReport) appends the forced pulse before
@@ -1376,6 +1411,27 @@ async function main() {
       const directTail = directArr.slice(-5);
       assert(JSON.stringify(directTail) === JSON.stringify([0x1B, 0x70, 0x00, 0x19, 0xFA]),
         `F4 direct: forced drawer pulse tail (got ${JSON.stringify(directTail)})`);
+      const { GENERIC_THERMAL_CAPABILITIES } = require('../shared/print/thermal-capabilities');
+      const shapingCapabilities = {
+        ...GENERIC_THERMAL_CAPABILITIES,
+        shaping: { arabic: true },
+      };
+      const bilingualBody = thermalModule.buildZReportBody({
+        ...z,
+        __language: 'fa',
+        __additionalLanguage: 'en',
+      }, undefined, { columns: 48, capabilities: shapingCapabilities }, []);
+      const bilingualPreview = thermalModule.escPosToText(bilingualBody);
+      assert(bilingualPreview.includes('اختلاف') && bilingualPreview.includes('Variance'),
+        'F4 direct: bilingual variance renders both configured languages');
+      assert(bilingualPreview.includes('امضای اپراتور') && bilingualPreview.includes('Operator signature'),
+        'F4 direct: bilingual operator signature renders both configured languages');
+
+      const unsupported = await realPrintZ({ ...z, __language: 'fa' }, undefined, webusbPrinter);
+      assertEqual(unsupported.ok, false, 'F4 direct: unsupported localized financial labels refuse before WebUSB dispatch');
+      assert((unsupported.warnings || []).some((warning: any) => warning.kind === 'financial'),
+        'F4 direct: refusal carries a financial warning');
+      assert(!unsupported.bytes, 'F4 direct: refused Z report does not return partial WebUSB bytes');
       // Non-webusb direct dispatch (network): same shape, no mock — the test
       // server is not actually reachable, so the helper returns ok:false with
       // a socket detail. We assert the contract (bytes present, detail propagated).

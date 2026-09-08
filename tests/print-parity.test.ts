@@ -286,7 +286,13 @@ function expectContent(
   warn(text.includes(expectations.businessName), `${label}: business header`);
   if (expectations.truncationMarker) {
     const stemRowIndex = rows.findIndex((r) => r.includes(LONG_NAME_STEM));
-    const isTruncatedOrWrapped = stemRowIndex >= 0 && (rows[stemRowIndex].includes('..') || rows[stemRowIndex + 1]?.length > 0);
+    const stemRow = stemRowIndex >= 0 ? rows[stemRowIndex] : '';
+    const amountStart = stemRow.search(/(?:Rs|INR|USD|EUR|GBP|\$|\u20b9)?\s*420(?:[.,]00)?\s*$/);
+    const itemNamePortion = amountStart >= 0 ? stemRow.slice(0, amountStart) : stemRow;
+    const hasExplicitMarker = /\.(?:\s+\d+)?\s*$/.test(itemNamePortion) || itemNamePortion.includes('\u2026');
+    const hasWrappedContinuation = stemRowIndex >= 0
+      && rows.slice(stemRowIndex + 1, stemRowIndex + 12).some((row) => row.includes('Drizzle'));
+    const isTruncatedOrWrapped = stemRowIndex >= 0 && (hasExplicitMarker || hasWrappedContinuation);
     warn(isTruncatedOrWrapped, `${label}: long item truncated with marker or wrapped`);
   }
   for (const addon of expectations.addons ?? []) {
@@ -366,7 +372,7 @@ function run(): void {
   }
 
   // ------------------------------------------------------------------
-  // 2. Frontend WebUSB ESC/POS — classic + compact at 58mm(42c)/80mm(48c)
+  // 2. Frontend WebUSB ESC/POS — classic + compact at 58mm(32c)/80mm(48c)
   // ------------------------------------------------------------------
   for (const variant of ['classic', 'compact'] as const) {
     for (const paperWidth of [58, 80] as const) {
@@ -376,24 +382,20 @@ function run(): void {
         ? fe.receiptEncoder.buildClassicReceiptBytes(fullBill as any, tenant as any, { paperWidth }, warnings as any)
         : fe.receiptEncoder.buildCompactReceiptBytes(fullBill as any, tenant as any, { paperWidth }, warnings as any);
       const text = new TextDecoder().decode(bytes);
-      // LEGACY: same skip-with-warning contract as backend (safePrinterText).
       const feSubtotal = variant === 'classic' ? { subtotal: 1220 } : {};
-      // LEGACY: the WebUSB 4-column layout truncates over-long item names with
-      // a '…' ellipsis, which is itself non-ASCII — so the unsupported-char
-      // guard drops the ENTIRE row (with a warning). The desktop path
-      // truncates with '..' and keeps the line. This asymmetry is today's
-      // documented behavior, not the target architecture.
+      // WebUSB uses the configured 32-column logical width for 58mm and keeps
+      // truncated item rows printable with an ASCII marker.
       expectContent(`webusb/${variant}/${paperWidth}`, text, {
         ...baseExpect,
         ...feSubtotal,
         items: [LATIN_ITEM],
-        absentItems: [PERSIAN_ITEM, LONG_NAME_STEM],
-        truncationMarker: false,
+        absentItems: [PERSIAN_ITEM],
+        truncationMarker: true,
       }, warn);
       warn(warnings.some((w) => (w.message ?? '').includes('Persian/Arabic')),
         `webusb/${variant}/${paperWidth}: skip produced explicit Persian/Arabic warning`);
-      warn(warnings.some((w) => (w.message ?? '').includes('unsupported characters') && (w.text ?? '').includes('Extra Long')),
-        `webusb/${variant}/${paperWidth}: long-name row skipped with explicit unsupported-chars warning`);
+      warn(!warnings.some((w) => (w.message ?? '').includes('unsupported characters') && (w.text ?? '').includes('Extra Long')),
+        `webusb/${variant}/${paperWidth}: ASCII-truncated long-name row does not create a false unsupported-chars warning`);
     }
   }
 
@@ -409,8 +411,8 @@ function run(): void {
       ...baseExpect,
       subtotal: 1220,
       items: [LATIN_ITEM],
-      absentItems: [PERSIAN_ITEM, LONG_NAME_STEM],
-      truncationMarker: false,
+      absentItems: [PERSIAN_ITEM],
+      truncationMarker: true,
       reprint: true,
     }, warn);
   }

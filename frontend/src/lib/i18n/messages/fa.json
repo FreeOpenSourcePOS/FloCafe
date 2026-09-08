@@ -276,6 +276,10 @@
     "noPriorCloseHint": "روز قبل بسته نشده — موجودی اولیه روی ۰ تنظیم شد",
     "billsCount": "{count} صورتحساب",
     "businessDateLabel": "تاریخ کاری",
+    "periodStart": "شروع دوره",
+    "periodEnd": "پایان دوره",
+    "ticketCount": "تعداد",
+    "ticketOperatorSignature": "امضای اپراتور",
     "ticketSectionPayments": "روش‌های پرداخت",
     "ticketSectionRefunds": "بازپرداخت‌ها",
     "ticketSectionTax": "جزئیات مالیات",
@@ -792,6 +796,7 @@
       "end": "پایان"
     },
     "hsn": "کد کالا",
+    "zReport": { "title": "گزارش Z", "businessDate": "تاریخ:", "periodStart": "شروع دوره:", "periodEnd": "پایان دوره:", "openingFloat": "موجودی اولیه", "payments": "فروش بر اساس روش پرداخت", "refunds": "بازپرداخت‌ها", "tax": "جزئیات مالیات", "staff": "فروش بر اساس پرسنل", "expectedCash": "وجه نقد مورد انتظار", "countedCash": "وجه نقد شمارش‌شده", "variance": "اختلاف", "closedBy": "بسته توسط:", "operatorSignature": "امضای اپراتور:", "footer": "تولید شده توسط FloCafe", "none": "(هیچ‌کدام)", "paymentCount": "{count} عدد", "count": "تعداد:", "amount": "مجموع:" },
     "test": {
       "title": "آزمون چاپگر Flo",
       "networkUsb": "چاپ آزمایشی شبکه / USB",
@@ -1626,6 +1631,9 @@
     "scanningForPrinters": "در حال جستجوی چاپگرهای نصب‌شده…",
     "secondLanguageNone": "هیچ",
     "secondReceiptLanguage": "زبان دوم رسید",
+    "zReportLanguage": "زبان گزارش Z",
+    "secondZReportLanguage": "زبان دوم گزارش Z",
+    "zReportLanguageHint": "گزارش‌های Z از زبان فروشگاه پیروی می‌کنند مگر زبان مشخصی انتخاب شود.",
     "selectCountry": "انتخاب کشور...",
     "selectFileAndImport": "انتخاب فایل و درون‌ریزی",
     "selectTimezone": "انتخاب منطقه زمانی…",

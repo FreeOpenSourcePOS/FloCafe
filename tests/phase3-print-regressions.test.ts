@@ -153,6 +153,12 @@ async function run(): Promise<void> {
     }
   }
 
+  const longKotHtml = frontend.kotWebPrint.generateKotHtml({
+    ...order,
+    items: [{ quantity: 1, product_name: 'A'.repeat(100), status: 'pending', addons: [], special_instructions: '' }],
+  } as any, { paperWidth: 58, language: 'en', stationName: 'Main Kitchen', timezone: 'UTC' });
+  assert.match(longKotHtml, /width:100%;max-width:58mm;min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;/, 'browser KOT declares a bounded 58mm content width with unbroken-text wrapping');
+
   const nonAsciiMetadataOrder = {
     ...order,
     order_number: 'شماره-001',
@@ -243,6 +249,17 @@ async function run(): Promise<void> {
     language: 'en',
   }, taxWarnings)).toString('utf8');
   assert.match(taxBillText, /Date: Apr 21, 2026/, 'raw tax bill uses an explicit ASCII-safe fallback for Persian country data');
+
+  const longTaxItemName = 'Extra Long Caramelized Vanilla Bean Creme Frappuccino';
+  const longTaxBillText = Buffer.from(frontend.taxBillEncoder.buildTaxBillBytes({
+    bill_number: 'INV-PHASE3-LONG', subtotal: 123, discount_amount: 0, tax_amount: 0, total: 123,
+    order: { created_at: '2026-04-21 10:30:00', items: [{ product_name: longTaxItemName, quantity: 1, total: 123, addons: [] }] },
+  } as any, { business_name: 'Cafe', country: 'IN', currency: 'INR', timezone: 'UTC' } as any, {
+    paperWidth: 58, rawEscPos: true, useUnicode: false, language: 'en',
+  }, [])).toString('utf8');
+  const longTaxVisibleText = longTaxBillText.replace(/[\x00-\x1F\x7F]/g, '');
+  assert.ok(longTaxVisibleText.includes(longTaxItemName), '58 mm tax bill preserves a long ASCII item name across wrapped rows');
+  assert.match(longTaxVisibleText, /123\.00/, '58 mm tax bill preserves the long item amount');
 
   const germanTaxWarnings: any[] = [];
   const germanTaxText = Buffer.from(frontend.taxBillEncoder.buildTaxBillBytes({

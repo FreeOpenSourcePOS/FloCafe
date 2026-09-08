@@ -11,6 +11,7 @@ import {
   formatNumberForTenant,
   formatDateForTenant,
 } from '@/lib/countries';
+import { columnsForReceiptPaperSize } from '@print/width';
 import { parseDbTimestamp } from '@/lib/utils';
 import { loadLocaleMessages } from '@/lib/i18n/loader';
 import {
@@ -229,7 +230,7 @@ export function generateBillHtml(
   const lang = languages[0] as Language;
 
   const document = buildFrontendBillDocument(bill, tenant, {
-    columns: paperSize === 'thermal80' ? 48 : 42,
+    columns: columnsForReceiptPaperSize(paperSize === 'thermal80' ? 80 : 58),
     businessName: showBusinessName ? (businessName ?? tenant.business_name) : undefined,
     address,
     phone,
@@ -267,15 +268,15 @@ export function generateBillHtml(
     table: stripLabelPlaceholder(metaTableLabel),
     customer: documentLabel(customer?.nameLabel, 'pos.customer', lang),
     customerNo: documentLabel(customer?.phoneLabel, 'print.numberShort', lang),
-    rate: printLabelResolver('receipt.rate', lang),
+    rate: itemsBlock?.header.rate.primary ?? printLabelResolver('receipt.rate', lang),
     totalTax: surfaceLabel(totals?.tax?.label, 'pos.tax', 'receipt.totalTax', lang),
     deliveryCharge: surfaceLabel(totals?.deliveryCharge?.label, 'pos.delivery', 'receipt.deliveryCharge', lang),
     packagingCharge: documentLabel(totals?.packagingCharge?.label, 'pos.packaging', lang),
     grandTotal: surfaceLabel(totals?.grandTotal?.label, 'print.grandTotal', 'receipt.grandTotal', lang),
-    taxDetails: printLabelResolver('receipt.taxDetails', lang),
-    paymentsHeader: printLabelResolver('receipt.payments', lang),
+    taxDetails: breakdown?.heading.primary ?? printLabelResolver('receipt.taxDetails', lang),
+    paymentsHeader: payments?.heading.primary ?? printLabelResolver('receipt.payments', lang),
     thankYou: surfaceLabel(messages?.thankYou, 'print.thankYouShort', 'receipt.thankYou', lang),
-    taxIncluded: printLabelResolver('receipt.taxIncluded', lang),
+    taxIncluded: messages?.taxIncluded.primary ?? printLabelResolver('receipt.taxIncluded', lang),
     printBill: printLabelResolver('receipt.printBill', lang),
   };
 

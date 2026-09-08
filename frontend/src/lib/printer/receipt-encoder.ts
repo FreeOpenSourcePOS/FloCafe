@@ -3,6 +3,7 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
 import { selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
+import { columnsForReceiptPaperSize, fitThermalLine } from '@print/width';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -27,6 +28,7 @@ import {
   type TaxBreakdownBlock,
   type TotalsBlock,
 } from '@print/document';
+import { layoutStyledUnit } from '@print/layout';
 import type { ResolvedPrintLanguages } from '@print/types';
 
 export interface ReceiptOptions {
@@ -68,29 +70,39 @@ export interface ReceiptOptions {
 
 function printReprintBanner(
   enc: ReceiptPrinterEncoder,
-  bannerLabel: string,
+  bannerLabel: SemanticLabel,
   warnings: PrintWarning[] | undefined,
   arabicShaping: boolean,
   cols: number,
   language?: string,
 ): void {
+  const layout = layoutStyledUnit({
+    label: {
+      primary: `** ${bannerLabel.primary} **`,
+      ...(bannerLabel.secondary ? { secondary: `** ${bannerLabel.secondary} **` } : {}),
+    },
+    widthMultiplier: 2,
+    field: 'reprint banner',
+  }, { logicalColumns: cols, direction: 'ltr', languages: ['en'] });
+  warnings?.push(...layout.warnings);
   enc
     .align('center')
     .bold(true)
-    .width(2)
+    .width(layout.widthMultiplier)
     .height(2);
-  writeSafePrinterText(enc, `** ${bannerLabel} **`, warnings, false, arabicShaping, Math.floor(cols / 2), undefined, language);
+  for (const line of layout.lines) {
+    writeSafePrinterText(enc, line, warnings, false, arabicShaping, cols, undefined, language).newline();
+  }
   enc
     .width(1)
     .height(1)
     .bold(false)
-    .newline()
     .align('left');
 }
 
 function printOnlineOrderBanner(
   enc: ReceiptPrinterEncoder,
-  bannerLabel: string,
+  bannerLabel: SemanticLabel,
   platform: string,
   externalOrderId: string,
   warnings: PrintWarning[] | undefined,
@@ -98,16 +110,24 @@ function printOnlineOrderBanner(
   cols: number,
   language?: string,
 ): void {
+  const layout = layoutStyledUnit({
+    label: {
+      primary: `** ${bannerLabel.primary} **`,
+      ...(bannerLabel.secondary ? { secondary: `** ${bannerLabel.secondary} **` } : {}),
+    },
+    widthMultiplier: 2,
+    field: 'online order banner',
+  }, { logicalColumns: cols, direction: 'ltr', languages: ['en'] });
+  warnings?.push(...layout.warnings);
   enc
     .align('center')
     .bold(true)
-    .width(2)
+    .width(layout.widthMultiplier)
     .height(2);
-  writeSafePrinterText(enc, `** ${bannerLabel} **`, warnings, false, arabicShaping, Math.floor(cols / 2), undefined, language);
-  enc
-    .width(1)
-    .height(1)
-    .newline();
+  for (const line of layout.lines) {
+    writeSafePrinterText(enc, line, warnings, false, arabicShaping, cols, undefined, language).newline();
+  }
+  enc.width(1).height(1);
   if (platform) writeSafePrinterText(enc, platform, warnings, false, arabicShaping, cols, undefined, language).newline();
   if (externalOrderId) writeSafePrinterText(enc, `#${externalOrderId}`, warnings, false, arabicShaping, cols, undefined, language).newline();
   enc
@@ -115,18 +135,18 @@ function printOnlineOrderBanner(
     .align('left');
 }
 
-function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
+function printPoweredByFooter(enc: ReceiptPrinterEncoder, columns: number): void {
   enc
     .align('center')
     .size('small')
-    .text(RECEIPT_BRANDING_NAME)
+    .text(fitThermalLine(RECEIPT_BRANDING_NAME, columns))
     .newline()
     .size('normal')
     .align('left');
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
-const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
+const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
 
 /** Mask phone number for receipt display — shows only last 4 digits. */
 function maskPhoneOnReceipt(phone: string): string {
@@ -319,9 +339,10 @@ function col4Rows(
   const amtStr = formatAmount(amount, currency, locale, trimDecimals, fractionDigits);
   const qtyStr = String(qty);
 
-  if (qtyStr.length > qtyWidth || rateStr.length > rateWidth || amtStr.length > amountWidth) {
-    const itemWidth = Math.max(1, widths[0] + widths[1] - 1, colsForCol4(widths) - qtyStr.length - 1);
-    const itemLine = truncateForLanguage(normalizedName, itemWidth, language, capabilities).padEnd(itemWidth) + ' ' + qtyStr;
+  const useSeparateValueLines = normalizedName.length > nameWidth || nameWidth < 8 || qtyStr.length > qtyWidth || rateStr.length > rateWidth || amtStr.length > amountWidth;
+  if (useSeparateValueLines) {
+    const itemWidth = Math.max(1, colsForCol4(widths) - qtyStr.length - 1);
+    const itemLine = (truncateForLanguage(normalizedName, itemWidth, language, capabilities).trimEnd() + ' ' + qtyStr).padEnd(colsForCol4(widths));
     return [
       itemLine,
       ...fitLabeledValue('Rate', rateStr, colsForCol4(widths)),
@@ -396,11 +417,11 @@ export function buildClassicReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols, primaryLang);
+  if (messages?.reprintBanner) printReprintBanner(enc, messages.reprintBanner, warnings, arabicShaping, cols, primaryLang);
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
       enc,
-      labelOf(messages.onlineOrderBanner.label),
+      messages.onlineOrderBanner.label,
       messages.onlineOrderBanner.platform.text,
       messages.onlineOrderBanner.externalOrderId.text,
       warnings,
@@ -580,7 +601,7 @@ export function buildClassicReceiptBytes(
       safePrinterText(enc, truncate(messages.footerNote.text, cols), warnings, false, arabicShaping, cols).newline();
     }
   }
-  printPoweredByFooter(enc);
+  printPoweredByFooter(enc, cols);
 
   enc.newline().newline().newline().cut();
 
@@ -621,11 +642,11 @@ export function buildCompactReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols, primaryLang);
+  if (messages?.reprintBanner) printReprintBanner(enc, messages.reprintBanner, warnings, arabicShaping, cols, primaryLang);
   if (messages?.onlineOrderBanner) {
     printOnlineOrderBanner(
       enc,
-      labelOf(messages.onlineOrderBanner.label),
+      messages.onlineOrderBanner.label,
       messages.onlineOrderBanner.platform.text,
       messages.onlineOrderBanner.externalOrderId.text,
       warnings,
@@ -757,7 +778,7 @@ export function buildCompactReceiptBytes(
   if (messages?.footerNote) {
     safePrinterText(enc, truncate(messages.footerNote.text, cols), warnings, false, arabicShaping, cols).newline();
   }
-  printPoweredByFooter(enc);
+  printPoweredByFooter(enc, cols);
 
   enc.newline().newline().newline().cut();
 
@@ -808,7 +829,7 @@ export function buildDetailedReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (isReprint) printReprintBanner(enc, 'REPRINT', warnings, arabicShaping, cols, primaryLang);
+  if (isReprint) printReprintBanner(enc, { primary: printLabelResolver('receipt.reprint', primaryLang) }, warnings, arabicShaping, cols, primaryLang);
 
   // Header
   if (showBusinessName && tenant.business_name) {
@@ -937,7 +958,7 @@ export function buildDetailedReceiptBytes(
   if (footerNote) {
     safePrinterText(enc, truncate(footerNote, cols), warnings, false, arabicShaping).newline();
   }
-  printPoweredByFooter(enc);
+  printPoweredByFooter(enc, cols);
 
   enc.newline().newline().newline().cut();
 
@@ -951,10 +972,11 @@ export const buildReceiptBytes = buildClassicReceiptBytes;
 function padRowForLanguage(left: string, right: string, cols: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {
   const normalizedLeft = normalizeThermalText(left, capabilities);
   const normalizedRight = normalizeThermalText(right, capabilities);
+  if (normalizedLeft.length + normalizedRight.length + 1 > cols) return `${normalizedLeft}\n${normalizedRight}`;
   const gap = cols - normalizedLeft.length - normalizedRight.length;
   return gap > 0
     ? normalizedLeft + ' '.repeat(gap) + normalizedRight
-    : normalizedLeft.slice(0, cols - normalizedRight.length - 1) + ' ' + normalizedRight;
+    : normalizedLeft.slice(0, Math.max(0, cols - normalizedRight.length - 1)) + ' ' + normalizedRight;
 }
 
 function truncateForLanguage(str: string, max: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {

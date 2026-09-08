@@ -44,6 +44,8 @@ import {
   DisplayTaxComponent,
   aggregateTaxComponents,
 } from '../services/tax-components';
+import { Z_REPORT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
+import { resolveReceiptLanguages, type ReceiptLanguagePolicy } from '../../shared/print';
 
 const router = Router();
 const MAX_NOTES_LENGTH = 500;
@@ -112,7 +114,7 @@ function validateCents(raw: unknown, field: string, allowZero = true): number {
  *    JSON becomes `[]` so the body builder renders "(none)" rather
  *    than blowing up.
  *  - `__isReprint` is the synthetic flag the body builder uses to add
- *    the REIMPRESION marker; caller passes `true` for reprints.
+ *    the localized reprint marker; caller passes `true` for reprints.
  */
 function shapeZReportSnapshot(db: ReturnType<typeof getDatabase>, row: any, isReprint: boolean): any {
   const userRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(row.closed_by) as { name: string } | undefined;
@@ -526,6 +528,14 @@ router.post('/:id/print', requireRole(...ROLE_ACCESS.owner), async (req: Request
     // id string when the user row is missing (e.g. historical data after a
     // staff deletion).
     const snapshot = shapeZReportSnapshot(db, row, isReprint);
+    const languageRow = db.prepare(`SELECT value FROM settings WHERE key = 'language'`).get() as { value?: string } | undefined;
+    const zPolicy = parseStoredLanguagePolicy(
+      Z_REPORT_LANGUAGE_POLICY_KEY,
+      (db.prepare('SELECT value FROM settings WHERE key = ?').get(Z_REPORT_LANGUAGE_POLICY_KEY) as { value?: string } | undefined)?.value,
+    ) as ReceiptLanguagePolicy;
+    const zLanguages = resolveReceiptLanguages(zPolicy, languageRow?.value || 'en');
+    snapshot.__language = zLanguages[0];
+    if (zLanguages[1]) snapshot.__additionalLanguage = zLanguages[1];
     // Resolve the default receipt printer server-side so the WebUSB branch
     // is reachable end-to-end (mirrors `main/routes/printers.ts:304-339`,
     // bytes branch `:329-331`). `getPrinterConfig()` inside the helper
@@ -533,21 +543,18 @@ router.post('/:id/print', requireRole(...ROLE_ACCESS.owner), async (req: Request
     const printer = db.prepare(`SELECT * FROM printers WHERE is_default = 1`).get() as any;
     if (!printer) return res.status(409).json({ error: 'No default printer configured' });
     const { printZReport } = require('../printers/thermal');
-    // F7: thread request signal through so a server shutdown aborts the
-    // print job (pattern at `main/routes/printers.ts:119,323`). No language
-    // argument: the Z body is built with English literals by design, and
-    // shaping/code-page selection comes from the printer-profile
-    // capabilities, not from a language bundle.
+    // Thread request cancellation through the print job. The resolved Z
+    // language policy is carried only in this print snapshot.
     const result = await printZReport(snapshot, getHttpRequestSignal(req), printer);
     if (printer.connection_type === 'webusb' && result?.bytes) {
       // Return the FULL bytes including the forced drawer pulse; the renderer
       // dispatches them over WebUSB exactly as the test-page endpoint does.
-      return res.json({ success: true, webusb: true, isReprint, bytes: Array.from(result.bytes) });
+      return res.json({ success: true, webusb: true, isReprint, bytes: Array.from(result.bytes), warnings: result.warnings || [] });
     }
     if (!result.ok) {
-      return res.status(502).json({ error: result.detail || 'Printer did not respond or print failed', detail: result.detail });
+      return res.status(502).json({ error: result.detail || 'Printer did not respond or print failed', detail: result.detail, warnings: result.warnings || [] });
     }
-    res.json({ success: true, isReprint });
+    res.json({ success: true, isReprint, warnings: result.warnings || [] });
   } catch (error: any) {
     console.error('[CashClosures] Print error:', error);
     res.status(500).json({ error: 'Internal server error' });

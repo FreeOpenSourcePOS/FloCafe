@@ -50,6 +50,7 @@ import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, 
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
 import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii } from '../../shared/print/currency';
+import { columnsForPaperWidth as columnsForConfiguredPaperWidth, fitThermalLine } from '../../shared/print/width';
 
 export type PrintResult = {
   ok: boolean;
@@ -999,21 +1000,7 @@ function nativeFallbackCapabilities(capabilities: ThermalPrinterCapabilities): T
 }
 
 export function columnsForPaperWidth(paperWidth: string): number | null {
-  const colsMatch = String(paperWidth || '').match(/^cols-(3[2-9]|4[0-8])$/);
-  if (colsMatch) return Number(colsMatch[1]);
-
-  switch (paperWidth) {
-    case '58mm':
-      return 32;
-    case '58mm-36':
-      return 36;
-    case '80mm-42':
-      return 42;
-    case '80mm':
-      return null;
-    default:
-      return null;
-  }
+  return columnsForConfiguredPaperWidth(paperWidth);
 }
 
 export { dotsForPaperWidth, capabilitiesForPrinter };
@@ -1566,15 +1553,17 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (showTaxRegistration && biz.taxRegistrationNumber) pushWrapped(lines, configuredTaxLabel + ': ' + biz.taxRegistrationNumber, cols, lang, capabilities);
   if (payload?.footer?.useConfiguredFooterNote !== false && biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols, lang, capabilities);
   else lines.push('{CENTER}' + (fitTemplateLabel(normalize(String(payload?.footer?.defaultMessage || '')), cols) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'footerThanks', lang)), cols)) + '{/CENTER}');
-  if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
+  if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines, cols);
   lines.push('{CUT}');
 
   return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols, language: lang, capabilities, financialLineRanges }, warnings);
 }
 
-export function appendPoweredByFooter(lines: string[]): void {
+export function appendPoweredByFooter(lines: string[], cols: number = 48): void {
   lines.push('', '');
-  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING + '{/FONT_B}{/CENTER}');
+  for (const line of wrapText(RECEIPT_BRANDING, cols)) {
+    lines.push('{CENTER}{FONT_B}' + line + '{/FONT_B}{/CENTER}');
+  }
 }
 
 /** Compact thermal receipt: builds PrintDocument and renders via document-compact pipeline. */
@@ -2232,7 +2221,9 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   sections.push('{BOLD}' + label('Counted cash') + '{/BOLD}');
   sections.push(rightAlign(formatAmount(z?.counted_cash_cents), cols));
   sections.push(bar);
-  sections.push('{CENTER}{BOLD}' + label('Variance') + '  ' + formatAmount(z?.variance_cents) + '{/BOLD}{/CENTER}');
+  for (const line of wrapText('Variance  ' + formatAmount(z?.variance_cents), cols)) {
+    sections.push('{CENTER}{BOLD}' + line + '{/BOLD}{/CENTER}');
+  }
   sections.push(dash);
   sections.push('');
 
@@ -2542,6 +2533,9 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     // the default), 1 = Font B (9x17, condensed). No token means Font A.
 
     line = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
+    if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
+      line = fitThermalLine(line, options.columns as number, lineDW);
+    }
 
     buf.push(0x1B, 0x61, center ? 0x01 : 0x00);
 

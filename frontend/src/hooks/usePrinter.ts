@@ -31,6 +31,7 @@ import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 import { type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterWebUsbPathEnabled } from '@print/raster';
+import { columnsForReceiptPaperSize } from '@print/width';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 
 type CoreBillTemplate = 'classic' | 'compact';
@@ -282,7 +283,7 @@ export const usePrinterStore = create<PrinterState>()(
               const rasterResult = await rasterizePrintDocument({
                 document: buildFrontendBillDocument(bill, tenant, {
                   ...builderOpts,
-                  columns: builderOpts.paperWidth === 80 ? 48 : 42,
+                  columns: columnsForReceiptPaperSize(builderOpts.paperWidth ?? configuredPaperWidth),
                   businessName: tenant.business_name,
                   includeTaxId: billShowTaxId,
                   taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel ?? 'Tax ID',
@@ -292,7 +293,7 @@ export const usePrinterStore = create<PrinterState>()(
                 template: rasterBillTemplate,
                 profileId: webusbPrinter.profile_id,
                 options: {
-                  columns: builderOpts.paperWidth === 80 ? 48 : 42,
+                  columns: columnsForReceiptPaperSize(builderOpts.paperWidth ?? configuredPaperWidth),
                   language: languages[0],
                   locale: getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US',
                   currency,
@@ -491,13 +492,13 @@ export const usePrinterStore = create<PrinterState>()(
                   document: buildFrontendKotDocument(rasterOrder, {
                     items: rasterOrder.items,
                     stationName: opts?.stationName ?? 'Kitchen',
-                    columns: paperWidth === 80 ? 48 : 42,
+                    columns: columnsForReceiptPaperSize(paperWidth),
                     language: kotLanguage,
                     ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
                   }),
                   profileId: webusbPrinter.profile_id,
                   options: {
-                    columns: paperWidth === 80 ? 48 : 42,
+                    columns: columnsForReceiptPaperSize(paperWidth),
                     language: kotLanguage,
                     locale: tenantLocale,
                     ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),

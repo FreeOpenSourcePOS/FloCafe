@@ -2,6 +2,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
+import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
 import { normalizeThermalText } from './unicode';
 import {
@@ -33,7 +34,7 @@ export interface KotOptions {
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
-const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
+const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
 
 function safePrinterTextForLanguage(language: string, columns: number, capabilities?: ThermalPrinterCapabilities) {
   return <T extends { text(value: string): T }>(

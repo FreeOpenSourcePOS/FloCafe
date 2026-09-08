@@ -397,7 +397,7 @@ export function renderBillDocumentToCompactLines(
     messageFooterSourceControlLines.push(lines.at(-1) ?? '');
   }
   markGroup('message', messageFooterStart, messageFooterSourceLines, messageFooterSourceControlLines);
-  appendPoweredByFooter(lines);
+  appendPoweredByFooter(lines, cols);
   lines.push('{CUT}');
 
   return lines;

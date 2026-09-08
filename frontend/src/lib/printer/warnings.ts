@@ -126,9 +126,9 @@ export function safePrinterText<T extends { text(value: string): T }>(
   const useLegacyUnicode = capabilities === undefined && useUnicode;
   const printableValue = normalizeThermalText(value, thermalCapabilities);
   const hasNativeCodePage = thermalCapabilities.encoding.codePages.some((codePage) => codePage !== 'ascii');
-  const printerValue = !useLegacyUnicode && !hasNativeCodePage
+  const printerValue = (!useLegacyUnicode && !hasNativeCodePage
     ? normalizeCurrencyToAscii(printableValue)
-    : printableValue;
+    : printableValue).replace(/\u2026/g, useUnicode && arabicShaping ? '\u2026' : '.');
   const hasUnsupported = hasUnsupportedPrinterChars(printerValue);
   const shapingSafe = thermalCapabilities.shaping.arabic && isCapabilityArabicShapingSafeLine(printerValue);
   const representable = !hasUnsupported || (isThermalTextRepresentable(printerValue, thermalCapabilities) && !shapingSafe);
@@ -205,6 +205,7 @@ export function formatReceiptErrorToast(detail?: string, fallbackTranslation = '
   return fallbackTranslation;
 }
 
+
 /** Formats a user-facing KOT print error message with operational detail when available. */
 export function formatKotErrorToast(detail?: string, fallbackTranslation = 'KOT print failed'): string {
   const msg = String(detail || '').trim();
@@ -213,4 +214,3 @@ export function formatKotErrorToast(detail?: string, fallbackTranslation = 'KOT 
   }
   return fallbackTranslation;
 }
-

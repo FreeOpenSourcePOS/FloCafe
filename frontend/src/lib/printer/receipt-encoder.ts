@@ -3,6 +3,7 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
 import { selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
+import { columnsForReceiptPaperSize, fitThermalLine } from '@print/width';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -115,18 +116,18 @@ function printOnlineOrderBanner(
     .align('left');
 }
 
-function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
+function printPoweredByFooter(enc: ReceiptPrinterEncoder, columns: number): void {
   enc
     .align('center')
     .size('small')
-    .text(RECEIPT_BRANDING_NAME)
+    .text(fitThermalLine(RECEIPT_BRANDING_NAME, columns))
     .newline()
     .size('normal')
     .align('left');
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
-const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
+const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
 
 /** Mask phone number for receipt display — shows only last 4 digits. */
 function maskPhoneOnReceipt(phone: string): string {
@@ -319,9 +320,10 @@ function col4Rows(
   const amtStr = formatAmount(amount, currency, locale, trimDecimals, fractionDigits);
   const qtyStr = String(qty);
 
-  if (qtyStr.length > qtyWidth || rateStr.length > rateWidth || amtStr.length > amountWidth) {
-    const itemWidth = Math.max(1, widths[0] + widths[1] - 1, colsForCol4(widths) - qtyStr.length - 1);
-    const itemLine = truncateForLanguage(normalizedName, itemWidth, language, capabilities).padEnd(itemWidth) + ' ' + qtyStr;
+  const useSeparateValueLines = normalizedName.length > nameWidth || nameWidth < 8 || qtyStr.length > qtyWidth || rateStr.length > rateWidth || amtStr.length > amountWidth;
+  if (useSeparateValueLines) {
+    const itemWidth = Math.max(1, colsForCol4(widths) - qtyStr.length - 1);
+    const itemLine = (truncateForLanguage(normalizedName, itemWidth, language, capabilities).trimEnd() + ' ' + qtyStr).padEnd(colsForCol4(widths));
     return [
       itemLine,
       ...fitLabeledValue('Rate', rateStr, colsForCol4(widths)),
@@ -580,7 +582,7 @@ export function buildClassicReceiptBytes(
       safePrinterText(enc, truncate(messages.footerNote.text, cols), warnings, false, arabicShaping, cols).newline();
     }
   }
-  printPoweredByFooter(enc);
+  printPoweredByFooter(enc, cols);
 
   enc.newline().newline().newline().cut();
 
@@ -757,7 +759,7 @@ export function buildCompactReceiptBytes(
   if (messages?.footerNote) {
     safePrinterText(enc, truncate(messages.footerNote.text, cols), warnings, false, arabicShaping, cols).newline();
   }
-  printPoweredByFooter(enc);
+  printPoweredByFooter(enc, cols);
 
   enc.newline().newline().newline().cut();
 
@@ -937,7 +939,7 @@ export function buildDetailedReceiptBytes(
   if (footerNote) {
     safePrinterText(enc, truncate(footerNote, cols), warnings, false, arabicShaping).newline();
   }
-  printPoweredByFooter(enc);
+  printPoweredByFooter(enc, cols);
 
   enc.newline().newline().newline().cut();
 
@@ -951,10 +953,11 @@ export const buildReceiptBytes = buildClassicReceiptBytes;
 function padRowForLanguage(left: string, right: string, cols: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {
   const normalizedLeft = normalizeThermalText(left, capabilities);
   const normalizedRight = normalizeThermalText(right, capabilities);
+  if (normalizedLeft.length + normalizedRight.length + 1 > cols) return `${normalizedLeft}\n${normalizedRight}`;
   const gap = cols - normalizedLeft.length - normalizedRight.length;
   return gap > 0
     ? normalizedLeft + ' '.repeat(gap) + normalizedRight
-    : normalizedLeft.slice(0, cols - normalizedRight.length - 1) + ' ' + normalizedRight;
+    : normalizedLeft.slice(0, Math.max(0, cols - normalizedRight.length - 1)) + ' ' + normalizedRight;
 }
 
 function truncateForLanguage(str: string, max: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {

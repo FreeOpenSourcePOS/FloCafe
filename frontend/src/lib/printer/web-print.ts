@@ -11,6 +11,7 @@ import {
   formatNumberForTenant,
   formatDateForTenant,
 } from '@/lib/countries';
+import { columnsForReceiptPaperSize } from '@print/width';
 import { parseDbTimestamp } from '@/lib/utils';
 import { loadLocaleMessages } from '@/lib/i18n/loader';
 import {
@@ -229,7 +230,7 @@ export function generateBillHtml(
   const lang = languages[0] as Language;
 
   const document = buildFrontendBillDocument(bill, tenant, {
-    columns: paperSize === 'thermal80' ? 48 : 42,
+    columns: columnsForReceiptPaperSize(paperSize === 'thermal80' ? 80 : 58),
     businessName: showBusinessName ? (businessName ?? tenant.business_name) : undefined,
     address,
     phone,

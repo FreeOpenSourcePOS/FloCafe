@@ -153,6 +153,12 @@ async function run(): Promise<void> {
     }
   }
 
+  const longKotHtml = frontend.kotWebPrint.generateKotHtml({
+    ...order,
+    items: [{ quantity: 1, product_name: 'A'.repeat(100), status: 'pending', addons: [], special_instructions: '' }],
+  } as any, { paperWidth: 58, language: 'en', stationName: 'Main Kitchen', timezone: 'UTC' });
+  assert.match(longKotHtml, /width:100%;max-width:58mm;min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;/, 'browser KOT declares a bounded 58mm content width with unbroken-text wrapping');
+
   const nonAsciiMetadataOrder = {
     ...order,
     order_number: 'شماره-001',

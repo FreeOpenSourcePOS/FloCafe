@@ -105,6 +105,7 @@ export function generateKotHtml(
 
   const fontSize = paperWidth === 58 ? '10px' : '12px';
   const padding = paperWidth === 58 ? '4px' : '6px';
+  const paperWidthCss = paperWidth === 58 ? '58mm' : '80mm';
   const locale = LANGUAGES[lang]?.locale ?? 'en-US';
 
   // Header facts annotated by the direction kernel.
@@ -140,7 +141,7 @@ export function generateKotHtml(
     : `<div style="margin:${padding} 0;">${escapeHtml(tr('print.kot.noPendingItems'))}</div>`;
 
   return `
-    <div class="kot-container" dir="${base}" style="text-align:start;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
+    <div class="kot-container" dir="${base}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;text-align:start;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
       <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(tr('print.kot.banner'))}</h2>
       ${stationName ? `<p style="margin:2px 0;">${escapeHtml(tr('print.kot.station'))}: ${directionalValue(directionalText(stationName, base), base)}</p>` : ''}
       <p style="margin:2px 0;font-weight:bold;">${formatOrderNumberLabel(tr('pos.orderNumber'), orderNumber, base)}</p>

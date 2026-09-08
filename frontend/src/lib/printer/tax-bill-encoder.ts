@@ -2,6 +2,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
+import { columnsForReceiptPaperSize, fitThermalLine } from '@print/width';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -11,7 +12,7 @@ import { printLabelResolver } from './print-document';
 import { GENERIC_THERMAL_CAPABILITIES, isThermalTextRepresentable, selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 
 export interface TaxBillOptions {
-  /** 58 mm (2.5", 42 chars) or 80 mm (3.5", 48 chars). Default: 58 */
+  /** 58 mm (2.5", 32 chars) or 80 mm (3.5", 48 chars). Default: 58 */
   paperWidth?: 58 | 80;
   /** Show "Thank you" footer. Default: true */
   showFooter?: boolean;
@@ -48,13 +49,13 @@ export interface TaxBillOptions {
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
-const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
+const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
 
-function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
+function printPoweredByFooter(enc: ReceiptPrinterEncoder, columns: number): void {
   enc
     .align('center')
     .size('small')
-    .text(RECEIPT_BRANDING_NAME)
+    .text(fitThermalLine(RECEIPT_BRANDING_NAME, columns))
     .newline()
     .size('normal')
     .align('left');
@@ -324,7 +325,7 @@ export function buildTaxBillBytes(
       safePrinterText(enc, labelFor('receipt.taxIncluded'), warnings, false, arabicShaping, undefined, undefined, language).newline();
     }
   }
-  printPoweredByFooter(enc);
+  printPoweredByFooter(enc, cols);
 
   enc.newline().newline().newline().cut();
 

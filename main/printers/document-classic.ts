@@ -711,7 +711,7 @@ export function renderBillDocumentToClassicLines(
     }
   }
 
-  appendPoweredByFooter(lines);
+  appendPoweredByFooter(lines, cols);
   lines.push('{CUT}');
 
   return lines;

@@ -153,7 +153,7 @@ export function startKdsServer(): Promise<void> {
     });
 
     // Public tenant metadata: language and KDS defaults for pre-login display.
-    app.get('/api/kds/info', (_req: Request, res: Response) => {
+    app.get('/api/kds/info', rateLimit(), (_req: Request, res: Response) => {
       // Return 404 when disabled to avoid revealing KDS presence to unauthorized LAN clients.
       if (!isKdsEnabled()) {
         return res.status(404).json({ error: 'Not found' });

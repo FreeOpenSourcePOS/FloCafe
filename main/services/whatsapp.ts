@@ -991,7 +991,7 @@ export function sendMessage(req: QueuedSend): Promise<SendResult> {
 
 async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
   const startedAt = Date.now();
-  logWhatsApp('info', 'send_requested', { phone: maskPhone(req.phoneE164), kind: req.kind });
+  logWhatsApp('info', 'send_requested', { phone: maskPhone(req.phoneE164) });
   const signal = req.signal
     ? AbortSignal.any([whatsappAbortController.signal, req.signal])
     : whatsappAbortController.signal;
@@ -1005,7 +1005,6 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
       const result = { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' as const };
       logWhatsApp('warn', 'send_result', {
         phone: maskPhone(req.phoneE164),
-        kind: req.kind,
         ok: false,
         reason: result.reason,
         durationMs: Date.now() - startedAt,
@@ -1015,7 +1014,6 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     const result = await sendMessageInternal(req, signal);
     logWhatsApp(result.ok ? 'info' : 'warn', 'send_result', {
       phone: maskPhone(req.phoneE164),
-      kind: req.kind,
       ok: result.ok,
       reason: result.reason ?? 'sent',
       durationMs: Date.now() - startedAt,
@@ -1026,7 +1024,6 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
       const result = { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' as const };
       logWhatsApp('warn', 'send_result', {
         phone: maskPhone(req.phoneE164),
-        kind: req.kind,
         ok: false,
         reason: result.reason,
         durationMs: Date.now() - startedAt,
@@ -1035,7 +1032,6 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
     }
     logWhatsApp('error', 'send_result', {
       phone: maskPhone(req.phoneE164),
-      kind: req.kind,
       ok: false,
       reason: 'send_failed',
       error: sanitizeLogText(error),

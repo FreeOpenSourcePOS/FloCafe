@@ -1043,10 +1043,12 @@ export default function SettingsPage() {
       if (!signal?.aborted) setStationStaff(res.data.staff || []);
     } catch { /* ignore */ }
   };
-  const fetchStationUsers = async (stationId: string) => {
+  const fetchStationUsers = async (stationId: string, signal?: AbortSignal) => {
     try {
-      const res = await api.get(`/kitchen-stations/${stationId}`);
-      setStationUsersByStation((prev) => ({ ...prev, [stationId]: res.data.kitchenStation.users || [] }));
+      const res = await api.get(`/kitchen-stations/${stationId}`, signal ? { signal } : undefined);
+      if (!signal?.aborted) {
+        setStationUsersByStation((prev) => ({ ...prev, [stationId]: res.data.kitchenStation.users || [] }));
+      }
     } catch { /* ignore */ }
   };
 
@@ -1123,11 +1125,14 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
+    if (activeTab !== 'kds') return;
+    const controller = new AbortController();
     stations.forEach((s) => {
-      if (!stationUsersByStation[s.id]) fetchStationUsers(s.id);
+      if (!stationUsersByStation[s.id]) fetchStationUsers(s.id, controller.signal);
     });
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stations]);
+  }, [stations, activeTab]);
 
   // Mobile App Pairing
   const [pairingCode, setPairingCode] = useState<string | null>(null);
@@ -2116,7 +2121,7 @@ export default function SettingsPage() {
   const startSettingsTabLoad = (tab: string, signal: AbortSignal, includeStatusOnly = true): Promise<void> => {
     const tenantId = currentTenant?.id;
     if (!tenantId) return Promise.resolve();
-    const key = `${tenantId}:${tab}`;
+    const key = `${tenantId}:${tab}${tab === 'mobile-access' && !includeStatusOnly ? ':status' : ''}`;
     if (loadedSettingsTabs.current.has(key)) return Promise.resolve();
     const existing = settingsTabLoadPromises.current.get(key);
     if (existing) return existing;

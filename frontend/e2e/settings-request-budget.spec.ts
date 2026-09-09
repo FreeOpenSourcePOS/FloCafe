@@ -179,6 +179,25 @@ test('Mobile Access loads cloud and pairing data only when activated, once per t
   expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
 });
 
+test('Save All does not cache partial Mobile Access hydration', async ({ page }) => {
+  await startMockedSettingsSession(page, true);
+  const apiPaths = collectApiPaths(page);
+
+  await page.goto(`${BASE}/settings?tab=store`);
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  apiPaths.length = 0;
+  await page.locator('input[type="text"]').first().fill('Changed Store');
+  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+  await expect.poll(() => apiPaths.includes('/api/settings/printing')).toBeTruthy();
+
+  expect(apiPaths).not.toContain('/api/mobile/pairing-code');
+  expect(apiPaths).not.toContain('/api/mobile/devices');
+  await page.getByRole('button', { name: 'Mobile Access', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
+  await expect.poll(() => apiPaths.filter((path) => path === '/api/mobile/pairing-code').length).toBe(1);
+  await expect.poll(() => apiPaths.filter((path) => path === '/api/mobile/devices').length).toBe(1);
+});
+
 test('Rotating pairing code does not refresh devices after leaving Mobile Access', async ({ page }) => {
   await startMockedSettingsSession(page, true);
   const apiPaths = collectApiPaths(page);
@@ -200,6 +219,37 @@ test('Rotating pairing code does not refresh devices after leaving Mobile Access
   await page.waitForTimeout(1200);
 
   expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
+});
+
+test('Leaving KDS cancels station-user hydration', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const apiPaths = collectApiPaths(page);
+  await page.route('**/api/kitchen-stations', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ kitchenStations: [{ id: 'station-1', name: 'Main', is_active: 1, sort_order: 0 }] }),
+    });
+  });
+  await page.route('**/api/kitchen-stations/station-1', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ kitchenStation: { users: [{ id: 'staff-1', name: 'Chef', role: 'staff' }] } }),
+      });
+    } catch {}
+  });
+
+  await page.goto(`${BASE}/settings?tab=kds`);
+  await expect(page.getByRole('heading', { name: 'KDS', exact: true })).toBeVisible();
+  await expect.poll(() => apiPaths.filter((path) => path === '/api/kitchen-stations/station-1').length).toBe(1);
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/?$/);
+  await page.waitForTimeout(1200);
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await expect.poll(() => apiPaths.filter((path) => path === '/api/kitchen-stations/station-1').length).toBe(2);
 });
 
 test('Changing tabs aborts an in-flight page loader', async ({ page }) => {

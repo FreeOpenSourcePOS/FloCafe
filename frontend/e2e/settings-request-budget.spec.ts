@@ -327,7 +327,7 @@ test('Save All preserves order numbering edits during hydration', async ({ page 
         order_number_reset_daily: true,
         invoice_number_prefix: 'INV',
         invoice_number_include_period: true,
-        invoice_number_reset_period: 'daily',
+        invoice_number_reset_period: 'financial_year',
         invoice_financial_year_start_month: 4,
         invoice_financial_year_start_day: 1,
       }),

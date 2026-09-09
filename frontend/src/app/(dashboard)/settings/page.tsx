@@ -1364,9 +1364,7 @@ export default function SettingsPage() {
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const businessFormRef = useRef(form);
-  const savedBusinessRef = useRef(savedBusiness);
   businessFormRef.current = form;
-  savedBusinessRef.current = savedBusiness;
   const [savingBusiness, setSavingBusiness] = useState(false);
   // Server-resolved tax format from country tax pack or static fallback;
   // drives immediate warning feedback below the field.
@@ -1694,6 +1692,7 @@ export default function SettingsPage() {
         if (businessHydrated.current || !active()) return;
       }
 
+      const businessFormAtHydrationStart = { ...businessFormRef.current };
       const printingAtHydrationStart = { ...printingFormRef.current };
       const promise = (async () => {
         const { data: d } = await get('/settings/business');
@@ -1717,9 +1716,14 @@ export default function SettingsPage() {
           numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
           calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
         };
-        const preserveForm = JSON.stringify(businessFormRef.current) !== JSON.stringify(savedBusinessRef.current);
+        const mergedBusiness = mergeHydratedValues(
+          businessFormRef.current,
+          businessFormAtHydrationStart,
+          loaded,
+          hydrationTouchSnapshot,
+        );
         setSavedBusiness(loaded);
-        if (!preserveForm) setForm(loaded);
+        setForm(mergedBusiness);
         setTaxIdFormat(d.tax_id_format || null);
         setTaxIdFormatCountryCode(loaded.countryCode);
         const billDisplay = {
@@ -2801,7 +2805,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('businessName')}</label>
                   {isAdmin ? (
-                    <input type="text" value={form.businessName} onChange={(e) => setForm((p) => ({ ...p, businessName: e.target.value }))}
+                    <input type="text" value={form.businessName} onChange={(e) => { markHydrationTouched('businessName'); setForm((p) => ({ ...p, businessName: e.target.value })); }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                   ) : (
                     <p className="font-medium text-foreground">{form.businessName || currentTenant?.business_name}</p>
@@ -2822,6 +2826,12 @@ export default function SettingsPage() {
                       <select
                         value={form.countryCode}
                         onChange={(e) => {
+                           markHydrationTouched('countryCode');
+                           markHydrationTouched('currency');
+                           markHydrationTouched('timezone');
+                           markHydrationTouched('currencyDisplay');
+                           markHydrationTouched('numberDigits');
+                           markHydrationTouched('calendar');
                            const country = COUNTRIES.find(c => c.code === e.target.value);
                            setForm((p) => {
                              const previousCountry = getCountryByCode(p.countryCode);
@@ -2861,7 +2871,7 @@ export default function SettingsPage() {
                       </select>
                       <TimeZoneSelect
                         value={form.timezone}
-                        onChange={(timezone) => setForm((p) => ({ ...p, timezone }))}
+                        onChange={(timezone) => { markHydrationTouched('timezone'); setForm((p) => ({ ...p, timezone })); }}
                         placeholder={t('selectTimezone')}
                         className="px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                         ariaLabel={t('timezone')}
@@ -2896,18 +2906,23 @@ export default function SettingsPage() {
                   digits={form.numberDigits}
                   calendar={form.calendar}
                   isAdmin={isAdmin}
-                  onChange={(patch) => setForm((p) => ({
-                    ...p,
-                    ...(patch.currencyDisplay !== undefined ? { currencyDisplay: patch.currencyDisplay } : {}),
-                    ...(patch.digits !== undefined ? { numberDigits: patch.digits } : {}),
-                    ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
-                  }))}
+                  onChange={(patch) => {
+                    if (patch.currencyDisplay !== undefined) markHydrationTouched('currencyDisplay');
+                    if (patch.digits !== undefined) markHydrationTouched('numberDigits');
+                    if (patch.calendar !== undefined) markHydrationTouched('calendar');
+                    setForm((p) => ({
+                      ...p,
+                      ...(patch.currencyDisplay !== undefined ? { currencyDisplay: patch.currencyDisplay } : {}),
+                      ...(patch.digits !== undefined ? { numberDigits: patch.digits } : {}),
+                      ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
+                    }));
+                  }}
                 />
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('billingType')}</label>
                   {isAdmin ? (
                     <select value={form.billingType}
-                      onChange={(e) => setForm((p) => ({ ...p, billingType: e.target.value as 'postpaid' | 'prepaid' }))}
+                      onChange={(e) => { markHydrationTouched('billingType'); setForm((p) => ({ ...p, billingType: e.target.value as 'postpaid' | 'prepaid' })); }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
                       <option value="postpaid">{t('billingTypePostpaid')}</option>
                       <option value="prepaid">{t('billingTypePrepaid')}</option>
@@ -2921,7 +2936,7 @@ export default function SettingsPage() {
                   {isAdmin ? (
                     <select
                       value={form.tablesRequired ? 'yes' : 'no'}
-                      onChange={(e) => setForm((p) => ({ ...p, tablesRequired: e.target.value === 'yes' }))}
+                      onChange={(e) => { markHydrationTouched('tablesRequired'); setForm((p) => ({ ...p, tablesRequired: e.target.value === 'yes' })); }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                     >
                       <option value="yes">{t('tablesRequiredYes')}</option>
@@ -2936,7 +2951,7 @@ export default function SettingsPage() {
                   {isAdmin ? (
                     <select
                       value={form.taxRegistered ? 'yes' : 'no'}
-                      onChange={(e) => setForm((p) => ({ ...p, taxRegistered: e.target.value === 'yes' }))}
+                      onChange={(e) => { markHydrationTouched('taxRegistered'); setForm((p) => ({ ...p, taxRegistered: e.target.value === 'yes' })); }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                     >
                       <option value="yes">{t('yes')}</option>
@@ -2951,7 +2966,7 @@ export default function SettingsPage() {
                     <label className="block text-sm text-muted-foreground mb-1">{t('taxIdLabel')}</label>
                     {isAdmin ? (
                       <>
-                        <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
+                        <input type="text" value={form.taxRegistrationNumber} onChange={(e) => { markHydrationTouched('taxRegistrationNumber'); setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value })); }}
                           placeholder={t('taxIdPlaceholder')}
                           className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                         {taxIdWarning ? (
@@ -2969,7 +2984,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('phone')}</label>
                   {isAdmin ? (
-                    <input type="text" value={form.businessPhone} onChange={(e) => setForm((p) => ({ ...p, businessPhone: e.target.value }))}
+                    <input type="text" value={form.businessPhone} onChange={(e) => { markHydrationTouched('businessPhone'); setForm((p) => ({ ...p, businessPhone: e.target.value })); }}
                       placeholder={t('phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1' })}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                   ) : (
@@ -2979,7 +2994,7 @@ export default function SettingsPage() {
                 <div className="md:col-span-2">
                   <label className="block text-sm text-muted-foreground mb-1">{t('address')}</label>
                   {isAdmin ? (
-                    <textarea value={form.businessAddress} onChange={(e) => setForm((p) => ({ ...p, businessAddress: e.target.value }))}
+                    <textarea value={form.businessAddress} onChange={(e) => { markHydrationTouched('businessAddress'); setForm((p) => ({ ...p, businessAddress: e.target.value })); }}
                       rows={2} placeholder={t('addressPlaceholder')}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none" />
                   ) : (
@@ -2989,7 +3004,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('instagramHandle')}</label>
                   {isAdmin ? (
-                    <input type="text" value={form.instagramHandle} onChange={(e) => setForm((p) => ({ ...p, instagramHandle: e.target.value }))}
+                    <input type="text" value={form.instagramHandle} onChange={(e) => { markHydrationTouched('instagramHandle'); setForm((p) => ({ ...p, instagramHandle: e.target.value })); }}
                       placeholder={t('instagramPlaceholder')}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                   ) : (
@@ -4403,7 +4418,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">{t('enablePrinter')}</p>
                     <p className="text-sm text-muted-foreground">{t('enablePrinterHint')}</p>
                   </div>
-                  <Toggle value={printingForm.printerEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, printerEnabled: v }))} />
+                  <Toggle value={printingForm.printerEnabled} onChange={(v) => { markHydrationTouched('printerEnabled'); setPrintingForm((p) => ({ ...p, printerEnabled: v })); }} />
                 </div>
                 <div className="border-t border-border pt-4">
                   <div className="flex items-center justify-between gap-4">
@@ -4411,7 +4426,7 @@ export default function SettingsPage() {
                       <p className="font-medium text-foreground">{t('sendPulseToCashDrawer')}</p>
                       <p className="text-sm text-muted-foreground">{t('sendPulseToCashDrawerHint')}</p>
                     </div>
-                    <Toggle value={!!printingForm.cashDrawerPulseEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }))} />
+                    <Toggle value={!!printingForm.cashDrawerPulseEnabled} onChange={(v) => { markHydrationTouched('cashDrawerPulseEnabled'); setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v })); }} />
                   </div>
                   {printingForm.cashDrawerPulseEnabled && (
                     <div className="mt-3 rounded-lg border border-border overflow-hidden">
@@ -4430,12 +4445,15 @@ export default function SettingsPage() {
                               <input
                                 type="checkbox"
                                 checked={printingForm.cashDrawerPulseMethods.includes(value)}
-                                onChange={(e) => setPrintingForm((p) => ({
-                                  ...p,
-                                  cashDrawerPulseMethods: e.target.checked
-                                    ? [...p.cashDrawerPulseMethods, value]
-                                    : p.cashDrawerPulseMethods.filter((method) => method !== value),
-                                }))}
+                                onChange={(e) => {
+                                  markHydrationTouched('cashDrawerPulseMethods');
+                                  setPrintingForm((p) => ({
+                                    ...p,
+                                    cashDrawerPulseMethods: e.target.checked
+                                      ? [...p.cashDrawerPulseMethods, value]
+                                      : p.cashDrawerPulseMethods.filter((method) => method !== value),
+                                  }));
+                                }}
                                 className="h-4 w-4 rounded border-border text-brand focus:ring-brand"
                               />
                               {label}
@@ -4450,7 +4468,7 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-medium text-foreground mb-2">{t('printMethod')}</p>
                   <select value={printingForm.printMethod}
-                    onChange={(e) => setPrintingForm((p) => ({ ...p, printMethod: e.target.value as 'escpos' | 'browser' }))}
+                    onChange={(e) => { markHydrationTouched('printMethod'); setPrintingForm((p) => ({ ...p, printMethod: e.target.value as 'escpos' | 'browser' })); }}
                     className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand">
                     <option value="escpos">{t('printMethodEscpos')}</option>
                     <option value="browser">{t('printMethodBrowser')}</option>
@@ -4479,7 +4497,7 @@ export default function SettingsPage() {
                   </div>
                   <Toggle
                     value={printingForm.autoPrintKot && kotPrintingEnabledSetting}
-                    onChange={(v) => { if (kotPrintingEnabledSetting) setPrintingForm((p) => ({ ...p, autoPrintKot: v })); }}
+                    onChange={(v) => { if (kotPrintingEnabledSetting) { markHydrationTouched('autoPrintKot'); setPrintingForm((p) => ({ ...p, autoPrintKot: v })); } }}
                   />
                 </div>
                 {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
@@ -4495,7 +4513,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">{t('autoPrintBill')}</p>
                     <p className="text-sm text-muted-foreground">{t('autoPrintBillHint')}</p>
                   </div>
-                  <Toggle value={printingForm.autoPrintBill} onChange={(v) => setPrintingForm((p) => ({ ...p, autoPrintBill: v }))} />
+                  <Toggle value={printingForm.autoPrintBill} onChange={(v) => { markHydrationTouched('autoPrintBill'); setPrintingForm((p) => ({ ...p, autoPrintBill: v })); }} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -4504,21 +4522,21 @@ export default function SettingsPage() {
                       {t('printerUnicodeHint')}
                     </p>
                   </div>
-                  <Toggle value={printingForm.printerUseUnicode} onChange={(v) => setPrintingForm((p) => ({ ...p, printerUseUnicode: v }))} />
+                  <Toggle value={printingForm.printerUseUnicode} onChange={(v) => { markHydrationTouched('printerUseUnicode'); setPrintingForm((p) => ({ ...p, printerUseUnicode: v })); }} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground">{t('printerArabicShaping')}</p>
                     <p className="text-sm text-muted-foreground">{t('printerArabicShapingHint')}</p>
                   </div>
-                  <Toggle value={printingForm.printerArabicShaping} onChange={(v) => setPrintingForm((p) => ({ ...p, printerArabicShaping: v }))} />
+                  <Toggle value={printingForm.printerArabicShaping} onChange={(v) => { markHydrationTouched('printerArabicShaping'); setPrintingForm((p) => ({ ...p, printerArabicShaping: v })); }} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground">{t('trimDecimals')}</p>
                     <p className="text-sm text-muted-foreground">{t('trimDecimalsHint')}</p>
                   </div>
-                  <Toggle value={printingForm.printerTrimDecimals} onChange={(v) => setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }))} />
+                  <Toggle value={printingForm.printerTrimDecimals} onChange={(v) => { markHydrationTouched('printerTrimDecimals'); setPrintingForm((p) => ({ ...p, printerTrimDecimals: v })); }} />
                 </div>
                 <div className="pt-4 border-t border-border">
                   <p className="font-medium text-foreground mb-1">{t('receiptLanguage')}</p>
@@ -4529,7 +4547,7 @@ export default function SettingsPage() {
                       <select
                         id="receipt-primary-language"
                         value={printingForm.receiptPrimaryLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, receiptPrimaryLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('receiptPrimaryLanguage'); setPrintingForm((p) => ({ ...p, receiptPrimaryLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="inherit">{t('sameAsStore')}</option>
@@ -4543,7 +4561,7 @@ export default function SettingsPage() {
                       <select
                         id="receipt-second-language"
                         value={printingForm.receiptSecondLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, receiptSecondLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('receiptSecondLanguage'); setPrintingForm((p) => ({ ...p, receiptSecondLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="none">{t('secondLanguageNone')}</option>
@@ -4557,7 +4575,7 @@ export default function SettingsPage() {
                       <select
                         id="kot-language"
                         value={printingForm.kotLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, kotLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('kotLanguage'); setPrintingForm((p) => ({ ...p, kotLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="inherit">{t('sameAsStore')}</option>
@@ -4571,7 +4589,7 @@ export default function SettingsPage() {
                       <select
                         id="z-report-primary-language"
                         value={printingForm.zReportPrimaryLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, zReportPrimaryLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('zReportPrimaryLanguage'); setPrintingForm((p) => ({ ...p, zReportPrimaryLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="inherit">{t('sameAsStore')}</option>
@@ -4585,7 +4603,7 @@ export default function SettingsPage() {
                       <select
                         id="z-report-second-language"
                         value={printingForm.zReportSecondLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, zReportSecondLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('zReportSecondLanguage'); setPrintingForm((p) => ({ ...p, zReportSecondLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="none">{t('secondLanguageNone')}</option>
@@ -4616,7 +4634,7 @@ export default function SettingsPage() {
                         <span className="text-sm text-foreground">{item.label}</span>
                         <Toggle
                           value={printingForm[item.key]}
-                          onChange={(value) => setPrintingForm((previous) => ({ ...previous, [item.key]: value }))}
+                          onChange={(value) => { markHydrationTouched(item.key); setPrintingForm((previous) => ({ ...previous, [item.key]: value })); }}
                         />
                       </div>
                     ))}
@@ -4647,7 +4665,7 @@ export default function SettingsPage() {
                   <p className="font-medium text-foreground">{t('enableWhatsappShare')}</p>
                   <p className="text-sm text-muted-foreground">{t('enableWhatsappShareHint')}</p>
                 </div>
-                <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }))} />
+                <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => { markHydrationTouched('whatsappShareEnabled'); setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v })); }} />
               </div>
             </div>
           </div>

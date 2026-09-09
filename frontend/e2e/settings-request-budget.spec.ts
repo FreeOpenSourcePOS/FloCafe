@@ -302,11 +302,14 @@ test('Mobile Access caches an unavailable cloud status without navigation retrie
 
 test('Save All does not write cloud defaults after unavailable cloud hydration', async ({ page }) => {
   await startMockedSettingsSession(page);
-  let cloudReads = 0;
   let cloudWrites = 0;
+  let releaseCloudHydration!: () => void;
+  const cloudHydrationHeld = new Promise<void>((resolve) => {
+    releaseCloudHydration = resolve;
+  });
   await page.route('**/api/settings/cloud', async (route) => {
     if (route.request().method() === 'GET') {
-      cloudReads += 1;
+      await cloudHydrationHeld;
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
       return;
     }
@@ -314,16 +317,13 @@ test('Save All does not write cloud defaults after unavailable cloud hydration',
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
   });
 
-  await page.goto(`${BASE}/settings?tab=mobile-access`);
-  await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
-  await expect.poll(() => cloudReads).toBe(1);
-  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await page.goto(`${BASE}/settings?tab=store`);
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
   await page.locator('input[type="text"]').first().fill('Changed Store');
-  await page.getByRole('button', { name: 'Mobile Access', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
-  const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
+  const saveButton = page.getByRole('button', { name: /^(Save Changes|Saving\.\.\.)$/ });
   await saveButton.click();
   await expect(saveButton).toBeDisabled();
+  releaseCloudHydration();
   await expect(saveButton).toBeEnabled();
   expect(cloudWrites).toBe(0);
 });
@@ -724,20 +724,26 @@ test('Save All hydrates settings before writing and skips mobile status requests
 test('Save All stops when required hydration fails', async ({ page }) => {
   await startMockedSettingsSession(page);
   const writes: string[] = [];
+  let releaseBusinessHydration!: () => void;
+  const businessHydrationHeld = new Promise<void>((resolve) => {
+    releaseBusinessHydration = resolve;
+  });
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
     if (request.method() === 'PUT' && path.startsWith('/api/settings/')) writes.push(path);
   });
   await page.route('**/api/settings/business', async (route) => {
+    await businessHydrationHeld;
     await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
   });
 
   await page.goto(`${BASE}/settings?tab=store`);
   await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
   await page.locator('input[type="text"]').first().fill('Should Not Save');
-  const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
+  const saveButton = page.getByRole('button', { name: /^(Save Changes|Saving\.\.\.)$/ });
   await saveButton.click();
   await expect(saveButton).toBeDisabled();
+  releaseBusinessHydration();
   await expect(saveButton).toBeEnabled();
 
   expect(writes).toEqual([]);
@@ -746,20 +752,26 @@ test('Save All stops when required hydration fails', async ({ page }) => {
 test('Save All stops when printing hydration fails', async ({ page }) => {
   await startMockedSettingsSession(page);
   const writes: string[] = [];
+  let releasePrintingHydration!: () => void;
+  const printingHydrationHeld = new Promise<void>((resolve) => {
+    releasePrintingHydration = resolve;
+  });
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
     if (request.method() === 'PUT' && path.startsWith('/api/settings/')) writes.push(path);
   });
   await page.route('**/api/settings/z_report_language_policy', async (route) => {
+    await printingHydrationHeld;
     await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
   });
 
   await page.goto(`${BASE}/settings?tab=store`);
   await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
   await page.locator('input[type="text"]').first().fill('Should Not Save');
-  const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
+  const saveButton = page.getByRole('button', { name: /^(Save Changes|Saving\.\.\.)$/ });
   await saveButton.click();
   await expect(saveButton).toBeDisabled();
+  releasePrintingHydration();
   await expect(saveButton).toBeEnabled();
 
   expect(writes).toEqual([]);

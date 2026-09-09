@@ -2361,15 +2361,20 @@ export default function SettingsPage() {
         });
         if (activeTabRef.current === 'mobile-access') {
           const controller = new AbortController();
+          mobileAccessRequestController.current = controller;
           try {
             await startSettingsTabLoad('mobile-access', controller);
           } finally {
+            if (mobileAccessRequestController.current === controller) {
+              mobileAccessRequestController.current = null;
+            }
             controller.abort();
           }
         }
         toast.success(t('cloudRegistrationSuccess'));
       }
-    } catch {
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
       toast.error(t('cloudRegistrationFailed'));
     } finally {
       setRegisteringCloud(false);

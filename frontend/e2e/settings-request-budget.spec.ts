@@ -275,6 +275,48 @@ test('Cloud registration refreshes Mobile Access pairing data', async ({ page })
   expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
 });
 
+test('Cloud registration refresh does not continue after leaving Mobile Access', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let registered = false;
+  let pairingStarted = false;
+  await page.route('**/api/settings/cloud', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ cloud_registration_status: registered ? 'registered' : 'unregistered' }),
+    });
+  });
+  await page.route('**/api/settings/cloud/register', async (route) => {
+    registered = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ cloud_registration_status: 'registered' }),
+    });
+  });
+  await page.route('**/api/mobile/pairing-code', async (route) => {
+    pairingStarted = true;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ pairing_code: 'STALECODE', expires_at: null, qr_data_url: null }),
+      });
+    } catch {}
+  });
+  const apiPaths = collectApiPaths(page);
+  await page.goto(`${BASE}/settings?tab=mobile-access`);
+  await page.getByRole('button', { name: 'Initialize Cloud Services', exact: true }).click();
+  await page.getByRole('button', { name: 'Accept & Initialize', exact: true }).click();
+  await expect.poll(() => pairingStarted).toBe(true);
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await page.waitForTimeout(1200);
+
+  expect(apiPaths.filter((path) => path === '/api/mobile/pairing-code')).toHaveLength(1);
+  expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(0);
+});
+
 test('Failed KDS and Data hydration retries when revisiting the tab', async ({ page }) => {
   await startMockedSettingsSession(page);
   let kdsInfoAttempts = 0;

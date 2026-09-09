@@ -56,16 +56,50 @@ async function clickThemeRadio(label: 'Light' | 'Dark' | 'System'): Promise<void
   await expect.poll(() => radio.isDisabled(), { timeout: 10_000 }).toBe(false);
 }
 
-async function expectNativeSelectColorScheme(expected: 'light' | 'dark'): Promise<void> {
-  await harness.page.goto(`http://localhost:${harness.ports.main}/orders`, {
+async function expectNativeSelectTheme(expected: 'light' | 'dark'): Promise<void> {
+  await harness.page.goto(`http://localhost:${harness.ports.main}/products`, {
     waitUntil: 'domcontentloaded',
   });
-  const select = harness.page.locator('select').first();
-  await select.waitFor({ state: 'visible', timeout: 10_000 });
-  await expect.poll(
-    () => select.evaluate((element) => getComputedStyle(element).colorScheme),
-    { timeout: 10_000 },
-  ).toBe(expected);
+  await harness.page.getByRole('button', { name: 'Add Product', exact: true }).click();
+  await harness.page.getByRole('heading', { name: 'Add Product', exact: true }).waitFor({
+    state: 'visible',
+    timeout: 10_000,
+  });
+  const selects = harness.page.locator('form select');
+  await selects.first().waitFor({ state: 'visible', timeout: 10_000 });
+  const styles = await selects.evaluateAll((elements) => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--card-foreground)';
+    probe.style.backgroundColor = 'var(--card)';
+    document.body.append(probe);
+    const theme = getComputedStyle(probe);
+    const controls = elements.map((element) => {
+      const selectStyle = getComputedStyle(element);
+      const option = element.querySelector('option');
+      const optionStyle = option ? getComputedStyle(option) : null;
+      return {
+        colorScheme: selectStyle.colorScheme,
+        color: selectStyle.color,
+        backgroundColor: selectStyle.backgroundColor,
+        optionColor: optionStyle?.color ?? null,
+        optionBackgroundColor: optionStyle?.backgroundColor ?? null,
+      };
+    });
+    const expectedColors = {
+      foreground: theme.color,
+      background: theme.backgroundColor,
+    };
+    probe.remove();
+    return { controls, expectedColors };
+  });
+  expect(styles.controls.length).toBeGreaterThan(0);
+  for (const style of styles.controls) {
+    expect(style.colorScheme).toBe(expected);
+    expect(style.color).toBe(styles.expectedColors.foreground);
+    expect(style.backgroundColor).toBe(styles.expectedColors.background);
+    expect(style.optionColor).toBe(styles.expectedColors.foreground);
+    expect(style.optionBackgroundColor).toBe(styles.expectedColors.background);
+  }
   await navigateToAppearance();
 }
 
@@ -97,7 +131,7 @@ test('real Electron flips the renderer palette when the owner toggles Dark in Se
   expect(runtime.htmlHasDark).toBe(true);
   expect(runtime.mirror).toBe('dark');
 
-  await expectNativeSelectColorScheme('dark');
+  await expectNativeSelectTheme('dark');
 
   if (process.env.FLO_E2E_EVIDENCE_DIR) {
     await harness.page.screenshot({
@@ -106,7 +140,7 @@ test('real Electron flips the renderer palette when the owner toggles Dark in Se
   }
 
   await clickThemeRadio('Light');
-  await expectNativeSelectColorScheme('light');
+  await expectNativeSelectTheme('light');
 });
 
 test('real System mode follows nativeTheme.themeSource through the renderer matchMedia listener', async () => {
@@ -124,7 +158,7 @@ test('real System mode follows nativeTheme.themeSource through the renderer matc
     undefined,
     { timeout: 10_000 },
   );
-  await expectNativeSelectColorScheme('dark');
+  await expectNativeSelectTheme('dark');
 
   await harness.app.evaluate((electron) => {
     electron.nativeTheme.themeSource = 'light';
@@ -134,7 +168,7 @@ test('real System mode follows nativeTheme.themeSource through the renderer matc
     undefined,
     { timeout: 10_000 },
   );
-  await expectNativeSelectColorScheme('light');
+  await expectNativeSelectTheme('light');
 
   await harness.app.evaluate((electron) => {
     electron.nativeTheme.themeSource = 'system';

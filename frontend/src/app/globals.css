@@ -371,6 +371,13 @@ div:hover > .flo-toast-drain,
   }
   select {
     color-scheme: light;
+    background-color: var(--card);
+    color: var(--card-foreground);
+  }
+  /* Explicit option colors keep Chromium's Windows popup readable. */
+  select option {
+    background-color: var(--card);
+    color: var(--card-foreground);
   }
   .dark select {
     color-scheme: dark;

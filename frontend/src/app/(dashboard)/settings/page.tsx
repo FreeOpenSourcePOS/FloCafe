@@ -302,7 +302,6 @@ export default function SettingsPage() {
   const [globalCashbackPercent, setGlobalCashbackPercent] = useState('0');
   const [savedGlobalCashbackPercent, setSavedGlobalCashbackPercent] = useState('0');
   const loyaltyFormRef = useRef({ loyaltyEnabled, globalCashbackPercent });
-  loyaltyFormRef.current = { loyaltyEnabled, globalCashbackPercent };
   const [globalRateCandidates, setGlobalRateCandidates] = useState(0);
   const [applyingGlobalRate, setApplyingGlobalRate] = useState(false);
   const [savingLoyalty, setSavingLoyalty] = useState(false);
@@ -319,7 +318,6 @@ export default function SettingsPage() {
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [savedDiscountRequiresApproval, setSavedDiscountRequiresApproval] = useState(false);
   const discountFormRef = useRef({ discountMaxPct, discountMaxAmount, discountMode, discountRequiresApproval });
-  discountFormRef.current = { discountMaxPct, discountMaxAmount, discountMode, discountRequiresApproval };
   const [savingDiscount, setSavingDiscount] = useState(false);
 
   // Table info dialog
@@ -332,7 +330,6 @@ export default function SettingsPage() {
   // Deep-link query param state for active tab and database actions.
   const [activeTab, setActiveTab] = useState(requestedTab);
   const activeTabRef = useRef(activeTab);
-  activeTabRef.current = activeTab;
   const hydrationTouchVersions = useRef(new Map<string, number>());
   const markHydrationTouched = (field: string) => {
     hydrationTouchVersions.current.set(field, (hydrationTouchVersions.current.get(field) || 0) + 1);
@@ -856,7 +853,7 @@ export default function SettingsPage() {
   const [savingPrinter, setSavingPrinter] = useState(false);
   const [testingPrinterId, setTestingPrinterId] = useState<string | null>(null);
   const [detectedPrinters, setDetectedPrinters] = useState<DetectedPrinter[]>([]);
-  // Starts true as mount effect detects unconditionally; fetchDetectedPrinters
+  // Starts true until the Printers tab performs its first load; fetchDetectedPrinters
   // sets it explicitly for manual refresh.
   const [detectingPrinters, setDetectingPrinters] = useState(true);
   const [addingDetectedName, setAddingDetectedName] = useState<string | null>(null);
@@ -1213,7 +1210,6 @@ export default function SettingsPage() {
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
   const printingFormRef = useRef(printingForm);
-  printingFormRef.current = printingForm;
   const mergeHydratedPrinting = (patch: Partial<PrintingForm>, initial: PrintingForm, touchedAtHydrationStart = new Map<string, number>()) => {
     setPrintingForm((previous) => {
       const applicablePatch = Object.fromEntries(
@@ -1322,7 +1318,6 @@ export default function SettingsPage() {
   const [billForm, setBillForm] = useState<BillTemplateForm>(initBillTemplate);
   const [savedBillForm, setSavedBillForm] = useState<BillTemplateForm>(initBillTemplate);
   const billFormRef = useRef(billForm);
-  billFormRef.current = billForm;
   const [billTemplateCards, setBillTemplateCards] = useState<TemplateCard[]>(TEMPLATE_CARDS);
   const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
@@ -1364,7 +1359,6 @@ export default function SettingsPage() {
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const businessFormRef = useRef(form);
-  businessFormRef.current = form;
   const [savingBusiness, setSavingBusiness] = useState(false);
   // Server-resolved tax format from country tax pack or static fallback;
   // drives immediate warning feedback below the field.
@@ -1394,7 +1388,6 @@ export default function SettingsPage() {
   });
   const [savedCloudSettings, setSavedCloudSettings] = useState(cloudSettings);
   const cloudSettingsRef = useRef(cloudSettings);
-  cloudSettingsRef.current = cloudSettings;
   const [cloudStatus, setCloudStatus] = useState({
     cloud_registration_status: 'unregistered',
     cloud_services_disabled_by_user: false,
@@ -1522,8 +1515,31 @@ export default function SettingsPage() {
   });
   const [orderNumberForm, setOrderNumberForm] = useState<OrderNumberForm>(savedOrderNumberForm);
   const orderNumberFormRef = useRef(orderNumberForm);
-  orderNumberFormRef.current = orderNumberForm;
   const [savingOrderNumbering, setSavingOrderNumbering] = useState(false);
+
+  useEffect(() => {
+    loyaltyFormRef.current = { loyaltyEnabled, globalCashbackPercent };
+    discountFormRef.current = { discountMaxPct, discountMaxAmount, discountMode, discountRequiresApproval };
+    activeTabRef.current = activeTab;
+    printingFormRef.current = printingForm;
+    billFormRef.current = billForm;
+    businessFormRef.current = form;
+    cloudSettingsRef.current = cloudSettings;
+    orderNumberFormRef.current = orderNumberForm;
+  }, [
+    loyaltyEnabled,
+    globalCashbackPercent,
+    discountMaxPct,
+    discountMaxAmount,
+    discountMode,
+    discountRequiresApproval,
+    activeTab,
+    printingForm,
+    billForm,
+    form,
+    cloudSettings,
+    orderNumberForm,
+  ]);
 
   const mergeHydratedValues = <T extends object>(previous: T, initial: T, loaded: T, touchedAtHydrationStart: Map<string, number>): T => {
     const previousValues = previous as Record<string, unknown>;

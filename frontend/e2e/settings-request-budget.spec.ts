@@ -365,6 +365,7 @@ test('Save All preserves order numbering edits during hydration', async ({ page 
   const orderPrefix = page.locator('input[placeholder="ORD"]');
   await orderPrefix.fill('EDIT');
   await orderPrefix.fill('ORD');
+  await page.locator('input[type="text"]').first().fill('Changed Store');
   await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
   await expect.poll(() => savedOrder?.order_number_prefix, { timeout: 10000 }).toBe('ORD');
@@ -386,7 +387,7 @@ test('Save All preserves printing edits during business hydration', async ({ pag
 
   await page.goto(`${BASE}/settings?tab=receipts-printers`);
   await expect(page.getByRole('heading', { name: 'Printers', exact: true })).toBeVisible();
-  await page.getByText('Trim decimals', { exact: true }).locator('..').getByRole('button').click();
+  await page.locator('p').filter({ hasText: 'Trim decimals' }).locator('xpath=../..').getByRole('button').click();
   await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
   await expect.poll(() => savedPrinting?.printer_trim_decimals, { timeout: 10000 }).toBe(true);
@@ -487,6 +488,7 @@ test('Save All stops when printing hydration fails', async ({ page }) => {
 
   await page.goto(`${BASE}/settings?tab=store`);
   await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  await page.locator('input[type="text"]').first().fill('Should Not Save');
   await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
   await page.waitForTimeout(500);
 
@@ -498,6 +500,6 @@ test('Health-check deep link loads from the existing store URL', async ({ page }
   const apiPaths = collectApiPaths(page);
 
   await page.goto(`${BASE}/settings?tab=store&action=health-check`);
-  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog')).toBeVisible();
   await expect.poll(() => apiPaths.filter((path) => path === '/api/db-tools/health-check').length).toBe(1);
 });

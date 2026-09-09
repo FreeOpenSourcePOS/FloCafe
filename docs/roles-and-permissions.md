@@ -58,6 +58,7 @@ A check means the role is allowed to use the capability. A dash means it is not 
 | Support | Contact support and view diagnostics | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Expenses | Add or delete expense categories | ✓ | ✓ | — | — | — |
 | Expenses | Record expenses and due payments | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Expenses | Void mistyped entries, payments, and floats | ✓ | ✓ | — | — | — |
 | Expenses | Log opening floats and cash counts | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ## Important scope notes
@@ -68,7 +69,7 @@ A check means the role is allowed to use the capability. A dash means it is not 
 - **Server App:** The standalone Server App is intentionally restricted to `server`, `manager`, and `owner` roles. It is separate from the dashboard navigation.
 - **Staff management:** Managers can manage operational staff, but cannot modify or deactivate owner/manager accounts. Only owners can change roles for an existing account, and the last active owner cannot be demoted.
 - **Conditional surfaces:** Business type, feature settings (such as KDS or WhatsApp), and account state can hide or disable a surface without changing the fixed role boundary.
-- **Expense records are append-only:** Any staff member can record an expense or a due payment against an existing category, but no role — including owner — can edit or delete an individual expense/payment entry once recorded; it is a permanent audit trail. Only the expense *category* itself can be deleted (owner/manager only, and only once its due balance is settled).
+- **Expense records are append-only:** Any staff member can record an expense or a due payment against an existing category, but no role — including owner — can edit an individual expense/payment entry once recorded; it is a permanent audit trail. Owners and managers can void a mistyped entry, payment, or opening float, which drops it from every due and total while keeping the row itself. Only the expense *category* itself can be deleted (owner/manager only, and only once its due balance is settled).
 - **Cash Counter's expected-cash figure cannot be overridden:** the daily/monthly expected cash total is always calculated (opening float + cash collected from orders − cash refunds − cash paid out as expenses, same drawer rule as the Z day-close); no role can edit or replace it. Staff can log an opening float (once per day) and any number of physical cash counts, both append-only, purely as reference facts compared against the calculated figure — never a substitute for it.
 
 ## Research-backed presentation choice

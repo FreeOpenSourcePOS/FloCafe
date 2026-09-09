@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
-import { getDatabase, now, generateShortId, utcTodayDate } from '../db';
+import { getDatabase, now, generateShortId } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import {
@@ -8,6 +8,7 @@ import {
   normalizeBusinessDate,
   normalizeNote,
   roundMoney,
+  storeToday,
 } from './finance-shared';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -69,9 +70,9 @@ function listCategories(includeInactive: boolean) {
       COALESCE(payments.total, 0) AS total_payments,
       COALESCE(entries.total, 0) - COALESCE(payments.total, 0) AS due
     FROM expense_categories ec
-    LEFT JOIN (SELECT category_id, SUM(amount) AS total FROM expense_entries GROUP BY category_id) entries
+    LEFT JOIN (SELECT category_id, SUM(amount) AS total FROM expense_entries WHERE voided_at IS NULL GROUP BY category_id) entries
       ON entries.category_id = ec.id
-    LEFT JOIN (SELECT category_id, SUM(amount) AS total FROM expense_due_payments GROUP BY category_id) payments
+    LEFT JOIN (SELECT category_id, SUM(amount) AS total FROM expense_due_payments WHERE voided_at IS NULL GROUP BY category_id) payments
       ON payments.category_id = ec.id
     ${includeInactive ? '' : 'WHERE ec.deleted_at IS NULL AND ec.is_active = 1'}
     ORDER BY ec.name COLLATE NOCASE
@@ -84,8 +85,8 @@ function listCategories(includeInactive: boolean) {
 }
 
 function categoryDue(db: ReturnType<typeof getDatabase>, categoryId: string): number {
-  const entries = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM expense_entries WHERE category_id = ?').get(categoryId) as { total: number };
-  const payments = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM expense_due_payments WHERE category_id = ?').get(categoryId) as { total: number };
+  const entries = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM expense_entries WHERE category_id = ? AND voided_at IS NULL').get(categoryId) as { total: number };
+  const payments = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM expense_due_payments WHERE category_id = ? AND voided_at IS NULL').get(categoryId) as { total: number };
   return roundMoney(entries.total - payments.total);
 }
 
@@ -102,7 +103,7 @@ function listLedger(table: 'expense_entries' | 'expense_due_payments', query: Re
     FROM ${table} t
     JOIN expense_categories ec ON ec.id = t.category_id
     LEFT JOIN users u ON u.id = t.created_by
-    WHERE 1 = 1
+    WHERE 1 = 1 AND t.voided_at IS NULL
   `;
   const params: any[] = [];
   if (typeof query.category_id === 'string' && query.category_id) {
@@ -196,6 +197,30 @@ router.get('/payments', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res
   res.json({ payments: listLedger('expense_due_payments', req.query) });
 });
 
+// Typo correction without rewriting history: stamping voided_at drops the row
+// from every due, total, and ledger read below, while the row itself stays as
+// the audit trail. Staff re-enter the correct figure as a new row. Counts are
+// excluded on purpose: a wrong count is already superseded by appending a new
+// one, since variance always compares the latest count.
+function voidLedgerRow(table: 'expense_entries' | 'expense_due_payments', id: string) {
+  const db = getDatabase();
+  const result = db.prepare(`UPDATE ${table} SET voided_at = ? WHERE id = ? AND voided_at IS NULL`).run(now(), id);
+  if (result.changes === 0) return null;
+  return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
+}
+
+router.post('/entries/:id/void', expenseWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  const entry = voidLedgerRow('expense_entries', String(req.params.id));
+  if (!entry) return res.status(404).json({ error: 'Expense entry not found or already voided' });
+  res.json({ entry });
+});
+
+router.post('/payments/:id/void', expenseWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  const payment = voidLedgerRow('expense_due_payments', String(req.params.id));
+  if (!payment) return res.status(404).json({ error: 'Due payment not found or already voided' });
+  res.json({ payment });
+});
+
 router.post('/payments', expenseWriteRateLimit, requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -225,17 +250,17 @@ router.post('/payments', expenseWriteRateLimit, requireRole(...ROLE_ACCESS.allSt
 
 router.get('/summary', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
-    const month = typeof req.query.month === 'string' && req.query.month ? req.query.month : utcTodayDate().slice(0, 7);
+    const month = typeof req.query.month === 'string' && req.query.month ? req.query.month : storeToday().slice(0, 7);
     const [from, to] = monthBounds(month);
     const db = getDatabase();
 
     const expenseTotals = new Map((db.prepare(
-      'SELECT category_id, COALESCE(SUM(amount), 0) AS total FROM expense_entries WHERE expense_date >= ? AND expense_date <= ? GROUP BY category_id'
+      'SELECT category_id, COALESCE(SUM(amount), 0) AS total FROM expense_entries WHERE voided_at IS NULL AND expense_date >= ? AND expense_date <= ? GROUP BY category_id'
     ).all(from, to) as { category_id: string; total: number }[]).map((row) => [row.category_id, row.total]));
 
     const paymentTotals = new Map<string, { total: number; byMethod: Record<PaymentMethod, number>; custom: Record<string, number> }>();
     for (const row of db.prepare(
-      'SELECT category_id, method, COALESCE(SUM(amount), 0) AS total FROM expense_due_payments WHERE payment_date >= ? AND payment_date <= ? GROUP BY category_id, method'
+      'SELECT category_id, method, COALESCE(SUM(amount), 0) AS total FROM expense_due_payments WHERE voided_at IS NULL AND payment_date >= ? AND payment_date <= ? GROUP BY category_id, method'
     ).all(from, to) as { category_id: string; method: string | null; total: number }[]) {
       let bucket = paymentTotals.get(row.category_id);
       if (!bucket) {
@@ -256,7 +281,7 @@ router.get('/summary', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res:
         category_id: category.id,
         category_name: category.name,
         due: category.due,
-        total_expenses: expenseTotals.get(category.id) ?? 0,
+        total_expenses: roundMoney(expenseTotals.get(category.id) ?? 0),
         total_payments: payments.total,
         payments_by_method: payments.byMethod,
         custom_payments: payments.custom,
@@ -265,11 +290,11 @@ router.get('/summary', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res:
 
     const overallCustom: Record<string, number> = {};
     const overall = categories.reduce((acc, category) => {
-      acc.total_expenses += category.total_expenses;
-      acc.total_payments += category.total_payments;
-      acc.payments_by_method.cash += category.payments_by_method.cash;
-      acc.payments_by_method.card += category.payments_by_method.card;
-      acc.payments_by_method.upi += category.payments_by_method.upi;
+      acc.total_expenses = roundMoney(acc.total_expenses + category.total_expenses);
+      acc.total_payments = roundMoney(acc.total_payments + category.total_payments);
+      acc.payments_by_method.cash = roundMoney(acc.payments_by_method.cash + category.payments_by_method.cash);
+      acc.payments_by_method.card = roundMoney(acc.payments_by_method.card + category.payments_by_method.card);
+      acc.payments_by_method.upi = roundMoney(acc.payments_by_method.upi + category.payments_by_method.upi);
       for (const [method, total] of Object.entries(category.custom_payments)) {
         overallCustom[method] = roundMoney((overallCustom[method] || 0) + total);
       }

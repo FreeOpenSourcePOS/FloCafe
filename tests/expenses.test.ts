@@ -33,6 +33,13 @@ function seedUserWithRole(db: any, role: string): { userId: string; authHeader: 
 async function main() {
   const db = initTestDb();
   const { authHeader: ownerAuth } = seedOwnerUser(db);
+  // Store-timezone validation compares against the store day: pin it to UTC
+  // so UTC-based expectations stay deterministic on any host clock
+  // (same convention as the cash-counter and Z day-close tests).
+  db.prepare("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'").run();
+  if ((db.prepare("SELECT COUNT(*) as c FROM settings WHERE key = 'timezone'").get() as any).c === 0) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('timezone', 'UTC')").run();
+  }
   const mgr = seedManagerUser(db);
   const cashier = seedUserWithRole(db, 'cashier');
   const server = seedUserWithRole(db, 'server');
@@ -237,9 +244,25 @@ async function main() {
     assertEqual(inactivePay.status, 400, 'a payment with a deactivated custom method is rejected');
     const customSummary = await api(baseUrl, `/api/expenses/summary?month=${utcTodayDate().slice(0, 7)}`, { headers: ownerAuth });
     assertEqual(customSummary.status, 200, 'summary loads after custom-method payments');
-    const vegRow = customSummary.data.categories.find((c: any) => c.category_id === vegId);
-    assertEqual(vegRow.custom_payments.Cheque, 45, 'the monthly report splits custom methods out of the built-in trio');
+    const vegCustomRow = customSummary.data.categories.find((c: any) => c.category_id === vegId);
+    assertEqual(vegCustomRow.custom_payments.Cheque, 45, 'the monthly report splits custom methods out of the built-in trio');
     assertEqual(customSummary.data.overall.custom_payments.Cheque, 45, 'overall custom totals accumulate across categories');
+
+    // ── Void: typo correction without rewriting history ────────────────────
+    const typoEntry = await api(baseUrl, '/api/expenses/entries', { method: 'POST', body: { category_id: vegId, amount: 500 }, headers: ownerAuth });
+    const typoId = typoEntry.data.entry.id;
+    const voidForbidden = await api(baseUrl, `/api/expenses/entries/${typoId}/void`, { method: 'POST', headers: cashier.authHeader });
+    assertEqual(voidForbidden.status, 403, 'cashier cannot void an entry');
+    const voided = await api(baseUrl, `/api/expenses/entries/${typoId}/void`, { method: 'POST', headers: ownerAuth });
+    assertEqual(voided.status, 200, 'owner voids a mistyped entry');
+    const afterVoid = await api(baseUrl, '/api/expenses/categories', { headers: ownerAuth });
+    assertEqual(afterVoid.data.categories.find((c: any) => c.id === vegId).due, -1045, 'voiding removes the entry from the due');
+    const doubleVoid = await api(baseUrl, `/api/expenses/entries/${typoId}/void`, { method: 'POST', headers: ownerAuth });
+    assertEqual(doubleVoid.status, 404, 'voiding twice is rejected');
+    const missingVoid = await api(baseUrl, '/api/expenses/entries/999999/void', { method: 'POST', headers: ownerAuth });
+    assertEqual(missingVoid.status, 404, 'voiding an unknown entry is rejected');
+    const ledgerAfterVoid = await api(baseUrl, `/api/expenses/entries?category_id=${vegId}&limit=100`, { headers: ownerAuth });
+    assert(!ledgerAfterVoid.data.entries.some((e: any) => e.id === typoId), 'voided entries disappear from ledger reads');
   } finally {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     closeDatabase();

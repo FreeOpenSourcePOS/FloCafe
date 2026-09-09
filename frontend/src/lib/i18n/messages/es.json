@@ -180,6 +180,9 @@
     "total": "Total",
     "unknown": "Desconocido",
     "update": "Actualizar",
+    "confirmVoid": "¿Anular este registro? Su importe dejará de contar.",
+    "void": "Anular",
+    "voided": "Anulado",
     "windowControls": "Controles de ventana",
     "yes": "Sí",
     "back": "Atrás"

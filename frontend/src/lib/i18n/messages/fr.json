@@ -180,6 +180,9 @@
     "total": "Total",
     "unknown": "Inconnu",
     "update": "Mettre à jour",
+    "confirmVoid": "Annuler cette écriture ? Son montant ne sera plus compté.",
+    "void": "Annuler",
+    "voided": "Annulé",
     "windowControls": "Commandes de la fenêtre",
     "yes": "Oui",
     "back": "Retour"

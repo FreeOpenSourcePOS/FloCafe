@@ -180,6 +180,9 @@
     "total": "Gesamt",
     "unknown": "Unbekannt",
     "update": "Aktualisieren",
+    "confirmVoid": "Diesen Eintrag stornieren? Der Betrag zählt dann nicht mehr.",
+    "void": "Stornieren",
+    "voided": "Storniert",
     "windowControls": "Fenstersteuerung",
     "yes": "Ja",
     "back": "Zurück"

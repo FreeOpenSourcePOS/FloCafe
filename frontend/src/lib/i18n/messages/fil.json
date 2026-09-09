@@ -180,6 +180,9 @@
     "total": "Kabuuan",
     "unknown": "Hindi alam",
     "update": "I-update",
+    "confirmVoid": "Void this entry? Its amount will no longer count.",
+    "void": "Void",
+    "voided": "Voided",
     "windowControls": "Mga Kontrol sa Window",
     "yes": "Oo",
     "back": "Bumalik"

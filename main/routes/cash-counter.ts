@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
-import { dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, now, parseDbTimestamp, utcTodayDate } from '../db';
+import { dayBoundsInTimezone, getDatabase, localDateInTimezone, now, parseDbTimestamp } from '../db';
 import { getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency } from '../services/refund';
 import { requireRole } from '../middleware/security';
@@ -10,6 +10,8 @@ import {
   normalizeBusinessDate,
   normalizeNote,
   roundMoney,
+  storeToday,
+  tenantTimezone,
 } from './finance-shared';
 
 function normalizeNonNegativeAmount(value: unknown, field: string): number {
@@ -22,11 +24,6 @@ function normalizeNonNegativeAmount(value: unknown, field: string): number {
 
 const router = Router();
 const cashCounterWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
-
-// Store timezone for day boundaries (reports and the Z day-close read the same setting).
-function tenantTimezone(): string {
-  return getSettingValue('timezone') || 'Asia/Kolkata';
-}
 
 /** Every YYYY-MM-DD date from `from` to `to`, inclusive. */
 function datesInRange(from: string, to: string): string[] {
@@ -106,7 +103,7 @@ function listCashExpensePayments(db: ReturnType<typeof getDatabase>, date: strin
     FROM expense_due_payments t
     JOIN expense_categories ec ON ec.id = t.category_id
     LEFT JOIN users u ON u.id = t.created_by
-    WHERE t.method = 'cash' AND t.payment_date = ?
+    WHERE t.method = 'cash' AND t.payment_date = ? AND t.voided_at IS NULL
     ORDER BY t.created_at DESC, t.id DESC
   `).all(date);
 }
@@ -115,7 +112,7 @@ function cashExpenseTotalsByDate(db: ReturnType<typeof getDatabase>, from: strin
   const rows = db.prepare(`
     SELECT payment_date AS date, COALESCE(SUM(amount), 0) AS total
     FROM expense_due_payments
-    WHERE method = 'cash' AND payment_date >= ? AND payment_date <= ?
+    WHERE method = 'cash' AND payment_date >= ? AND payment_date <= ? AND voided_at IS NULL
     GROUP BY payment_date
   `).all(from, to) as { date: string; total: number }[];
   return new Map(rows.map((row) => [row.date, row.total]));
@@ -155,7 +152,7 @@ router.get('/daily', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: R
       SELECT f.*, u.name AS created_by_name
       FROM cash_opening_floats f
       LEFT JOIN users u ON u.id = f.created_by
-      WHERE f.date = ?
+      WHERE f.date = ? AND f.voided_at IS NULL
     `).get(date) as any;
 
     const orderLines = cashOrderPaymentLines(db, start, end);
@@ -215,6 +212,19 @@ router.post('/opening-float', cashCounterWriteRateLimit, requireRole(...ROLE_ACC
   }
 });
 
+router.post('/opening-float/:id/void', cashCounterWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  // Same void rule as expense rows: the voided float stops feeding expected
+  // cash while staying in the table, and the live-rows-only unique index
+  // lets staff set the corrected float for the same date right away.
+  const db = getDatabase();
+  const result = db.prepare('UPDATE cash_opening_floats SET voided_at = ? WHERE id = ? AND voided_at IS NULL').run(now(), String(req.params.id));
+  if (result.changes === 0) return res.status(404).json({ error: 'Opening float not found or already voided' });
+  const opening_float = db.prepare(`
+    SELECT f.*, u.name AS created_by_name FROM cash_opening_floats f LEFT JOIN users u ON u.id = f.created_by WHERE f.id = ?
+  `).get(String(req.params.id));
+  res.json({ opening_float });
+});
+
 router.post('/count', cashCounterWriteRateLimit, requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
     const date = normalizeBusinessDate(req.body?.date);
@@ -236,7 +246,7 @@ router.post('/count', cashCounterWriteRateLimit, requireRole(...ROLE_ACCESS.allS
 
 router.get('/monthly', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
-    const month = typeof req.query.month === 'string' && req.query.month ? req.query.month : utcTodayDate().slice(0, 7);
+    const month = typeof req.query.month === 'string' && req.query.month ? req.query.month : storeToday().slice(0, 7);
     const [from, to] = monthBounds(month);
     const db = getDatabase();
     const timezone = tenantTimezone();

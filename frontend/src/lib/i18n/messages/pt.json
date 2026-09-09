@@ -180,6 +180,9 @@
     "total": "Total",
     "unknown": "Desconhecido",
     "update": "Atualizar",
+    "confirmVoid": "Anular este lançamento? O valor deixará de contar.",
+    "void": "Anular",
+    "voided": "Anulado",
     "windowControls": "Controles da janela",
     "yes": "Sim",
     "back": "Voltar"

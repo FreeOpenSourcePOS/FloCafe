@@ -209,6 +209,21 @@ async function main() {
     const dailyAfterCheque = await api(baseUrl, `/api/cash-counter/daily?date=${today}`, { headers: ownerAuth });
     assertEqual(dailyAfterCheque.data.cash_expenses.total, 30, 'a non-cash expense payment leaves cash-expenses untouched');
 
+    // ── Voiding the float restores a clean slate for the same date ─────────
+    const floatId = dailyAfterCheque.data.opening_float.id;
+    const voidFloatForbidden = await api(baseUrl, `/api/cash-counter/opening-float/${floatId}/void`, { method: 'POST', headers: cashier.authHeader });
+    assertEqual(voidFloatForbidden.status, 403, 'cashier cannot void the opening float');
+    const voidFloat = await api(baseUrl, `/api/cash-counter/opening-float/${floatId}/void`, { method: 'POST', headers: ownerAuth });
+    assertEqual(voidFloat.status, 200, 'owner voids a mistyped opening float');
+    const dailyAfterVoid = await api(baseUrl, `/api/cash-counter/daily?date=${today}`, { headers: ownerAuth });
+    assertEqual(dailyAfterVoid.data.opening_float, null, 'a voided float no longer feeds the daily view');
+    const doubleVoidFloat = await api(baseUrl, `/api/cash-counter/opening-float/${floatId}/void`, { method: 'POST', headers: ownerAuth });
+    assertEqual(doubleVoidFloat.status, 404, 'voiding the same float twice is rejected');
+    const refloat = await api(baseUrl, '/api/cash-counter/opening-float', { method: 'POST', body: { date: today, amount: 25 }, headers: ownerAuth });
+    assertEqual(refloat.status, 201, 'a corrected float can be set for the same date after voiding');
+    const dailyAfterRefloat = await api(baseUrl, `/api/cash-counter/daily?date=${today}`, { headers: ownerAuth });
+    assertEqual(dailyAfterRefloat.data.opening_float.amount, 25, 'the corrected float feeds the daily view');
+
     // ── Store-timezone alignment uses fixed timestamps, host-clock free ─────
     db.prepare("UPDATE settings SET value = 'Asia/Kolkata' WHERE key = 'timezone'").run();
     const tzOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 1, items: [{ product_id: 'cc-cash-item', quantity: 1 }] }, headers: ownerAuth });

@@ -379,7 +379,10 @@ const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'cashCounter.cashRefunds', // pending translation (English fallback)
   'common.appTitle', // brand
   'common.brandName', // brand
+  'common.confirmVoid', // pending translation (English fallback)
   'common.logoAlt', // brand
+  'common.void', // pending translation (English fallback)
+  'common.voided', // pending translation (English fallback)
   'expenses.paymentMethodUpi', // technical acronym (Unified Payments Interface)
   'kds.emptyColumn', // em dash
   'pos.addonPrice', // pure format: +{currency}{price}
@@ -568,7 +571,10 @@ const TR_INTENTIONAL_IDENTICAL = new Set<string>([
   'cashCounter.varianceShortage', // pending translation (English fallback)
   'common.appTitle', // brand name "Flo"
   'common.brandName', // brand name "Flo Cafe"
+  'common.confirmVoid', // pending translation (English fallback)
   'common.logoAlt', // brand name "Flo Cafe"
+  'common.void', // pending translation (English fallback)
+  'common.voided', // pending translation (English fallback)
   'expenses.addCategory', // pending translation (English fallback)
   'expenses.addExpense', // pending translation (English fallback)
   'expenses.category', // pending translation (English fallback)
@@ -691,9 +697,12 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'cashCounter.varianceShortage', // pending translation (English fallback)
   'common.appTitle',
   'common.brandName',
+  'common.confirmVoid', // pending translation (English fallback)
   'common.discount',
   'common.logoAlt',
   'common.subtotal',
+  'common.void', // pending translation (English fallback)
+  'common.voided', // pending translation (English fallback)
   'customer.email',
   'customer.loyalty',
   'customer.ptsSuffix',

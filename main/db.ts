@@ -4099,6 +4099,46 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    // Corrections without rewriting history: voiding stamps voided_at and
+    // every sum/ledger read ignores voided rows. The row stays as the audit
+    // trail; staff re-enter the correct figure as a new row.
+    version: 83,
+    name: 'add_finance_void_flags',
+    up: () => {
+      for (const table of ['expense_entries', 'expense_due_payments']) {
+        if (!getColumns(db, table).includes('voided_at')) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN voided_at TEXT`);
+        }
+      }
+      // A voided opening float must not block its replacement, so uniqueness
+      // moves from the inline constraint to a live-rows-only partial index.
+      // (SQLite cannot drop an inline UNIQUE; the table is rebuilt around it.)
+      const floatColumns = getColumns(db, 'cash_opening_floats');
+      if (!floatColumns.includes('voided_at')) {
+        db.exec(`
+          CREATE TABLE cash_opening_floats_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            amount REAL NOT NULL CHECK (amount >= 0),
+            note TEXT,
+            voided_at TEXT,
+            created_by TEXT REFERENCES users(id),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          );
+          INSERT INTO cash_opening_floats_new (id, date, amount, note, created_by, created_at)
+            SELECT id, date, amount, note, created_by, created_at FROM cash_opening_floats;
+          DROP TABLE cash_opening_floats;
+          ALTER TABLE cash_opening_floats_new RENAME TO cash_opening_floats;
+          CREATE INDEX IF NOT EXISTS idx_cash_opening_floats_date ON cash_opening_floats(date);
+        `);
+      }
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_opening_floats_live_date
+          ON cash_opening_floats(date) WHERE voided_at IS NULL;
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4251,7 +4291,10 @@ function createSchema(): void {
       -- path in main/routes/expenses.ts always supplies a value.
       expense_date TEXT,
       created_by TEXT REFERENCES users(id),
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      -- Void stamp for typo corrections (see v83): voided rows stay as the
+      -- audit trail while every sum and ledger read ignores them.
+      voided_at TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_expense_entries_category ON expense_entries(category_id, created_at);
@@ -4274,7 +4317,9 @@ function createSchema(): void {
       -- main/routes/expenses.ts, not by a DB CHECK constraint.
       method TEXT,
       created_by TEXT REFERENCES users(id),
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      -- Void stamp, same as expense_entries.voided_at (see v83).
+      voided_at TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_expense_due_payments_category ON expense_due_payments(category_id, created_at);
@@ -4286,14 +4331,19 @@ function createSchema(): void {
     -- Cash Counter's daily reconciliation (main/routes/cash-counter.ts).
     CREATE TABLE IF NOT EXISTS cash_opening_floats (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      date TEXT NOT NULL UNIQUE,
+      date TEXT NOT NULL,
       amount REAL NOT NULL CHECK (amount >= 0),
       note TEXT,
+      -- Void stamp, same as expense_entries.voided_at (see v83). Uniqueness
+      -- applies to live rows only, so a voided float never blocks its re-entry.
+      voided_at TEXT,
       created_by TEXT REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE INDEX IF NOT EXISTS idx_cash_opening_floats_date ON cash_opening_floats(date);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_opening_floats_live_date
+      ON cash_opening_floats(date) WHERE voided_at IS NULL;
 
     -- Append-only. A staff-logged physical cash count for a day — purely a
     -- reference fact compared against the calculated expected_cash; it never

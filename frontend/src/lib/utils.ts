@@ -22,3 +22,14 @@ export function todayUtcDate(): string {
 export function currentUtcMonth(): string {
   return todayUtcDate().slice(0, 7)
 }
+
+// Store-local calendar day (YYYY-MM-DD) for business-date defaults and picker
+// limits. Falls back to the UTC day when the zone is missing or invalid.
+export function todayInTimezone(timezone: string | null | undefined): string {
+  if (!timezone) return todayUtcDate()
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+  } catch {
+    return todayUtcDate()
+  }
+}

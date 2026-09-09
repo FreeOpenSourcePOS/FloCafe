@@ -256,6 +256,17 @@ function main() {
   }
   console.log('   ✓ old installs receive the v82 expense and cash counter tables');
 
+  // ── Migration v83: finance void flags ────────────────────────────────────
+  for (const table of ['expense_entries', 'expense_due_payments', 'cash_opening_floats']) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
+    assert.ok(columns.includes('voided_at'), `${table}.voided_at exists after upgrading an old install`);
+  }
+  assert.ok(
+    db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_cash_opening_floats_live_date'`).get(),
+    'the live-rows-only float uniqueness index exists after upgrading an old install',
+  );
+  console.log('   ✓ old installs receive the v83 void flags with live-only float uniqueness');
+
   assert.equal((db.prepare('SELECT COUNT(*) AS count FROM products').get() as any).count, 10);
   // A product originating in this pre-tax-engine fixture can still carry the
   // old tax_type/tax_rate columns after Phase 1, but those columns are not

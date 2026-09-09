@@ -1,17 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
-import { currentUtcMonth, todayUtcDate } from '@/lib/utils';
+import { currentUtcMonth, todayInTimezone, todayUtcDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { X, Wallet, ClipboardCheck } from 'lucide-react';
 import type { CashDailySummary, CashMonthlySummary } from '@/lib/types';
 import { useTranslations } from 'use-intl';
+import { useAuthStore } from '@/store/auth';
+import { useConfirm } from '@/hooks/use-confirm';
+import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 export default function CashCounterPage() {
   const t = useTranslations('cashCounter');
   const tCommon = useTranslations('common');
+  const { currentTenant } = useAuthStore();
+  const { confirm, ConfirmDialog } = useConfirm();
+  const isAdmin = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
 
   const [date, setDate] = useState(todayUtcDate());
   const [daily, setDaily] = useState<CashDailySummary | null>(null);
@@ -28,14 +34,43 @@ export default function CashCounterPage() {
   const [countAmount, setCountAmount] = useState('');
   const [countNote, setCountNote] = useState('');
 
-  const loadDaily = () => api.get('/cash-counter/daily', { params: { date } })
-    .then(({ data }) => setDaily(data))
-    .catch(() => toast.error(t('failedToLoad')))
-    .finally(() => setLoadingDaily(false));
+  // Store-local day for date defaults and picker limits (see /expenses).
+  const [storeTimezone, setStoreTimezone] = useState<string | null>(null);
+  const today = storeTimezone ? todayInTimezone(storeTimezone) : todayUtcDate();
+  useEffect(() => {
+    api.get('/settings/business')
+      .then(({ data }) => {
+        const tz = typeof data?.timezone === 'string' && data.timezone ? data.timezone : null;
+        if (!tz) return;
+        setStoreTimezone(tz);
+        const storeToday = todayInTimezone(tz);
+        if (storeToday !== todayUtcDate()) {
+          setDate(storeToday);
+          setMonth(storeToday.slice(0, 7));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
-  const loadMonthly = (m: string) => api.get('/cash-counter/monthly', { params: { month: m } })
-    .then(({ data }) => setMonthly(data))
-    .catch(() => toast.error(t('failedToLoadMonthly')));
+  // Only the latest request may write state: a superseded date/month
+  // response must not overwrite the current selection.
+  const dailySeq = useRef(0);
+  const monthlySeq = useRef(0);
+
+  const loadDaily = () => {
+    const seq = ++dailySeq.current;
+    return api.get('/cash-counter/daily', { params: { date } })
+      .then(({ data }) => { if (seq === dailySeq.current) setDaily(data); })
+      .catch(() => { if (seq === dailySeq.current) toast.error(t('failedToLoad')); })
+      .finally(() => { if (seq === dailySeq.current) setLoadingDaily(false); });
+  };
+
+  const loadMonthly = (m: string) => {
+    const seq = ++monthlySeq.current;
+    return api.get('/cash-counter/monthly', { params: { month: m } })
+      .then(({ data }) => { if (seq === monthlySeq.current) setMonthly(data); })
+      .catch(() => { if (seq === monthlySeq.current) toast.error(t('failedToLoadMonthly')); });
+  };
 
   useEffect(() => {
     loadDaily();
@@ -51,6 +86,20 @@ export default function CashCounterPage() {
     setFloatAmount('');
     setFloatNote('');
     setShowFloatForm(true);
+  };
+
+  const handleVoidFloat = async () => {
+    if (!daily?.opening_float) return;
+    if (!await confirm(tCommon('confirmVoid'), { destructive: true })) return;
+    try {
+      await api.post(`/cash-counter/opening-float/${daily.opening_float.id}/void`);
+      toast.success(tCommon('voided'));
+      loadDaily();
+      loadMonthly(month);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || tCommon('failedToSave'));
+    }
   };
 
   const handleAddFloat = async (e: React.FormEvent) => {
@@ -101,18 +150,21 @@ export default function CashCounterPage() {
 
   return (
     <div>
+      {ConfirmDialog}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
         <input
-          type="date" value={date} max={todayUtcDate()}
+          type="date" value={date} max={today}
           onChange={(e) => setDate(e.target.value)}
           aria-label={t('selectDate')}
           className="px-3 py-1.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-brand"
         />
       </div>
 
-      {loadingDaily || !daily ? (
+      {loadingDaily ? (
         <p className="text-center text-gray-500 py-12">{tCommon('loading')}</p>
+      ) : !daily ? (
+        <p className="text-center text-red-600 py-12">{t('failedToLoad')}</p>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -144,6 +196,11 @@ export default function CashCounterPage() {
             <Button variant="outline" size="sm" onClick={openCountForm}>
               <ClipboardCheck size={14} className="me-1" /> {t('recordCount')}
             </Button>
+            {isAdmin && daily.opening_float && (
+              <Button variant="outline" size="sm" onClick={handleVoidFloat} className="text-red-600 hover:text-red-700">
+                {tCommon('void')}
+              </Button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -219,7 +276,7 @@ export default function CashCounterPage() {
         <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
           <h2 className="text-lg font-bold text-gray-900">{t('monthlyReport')}</h2>
           <input
-            type="month" value={month} max={currentUtcMonth()}
+            type="month" value={month} max={today.slice(0, 7)}
             onChange={(e) => setMonth(e.target.value)}
             aria-label={t('selectMonth')}
             className="px-3 py-1.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-brand"
@@ -274,7 +331,7 @@ export default function CashCounterPage() {
           <div className="bg-background rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('setOpeningFloat')}</h2>
-              <button type="button" onClick={() => setShowFloatForm(false)}><X size={20} className="text-gray-400" /></button>
+              <button type="button" onClick={() => setShowFloatForm(false)} aria-label={tCommon('close')}><X size={20} className="text-gray-400" /></button>
             </div>
             <form onSubmit={handleAddFloat} className="space-y-4">
               <input
@@ -298,7 +355,7 @@ export default function CashCounterPage() {
           <div className="bg-background rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('recordCount')}</h2>
-              <button type="button" onClick={() => setShowCountForm(false)}><X size={20} className="text-gray-400" /></button>
+              <button type="button" onClick={() => setShowCountForm(false)} aria-label={tCommon('close')}><X size={20} className="text-gray-400" /></button>
             </div>
             <form onSubmit={handleAddCount} className="space-y-4">
               <input

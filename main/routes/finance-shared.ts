@@ -1,4 +1,4 @@
-import { utcTodayDate } from '../db';
+import { getSettingValue, localDateInTimezone } from '../db';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
@@ -8,12 +8,25 @@ function httpError(message: string, statusCode: number) {
 }
 
 /**
+ * Store timezone for day boundaries. Reports and the Z day-close read the
+ * same setting; business dates must agree with them, not with UTC.
+ */
+export function tenantTimezone(): string {
+  return getSettingValue('timezone') || 'Asia/Kolkata';
+}
+
+/** Store-local calendar date — the only "today" a business date may reference. */
+export function storeToday(): string {
+  return localDateInTimezone(new Date(), tenantTimezone());
+}
+
+/**
  * Business date a record is FOR: defaults to today, may be backdated, never
  * postdated. Distinct from created_at, which always stamps the real moment
  * of recording and is never client-supplied.
  */
 export function normalizeBusinessDate(value: unknown): string {
-  if (value === undefined || value === null || value === '') return utcTodayDate();
+  if (value === undefined || value === null || value === '') return storeToday();
   if (typeof value !== 'string' || !DATE_PATTERN.test(value)) {
     throw httpError('date must be in YYYY-MM-DD format', 400);
   }
@@ -26,7 +39,7 @@ export function normalizeBusinessDate(value: unknown): string {
   ) {
     throw httpError('date is not a real calendar date', 400);
   }
-  if (value > utcTodayDate()) {
+  if (value > storeToday()) {
     throw httpError('date cannot be in the future', 400);
   }
   return value;

@@ -180,6 +180,9 @@
     "total": "Toplam",
     "unknown": "Bilinmiyor",
     "update": "Güncelle",
+    "confirmVoid": "Void this entry? Its amount will no longer count.",
+    "void": "Void",
+    "voided": "Voided",
     "windowControls": "Pencere Kontrolleri",
     "yes": "Evet",
     "back": "Geri"

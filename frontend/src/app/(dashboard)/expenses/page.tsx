@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '@/lib/api';
-import { currentUtcMonth, todayUtcDate } from '@/lib/utils';
+import { currentUtcMonth, todayInTimezone, todayUtcDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, X, Trash2, Wallet, Receipt } from 'lucide-react';
@@ -48,7 +48,32 @@ export default function ExpensesPage() {
   const [summaryMonth, setSummaryMonth] = useState(currentUtcMonth());
   const [summary, setSummary] = useState<ExpenseMonthSummary | null>(null);
 
+  // Store-local day for date defaults and picker limits. Falls back to UTC
+  // until the business settings load; only corrects state when it differs.
+  const [storeTimezone, setStoreTimezone] = useState<string | null>(null);
+  const today = storeTimezone ? todayInTimezone(storeTimezone) : todayUtcDate();
+  useEffect(() => {
+    api.get('/settings/business')
+      .then(({ data }) => {
+        const tz = typeof data?.timezone === 'string' && data.timezone ? data.timezone : null;
+        if (!tz) return;
+        setStoreTimezone(tz);
+        const storeToday = todayInTimezone(tz);
+        if (storeToday !== todayUtcDate()) {
+          setDate(storeToday);
+          setSummaryMonth(storeToday.slice(0, 7));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Only the latest request may write state: a superseded date/month
+  // response must not overwrite the current selection.
+  const loadSeq = useRef(0);
+  const summarySeq = useRef(0);
+
   const load = () => {
+    const seq = ++loadSeq.current;
     const ledgerParams = { limit: 20, ...(filterDate ? { date: filterDate } : {}) };
     return Promise.all([
       api.get('/expenses/categories'),
@@ -57,6 +82,7 @@ export default function ExpensesPage() {
       api.get('/payment-methods'),
     ])
       .then(([categoriesRes, entriesRes, paymentsRes, methodsRes]) => {
+        if (seq !== loadSeq.current) return;
         setCustomMethods(methodsRes.data.payment_methods || []);
         setCategories(categoriesRes.data.categories || []);
         const merged: LedgerRow[] = [
@@ -65,8 +91,8 @@ export default function ExpensesPage() {
         ].sort((a, b) => (a.date === b.date ? (a.created_at < b.created_at ? 1 : -1) : (a.date < b.date ? 1 : -1)));
         setRecent(merged.slice(0, 20));
       })
-      .catch(() => toast.error(t('failedToLoad')))
-      .finally(() => setLoading(false));
+      .catch(() => { if (seq === loadSeq.current) toast.error(t('failedToLoad')); })
+      .finally(() => { if (seq === loadSeq.current) setLoading(false); });
   };
 
   useEffect(() => {
@@ -74,9 +100,12 @@ export default function ExpensesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterDate]);
 
-  const loadSummary = (month: string) => api.get('/expenses/summary', { params: { month } })
-    .then(({ data }) => setSummary(data))
-    .catch(() => toast.error(t('failedToLoadSummary')));
+  const loadSummary = (month: string) => {
+    const seq = ++summarySeq.current;
+    return api.get('/expenses/summary', { params: { month } })
+      .then(({ data }) => { if (seq === summarySeq.current) setSummary(data); })
+      .catch(() => { if (seq === summarySeq.current) toast.error(t('failedToLoadSummary')); });
+  };
 
   useEffect(() => {
     loadSummary(summaryMonth);
@@ -114,12 +143,28 @@ export default function ExpensesPage() {
     }
   };
 
+  const handleVoidRow = async (row: LedgerRow) => {
+    if (!await confirm(tCommon('confirmVoid'), { destructive: true })) return;
+    try {
+      const path = row.kind === 'expense'
+        ? `/expenses/entries/${row.id}/void`
+        : `/expenses/payments/${row.id}/void`;
+      await api.post(path);
+      toast.success(tCommon('voided'));
+      load();
+      loadSummary(summaryMonth);
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } };
+      toast.error(err.response?.data?.error || tCommon('failedToSave'));
+    }
+  };
+
   const openModal = (category: ExpenseCategory, mode: 'expense' | 'payment') => {
     setActiveCategory(category);
     setModalMode(mode);
     setAmount('');
     setNote('');
-    setDate(todayUtcDate());
+    setDate(today);
     setMethod('cash');
   };
 
@@ -200,7 +245,7 @@ export default function ExpensesPage() {
         <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
           <h2 className="text-lg font-bold text-gray-900">{t('monthlyReport')}</h2>
           <input
-            type="month" value={summaryMonth} max={currentUtcMonth()}
+            type="month" value={summaryMonth} max={today.slice(0, 7)}
             onChange={(e) => setSummaryMonth(e.target.value)}
             aria-label={t('selectMonth')}
             className="px-3 py-1.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-brand"
@@ -261,7 +306,7 @@ export default function ExpensesPage() {
           <h2 className="text-lg font-bold text-gray-900">{t('history')}</h2>
           <div className="flex items-center gap-2">
             <input
-              type="date" value={filterDate} max={todayUtcDate()}
+              type="date" value={filterDate} max={today}
               onChange={(e) => setFilterDate(e.target.value)}
               aria-label={t('filterByDate')}
               className="px-3 py-1.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-brand"
@@ -290,9 +335,19 @@ export default function ExpensesPage() {
                     {row.note ? ` · ${row.note}` : ''}
                   </p>
                 </div>
-                <p className={`text-sm font-semibold ${row.kind === 'expense' ? 'text-red-600' : 'text-emerald-600'}`}>
-                  {row.kind === 'expense' ? '+' : '-'}{Number(row.amount).toFixed(2)}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className={`text-sm font-semibold ${row.kind === 'expense' ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {row.kind === 'expense' ? '+' : '-'}{Number(row.amount).toFixed(2)}
+                  </p>
+                  {isAdmin && (
+                    <button
+                      type="button" onClick={() => handleVoidRow(row)}
+                      className="text-xs text-red-500 hover:text-red-700 underline"
+                    >
+                      {tCommon('void')}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -304,7 +359,7 @@ export default function ExpensesPage() {
           <div className="bg-background rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('addCategory')}</h2>
-              <button type="button" onClick={() => setShowCategoryForm(false)}><X size={20} className="text-gray-400" /></button>
+              <button type="button" onClick={() => setShowCategoryForm(false)} aria-label={tCommon('close')}><X size={20} className="text-gray-400" /></button>
             </div>
             <form onSubmit={handleAddCategory} className="space-y-4">
               <input
@@ -323,7 +378,7 @@ export default function ExpensesPage() {
           <div className="bg-background rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{modalMode === 'expense' ? t('addExpense') : t('recordPayment')} — {activeCategory.name}</h2>
-              <button type="button" onClick={closeModal}><X size={20} className="text-gray-400" /></button>
+              <button type="button" onClick={closeModal} aria-label={tCommon('close')}><X size={20} className="text-gray-400" /></button>
             </div>
             <form onSubmit={handleSubmitLedger} className="space-y-4">
               <input
@@ -335,7 +390,7 @@ export default function ExpensesPage() {
                 <label htmlFor="expense-entry-date" className="mb-1 block text-xs font-medium text-gray-500">{t('date')}</label>
                 <input
                   id="expense-entry-date"
-                  type="date" value={date} max={todayUtcDate()}
+                  type="date" value={date} max={today}
                   onChange={(e) => setDate(e.target.value)}
                   className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required
                 />

@@ -180,6 +180,9 @@
     "total": "Total",
     "unknown": "Unknown",
     "update": "Update",
+    "confirmVoid": "Void this entry? Its amount will no longer count.",
+    "void": "Void",
+    "voided": "Voided",
     "windowControls": "Window controls",
     "yes": "Yes",
     "back": "Back"

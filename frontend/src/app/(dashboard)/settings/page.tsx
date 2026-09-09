@@ -301,6 +301,8 @@ export default function SettingsPage() {
   const [savedLoyaltyEnabled, setSavedLoyaltyEnabled] = useState(false);
   const [globalCashbackPercent, setGlobalCashbackPercent] = useState('0');
   const [savedGlobalCashbackPercent, setSavedGlobalCashbackPercent] = useState('0');
+  const loyaltyFormRef = useRef({ loyaltyEnabled, globalCashbackPercent });
+  loyaltyFormRef.current = { loyaltyEnabled, globalCashbackPercent };
   const [globalRateCandidates, setGlobalRateCandidates] = useState(0);
   const [applyingGlobalRate, setApplyingGlobalRate] = useState(false);
   const [savingLoyalty, setSavingLoyalty] = useState(false);
@@ -316,6 +318,8 @@ export default function SettingsPage() {
   const [savedDiscountMode, setSavedDiscountMode] = useState('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [savedDiscountRequiresApproval, setSavedDiscountRequiresApproval] = useState(false);
+  const discountFormRef = useRef({ discountMaxPct, discountMaxAmount, discountMode, discountRequiresApproval });
+  discountFormRef.current = { discountMaxPct, discountMaxAmount, discountMode, discountRequiresApproval };
   const [savingDiscount, setSavingDiscount] = useState(false);
 
   // Table info dialog
@@ -1312,6 +1316,8 @@ export default function SettingsPage() {
   });
   const [billForm, setBillForm] = useState<BillTemplateForm>(initBillTemplate);
   const [savedBillForm, setSavedBillForm] = useState<BillTemplateForm>(initBillTemplate);
+  const billFormRef = useRef(billForm);
+  billFormRef.current = billForm;
   const [billTemplateCards, setBillTemplateCards] = useState<TemplateCard[]>(TEMPLATE_CARDS);
   const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
@@ -1384,6 +1390,8 @@ export default function SettingsPage() {
     cloud_last_sync: null as string | null,
   });
   const [savedCloudSettings, setSavedCloudSettings] = useState(cloudSettings);
+  const cloudSettingsRef = useRef(cloudSettings);
+  cloudSettingsRef.current = cloudSettings;
   const [cloudStatus, setCloudStatus] = useState({
     cloud_registration_status: 'unregistered',
     cloud_services_disabled_by_user: false,
@@ -1393,7 +1401,6 @@ export default function SettingsPage() {
     cloud_last_error: null as string | null,
     cloud_deletion_status: '',
   });
-  const [cloudStatusHydrated, setCloudStatusHydrated] = useState(false);
   const [cloudPrivacyHydrated, setCloudPrivacyHydrated] = useState(false);
    
   const [savingCloud, setSavingCloud] = useState(false);
@@ -1416,7 +1423,6 @@ export default function SettingsPage() {
         cloud_last_error: data.cloud_last_error || null,
         cloud_deletion_status: data.cloud_deletion_status || '',
       });
-      setCloudStatusHydrated(true);
       setCloudSettings((previous) => ({
         ...previous,
         cloud_sync_enabled: !!data.cloud_sync_enabled,
@@ -1512,7 +1518,18 @@ export default function SettingsPage() {
     invoiceFinancialYearStartDay: 1,
   });
   const [orderNumberForm, setOrderNumberForm] = useState<OrderNumberForm>(savedOrderNumberForm);
+  const orderNumberFormRef = useRef(orderNumberForm);
+  orderNumberFormRef.current = orderNumberForm;
   const [savingOrderNumbering, setSavingOrderNumbering] = useState(false);
+
+  const mergeHydratedValues = <T extends object>(previous: T, initial: T, loaded: T): T => {
+    const previousValues = previous as Record<string, unknown>;
+    const initialValues = initial as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(loaded).map(([key, value]) => [
+      key,
+      Object.is(previousValues[key], initialValues[key]) ? value : previousValues[key],
+    ])) as T;
+  };
 
   const resetBusiness = async () => {
     try {
@@ -1733,6 +1750,7 @@ export default function SettingsPage() {
     };
 
     const loadCloud = async () => {
+      const cloudSettingsAtHydrationStart = { ...cloudSettingsRef.current };
       let registrationStatus = cloudRegistrationStatus.current;
       const tenantId = currentTenant?.id ?? null;
       if (cloudHydrationTenant.current !== tenantId) {
@@ -1740,7 +1758,6 @@ export default function SettingsPage() {
         cloudHydrated.current = false;
         cloudHydrationPromise.current = null;
         cloudRegistrationStatus.current = 'unregistered';
-        setCloudStatusHydrated(false);
         setCloudPrivacyHydrated(false);
       }
       if (cloudHydrated.current) {
@@ -1771,7 +1788,8 @@ export default function SettingsPage() {
             };
             registrationStatus = data.cloud_registration_status || 'unregistered';
             cloudRegistrationStatus.current = registrationStatus;
-            setCloudSettings(settings);
+            const mergedCloudSettings = mergeHydratedValues(cloudSettingsRef.current, cloudSettingsAtHydrationStart, settings);
+            setCloudSettings(mergedCloudSettings);
             setSavedCloudSettings(settings);
             setCloudStatus({
               cloud_registration_status: data.cloud_registration_status || 'unregistered',
@@ -1782,7 +1800,6 @@ export default function SettingsPage() {
               cloud_last_error: data.cloud_last_error || null,
               cloud_deletion_status: data.cloud_deletion_status || '',
             });
-            setCloudStatusHydrated(true);
             cloudHydrated.current = true;
           })();
           cloudHydrationPromise.current = promise;
@@ -1814,7 +1831,7 @@ export default function SettingsPage() {
       await loadPairedDevices(signal);
     };
 
-    const loadPrinting = async () => {
+    const loadPrinting = async (billFormAtHydrationStart = { ...billFormRef.current }) => {
       const printingAtHydrationStart = { ...printingFormRef.current };
       const [trimResponse, cashEnabledResponse, cashMethodsResponse, billLanguageResponse, kotLanguageResponse] = await Promise.all([
         readOptional('/settings/printer_trim_decimals'),
@@ -1954,7 +1971,8 @@ export default function SettingsPage() {
       posSettings.setBillTemplate(billTemplate);
       posSettings.setBillTemplateSource(billTemplateSource);
       posSettings.setBillFooterMessage(billFooterMessage);
-      setBillForm(loadedBillForm);
+      const mergedBillForm = mergeHydratedValues(billFormRef.current, billFormAtHydrationStart, loadedBillForm);
+      setBillForm(mergedBillForm);
       setSavedBillForm(loadedBillForm);
     };
 
@@ -1972,6 +1990,7 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'store') {
+        const orderNumberAtHydrationStart = { ...orderNumberFormRef.current };
         await loadBusiness();
         const { data } = await get('/settings/order-numbering');
         if (!active()) return;
@@ -1985,16 +2004,18 @@ export default function SettingsPage() {
           invoiceFinancialYearStartMonth: Number(data.invoice_financial_year_start_month) || 4,
           invoiceFinancialYearStartDay: Number(data.invoice_financial_year_start_day) || 1,
         };
-        setOrderNumberForm(loaded);
+        const mergedOrderNumbering = mergeHydratedValues(orderNumberFormRef.current, orderNumberAtHydrationStart, loaded);
+        setOrderNumberForm(mergedOrderNumbering);
         setSavedOrderNumberForm(loaded);
         return;
       }
       if (tab === 'receipts-printers') {
+        const billFormAtHydrationStart = { ...billFormRef.current };
         await loadBusiness();
         await Promise.all([
           fetchPrinters(signal),
           fetchDetectedPrinters(signal),
-          loadPrinting(),
+          loadPrinting(billFormAtHydrationStart),
           readOptional('/settings/kot_printing_enabled').then((res) => {
             if (!active()) return;
             const enabled = res?.data.setting?.value !== 'false';
@@ -2025,36 +2046,42 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'loyalty') {
+        const loyaltyAtHydrationStart = { ...loyaltyFormRef.current };
         const [loyaltyResponse, candidatesResponse] = await Promise.all([
           get('/settings/loyalty'),
           get('/products/loyalty/global-rate-candidates'),
         ]);
         if (!active()) return;
-        setLoyaltyEnabled(!!loyaltyResponse.data.loyalty_enabled);
-        setSavedLoyaltyEnabled(!!loyaltyResponse.data.loyalty_enabled);
-        setGlobalCashbackPercent(String(loyaltyResponse.data.global_cashback_percent ?? 0));
-        setSavedGlobalCashbackPercent(String(loyaltyResponse.data.global_cashback_percent ?? 0));
+        const loadedLoyalty = {
+          loyaltyEnabled: !!loyaltyResponse.data.loyalty_enabled,
+          globalCashbackPercent: String(loyaltyResponse.data.global_cashback_percent ?? 0),
+        };
+        const mergedLoyalty = mergeHydratedValues(loyaltyFormRef.current, loyaltyAtHydrationStart, loadedLoyalty);
+        setLoyaltyEnabled(mergedLoyalty.loyaltyEnabled);
+        setSavedLoyaltyEnabled(loadedLoyalty.loyaltyEnabled);
+        setGlobalCashbackPercent(mergedLoyalty.globalCashbackPercent);
+        setSavedGlobalCashbackPercent(loadedLoyalty.globalCashbackPercent);
         setGlobalRateCandidates(Number(candidatesResponse.data.count) || 0);
         return;
       }
       if (tab === 'discounts') {
+        const discountAtHydrationStart = { ...discountFormRef.current };
         const { data } = await get('/settings/discount');
         if (!active()) return;
-        if (data.discount_max_percentage !== undefined) {
-          const value = normalizeDiscountPercentage(data.discount_max_percentage);
-          setDiscountMaxPct(value);
-          setSavedDiscountMaxPct(value);
-        }
-        if (data.discount_max_amount !== undefined) {
-          const value = normalizeDiscountAmount(data.discount_max_amount);
-          setDiscountMaxAmount(value);
-          setSavedDiscountMaxAmount(value);
-        }
-        if (data.discount_mode) { setDiscountMode(data.discount_mode); setSavedDiscountMode(data.discount_mode); }
-        if (data.discount_requires_approval !== undefined) {
-          setDiscountRequiresApproval(!!data.discount_requires_approval);
-          setSavedDiscountRequiresApproval(!!data.discount_requires_approval);
-        }
+        const loadedDiscount = { ...discountAtHydrationStart };
+        if (data.discount_max_percentage !== undefined) loadedDiscount.discountMaxPct = normalizeDiscountPercentage(data.discount_max_percentage);
+        if (data.discount_max_amount !== undefined) loadedDiscount.discountMaxAmount = normalizeDiscountAmount(data.discount_max_amount);
+        if (data.discount_mode) loadedDiscount.discountMode = data.discount_mode;
+        if (data.discount_requires_approval !== undefined) loadedDiscount.discountRequiresApproval = !!data.discount_requires_approval;
+        const mergedDiscount = mergeHydratedValues(discountFormRef.current, discountAtHydrationStart, loadedDiscount);
+        setDiscountMaxPct(mergedDiscount.discountMaxPct);
+        setSavedDiscountMaxPct(loadedDiscount.discountMaxPct);
+        setDiscountMaxAmount(mergedDiscount.discountMaxAmount);
+        setSavedDiscountMaxAmount(loadedDiscount.discountMaxAmount);
+        setDiscountMode(mergedDiscount.discountMode);
+        setSavedDiscountMode(loadedDiscount.discountMode);
+        setDiscountRequiresApproval(mergedDiscount.discountRequiresApproval);
+        setSavedDiscountRequiresApproval(loadedDiscount.discountRequiresApproval);
         return;
       }
       if (tab === 'privacy') {

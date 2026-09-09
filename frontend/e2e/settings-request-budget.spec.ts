@@ -308,6 +308,40 @@ test('Save All preserves edits made during business hydration', async ({ page })
   await expect.poll(() => savedBusinessName, { timeout: 10000 }).toBe('Edited While Loading');
 });
 
+test('Save All preserves order numbering edits during hydration', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let savedOrderPrefix: string | undefined;
+  page.on('request', (request) => {
+    if (request.method() === 'PUT' && new URL(request.url()).pathname === '/api/settings/order-numbering') {
+      savedOrderPrefix = request.postDataJSON()?.order_number_prefix;
+    }
+  });
+  await page.route('**/api/settings/order-numbering', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        order_number_prefix: 'SERVER',
+        order_number_include_date: true,
+        order_number_reset_daily: true,
+        invoice_number_prefix: 'INV',
+        invoice_number_include_period: true,
+        invoice_number_reset_period: 'daily',
+        invoice_financial_year_start_month: 4,
+        invoice_financial_year_start_day: 1,
+      }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=store`);
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  await page.locator('input[placeholder="ORD"]').fill('EDIT');
+  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+
+  await expect.poll(() => savedOrderPrefix, { timeout: 10000 }).toBe('EDIT');
+});
+
 test('Rapid Settings navigation stays below the read rate limit', async ({ page }) => {
   await startMockedSettingsSession(page);
   const apiPaths = collectApiPaths(page);

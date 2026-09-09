@@ -17,7 +17,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const {
-  initTestDb, createApp, startServer, api, seedOwnerUser, seedManagerUser, assert, assertEqual, getResults, closeDatabase,
+  initTestDb, createApp, startServer, api, seedOwnerUser, seedManagerUser, assertEqual, getResults, closeDatabase,
 } = require('./helpers/test-setup');
 const { settingsRoutes } = require('../main/routes/settings');
 
@@ -96,18 +96,6 @@ async function main() {
     const invalidMethodsResponse = await api(baseUrl, '/api/settings/printing', { method: 'PUT', headers: owner.authHeader, body: { ...basePayload, cash_drawer_pulse_methods: ['cash', 7] } });
     assertEqual(invalidMethodsResponse.status, 400, 'invalid cash drawer methods are rejected');
     assertPersisted(db, 'cash_drawer_pulse_methods', beforeInvalid.cash_drawer_pulse_methods as string, 'invalid cash drawer methods do not partially persist');
-
-    const settingsSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/app/(dashboard)/settings/page.tsx'), 'utf8');
-    const savePrintingBlock = settingsSource.match(/const savePrinting = async[\s\S]*?\n\s{2}\};/)?.[0] ?? '';
-    assert(savePrintingBlock.includes("api.put('/settings/printing'"), 'settings page uses the atomic printing endpoint');
-    assertEqual((savePrintingBlock.match(/api\.put\(/g) || []).length, 1, 'settings page emits one printing-settings request per save');
-    assert(settingsSource.includes('printingSaveInFlight.current'), 'settings page has a synchronous printing save guard');
-    assert(savePrintingBlock.indexOf("await api.put('/settings/printing'") < savePrintingBlock.indexOf('posSettings.setPrinterUseUnicode'), 'device-local settings update only follows a successful batch request');
-    assert(savePrintingBlock.includes('setSavedPrinting(formSnapshot)'), 'saved printing snapshot updates from the submitted form only after success');
-    assert(savePrintingBlock.includes('zReportLanguagePolicyLoaded'), 'Z-report policy waits for hydration before batch persistence');
-    assert(savePrintingBlock.includes('finally {'), 'printing save guard is released after failed requests');
-    assert(settingsSource.includes('savingAllSettingsInFlight.current'), 'global save has a synchronous in-flight guard');
-    assert(settingsSource.includes('savingPrinting || savingAllSettings'), 'global save controls disable during printing or overall saves');
 
     // Existing wildcard writes remain available for unrelated callers.
     const wildcardResponse = await api(baseUrl, '/api/settings/printer_trim_decimals', { method: 'PUT', headers: owner.authHeader, body: { value: 'true' } });

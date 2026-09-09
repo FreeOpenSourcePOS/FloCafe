@@ -1195,6 +1195,19 @@ export default function SettingsPage() {
   });
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
+  const printingFormRef = useRef(printingForm);
+  printingFormRef.current = printingForm;
+  const mergeHydratedPrinting = (patch: Partial<PrintingForm>, initial: PrintingForm) => {
+    setPrintingForm((previous) => {
+      const applicablePatch = Object.fromEntries(
+        Object.entries(patch).filter(([key]) => {
+          const field = key as keyof PrintingForm;
+          return Object.is(previous[field], initial[field]);
+        }),
+      ) as Partial<PrintingForm>;
+      return { ...previous, ...applicablePatch };
+    });
+  };
   const [cashDrawerMethodsOpen, setCashDrawerMethodsOpen] = useState(false);
   const [zReportLanguagePolicyLoaded, setZReportLanguagePolicyLoaded] = useState(false);
   const [savingPrinting, setSavingPrinting] = useState(false);
@@ -1330,6 +1343,10 @@ export default function SettingsPage() {
     calendar: 'locale',
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
+  const businessFormRef = useRef(form);
+  const savedBusinessRef = useRef(savedBusiness);
+  businessFormRef.current = form;
+  savedBusinessRef.current = savedBusiness;
   const [savingBusiness, setSavingBusiness] = useState(false);
   // Server-resolved tax format from country tax pack or static fallback;
   // drives immediate warning feedback below the field.
@@ -1641,6 +1658,7 @@ export default function SettingsPage() {
         if (businessHydrated.current || !active()) return;
       }
 
+      const printingAtHydrationStart = { ...printingFormRef.current };
       const promise = (async () => {
         const { data: d } = await get('/settings/business');
         if (!active()) {
@@ -1663,7 +1681,7 @@ export default function SettingsPage() {
           numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
           calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
         };
-        const preserveForm = JSON.stringify(form) !== JSON.stringify(savedBusiness);
+        const preserveForm = JSON.stringify(businessFormRef.current) !== JSON.stringify(savedBusinessRef.current);
         setSavedBusiness(loaded);
         if (!preserveForm) setForm(loaded);
         setTaxIdFormat(d.tax_id_format || null);
@@ -1678,7 +1696,7 @@ export default function SettingsPage() {
           billShowCustomerPhone: d.bill_show_customer_phone !== false,
           billShowTableNumber: d.bill_show_table_number !== false,
         };
-        setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
+        mergeHydratedPrinting(billDisplay, printingAtHydrationStart);
         setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
         posSettings.setBillShowName(billDisplay.billShowName);
         posSettings.setBillShowAddress(billDisplay.billShowAddress);
@@ -1786,6 +1804,7 @@ export default function SettingsPage() {
     };
 
     const loadPrinting = async () => {
+      const printingAtHydrationStart = { ...printingFormRef.current };
       const [trimResponse, cashEnabledResponse, cashMethodsResponse, billLanguageResponse, kotLanguageResponse] = await Promise.all([
         readOptional('/settings/printer_trim_decimals'),
         readOptional('/settings/cash_drawer_pulse_enabled'),
@@ -1798,7 +1817,7 @@ export default function SettingsPage() {
       if (trimResponse) {
         const enabled = trimResponse.data.setting?.value === 'true';
         posSettings.setPrinterTrimDecimals(enabled);
-        setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
+        mergeHydratedPrinting({ printerTrimDecimals: enabled }, printingAtHydrationStart);
         setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
       }
       if (cashEnabledResponse) {
@@ -1808,7 +1827,7 @@ export default function SettingsPage() {
           setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
           // Missing rows intentionally remain undefined so thermal printing keeps
           // its legacy per-printer fallback.
-          setPrintingForm((p) => (p.cashDrawerPulseEnabled === undefined ? { ...p, cashDrawerPulseEnabled: enabled } : p));
+          mergeHydratedPrinting({ cashDrawerPulseEnabled: enabled }, printingAtHydrationStart);
         }
       }
       if (cashMethodsResponse) {
@@ -1817,7 +1836,7 @@ export default function SettingsPage() {
           if (Array.isArray(methods)) {
             const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
             const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
-            setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
+            mergeHydratedPrinting({ cashDrawerPulseMethods: normalized }, printingAtHydrationStart);
             setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
           }
         } catch { /* Use the safe defaults. */ }
@@ -1830,7 +1849,7 @@ export default function SettingsPage() {
             receiptPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
             receiptSecondLanguage: policy.additional[0] ?? 'none',
           };
-          setPrintingForm((p) => ({ ...p, ...formPatch }));
+          mergeHydratedPrinting(formPatch, printingAtHydrationStart);
           setSavedPrinting((p) => ({ ...p, ...formPatch }));
         }
       }
@@ -1839,7 +1858,7 @@ export default function SettingsPage() {
         if (policy) {
           posSettings.setKotLanguagePolicy(policy);
           const formPatch = { kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit' };
-          setPrintingForm((p) => ({ ...p, ...formPatch }));
+          mergeHydratedPrinting(formPatch, printingAtHydrationStart);
           setSavedPrinting((p) => ({ ...p, ...formPatch }));
         }
       }
@@ -1852,7 +1871,7 @@ export default function SettingsPage() {
             zReportPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
             zReportSecondLanguage: policy.additional[0] ?? 'none',
           };
-          setPrintingForm((p) => ({ ...p, ...formPatch }));
+          mergeHydratedPrinting(formPatch, printingAtHydrationStart);
           setSavedPrinting((p) => ({ ...p, ...formPatch }));
           setZReportLanguagePolicyLoaded(true);
         }

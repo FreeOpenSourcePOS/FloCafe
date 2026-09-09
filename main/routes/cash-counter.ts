@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
-import { dayBoundsInTimezone, getDatabase, localDateInTimezone, now, parseDbTimestamp, utcTodayDate } from '../db';
+import { dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, now, parseDbTimestamp, utcTodayDate } from '../db';
 import { getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency } from '../services/refund';
 import { requireRole } from '../middleware/security';
@@ -10,7 +10,6 @@ import {
   normalizeBusinessDate,
   normalizeNote,
   roundMoney,
-  tenantTimezone,
 } from './finance-shared';
 
 function normalizeNonNegativeAmount(value: unknown, field: string): number {
@@ -23,6 +22,11 @@ function normalizeNonNegativeAmount(value: unknown, field: string): number {
 
 const router = Router();
 const cashCounterWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+
+// Store timezone for day boundaries (reports and the Z day-close read the same setting).
+function tenantTimezone(): string {
+  return getSettingValue('timezone') || 'Asia/Kolkata';
+}
 
 /** Every YYYY-MM-DD date from `from` to `to`, inclusive. */
 function datesInRange(from: string, to: string): string[] {
@@ -264,7 +268,7 @@ router.get('/monthly', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res:
       const refunds = refundsByDate.get(date) || 0;
       const expenses = expensesByDate.get(date) || 0;
       const expected = expectedCash(opening, orders, refunds, expenses);
-      const latestCount = latestCountByDate.has(date) ? latestCountByDate.get(date)! : null;
+      const latestCount = latestCountByDate.get(date) ?? null;
       const variance = latestCount !== null ? roundMoney(latestCount - expected) : null;
 
       totalOpeningFloats = roundMoney(totalOpeningFloats + opening);

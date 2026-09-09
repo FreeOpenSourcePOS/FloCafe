@@ -1,15 +1,10 @@
-import { getSettingValue, utcTodayDate } from '../db';
+import { utcTodayDate } from '../db';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 
 function httpError(message: string, statusCode: number) {
   return Object.assign(new Error(message), { statusCode });
-}
-
-/** Store timezone for day boundaries (reports and the Z day-close use this same source). */
-export function tenantTimezone(): string {
-  return getSettingValue('timezone') || 'Asia/Kolkata';
 }
 
 /**

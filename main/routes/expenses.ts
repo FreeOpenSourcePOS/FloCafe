@@ -99,7 +99,11 @@ function listCategories(includeInactive: boolean) {
     ${includeInactive ? '' : 'WHERE ec.deleted_at IS NULL AND ec.is_active = 1'}
     ORDER BY ec.name COLLATE NOCASE
   `).all() as any[];
-  return rows.map((row) => ({ ...row, is_active: Boolean(row.is_active) }));
+  // Round due to cents: the raw SUM difference can carry binary float
+  // residue (e.g. 5e-17), which would read as a nonzero due and block
+  // category deletion even though nothing is owed. DELETE rechecks via
+  // categoryDue(), which rounds the same way, so both gates agree.
+  return rows.map((row) => ({ ...row, is_active: Boolean(row.is_active), due: Math.round(row.due * 100) / 100 }));
 }
 
 function categoryDue(db: ReturnType<typeof getDatabase>, categoryId: string): number {

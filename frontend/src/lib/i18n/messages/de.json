@@ -86,6 +86,36 @@
   "businessType": {
     "restaurant": "Restaurant"
   },
+        "cashCounter":     {
+      "cashExpenses": "Barausgaben",
+      "cashFromOrders": "Bareinnahmen aus Bestellungen",
+      "countLog": "Zählprotokoll",
+      "countRecorded": "Kassenzählung gespeichert",
+      "counted": "Gezählt",
+      "countedAmount": "Gezählter Betrag",
+      "date": "Datum",
+      "expectedCash": "Erwarteter Kassenbestand",
+      "failedToLoad": "Kasse konnte nicht geladen werden",
+      "failedToLoadMonthly": "Monatsbericht konnte nicht geladen werden",
+      "monthlyReport": "Monatsbericht",
+      "netCash": "Bargeld netto",
+      "noCounts": "Noch keine Zählungen",
+      "noPayments": "Noch keine Zahlungen",
+      "openingFloat": "Anfangsbestand",
+      "openingFloatAlreadySet": "Anfangsbestand für dieses Datum bereits gesetzt",
+      "openingFloatSet": "Anfangsbestand gesetzt",
+      "overall": "Gesamt",
+      "recordCount": "Zählung erfassen",
+      "recordedBy": "von {name}",
+      "selectDate": "Datum wählen",
+      "selectMonth": "Monat wählen",
+      "setOpeningFloat": "Anfangsbestand setzen",
+      "title": "Kasse",
+      "variance": "Differenz",
+      "varianceMatch": "Stimmt überein",
+      "varianceOverage": "+{amount} zu viel",
+      "varianceShortage": "-{amount} zu wenig"
+    },
   "common": {
     "active": "Aktiv",
     "add": "Hinzufügen",
@@ -301,6 +331,43 @@
     "refundsCount": "{count} Erstattungen",
     "ticketNoPayments": "Keine Zahlungen an diesem Tag"
   },
+        "expenses":     {
+      "addCategory": "Kategorie hinzufügen",
+      "addExpense": "Ausgabe hinzufügen",
+      "category": "Kategorie",
+      "categoryCreated": "Ausgabenkategorie erstellt",
+      "categoryDeleted": "Ausgabenkategorie gelöscht",
+      "categoryName": "Kategoriename",
+      "clearDateFilter": "Zurücksetzen",
+      "confirmDeleteCategory": "Kategorie \"{name}\" löschen? Kann nicht rückgängig gemacht werden.",
+      "date": "Datum",
+      "deleteCategory": "Kategorie löschen",
+      "deleteCategoryBlocked": "Offenen Betrag erst ausgleichen, dann löschen",
+      "due": "Offen",
+      "entryAdded": "Ausgabe erfasst",
+      "entryTypeExpense": "Ausgabe",
+      "entryTypePayment": "Zahlung",
+      "failedToLoad": "Ausgaben konnten nicht geladen werden",
+      "failedToLoadSummary": "Monatsbericht konnte nicht geladen werden",
+      "filterByDate": "Nach Datum filtern",
+      "history": "Letzte Aktivitäten",
+      "monthlyReport": "Monatsbericht",
+      "noCategories": "Noch keine Ausgabenkategorien",
+      "noEntries": "Noch keine Ausgaben",
+      "note": "Notiz",
+      "overall": "Gesamt",
+      "paymentMethod": "Zahlungsmethode",
+      "paymentMethodCard": "Karte",
+      "paymentMethodCash": "Bar",
+      "paymentMethodUpi": "UPI",
+      "paymentRecorded": "Zahlung erfasst",
+      "recordPayment": "Zahlung erfassen",
+      "recordedBy": "von {name}",
+      "selectMonth": "Monat wählen",
+      "title": "Ausgaben",
+      "totalExpenses": "Ausgaben gesamt",
+      "totalPaid": "Gezahlt gesamt"
+    },
   "kds": {
     "addonsLabel": "Zusätze",
     "authFailed": "Authentifizierung fehlgeschlagen",
@@ -346,10 +413,12 @@
     "wsConnected": "WebSocket verbunden"
   },
   "nav": {
+        "cashCounter": "Kasse",
     "collapse": "Einklappen",
     "confirmLogout": "Möchten Sie sich wirklich abmelden?",
     "customers": "Kunden",
     "dashboard": "Dashboard",
+        "expenses": "Ausgaben",
     "heapLabel": "Speicher: ",
     "kds": "KDS",
     "logout": "Abmelden",
@@ -1920,7 +1989,8 @@
       "settings": "Einstellungen",
       "integrations": "Integrationen",
       "system": "System",
-      "support": "Support"
+      "support": "Support",
+      "expenses": "Ausgaben"
     },
     "capabilities": {
       "pos": "Kassenterminal bedienen",
@@ -1966,7 +2036,10 @@
       "cloudAccountData": "Cloud-Konto- und Datenkontrollen verwalten",
       "databaseTools": "Datenbankwerkzeuge und Sicherungen nutzen",
       "serverApp": "Eigenständige Bedienungs-App verwenden",
-      "support": "Support kontaktieren und Diagnosedaten einsehen"
+      "support": "Support kontaktieren und Diagnosedaten einsehen",
+      "expenseCategoriesManage": "Ausgabenkategorien hinzufügen oder löschen",
+      "expenseEntriesRecord": "Ausgaben und Zahlungen erfassen",
+      "cashCounterRecord": "Anfangsbestände und Zählungen erfassen"
     }
   },
   "support": {

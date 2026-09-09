@@ -430,6 +430,7 @@ function faFallbackErrors(faFlat: Record<string, string>, enFlat: Record<string,
 const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'auth.emailPlaceholder', // example email
   'businessType.restaurant', // same word in French
+  'cashCounter.date', // same word in French
   'common.appTitle', // brand
   'common.brandName', // brand
   'common.logoAlt', // brand
@@ -440,6 +441,9 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'customers.columnDate', // same word in French
   'customers.columnDescription', // same word in French
   'customers.columnPoints', // same word in French
+  'expenses.date', // same word in French
+  'expenses.note', // same word in French
+  'expenses.paymentMethodUpi', // technical acronym (payment rail name)
   'kds.emptyColumn', // em dash
   'kds.tableLabel', // same word in French
   'kds.viewKanban', // product term
@@ -449,6 +453,7 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'nav.tables', // same word in French
   'nav.whatsapp', // product name
   'orders.tableAt', // same word in French
+  'permissionMatrix.areas.menu', // same word in French
   'pos.addonPrice', // pure format: +{currency}{price}
   'pos.loadingEllipsis', // ellipsis
   'pos.loyaltyPointsShort', // standard abbreviation
@@ -456,13 +461,13 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'pos.tagCount', // pure format: {tag} ×{count}
   'pos.taxLine', // pure format: {title} @{rate}%
   'pos.total', // same word in French
+  'print.grandTotal', // receipt convention
+  'print.hsn', // technical acronym
+  'print.kot.type', // same word in French
+  'print.note', // same word in French
   'printTest.escpos', // technical acronym
   'printTest.paperWidth58', // measurement
   'printTest.paperWidth80', // measurement
-  'print.note', // same word in French
-  'print.grandTotal', // receipt convention
-  'print.kot.type', // same word in French
-  'print.hsn', // technical acronym
   'products.addonSelectionRange', // pure format: {min} – {max}
   'products.cashbackGlobalBadge', // same word in French
   'products.categoryDescription', // same word in French
@@ -481,7 +486,6 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'serverApp.tables', // same word in French
   'settings.apiKeyInputPlaceholder', // example API key
   'settings.connectionUsb', // technical acronym
-  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.instagramPlaceholder', // example handle
   'settings.ipAddressPlaceholder', // example IP
   'settings.iranCurrencyDisplayRial', // currency name and native script
@@ -492,6 +496,7 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'settings.paperWidth58', // measurement
   'settings.paperWidth80', // measurement
   'settings.paperWidth80Safe', // measurement
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.port', // same word in French
   'settings.portPlaceholder', // example port
   'settings.registrationEmailPlaceholder', // example email
@@ -506,12 +511,11 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'setup.ownerEmailPlaceholder', // example email
   'setup.pinLabel', // technical acronym
   'staff.roleChef', // same loanword in French UI
-  'permissionMatrix.areas.menu', // same word in French
   'support.restaurant', // same word in French
   'support.version', // same word in French
+  'tables.floorplanAuto', // same word in French ("Auto")
   'tables.section', // same word in French
   'tables.title', // same word in French
-  'tables.floorplanAuto', // same word in French ("Auto")
   'tax.actions', // same word in French
   'tax.auditCreateOverride', // pure format with identifiers
   'tax.type', // same word in French
@@ -532,12 +536,80 @@ function frFallbackErrors(frFlat: Record<string, string>, enFlat: Record<string,
 }
 
 const TR_INTENTIONAL_IDENTICAL = new Set<string>([
-  'settings.paymentMethodUpi', // technical acronym (payment rail name)
+  'cashCounter.cashExpenses', // pending translation (English fallback)
+  'cashCounter.cashFromOrders', // pending translation (English fallback)
+  'cashCounter.countLog', // pending translation (English fallback)
+  'cashCounter.countRecorded', // pending translation (English fallback)
+  'cashCounter.counted', // pending translation (English fallback)
+  'cashCounter.countedAmount', // pending translation (English fallback)
+  'cashCounter.date', // pending translation (English fallback)
+  'cashCounter.expectedCash', // pending translation (English fallback)
+  'cashCounter.failedToLoad', // pending translation (English fallback)
+  'cashCounter.failedToLoadMonthly', // pending translation (English fallback)
+  'cashCounter.monthlyReport', // pending translation (English fallback)
+  'cashCounter.netCash', // pending translation (English fallback)
+  'cashCounter.noCounts', // pending translation (English fallback)
+  'cashCounter.noPayments', // pending translation (English fallback)
+  'cashCounter.openingFloat', // pending translation (English fallback)
+  'cashCounter.openingFloatAlreadySet', // pending translation (English fallback)
+  'cashCounter.openingFloatSet', // pending translation (English fallback)
+  'cashCounter.overall', // pending translation (English fallback)
+  'cashCounter.recordCount', // pending translation (English fallback)
+  'cashCounter.recordedBy', // pending translation (English fallback)
+  'cashCounter.selectDate', // pending translation (English fallback)
+  'cashCounter.selectMonth', // pending translation (English fallback)
+  'cashCounter.setOpeningFloat', // pending translation (English fallback)
+  'cashCounter.title', // pending translation (English fallback)
+  'cashCounter.variance', // pending translation (English fallback)
+  'cashCounter.varianceMatch', // pending translation (English fallback)
+  'cashCounter.varianceOverage', // pending translation (English fallback)
+  'cashCounter.varianceShortage', // pending translation (English fallback)
   'common.appTitle', // brand name "Flo"
   'common.brandName', // brand name "Flo Cafe"
   'common.logoAlt', // brand name "Flo Cafe"
+  'expenses.addCategory', // pending translation (English fallback)
+  'expenses.addExpense', // pending translation (English fallback)
+  'expenses.category', // pending translation (English fallback)
+  'expenses.categoryCreated', // pending translation (English fallback)
+  'expenses.categoryDeleted', // pending translation (English fallback)
+  'expenses.categoryName', // pending translation (English fallback)
+  'expenses.clearDateFilter', // pending translation (English fallback)
+  'expenses.confirmDeleteCategory', // pending translation (English fallback)
+  'expenses.date', // pending translation (English fallback)
+  'expenses.deleteCategory', // pending translation (English fallback)
+  'expenses.deleteCategoryBlocked', // pending translation (English fallback)
+  'expenses.due', // pending translation (English fallback)
+  'expenses.entryAdded', // pending translation (English fallback)
+  'expenses.entryTypeExpense', // pending translation (English fallback)
+  'expenses.entryTypePayment', // pending translation (English fallback)
+  'expenses.failedToLoad', // pending translation (English fallback)
+  'expenses.failedToLoadSummary', // pending translation (English fallback)
+  'expenses.filterByDate', // pending translation (English fallback)
+  'expenses.history', // pending translation (English fallback)
+  'expenses.monthlyReport', // pending translation (English fallback)
+  'expenses.noCategories', // pending translation (English fallback)
+  'expenses.noEntries', // pending translation (English fallback)
+  'expenses.note', // pending translation (English fallback)
+  'expenses.overall', // pending translation (English fallback)
+  'expenses.paymentMethod', // pending translation (English fallback)
+  'expenses.paymentMethodCard', // pending translation (English fallback)
+  'expenses.paymentMethodCash', // pending translation (English fallback)
+  'expenses.paymentMethodUpi', // pending translation (English fallback)
+  'expenses.paymentRecorded', // pending translation (English fallback)
+  'expenses.recordPayment', // pending translation (English fallback)
+  'expenses.recordedBy', // pending translation (English fallback)
+  'expenses.selectMonth', // pending translation (English fallback)
+  'expenses.title', // pending translation (English fallback)
+  'expenses.totalExpenses', // pending translation (English fallback)
+  'expenses.totalPaid', // pending translation (English fallback)
+  'nav.cashCounter', // pending translation (English fallback)
+  'nav.expenses', // pending translation (English fallback)
   'nav.portLabel', // technical term "Port"
   'nav.whatsapp', // product name "WhatsApp"
+  'permissionMatrix.areas.expenses', // pending translation (English fallback)
+  'permissionMatrix.capabilities.cashCounterRecord', // pending translation (English fallback)
+  'permissionMatrix.capabilities.expenseCategoriesManage', // pending translation (English fallback)
+  'permissionMatrix.capabilities.expenseEntriesRecord', // pending translation (English fallback)
   'pos.addonPrice', // pure format "+{currency}{price}"
   'pos.loadingEllipsis', // pure symbol "…"
   'pos.tagCount', // pure format "{tag} ×{count}"
@@ -553,6 +625,7 @@ const TR_INTENTIONAL_IDENTICAL = new Set<string>([
   'products.tagVegan', // universal dietary term "Vegan"
   'settings.ipAddressPlaceholder', // example IP "192.168.1.100"
   'settings.iranNumberDigitsLatin', // script name "Latin (0-9)"
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.plan', // loanword / term "Plan"
   'settings.port', // technical term "Port"
   'settings.revflo', // brand name "RevFlo"
@@ -585,6 +658,34 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'auth.email',
   'auth.password',
   'auth.recoverPinLabel',
+  'cashCounter.cashExpenses', // pending translation (English fallback)
+  'cashCounter.cashFromOrders', // pending translation (English fallback)
+  'cashCounter.countLog', // pending translation (English fallback)
+  'cashCounter.countRecorded', // pending translation (English fallback)
+  'cashCounter.counted', // pending translation (English fallback)
+  'cashCounter.countedAmount', // pending translation (English fallback)
+  'cashCounter.date', // pending translation (English fallback)
+  'cashCounter.expectedCash', // pending translation (English fallback)
+  'cashCounter.failedToLoad', // pending translation (English fallback)
+  'cashCounter.failedToLoadMonthly', // pending translation (English fallback)
+  'cashCounter.monthlyReport', // pending translation (English fallback)
+  'cashCounter.netCash', // pending translation (English fallback)
+  'cashCounter.noCounts', // pending translation (English fallback)
+  'cashCounter.noPayments', // pending translation (English fallback)
+  'cashCounter.openingFloat', // pending translation (English fallback)
+  'cashCounter.openingFloatAlreadySet', // pending translation (English fallback)
+  'cashCounter.openingFloatSet', // pending translation (English fallback)
+  'cashCounter.overall', // pending translation (English fallback)
+  'cashCounter.recordCount', // pending translation (English fallback)
+  'cashCounter.recordedBy', // pending translation (English fallback)
+  'cashCounter.selectDate', // pending translation (English fallback)
+  'cashCounter.selectMonth', // pending translation (English fallback)
+  'cashCounter.setOpeningFloat', // pending translation (English fallback)
+  'cashCounter.title', // pending translation (English fallback)
+  'cashCounter.variance', // pending translation (English fallback)
+  'cashCounter.varianceMatch', // pending translation (English fallback)
+  'cashCounter.varianceOverage', // pending translation (English fallback)
+  'cashCounter.varianceShortage', // pending translation (English fallback)
   'common.appTitle',
   'common.brandName',
   'common.discount',
@@ -600,11 +701,48 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'dashboard.minutesValue',
   'dashboard.title',
   'dashboard.walkIn',
+  'expenses.addCategory', // pending translation (English fallback)
+  'expenses.addExpense', // pending translation (English fallback)
+  'expenses.category', // pending translation (English fallback)
+  'expenses.categoryCreated', // pending translation (English fallback)
+  'expenses.categoryDeleted', // pending translation (English fallback)
+  'expenses.categoryName', // pending translation (English fallback)
+  'expenses.clearDateFilter', // pending translation (English fallback)
+  'expenses.confirmDeleteCategory', // pending translation (English fallback)
+  'expenses.date', // pending translation (English fallback)
+  'expenses.deleteCategory', // pending translation (English fallback)
+  'expenses.deleteCategoryBlocked', // pending translation (English fallback)
+  'expenses.due', // pending translation (English fallback)
+  'expenses.entryAdded', // pending translation (English fallback)
+  'expenses.entryTypeExpense', // pending translation (English fallback)
+  'expenses.entryTypePayment', // pending translation (English fallback)
+  'expenses.failedToLoad', // pending translation (English fallback)
+  'expenses.failedToLoadSummary', // pending translation (English fallback)
+  'expenses.filterByDate', // pending translation (English fallback)
+  'expenses.history', // pending translation (English fallback)
+  'expenses.monthlyReport', // pending translation (English fallback)
+  'expenses.noCategories', // pending translation (English fallback)
+  'expenses.noEntries', // pending translation (English fallback)
+  'expenses.note', // pending translation (English fallback)
+  'expenses.overall', // pending translation (English fallback)
+  'expenses.paymentMethod', // pending translation (English fallback)
+  'expenses.paymentMethodCard', // pending translation (English fallback)
+  'expenses.paymentMethodCash', // pending translation (English fallback)
+  'expenses.paymentMethodUpi', // pending translation (English fallback)
+  'expenses.paymentRecorded', // pending translation (English fallback)
+  'expenses.recordPayment', // pending translation (English fallback)
+  'expenses.recordedBy', // pending translation (English fallback)
+  'expenses.selectMonth', // pending translation (English fallback)
+  'expenses.title', // pending translation (English fallback)
+  'expenses.totalExpenses', // pending translation (English fallback)
+  'expenses.totalPaid', // pending translation (English fallback)
   'kds.connectionLive',
   'kds.modalOrderNumber',
   'kds.viewKanban',
   'kds.viewTabs',
+  'nav.cashCounter', // pending translation (English fallback)
   'nav.dashboard',
+  'nav.expenses', // pending translation (English fallback)
   'nav.kds',
   'nav.portLabel',
   'nav.pos',
@@ -616,6 +754,13 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'orders.online',
   'orders.overridePinLabel',
   'orders.takeaway',
+  'permissionMatrix.areas.expenses', // pending translation (English fallback)
+  'permissionMatrix.areas.staff',
+  'permissionMatrix.areas.system',
+  'permissionMatrix.capabilities.cashCounterRecord', // pending translation (English fallback)
+  'permissionMatrix.capabilities.expenseCategoriesManage', // pending translation (English fallback)
+  'permissionMatrix.capabilities.expenseEntriesRecord', // pending translation (English fallback)
+  'permissionMatrix.managerDescription',
   'pos.addonPrice',
   'pos.billNumber',
   'pos.cart',
@@ -631,8 +776,7 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'pos.methodCard',
   'pos.methodCash',
   'pos.methodWallet',
-  'settings.paymentMethodCard',
-  'settings.paymentMethodCash',
+  'pos.numericKeypad',
   'pos.orderNumber',
   'pos.orderTypeDelivery',
   'pos.orderTypeOnline',
@@ -649,18 +793,17 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'pos.tagOrganic',
   'pos.tagVegan',
   'pos.taxLine',
-  'pos.numericKeypad',
+  'print.address',
+  'print.customerShort',
+  'print.kot.banner',
+  'print.taxInvoiceTitle',
+  'print.test.title',
   'printTest.escpos',
-  'printTest.kitchenStation', // English-identical station sample data
   'printTest.item',
+  'printTest.kitchenStation', // English-identical station sample data
+  'printTest.optionWebPrint', // technical browser print mode label
   'printTest.paperWidth58',
   'printTest.paperWidth80',
-  'printTest.optionWebPrint', // technical browser print mode label
-  'print.taxInvoiceTitle',
-  'print.customerShort',
-  'print.address',
-  'print.kot.banner',
-  'print.test.title',
   'products.addonSelectionRange',
   'products.barcodeLabel',
   'products.cashbackGlobalBadge',
@@ -708,10 +851,9 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'settings.backupSchemaVersion',
   'settings.billTemplateCompactName',
   'settings.browserWebusb',
+  'settings.cashDrawerPulseEnabledShort',
   'settings.connectionNetwork',
   'settings.connectionUsb',
-  'settings.paymentMethodUpi', // technical acronym (payment rail name)
-  'settings.cashDrawerPulseEnabledShort',
   'settings.currency',
   'settings.default',
   'settings.defaultPrinter',
@@ -746,6 +888,9 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'settings.paperWidth58',
   'settings.paperWidth80',
   'settings.paperWidth80Safe',
+  'settings.paymentMethodCard',
+  'settings.paymentMethodCash',
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.percentMaximum',
   'settings.plan',
   'settings.port',
@@ -765,13 +910,13 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'settings.tabOrderflow',
   'settings.tabWhatsapp',
   'settings.taxIdLabel',
+  'settings.themeSystem',
   'settings.timezone',
   'settings.unicode',
   'settings.updateStatusAvailable',
   'settings.updateStatusOffline',
   'settings.vpnMeshNetwork',
   'settings.whatsapp',
-  'settings.themeSystem',
   'setup.cloudUrlLabel',
   'setup.demoLabel',
   'setup.expressLabel',
@@ -786,9 +931,6 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'staff.passwordPlaceholder',
   'staff.roleManager',
   'staff.roleServer',
-  'permissionMatrix.managerDescription',
-  'permissionMatrix.areas.staff',
-  'permissionMatrix.areas.system',
   'support.email',
   'support.platform',
   'support.requestId',
@@ -800,9 +942,9 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'tax.fixed',
   'tax.readOnly',
   'tax.target',
-  'update.downloadingBadge',
-  'update.betaOn',
   'update.betaOff',
+  'update.betaOn',
+  'update.downloadingBadge',
   'whatsapp.blocklist.title',
   'whatsapp.connect.pairingMethodTitle',
   'whatsapp.connect.pairingPhonePlaceholder',
@@ -840,6 +982,7 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'common.logoAlt',
   'common.namePlaceholder',
   'dashboard.title',
+  'expenses.paymentMethodUpi', // technical acronym (payment rail name)
   'kds.connectionLive',
   'kds.emptyColumn',
   'kds.viewKanban',
@@ -884,13 +1027,13 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'serverApp.emailPlaceholder',
   'settings.apiKeyInputPlaceholder',
   'settings.connectionUsb',
-  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.errorDetails',
   'settings.ipAddressPlaceholder',
   'settings.iranCurrencyDisplayRial',
   'settings.iranCurrencyDisplayToman',
   'settings.kds',
   'settings.name',
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.port',
   'settings.portPlaceholder',
   'settings.printerOffline',

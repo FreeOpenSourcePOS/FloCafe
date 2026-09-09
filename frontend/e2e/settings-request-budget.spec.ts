@@ -179,6 +179,29 @@ test('Mobile Access loads cloud and pairing data only when activated, once per t
   expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
 });
 
+test('Rotating pairing code does not refresh devices after leaving Mobile Access', async ({ page }) => {
+  await startMockedSettingsSession(page, true);
+  const apiPaths = collectApiPaths(page);
+  await page.goto(`${BASE}/settings?tab=mobile-access`);
+  await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Generate Pairing Code', exact: true })).toBeVisible();
+
+  await page.route('**/api/mobile/rotate-code', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ pairing_code: 'NEWCODE', expires_at: null, qr_data_url: null }),
+    });
+  });
+  await page.getByRole('button', { name: 'Generate Pairing Code', exact: true }).click();
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/?$/);
+  await page.waitForTimeout(1200);
+
+  expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
+});
+
 test('Changing tabs aborts an in-flight page loader', async ({ page }) => {
   await startMockedSettingsSession(page);
   await page.waitForTimeout(1000);

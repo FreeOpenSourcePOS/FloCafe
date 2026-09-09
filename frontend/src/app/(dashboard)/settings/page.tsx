@@ -327,6 +327,8 @@ export default function SettingsPage() {
   const requestedAction = searchParams?.get('action');
   // Deep-link query param state for active tab and database actions.
   const [activeTab, setActiveTab] = useState(requestedTab);
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
   const loadedSettingsTabs = useRef(new Set<string>());
   const settingsTabLoadPromises = useRef(new Map<string, Promise<void>>());
   const businessHydrationPromise = useRef<Promise<void> | null>(null);
@@ -445,15 +447,17 @@ export default function SettingsPage() {
   const cloudDeletionNeedsResolution = ['pending', 'processing', 'failed'].includes(cloudDeletionStatus);
   const cloudDeletionCanCancel = ['pending', 'processing'].includes(cloudDeletionStatus) && Boolean(cloudAccount?.deletion_request?.id);
 
-  const fetchCloudAccount = async (signal?: AbortSignal) => {
+  const fetchCloudAccount = async (signal?: AbortSignal): Promise<boolean> => {
     try {
       const { data } = await api.get('/settings/cloud/account', signal ? { signal } : undefined);
-      if (signal?.aborted) return;
+      if (signal?.aborted) return false;
       setCloudAccount(data);
       setCloudAccountLoadFailed(false);
+      return true;
     } catch (error) {
-      if (isRequestCancelled(error)) return;
+      if (isRequestCancelled(error)) return false;
       setCloudAccountLoadFailed(true);
+      return false;
     }
   };
 
@@ -1385,13 +1389,14 @@ export default function SettingsPage() {
     cloud_deletion_status: '',
   });
   const [cloudStatusHydrated, setCloudStatusHydrated] = useState(false);
+  const [cloudPrivacyHydrated, setCloudPrivacyHydrated] = useState(false);
    
   const [savingCloud, setSavingCloud] = useState(false);
   const [registeringCloud, setRegisteringCloud] = useState(false);
   const [showInitializeCloudConfirm, setShowInitializeCloudConfirm] = useState(false);
 
   const cloudServicesStopped = cloudStatus.cloud_services_disabled_by_user;
-  const cloudDeletionFinal = !cloudStatusHydrated || cloudAccountLoadFailed || cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
+  const cloudDeletionFinal = !cloudPrivacyHydrated || cloudAccountLoadFailed || cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
   const cloudDeletionNeedsAction = !cloudDeletionFinal && (cloudDeletionNeedsResolution || ['processing', 'failed'].includes(cloudStatus.cloud_deletion_status));
 
   const refreshCloudStatus = async () => {
@@ -1731,6 +1736,7 @@ export default function SettingsPage() {
         cloudHydrationPromise.current = null;
         cloudRegistrationStatus.current = 'unregistered';
         setCloudStatusHydrated(false);
+        setCloudPrivacyHydrated(false);
       }
       if (cloudHydrated.current) {
         registrationStatus = cloudRegistrationStatus.current;
@@ -2047,6 +2053,7 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'privacy') {
+        setCloudPrivacyHydrated(false);
         const [telemetryResponse, diagnosticsResponse] = await Promise.all([
           get('/settings/telemetry_enabled').catch(() => null),
           get('/settings/diagnostics_consent').catch(() => null),
@@ -2054,12 +2061,14 @@ export default function SettingsPage() {
         if (!active()) return;
         setTelemetryEnabled(telemetryResponse ? telemetryResponse.data.setting?.value === 'true' : false);
         setDiagnosticsConsent(diagnosticsResponse ? diagnosticsResponse.data.setting?.value !== 'false' : true);
-        await Promise.all([
-          loadCloud().catch((error) => {
+        const [cloudLoaded, accountLoaded] = await Promise.all([
+          loadCloud().then(() => true).catch((error) => {
             if (isRequestCancelled(error)) throw error;
+            return false;
           }),
-          isOwner ? fetchCloudAccount(signal) : Promise.resolve(),
+          isOwner ? fetchCloudAccount(signal) : Promise.resolve(true),
         ]);
+        if (active() && cloudLoaded && accountLoaded) setCloudPrivacyHydrated(true);
         return;
       }
       if (tab === 'data') {
@@ -2603,12 +2612,13 @@ export default function SettingsPage() {
     setRotatingCode(true);
     try {
       const res = await api.post('/mobile/rotate-code');
+      if (activeTabRef.current !== 'mobile-access') return;
       setPairingCode(res.data.pairing_code);
       setPairingExpiresAt(res.data.expires_at);
       setPairingQrDataUrl(res.data.qr_data_url || null);
       setPairingUnavailable(false);
       toast.success(t('pairingCodeRotated'));
-      loadPairedDevices();
+      await loadPairedDevices();
     } catch {
       // Show a localized failure; the specific backend reason stays in logs.
       toast.error(t('pairingCodeFailed'));

@@ -275,7 +275,7 @@ test('Cloud registration refreshes Mobile Access pairing data', async ({ page })
   await page.getByRole('button', { name: 'Accept & Initialize', exact: true }).click();
 
   await expect(page.getByText('PAIR123', { exact: true })).toBeVisible();
-  await expect(page.getByRole('checkbox', { name: 'Enable bill sync', exact: true })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /Enable Cloud Sync for RevFlo/i })).toBeChecked();
   expect(apiPaths.filter((path) => path === '/api/mobile/pairing-code')).toHaveLength(1);
   expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
 });
@@ -317,6 +317,10 @@ test('Save All does not write cloud defaults after unavailable cloud hydration',
   await page.goto(`${BASE}/settings?tab=mobile-access`);
   await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
   await expect.poll(() => cloudReads).toBe(1);
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await page.locator('input[type="text"]').first().fill('Changed Store');
+  await page.getByRole('button', { name: 'Mobile Access', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
   await expect.poll(() => cloudReads).toBe(2);
   expect(cloudWrites).toBe(0);
@@ -485,7 +489,7 @@ test('Rotating pairing code does not update the code after leaving and re-enteri
       });
     } catch {}
   });
-  await page.getByRole('button', { name: 'Generate New Code', exact: true }).click();
+  await page.getByRole('button', { name: /Generate new code/i }).click();
   await page.getByRole('button', { name: 'Store Details', exact: true }).click();
   await page.getByRole('button', { name: 'Mobile Access', exact: true }).click();
   await expect(page.getByText('INITIALCODE', { exact: true })).toBeVisible();

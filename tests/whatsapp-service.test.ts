@@ -34,6 +34,11 @@ let requestAuthStateStarted!: () => void;
 const requestAuthStateStartedPromise = new Promise<void>((resolve) => { requestAuthStateStarted = resolve; });
 let releaseRequestAuthState!: () => void;
 const requestAuthStateGate = new Promise<void>((resolve) => { releaseRequestAuthState = resolve; });
+let holdCredentialWrite = false;
+let credentialWriteStarted!: () => void;
+const credentialWriteStartedPromise = new Promise<void>((resolve) => { credentialWriteStarted = resolve; });
+let releaseCredentialWrite!: () => void;
+const credentialWriteGate = new Promise<void>((resolve) => { releaseCredentialWrite = resolve; });
 const fakeSocket = {
   ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
   onWhatsApp: async () => [{ exists: true, jid: '15555550100@s.whatsapp.net' }],
@@ -58,7 +63,15 @@ const fakeBaileys = {
       requestAuthStateStarted();
       await requestAuthStateGate;
     }
-    return { state: {}, saveCreds: () => {} };
+    return {
+      state: {},
+      saveCreds: async () => {
+        if (holdCredentialWrite) {
+          credentialWriteStarted();
+          await credentialWriteGate;
+        }
+      },
+    };
   },
   makeWASocket: () => {
     makeSocketCalls++;
@@ -162,6 +175,22 @@ async function main(): Promise<void> {
     await whatsapp.connectWithQr();
     eventHandlers.get('connection.update')?.({ connection: 'open' });
     await new Promise((resolve) => setImmediate(resolve));
+
+    holdCredentialWrite = true;
+    const authStateCallsBeforeCredentialRecovery = authStateCalls;
+    eventHandlers.get('creds.update')?.({});
+    await credentialWriteStartedPromise;
+    whatsapp.disconnect();
+    await whatsapp.enable('credential-recovery-test-user');
+    const credentialRecovery = whatsapp.connectWithQr();
+    let credentialRecoverySettled = false;
+    void credentialRecovery.then(() => { credentialRecoverySettled = true; }, () => { credentialRecoverySettled = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(!credentialRecoverySettled, 'startup waits for asynchronous credential persistence before reopening auth');
+    releaseCredentialWrite();
+    holdCredentialWrite = false;
+    await credentialRecovery;
+    assert(authStateCalls === authStateCallsBeforeCredentialRecovery + 1, 'credential cleanup completes before the replacement startup');
 
     holdRecoveryAuthState = true;
     const authStateCallsBeforeRecovery = authStateCalls;

@@ -163,6 +163,8 @@ let whatsappAbortController = new AbortController();
 let whatsappStartPromise: Promise<void> | null = null;
 let whatsappStartController: AbortController | null = null;
 let whatsappStartAttempt = 0;
+let credentialWriteTail: Promise<void> = Promise.resolve();
+let authCleanupPromise: Promise<void> = Promise.resolve();
 let shutdownSocket: BaileysSocket | null = null;
 let whatsappTerminalCleanup = false;
 let whatsappShutdownRequested = false;
@@ -651,7 +653,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         writeSetting('whatsapp_connected_phone', '');
         state.lastError = 'Logged out. Reconnect to continue.';
         state.lastErrorReason = 'logged_out';
-        wipeAuthDir();
+        scheduleAuthWipe();
       } else if (!isWhatsAppTerminal() && state.enabled) {
         // Auto-reconnect on transient disconnections; cooldown only applies to explicit 429 errors.
         state.state = 'connecting';
@@ -750,6 +752,9 @@ async function resolveWaWebVersion(signal: AbortSignal): Promise<[number, number
 async function startSocketImpl(attemptId: number): Promise<void> {
   const signal = whatsappAbortController.signal;
   if (!state.enabled || isWhatsAppTerminal() || signal.aborted) return;
+  await authCleanupPromise;
+  await credentialWriteTail;
+  if (!state.enabled || isWhatsAppTerminal() || signal.aborted) return;
   logWhatsApp('info', 'socket_start', { attemptId });
   if (state.socket) {
     logWhatsApp('info', 'socket_start_skipped', { attemptId, reason: 'socket_exists' });
@@ -796,8 +801,7 @@ async function startSocketImpl(attemptId: number): Promise<void> {
   state.state = 'connecting';
   attachSocketHandlers(socket);
   socket.ev.on('creds.update', (...args: any[]) => {
-    if (!isActiveSocket(socket)) return;
-    (saveCreds as (...values: any[]) => unknown)(...args);
+    queueCredentialWrite(socket, saveCreds as (...values: any[]) => unknown, args);
   });
   logWhatsApp('info', 'socket_created', { attemptId, state: state.state });
 }
@@ -808,6 +812,25 @@ function wipeAuthDir(): void {
   } catch (err) {
     logWhatsApp('error', 'auth_cleanup_failed', { error: sanitizeLogText(err) });
   }
+}
+
+function scheduleAuthWipe(): void {
+  const pendingWrites = credentialWriteTail;
+  authCleanupPromise = authCleanupPromise
+    .then(() => pendingWrites)
+    .then(() => wipeAuthDir());
+}
+
+function queueCredentialWrite(socket: BaileysSocket, saveCreds: (...values: any[]) => unknown, args: any[]): void {
+  if (!isActiveSocket(socket)) return;
+  const write = credentialWriteTail.then(async () => {
+    if (!isActiveSocket(socket)) return;
+    await saveCreds(...args);
+  });
+  credentialWriteTail = write.catch((error) => {
+    logWhatsApp('error', 'credentials_save_failed', { error: sanitizeLogText(error) });
+  });
+  void trackWhatsAppWork(write, () => {}).catch(() => {});
 }
 
 function startSocket(requestSignal?: AbortSignal): Promise<void> {
@@ -903,7 +926,7 @@ export function disable(): void {
   state.lastErrorReason = null;
   state.cooldownUntil = null;
   if (state.cooldownTimer) { clearTimeout(state.cooldownTimer); state.cooldownTimer = null; }
-  wipeAuthDir();
+  scheduleAuthWipe();
 }
 
 export async function connectWithQr(requestSignal?: AbortSignal): Promise<{ ok: boolean; qr?: string; error?: string }> {
@@ -963,7 +986,7 @@ export function disconnect(): void {
   state.lastError = null;
   state.lastErrorReason = null;
   writeSetting('whatsapp_connected_phone', '');
-  wipeAuthDir();
+  scheduleAuthWipe();
 }
 
 export interface SendResult {

@@ -79,7 +79,7 @@ async function run(): Promise<void> {
     'backupDatabase', 'checkForUpdates', 'dbApplySafeFixes', 'dbHealthCheck',
     'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
-    'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openKdsWindow', 'platform', 'reportRendererError', 'restartAndInstall',
+    'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openKdsWindow', 'openWhatsAppShare', 'platform', 'reportRendererError', 'restartAndInstall',
     'rasterizeKotDocument', 'rasterizePrintDocument', 'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'setThemeEffective',
     'windowAction', 'windowReady',
   ].sort());
@@ -102,6 +102,7 @@ async function run(): Promise<void> {
   await call('windowReady', { epoch: 1 });
   await call('windowAction', 'minimize');
   await call('getWindowState');
+  await call('openWhatsAppShare', 'https://wa.me/15555550100?text=test');
   await call('reportRendererError', { message: 'boom', stack: 'stack', digest: 'd1', route: '/dashboard' });
 
   const receivedStatuses: unknown[] = [];
@@ -142,6 +143,7 @@ async function run(): Promise<void> {
     { channel: 'window-ready', args: [{ epoch: 1, documentNonce }] },
     { channel: 'window-action', args: ['minimize'] },
     { channel: 'get-window-state', args: [] },
+    { channel: 'whatsapp-open-share', args: ['https://wa.me/15555550100?text=test'] },
     { channel: 'report-renderer-error', args: [{ message: 'boom', stack: 'stack', digest: 'd1', route: '/dashboard' }] },
   ]);
 

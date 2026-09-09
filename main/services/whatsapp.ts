@@ -19,18 +19,53 @@ async function loadBaileys(): Promise<typeof import('@whiskeysockets/baileys')> 
   return baileysModule;
 }
 
-// Safely load pino with a no-op fallback to avoid ASAR worker thread failures in packaged builds.
+type WhatsAppLogLevel = 'debug' | 'info' | 'warn' | 'error';
+const WHATSAPP_LOG_LEVEL = process.env.FLO_WHATSAPP_LOG_LEVEL === 'debug' ? 'debug' : 'warn';
+const WHATSAPP_LOG_LEVELS: Record<string, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+
+function sanitizeLogText(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = value instanceof Error ? value.message : String(value);
+  return text
+    .replace(/\b\d{7,15}\b/g, '[redacted-number]')
+    .replace(/(?:token|secret|password|auth|key)=\S+/gi, '[redacted]')
+    .slice(0, 240);
+}
+
+function maskPhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 5) return '[redacted-number]';
+  return `+${'*'.repeat(Math.max(1, digits.length - 4))}${digits.slice(-4)}`;
+}
+
+function logWhatsApp(level: WhatsAppLogLevel, event: string, details: Record<string, unknown> = {}): void {
+  const line = `[WhatsApp] ${JSON.stringify({ event, ...details })}`;
+  if (level === 'error') console.error(line);
+  else if (level === 'warn') console.warn(line);
+  else if (level === 'debug') console.debug(line);
+  else console.info(line);
+}
+
+// Keep Baileys warnings/errors in the existing Electron main log. Its verbose
+// debug stream is opt-in because it is otherwise too noisy for production.
 type MinimalLogger = { level: string; trace: (...a: unknown[]) => void; debug: (...a: unknown[]) => void; info: (...a: unknown[]) => void; warn: (...a: unknown[]) => void; error: (...a: unknown[]) => void; fatal: (...a: unknown[]) => void; child: (obj: Record<string, unknown>) => MinimalLogger };
 function makeBaileysLogger(): MinimalLogger {
-  const noop = (): void => {};
-  const fallback: MinimalLogger = { level: 'silent', trace: noop, debug: noop, info: noop, warn: noop, error: noop, fatal: noop, child: () => fallback };
-  try {
-    const pinoFactory = require('pino').pino ?? require('pino');
-    return pinoFactory({ level: 'silent' });
-  } catch (err) {
-    console.error('[WhatsApp] pino failed to load (packaging/ASAR issue?) — WhatsApp logging disabled, everything else unaffected:', (err as Error).message);
-    return fallback;
-  }
+  const emit = (level: WhatsAppLogLevel) => (..._args: unknown[]): void => {
+    if (WHATSAPP_LOG_LEVELS[level] < WHATSAPP_LOG_LEVELS[WHATSAPP_LOG_LEVEL]) return;
+    logWhatsApp(level === 'debug' ? 'debug' : level, 'baileys_log', { level });
+  };
+  const logger: MinimalLogger = {
+    level: WHATSAPP_LOG_LEVEL,
+    trace: emit('debug'),
+    debug: emit('debug'),
+    info: emit('info'),
+    warn: emit('warn'),
+    error: emit('error'),
+    fatal: emit('error'),
+    child: () => logger,
+  };
+  return logger;
 }
 
 const AUTH_DIR_NAME = 'whatsapp-auth';
@@ -45,8 +80,8 @@ const RECONNECT_DELAY_MS = 5_000;
 const VERSION_FETCH_TIMEOUT_MS = 5_000;
 const RATE_LIMITED_STATUS_CODES = new Set([429]);
 
-// Baileys is extremely chatty at debug. Silence it so the Electron log
-// doesn't drown out the real signal from our service.
+// Baileys is extremely chatty at debug. Keep that level opt-in while retaining
+// warnings and errors in the Electron log for packaged-app diagnostics.
 const baileysLogger = makeBaileysLogger();
 
 const SHORTENER_HOSTS = new Set([
@@ -124,6 +159,8 @@ type WhatsAppWorkCancellation = () => void;
 const inFlightWhatsAppWork = new Map<Promise<unknown>, WhatsAppWorkCancellation>();
 let whatsappShutdownPromise: Promise<void> | null = null;
 let whatsappAbortController = new AbortController();
+let whatsappStartPromise: Promise<void> | null = null;
+let whatsappStartAttempt = 0;
 let shutdownSocket: BaileysSocket | null = null;
 let whatsappTerminalCleanup = false;
 let whatsappShutdownRequested = false;
@@ -542,6 +579,24 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
   });
 }
 
+async function runSocketPhase<T>(attemptId: number, phase: string, operation: () => T | Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    const result = await operation();
+    logWhatsApp('info', 'socket_phase', { attemptId, phase, ok: true, durationMs: Date.now() - startedAt });
+    return result;
+  } catch (error) {
+    logWhatsApp('error', 'socket_phase', {
+      attemptId,
+      phase,
+      ok: false,
+      durationMs: Date.now() - startedAt,
+      error: sanitizeLogText(error),
+    });
+    throw error;
+  }
+}
+
 function attachSocketHandlers(socket: BaileysSocket): void {
   socket.ev.on('connection.update', (update: any) => {
     void trackWhatsAppWork((async () => {
@@ -551,6 +606,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
       state.lastQr = qr;
       state.lastPairingCode = null;
       state.state = 'waiting_qr';
+      logWhatsApp('info', 'connection_state', { state: 'waiting_qr' });
     }
     if (connection === 'open') {
       state.state = 'connected';
@@ -564,11 +620,18 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         state.connectedPhone = phone;
         writeSetting('whatsapp_connected_phone', phone);
       }
+      logWhatsApp('info', 'connection_state', { state: 'connected', phone: maskPhone(state.connectedPhone) });
     } else if (connection === 'close') {
-      const status = (lastDisconnect?.error as any)?.output?.statusCode as number | undefined;
+      const disconnectError = lastDisconnect?.error;
+      const status = (disconnectError as any)?.output?.statusCode as number | undefined;
       state.socket = null;
       state.lastQr = null;
       state.lastPairingCode = null;
+      logWhatsApp('warn', 'connection_state', {
+        state: 'closed',
+        statusCode: status ?? null,
+        reason: sanitizeLogText(disconnectError),
+      });
       // Baileys's DisconnectReason.loggedOut == 401. Hardcoded here so we
       // don't have to load Baileys synchronously just to compare a number.
       if (status === 401) {
@@ -586,12 +649,14 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         state.lastError = `Connection closed (${status ?? 'unknown'}), reconnecting in ${RECONNECT_DELAY_MS / 1000}s…`;
         state.lastErrorReason = 'reconnecting';
         if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+        logWhatsApp('info', 'reconnect_scheduled', { delayMs: RECONNECT_DELAY_MS, statusCode: status ?? null });
         state.reconnectTimer = setTimeout(() => {
           state.reconnectTimer = null;
           if (state.enabled && !isWhatsAppTerminal()) {
-            void startSocket().catch((err) => {
-              console.warn('[WhatsApp] Reconnect failed:', err?.message ?? err);
-            });
+            logWhatsApp('info', 'reconnect_attempt');
+            void startSocket()
+              .then(() => logWhatsApp('info', 'reconnect_started'))
+              .catch((err) => logWhatsApp('error', 'reconnect_failed', { error: sanitizeLogText(err) }));
           }
         }, RECONNECT_DELAY_MS);
       } else {
@@ -673,60 +738,110 @@ async function resolveWaWebVersion(signal: AbortSignal): Promise<[number, number
   return undefined;
 }
 
-async function startSocketImpl(requestSignal?: AbortSignal): Promise<void> {
+async function startSocketImpl(requestSignal: AbortSignal | undefined, attemptId: number): Promise<void> {
   const signal = requestSignal
     ? AbortSignal.any([requestSignal, whatsappAbortController.signal])
     : whatsappAbortController.signal;
   if (!state.enabled || isWhatsAppTerminal() || signal.aborted) return;
-  if (state.socket) return;
+  logWhatsApp('info', 'socket_start', { attemptId });
+  if (state.socket) {
+    logWhatsApp('info', 'socket_start_skipped', { attemptId, reason: 'socket_exists' });
+    return;
+  }
   const authDir = getAuthDir();
   if (!fs.existsSync(authDir)) {
     fs.mkdirSync(authDir, { recursive: true, mode: 0o700 });
   }
-  const version = await resolveWaWebVersion(signal);
+  const version = await runSocketPhase(attemptId, 'version_lookup', () => resolveWaWebVersion(signal));
   if (isWhatsAppTerminal() || signal.aborted) return;
-  const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await abortable(() => loadBaileys(), signal);
+  const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await runSocketPhase(
+    attemptId,
+    'baileys_load',
+    () => abortable(() => loadBaileys(), signal),
+  );
   if (isWhatsAppTerminal() || signal.aborted) return;
-  const { state: authState, saveCreds } = await abortable(() => useMultiFileAuthState(authDir), signal);
+  const { state: authState, saveCreds } = await runSocketPhase(
+    attemptId,
+    'auth_load',
+    () => abortable(() => useMultiFileAuthState(authDir), signal),
+  );
   if (isWhatsAppTerminal() || signal.aborted) return;
-  const socket = makeWASocket({
-    version,
-    auth: authState,
-    printQRInTerminal: false,
-    logger: baileysLogger,
-    browser: Browsers.macOS('Chrome'),
-    markOnlineOnConnect: false,
-    syncFullHistory: false,
-    getMessage: async (key: WAMessageKey) => {
-      const cached = state.sentMessageCache.get(key.id ?? '');
-      if (cached) return cached;
-      // Return empty message to avoid hanging on re-encryption requests.
-      return proto.Message.create({});
-    },
-  });
+  const socket = await runSocketPhase(attemptId, 'socket_create', () => makeWASocket({
+      version,
+      auth: authState,
+      printQRInTerminal: false,
+      logger: baileysLogger,
+      browser: Browsers.macOS('Chrome'),
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+      getMessage: async (key: WAMessageKey) => {
+        const cached = state.sentMessageCache.get(key.id ?? '');
+        if (cached) return cached;
+        // Return empty message to avoid hanging on re-encryption requests.
+        return proto.Message.create({});
+      },
+    }));
   if (isWhatsAppTerminal() || signal.aborted) {
     try { socket.end(undefined); } catch { }
     return;
   }
+  state.socket = socket;
+  state.state = 'connecting';
   attachSocketHandlers(socket);
   socket.ev.on('creds.update', (...args: any[]) => {
     if (isWhatsAppTerminal()) return;
     (saveCreds as (...values: any[]) => unknown)(...args);
   });
-  state.socket = socket;
-  state.state = 'connecting';
+  logWhatsApp('info', 'socket_created', { attemptId, state: state.state });
 }
 
 function wipeAuthDir(): void {
   try {
     fs.rmSync(getAuthDir(), { recursive: true, force: true });
   } catch (err) {
-    console.warn('[WhatsApp] Failed to wipe auth dir:', err);
+    logWhatsApp('error', 'auth_cleanup_failed', { error: sanitizeLogText(err) });
   }
 }
 
 function startSocket(requestSignal?: AbortSignal): Promise<void> {
-  return trackWhatsAppWork(startSocketImpl(requestSignal));
+  if (whatsappStartPromise) {
+    logWhatsApp('info', 'socket_start_deduplicated', { attemptId: whatsappStartAttempt });
+    return whatsappStartPromise;
+  }
+  if (!state.enabled || isWhatsAppTerminal() || requestSignal?.aborted) return Promise.resolve();
+  if (state.socket) {
+    logWhatsApp('info', 'socket_start_skipped', { reason: 'socket_exists' });
+    return Promise.resolve();
+  }
+
+  const attemptId = ++whatsappStartAttempt;
+  const startedAt = Date.now();
+  state.state = 'connecting';
+  let sharedPromise: Promise<void>;
+  const startup = startSocketImpl(requestSignal, attemptId)
+    .then(() => {
+      logWhatsApp('info', 'socket_start_result', { attemptId, ok: true, durationMs: Date.now() - startedAt });
+    })
+    .catch((error) => {
+      if (!isWhatsAppTerminal()) {
+        state.socket = null;
+        state.state = 'disconnected';
+        state.lastError = 'WhatsApp connection could not be started.';
+        state.lastErrorReason = 'startup_failed';
+      }
+      logWhatsApp('error', 'socket_start_result', {
+        attemptId,
+        ok: false,
+        durationMs: Date.now() - startedAt,
+        error: sanitizeLogText(error),
+      });
+      throw error;
+    });
+  sharedPromise = trackWhatsAppWork(startup).finally(() => {
+    if (whatsappStartPromise === sharedPromise) whatsappStartPromise = null;
+  });
+  whatsappStartPromise = sharedPromise;
+  return sharedPromise;
 }
 
 export async function enable(userId: string): Promise<{ ok: boolean; error?: string }> {
@@ -746,7 +861,7 @@ export async function enable(userId: string): Promise<{ ok: boolean; error?: str
   const credsPath = path.join(getAuthDir(), 'creds.json');
   if (fs.existsSync(credsPath)) {
     void startSocket().catch((err) => {
-      console.warn('[WhatsApp] Auto-restore on enable failed:', err?.message ?? err);
+      logWhatsApp('error', 'auto_restore_failed', { error: sanitizeLogText(err) });
     });
   }
   return { ok: true };
@@ -858,6 +973,8 @@ export function sendMessage(req: QueuedSend): Promise<SendResult> {
 }
 
 async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
+  const startedAt = Date.now();
+  logWhatsApp('info', 'send_requested', { phone: maskPhone(req.phoneE164), kind: req.kind });
   const signal = req.signal
     ? AbortSignal.any([whatsappAbortController.signal, req.signal])
     : whatsappAbortController.signal;
@@ -867,12 +984,46 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
   sendLocks.set(req.phoneE164, current);
   try {
     await abortable(() => previous, signal);
-    if (isWhatsAppTerminal()) return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
-    return await sendMessageInternal(req, signal);
+    if (isWhatsAppTerminal()) {
+      const result = { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' as const };
+      logWhatsApp('warn', 'send_result', {
+        phone: maskPhone(req.phoneE164),
+        kind: req.kind,
+        ok: false,
+        reason: result.reason,
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    }
+    const result = await sendMessageInternal(req, signal);
+    logWhatsApp(result.ok ? 'info' : 'warn', 'send_result', {
+      phone: maskPhone(req.phoneE164),
+      kind: req.kind,
+      ok: result.ok,
+      reason: result.reason ?? 'sent',
+      durationMs: Date.now() - startedAt,
+    });
+    return result;
   } catch (error) {
     if (isWhatsAppTerminal() || signal.aborted) {
-      return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+      const result = { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' as const };
+      logWhatsApp('warn', 'send_result', {
+        phone: maskPhone(req.phoneE164),
+        kind: req.kind,
+        ok: false,
+        reason: result.reason,
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
     }
+    logWhatsApp('error', 'send_result', {
+      phone: maskPhone(req.phoneE164),
+      kind: req.kind,
+      ok: false,
+      reason: 'send_failed',
+      error: sanitizeLogText(error),
+      durationMs: Date.now() - startedAt,
+    });
     throw error;
   } finally {
     release();
@@ -1119,10 +1270,13 @@ export function initFromDb(): void {
   }
   const v = getDatabase().prepare("SELECT value FROM settings WHERE key = 'whatsapp_enabled'").get() as { value: string | null } | undefined;
   state.enabled = v?.value === 'true';
+  logWhatsApp('info', 'startup_init', {
+    enabled: state.enabled,
+    hasCredentials: fs.existsSync(credsPath),
+    connectedPhone: maskPhone(state.connectedPhone),
+  });
   if (state.enabled) {
-    void startSocket().catch((err) => {
-      console.warn('[WhatsApp] Startup failed:', err?.message ?? err);
-    });
+    void startSocket().catch(() => {});
   }
 }
 

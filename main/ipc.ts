@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, BrowserWindow } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -22,6 +22,7 @@ import { getCurrencyMinorUnitFactor } from './countries';
 import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from './printers/thermal';
 import { isKotDocument, isPrintDocument } from '../shared/print/document';
 import { sendEvent as sendTelemetryEvent } from './services/telemetry';
+import { isSafeWhatsAppShareUrl } from './security/url-allowlist';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -395,6 +396,19 @@ export function registerIpcHandlers(
       return { error: getErrorMessage(err) };
     }
   }));
+
+  handle('whatsapp-open-share', async (_event, rawUrl: unknown) => {
+    if (typeof rawUrl !== 'string' || !isSafeWhatsAppShareUrl(rawUrl)) {
+      return { success: false, error: 'Invalid WhatsApp share URL' };
+    }
+    try {
+      await shell.openExternal(rawUrl);
+      return { success: true };
+    } catch (error: unknown) {
+      console.error('[IPC] WhatsApp share open failed:', getErrorMessage(error));
+      return { success: false, error: 'Failed to open WhatsApp' };
+    }
+  });
 
   // Module-level reference to ensure single instance
   let activeKdsWindow: BrowserWindow | null = null;

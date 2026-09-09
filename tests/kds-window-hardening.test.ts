@@ -10,6 +10,7 @@ const originalLoad = Module._load;
 const registered = new Map<string, (...args: any[]) => any>();
 const registeredSync = new Map<string, (...args: any[]) => any>();
 const windows: any[] = [];
+let failExternalOpen = false;
 
 class FakeWebContents {
   handlers = new Map<string, Function[]>();
@@ -89,7 +90,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
       },
       app: { getPath: () => '/tmp/flo-kds-test', getVersion: () => '3.2.0', getName: () => 'FloCafe' },
       BrowserWindow: FakeBrowserWindow,
-      shell: { openExternal: () => Promise.resolve() },
+      shell: {
+        openExternal: async () => {
+          if (failExternalOpen) throw new Error('test external-open failure');
+        },
+      },
     };
   }
   if (request === './db') {
@@ -208,6 +213,7 @@ async function run(): Promise<void> {
     { channel: 'get-settings', args: [] },
     { channel: 'set-setting', args: ['business_name', 'My Cafe'] },
     { channel: 'whatsapp-get-status', args: [] },
+    { channel: 'whatsapp-open-share', args: ['https://wa.me/15555550100?text=test'] },
     { channel: 'get-kds-info', args: [] },
     { channel: 'open-kds-window', args: [] },
     { channel: 'get-app-info', args: [] },
@@ -244,6 +250,16 @@ async function run(): Promise<void> {
 
     log(`  ✓ ${channel}: successfully blocks untrusted senders and admits trusted origins`);
   }
+
+  const openShareListener = registered.get('whatsapp-open-share')!;
+  const invalidShareRes = await openShareListener(trustedLocalhost, 'https://example.com/');
+  assert.deepEqual(invalidShareRes, { success: false, error: 'Invalid WhatsApp share URL' }, 'WhatsApp opener rejects non-wa.me URLs');
+  failExternalOpen = true;
+  const failedShareRes = await openShareListener(trustedLocalhost, 'https://wa.me/15555550100?text=test');
+  assert.deepEqual(failedShareRes, { success: false, error: 'Failed to open WhatsApp' }, 'WhatsApp opener reports shell failure');
+  failExternalOpen = false;
+  const successfulShareRes = await openShareListener(trustedLocalhost, 'https://wa.me/15555550100?text=test');
+  assert.deepEqual(successfulShareRes, { success: true }, 'WhatsApp opener reports shell success');
 
   // 2. PIN-gated handlers enforce master PIN
   log('\n[Phase 2] Verifying PIN-gated handlers require authorization...');

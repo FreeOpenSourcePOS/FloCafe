@@ -113,11 +113,14 @@ export default function PrintTestPage() {
           break;
         }
         case 'whatsapp':
-          shareBillViaWhatsApp(testBill, testCustomer, testTenant, {
+          if (!await shareBillViaWhatsApp(testBill, testCustomer, testTenant, {
             pointsEarned: 50,
             walletBalance: 200,
-          });
-          toast.success(t('whatsappOpened'));
+          })) {
+            toast.error(tCommon('somethingWrong'));
+          } else {
+            toast.success(t('whatsappOpened'));
+          }
           break;
       }
     } catch {

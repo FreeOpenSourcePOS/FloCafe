@@ -17,6 +17,12 @@ let releasePendingPresence!: () => void;
 const pendingPresence = new Promise<void>((resolve) => { releasePendingPresence = resolve; });
 let presenceSettled = false;
 void pendingPresence.then(() => { presenceSettled = true; });
+let makeSocketCalls = 0;
+let holdAuthState = false;
+let authStateStarted!: () => void;
+const authStateStartedPromise = new Promise<void>((resolve) => { authStateStarted = resolve; });
+let releaseAuthState!: () => void;
+const authStateGate = new Promise<void>((resolve) => { releaseAuthState = resolve; });
 const fakeSocket = {
   ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
   onWhatsApp: async () => [{ exists: true, jid: '15555550100@s.whatsapp.net' }],
@@ -27,8 +33,17 @@ const fakeSocket = {
 };
 const fakeBaileys = {
   fetchLatestWaWebVersion: async () => ({ version: [2, 3000, 1] }),
-  useMultiFileAuthState: async () => ({ state: {}, saveCreds: () => {} }),
-  makeWASocket: () => fakeSocket,
+  useMultiFileAuthState: async () => {
+    if (holdAuthState) {
+      authStateStarted();
+      await authStateGate;
+    }
+    return { state: {}, saveCreds: () => {} };
+  },
+  makeWASocket: () => {
+    makeSocketCalls++;
+    return fakeSocket;
+  },
   Browsers: { macOS: () => ({}) },
   proto: { Message: { create: () => ({}) } },
 };
@@ -103,10 +118,22 @@ async function main(): Promise<void> {
   const testDir = path.join(os.tmpdir(), 'flo-whatsapp-shutdown-test');
   const originalFetch = globalThis.fetch;
   const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
+  fs.rmSync(testDir, { recursive: true, force: true });
   initDatabase();
   globalThis.fetch = (() => Promise.reject(new Error('offline test network'))) as typeof fetch;
   try {
     await whatsapp.enable('shutdown-test-user');
+
+    holdAuthState = true;
+    const socketCallsBeforeRace = makeSocketCalls;
+    whatsapp.initFromDb();
+    whatsapp.initFromDb();
+    await authStateStartedPromise;
+    releaseAuthState();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(makeSocketCalls === socketCallsBeforeRace + 1, 'duplicate startup initialization creates one socket');
+    holdAuthState = false;
+
     await whatsapp.connectWithQr();
     eventHandlers.get('connection.update')?.({ connection: 'open' });
     await new Promise((resolve) => setImmediate(resolve));

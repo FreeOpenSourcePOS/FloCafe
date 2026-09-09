@@ -76,9 +76,13 @@ export function shareBillViaWhatsApp(
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WhatsAppShareOptions = {},
   localeOverride?: string,
-): void {
+): Promise<boolean> {
   const url = getWhatsAppShareUrl(bill, tenant, customerInfo, opts, localeOverride);
-  window.open(url, '_blank', 'noopener,noreferrer');
+  if (window.electronAPI?.openWhatsAppShare) {
+    return window.electronAPI.openWhatsAppShare(url)
+      .then((result) => 'success' in result && result.success === true);
+  }
+  return Promise.resolve(window.open(url, '_blank', 'noopener,noreferrer') !== null);
 }
 
 /** Generates plain text bill summary message for clipboard copy. */

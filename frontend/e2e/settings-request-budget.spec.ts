@@ -1,11 +1,19 @@
 import { test, expect, type Page } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 
-async function startMockedSettingsSession(page: Page, cloudRegistered = false): Promise<void> {
+const MOCK_API_RATE_LIMIT = 100;
+
+async function startMockedSettingsSession(page: Page, cloudRegistered = false, cloudStatus: Record<string, unknown> = {}): Promise<void> {
+  let apiRequestCount = 0;
   await page.addInitScript(() => {
     localStorage.setItem('token', 'settings-request-budget-token');
   });
   await page.route('**/api/**', async (route) => {
+    apiRequestCount += 1;
+    if (apiRequestCount > MOCK_API_RATE_LIMIT) {
+      await route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: 'Too many requests' }) });
+      return;
+    }
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/auth/me') {
       await route.fulfill({
@@ -18,11 +26,11 @@ async function startMockedSettingsSession(page: Page, cloudRegistered = false): 
       });
       return;
     }
-    if (path === '/api/settings/cloud' && cloudRegistered) {
+    if (path === '/api/settings/cloud' && (cloudRegistered || Object.keys(cloudStatus).length > 0)) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ cloud_registration_status: 'registered' }),
+        body: JSON.stringify({ cloud_registration_status: cloudRegistered ? 'registered' : 'unregistered', ...cloudStatus }),
       });
       return;
     }
@@ -92,6 +100,20 @@ test('Store Settings does not hydrate inactive tabs', async ({ page }) => {
   await page.waitForTimeout(300);
   expect(apiPaths).not.toContain('/api/mobile/pairing-code');
   expect(apiPaths).not.toContain('/api/mobile/devices');
+});
+
+test('Privacy hydrates terminal cloud status before exposing deletion', async ({ page }) => {
+  await startMockedSettingsSession(page, false, {
+    cloud_registration_status: 'deleted',
+    cloud_deletion_status: 'deleted',
+  });
+
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/?$/);
+  await page.getByRole('button', { name: 'Privacy', exact: true }).click();
+  await expect(page).toHaveURL(/tab=privacy/);
+  await expect(page.getByRole('heading', { name: 'Privacy', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Request cloud data deletion', exact: true })).toHaveCount(0);
 });
 
 test('Mobile Access loads cloud and pairing data only when activated, once per tenant', async ({ page }) => {
@@ -175,7 +197,7 @@ test('Rapid Settings navigation stays below the read rate limit', async ({ page 
   }
   await page.waitForTimeout(500);
 
-  expect(apiPaths.length).toBeLessThan(120);
+  expect(apiPaths.length).toBeLessThan(MOCK_API_RATE_LIMIT);
   expect(responseStatuses).not.toContain(429);
 });
 

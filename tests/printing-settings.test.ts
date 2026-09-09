@@ -62,6 +62,9 @@ async function main() {
     assertPersisted(db, 'bill_language_policy', JSON.stringify({ primary: { mode: 'fixed', language: 'de' }, additional: ['fa'] }), 'receipt policy is normalized and persisted');
     assertPersisted(db, 'kot_language_policy', JSON.stringify({ primary: { mode: 'fixed', language: 'tr' }, additional: [] }), 'KOT policy is normalized and persisted');
     assertPersisted(db, 'z_report_language_policy', JSON.stringify({ primary: { mode: 'fixed', language: 'fr' }, additional: [] }), 'Z-report policy is normalized and persisted');
+    const zReportRead = await api(baseUrl, '/api/settings/z_report_language_policy', { headers: owner.authHeader });
+    assertEqual(zReportRead.status, 200, 'Z-report policy can be read through the settings API');
+    assertEqual(zReportRead.data.setting.value, JSON.stringify({ primary: { mode: 'fixed', language: 'fr' }, additional: [] }), 'settings API returns the persisted Z-report policy');
     assertPersisted(db, 'bill_show_name', 'false', 'bill name visibility is persisted');
     assertPersisted(db, 'bill_show_tax_id', 'true', 'tax ID visibility is persisted');
     assertPersisted(db, 'cash_drawer_pulse_methods', JSON.stringify(['cash', 'card']), 'cash drawer methods are persisted');

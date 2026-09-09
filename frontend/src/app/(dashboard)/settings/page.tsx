@@ -1367,13 +1367,14 @@ export default function SettingsPage() {
     cloud_last_error: null as string | null,
     cloud_deletion_status: '',
   });
+  const [cloudStatusHydrated, setCloudStatusHydrated] = useState(false);
    
   const [savingCloud, setSavingCloud] = useState(false);
   const [registeringCloud, setRegisteringCloud] = useState(false);
   const [showInitializeCloudConfirm, setShowInitializeCloudConfirm] = useState(false);
 
   const cloudServicesStopped = cloudStatus.cloud_services_disabled_by_user;
-  const cloudDeletionFinal = cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
+  const cloudDeletionFinal = !cloudStatusHydrated || cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
   const cloudDeletionNeedsAction = !cloudDeletionFinal && (cloudDeletionNeedsResolution || ['processing', 'failed'].includes(cloudStatus.cloud_deletion_status));
 
   const refreshCloudStatus = async () => {
@@ -1388,6 +1389,7 @@ export default function SettingsPage() {
         cloud_last_error: data.cloud_last_error || null,
         cloud_deletion_status: data.cloud_deletion_status || '',
       });
+      setCloudStatusHydrated(true);
       setCloudSettings((previous) => ({
         ...previous,
         cloud_sync_enabled: !!data.cloud_sync_enabled,
@@ -1701,6 +1703,7 @@ export default function SettingsPage() {
         cloudHydrated.current = false;
         cloudHydrationPromise.current = null;
         cloudRegistrationStatus.current = 'unregistered';
+        setCloudStatusHydrated(false);
       }
       if (cloudHydrated.current) {
         registrationStatus = cloudRegistrationStatus.current;
@@ -1741,6 +1744,7 @@ export default function SettingsPage() {
               cloud_last_error: data.cloud_last_error || null,
               cloud_deletion_status: data.cloud_deletion_status || '',
             });
+            setCloudStatusHydrated(true);
             cloudHydrated.current = true;
           })();
           cloudHydrationPromise.current = promise;
@@ -2021,6 +2025,7 @@ export default function SettingsPage() {
         const [telemetryResponse, diagnosticsResponse] = await Promise.all([
           get('/settings/telemetry_enabled').catch(() => null),
           get('/settings/diagnostics_consent').catch(() => null),
+          loadCloud(),
         ]);
         if (!active()) return;
         setTelemetryEnabled(telemetryResponse ? telemetryResponse.data.setting?.value === 'true' : false);

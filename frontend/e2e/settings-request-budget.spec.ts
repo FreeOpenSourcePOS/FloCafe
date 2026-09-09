@@ -310,10 +310,10 @@ test('Save All preserves edits made during business hydration', async ({ page })
 
 test('Save All preserves order numbering edits during hydration', async ({ page }) => {
   await startMockedSettingsSession(page);
-  let savedOrderPrefix: string | undefined;
+  let savedOrder: Record<string, unknown> | undefined;
   page.on('request', (request) => {
     if (request.method() === 'PUT' && new URL(request.url()).pathname === '/api/settings/order-numbering') {
-      savedOrderPrefix = request.postDataJSON()?.order_number_prefix;
+      savedOrder = request.postDataJSON();
     }
   });
   await page.route('**/api/settings/order-numbering', async (route) => {
@@ -336,10 +336,34 @@ test('Save All preserves order numbering edits during hydration', async ({ page 
 
   await page.goto(`${BASE}/settings?tab=store`);
   await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
-  await page.locator('input[placeholder="ORD"]').fill('EDIT');
+  const orderPrefix = page.locator('input[placeholder="ORD"]');
+  await orderPrefix.fill('EDIT');
+  await orderPrefix.fill('ORD');
   await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
-  await expect.poll(() => savedOrderPrefix, { timeout: 10000 }).toBe('EDIT');
+  await expect.poll(() => savedOrder?.order_number_prefix, { timeout: 10000 }).toBe('ORD');
+  expect(savedOrder?.invoice_number_reset_period).toBe('financial_year');
+});
+
+test('Save All preserves printing edits during business hydration', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let savedPrinting: Record<string, unknown> | undefined;
+  await page.route('**/api/settings/business', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
+  });
+  page.on('request', (request) => {
+    if (request.method() === 'PUT' && new URL(request.url()).pathname === '/api/settings/printing') {
+      savedPrinting = request.postDataJSON();
+    }
+  });
+
+  await page.goto(`${BASE}/settings?tab=receipts-printers`);
+  await expect(page.getByRole('heading', { name: 'Printers', exact: true })).toBeVisible();
+  await page.getByText('Trim decimals', { exact: true }).locator('..').getByRole('button').click();
+  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+
+  await expect.poll(() => savedPrinting?.printer_trim_decimals, { timeout: 10000 }).toBe(true);
 });
 
 test('Rapid Settings navigation stays below the read rate limit', async ({ page }) => {

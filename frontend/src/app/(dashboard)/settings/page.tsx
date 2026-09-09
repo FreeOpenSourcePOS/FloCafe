@@ -333,6 +333,10 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState(requestedTab);
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
+  const hydrationTouchVersions = useRef(new Map<string, number>());
+  const markHydrationTouched = (field: string) => {
+    hydrationTouchVersions.current.set(field, (hydrationTouchVersions.current.get(field) || 0) + 1);
+  };
   const loadedSettingsTabs = useRef(new Set<string>());
   const settingsTabLoadPromises = useRef(new Map<string, Promise<void>>());
   const businessHydrationPromise = useRef<Promise<void> | null>(null);
@@ -1210,12 +1214,13 @@ export default function SettingsPage() {
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
   const printingFormRef = useRef(printingForm);
   printingFormRef.current = printingForm;
-  const mergeHydratedPrinting = (patch: Partial<PrintingForm>, initial: PrintingForm) => {
+  const mergeHydratedPrinting = (patch: Partial<PrintingForm>, initial: PrintingForm, touchedAtHydrationStart = new Map<string, number>()) => {
     setPrintingForm((previous) => {
       const applicablePatch = Object.fromEntries(
         Object.entries(patch).filter(([key]) => {
           const field = key as keyof PrintingForm;
-          return Object.is(previous[field], initial[field]);
+          const touchedAfterStart = (hydrationTouchVersions.current.get(key) || 0) > (touchedAtHydrationStart.get(key) || 0);
+          return !touchedAfterStart && Object.is(previous[field], initial[field]);
         }),
       ) as Partial<PrintingForm>;
       return { ...previous, ...applicablePatch };
@@ -1522,12 +1527,15 @@ export default function SettingsPage() {
   orderNumberFormRef.current = orderNumberForm;
   const [savingOrderNumbering, setSavingOrderNumbering] = useState(false);
 
-  const mergeHydratedValues = <T extends object>(previous: T, initial: T, loaded: T): T => {
+  const mergeHydratedValues = <T extends object>(previous: T, initial: T, loaded: T, touchedAtHydrationStart: Map<string, number>): T => {
     const previousValues = previous as Record<string, unknown>;
     const initialValues = initial as Record<string, unknown>;
     return Object.fromEntries(Object.entries(loaded).map(([key, value]) => [
       key,
-      Object.is(previousValues[key], initialValues[key]) ? value : previousValues[key],
+      (hydrationTouchVersions.current.get(key) || 0) > (touchedAtHydrationStart.get(key) || 0)
+        || !Object.is(previousValues[key], initialValues[key])
+        ? previousValues[key]
+        : value,
     ])) as T;
   };
 
@@ -1659,6 +1667,7 @@ export default function SettingsPage() {
   const loadSettingsTab = async (tab: string, signal: AbortSignal, includeStatusOnly = true): Promise<void> => {
     const get = (path: string) => api.get(path, { signal });
     const active = () => !signal.aborted;
+    const hydrationTouchSnapshot = new Map(hydrationTouchVersions.current);
     const readOptional = async (path: string) => {
       try {
         return await get(path);
@@ -1723,7 +1732,7 @@ export default function SettingsPage() {
           billShowCustomerPhone: d.bill_show_customer_phone !== false,
           billShowTableNumber: d.bill_show_table_number !== false,
         };
-        mergeHydratedPrinting(billDisplay, printingAtHydrationStart);
+        mergeHydratedPrinting(billDisplay, printingAtHydrationStart, hydrationTouchSnapshot);
         setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
         posSettings.setBillShowName(billDisplay.billShowName);
         posSettings.setBillShowAddress(billDisplay.billShowAddress);
@@ -1788,7 +1797,7 @@ export default function SettingsPage() {
             };
             registrationStatus = data.cloud_registration_status || 'unregistered';
             cloudRegistrationStatus.current = registrationStatus;
-            const mergedCloudSettings = mergeHydratedValues(cloudSettingsRef.current, cloudSettingsAtHydrationStart, settings);
+            const mergedCloudSettings = mergeHydratedValues(cloudSettingsRef.current, cloudSettingsAtHydrationStart, settings, hydrationTouchSnapshot);
             setCloudSettings(mergedCloudSettings);
             setSavedCloudSettings(settings);
             setCloudStatus({
@@ -1831,8 +1840,7 @@ export default function SettingsPage() {
       await loadPairedDevices(signal);
     };
 
-    const loadPrinting = async (billFormAtHydrationStart = { ...billFormRef.current }) => {
-      const printingAtHydrationStart = { ...printingFormRef.current };
+    const loadPrinting = async (printingAtHydrationStart: PrintingForm, billFormAtHydrationStart: BillTemplateForm) => {
       const [trimResponse, cashEnabledResponse, cashMethodsResponse, billLanguageResponse, kotLanguageResponse] = await Promise.all([
         readOptional('/settings/printer_trim_decimals'),
         readOptional('/settings/cash_drawer_pulse_enabled'),
@@ -1845,7 +1853,7 @@ export default function SettingsPage() {
       if (trimResponse) {
         const enabled = trimResponse.data.setting?.value === 'true';
         posSettings.setPrinterTrimDecimals(enabled);
-        mergeHydratedPrinting({ printerTrimDecimals: enabled }, printingAtHydrationStart);
+        mergeHydratedPrinting({ printerTrimDecimals: enabled }, printingAtHydrationStart, hydrationTouchSnapshot);
         setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
       }
       if (cashEnabledResponse) {
@@ -1855,7 +1863,7 @@ export default function SettingsPage() {
           setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
           // Missing rows intentionally remain undefined so thermal printing keeps
           // its legacy per-printer fallback.
-          mergeHydratedPrinting({ cashDrawerPulseEnabled: enabled }, printingAtHydrationStart);
+          mergeHydratedPrinting({ cashDrawerPulseEnabled: enabled }, printingAtHydrationStart, hydrationTouchSnapshot);
         }
       }
       if (cashMethodsResponse) {
@@ -1864,7 +1872,7 @@ export default function SettingsPage() {
           if (Array.isArray(methods)) {
             const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
             const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
-            mergeHydratedPrinting({ cashDrawerPulseMethods: normalized }, printingAtHydrationStart);
+            mergeHydratedPrinting({ cashDrawerPulseMethods: normalized }, printingAtHydrationStart, hydrationTouchSnapshot);
             setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
           }
         } catch { /* Use the safe defaults. */ }
@@ -1877,7 +1885,7 @@ export default function SettingsPage() {
             receiptPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
             receiptSecondLanguage: policy.additional[0] ?? 'none',
           };
-          mergeHydratedPrinting(formPatch, printingAtHydrationStart);
+          mergeHydratedPrinting(formPatch, printingAtHydrationStart, hydrationTouchSnapshot);
           setSavedPrinting((p) => ({ ...p, ...formPatch }));
         }
       }
@@ -1886,7 +1894,7 @@ export default function SettingsPage() {
         if (policy) {
           posSettings.setKotLanguagePolicy(policy);
           const formPatch = { kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit' };
-          mergeHydratedPrinting(formPatch, printingAtHydrationStart);
+          mergeHydratedPrinting(formPatch, printingAtHydrationStart, hydrationTouchSnapshot);
           setSavedPrinting((p) => ({ ...p, ...formPatch }));
         }
       }
@@ -1899,7 +1907,7 @@ export default function SettingsPage() {
             zReportPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
             zReportSecondLanguage: policy.additional[0] ?? 'none',
           };
-          mergeHydratedPrinting(formPatch, printingAtHydrationStart);
+          mergeHydratedPrinting(formPatch, printingAtHydrationStart, hydrationTouchSnapshot);
           setSavedPrinting((p) => ({ ...p, ...formPatch }));
           setZReportLanguagePolicyLoaded(true);
         }
@@ -1971,7 +1979,7 @@ export default function SettingsPage() {
       posSettings.setBillTemplate(billTemplate);
       posSettings.setBillTemplateSource(billTemplateSource);
       posSettings.setBillFooterMessage(billFooterMessage);
-      const mergedBillForm = mergeHydratedValues(billFormRef.current, billFormAtHydrationStart, loadedBillForm);
+      const mergedBillForm = mergeHydratedValues(billFormRef.current, billFormAtHydrationStart, loadedBillForm, hydrationTouchSnapshot);
       setBillForm(mergedBillForm);
       setSavedBillForm(loadedBillForm);
     };
@@ -2000,22 +2008,23 @@ export default function SettingsPage() {
           resetDaily: data.order_number_reset_daily !== false,
           invoicePrefix: data.invoice_number_prefix == null ? 'INV' : sanitizeStoredNumberPrefix(data.invoice_number_prefix),
           invoiceIncludePeriod: data.invoice_number_include_period !== false,
-          invoiceResetPeriod: (data.invoice_reset_period || 'daily') as InvoiceResetPeriod,
+          invoiceResetPeriod: (data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
           invoiceFinancialYearStartMonth: Number(data.invoice_financial_year_start_month) || 4,
           invoiceFinancialYearStartDay: Number(data.invoice_financial_year_start_day) || 1,
         };
-        const mergedOrderNumbering = mergeHydratedValues(orderNumberFormRef.current, orderNumberAtHydrationStart, loaded);
+        const mergedOrderNumbering = mergeHydratedValues(orderNumberFormRef.current, orderNumberAtHydrationStart, loaded, hydrationTouchSnapshot);
         setOrderNumberForm(mergedOrderNumbering);
         setSavedOrderNumberForm(loaded);
         return;
       }
       if (tab === 'receipts-printers') {
+        const printingAtHydrationStart = { ...printingFormRef.current };
         const billFormAtHydrationStart = { ...billFormRef.current };
         await loadBusiness();
         await Promise.all([
           fetchPrinters(signal),
           fetchDetectedPrinters(signal),
-          loadPrinting(billFormAtHydrationStart),
+          loadPrinting(printingAtHydrationStart, billFormAtHydrationStart),
           readOptional('/settings/kot_printing_enabled').then((res) => {
             if (!active()) return;
             const enabled = res?.data.setting?.value !== 'false';
@@ -2056,7 +2065,7 @@ export default function SettingsPage() {
           loyaltyEnabled: !!loyaltyResponse.data.loyalty_enabled,
           globalCashbackPercent: String(loyaltyResponse.data.global_cashback_percent ?? 0),
         };
-        const mergedLoyalty = mergeHydratedValues(loyaltyFormRef.current, loyaltyAtHydrationStart, loadedLoyalty);
+        const mergedLoyalty = mergeHydratedValues(loyaltyFormRef.current, loyaltyAtHydrationStart, loadedLoyalty, hydrationTouchSnapshot);
         setLoyaltyEnabled(mergedLoyalty.loyaltyEnabled);
         setSavedLoyaltyEnabled(loadedLoyalty.loyaltyEnabled);
         setGlobalCashbackPercent(mergedLoyalty.globalCashbackPercent);
@@ -2073,7 +2082,7 @@ export default function SettingsPage() {
         if (data.discount_max_amount !== undefined) loadedDiscount.discountMaxAmount = normalizeDiscountAmount(data.discount_max_amount);
         if (data.discount_mode) loadedDiscount.discountMode = data.discount_mode;
         if (data.discount_requires_approval !== undefined) loadedDiscount.discountRequiresApproval = !!data.discount_requires_approval;
-        const mergedDiscount = mergeHydratedValues(discountFormRef.current, discountAtHydrationStart, loadedDiscount);
+        const mergedDiscount = mergeHydratedValues(discountFormRef.current, discountAtHydrationStart, loadedDiscount, hydrationTouchSnapshot);
         setDiscountMaxPct(mergedDiscount.discountMaxPct);
         setSavedDiscountMaxPct(loadedDiscount.discountMaxPct);
         setDiscountMaxAmount(mergedDiscount.discountMaxAmount);
@@ -3016,7 +3025,10 @@ export default function SettingsPage() {
                     <input
                       type="text"
                       value={orderNumberForm.prefix}
-                      onChange={(e) => setOrderNumberForm((p) => ({ ...p, prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
+                      onChange={(e) => {
+                        markHydrationTouched('prefix');
+                        setOrderNumberForm((p) => ({ ...p, prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }));
+                      }}
                       placeholder="ORD"
                       maxLength={12}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
@@ -3045,7 +3057,10 @@ export default function SettingsPage() {
                   </div>
                   <Toggle
                     value={orderNumberForm.includeDate}
-                    onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, includeDate: v })) : () => {}}
+                    onChange={isAdmin ? (v) => {
+                      markHydrationTouched('includeDate');
+                      setOrderNumberForm((p) => ({ ...p, includeDate: v }));
+                    } : () => {}}
                   />
                 </div>
                 <div className="flex items-center justify-between py-2">
@@ -3055,7 +3070,10 @@ export default function SettingsPage() {
                   </div>
                   <Toggle
                     value={orderNumberForm.resetDaily}
-                    onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, resetDaily: v })) : () => {}}
+                    onChange={isAdmin ? (v) => {
+                      markHydrationTouched('resetDaily');
+                      setOrderNumberForm((p) => ({ ...p, resetDaily: v }));
+                    } : () => {}}
                   />
                 </div>
               </div>
@@ -3069,7 +3087,10 @@ export default function SettingsPage() {
                       <input
                         type="text"
                         value={orderNumberForm.invoicePrefix}
-                        onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoicePrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
+                        onChange={(e) => {
+                          markHydrationTouched('invoicePrefix');
+                          setOrderNumberForm((p) => ({ ...p, invoicePrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }));
+                        }}
                         placeholder="INV"
                         maxLength={12}
                         className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
@@ -3097,7 +3118,10 @@ export default function SettingsPage() {
                     {isAdmin ? (
                       <select
                         value={orderNumberForm.invoiceResetPeriod}
-                        onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceResetPeriod: e.target.value as InvoiceResetPeriod }))}
+                        onChange={(e) => {
+                          markHydrationTouched('invoiceResetPeriod');
+                          setOrderNumberForm((p) => ({ ...p, invoiceResetPeriod: e.target.value as InvoiceResetPeriod }));
+                        }}
                         className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                       >
                         <option value="daily">{t('invoiceResetDaily')}</option>
@@ -3119,7 +3143,10 @@ export default function SettingsPage() {
                           max={12}
                           value={orderNumberForm.invoiceFinancialYearStartMonth}
                           disabled={!isAdmin}
-                          onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartMonth: Number(e.target.value) }))}
+                          onChange={(e) => {
+                            markHydrationTouched('invoiceFinancialYearStartMonth');
+                            setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartMonth: Number(e.target.value) }));
+                          }}
                           className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand disabled:bg-muted"
                         />
                       </div>
@@ -3131,7 +3158,10 @@ export default function SettingsPage() {
                           max={31}
                           value={orderNumberForm.invoiceFinancialYearStartDay}
                           disabled={!isAdmin}
-                          onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartDay: Number(e.target.value) }))}
+                          onChange={(e) => {
+                            markHydrationTouched('invoiceFinancialYearStartDay');
+                            setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartDay: Number(e.target.value) }));
+                          }}
                           className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand disabled:bg-muted"
                         />
                       </div>
@@ -3147,7 +3177,10 @@ export default function SettingsPage() {
                     </div>
                     <Toggle
                       value={orderNumberForm.invoiceIncludePeriod}
-                      onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, invoiceIncludePeriod: v })) : () => {}}
+                      onChange={isAdmin ? (v) => {
+                        markHydrationTouched('invoiceIncludePeriod');
+                        setOrderNumberForm((p) => ({ ...p, invoiceIncludePeriod: v }));
+                      } : () => {}}
                     />
                   </div>
                 </div>
@@ -3820,7 +3853,10 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground">{t('loyaltyHint')}</p>
                   </div>
                   <button
-                    onClick={() => setLoyaltyEnabled(!loyaltyEnabled)}
+                    onClick={() => {
+                      markHydrationTouched('loyaltyEnabled');
+                      setLoyaltyEnabled(!loyaltyEnabled);
+                    }}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                       loyaltyEnabled ? 'bg-brand' : 'bg-gray-200'
                     }`}
@@ -3844,7 +3880,10 @@ export default function SettingsPage() {
                         max="100"
                         step="0.1"
                         value={globalCashbackPercent}
-                        onChange={(e) => setGlobalCashbackPercent(e.target.value)}
+                        onChange={(e) => {
+                          markHydrationTouched('globalCashbackPercent');
+                          setGlobalCashbackPercent(e.target.value);
+                        }}
                         placeholder="0"
                         className="w-20 px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-end"
                       />
@@ -3892,7 +3931,10 @@ export default function SettingsPage() {
                   <p className="font-medium text-foreground">{t('discountMode')}</p>
                   <p className="text-sm text-muted-foreground mb-2">{t('discountModeHint')}</p>
                   <select value={discountMode}
-                    onChange={(e) => setDiscountMode(e.target.value)}
+                    onChange={(e) => {
+                      markHydrationTouched('discountMode');
+                      setDiscountMode(e.target.value);
+                    }}
                     className="w-48 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand bg-card">
                     <option value="both">{t('discountBoth')}</option>
                     <option value="percentage">{t('discountPercentageOnly')}</option>
@@ -3906,7 +3948,10 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground mb-2">{t('maxDiscountPercentageHint')}</p>
                     <div className="flex items-center gap-3">
                       <input type="number" min={1} max={100} value={discountMaxPct}
-                        onChange={(e) => setDiscountMaxPct(normalizeDiscountPercentage(e.target.value))}
+                        onChange={(e) => {
+                          markHydrationTouched('discountMaxPct');
+                          setDiscountMaxPct(normalizeDiscountPercentage(e.target.value));
+                        }}
                         className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       <span className="text-sm text-muted-foreground">{t('percentMaximum')}</span>
                     </div>
@@ -3919,7 +3964,10 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground mb-2">{t('maxDiscountAmountHint')}</p>
                     <div className="flex items-center gap-3">
                       <input type="number" min={0} max={999999} value={discountMaxAmount}
-                        onChange={(e) => setDiscountMaxAmount(normalizeDiscountAmount(e.target.value))}
+                        onChange={(e) => {
+                          markHydrationTouched('discountMaxAmount');
+                          setDiscountMaxAmount(normalizeDiscountAmount(e.target.value));
+                        }}
                         className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       <span className="text-sm text-muted-foreground">{t('zeroNoLimit')}</span>
                     </div>
@@ -3932,7 +3980,10 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground">{t('requireApprovalHint')}</p>
                   </div>
                   <button
-                    onClick={() => setDiscountRequiresApproval(!discountRequiresApproval)}
+                    onClick={() => {
+                      markHydrationTouched('discountRequiresApproval');
+                      setDiscountRequiresApproval(!discountRequiresApproval);
+                    }}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                       discountRequiresApproval ? 'bg-brand' : 'bg-gray-200'
                     }`}
@@ -4575,7 +4626,10 @@ export default function SettingsPage() {
                     <textarea id="footer-message" rows={2}
                       placeholder={t('footerMessagePlaceholder')}
                       value={billForm.billFooterMessage}
-                      onChange={(e) => setBillForm((p) => ({ ...p, billFooterMessage: e.target.value }))}
+                      onChange={(e) => {
+                        markHydrationTouched('billFooterMessage');
+                        setBillForm((p) => ({ ...p, billFooterMessage: e.target.value }));
+                      }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none" />
                     <p className="text-xs text-gray-400 mt-1">{t('footerMessageHint')}</p>
                   </div>
@@ -4608,7 +4662,11 @@ export default function SettingsPage() {
                 {billTemplateCards.map((card) => {
                   const isSelected = isTemplateCardSelected(billForm, card);
                   return (
-                    <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id, billTemplateSource: card.selectionSource }))}
+                    <button key={card.id} onClick={() => {
+                      markHydrationTouched('billTemplate');
+                      markHydrationTouched('billTemplateSource');
+                      setBillForm((p) => ({ ...p, billTemplate: card.id, billTemplateSource: card.selectionSource }));
+                    }}
                       className={`text-start rounded-xl border-2 p-4 transition-all ${
                         isSelected ? 'border-brand bg-brand/5' : 'border-border hover:border-gray-300 dark:border-border bg-card'
                       }`}>
@@ -5156,7 +5214,10 @@ export default function SettingsPage() {
                   <input
                     type="checkbox"
                     checked={cloudSettings.cloud_sync_enabled}
-                    onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_sync_enabled: e.target.checked })}
+                    onChange={(e) => {
+                      markHydrationTouched('cloud_sync_enabled');
+                      setCloudSettings({ ...cloudSettings, cloud_sync_enabled: e.target.checked });
+                    }}
                     className="mt-0.5 rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                   />
                   <div>
@@ -5325,7 +5386,10 @@ export default function SettingsPage() {
                 <input
                   type="checkbox"
                   checked={cloudSettings.cloud_orders_enabled}
-                  onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_orders_enabled: e.target.checked })}
+                    onChange={(e) => {
+                      markHydrationTouched('cloud_orders_enabled');
+                      setCloudSettings({ ...cloudSettings, cloud_orders_enabled: e.target.checked });
+                    }}
                   className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                 />
                 <span className="text-sm text-foreground">{t('enableOnlineOrderPolling')}</span>

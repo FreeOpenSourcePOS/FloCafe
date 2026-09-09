@@ -13,22 +13,10 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const {
   initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser,
-  api, assert, assertEqual, getResults, closeDatabase, now,
+  api, assert, assertEqual, getResults, closeDatabase, now, rawStatus,
 } = require('./helpers/test-setup');
 const { expenseRoutes } = require('../main/routes/expenses');
 const { utcTodayDate } = require('../main/db');
-
-// Express's default handler for an unmatched route returns an HTML body, not
-// JSON — the api() helper's automatic response.json() would throw on that, so
-// route-non-existence checks use a raw fetch and only look at the status.
-async function rawStatus(baseUrl: string, urlPath: string, method: string, headers: Record<string, string>): Promise<number> {
-  const response = await (globalThis as any).fetch(baseUrl + urlPath, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: method === 'GET' || method === 'DELETE' ? undefined : '{}',
-  });
-  return response.status;
-}
 
 function seedUserWithRole(db: any, role: string): { userId: string; authHeader: Record<string, string> } {
   const { getJWTSecret } = require('../main/routes/auth');
@@ -231,6 +219,10 @@ async function main() {
 
     const inactiveListForOwner = await api(baseUrl, '/api/expenses/categories?include_inactive=true', { headers: ownerAuth });
     assert(inactiveListForOwner.data.categories.some((c: any) => c.id === chickenId), 'owner can still see the soft-deleted category with include_inactive');
+
+    // ── Business-date validation ───────────────────────────────────────────
+    const badCalendar = await api(baseUrl, '/api/expenses/entries', { method: 'POST', body: { category_id: vegId, amount: 5, date: '2026-02-30' }, headers: ownerAuth });
+    assertEqual(badCalendar.status, 400, 'a non-existent calendar date is rejected');
   } finally {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     closeDatabase();

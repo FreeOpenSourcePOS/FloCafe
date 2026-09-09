@@ -4024,8 +4024,11 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     },
   },
   {
+    // One migration for the whole expense/cash-counter feature: these tables
+    // never shipped in a release, so there is no old install carrying the
+    // intermediate shapes and nothing to preserve step by step.
     version: 82,
-    name: 'add_expense_tracker',
+    name: 'add_expense_tracker_and_cash_counter',
     up: () => {
       db.exec(`
         CREATE TABLE IF NOT EXISTS expense_categories (
@@ -4046,76 +4049,32 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           category_id TEXT NOT NULL REFERENCES expense_categories(id),
           amount REAL NOT NULL CHECK (amount > 0),
           note TEXT,
+          expense_date TEXT,
           created_by TEXT REFERENCES users(id),
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE INDEX IF NOT EXISTS idx_expense_entries_category ON expense_entries(category_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_expense_entries_created_at ON expense_entries(created_at);
+        CREATE INDEX IF NOT EXISTS idx_expense_entries_category_date ON expense_entries(category_id, expense_date);
+        CREATE INDEX IF NOT EXISTS idx_expense_entries_date ON expense_entries(expense_date);
 
         CREATE TABLE IF NOT EXISTS expense_due_payments (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           category_id TEXT NOT NULL REFERENCES expense_categories(id),
           amount REAL NOT NULL CHECK (amount > 0),
           note TEXT,
+          payment_date TEXT,
+          method TEXT,
           created_by TEXT REFERENCES users(id),
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE INDEX IF NOT EXISTS idx_expense_due_payments_category ON expense_due_payments(category_id, created_at);
         CREATE INDEX IF NOT EXISTS idx_expense_due_payments_created_at ON expense_due_payments(created_at);
-      `);
-    },
-  },
-  {
-    version: 83,
-    name: 'add_expense_ledger_dates',
-    up: () => {
-      // Additive: expense_entries/expense_due_payments (v82) predate the
-      // business-date field. Added nullable — SQLite's ALTER TABLE ADD COLUMN
-      // rejects a non-constant default (e.g. date('now')), so this mirrors
-      // createSchema()'s plain `TEXT` column exactly (same lesson as
-      // products.cb_percent above: keep the migrated shape byte-identical to
-      // the ideal schema, or schema-health drifts forever). Existing rows are
-      // backfilled from created_at's date portion in the same transaction, so
-      // no real row is ever left with a null business date.
-      const entryColumns = getColumns(db, 'expense_entries');
-      if (!entryColumns.includes('expense_date')) {
-        db.exec(`ALTER TABLE expense_entries ADD COLUMN expense_date TEXT`);
-        db.exec(`UPDATE expense_entries SET expense_date = substr(created_at, 1, 10)`);
-        db.exec(`CREATE INDEX IF NOT EXISTS idx_expense_entries_category_date ON expense_entries(category_id, expense_date)`);
-        db.exec(`CREATE INDEX IF NOT EXISTS idx_expense_entries_date ON expense_entries(expense_date)`);
-      }
-      const paymentColumns = getColumns(db, 'expense_due_payments');
-      if (!paymentColumns.includes('payment_date')) {
-        db.exec(`ALTER TABLE expense_due_payments ADD COLUMN payment_date TEXT`);
-        db.exec(`UPDATE expense_due_payments SET payment_date = substr(created_at, 1, 10)`);
-        db.exec(`CREATE INDEX IF NOT EXISTS idx_expense_due_payments_category_date ON expense_due_payments(category_id, payment_date)`);
-        db.exec(`CREATE INDEX IF NOT EXISTS idx_expense_due_payments_date ON expense_due_payments(payment_date)`);
-      }
-    },
-  },
-  {
-    version: 84,
-    name: 'add_expense_payment_method',
-    up: () => {
-      // How a due payment was settled — cash/card/upi, validated at the route
-      // layer (main/routes/expenses.ts), not via a DB CHECK constraint: a
-      // CHECK added through ALTER TABLE would also have to accept NULL for
-      // pre-existing rows, and the route is already the single source of
-      // truth for valid values. Nullable/no-default for the same ALTER TABLE
-      // constant-default reason as v83.
-      const columns = getColumns(db, 'expense_due_payments');
-      if (!columns.includes('method')) {
-        db.exec(`ALTER TABLE expense_due_payments ADD COLUMN method TEXT`);
-      }
-    },
-  },
-  {
-    version: 85,
-    name: 'add_cash_counter',
-    up: () => {
-      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_expense_due_payments_category_date ON expense_due_payments(category_id, payment_date);
+        CREATE INDEX IF NOT EXISTS idx_expense_due_payments_date ON expense_due_payments(payment_date);
+
         CREATE TABLE IF NOT EXISTS cash_opening_floats (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           date TEXT NOT NULL UNIQUE,
@@ -4288,9 +4247,7 @@ function createSchema(): void {
       -- Business date the expense was for (YYYY-MM-DD, UTC calendar day —
       -- see utcTodayDate()); may be backdated by the caller. Distinct from
       -- created_at, which is the immutable moment the row was recorded.
-      -- Nullable at the schema level (not NOT NULL/DEFAULT) — SQLite's
-      -- ALTER TABLE ADD COLUMN only accepts a constant default, so v83's
-      -- guarded migration adds this same column without one; every insert
+      -- Nullable at the schema level (not NOT NULL/DEFAULT); every insert
       -- path in main/routes/expenses.ts always supplies a value.
       expense_date TEXT,
       created_by TEXT REFERENCES users(id),
@@ -4314,7 +4271,7 @@ function createSchema(): void {
       -- Nullable at the schema level — see expense_entries.expense_date.
       payment_date TEXT,
       -- How the payment was settled: 'cash' | 'card' | 'upi', validated in
-      -- main/routes/expenses.ts, not by a DB CHECK constraint (see v84).
+      -- main/routes/expenses.ts, not by a DB CHECK constraint.
       method TEXT,
       created_by TEXT REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

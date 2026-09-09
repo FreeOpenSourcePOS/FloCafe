@@ -89,6 +89,7 @@
         "cashCounter":     {
       "cashExpenses": "Barausgaben",
       "cashFromOrders": "Bareinnahmen aus Bestellungen",
+      "cashRefunds": "Rückerstattungen (bar)",
       "countLog": "Zählprotokoll",
       "countRecorded": "Kassenzählung gespeichert",
       "counted": "Gezählt",

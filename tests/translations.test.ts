@@ -376,6 +376,7 @@ function tagParityErrors(enFlat: Record<string, string>, localeFlat: Record<stri
  */
 const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'auth.emailPlaceholder', // example email
+  'cashCounter.cashRefunds', // pending translation (English fallback)
   'common.appTitle', // brand
   'common.brandName', // brand
   'common.logoAlt', // brand
@@ -389,10 +390,9 @@ const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'printTest.paperWidth58', // measurement
   'printTest.paperWidth80', // measurement
   'products.addonSelectionRange', // pure format: {min} – {max}
-  'setup.ownerEmailPlaceholder', // example email
+  'serverApp.emailPlaceholder', // example email
   'settings.apiKeyInputPlaceholder', // example API key
   'settings.connectionUsb', // technical acronym
-  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.instagramPlaceholder', // example handle
   'settings.ipAddressPlaceholder', // example IP
   'settings.kds', // technical acronym
@@ -401,12 +401,13 @@ const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'settings.paperWidth58', // measurement
   'settings.paperWidth80', // measurement
   'settings.paperWidth80Safe', // measurement
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
   'settings.portPlaceholder', // example port
   'settings.registrationEmailPlaceholder', // example email
   'settings.registrationLastError', // pure placeholder: {error}
-  'serverApp.emailPlaceholder', // example email
   'settings.revflo', // brand
   'settings.tabOrderflow', // brand
+  'setup.ownerEmailPlaceholder', // example email
   'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX
 ]);
 
@@ -538,6 +539,7 @@ function frFallbackErrors(frFlat: Record<string, string>, enFlat: Record<string,
 const TR_INTENTIONAL_IDENTICAL = new Set<string>([
   'cashCounter.cashExpenses', // pending translation (English fallback)
   'cashCounter.cashFromOrders', // pending translation (English fallback)
+  'cashCounter.cashRefunds', // pending translation (English fallback)
   'cashCounter.countLog', // pending translation (English fallback)
   'cashCounter.countRecorded', // pending translation (English fallback)
   'cashCounter.counted', // pending translation (English fallback)
@@ -660,6 +662,7 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'auth.recoverPinLabel',
   'cashCounter.cashExpenses', // pending translation (English fallback)
   'cashCounter.cashFromOrders', // pending translation (English fallback)
+  'cashCounter.cashRefunds', // pending translation (English fallback)
   'cashCounter.countLog', // pending translation (English fallback)
   'cashCounter.countRecorded', // pending translation (English fallback)
   'cashCounter.counted', // pending translation (English fallback)

@@ -2,21 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
+import { currentUtcMonth, todayUtcDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { X, Wallet, ClipboardCheck } from 'lucide-react';
 import type { CashDailySummary, CashMonthlySummary } from '@/lib/types';
 import { useTranslations } from 'use-intl';
-
-// UTC calendar day — matches the backend's utcTodayDate() convention (see
-// the /expenses page, which shares this same date discipline).
-function todayUtcDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function currentUtcMonth(): string {
-  return todayUtcDate().slice(0, 7);
-}
 
 export default function CashCounterPage() {
   const t = useTranslations('cashCounter');
@@ -132,6 +123,9 @@ export default function CashCounterPage() {
             <div className="bg-white rounded-xl p-4 border border-gray-100">
               <p className="text-xs text-gray-500">{t('cashFromOrders')}</p>
               <p className="text-lg font-semibold text-emerald-600">+{daily.cash_from_orders.total.toFixed(2)}</p>
+              {daily.cash_refunds.total > 0 && (
+                <p className="text-xs text-red-500">-{daily.cash_refunds.total.toFixed(2)} {t('cashRefunds')}</p>
+              )}
             </div>
             <div className="bg-white rounded-xl p-4 border border-gray-100">
               <p className="text-xs text-gray-500">{t('cashExpenses')}</p>
@@ -159,20 +153,23 @@ export default function CashCounterPage() {
                 <p className="text-center text-gray-500 py-8">{t('noCounts')}</p>
               ) : (
                 <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-100">
-                  {daily.counts.map((count) => (
-                    <div key={count.id} className="flex justify-between items-center px-4 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{count.counted_amount.toFixed(2)}</p>
-                        <p className="text-xs text-gray-500">
-                          {count.created_by_name ? t('recordedBy', { name: count.created_by_name }) : ''}
-                          {count.note ? ` · ${count.note}` : ''}
+                  {daily.counts.map((count) => {
+                    const variance = Math.round((count.counted_amount - daily.expected_cash) * 100) / 100;
+                    return (
+                      <div key={count.id} className="flex justify-between items-center px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{count.counted_amount.toFixed(2)}</p>
+                          <p className="text-xs text-gray-500">
+                            {count.created_by_name ? t('recordedBy', { name: count.created_by_name }) : ''}
+                            {count.note ? ` · ${count.note}` : ''}
+                          </p>
+                        </div>
+                        <p className={`text-sm font-semibold ${varianceColor(variance)}`}>
+                          {varianceLabel(variance)}
                         </p>
                       </div>
-                      <p className={`text-sm font-semibold ${varianceColor(Math.round((count.counted_amount - daily.expected_cash) * 100) / 100)}`}>
-                        {varianceLabel(Math.round((count.counted_amount - daily.expected_cash) * 100) / 100)}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -236,6 +233,7 @@ export default function CashCounterPage() {
                   <th className="px-4 py-2">{t('date')}</th>
                   <th className="px-4 py-2 text-end">{t('openingFloat')}</th>
                   <th className="px-4 py-2 text-end">{t('cashFromOrders')}</th>
+                  <th className="px-4 py-2 text-end">{t('cashRefunds')}</th>
                   <th className="px-4 py-2 text-end">{t('cashExpenses')}</th>
                   <th className="px-4 py-2 text-end">{t('expectedCash')}</th>
                   <th className="px-4 py-2 text-end">{t('counted')}</th>
@@ -248,6 +246,7 @@ export default function CashCounterPage() {
                     <td className="px-4 py-2 text-gray-900">{day.date}</td>
                     <td className="px-4 py-2 text-end text-gray-600">{day.opening_float.toFixed(2)}</td>
                     <td className="px-4 py-2 text-end text-emerald-600">{day.cash_from_orders.toFixed(2)}</td>
+                    <td className="px-4 py-2 text-end text-red-600">{day.cash_refunds > 0 ? `-${day.cash_refunds.toFixed(2)}` : '—'}</td>
                     <td className="px-4 py-2 text-end text-red-600">{day.cash_expenses.toFixed(2)}</td>
                     <td className="px-4 py-2 text-end font-medium text-gray-900">{day.expected_cash.toFixed(2)}</td>
                     <td className="px-4 py-2 text-end text-gray-600">{day.latest_count !== null ? day.latest_count.toFixed(2) : '—'}</td>
@@ -260,6 +259,7 @@ export default function CashCounterPage() {
                   <td className="px-4 py-2">{t('overall')}</td>
                   <td className="px-4 py-2 text-end">{monthly.totals.total_opening_floats.toFixed(2)}</td>
                   <td className="px-4 py-2 text-end text-emerald-600">{monthly.totals.total_cash_from_orders.toFixed(2)}</td>
+                  <td className="px-4 py-2 text-end text-red-600">{monthly.totals.total_cash_refunds.toFixed(2)}</td>
                   <td className="px-4 py-2 text-end text-red-600">{monthly.totals.total_cash_expenses.toFixed(2)}</td>
                   <td className="px-4 py-2 text-end" colSpan={3}>{t('netCash')}: {monthly.totals.net.toFixed(2)}</td>
                 </tr>

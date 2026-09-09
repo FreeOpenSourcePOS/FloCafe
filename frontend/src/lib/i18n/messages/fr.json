@@ -89,6 +89,7 @@
         "cashCounter":     {
       "cashExpenses": "Dépenses en espèces",
       "cashFromOrders": "Encaissé en espèces",
+      "cashRefunds": "Remboursements en espèces",
       "countLog": "Relevés de caisse",
       "countRecorded": "Comptage enregistré",
       "counted": "Compté",

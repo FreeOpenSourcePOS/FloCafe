@@ -233,46 +233,28 @@ function main() {
   );
   console.log('   ✓ old installs receive generic tax behavior without replacing legacy tax data');
 
-  // ── Migration v82: expense tracker tables ────────────────────────────────
-  const requiredExpenseTables = ['expense_categories', 'expense_entries', 'expense_due_payments'];
-  for (const table of requiredExpenseTables) {
+  // ── Migration v82: expense tracker + cash counter tables ─────────────────
+  const requiredFinanceTables = ['expense_categories', 'expense_entries', 'expense_due_payments', 'cash_opening_floats', 'cash_count_records'];
+  for (const table of requiredFinanceTables) {
     assert.ok(
       db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
       `${table} exists after upgrading an old install`,
     );
   }
-  const expectedExpenseColumns: Record<string, string[]> = {
+  const expectedFinanceColumns: Record<string, string[]> = {
     expense_categories: ['id', 'name', 'is_active', 'deleted_at', 'created_at', 'updated_at', 'created_by'],
     expense_entries: ['id', 'category_id', 'amount', 'note', 'expense_date', 'created_by', 'created_at'],
     expense_due_payments: ['id', 'category_id', 'amount', 'note', 'payment_date', 'method', 'created_by', 'created_at'],
-  };
-  for (const [table, expected] of Object.entries(expectedExpenseColumns)) {
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
-    for (const column of expected) {
-      assert.ok(columns.includes(column), `${table}.${column} exists after upgrading an old install`);
-    }
-  }
-  console.log('   ✓ old installs receive the v82 expense tracker tables (expense_categories, expense_entries, expense_due_payments)');
-
-  // ── Migration v85: cash counter tables ────────────────────────────────────
-  const requiredCashCounterTables = ['cash_opening_floats', 'cash_count_records'];
-  for (const table of requiredCashCounterTables) {
-    assert.ok(
-      db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
-      `${table} exists after upgrading an old install`,
-    );
-  }
-  const expectedCashCounterColumns: Record<string, string[]> = {
     cash_opening_floats: ['id', 'date', 'amount', 'note', 'created_by', 'created_at'],
     cash_count_records: ['id', 'date', 'counted_amount', 'note', 'created_by', 'created_at'],
   };
-  for (const [table, expected] of Object.entries(expectedCashCounterColumns)) {
+  for (const [table, expected] of Object.entries(expectedFinanceColumns)) {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
     for (const column of expected) {
       assert.ok(columns.includes(column), `${table}.${column} exists after upgrading an old install`);
     }
   }
-  console.log('   ✓ old installs receive the v85 cash counter tables (cash_opening_floats, cash_count_records)');
+  console.log('   ✓ old installs receive the v82 expense and cash counter tables');
 
   assert.equal((db.prepare('SELECT COUNT(*) AS count FROM products').get() as any).count, 10);
   // A product originating in this pre-tax-engine fixture can still carry the

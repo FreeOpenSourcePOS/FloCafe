@@ -1,57 +1,28 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
-import { getDatabase, now, utcTodayDate, utcDayBounds } from '../db';
+import { dayBoundsInTimezone, getDatabase, localDateInTimezone, now, parseDbTimestamp, utcTodayDate } from '../db';
+import { getCurrencyMinorUnitFactor } from '../countries';
+import { getTenantCurrency } from '../services/refund';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const MONTH_PATTERN = /^\d{4}-\d{2}$/;
-
-const router = Router();
-const cashCounterWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
-
-/**
- * Same "business date, defaults to today, may be backdated, never postdated"
- * rule used by the expense tracker (main/routes/expenses.ts) — a cash count
- * or opening float can't be logged for a day that hasn't happened yet.
- */
-function normalizeRecordDate(value: unknown): string {
-  if (value === undefined || value === null || value === '') return utcTodayDate();
-  if (typeof value !== 'string' || !DATE_PATTERN.test(value)) {
-    throw Object.assign(new Error('date must be in YYYY-MM-DD format'), { statusCode: 400 });
-  }
-  if (value > utcTodayDate()) {
-    throw Object.assign(new Error('date cannot be in the future'), { statusCode: 400 });
-  }
-  return value;
-}
+import {
+  monthBounds,
+  normalizeBusinessDate,
+  normalizeNote,
+  roundMoney,
+  tenantTimezone,
+} from './finance-shared';
 
 function normalizeNonNegativeAmount(value: unknown, field: string): number {
   const amount = Number(value);
   if (!Number.isFinite(amount) || amount < 0) {
     throw Object.assign(new Error(`${field} must be a non-negative number`), { statusCode: 400 });
   }
-  return Math.round(amount * 100) / 100;
+  return roundMoney(amount);
 }
 
-function normalizeNote(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, 500) : null;
-}
-
-function monthBounds(month: string): [string, string] {
-  if (!MONTH_PATTERN.test(month)) {
-    throw Object.assign(new Error('month must be in YYYY-MM format'), { statusCode: 400 });
-  }
-  const [year, mon] = month.split('-').map(Number);
-  if (mon < 1 || mon > 12) {
-    throw Object.assign(new Error('month must be in YYYY-MM format'), { statusCode: 400 });
-  }
-  const lastDay = new Date(Date.UTC(year, mon, 0)).getUTCDate();
-  return [`${month}-01`, `${month}-${String(lastDay).padStart(2, '0')}`];
-}
+const router = Router();
+const cashCounterWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
 
 /** Every YYYY-MM-DD date from `from` to `to`, inclusive. */
 function datesInRange(from: string, to: string): string[] {
@@ -68,49 +39,61 @@ function datesInRange(from: string, to: string): string[] {
 type CashOrderPaymentLine = { bill_id: number; bill_number: string; amount: number; payment_time: string };
 
 /**
- * Individual cash payment lines from bills.payment_details in a UTC
- * half-open range [start, end). Deliberately mirrors the CTE shape in
- * main/routes/reports.ts's paymentMethodBreakdown() — same JSON1 handling of
- * legacy object-shaped payment_details, split-check bills (each a separate
- * bills row), partial payments, and the timestamp -> paid_at -> created_at
- * fallback — but returns row-level lines (reports.ts only aggregates) and is
- * filtered to method = 'cash'. Not filtered by payment_status = 'paid': cash
- * physically received counts immediately even if the rest of a
- * partially-paid bill is still outstanding.
+ * Cash payment lines for bills paid inside a store-timezone day window.
+ * Same drawer-reality rule as the Z day-close (main/routes/cash-closures.ts):
+ * lines are keyed by the bill's paid_at, not per-line timestamps, so an
+ * installment lands on the settlement day; unpaid bills have no paid_at
+ * and drop out on their own, no payment_status filter needed. Returns
+ * row-level lines (the Z only aggregates) for the daily breakdown.
  */
 function cashOrderPaymentLines(db: ReturnType<typeof getDatabase>, start: string, end: string): CashOrderPaymentLine[] {
   return db.prepare(`
-    WITH payment_lines AS (
-      SELECT b.id AS bill_id, b.bill_number, b.paid_at, b.created_at, je.value AS line
-      FROM bills b
-      JOIN json_each(CASE
-        WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array'
-          THEN b.payment_details
-        WHEN json_valid(b.payment_details)
-          THEN json_array(b.payment_details)
-        ELSE '[]'
-      END) je
-      WHERE b.payment_details IS NOT NULL
-        AND json_type(je.value) = 'object'
-        AND COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), 'unknown') = 'cash'
-    ), normalized AS (
-      SELECT
-        bill_id, bill_number,
-        json_extract(line, '$.amount') AS amount,
-        COALESCE(
-          datetime(NULLIF(json_extract(line, '$.timestamp'), '')),
-          datetime(NULLIF(paid_at, '')),
-          datetime(NULLIF(created_at, ''))
-        ) AS payment_time
-      FROM payment_lines
-    )
-    SELECT bill_id, bill_number,
-      CASE WHEN typeof(amount) IN ('integer', 'real') THEN amount ELSE 0 END AS amount,
-      payment_time
-    FROM normalized
-    WHERE payment_time >= datetime(?) AND payment_time < datetime(?)
-    ORDER BY payment_time DESC
+    SELECT b.id AS bill_id, b.bill_number,
+      CASE WHEN typeof(json_extract(je.value, '$.amount')) IN ('integer', 'real')
+        THEN json_extract(je.value, '$.amount') ELSE 0 END AS amount,
+      b.paid_at AS payment_time
+    FROM bills b
+    JOIN json_each(CASE
+      WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array'
+        THEN b.payment_details
+      WHEN json_valid(b.payment_details)
+        THEN json_array(b.payment_details)
+      ELSE '[]'
+    END) je
+    WHERE b.paid_at >= ? AND b.paid_at < ?
+      AND json_type(je.value) = 'object'
+      AND COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), 'unknown') = 'cash'
+    ORDER BY b.paid_at DESC, b.id DESC
   `).all(start, end) as CashOrderPaymentLine[];
+}
+
+// Cash that left the drawer as refunds, by the day the refund was issued
+// (refunds.created_at) — same as the Z day-close. Stored in minor units,
+// converted at the boundary like every other major-unit figure here.
+function cashRefundsTotal(db: ReturnType<typeof getDatabase>, start: string, end: string): number {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(amount_cents), 0) AS cents FROM refunds
+    WHERE method = 'cash' AND created_at >= ? AND created_at < ?
+  `).get(start, end) as { cents: number };
+  const factor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+  return roundMoney(row.cents / factor);
+}
+
+// Same totals as cashRefundsTotal but bucketed per store-local day, mirroring
+// how the monthly handler buckets order lines below: one range query, then
+// group in JS on the store-local calendar date.
+function cashRefundsByDate(db: ReturnType<typeof getDatabase>, start: string, end: string, timezone: string): Map<string, number> {
+  const factor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+  const rows = db.prepare(`
+    SELECT created_at, amount_cents AS cents FROM refunds
+    WHERE method = 'cash' AND created_at >= ? AND created_at < ?
+  `).all(start, end) as { created_at: string; cents: number }[];
+  const byDate = new Map<string, number>();
+  for (const row of rows) {
+    const day = localDateInTimezone(parseDbTimestamp(row.created_at), timezone);
+    byDate.set(day, roundMoney((byDate.get(day) || 0) + row.cents / factor));
+  }
+  return byDate;
 }
 
 function listCashExpensePayments(db: ReturnType<typeof getDatabase>, date: string) {
@@ -154,11 +137,15 @@ function latestCountsByDate(db: ReturnType<typeof getDatabase>, from: string, to
   return new Map(rows.map((row) => [row.date, row.counted_amount]));
 }
 
+function expectedCash(opening: number, orders: number, refunds: number, expenses: number): number {
+  return roundMoney(opening + orders - refunds - expenses);
+}
+
 router.get('/daily', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
-    const date = normalizeRecordDate(req.query.date);
+    const date = normalizeBusinessDate(req.query.date);
     const db = getDatabase();
-    const [start, end] = utcDayBounds(date);
+    const [start, end] = dayBoundsInTimezone(date, tenantTimezone());
 
     const openingFloat = db.prepare(`
       SELECT f.*, u.name AS created_by_name
@@ -168,13 +155,15 @@ router.get('/daily', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: R
     `).get(date) as any;
 
     const orderLines = cashOrderPaymentLines(db, start, end);
-    const orderTotal = Math.round(orderLines.reduce((sum, line) => sum + line.amount, 0) * 100) / 100;
+    const orderTotal = roundMoney(orderLines.reduce((sum, line) => sum + line.amount, 0));
+
+    const refundTotal = cashRefundsTotal(db, start, end);
 
     const expensePayments = listCashExpensePayments(db, date) as any[];
-    const expenseTotal = Math.round(expensePayments.reduce((sum, row) => sum + row.amount, 0) * 100) / 100;
+    const expenseTotal = roundMoney(expensePayments.reduce((sum, row) => sum + row.amount, 0));
 
     const openingAmount = openingFloat?.amount ?? 0;
-    const expectedCash = Math.round((openingAmount + orderTotal - expenseTotal) * 100) / 100;
+    const expected = expectedCash(openingAmount, orderTotal, refundTotal, expenseTotal);
 
     const counts = db.prepare(`
       SELECT c.*, u.name AS created_by_name
@@ -184,14 +173,15 @@ router.get('/daily', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: R
       ORDER BY c.created_at DESC, c.id DESC
     `).all(date) as any[];
     const latestCount = counts[0] ?? null;
-    const variance = latestCount ? Math.round((latestCount.counted_amount - expectedCash) * 100) / 100 : null;
+    const variance = latestCount ? roundMoney(latestCount.counted_amount - expected) : null;
 
     res.json({
       date,
       opening_float: openingFloat || null,
       cash_from_orders: { total: orderTotal, payments: orderLines },
+      cash_refunds: { total: refundTotal },
       cash_expenses: { total: expenseTotal, payments: expensePayments },
-      expected_cash: expectedCash,
+      expected_cash: expected,
       counts,
       latest_count: latestCount,
       variance,
@@ -203,7 +193,7 @@ router.get('/daily', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: R
 
 router.post('/opening-float', cashCounterWriteRateLimit, requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
-    const date = normalizeRecordDate(req.body?.date);
+    const date = normalizeBusinessDate(req.body?.date);
     const amount = normalizeNonNegativeAmount(req.body?.amount, 'amount');
     const note = normalizeNote(req.body?.note);
     const db = getDatabase();
@@ -223,7 +213,7 @@ router.post('/opening-float', cashCounterWriteRateLimit, requireRole(...ROLE_ACC
 
 router.post('/count', cashCounterWriteRateLimit, requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
-    const date = normalizeRecordDate(req.body?.date);
+    const date = normalizeBusinessDate(req.body?.date);
     const counted_amount = normalizeNonNegativeAmount(req.body?.counted_amount, 'counted_amount');
     const note = normalizeNote(req.body?.note);
     const db = getDatabase();
@@ -245,42 +235,50 @@ router.get('/monthly', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res:
     const month = typeof req.query.month === 'string' && req.query.month ? req.query.month : utcTodayDate().slice(0, 7);
     const [from, to] = monthBounds(month);
     const db = getDatabase();
+    const timezone = tenantTimezone();
 
-    const [rangeStart] = utcDayBounds(from);
-    const [, rangeEnd] = utcDayBounds(to);
+    const [rangeStart] = dayBoundsInTimezone(from, timezone);
+    const [, rangeEnd] = dayBoundsInTimezone(to, timezone);
     const orderLines = cashOrderPaymentLines(db, rangeStart, rangeEnd);
     const ordersByDate = new Map<string, number>();
     for (const line of orderLines) {
-      const day = line.payment_time.slice(0, 10);
-      ordersByDate.set(day, Math.round(((ordersByDate.get(day) || 0) + line.amount) * 100) / 100);
+      // paid_at is UTC; the window above is store-local, so bucket by the
+      // store-local calendar date, not the UTC date prefix.
+      const day = localDateInTimezone(parseDbTimestamp(line.payment_time), timezone);
+      ordersByDate.set(day, roundMoney((ordersByDate.get(day) || 0) + line.amount));
     }
 
     const expensesByDate = cashExpenseTotalsByDate(db, from, to);
+    const refundsByDate = cashRefundsByDate(db, rangeStart, rangeEnd, timezone);
     const openingByDate = openingFloatsByDate(db, from, to);
     const latestCountByDate = latestCountsByDate(db, from, to);
 
     let totalOpeningFloats = 0;
     let totalCashFromOrders = 0;
+    let totalCashRefunds = 0;
     let totalCashExpenses = 0;
 
     const days = datesInRange(from, to).map((date) => {
       const opening = openingByDate.get(date) || 0;
       const orders = ordersByDate.get(date) || 0;
+      const refunds = refundsByDate.get(date) || 0;
       const expenses = expensesByDate.get(date) || 0;
-      const expectedCash = Math.round((opening + orders - expenses) * 100) / 100;
+      const expected = expectedCash(opening, orders, refunds, expenses);
       const latestCount = latestCountByDate.has(date) ? latestCountByDate.get(date)! : null;
-      const variance = latestCount !== null ? Math.round((latestCount - expectedCash) * 100) / 100 : null;
+      const variance = latestCount !== null ? roundMoney(latestCount - expected) : null;
 
-      totalOpeningFloats = Math.round((totalOpeningFloats + opening) * 100) / 100;
-      totalCashFromOrders = Math.round((totalCashFromOrders + orders) * 100) / 100;
-      totalCashExpenses = Math.round((totalCashExpenses + expenses) * 100) / 100;
+      totalOpeningFloats = roundMoney(totalOpeningFloats + opening);
+      totalCashFromOrders = roundMoney(totalCashFromOrders + orders);
+      totalCashRefunds = roundMoney(totalCashRefunds + refunds);
+      totalCashExpenses = roundMoney(totalCashExpenses + expenses);
 
       return {
         date,
         opening_float: opening,
         cash_from_orders: orders,
+        cash_refunds: refunds,
         cash_expenses: expenses,
-        expected_cash: expectedCash,
+        expected_cash: expected,
         latest_count: latestCount,
         variance,
       };
@@ -294,8 +292,9 @@ router.get('/monthly', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res:
       totals: {
         total_opening_floats: totalOpeningFloats,
         total_cash_from_orders: totalCashFromOrders,
+        total_cash_refunds: totalCashRefunds,
         total_cash_expenses: totalCashExpenses,
-        net: Math.round((totalCashFromOrders - totalCashExpenses) * 100) / 100,
+        net: roundMoney(totalCashFromOrders - totalCashRefunds - totalCashExpenses),
       },
     });
   } catch (error: any) {

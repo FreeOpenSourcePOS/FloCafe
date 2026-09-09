@@ -3,26 +3,14 @@ import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, generateShortId, utcTodayDate } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import {
+  monthBounds,
+  normalizeBusinessDate,
+  normalizeNote,
+  roundMoney,
+} from './finance-shared';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * The business date an expense/payment is FOR — defaults to today, may be
- * backdated, but never postdated (a record can't be for a day that hasn't
- * happened yet). Distinct from created_at (main/db.ts:5156's UTC-day
- * convention — see utcTodayDate), which always stamps the real moment of
- * recording and is never client-supplied.
- */
-function normalizeEntryDate(value: unknown): string {
-  if (value === undefined || value === null || value === '') return utcTodayDate();
-  if (typeof value !== 'string' || !DATE_PATTERN.test(value)) {
-    throw Object.assign(new Error('date must be in YYYY-MM-DD format'), { statusCode: 400 });
-  }
-  if (value > utcTodayDate()) {
-    throw Object.assign(new Error('date cannot be in the future'), { statusCode: 400 });
-  }
-  return value;
-}
 
 const PAYMENT_METHODS = ['cash', 'card', 'upi'] as const;
 type PaymentMethod = typeof PAYMENT_METHODS[number];
@@ -32,21 +20,6 @@ function normalizePaymentMethod(value: unknown): PaymentMethod {
     throw Object.assign(new Error(`method is required and must be one of: ${PAYMENT_METHODS.join(', ')}`), { statusCode: 400 });
   }
   return value as PaymentMethod;
-}
-
-const MONTH_PATTERN = /^\d{4}-\d{2}$/;
-
-/** [firstDay, lastDay] of a `YYYY-MM` month, both inclusive `YYYY-MM-DD` strings. */
-function monthBounds(month: string): [string, string] {
-  if (!MONTH_PATTERN.test(month)) {
-    throw Object.assign(new Error('month must be in YYYY-MM format'), { statusCode: 400 });
-  }
-  const [year, mon] = month.split('-').map(Number);
-  if (mon < 1 || mon > 12) {
-    throw Object.assign(new Error('month must be in YYYY-MM format'), { statusCode: 400 });
-  }
-  const lastDay = new Date(Date.UTC(year, mon, 0)).getUTCDate();
-  return [`${month}-01`, `${month}-${String(lastDay).padStart(2, '0')}`];
 }
 
 const router = Router();
@@ -64,14 +37,7 @@ function normalizeAmount(value: unknown): number {
   if (!Number.isFinite(amount) || amount <= 0) {
     throw Object.assign(new Error('Amount must be a positive number'), { statusCode: 400 });
   }
-  return Math.round(amount * 100) / 100;
-}
-
-function normalizeNote(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, 500) : null;
+  return roundMoney(amount);
 }
 
 function requireActiveCategory(db: ReturnType<typeof getDatabase>, categoryId: unknown) {
@@ -103,13 +69,13 @@ function listCategories(includeInactive: boolean) {
   // residue (e.g. 5e-17), which would read as a nonzero due and block
   // category deletion even though nothing is owed. DELETE rechecks via
   // categoryDue(), which rounds the same way, so both gates agree.
-  return rows.map((row) => ({ ...row, is_active: Boolean(row.is_active), due: Math.round(row.due * 100) / 100 }));
+  return rows.map((row) => ({ ...row, is_active: Boolean(row.is_active), due: roundMoney(row.due) }));
 }
 
 function categoryDue(db: ReturnType<typeof getDatabase>, categoryId: string): number {
   const entries = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM expense_entries WHERE category_id = ?').get(categoryId) as { total: number };
   const payments = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM expense_due_payments WHERE category_id = ?').get(categoryId) as { total: number };
-  return Math.round((entries.total - payments.total) * 100) / 100;
+  return roundMoney(entries.total - payments.total);
 }
 
 const LEDGER_DATE_COLUMN = {
@@ -197,7 +163,7 @@ router.post('/entries', expenseWriteRateLimit, requireRole(...ROLE_ACCESS.allSta
     const category = requireActiveCategory(db, req.body?.category_id);
     const amount = normalizeAmount(req.body?.amount);
     const note = normalizeNote(req.body?.note);
-    const date = normalizeEntryDate(req.body?.date);
+    const date = normalizeBusinessDate(req.body?.date);
     const result = db.prepare(`
       INSERT INTO expense_entries (category_id, amount, note, expense_date, created_by, created_at)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -225,7 +191,7 @@ router.post('/payments', expenseWriteRateLimit, requireRole(...ROLE_ACCESS.allSt
     const category = requireActiveCategory(db, req.body?.category_id);
     const amount = normalizeAmount(req.body?.amount);
     const note = normalizeNote(req.body?.note);
-    const date = normalizeEntryDate(req.body?.date);
+    const date = normalizeBusinessDate(req.body?.date);
     const method = normalizePaymentMethod(req.body?.method);
     // A payment may legally exceed the category's current due (e.g. prepaying
     // a vendor) — this is allowed on purpose, not clamped or rejected.
@@ -252,28 +218,34 @@ router.get('/summary', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res:
     const [from, to] = monthBounds(month);
     const db = getDatabase();
 
-    const categories = listCategories(false).map((category) => {
-      const expenses = db.prepare(
-        'SELECT COALESCE(SUM(amount), 0) AS total FROM expense_entries WHERE category_id = ? AND expense_date >= ? AND expense_date <= ?'
-      ).get(category.id, from, to) as { total: number };
-      const paymentsByMethod = db.prepare(
-        'SELECT method, COALESCE(SUM(amount), 0) AS total FROM expense_due_payments WHERE category_id = ? AND payment_date >= ? AND payment_date <= ? GROUP BY method'
-      ).all(category.id, from, to) as { method: string | null; total: number }[];
-      const byMethod: Record<PaymentMethod, number> = { cash: 0, card: 0, upi: 0 };
-      let totalPayments = 0;
-      for (const row of paymentsByMethod) {
-        totalPayments += row.total;
-        if (row.method && PAYMENT_METHODS.includes(row.method as PaymentMethod)) {
-          byMethod[row.method as PaymentMethod] = row.total;
-        }
+    const expenseTotals = new Map((db.prepare(
+      'SELECT category_id, COALESCE(SUM(amount), 0) AS total FROM expense_entries WHERE expense_date >= ? AND expense_date <= ? GROUP BY category_id'
+    ).all(from, to) as { category_id: string; total: number }[]).map((row) => [row.category_id, row.total]));
+
+    const paymentTotals = new Map<string, { total: number; byMethod: Record<PaymentMethod, number> }>();
+    for (const row of db.prepare(
+      'SELECT category_id, method, COALESCE(SUM(amount), 0) AS total FROM expense_due_payments WHERE payment_date >= ? AND payment_date <= ? GROUP BY category_id, method'
+    ).all(from, to) as { category_id: string; method: string | null; total: number }[]) {
+      let bucket = paymentTotals.get(row.category_id);
+      if (!bucket) {
+        bucket = { total: 0, byMethod: { cash: 0, card: 0, upi: 0 } };
+        paymentTotals.set(row.category_id, bucket);
       }
+      bucket.total = roundMoney(bucket.total + row.total);
+      if (row.method && PAYMENT_METHODS.includes(row.method as PaymentMethod)) {
+        bucket.byMethod[row.method as PaymentMethod] = row.total;
+      }
+    }
+
+    const categories = listCategories(false).map((category) => {
+      const payments = paymentTotals.get(category.id) ?? { total: 0, byMethod: { cash: 0, card: 0, upi: 0 } };
       return {
         category_id: category.id,
         category_name: category.name,
         due: category.due,
-        total_expenses: expenses.total,
-        total_payments: Math.round(totalPayments * 100) / 100,
-        payments_by_method: byMethod,
+        total_expenses: expenseTotals.get(category.id) ?? 0,
+        total_payments: payments.total,
+        payments_by_method: payments.byMethod,
       };
     });
 

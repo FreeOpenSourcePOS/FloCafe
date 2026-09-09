@@ -405,6 +405,18 @@ async function api(
   return { status: response.status, data };
 }
 
+// Express's default handler for an unmatched route returns an HTML body, not
+// JSON — the api() helper's automatic response.json() would throw on that, so
+// route-non-existence checks use a raw fetch and only look at the status.
+async function rawStatus(baseUrl: string, urlPath: string, method: string, headers: Record<string, string>): Promise<number> {
+  const response = await (globalThis as any).fetch(baseUrl + urlPath, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: method === 'GET' || method === 'DELETE' ? undefined : '{}',
+  });
+  return response.status;
+}
+
 // ── Exports ──────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -423,6 +435,7 @@ module.exports = {
   // Express
   createApp,
   startServer,
+  rawStatus,
 
   // Seed data
   seedOwnerUser,

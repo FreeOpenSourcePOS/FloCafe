@@ -31,7 +31,7 @@
  */
 import { Router, Request, Response } from 'express';
 import {
-  dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, now, withTxn,
+  dayBoundsInTimezone, getDatabase, localDateInTimezone, now, withTxn,
 } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
@@ -40,6 +40,7 @@ import { getTenantCurrency } from '../services/refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
 import { getOrdersWithItemsForBills } from './bills';
 import { getHttpRequestSignal } from '../shutdown';
+import { tenantTimezone } from './finance-shared';
 import {
   DisplayTaxComponent,
   aggregateTaxComponents,
@@ -53,10 +54,6 @@ const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
-}
-
-function tenantTimezone(): string {
-  return getSettingValue('timezone') || 'Asia/Kolkata';
 }
 
 function validateBusinessDate(raw: unknown): string {

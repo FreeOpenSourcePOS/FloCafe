@@ -337,6 +337,7 @@ export interface CashDailySummary {
   date: string;
   opening_float: CashOpeningFloat | null;
   cash_from_orders: { total: number; payments: CashOrderPayment[] };
+  cash_refunds: { total: number };
   cash_expenses: { total: number; payments: ExpenseLedgerEntry[] };
   expected_cash: number;
   counts: CashCountRecord[];
@@ -348,6 +349,7 @@ export interface CashMonthlyDay {
   date: string;
   opening_float: number;
   cash_from_orders: number;
+  cash_refunds: number;
   cash_expenses: number;
   expected_cash: number;
   latest_count: number | null;
@@ -362,6 +364,7 @@ export interface CashMonthlySummary {
   totals: {
     total_opening_floats: number;
     total_cash_from_orders: number;
+    total_cash_refunds: number;
     total_cash_expenses: number;
     net: number;
   };

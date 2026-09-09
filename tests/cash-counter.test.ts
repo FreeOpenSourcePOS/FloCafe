@@ -13,20 +13,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const {
   initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct,
-  api, assert, assertEqual, getResults, closeDatabase, now,
+  api, assert, assertEqual, getResults, closeDatabase, now, rawStatus,
 } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { utcTodayDate } = require('../main/db');
-
-async function rawStatus(baseUrl: string, urlPath: string, method: string, headers: Record<string, string>): Promise<number> {
-  const response = await (globalThis as any).fetch(baseUrl + urlPath, {
-    method,
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: method === 'GET' || method === 'DELETE' ? undefined : '{}',
-  });
-  return response.status;
-}
 
 function seedUserWithRole(db: any, role: string): { userId: string; authHeader: Record<string, string> } {
   const { getJWTSecret } = require('../main/routes/auth');
@@ -46,7 +37,13 @@ async function payFullBill(baseUrl: string, billId: number, method: string, amou
 
 async function main() {
   const db = initTestDb();
-  const { authHeader: ownerAuth } = seedOwnerUser(db);
+  const { authHeader: ownerAuth, userId: ownerId } = seedOwnerUser(db);
+  // Deterministic day windows regardless of host clock (same convention as
+  // the Z day-close tests); the Asia/Kolkata case below opts back in briefly.
+  db.prepare("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'").run();
+  if ((db.prepare("SELECT COUNT(*) as c FROM settings WHERE key = 'timezone'").get() as any).c === 0) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('timezone', 'UTC')").run();
+  }
   const mgr = seedManagerUser(db);
   const cashier = seedUserWithRole(db, 'cashier');
   const server = seedUserWithRole(db, 'server');
@@ -183,6 +180,41 @@ async function main() {
     assertEqual(monthly.data.totals.total_cash_from_orders, daysSum.cash_from_orders, 'month totals.total_cash_from_orders equals the sum of daily rows');
     assertEqual(monthly.data.totals.total_cash_expenses, daysSum.cash_expenses, 'month totals.total_cash_expenses equals the sum of daily rows');
     assertEqual(monthly.data.totals.net, Math.round((daysSum.cash_from_orders - daysSum.cash_expenses) * 100) / 100, 'month totals.net = total cash from orders - total cash expenses');
+
+    // ── Cash refunds leave the drawer: expected_cash subtracts them ─────────
+    db.prepare(`
+      INSERT INTO refunds (bill_id, amount_cents, method, reason, approved_by, created_by, created_at)
+      VALUES (?, 1000, 'cash', 'test cash refund', ?, ?, ?)
+    `).run(cashBillRes.data.bill.id, ownerId, ownerId, now());
+    db.prepare(`
+      INSERT INTO refunds (bill_id, amount_cents, method, reason, approved_by, created_by, created_at)
+      VALUES (?, 500, 'card', 'test card refund', ?, ?, ?)
+    `).run(cardBillRes.data.bill.id, ownerId, ownerId, now());
+
+    const dailyAfterRefund = await api(baseUrl, `/api/cash-counter/daily?date=${today}`, { headers: ownerAuth });
+    assertEqual(dailyAfterRefund.data.cash_refunds.total, 10, 'cash_refunds totals only cash-method refunds');
+    assertEqual(dailyAfterRefund.data.expected_cash, Math.round((expectedAfterFloat - 10) * 100) / 100, 'expected_cash subtracts cash refunds');
+
+    const monthlyAfterRefund = await api(baseUrl, `/api/cash-counter/monthly?month=${thisMonth}`, { headers: ownerAuth });
+    const todayRowAfter = monthlyAfterRefund.data.days.find((d: any) => d.date === today);
+    assertEqual(todayRowAfter.cash_refunds, 10, 'monthly per-day row reports cash refunds');
+    assertEqual(todayRowAfter.expected_cash, dailyAfterRefund.data.expected_cash, 'monthly per-day expected_cash matches the daily figure after refunds');
+    assertEqual(monthlyAfterRefund.data.totals.total_cash_refunds, 10, 'month totals include cash refunds');
+    assertEqual(monthlyAfterRefund.data.totals.net, Math.round((monthlyAfterRefund.data.totals.total_cash_from_orders - 10 - monthlyAfterRefund.data.totals.total_cash_expenses) * 100) / 100, 'month totals.net subtracts cash refunds');
+
+    // ── Store-timezone alignment uses fixed timestamps, host-clock free ─────
+    db.prepare("UPDATE settings SET value = 'Asia/Kolkata' WHERE key = 'timezone'").run();
+    const tzOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 1, items: [{ product_id: 'cc-cash-item', quantity: 1 }] }, headers: ownerAuth });
+    const tzBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: tzOrderRes.data.order.id }, headers: ownerAuth });
+    await payFullBill(baseUrl, tzBillRes.data.bill.id, 'cash', tzBillRes.data.bill.total, ownerAuth);
+    // 2026-01-10 19:00 UTC is 2026-01-11 00:30 IST: paid on the UTC 10th,
+    // settled on the store-local 11th.
+    db.prepare(`UPDATE bills SET paid_at = '2026-01-10 19:00:00' WHERE id = ?`).run(tzBillRes.data.bill.id);
+    const istDay = await api(baseUrl, '/api/cash-counter/daily?date=2026-01-11', { headers: ownerAuth });
+    assert(istDay.data.cash_from_orders.payments.some((p: any) => p.bill_id === tzBillRes.data.bill.id), 'a late-UTC bill lands on the store-local day');
+    const utcDay = await api(baseUrl, '/api/cash-counter/daily?date=2026-01-10', { headers: ownerAuth });
+    assert(!utcDay.data.cash_from_orders.payments.some((p: any) => p.bill_id === tzBillRes.data.bill.id), 'the same bill does not land on the UTC day');
+    db.prepare("UPDATE settings SET value = 'UTC' WHERE key = 'timezone'").run();
   } finally {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     closeDatabase();

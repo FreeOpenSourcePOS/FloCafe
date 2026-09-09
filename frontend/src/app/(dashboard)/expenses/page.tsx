@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import api from '@/lib/api';
+import { currentUtcMonth, todayUtcDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, X, Trash2, Wallet, Receipt } from 'lucide-react';
@@ -14,17 +15,6 @@ import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 type LedgerRow = ExpenseLedgerEntry & { kind: 'expense' | 'payment' };
 
 const PAYMENT_METHODS: ExpensePaymentMethod[] = ['cash', 'card', 'upi'];
-
-// UTC calendar day — matches the backend's utcTodayDate() convention, so a
-// date picked here is never rejected as "in the future" by a client whose
-// local clock has already rolled past midnight UTC.
-function todayUtcDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function currentUtcMonth(): string {
-  return todayUtcDate().slice(0, 7);
-}
 
 type PaymentMethodLabelKey = 'paymentMethodCash' | 'paymentMethodCard' | 'paymentMethodUpi';
 

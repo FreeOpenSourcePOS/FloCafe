@@ -358,12 +358,14 @@ async function translateJid(jid: string, altJid: string | undefined, sock: Baile
   if (cached) return cached;
   if (altJid && !altJid.endsWith('@lid')) {
     const phoneJid = altJid.includes('@') ? altJid : `${altJid}@s.whatsapp.net`;
+    if (!isActiveSocket(sock)) return jid;
     state.lidToPhoneMap.set(lidUser, phoneJid);
     return phoneJid;
   }
   try {
     const pn: string | null = await abortable(() => sock.signalRepository.lidMapping.getPNForLID(jid), signal);
     if (pn) {
+      if (!isActiveSocket(sock)) return jid;
       const phoneJid = `${userFromJid(pn)}@s.whatsapp.net`;
       state.lidToPhoneMap.set(lidUser, phoneJid);
       return phoneJid;
@@ -561,7 +563,7 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
   const resolvedJid = rawJid.endsWith('@g.us')
     ? rawJid
     : await translateJid(rawJid, msg.key?.remoteJidAlt, sock, signal);
-  if (isWhatsAppTerminal()) return;
+  if (!isActiveSocket(sock)) return;
   const phone = '+' + userFromJid(resolvedJid);
   const body =
     msg.message?.conversation ??
@@ -570,6 +572,7 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
     msg.message?.videoMessage?.caption ??
     '';
   if (!body) return;
+  if (!isActiveSocket(sock)) return;
   recordMessageRow({
     phone_e164: phone,
     direction: 'inbound',

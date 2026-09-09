@@ -2273,6 +2273,7 @@ export default function SettingsPage() {
     const key = `${currentTenant.id}:${activeTab}`;
     if (loadedSettingsTabs.current.has(key)) return;
     const tabLoadPromises = settingsTabLoadPromises.current;
+    const tabLoadControllers = settingsTabLoadControllers.current;
     const controller = new AbortController();
     void startSettingsTabLoad(activeTab, controller)
       .catch(() => {});
@@ -2281,8 +2282,8 @@ export default function SettingsPage() {
       if (tabLoadPromises.has(key)) {
         tabLoadPromises.delete(key);
       }
-      if (settingsTabLoadControllers.current.get(key) === controller) {
-        settingsTabLoadControllers.current.delete(key);
+      if (tabLoadControllers.get(key) === controller) {
+        tabLoadControllers.delete(key);
       }
     };
   // The tab and tenant identity are the intentional hydration boundaries.

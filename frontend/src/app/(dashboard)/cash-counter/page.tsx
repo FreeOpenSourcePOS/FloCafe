@@ -271,7 +271,7 @@ export default function CashCounterPage() {
 
       {showFloatForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+          <div className="bg-background rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('setOpeningFloat')}</h2>
               <button type="button" onClick={() => setShowFloatForm(false)}><X size={20} className="text-gray-400" /></button>
@@ -295,7 +295,7 @@ export default function CashCounterPage() {
 
       {showCountForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+          <div className="bg-background rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('recordCount')}</h2>
               <button type="button" onClick={() => setShowCountForm(false)}><X size={20} className="text-gray-400" /></button>

@@ -301,7 +301,7 @@ export default function ExpensesPage() {
 
       {showCategoryForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+          <div className="bg-background rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('addCategory')}</h2>
               <button type="button" onClick={() => setShowCategoryForm(false)}><X size={20} className="text-gray-400" /></button>
@@ -320,7 +320,7 @@ export default function ExpensesPage() {
 
       {activeCategory && modalMode && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
+          <div className="bg-background rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{modalMode === 'expense' ? t('addExpense') : t('recordPayment')} — {activeCategory.name}</h2>
               <button type="button" onClick={closeModal}><X size={20} className="text-gray-400" /></button>
@@ -345,7 +345,7 @@ export default function ExpensesPage() {
                   <label className="mb-1 block text-xs font-medium text-gray-500">{t('paymentMethod')}</label>
                   <select
                     value={method} onChange={(e) => setMethod(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-background"
                   >
                     {PAYMENT_METHODS.map((m) => (
                       <option key={m} value={m}>{t(paymentMethodLabelKey(m))}</option>

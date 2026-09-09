@@ -180,9 +180,9 @@ test('Mobile Access loads cloud and pairing data only when activated, once per t
   await page.goto(`${BASE}/settings?tab=store`);
   await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
   await page.waitForTimeout(300);
-  apiPaths.length = 0;
   expect(apiPaths).not.toContain('/api/mobile/pairing-code');
   expect(apiPaths).not.toContain('/api/mobile/devices');
+  apiPaths.length = 0;
 
   await page.getByRole('button', { name: 'Mobile Access', exact: true }).click();
   await expect(page).toHaveURL(/tab=mobile-access/);
@@ -203,6 +203,81 @@ test('Mobile Access loads cloud and pairing data only when activated, once per t
   expect(apiPaths.filter((path) => path === '/api/settings/cloud')).toHaveLength(1);
   expect(apiPaths.filter((path) => path === '/api/mobile/pairing-code')).toHaveLength(1);
   expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
+});
+
+test('Cloud registration refreshes Mobile Access pairing data', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let registered = false;
+  const apiPaths = collectApiPaths(page);
+  await page.route('**/api/settings/cloud', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ cloud_registration_status: registered ? 'registered' : 'unregistered' }),
+    });
+  });
+  await page.route('**/api/settings/cloud/register', async (route) => {
+    registered = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ cloud_registration_status: 'registered' }),
+    });
+  });
+  await page.route('**/api/mobile/pairing-code', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ pairing_code: 'PAIR123', expires_at: null, qr_data_url: null }),
+    });
+  });
+  await page.route('**/api/mobile/devices', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ devices: [] }) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=mobile-access`);
+  await expect(page.getByRole('button', { name: 'Initialize Cloud Services', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Initialize Cloud Services', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Accept & Initialize', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Accept & Initialize', exact: true }).click();
+
+  await expect(page.getByText('PAIR123', { exact: true })).toBeVisible();
+  expect(apiPaths.filter((path) => path === '/api/mobile/pairing-code')).toHaveLength(1);
+  expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
+});
+
+test('Failed KDS and Data hydration retries when revisiting the tab', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let kdsInfoAttempts = 0;
+  let backupAttempts = 0;
+  await page.route('**/api/kds-info', async (route) => {
+    kdsInfoAttempts += 1;
+    if (kdsInfoAttempts === 1) {
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
+  });
+  await page.route('**/api/db-tools/backups', async (route) => {
+    backupAttempts += 1;
+    if (backupAttempts === 1) {
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ backups: [] }) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=kds`);
+  await expect(page.getByRole('heading', { name: 'KDS', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await expect.poll(() => kdsInfoAttempts).toBe(2);
+
+  await page.getByRole('button', { name: 'Backup & Data', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Backup & Data', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await page.getByRole('button', { name: 'Backup & Data', exact: true }).click();
+  await expect.poll(() => backupAttempts).toBe(2);
 });
 
 test('Save All does not cache partial Mobile Access hydration', async ({ page }) => {
@@ -282,7 +357,6 @@ test('Changing tabs aborts an in-flight page loader', async ({ page }) => {
   await startMockedSettingsSession(page);
   await page.waitForTimeout(1000);
   let navigationStarted = false;
-  await page.unroute('**/api/settings/business');
   await page.route('**/api/settings/business', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, navigationStarted ? 50 : 1000));
     try {
@@ -374,14 +448,14 @@ test('Save All preserves order numbering edits during hydration', async ({ page 
 
 test('Save All preserves printing edits during business hydration', async ({ page }) => {
   await startMockedSettingsSession(page);
-  let savedPrinting: Record<string, unknown> | undefined;
+  const savedPrintingRequests: Record<string, unknown>[] = [];
   await page.route('**/api/settings/business', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
   });
   page.on('request', (request) => {
     if (request.method() === 'PUT' && new URL(request.url()).pathname === '/api/settings/printing') {
-      savedPrinting = request.postDataJSON();
+      savedPrintingRequests.push(request.postDataJSON());
     }
   });
 
@@ -390,7 +464,20 @@ test('Save All preserves printing edits during business hydration', async ({ pag
   await page.locator('p').filter({ hasText: 'Trim decimals' }).locator('xpath=../..').getByRole('button').click();
   await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
-  await expect.poll(() => savedPrinting?.printer_trim_decimals, { timeout: 10000 }).toBe(true);
+  await expect.poll(() => savedPrintingRequests.length, { timeout: 10000 }).toBe(1);
+  expect(savedPrintingRequests[0]).toEqual({
+    printer_trim_decimals: true,
+    bill_language_policy: { primary: { mode: 'inherit' }, additional: [] },
+    kot_language_policy: { primary: { mode: 'inherit' }, additional: [] },
+    bill_show_name: true,
+    bill_show_address: true,
+    bill_show_phone: true,
+    bill_show_tax_id: false,
+    bill_show_tax_breakdown: true,
+    bill_show_customer_name: true,
+    bill_show_customer_phone: true,
+    bill_show_table_number: true,
+  });
 });
 
 test('Rapid Settings navigation stays below the read rate limit', async ({ page }) => {
@@ -461,7 +548,6 @@ test('Save All stops when required hydration fails', async ({ page }) => {
     const path = new URL(request.url()).pathname;
     if (request.method() === 'PUT' && path.startsWith('/api/settings/')) writes.push(path);
   });
-  await page.unroute('**/api/settings/business');
   await page.route('**/api/settings/business', async (route) => {
     await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
   });
@@ -469,8 +555,9 @@ test('Save All stops when required hydration fails', async ({ page }) => {
   await page.goto(`${BASE}/settings?tab=store`);
   await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
   await page.locator('input[type="text"]').first().fill('Should Not Save');
-  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-  await page.waitForTimeout(500);
+  const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
+  await saveButton.click();
+  await expect(saveButton).toBeEnabled();
 
   expect(writes).toEqual([]);
 });
@@ -489,8 +576,9 @@ test('Save All stops when printing hydration fails', async ({ page }) => {
   await page.goto(`${BASE}/settings?tab=store`);
   await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
   await page.locator('input[type="text"]').first().fill('Should Not Save');
-  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-  await page.waitForTimeout(500);
+  const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
+  await saveButton.click();
+  await expect(saveButton).toBeEnabled();
 
   expect(writes).toEqual([]);
 });

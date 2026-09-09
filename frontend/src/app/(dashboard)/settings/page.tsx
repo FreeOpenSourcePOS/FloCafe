@@ -466,26 +466,30 @@ export default function SettingsPage() {
     }
   };
 
-  const fetchMasterPinStatus = async (signal?: AbortSignal) => {
+  const fetchMasterPinStatus = async (signal?: AbortSignal): Promise<boolean> => {
     try {
       const { data } = await api.get('/db-tools/master-pin/status', signal ? { signal } : undefined);
-      if (signal?.aborted) return;
+      if (signal?.aborted) return false;
       setMasterPinStatus(data);
+      return true;
     } catch (error) {
-      if (isRequestCancelled(error)) return;
+      if (isRequestCancelled(error)) return false;
       // ignore — card just shows "Unknown" state until retried
+      return false;
     }
   };
 
-  const fetchBackups = async (signal?: AbortSignal) => {
+  const fetchBackups = async (signal?: AbortSignal): Promise<boolean> => {
     setBackupsLoading(true);
     try {
       const { data } = await api.get('/db-tools/backups', signal ? { signal } : undefined);
-      if (signal?.aborted) return;
+      if (signal?.aborted) return false;
       setBackups(data.backups ?? []);
+      return true;
     } catch (error) {
-      if (isRequestCancelled(error)) return;
+      if (isRequestCancelled(error)) return false;
       // ignore — history card just shows empty state until retried
+      return false;
     } finally {
       if (!signal?.aborted) setBackupsLoading(false);
     }
@@ -753,13 +757,17 @@ export default function SettingsPage() {
   // sets it explicitly for manual refresh.
   const [kdsInfoLoading, setKdsInfoLoading] = useState(true);
 
-  const fetchKdsInfo = async (signal?: AbortSignal) => {
+  const fetchKdsInfo = async (signal?: AbortSignal): Promise<boolean> => {
     setKdsInfoLoading(true);
     try {
       const res = await api.get('/kds-info', signal ? { signal } : undefined);
-      if (!signal?.aborted) setKdsInfo(res.data);
+      if (signal?.aborted) return false;
+      setKdsInfo(res.data);
+      return true;
     } catch (error) {
-      if (!signal?.aborted && !isRequestCancelled(error)) toast.error(t('kdsInfoFetchFailed'));
+      if (isRequestCancelled(error)) return false;
+      if (!signal?.aborted) toast.error(t('kdsInfoFetchFailed'));
+      return false;
     } finally {
       if (!signal?.aborted) setKdsInfoLoading(false);
     }
@@ -1030,23 +1038,29 @@ export default function SettingsPage() {
   }>({ name: '', category_ids: [], printer_id: '', user_ids: [] });
   const [savingStation, setSavingStation] = useState(false);
 
-  const fetchStations = async (signal?: AbortSignal) => {
+  const fetchStations = async (signal?: AbortSignal): Promise<boolean> => {
     try {
       const res = await api.get('/kitchen-stations', signal ? { signal } : undefined);
-      if (!signal?.aborted) setStations(res.data.kitchenStations || []);
-    } catch { /* ignore */ }
+      if (signal?.aborted) return false;
+      setStations(res.data.kitchenStations || []);
+      return true;
+    } catch { return false; }
   };
-  const fetchStationCategories = async (signal?: AbortSignal) => {
+  const fetchStationCategories = async (signal?: AbortSignal): Promise<boolean> => {
     try {
       const res = await api.get('/categories', signal ? { signal } : undefined);
-      if (!signal?.aborted) setStationCategories(res.data.categories || []);
-    } catch { /* ignore */ }
+      if (signal?.aborted) return false;
+      setStationCategories(res.data.categories || []);
+      return true;
+    } catch { return false; }
   };
-  const fetchStationStaff = async (signal?: AbortSignal) => {
+  const fetchStationStaff = async (signal?: AbortSignal): Promise<boolean> => {
     try {
       const res = await api.get('/staff', signal ? { signal } : undefined);
-      if (!signal?.aborted) setStationStaff(res.data.staff || []);
-    } catch { /* ignore */ }
+      if (signal?.aborted) return false;
+      setStationStaff(res.data.staff || []);
+      return true;
+    } catch { return false; }
   };
   const fetchStationUsers = async (stationId: string, signal?: AbortSignal) => {
     try {
@@ -2055,18 +2069,25 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'kds') {
-        await Promise.all([
+        const [kdsInfoLoaded, stationsLoaded, categoriesLoaded, staffLoaded, settingLoaded] = await Promise.all([
           fetchKdsInfo(signal),
           fetchStations(signal),
           fetchStationCategories(signal),
           fetchStationStaff(signal),
           get('/settings/kds_enabled').then((res) => {
-            if (!active()) return;
+            if (!active()) return false;
             const enabled = res.data.setting?.value !== 'false';
             setKdsEnabledSetting(enabled);
             posSettings.setKdsEnabled(enabled);
-          }).catch(() => {}),
+            return true;
+          }).catch((error) => {
+            if (isRequestCancelled(error)) throw error;
+            return false;
+          }),
         ]);
+        if (!kdsInfoLoaded || !stationsLoaded || !categoriesLoaded || !staffLoaded || !settingLoaded) {
+          throw new Error('KDS hydration failed');
+        }
         return;
       }
       if (tab === 'server-app') {
@@ -2134,7 +2155,12 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'data') {
-        await Promise.all([fetchMasterPinStatus(signal), fetchBackups(signal), fetchGoogleDriveStatus(signal)]);
+        const [masterPinLoaded, backupsLoaded] = await Promise.all([
+          fetchMasterPinStatus(signal),
+          fetchBackups(signal),
+          fetchGoogleDriveStatus(signal),
+        ]);
+        if (!masterPinLoaded || !backupsLoaded) throw new Error('Data hydration failed');
         return;
       }
       if (tab === 'account') {
@@ -2274,8 +2300,11 @@ export default function SettingsPage() {
     setRegisteringCloud(true);
     try {
       const res = await api.post('/settings/cloud/register', { email });
+      const registrationStatus = res.data.cloud_registration_status || 'unregistered';
+      cloudRegistrationStatus.current = registrationStatus;
+      cloudHydrated.current = true;
       setCloudStatus({
-        cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
+        cloud_registration_status: registrationStatus,
         cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
         cloud_connected: !!res.data.cloud_connected,
         cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
@@ -2290,7 +2319,17 @@ export default function SettingsPage() {
       }));
       await fetchCloudAccount();
       notifyCloudAccountStatusChanged();
-      if (res.data.cloud_registration_status === 'registered') {
+      if (registrationStatus === 'registered') {
+        const mobileAccessKey = currentTenant?.id ? `${currentTenant.id}:mobile-access` : null;
+        if (mobileAccessKey) loadedSettingsTabs.current.delete(mobileAccessKey);
+        if (activeTabRef.current === 'mobile-access') {
+          const controller = new AbortController();
+          try {
+            await startSettingsTabLoad('mobile-access', controller.signal);
+          } finally {
+            controller.abort();
+          }
+        }
         toast.success(t('cloudRegistrationSuccess'));
       }
     } catch {

@@ -2113,7 +2113,8 @@ export default function SettingsPage() {
           }),
           isOwner ? fetchCloudAccount(signal) : Promise.resolve(true),
         ]);
-        if (active() && cloudLoaded && accountLoaded) setCloudPrivacyHydrated(true);
+        if (!cloudLoaded || !accountLoaded) throw new Error('Privacy hydration failed');
+        if (active()) setCloudPrivacyHydrated(true);
         return;
       }
       if (tab === 'data') {

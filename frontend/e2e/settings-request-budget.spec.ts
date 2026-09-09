@@ -136,6 +136,32 @@ test('Privacy hydrates pending cloud account deletion before enabling deletion',
   await expect(deleteButton).toBeDisabled();
 });
 
+test('Privacy retries required cloud hydration after an account failure', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let accountAttempts = 0;
+  await page.route('**/api/settings/cloud/account', async (route) => {
+    accountAttempts += 1;
+    if (accountAttempts === 1) {
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ cloud_account_available: true, email: 'owner@flo.local' }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=privacy`);
+  await expect(page.getByRole('heading', { name: 'Privacy', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Request cloud data deletion', exact: true })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await page.getByRole('button', { name: 'Privacy', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Request cloud data deletion', exact: true })).toBeVisible();
+  expect(accountAttempts).toBe(2);
+});
+
 test('About hydrates More Apps only when activated', async ({ page }) => {
   await startMockedSettingsSession(page);
   const apiPaths = collectApiPaths(page);

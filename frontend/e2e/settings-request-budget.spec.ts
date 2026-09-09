@@ -321,8 +321,11 @@ test('Save All does not write cloud defaults after unavailable cloud hydration',
   await page.locator('input[type="text"]').first().fill('Changed Store');
   await page.getByRole('button', { name: 'Mobile Access', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+  const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
+  await saveButton.click();
+  await expect(saveButton).toBeDisabled();
   await expect.poll(() => cloudReads).toBe(2);
+  await expect(saveButton).toBeEnabled();
   expect(cloudWrites).toBe(0);
 });
 
@@ -735,6 +738,7 @@ test('Save All stops when required hydration fails', async ({ page }) => {
   await page.locator('input[type="text"]').first().fill('Should Not Save');
   const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
   await saveButton.click();
+  await expect(saveButton).toBeDisabled();
   await expect(saveButton).toBeEnabled();
 
   expect(writes).toEqual([]);
@@ -756,6 +760,7 @@ test('Save All stops when printing hydration fails', async ({ page }) => {
   await page.locator('input[type="text"]').first().fill('Should Not Save');
   const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
   await saveButton.click();
+  await expect(saveButton).toBeDisabled();
   await expect(saveButton).toBeEnabled();
 
   expect(writes).toEqual([]);

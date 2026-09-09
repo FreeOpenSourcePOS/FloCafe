@@ -599,11 +599,14 @@ async function runSocketPhase<T>(attemptId: number, phase: string, operation: ()
   }
 }
 
+function isActiveSocket(socket: BaileysSocket): boolean {
+  return !isWhatsAppTerminal() && state.socket === socket;
+}
+
 function attachSocketHandlers(socket: BaileysSocket): void {
   socket.ev.on('connection.update', (update: any) => {
     void trackWhatsAppWork((async () => {
-    if (isWhatsAppTerminal()) return;
-    if (state.socket !== socket) return;
+    if (!isActiveSocket(socket)) return;
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
       state.lastQr = qr;
@@ -673,7 +676,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
 
   // Keep the LID→phone cache fresh. WhatsApp rotates these over time.
   socket.ev.on('lid-mapping.update', (update: any) => {
-    if (isWhatsAppTerminal()) return;
+    if (!isActiveSocket(socket)) return;
     const lid = update?.lid as string | undefined;
     const pn = update?.pn as string | undefined;
     if (!lid || !pn) return;
@@ -684,10 +687,10 @@ function attachSocketHandlers(socket: BaileysSocket): void {
 
   socket.ev.on('messages.upsert', ({ messages }: { messages: any[] }) => {
     void trackWhatsAppWork((async () => {
-    if (isWhatsAppTerminal()) return;
+    if (!isActiveSocket(socket)) return;
     const filterGroups = getSettingValue('whatsapp_filter_groups') === 'true';
     for (const msg of messages) {
-      if (isWhatsAppTerminal()) return;
+      if (!isActiveSocket(socket)) return;
       if (msg.key?.fromMe) continue;
       // Ignore incoming group messages when group filtering is enabled.
       if (filterGroups && msg.key?.remoteJid?.endsWith('@g.us')) continue;
@@ -698,9 +701,9 @@ function attachSocketHandlers(socket: BaileysSocket): void {
 
   socket.ev.on('messages.update', (updates: any[]) => {
     void trackWhatsAppWork((async () => {
-    if (isWhatsAppTerminal()) return;
+    if (!isActiveSocket(socket)) return;
     for (const u of updates) {
-      if (isWhatsAppTerminal()) return;
+      if (!isActiveSocket(socket)) return;
       const id = u.key?.id;
       if (!id) continue;
       const stored = findMessageByExternalId(id);
@@ -790,7 +793,7 @@ async function startSocketImpl(attemptId: number): Promise<void> {
   state.state = 'connecting';
   attachSocketHandlers(socket);
   socket.ev.on('creds.update', (...args: any[]) => {
-    if (isWhatsAppTerminal()) return;
+    if (!isActiveSocket(socket)) return;
     (saveCreds as (...values: any[]) => unknown)(...args);
   });
   logWhatsApp('info', 'socket_created', { attemptId, state: state.state });
@@ -830,7 +833,7 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
       logWhatsApp('info', 'socket_start_result', { attemptId, ok: true, durationMs: Date.now() - startedAt });
     })
     .catch((error) => {
-      if (!isWhatsAppTerminal() && attemptId === whatsappStartAttempt) {
+      if (!isWhatsAppTerminal() && !startController.signal.aborted && attemptId === whatsappStartAttempt) {
         state.socket = null;
         state.state = 'disconnected';
         state.lastError = 'WhatsApp connection could not be started.';

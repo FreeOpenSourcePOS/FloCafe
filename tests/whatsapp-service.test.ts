@@ -172,12 +172,13 @@ async function main(): Promise<void> {
     await whatsapp.enable('startup-recovery-test-user');
     const socketCallsBeforeRecovery = makeSocketCalls;
     whatsapp.disconnect();
-    await whatsapp.enable('startup-recovery-test-user');
-    const restartedStartup = whatsapp.connectWithQr();
     releaseRecoveryAuthState();
     holdRecoveryAuthState = false;
-    const restartedResult = await restartedStartup;
     await cancelledStartup;
+    assert(whatsapp.getStatus().lastErrorReason === null, 'intentional startup cancellation does not report a failure');
+    await whatsapp.enable('startup-recovery-test-user');
+    const restartedStartup = whatsapp.connectWithQr();
+    const restartedResult = await restartedStartup;
     assert(restartedResult.ok === true, 're-enable starts a fresh socket after cancellation');
     assert(makeSocketCalls === socketCallsBeforeRecovery + 1, 'cancelled startup does not create a duplicate socket');
     assert(authStateCalls === authStateCallsBeforeRecovery + 2, 're-enable waits for the cancelled startup before retrying');

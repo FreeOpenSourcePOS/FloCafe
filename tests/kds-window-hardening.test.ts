@@ -143,7 +143,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
     };
   }
   if (request === './services/whatsapp') {
-    return { getStatus: () => ({ connected: false, qrCode: null }) };
+    return {
+      getStatus: () => ({ connected: false, qrCode: null }),
+      sanitizeLogText: (error: unknown) => (error instanceof Error ? error.message : String(error))
+        .replace(/https?:\/\/\S+/gi, '[redacted-url]'),
+    };
   }
   return originalLoad.apply(this, arguments as any);
 };

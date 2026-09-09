@@ -23,6 +23,11 @@ let authStateStarted!: () => void;
 const authStateStartedPromise = new Promise<void>((resolve) => { authStateStarted = resolve; });
 let releaseAuthState!: () => void;
 const authStateGate = new Promise<void>((resolve) => { releaseAuthState = resolve; });
+let holdRecoveryAuthState = false;
+let recoveryAuthStateStarted!: () => void;
+const recoveryAuthStateStartedPromise = new Promise<void>((resolve) => { recoveryAuthStateStarted = resolve; });
+let releaseRecoveryAuthState!: () => void;
+const recoveryAuthStateGate = new Promise<void>((resolve) => { releaseRecoveryAuthState = resolve; });
 const fakeSocket = {
   ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
   onWhatsApp: async () => [{ exists: true, jid: '15555550100@s.whatsapp.net' }],
@@ -37,6 +42,10 @@ const fakeBaileys = {
     if (holdAuthState) {
       authStateStarted();
       await authStateGate;
+    }
+    if (holdRecoveryAuthState) {
+      recoveryAuthStateStarted();
+      await recoveryAuthStateGate;
     }
     return { state: {}, saveCreds: () => {} };
   },
@@ -84,6 +93,10 @@ async function main(): Promise<void> {
   assert(typeof whatsapp.disconnect === 'function', 'exports disconnect()');
   assert(typeof whatsapp.shutdown === 'function', 'exports shutdown()');
   assert(typeof whatsapp.initFromDb === 'function', 'exports initFromDb()');
+  assert(
+    whatsapp.sanitizeLogText(new Error('failed https://wa.me/15555550100?text=private-bill')) === 'failed [redacted-url]',
+    'diagnostic sanitizer redacts share URLs',
+  );
 
   // Send + storage
   assert(typeof whatsapp.sendMessage === 'function', 'exports sendMessage()');
@@ -137,6 +150,22 @@ async function main(): Promise<void> {
     await whatsapp.connectWithQr();
     eventHandlers.get('connection.update')?.({ connection: 'open' });
     await new Promise((resolve) => setImmediate(resolve));
+
+    holdRecoveryAuthState = true;
+    whatsapp.disconnect();
+    await whatsapp.enable('startup-recovery-test-user');
+    const cancelledStartup = whatsapp.connectWithQr().catch(() => undefined);
+    await recoveryAuthStateStartedPromise;
+    const socketCallsBeforeRecovery = makeSocketCalls;
+    whatsapp.disconnect();
+    await whatsapp.enable('startup-recovery-test-user');
+    const restartedStartup = whatsapp.connectWithQr();
+    releaseRecoveryAuthState();
+    holdRecoveryAuthState = false;
+    const restartedResult = await restartedStartup;
+    await cancelledStartup;
+    assert(restartedResult.ok === true, 're-enable starts a fresh socket after cancellation');
+    assert(makeSocketCalls === socketCallsBeforeRecovery + 1, 'cancelled startup does not create a duplicate socket');
 
     const requestAbort = new AbortController();
     const sendPromise = whatsapp.sendMessage({

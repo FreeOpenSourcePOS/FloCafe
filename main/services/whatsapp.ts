@@ -23,10 +23,11 @@ type WhatsAppLogLevel = 'debug' | 'info' | 'warn' | 'error';
 const WHATSAPP_LOG_LEVEL = process.env.FLO_WHATSAPP_LOG_LEVEL === 'debug' ? 'debug' : 'warn';
 const WHATSAPP_LOG_LEVELS: Record<string, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
-function sanitizeLogText(value: unknown): string | null {
+export function sanitizeLogText(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   const text = value instanceof Error ? value.message : String(value);
   return text
+    .replace(/https?:\/\/\S+/gi, '[redacted-url]')
     .replace(/\b\d{7,15}\b/g, '[redacted-number]')
     .replace(/(?:token|secret|password|auth|key)=\S+/gi, '[redacted]')
     .slice(0, 240);
@@ -160,6 +161,7 @@ const inFlightWhatsAppWork = new Map<Promise<unknown>, WhatsAppWorkCancellation>
 let whatsappShutdownPromise: Promise<void> | null = null;
 let whatsappAbortController = new AbortController();
 let whatsappStartPromise: Promise<void> | null = null;
+let whatsappStartController: AbortController | null = null;
 let whatsappStartAttempt = 0;
 let shutdownSocket: BaileysSocket | null = null;
 let whatsappTerminalCleanup = false;
@@ -804,9 +806,13 @@ function wipeAuthDir(): void {
 }
 
 function startSocket(requestSignal?: AbortSignal): Promise<void> {
-  if (whatsappStartPromise) {
+  const previousStart = whatsappStartPromise;
+  if (previousStart && !whatsappStartController?.signal.aborted) {
     logWhatsApp('info', 'socket_start_deduplicated', { attemptId: whatsappStartAttempt });
-    return whatsappStartPromise;
+    return previousStart;
+  }
+  if (previousStart) {
+    logWhatsApp('info', 'socket_start_replacing_cancelled', { attemptId: whatsappStartAttempt });
   }
   if (!state.enabled || isWhatsAppTerminal() || requestSignal?.aborted) return Promise.resolve();
   if (state.socket) {
@@ -816,14 +822,16 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
 
   const attemptId = ++whatsappStartAttempt;
   const startedAt = Date.now();
+  const startController = whatsappAbortController;
   state.state = 'connecting';
   let sharedPromise: Promise<void>;
-  const startup = startSocketImpl(requestSignal, attemptId)
+  const startup = (previousStart ? previousStart.catch(() => {}) : Promise.resolve())
+    .then(() => startSocketImpl(requestSignal, attemptId))
     .then(() => {
       logWhatsApp('info', 'socket_start_result', { attemptId, ok: true, durationMs: Date.now() - startedAt });
     })
     .catch((error) => {
-      if (!isWhatsAppTerminal()) {
+      if (!isWhatsAppTerminal() && attemptId === whatsappStartAttempt) {
         state.socket = null;
         state.state = 'disconnected';
         state.lastError = 'WhatsApp connection could not be started.';
@@ -838,9 +846,13 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
       throw error;
     });
   sharedPromise = trackWhatsAppWork(startup).finally(() => {
-    if (whatsappStartPromise === sharedPromise) whatsappStartPromise = null;
+    if (whatsappStartPromise === sharedPromise) {
+      whatsappStartPromise = null;
+      whatsappStartController = null;
+    }
   });
   whatsappStartPromise = sharedPromise;
+  whatsappStartController = startController;
   return sharedPromise;
 }
 

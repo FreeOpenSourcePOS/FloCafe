@@ -9,7 +9,7 @@ import { clearJWTSecretCache } from './routes/auth';
 import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
-import { getStatus as getWhatsAppStatus } from './services/whatsapp';
+import { getStatus as getWhatsAppStatus, sanitizeLogText } from './services/whatsapp';
 import { createKdsWindow, applyWindowControlAction } from './window-options';
 import {
   isCurrentRendererFrame,
@@ -405,7 +405,7 @@ export function registerIpcHandlers(
       await shell.openExternal(rawUrl);
       return { success: true };
     } catch (error: unknown) {
-      console.error('[IPC] WhatsApp share open failed:', getErrorMessage(error));
+      console.error('[IPC] WhatsApp share open failed:', sanitizeLogText(error));
       return { success: false, error: 'Failed to open WhatsApp' };
     }
   });

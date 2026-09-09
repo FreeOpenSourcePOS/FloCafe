@@ -2750,7 +2750,7 @@ export default function SettingsPage() {
     setSavingAllSettings(true);
     try {
       await Promise.all(['store', 'receipts-printers', 'loyalty', 'discounts', 'mobile-access'].map((tab) => {
-        const key = `${currentTenant?.id}:${tab}`;
+        const key = `${currentTenant?.id}:${tab}${tab === 'mobile-access' ? ':status' : ''}`;
         if (loadedSettingsTabs.current.has(key)) return Promise.resolve();
         return startSettingsTabLoad(tab, new AbortController(), false);
       }));

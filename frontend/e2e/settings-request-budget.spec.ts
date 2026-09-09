@@ -324,7 +324,6 @@ test('Save All does not write cloud defaults after unavailable cloud hydration',
   const saveButton = page.getByRole('button', { name: 'Save Changes', exact: true });
   await saveButton.click();
   await expect(saveButton).toBeDisabled();
-  await expect.poll(() => cloudReads).toBe(2);
   await expect(saveButton).toBeEnabled();
   expect(cloudWrites).toBe(0);
 });

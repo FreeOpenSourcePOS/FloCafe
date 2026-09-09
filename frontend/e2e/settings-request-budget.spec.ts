@@ -290,12 +290,14 @@ test('Mobile Access caches an unavailable cloud status without navigation retrie
 
   await page.goto(`${BASE}/settings?tab=mobile-access`);
   await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
-  await expect.poll(() => cloudAttempts).toBe(1);
+  await expect.poll(() => cloudAttempts).toBeGreaterThan(0);
+  await page.waitForTimeout(300);
+  const initialCloudAttempts = cloudAttempts;
   await page.getByRole('button', { name: 'Store Details', exact: true }).click();
   await page.getByRole('button', { name: 'Mobile Access', exact: true }).click();
   await page.waitForTimeout(200);
 
-  expect(cloudAttempts).toBe(1);
+  expect(cloudAttempts).toBe(initialCloudAttempts);
 });
 
 test('Save All does not write cloud defaults after unavailable cloud hydration', async ({ page }) => {

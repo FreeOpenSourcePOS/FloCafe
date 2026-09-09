@@ -344,6 +344,7 @@ export default function SettingsPage() {
   const businessHydrated = useRef(false);
   const cloudHydrationPromise = useRef<Promise<void> | null>(null);
   const cloudHydrationTenant = useRef<number | null>(null);
+  const cloudHydrationGeneration = useRef(0);
   const cloudHydrated = useRef(false);
   const cloudHydrationSucceeded = useRef(false);
   const cloudRegistrationStatus = useRef('unregistered');
@@ -1802,12 +1803,14 @@ export default function SettingsPage() {
       const tenantId = currentTenant?.id ?? null;
       if (cloudHydrationTenant.current !== tenantId) {
         cloudHydrationTenant.current = tenantId;
+        cloudHydrationGeneration.current += 1;
         cloudHydrated.current = false;
         cloudHydrationSucceeded.current = false;
         cloudHydrationPromise.current = null;
         cloudRegistrationStatus.current = 'unregistered';
         setCloudPrivacyHydrated(false);
       }
+      const loadGeneration = cloudHydrationGeneration.current;
       try {
         if (cloudHydrated.current) {
           if (required && !cloudHydrationSucceeded.current && active()) throw new Error('Cloud hydration failed');
@@ -1817,19 +1820,27 @@ export default function SettingsPage() {
             try {
               await cloudHydrationPromise.current;
             } catch (error) {
-              if (!active() || !isRequestCancelled(error)) throw error;
+              if (cloudHydrationGeneration.current !== loadGeneration || !active()) return;
+              if (!isRequestCancelled(error)) throw error;
             }
           }
-          if (cloudHydrated.current || !active()) {
+          if (cloudHydrationGeneration.current !== loadGeneration || !active()) {
+            return;
+          }
+          if (cloudHydrated.current) {
             if (required && !cloudHydrationSucceeded.current && active()) throw new Error('Cloud hydration failed');
             registrationStatus = cloudRegistrationStatus.current;
           } else {
+            const requestGeneration = cloudHydrationGeneration.current;
             const promise = (async () => {
               const { data } = await get('/settings/cloud');
               if (!active()) {
-                cloudHydrationPromise.current = null;
+                if (cloudHydrationGeneration.current === requestGeneration) {
+                  cloudHydrationPromise.current = null;
+                }
                 return;
               }
+              if (cloudHydrationGeneration.current !== requestGeneration) return;
               const settings = {
                 cloud_api_key: data.cloud_api_key || '',
                 cloud_store_id: data.cloud_store_id || '',
@@ -1858,7 +1869,9 @@ export default function SettingsPage() {
             try {
               await promise;
             } catch (error) {
-              if (cloudHydrationPromise.current === promise) cloudHydrationPromise.current = null;
+              if (cloudHydrationPromise.current === promise && isRequestCancelled(error)) {
+                cloudHydrationPromise.current = null;
+              }
               throw error;
             }
           }
@@ -2228,7 +2241,7 @@ export default function SettingsPage() {
     if (!tenantId) return Promise.resolve();
     const { signal } = controller;
     const key = `${tenantId}:${tab}${tab === 'mobile-access' && !includeStatusOnly ? ':status' : ''}`;
-    const requiresCloudHydration = tab === 'mobile-access' && !cloudHydrationSucceeded.current;
+    const requiresCloudHydration = tab === 'mobile-access' && !includeStatusOnly && !cloudHydrationSucceeded.current;
     if (loadedSettingsTabs.current.has(key) && !requiresCloudHydration) return Promise.resolve();
     const existing = settingsTabLoadPromises.current.get(key);
     if (existing) return existing;
@@ -2349,6 +2362,7 @@ export default function SettingsPage() {
       const res = await api.post('/settings/cloud/register', { email });
       const registrationStatus = res.data.cloud_registration_status || 'unregistered';
       cloudRegistrationStatus.current = registrationStatus;
+      cloudHydrationGeneration.current += 1;
       cloudHydrated.current = false;
       cloudHydrationSucceeded.current = false;
       cloudHydrationPromise.current = null;

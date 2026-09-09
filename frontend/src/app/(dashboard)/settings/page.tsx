@@ -2158,10 +2158,10 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'data') {
+        void fetchGoogleDriveStatus(signal);
         const [masterPinLoaded, backupsLoaded] = await Promise.all([
           fetchMasterPinStatus(signal),
           fetchBackups(signal),
-          fetchGoogleDriveStatus(signal),
         ]);
         if (!masterPinLoaded || !backupsLoaded) throw new Error('Data hydration failed');
         return;

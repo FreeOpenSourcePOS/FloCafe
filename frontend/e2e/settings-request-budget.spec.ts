@@ -351,6 +351,27 @@ test('Failed KDS and Data hydration retries when revisiting the tab', async ({ p
   await expect.poll(() => backupAttempts).toBe(2);
 });
 
+test('Data hydration caches before optional Google Drive status resolves', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let googleDriveAttempts = 0;
+  await page.route('**/api/settings/google-drive', async (route) => {
+    googleDriveAttempts += 1;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
+    } catch {}
+  });
+
+  await page.goto(`${BASE}/settings?tab=data`);
+  await expect(page.getByRole('heading', { name: 'Backup & Data', exact: true })).toBeVisible();
+  await expect.poll(() => googleDriveAttempts).toBe(1);
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await page.getByRole('button', { name: 'Backup & Data', exact: true }).click();
+  await page.waitForTimeout(200);
+
+  expect(googleDriveAttempts).toBe(1);
+});
+
 test('Save All does not cache partial Mobile Access hydration', async ({ page }) => {
   await startMockedSettingsSession(page, true);
   const apiPaths = collectApiPaths(page);

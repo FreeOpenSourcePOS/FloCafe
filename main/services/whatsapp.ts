@@ -603,6 +603,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
   socket.ev.on('connection.update', (update: any) => {
     void trackWhatsAppWork((async () => {
     if (isWhatsAppTerminal()) return;
+    if (state.socket !== socket) return;
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
       state.lastQr = qr;
@@ -740,10 +741,8 @@ async function resolveWaWebVersion(signal: AbortSignal): Promise<[number, number
   return undefined;
 }
 
-async function startSocketImpl(requestSignal: AbortSignal | undefined, attemptId: number): Promise<void> {
-  const signal = requestSignal
-    ? AbortSignal.any([requestSignal, whatsappAbortController.signal])
-    : whatsappAbortController.signal;
+async function startSocketImpl(attemptId: number): Promise<void> {
+  const signal = whatsappAbortController.signal;
   if (!state.enabled || isWhatsAppTerminal() || signal.aborted) return;
   logWhatsApp('info', 'socket_start', { attemptId });
   if (state.socket) {
@@ -826,7 +825,7 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
   state.state = 'connecting';
   let sharedPromise: Promise<void>;
   const startup = (previousStart ? previousStart.catch(() => {}) : Promise.resolve())
-    .then(() => startSocketImpl(requestSignal, attemptId))
+    .then(() => startSocketImpl(attemptId))
     .then(() => {
       logWhatsApp('info', 'socket_start_result', { attemptId, ok: true, durationMs: Date.now() - startedAt });
     })

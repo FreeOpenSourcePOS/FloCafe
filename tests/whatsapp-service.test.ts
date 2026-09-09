@@ -29,6 +29,11 @@ let recoveryAuthStateStarted!: () => void;
 const recoveryAuthStateStartedPromise = new Promise<void>((resolve) => { recoveryAuthStateStarted = resolve; });
 let releaseRecoveryAuthState!: () => void;
 const recoveryAuthStateGate = new Promise<void>((resolve) => { releaseRecoveryAuthState = resolve; });
+let holdRequestAuthState = false;
+let requestAuthStateStarted!: () => void;
+const requestAuthStateStartedPromise = new Promise<void>((resolve) => { requestAuthStateStarted = resolve; });
+let releaseRequestAuthState!: () => void;
+const requestAuthStateGate = new Promise<void>((resolve) => { releaseRequestAuthState = resolve; });
 const fakeSocket = {
   ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
   onWhatsApp: async () => [{ exists: true, jid: '15555550100@s.whatsapp.net' }],
@@ -48,6 +53,10 @@ const fakeBaileys = {
     if (holdRecoveryAuthState) {
       recoveryAuthStateStarted();
       await recoveryAuthStateGate;
+    }
+    if (holdRequestAuthState) {
+      requestAuthStateStarted();
+      await requestAuthStateGate;
     }
     return { state: {}, saveCreds: () => {} };
   },
@@ -173,7 +182,23 @@ async function main(): Promise<void> {
     assert(makeSocketCalls === socketCallsBeforeRecovery + 1, 'cancelled startup does not create a duplicate socket');
     assert(authStateCalls === authStateCallsBeforeRecovery + 2, 're-enable waits for the cancelled startup before retrying');
 
+    holdRequestAuthState = true;
+    const authStateCallsBeforeRequestCancellation = authStateCalls;
+    whatsapp.disconnect();
+    await whatsapp.enable('request-cancellation-test-user');
     const requestAbort = new AbortController();
+    const cancelledRequest = whatsapp.connectWithQr(requestAbort.signal).then(() => 'resolved', () => 'rejected');
+    await requestAuthStateStartedPromise;
+    requestAbort.abort();
+    const retriedRequest = whatsapp.connectWithQr();
+    releaseRequestAuthState();
+    holdRequestAuthState = false;
+    const [cancelledRequestResult, retriedRequestResult] = await Promise.all([cancelledRequest, retriedRequest]);
+    assert(cancelledRequestResult === 'rejected', 'aborted connect request is rejected');
+    assert(retriedRequestResult.ok === true, 'retry joins request-independent startup');
+    assert(authStateCalls === authStateCallsBeforeRequestCancellation + 1, 'request cancellation does not restart shared auth loading');
+
+    const sendAbort = new AbortController();
     const sendPromise = whatsapp.sendMessage({
       phoneE164: '+15555550100',
       body: 'shutdown cancellation test',
@@ -181,7 +206,7 @@ async function main(): Promise<void> {
       customerId: null,
       kind: 'manual_reply',
       userId: null,
-      signal: requestAbort.signal,
+      signal: sendAbort.signal,
     });
     await presenceStartedPromise;
     const shutdownEntrypoints = createShutdownEntrypoints({
@@ -193,7 +218,7 @@ async function main(): Promise<void> {
       destroyWindow: () => {},
     });
     const shutdownPromise = shutdownEntrypoints.runCleanup();
-    requestAbort.abort();
+    sendAbort.abort();
     let sendSettled = false;
     void sendPromise.then(() => { sendSettled = true; }, () => { sendSettled = true; });
     let shutdownSettled = false;

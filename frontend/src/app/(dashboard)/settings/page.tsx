@@ -827,7 +827,7 @@ export default function SettingsPage() {
     available: boolean;
   };
   const [moreApps, setMoreApps] = useState<MoreApp[]>([]);
-  // Starts true until the Mobile Access tab performs its first load.
+  // Starts true until the About tab performs its first load.
   const [moreAppsLoading, setMoreAppsLoading] = useState(true);
   const [revflo, setRevflo] = useState<MoreApp | null>(null);
 

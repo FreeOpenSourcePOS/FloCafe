@@ -113,7 +113,7 @@ console.log('✓ lenient reader with safe fallback');
 console.log('Testing Z-report policy Settings wiring...');
 const settingsSource = readFileSync(resolve(__dirname, '../frontend/src/app/(dashboard)/settings/page.tsx'), 'utf8');
 for (const expected of [
-  "api.get('/settings/z_report_language_policy')",
+  "'/settings/z_report_language_policy'",
   'z_report_language_policy: zReportLanguagePolicy',
   'id="z-report-primary-language"',
   'id="z-report-second-language"',

@@ -53,6 +53,10 @@ function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' |
 
 const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
 
+function isRequestCancelled(error: unknown): boolean {
+  return axios.isCancel(error);
+}
+
 function notifyCloudAccountStatusChanged(): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(CLOUD_ACCOUNT_STATUS_CHANGED_EVENT));
 }
@@ -190,11 +194,14 @@ function KdsDefaultViewCard() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.get('/settings/kds').then((res) => {
+    const controller = new AbortController();
+    api.get('/settings/kds', { signal: controller.signal }).then((res) => {
+      if (controller.signal.aborted) return;
       const v = res.data?.kds_default_view === 'kanban' ? 'kanban' : 'tabs';
       setView(v);
       setSavedView(v);
     }).catch(() => {});
+    return () => controller.abort();
   }, []);
 
   const dirty = view !== savedView;
@@ -317,8 +324,19 @@ export default function SettingsPage() {
 
   const searchParams = useSearchParams();
   const requestedTab = searchParams?.get('tab') || 'store';
+  const requestedAction = searchParams?.get('action');
   // Deep-link query param state for active tab and database actions.
   const [activeTab, setActiveTab] = useState(requestedTab);
+  const loadedSettingsTabs = useRef(new Set<string>());
+  const settingsTabLoadPromises = useRef(new Map<string, Promise<void>>());
+  const businessHydrationPromise = useRef<Promise<void> | null>(null);
+  const businessHydrationTenant = useRef<number | null>(null);
+  const businessHydrated = useRef(false);
+  const cloudHydrationPromise = useRef<Promise<void> | null>(null);
+  const cloudHydrationTenant = useRef<number | null>(null);
+  const cloudHydrated = useRef(false);
+  const cloudRegistrationStatus = useRef('unregistered');
+  const healthCheckLoaded = useRef<string | null>(null);
   const [masterPinStatus, setMasterPinStatus] = useState<{ available: boolean; isSet: boolean; schemaVersion: number | null }>({ available: false, isSet: false, schemaVersion: null });
   const [healthCheckOpen, setHealthCheckOpen] = useState(() => searchParams?.get('action') === 'health-check');
   const [healthReport, setHealthReport] = useState<HealthCheckReport | null>(null);
@@ -326,6 +344,7 @@ export default function SettingsPage() {
   const [initializeDbOpen, setInitializeDbOpen] = useState(() => searchParams?.get('action') === 'initialize-db');
   const [shakeSaveBar, setShakeSaveBar] = useState(false);
   const [savingAllSettings, setSavingAllSettings] = useState(false);
+  const [saveAllHydrationRun, setSaveAllHydrationRun] = useState(0);
   const savingAllSettingsInFlight = useRef(false);
 
   const themeMode = useThemeMode((s) => s.mode);
@@ -342,32 +361,6 @@ export default function SettingsPage() {
   // Armed when a save fails outright; the next hydration applies server truth.
   const needsServerTruth = useRef(false);
   const [savingTheme, setSavingTheme] = useState(false);
-
-  // Hydrate theme_mode from server; missing setting defaults to 'system'.
-  useEffect(() => {
-    let cancelled = false;
-    const seqAtFetch = saveSeq.current;
-    api.get('/settings/theme_mode').then((res) => {
-      if (cancelled) return;
-      const raw = res.data?.setting?.value;
-      if (raw === 'light' || raw === 'dark' || raw === 'system') {
-        if (!userTouched.current || needsServerTruth.current) {
-          setThemeMode(raw);
-        }
-        // Only update committed baseline if no subsequent save was initiated.
-        if (saveSeq.current === seqAtFetch) {
-          lastCommitted.current = raw;
-        }
-        // Consume server truth flag after failed save recovery.
-        if (needsServerTruth.current) {
-          needsServerTruth.current = false;
-        }
-      }
-    }).catch(() => {
-      // 404 (no row yet), 401, network — keep 'system'.
-    });
-    return () => { cancelled = true; };
-  }, [setThemeMode]);
 
   // Optimistically updates theme store and rolls back on API failure.
   const saveThemeMode = async (next: ThemeMode) => {
@@ -440,8 +433,7 @@ export default function SettingsPage() {
     | null;
   const [pinGate, setPinGate] = useState<PinGate>(() => searchParams?.get('action') === 'master-pin' ? { mode: 'set' } : null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
-  // The mount effect below always fetches backups unconditionally, so this starts true
-  // rather than being set synchronously inside that effect.
+  // Starts true until the Data tab performs its first load.
   const [backupsLoading, setBackupsLoading] = useState(true);
   const [cloudAccount, setCloudAccount] = useState<{ email?: string | null; cloud_account_available?: boolean; verified?: boolean; verified_at?: string | null; verification_sent_at?: string | null; product_updates?: boolean; marketing?: boolean; deletion_request?: { id?: string; status?: 'pending' | 'processing' | 'approved' | 'completed' | 'deleted' | 'failed' | 'rejected' | 'cancelled'; requested_at?: string; reviewed_at?: string | null; decision_note?: string | null } | null } | null>(null);
   const [cloudAccountBusy, setCloudAccountBusy] = useState(false);
@@ -453,34 +445,40 @@ export default function SettingsPage() {
   const cloudDeletionNeedsResolution = ['pending', 'processing', 'failed'].includes(cloudDeletionStatus);
   const cloudDeletionCanCancel = ['pending', 'processing'].includes(cloudDeletionStatus) && Boolean(cloudAccount?.deletion_request?.id);
 
-  const fetchCloudAccount = async () => {
+  const fetchCloudAccount = async (signal?: AbortSignal) => {
     try {
-      const { data } = await api.get('/settings/cloud/account');
+      const { data } = await api.get('/settings/cloud/account', signal ? { signal } : undefined);
+      if (signal?.aborted) return;
       setCloudAccount(data);
       setCloudAccountLoadFailed(false);
-    } catch {
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
       setCloudAccountLoadFailed(true);
     }
   };
 
-  const fetchMasterPinStatus = async () => {
+  const fetchMasterPinStatus = async (signal?: AbortSignal) => {
     try {
-      const { data } = await api.get('/db-tools/master-pin/status');
+      const { data } = await api.get('/db-tools/master-pin/status', signal ? { signal } : undefined);
+      if (signal?.aborted) return;
       setMasterPinStatus(data);
-    } catch {
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
       // ignore — card just shows "Unknown" state until retried
     }
   };
 
-  const fetchBackups = async () => {
+  const fetchBackups = async (signal?: AbortSignal) => {
     setBackupsLoading(true);
     try {
-      const { data } = await api.get('/db-tools/backups');
+      const { data } = await api.get('/db-tools/backups', signal ? { signal } : undefined);
+      if (signal?.aborted) return;
       setBackups(data.backups ?? []);
-    } catch {
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
       // ignore — history card just shows empty state until retried
     } finally {
-      setBackupsLoading(false);
+      if (!signal?.aborted) setBackupsLoading(false);
     }
   };
 
@@ -494,39 +492,6 @@ export default function SettingsPage() {
       setHealthCheckOpen(false);
     }
   };
-
-  useEffect(() => {
-    api.get('/db-tools/master-pin/status')
-      .then(({ data }) => setMasterPinStatus(data))
-      .catch(() => {
-        // ignore — card just shows "Unknown" state until retried
-      });
-
-    api.get('/db-tools/backups')
-      .then(({ data }) => setBackups(data.backups ?? []))
-      .catch(() => {
-        // ignore — history card just shows empty state until retried
-      })
-      .finally(() => setBackupsLoading(false));
-    if (isOwner) {
-      api.get('/settings/cloud/account')
-        .then(({ data }) => {
-          setCloudAccount(data);
-          setCloudAccountLoadFailed(false);
-        })
-        .catch(() => setCloudAccountLoadFailed(true));
-    }
-
-    if (searchParams?.get('action') === 'health-check') {
-      api.get('/db-tools/health-check')
-        .then(({ data }) => setHealthReport(data))
-        .catch(() => {
-          toast.error(t('healthCheckFailed'));
-          setHealthCheckOpen(false);
-        });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const applySafeFixes = async () => {
     setApplyingFixes(true);
@@ -775,17 +740,20 @@ export default function SettingsPage() {
     qr_data_url: string | null;
     ips_data?: { ip: string; url: string; qr_data: string | null }[];
   } | null>(null);
-  // Starts true as mount effect fetches unconditionally; fetchKdsInfo
+  // Starts true until the KDS tab performs its first load; fetchKdsInfo
   // sets it explicitly for manual refresh.
   const [kdsInfoLoading, setKdsInfoLoading] = useState(true);
 
-  const fetchKdsInfo = () => {
+  const fetchKdsInfo = async (signal?: AbortSignal) => {
     setKdsInfoLoading(true);
-    api.get('/kds-info').then((res) => {
-      setKdsInfo(res.data);
-    }).catch(() => {
-      toast.error(t('kdsInfoFetchFailed'));
-    }).finally(() => setKdsInfoLoading(false));
+    try {
+      const res = await api.get('/kds-info', signal ? { signal } : undefined);
+      if (!signal?.aborted) setKdsInfo(res.data);
+    } catch (error) {
+      if (!signal?.aborted && !isRequestCancelled(error)) toast.error(t('kdsInfoFetchFailed'));
+    } finally {
+      if (!signal?.aborted) setKdsInfoLoading(false);
+    }
   };
 
   // ── Server App pairing (tableside ordering) ───────────────────────────────
@@ -837,24 +805,9 @@ export default function SettingsPage() {
     available: boolean;
   };
   const [moreApps, setMoreApps] = useState<MoreApp[]>([]);
-  // The mount effect below always fetches this unconditionally, so this starts true rather
-  // than being set synchronously inside that effect.
+  // Starts true until the Mobile Access tab performs its first load.
   const [moreAppsLoading, setMoreAppsLoading] = useState(true);
   const [revflo, setRevflo] = useState<MoreApp | null>(null);
-
-  useEffect(() => {
-    api.get('/more-apps').then((res) => {
-      setMoreApps(res.data.apps || []);
-    }).catch(() => {
-      // Silent — this tab is informational, not critical
-    }).finally(() => setMoreAppsLoading(false));
-
-    api.get('/more-apps/revflo').then((res) => {
-      setRevflo(res.data.app || null);
-    }).catch(() => {
-      // Silent — the card still shows the pairing code without the QR promo
-    });
-  }, []);
 
   // ── Updates ─────────────────────────────────────────────────────────────────
   const { updateStatus, appVersion, isElectron, checkForUpdates: handleCheckUpdates } = useUpdateStatus();
@@ -920,16 +873,25 @@ export default function SettingsPage() {
     return fallback;
   };
 
-  const fetchPrinters = () => {
-    api.get('/printers').then((res) => setHwPrinters(res.data.printers || [])).catch(() => {});
+  const fetchPrinters = async (signal?: AbortSignal) => {
+    try {
+      const res = await api.get('/printers', signal ? { signal } : undefined);
+      if (!signal?.aborted) setHwPrinters(res.data.printers || []);
+    } catch (error) {
+      if (!isRequestCancelled(error)) return;
+    }
   };
 
-  const fetchDetectedPrinters = () => {
+  const fetchDetectedPrinters = async (signal?: AbortSignal) => {
     setDetectingPrinters(true);
-    api.get('/printers/detect')
-      .then((res) => setDetectedPrinters(res.data.printers || []))
-      .catch(() => setDetectedPrinters([]))
-      .finally(() => setDetectingPrinters(false));
+    try {
+      const res = await api.get('/printers/detect', signal ? { signal } : undefined);
+      if (!signal?.aborted) setDetectedPrinters(res.data.printers || []);
+    } catch (error) {
+      if (!signal?.aborted && !isRequestCancelled(error)) setDetectedPrinters([]);
+    } finally {
+      if (!signal?.aborted) setDetectingPrinters(false);
+    }
   };
 
   const quickAddDetected = async (p: DetectedPrinter) => {
@@ -1059,14 +1021,23 @@ export default function SettingsPage() {
   }>({ name: '', category_ids: [], printer_id: '', user_ids: [] });
   const [savingStation, setSavingStation] = useState(false);
 
-  const fetchStations = () => {
-    api.get('/kitchen-stations').then((res) => setStations(res.data.kitchenStations || [])).catch(() => {});
+  const fetchStations = async (signal?: AbortSignal) => {
+    try {
+      const res = await api.get('/kitchen-stations', signal ? { signal } : undefined);
+      if (!signal?.aborted) setStations(res.data.kitchenStations || []);
+    } catch { /* ignore */ }
   };
-  const fetchStationCategories = () => {
-    api.get('/categories').then((res) => setStationCategories(res.data.categories || [])).catch(() => {});
+  const fetchStationCategories = async (signal?: AbortSignal) => {
+    try {
+      const res = await api.get('/categories', signal ? { signal } : undefined);
+      if (!signal?.aborted) setStationCategories(res.data.categories || []);
+    } catch { /* ignore */ }
   };
-  const fetchStationStaff = () => {
-    api.get('/staff').then((res) => setStationStaff(res.data.staff || [])).catch(() => {});
+  const fetchStationStaff = async (signal?: AbortSignal) => {
+    try {
+      const res = await api.get('/staff', signal ? { signal } : undefined);
+      if (!signal?.aborted) setStationStaff(res.data.staff || []);
+    } catch { /* ignore */ }
   };
   const fetchStationUsers = async (stationId: string) => {
     try {
@@ -1602,8 +1573,10 @@ export default function SettingsPage() {
     }
   };
 
-  const fetchGoogleDriveStatus = () => {
-    api.get('/settings/google-drive').then((res) => {
+  const fetchGoogleDriveStatus = async (signal?: AbortSignal) => {
+    try {
+      const res = await api.get('/settings/google-drive', signal ? { signal } : undefined);
+      if (signal?.aborted) return;
       setGoogleDriveStatus({
         configured: !!res.data.configured,
         secure_storage_available: res.data.secure_storage_available !== false,
@@ -1616,164 +1589,273 @@ export default function SettingsPage() {
         last_backup_filename: res.data.last_backup_filename || null,
         last_error: res.data.last_error || null,
       });
-    }).catch(() => {
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
       // Leave defaults (not configured / not connected) — this section is
       // optional and must never block the rest of Settings from loading.
-    });
-  };
-
-  const loadPairedDevices = async () => {
-    setDevicesLoading(true);
-    try {
-      const res = await api.get('/mobile/devices');
-      setPairedDevices(res.data.devices || []);
-    } catch {
-      setPairedDevices([]);
-    } finally {
-      setDevicesLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchPrinters();
-    // Inlined rather than calling fetchDetectedPrinters() (used by the manual "refresh"
-    // button too) — detectingPrinters already starts true for this initial detection.
-    api.get('/printers/detect')
-      .then((res) => setDetectedPrinters(res.data.printers || []))
-      .catch(() => setDetectedPrinters([]))
-      .finally(() => setDetectingPrinters(false));
-    // Inlined rather than calling fetchKdsInfo() (used by the manual "refresh" button too) —
-    // kdsInfoLoading already starts true for this initial fetch.
-    api.get('/kds-info')
-      .then((res) => setKdsInfo(res.data))
-      .catch(() => toast.error(t('kdsInfoFetchFailed')))
-      .finally(() => setKdsInfoLoading(false));
-    fetchStations();
-    fetchStationCategories();
-    fetchStationStaff();
+  const loadPairedDevices = async (signal?: AbortSignal) => {
+    setDevicesLoading(true);
+    try {
+      const res = await api.get('/mobile/devices', signal ? { signal } : undefined);
+      if (signal?.aborted) return;
+      setPairedDevices(res.data.devices || []);
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
+      setPairedDevices([]);
+    } finally {
+      if (!signal?.aborted) setDevicesLoading(false);
+    }
+  };
 
-    api.get('/settings/loyalty').then((res) => {
-      setLoyaltyEnabled(!!res.data.loyalty_enabled);
-      setSavedLoyaltyEnabled(!!res.data.loyalty_enabled);
-      setGlobalCashbackPercent(String(res.data.global_cashback_percent ?? 0));
-      setSavedGlobalCashbackPercent(String(res.data.global_cashback_percent ?? 0));
-    }).catch(() => {});
+  const loadSettingsTab = async (tab: string, signal: AbortSignal, includeStatusOnly = true): Promise<void> => {
+    const get = (path: string) => api.get(path, { signal });
+    const active = () => !signal.aborted;
 
-    api.get('/products/loyalty/global-rate-candidates')
-      .then((res) => setGlobalRateCandidates(Number(res.data.count) || 0))
-      .catch(() => {});
-
-    api.get('/settings/discount').then((res) => {
-      if (res.data.discount_max_percentage !== undefined) {
-        const value = normalizeDiscountPercentage(res.data.discount_max_percentage);
-        setDiscountMaxPct(value);
-        setSavedDiscountMaxPct(value);
+    const loadBusiness = async () => {
+      const tenantId = currentTenant?.id ?? null;
+      if (businessHydrationTenant.current !== tenantId) {
+        businessHydrationTenant.current = tenantId;
+        businessHydrated.current = false;
+        businessHydrationPromise.current = null;
       }
-      if (res.data.discount_max_amount !== undefined) {
-        const value = normalizeDiscountAmount(res.data.discount_max_amount);
-        setDiscountMaxAmount(value);
-        setSavedDiscountMaxAmount(value);
+      if (businessHydrated.current) return;
+      if (businessHydrationPromise.current) {
+        try {
+          await businessHydrationPromise.current;
+        } catch (error) {
+          if (!active() || !isRequestCancelled(error)) throw error;
+        }
+        if (businessHydrated.current || !active()) return;
       }
-      if (res.data.discount_mode) { setDiscountMode(res.data.discount_mode); setSavedDiscountMode(res.data.discount_mode); }
-      if (res.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!res.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!res.data.discount_requires_approval); }
-    }).catch(() => {});
 
-    api.get('/settings/telemetry_enabled').then((res) => {
-      setTelemetryEnabled(res.data.setting?.value === 'true');
-    }).catch(() => {
-      // No row yet = consent never given (setup predates this feature, or
-      // declined) = stays off until explicitly turned on here.
-      setTelemetryEnabled(false);
-    });
-
-    api.get('/settings/diagnostics_consent').then((res) => {
-      setDiagnosticsConsent(res.data.setting?.value !== 'false');
-    }).catch(() => {
-      setDiagnosticsConsent(true);
-    });
-
-    fetchGoogleDriveStatus();
-
-    api.get('/settings/kds_enabled').then((res) => {
-      const enabled = res.data.setting?.value !== 'false';
-      setKdsEnabledSetting(enabled);
-      posSettings.setKdsEnabled(enabled);
-    }).catch(() => {});
-
-    api.get('/settings/server_app_enabled').then((res) => {
-      setServerAppEnabledSetting(res.data.setting?.value !== 'false');
-    }).catch(() => {});
-
-    api.get('/settings/kot_printing_enabled').then((res) => {
-      const enabled = res.data.setting?.value !== 'false';
-      setKotPrintingEnabledSetting(enabled);
-      posSettings.setKotPrintingEnabled(enabled);
-    }).catch(() => {});
-    api.get('/settings/printer_trim_decimals').then((res) => {
-      const enabled = res.data.setting?.value === 'true';
-      posSettings.setPrinterTrimDecimals(enabled);
-      setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
-      setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
-    }).catch(() => {});
-    api.get('/settings/cash_drawer_pulse_enabled').then((res) => {
-      const enabled = res.data.setting?.value === 'true';
-      setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
-      // Only applies while still undefined (untouched) — once the user
-      // toggles it, this load resolving afterwards must not revert them.
-      setPrintingForm((p) => (p.cashDrawerPulseEnabled === undefined ? { ...p, cashDrawerPulseEnabled: enabled } : p));
-    }).catch(() => {});
-    api.get('/settings/cash_drawer_pulse_methods').then((res) => {
+      const promise = (async () => {
+        const { data: d } = await get('/settings/business');
+        if (!active()) {
+          businessHydrationPromise.current = null;
+          return;
+        }
+        const loaded: BusinessForm = {
+          businessName: d.business_name || '',
+          countryCode: d.country || '',
+          timezone: d.timezone || '',
+          currency: d.currency || '',
+          billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
+          tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
+          taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
+          taxRegistrationNumber: d.tax_registration_number || '',
+          businessAddress: d.business_address || '',
+          businessPhone: d.business_phone || '',
+          instagramHandle: d.instagram_handle || '',
+          currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
+          numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
+          calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
+        };
+        setSavedBusiness(loaded);
+        setForm(loaded);
+        setTaxIdFormat(d.tax_id_format || null);
+        setTaxIdFormatCountryCode(loaded.countryCode);
+        const billDisplay = {
+          billShowName: d.bill_show_name !== false,
+          billShowAddress: d.bill_show_address !== false,
+          billShowPhone: d.bill_show_phone !== false,
+          billShowTaxId: d.bill_show_tax_id === true,
+          billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
+          billShowCustomerName: d.bill_show_customer_name !== false,
+          billShowCustomerPhone: d.bill_show_customer_phone !== false,
+          billShowTableNumber: d.bill_show_table_number !== false,
+        };
+        setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
+        setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
+        posSettings.setBillShowName(billDisplay.billShowName);
+        posSettings.setBillShowAddress(billDisplay.billShowAddress);
+        posSettings.setBillShowPhone(billDisplay.billShowPhone);
+        posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
+        posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
+        posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
+        posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
+        posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
+        if (d.tax_registration_number) posSettings.setBillTaxRegistrationNumber(d.tax_registration_number);
+        if (d.business_address) posSettings.setBillAddress(d.business_address);
+        if (d.business_phone) posSettings.setBillPhone(d.business_phone);
+        posSettings.setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
+        posSettings.setTablesRequired(typeof d.tables_required === 'boolean' ? d.tables_required : true);
+        businessHydrated.current = true;
+      })();
+      businessHydrationPromise.current = promise;
       try {
-        const methods = JSON.parse(res.data.setting?.value || '[]');
-        if (!Array.isArray(methods)) return;
-        const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
-        // Restore safe defaults if non-empty array had no valid strings;
-        // keep empty array if user intentionally deselected all methods.
-        const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
-        setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
-        setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
-      } catch { /* Use the safe defaults. */ }
-    }).catch(() => {});
-    api.get('/settings/bill_language_policy').then((res) => {
-      const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
-      if (!policy) return;
-      posSettings.setBillLanguagePolicy(policy);
-      const formPatch = {
-        receiptPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
-        receiptSecondLanguage: policy.additional[0] ?? 'none',
-      };
-      setPrintingForm((p) => ({ ...p, ...formPatch }));
-      setSavedPrinting((p) => ({ ...p, ...formPatch }));
-    }).catch(() => {});
-    api.get('/settings/kot_language_policy').then((res) => {
-      const policy = parseStoredKotLanguagePolicy(res.data?.setting?.value);
-      if (!policy) return;
-      posSettings.setKotLanguagePolicy(policy);
-      const formPatch = {
-        kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
-      };
-      setPrintingForm((p) => ({ ...p, ...formPatch }));
-      setSavedPrinting((p) => ({ ...p, ...formPatch }));
-    }).catch(() => {});
-    api.get('/settings/z_report_language_policy').then((res) => {
-      const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
-      if (!policy) return;
-      const formPatch = {
-        zReportPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
-        zReportSecondLanguage: policy.additional[0] ?? 'none',
-      };
-      setPrintingForm((p) => ({ ...p, ...formPatch }));
-      setSavedPrinting((p) => ({ ...p, ...formPatch }));
-      setZReportLanguagePolicyLoaded(true);
-    }).catch((error: unknown) => {
-      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-      if (status === 404) setZReportLanguagePolicyLoaded(true);
-    });
-    Promise.all([
-      api.get('/settings/bill-templates').catch(() => null),
-      api.get('/settings/bill_template').catch(() => null),
-      api.get('/settings/bill_footer_message').catch(() => null),
-    ]).then(([templatesResponse, templateResponse, footerResponse]) => {
+        await promise;
+      } catch (error) {
+        if (businessHydrationPromise.current === promise) businessHydrationPromise.current = null;
+        throw error;
+      }
+    };
+
+    const loadCloud = async () => {
+      let registrationStatus = cloudRegistrationStatus.current;
+      const tenantId = currentTenant?.id ?? null;
+      if (cloudHydrationTenant.current !== tenantId) {
+        cloudHydrationTenant.current = tenantId;
+        cloudHydrated.current = false;
+        cloudHydrationPromise.current = null;
+        cloudRegistrationStatus.current = 'unregistered';
+      }
+      if (cloudHydrated.current) {
+        registrationStatus = cloudRegistrationStatus.current;
+      } else {
+        if (cloudHydrationPromise.current) {
+          try {
+            await cloudHydrationPromise.current;
+          } catch (error) {
+            if (!active() || !isRequestCancelled(error)) throw error;
+          }
+        }
+        if (cloudHydrated.current || !active()) {
+          registrationStatus = cloudRegistrationStatus.current;
+        } else {
+          const promise = (async () => {
+            const { data } = await get('/settings/cloud');
+            if (!active()) {
+              cloudHydrationPromise.current = null;
+              return;
+            }
+            const settings = {
+              cloud_api_key: data.cloud_api_key || '',
+              cloud_store_id: data.cloud_store_id || '',
+              cloud_sync_enabled: !!data.cloud_sync_enabled,
+              cloud_orders_enabled: !!data.cloud_orders_enabled,
+              cloud_last_sync: data.cloud_last_sync || null,
+            };
+            registrationStatus = data.cloud_registration_status || 'unregistered';
+            cloudRegistrationStatus.current = registrationStatus;
+            setCloudSettings(settings);
+            setSavedCloudSettings(settings);
+            setCloudStatus({
+              cloud_registration_status: data.cloud_registration_status || 'unregistered',
+              cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
+              cloud_connected: !!data.cloud_connected,
+              cloud_relay_mode: data.cloud_relay_mode || 'disconnected',
+              cloud_last_heartbeat: data.cloud_last_heartbeat || null,
+              cloud_last_error: data.cloud_last_error || null,
+              cloud_deletion_status: data.cloud_deletion_status || '',
+            });
+            cloudHydrated.current = true;
+          })();
+          cloudHydrationPromise.current = promise;
+          try {
+            await promise;
+          } catch (error) {
+            if (cloudHydrationPromise.current === promise) cloudHydrationPromise.current = null;
+            throw error;
+          }
+        }
+      }
+
+      if (tab !== 'mobile-access' || !includeStatusOnly || !active()) return;
+      if (registrationStatus !== 'registered') {
+        setPairingUnavailable(true);
+        return;
+      }
+      try {
+        const pairingResponse = await get('/mobile/pairing-code');
+        if (active()) {
+          setPairingCode(pairingResponse.data.pairing_code);
+          setPairingExpiresAt(pairingResponse.data.expires_at);
+          setPairingQrDataUrl(pairingResponse.data.qr_data_url || null);
+          setPairingUnavailable(false);
+        }
+      } catch (error) {
+        if (!isRequestCancelled(error) && active()) setPairingUnavailable(true);
+      }
+      await loadPairedDevices(signal);
+    };
+
+    const loadPrinting = async () => {
+      const [trimResponse, cashEnabledResponse, cashMethodsResponse, billLanguageResponse, kotLanguageResponse] = await Promise.all([
+        get('/settings/printer_trim_decimals').catch(() => null),
+        get('/settings/cash_drawer_pulse_enabled').catch(() => null),
+        get('/settings/cash_drawer_pulse_methods').catch(() => null),
+        get('/settings/bill_language_policy').catch(() => null),
+        get('/settings/kot_language_policy').catch(() => null),
+      ]);
+      if (!active()) return;
+
+      if (trimResponse) {
+        const enabled = trimResponse.data.setting?.value === 'true';
+        posSettings.setPrinterTrimDecimals(enabled);
+        setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
+        setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
+      }
+      if (cashEnabledResponse) {
+        const raw = cashEnabledResponse.data.setting?.value;
+        if (raw === 'true' || raw === 'false') {
+          const enabled = raw === 'true';
+          setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
+          // Missing rows intentionally remain undefined so thermal printing keeps
+          // its legacy per-printer fallback.
+          setPrintingForm((p) => (p.cashDrawerPulseEnabled === undefined ? { ...p, cashDrawerPulseEnabled: enabled } : p));
+        }
+      }
+      if (cashMethodsResponse) {
+        try {
+          const methods = JSON.parse(cashMethodsResponse.data.setting?.value || '[]');
+          if (Array.isArray(methods)) {
+            const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
+            const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
+            setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
+            setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
+          }
+        } catch { /* Use the safe defaults. */ }
+      }
+      if (billLanguageResponse) {
+        const policy = parseStoredReceiptLanguagePolicy(billLanguageResponse.data?.setting?.value);
+        if (policy) {
+          posSettings.setBillLanguagePolicy(policy);
+          const formPatch = {
+            receiptPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+            receiptSecondLanguage: policy.additional[0] ?? 'none',
+          };
+          setPrintingForm((p) => ({ ...p, ...formPatch }));
+          setSavedPrinting((p) => ({ ...p, ...formPatch }));
+        }
+      }
+      if (kotLanguageResponse) {
+        const policy = parseStoredKotLanguagePolicy(kotLanguageResponse.data?.setting?.value);
+        if (policy) {
+          posSettings.setKotLanguagePolicy(policy);
+          const formPatch = { kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit' };
+          setPrintingForm((p) => ({ ...p, ...formPatch }));
+          setSavedPrinting((p) => ({ ...p, ...formPatch }));
+        }
+      }
+      const zReportResult = await api.get('/settings/z_report_language_policy', { signal })
+        .then((response) => ({ response, error: null as unknown }))
+        .catch((error: unknown) => ({ response: null, error }));
+      if (!active()) return;
+      if (zReportResult.response) {
+        const zReportResponse = zReportResult.response;
+        const policy = parseStoredReceiptLanguagePolicy(zReportResponse.data?.setting?.value);
+        if (policy) {
+          const formPatch = {
+            zReportPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+            zReportSecondLanguage: policy.additional[0] ?? 'none',
+          };
+          setPrintingForm((p) => ({ ...p, ...formPatch }));
+          setSavedPrinting((p) => ({ ...p, ...formPatch }));
+          setZReportLanguagePolicyLoaded(true);
+        }
+      } else if (axios.isAxiosError(zReportResult.error) && zReportResult.error.response?.status === 404) {
+        setZReportLanguagePolicyLoaded(true);
+      }
+
+      const [templatesResponse, templateResponse, footerResponse] = await Promise.all([
+        get('/settings/bill-templates').catch(() => null),
+        get('/settings/bill_template').catch(() => null),
+        get('/settings/bill_footer_message').catch(() => null),
+      ]);
+      if (!active()) return;
       const pluginCards: TemplateCard[] = (templatesResponse?.data?.plugins || []).map((template: {
         id: string;
         displayName: string;
@@ -1787,8 +1869,6 @@ export default function SettingsPage() {
         selectionSource: 'pack' as const,
         description: `${template.country} tax template · ${template.paperColumns.join(', ')} columns`,
       }));
-      // Merchant templates: provenance is informational only without
-      // trust claims; the copy is an ordinary editable document.
       const merchantCards: TemplateCard[] = (templatesResponse?.data?.merchant || [])
         .filter((template: { status: string }) => template.status === 'active')
         .map((template: {
@@ -1811,33 +1891,24 @@ export default function SettingsPage() {
         }));
       const cards = [...TEMPLATE_CARDS, ...pluginCards, ...merchantCards];
       setBillTemplateCards(cards);
-      // Resolve stored bare ID or JSON { source, id } back to matching card,
-      // preserving selection source if pack ID collides with core name.
       let storedId: unknown = templateResponse?.data.setting?.value;
       let storedSource: string | null = null;
       if (typeof storedId === 'string' && storedId.trim().startsWith('{')) {
         try {
           const parsed = JSON.parse(storedId) as { source?: unknown; id?: unknown };
-          if (
-            parsed && typeof parsed === 'object'
-            && typeof parsed.id === 'string'
-            && (parsed.source === 'core' || parsed.source === 'pack' || parsed.source === 'merchant')
-          ) {
+          if (parsed && typeof parsed === 'object' && typeof parsed.id === 'string'
+            && (parsed.source === 'core' || parsed.source === 'pack' || parsed.source === 'merchant')) {
             storedId = parsed.id;
             storedSource = parsed.source;
           }
         } catch { /* keep raw value */ }
       }
-      const candidateCard = typeof storedId === 'string'
-        ? cards.find((card) => card.id === storedId)
-        : undefined;
+      const candidateCard = typeof storedId === 'string' ? cards.find((card) => card.id === storedId) : undefined;
       const matchedCard = candidateCard && storedSource !== null && candidateCard.selectionSource !== storedSource
         ? cards.find((card) => card.id === candidateCard.id && card.selectionSource === storedSource)
         : candidateCard;
       const billTemplate: BillTemplate = matchedCard ? matchedCard.id : 'classic';
-      const billTemplateSource: 'core' | 'pack' | 'merchant' = matchedCard
-        ? matchedCard.selectionSource
-        : 'core';
+      const billTemplateSource: 'core' | 'pack' | 'merchant' = matchedCard ? matchedCard.selectionSource : 'core';
       const billFooterMessage = footerResponse?.data.setting?.value ?? posSettings.billFooterMessage;
       const loadedBillForm = { billTemplate, billTemplateSource, billFooterMessage };
       posSettings.setBillTemplate(billTemplate);
@@ -1845,112 +1916,201 @@ export default function SettingsPage() {
       posSettings.setBillFooterMessage(billFooterMessage);
       setBillForm(loadedBillForm);
       setSavedBillForm(loadedBillForm);
-    });
+    };
 
-    api.get('/settings/order-numbering').then((res) => {
-      const loaded: OrderNumberForm = {
-        prefix: res.data.order_number_prefix == null ? 'ORD' : sanitizeStoredNumberPrefix(res.data.order_number_prefix),
-        includeDate: res.data.order_number_include_date !== false,
-        resetDaily: res.data.order_number_reset_daily !== false,
-        invoicePrefix: res.data.invoice_number_prefix == null ? 'INV' : sanitizeStoredNumberPrefix(res.data.invoice_number_prefix),
-        invoiceIncludePeriod: res.data.invoice_number_include_period !== false,
-        invoiceResetPeriod: (res.data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
-        invoiceFinancialYearStartMonth: Number(res.data.invoice_financial_year_start_month) || 4,
-        invoiceFinancialYearStartDay: Number(res.data.invoice_financial_year_start_day) || 1,
-      };
-      setOrderNumberForm(loaded);
-      setSavedOrderNumberForm(loaded);
-    }).catch(() => {});
-
-
-    api.get('/settings/cloud').then((res) => {
-      const settings = {
-        cloud_api_key: res.data.cloud_api_key || '',
-        cloud_store_id: res.data.cloud_store_id || '',
-        cloud_sync_enabled: !!res.data.cloud_sync_enabled,
-        cloud_orders_enabled: !!res.data.cloud_orders_enabled,
-        cloud_last_sync: res.data.cloud_last_sync || null,
-      };
-      setCloudSettings(settings);
-      setSavedCloudSettings(settings);
-      setCloudStatus({
-        cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
-        cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
-        cloud_connected: !!res.data.cloud_connected,
-        cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
-        cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
-        cloud_last_error: res.data.cloud_last_error || null,
-        cloud_deletion_status: res.data.cloud_deletion_status || '',
-      });
-
-      // Mobile pairing requires cloud registration — skip the requests entirely
-      // for unregistered stores to avoid 502 noise in the console.
-      if (res.data.cloud_registration_status === 'registered') {
-        api.get('/mobile/pairing-code').then((pcRes) => {
-          setPairingCode(pcRes.data.pairing_code);
-          setPairingExpiresAt(pcRes.data.expires_at);
-          setPairingQrDataUrl(pcRes.data.qr_data_url || null);
-          setPairingUnavailable(false);
-        }).catch(() => {
-          setPairingUnavailable(true);
-        });
-        loadPairedDevices();
-      } else {
-        setPairingUnavailable(true);
+    try {
+      if (tab === 'appearance') {
+        const seqAtFetch = saveSeq.current;
+        const { data } = await get('/settings/theme_mode');
+        if (!active()) return;
+        const raw = data?.setting?.value;
+        if (raw === 'light' || raw === 'dark' || raw === 'system') {
+          if (!userTouched.current || needsServerTruth.current) setThemeMode(raw);
+          if (saveSeq.current === seqAtFetch) lastCommitted.current = raw;
+          if (needsServerTruth.current) needsServerTruth.current = false;
+        }
+        return;
       }
-    }).catch(() => {});
+      if (tab === 'store') {
+        await loadBusiness();
+        const { data } = await get('/settings/order-numbering');
+        if (!active()) return;
+        const loaded: OrderNumberForm = {
+          prefix: data.order_number_prefix == null ? 'ORD' : sanitizeStoredNumberPrefix(data.order_number_prefix),
+          includeDate: data.order_number_include_date !== false,
+          resetDaily: data.order_number_reset_daily !== false,
+          invoicePrefix: data.invoice_number_prefix == null ? 'INV' : sanitizeStoredNumberPrefix(data.invoice_number_prefix),
+          invoiceIncludePeriod: data.invoice_number_include_period !== false,
+          invoiceResetPeriod: (data.invoice_reset_period || 'daily') as InvoiceResetPeriod,
+          invoiceFinancialYearStartMonth: Number(data.invoice_financial_year_start_month) || 4,
+          invoiceFinancialYearStartDay: Number(data.invoice_financial_year_start_day) || 1,
+        };
+        setOrderNumberForm(loaded);
+        setSavedOrderNumberForm(loaded);
+        return;
+      }
+      if (tab === 'receipts-printers') {
+        await loadBusiness();
+        await Promise.all([
+          fetchPrinters(signal),
+          fetchDetectedPrinters(signal),
+          loadPrinting(),
+          get('/settings/kot_printing_enabled').then((res) => {
+            if (!active()) return;
+            const enabled = res.data.setting?.value !== 'false';
+            setKotPrintingEnabledSetting(enabled);
+            posSettings.setKotPrintingEnabled(enabled);
+          }).catch(() => {}),
+        ]);
+        return;
+      }
+      if (tab === 'kds') {
+        await Promise.all([
+          fetchKdsInfo(signal),
+          fetchStations(signal),
+          fetchStationCategories(signal),
+          fetchStationStaff(signal),
+          get('/settings/kds_enabled').then((res) => {
+            if (!active()) return;
+            const enabled = res.data.setting?.value !== 'false';
+            setKdsEnabledSetting(enabled);
+            posSettings.setKdsEnabled(enabled);
+          }).catch(() => {}),
+        ]);
+        return;
+      }
+      if (tab === 'server-app') {
+        const { data } = await get('/settings/server_app_enabled');
+        if (active()) setServerAppEnabledSetting(data.setting?.value !== 'false');
+        return;
+      }
+      if (tab === 'loyalty') {
+        const [loyaltyResponse, candidatesResponse] = await Promise.all([
+          get('/settings/loyalty'),
+          get('/products/loyalty/global-rate-candidates'),
+        ]);
+        if (!active()) return;
+        setLoyaltyEnabled(!!loyaltyResponse.data.loyalty_enabled);
+        setSavedLoyaltyEnabled(!!loyaltyResponse.data.loyalty_enabled);
+        setGlobalCashbackPercent(String(loyaltyResponse.data.global_cashback_percent ?? 0));
+        setSavedGlobalCashbackPercent(String(loyaltyResponse.data.global_cashback_percent ?? 0));
+        setGlobalRateCandidates(Number(candidatesResponse.data.count) || 0);
+        return;
+      }
+      if (tab === 'discounts') {
+        const { data } = await get('/settings/discount');
+        if (!active()) return;
+        if (data.discount_max_percentage !== undefined) {
+          const value = normalizeDiscountPercentage(data.discount_max_percentage);
+          setDiscountMaxPct(value);
+          setSavedDiscountMaxPct(value);
+        }
+        if (data.discount_max_amount !== undefined) {
+          const value = normalizeDiscountAmount(data.discount_max_amount);
+          setDiscountMaxAmount(value);
+          setSavedDiscountMaxAmount(value);
+        }
+        if (data.discount_mode) { setDiscountMode(data.discount_mode); setSavedDiscountMode(data.discount_mode); }
+        if (data.discount_requires_approval !== undefined) {
+          setDiscountRequiresApproval(!!data.discount_requires_approval);
+          setSavedDiscountRequiresApproval(!!data.discount_requires_approval);
+        }
+        return;
+      }
+      if (tab === 'privacy') {
+        const [telemetryResponse, diagnosticsResponse] = await Promise.all([
+          get('/settings/telemetry_enabled').catch(() => null),
+          get('/settings/diagnostics_consent').catch(() => null),
+        ]);
+        if (!active()) return;
+        setTelemetryEnabled(telemetryResponse ? telemetryResponse.data.setting?.value === 'true' : false);
+        setDiagnosticsConsent(diagnosticsResponse ? diagnosticsResponse.data.setting?.value !== 'false' : true);
+        return;
+      }
+      if (tab === 'data') {
+        await Promise.all([fetchMasterPinStatus(signal), fetchBackups(signal), fetchGoogleDriveStatus(signal)]);
+        return;
+      }
+      if (tab === 'account') {
+        if (isOwner) await fetchCloudAccount(signal);
+        return;
+      }
+      if (tab === 'mobile-access' || tab === 'orderflow') {
+        if (tab === 'mobile-access' && includeStatusOnly) {
+          setMoreAppsLoading(true);
+          await Promise.all([
+            get('/more-apps').then((res) => { if (active()) setMoreApps(res.data.apps || []); }),
+            get('/more-apps/revflo').then((res) => { if (active()) setRevflo(res.data.app || null); }),
+          ]).catch(() => {}).finally(() => { if (active()) setMoreAppsLoading(false); });
+        }
+        await loadCloud();
+      }
+    } catch (error) {
+      if (!isRequestCancelled(error) && active()) {
+        // Individual Settings sections are best-effort; the panel remains usable
+        // and its existing manual refresh actions remain available.
+      }
+      throw error;
+    }
+  };
 
-    api.get('/settings/business').then((res) => {
-      const d = res.data;
-      const loaded: BusinessForm = {
-        businessName: d.business_name || '',
-        countryCode: d.country || '',
-        timezone: d.timezone || '',
-        currency: d.currency || '',
-        billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
-        tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
-        taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
-        taxRegistrationNumber: d.tax_registration_number || '',
-        businessAddress: d.business_address || '',
-        businessPhone: d.business_phone || '',
-        instagramHandle: d.instagram_handle || '',
-        currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
-        numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
-        calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
-      };
-      setSavedBusiness(loaded);
-      setForm(loaded);
-      setTaxIdFormat(d.tax_id_format || null);
-      setTaxIdFormatCountryCode(loaded.countryCode);
-      // Sync to pos-settings store for bill printing
-      const billDisplay = {
-        billShowName: d.bill_show_name !== false,
-        billShowAddress: d.bill_show_address !== false,
-        billShowPhone: d.bill_show_phone !== false,
-        billShowTaxId: d.bill_show_tax_id === true,
-        billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
-        billShowCustomerName: d.bill_show_customer_name !== false,
-        billShowCustomerPhone: d.bill_show_customer_phone !== false,
-        billShowTableNumber: d.bill_show_table_number !== false,
-      };
-      setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
-      setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
-      posSettings.setBillShowName(billDisplay.billShowName);
-      posSettings.setBillShowAddress(billDisplay.billShowAddress);
-      posSettings.setBillShowPhone(billDisplay.billShowPhone);
-      posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
-      posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
-      posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
-      posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
-      posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
-      if (d.tax_registration_number) posSettings.setBillTaxRegistrationNumber(d.tax_registration_number);
-      if (d.business_address) posSettings.setBillAddress(d.business_address);
-      if (d.business_phone) posSettings.setBillPhone(d.business_phone);
-      posSettings.setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
-      posSettings.setTablesRequired(typeof d.tables_required === 'boolean' ? d.tables_required : true);
-    }).catch(() => {});
+  const startSettingsTabLoad = (tab: string, signal: AbortSignal, includeStatusOnly = true): Promise<void> => {
+    const tenantId = currentTenant?.id;
+    if (!tenantId) return Promise.resolve();
+    const key = `${tenantId}:${tab}`;
+    if (loadedSettingsTabs.current.has(key)) return Promise.resolve();
+    const existing = settingsTabLoadPromises.current.get(key);
+    if (existing) return existing;
+    const promise = loadSettingsTab(tab, signal, includeStatusOnly).then(() => {
+      if (!signal.aborted) loadedSettingsTabs.current.add(key);
+    });
+    settingsTabLoadPromises.current.set(key, promise);
+    void promise.then(() => {
+      if (settingsTabLoadPromises.current.get(key) === promise) settingsTabLoadPromises.current.delete(key);
+    }, () => {
+      if (settingsTabLoadPromises.current.get(key) === promise) settingsTabLoadPromises.current.delete(key);
+    });
+    return promise;
+  };
+
+  useEffect(() => {
+    if (!currentTenant?.id) return;
+    const key = `${currentTenant.id}:${activeTab}`;
+    if (loadedSettingsTabs.current.has(key)) return;
+    const tabLoadPromises = settingsTabLoadPromises.current;
+    const controller = new AbortController();
+    void startSettingsTabLoad(activeTab, controller.signal)
+      .then(() => {
+        if (!controller.signal.aborted) loadedSettingsTabs.current.add(key);
+      })
+      .catch(() => {});
+    return () => {
+      controller.abort();
+      if (tabLoadPromises.has(key)) {
+        tabLoadPromises.delete(key);
+      }
+    };
+  // The tab and tenant identity are the intentional hydration boundaries.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeTab, currentTenant?.id, isOwner]);
+
+  useEffect(() => {
+    if (activeTab !== 'data' || requestedAction !== 'health-check' || !currentTenant?.id) return;
+    const key = `${currentTenant.id}:health-check`;
+    if (healthCheckLoaded.current === key) return;
+    const controller = new AbortController();
+    api.get('/db-tools/health-check', { signal: controller.signal }).then(({ data }) => {
+      if (controller.signal.aborted) return;
+      healthCheckLoaded.current = key;
+      setHealthReport(data);
+    }).catch((error) => {
+      if (!isRequestCancelled(error) && !controller.signal.aborted) {
+        toast.error(t('healthCheckFailed'));
+        setHealthCheckOpen(false);
+      }
+    });
+    return () => controller.abort();
+  }, [activeTab, currentTenant?.id, requestedAction, t]);
 
   const saveCloud = async (silent = false) => {
     setSavingCloud(true);
@@ -2353,17 +2513,41 @@ export default function SettingsPage() {
     savingAllSettingsInFlight.current = true;
     setSavingAllSettings(true);
     try {
-      await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
-      await savePrinting(true);
-      await saveBillTemplate(true);
-      toast.success(t('allSaved'));
+      const controller = new AbortController();
+      await Promise.all(['store', 'receipts-printers', 'loyalty', 'discounts', 'mobile-access'].map((tab) => {
+        const key = `${currentTenant?.id}:${tab}`;
+        if (loadedSettingsTabs.current.has(key)) return Promise.resolve();
+        return startSettingsTabLoad(tab, controller.signal, false);
+      }));
+      // Hydration updates state asynchronously. Let the next render run the
+      // saves against the hydrated values instead of stale initial defaults.
+      setSaveAllHydrationRun((run) => run + 1);
     } catch {
       toast.error(t('allSaveFailed'));
-    } finally {
       savingAllSettingsInFlight.current = false;
       setSavingAllSettings(false);
     }
   };
+
+  useEffect(() => {
+    if (saveAllHydrationRun === 0 || !savingAllSettingsInFlight.current) return;
+    void (async () => {
+      try {
+        await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
+        await savePrinting(true);
+        await saveBillTemplate(true);
+        toast.success(t('allSaved'));
+      } catch {
+        toast.error(t('allSaveFailed'));
+      } finally {
+        savingAllSettingsInFlight.current = false;
+        setSavingAllSettings(false);
+      }
+    })();
+  // This effect intentionally runs once per hydration run, using the state
+  // values produced by the loaders before it starts the writes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveAllHydrationRun]);
 
   const rotatePairingCode = async () => {
     setRotatingCode(true);
@@ -3248,7 +3432,7 @@ export default function SettingsPage() {
                   )}
 
                   <div className="flex justify-end border-t border-border pt-4">
-                    <button onClick={fetchKdsInfo} disabled={kdsInfoLoading}
+                    <button onClick={() => { void fetchKdsInfo(); }} disabled={kdsInfoLoading}
                       className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
                       <RefreshCw size={14} className={kdsInfoLoading ? 'animate-spin' : ''} />
                       {t('refreshUrls')}
@@ -3262,7 +3446,7 @@ export default function SettingsPage() {
                   <p className="text-sm text-muted-foreground mb-3">
                     {t('kdsLoadHint')}
                   </p>
-                  <button onClick={fetchKdsInfo}
+                  <button onClick={() => { void fetchKdsInfo(); }}
                     className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
                     {t('loadKdsInfo')}
                   </button>
@@ -3834,7 +4018,7 @@ export default function SettingsPage() {
                 </div>
                 {!showPrinterForm && (
                   <div className="flex items-center gap-2">
-                    <button onClick={fetchDetectedPrinters} disabled={detectingPrinters}
+                    <button onClick={() => { void fetchDetectedPrinters(); }} disabled={detectingPrinters}
                       title={t('refreshList')}
                       className="flex items-center gap-2 px-3 py-2 text-sm border border-border text-muted-foreground rounded-lg hover:bg-muted font-medium disabled:opacity-50">
                       <RefreshCw size={14} className={detectingPrinters ? 'animate-spin' : ''} /> {t('refresh')}
@@ -4436,7 +4620,7 @@ export default function SettingsPage() {
                   <h2 className="font-semibold text-foreground">{t('backupHistory')}</h2>
                 </div>
                 <button
-                  onClick={fetchBackups}
+                  onClick={() => { void fetchBackups(); }}
                   disabled={backupsLoading}
                   className="p-1.5 text-gray-400 hover:text-muted-foreground rounded-lg hover:bg-muted disabled:opacity-50"
                   title={t('refresh')}

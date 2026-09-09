@@ -69,7 +69,7 @@ export function getWhatsAppShareUrl(
   return `https://wa.me/?text=${encoded}`;
 }
 
-/** Opens WhatsApp share URL in a new window or tab. */
+/** Opens the WhatsApp share URL externally and reports whether it opened. */
 export function shareBillViaWhatsApp(
   bill: Bill,
   customerInfo: Pick<Customer, 'phone' | 'country_code'> | null,

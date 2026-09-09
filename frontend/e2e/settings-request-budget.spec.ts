@@ -239,7 +239,11 @@ test('Cloud registration refreshes Mobile Access pairing data', async ({ page })
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ cloud_registration_status: statusAtRequest }),
+        body: JSON.stringify({
+          cloud_registration_status: statusAtRequest,
+          cloud_sync_enabled: statusAtRequest === 'registered',
+          cloud_orders_enabled: statusAtRequest === 'registered',
+        }),
       });
     } catch {}
   });
@@ -271,8 +275,49 @@ test('Cloud registration refreshes Mobile Access pairing data', async ({ page })
   await page.getByRole('button', { name: 'Accept & Initialize', exact: true }).click();
 
   await expect(page.getByText('PAIR123', { exact: true })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Enable bill sync', exact: true })).toBeChecked();
   expect(apiPaths.filter((path) => path === '/api/mobile/pairing-code')).toHaveLength(1);
   expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
+});
+
+test('Mobile Access caches an unavailable cloud status without navigation retries', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let cloudAttempts = 0;
+  await page.route('**/api/settings/cloud', async (route) => {
+    cloudAttempts += 1;
+    await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=mobile-access`);
+  await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
+  await expect.poll(() => cloudAttempts).toBe(1);
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await page.getByRole('button', { name: 'Mobile Access', exact: true }).click();
+  await page.waitForTimeout(200);
+
+  expect(cloudAttempts).toBe(1);
+});
+
+test('Save All does not write cloud defaults after unavailable cloud hydration', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let cloudReads = 0;
+  let cloudWrites = 0;
+  await page.route('**/api/settings/cloud', async (route) => {
+    if (route.request().method() === 'GET') {
+      cloudReads += 1;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
+      return;
+    }
+    cloudWrites += 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=mobile-access`);
+  await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
+  await expect.poll(() => cloudReads).toBe(1);
+  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+  await expect.poll(() => cloudReads).toBe(2);
+  expect(cloudWrites).toBe(0);
 });
 
 test('Cloud registration refresh does not continue after leaving Mobile Access', async ({ page }) => {

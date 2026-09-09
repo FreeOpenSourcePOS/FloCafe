@@ -345,6 +345,7 @@ export default function SettingsPage() {
   const cloudHydrationPromise = useRef<Promise<void> | null>(null);
   const cloudHydrationTenant = useRef<number | null>(null);
   const cloudHydrated = useRef(false);
+  const cloudHydrationSucceeded = useRef(false);
   const cloudRegistrationStatus = useRef('unregistered');
   const healthCheckLoaded = useRef<string | null>(null);
   const [masterPinStatus, setMasterPinStatus] = useState<{ available: boolean; isSet: boolean; schemaVersion: number | null }>({ available: false, isSet: false, schemaVersion: null });
@@ -1795,67 +1796,85 @@ export default function SettingsPage() {
       }
     };
 
-    const loadCloud = async () => {
+    const loadCloud = async (required = false) => {
       const cloudSettingsAtHydrationStart = { ...cloudSettingsRef.current };
       let registrationStatus = cloudRegistrationStatus.current;
       const tenantId = currentTenant?.id ?? null;
       if (cloudHydrationTenant.current !== tenantId) {
         cloudHydrationTenant.current = tenantId;
         cloudHydrated.current = false;
+        cloudHydrationSucceeded.current = false;
         cloudHydrationPromise.current = null;
         cloudRegistrationStatus.current = 'unregistered';
         setCloudPrivacyHydrated(false);
       }
-      if (cloudHydrated.current) {
-        registrationStatus = cloudRegistrationStatus.current;
-      } else {
-        if (cloudHydrationPromise.current) {
-          try {
-            await cloudHydrationPromise.current;
-          } catch (error) {
-            if (!active() || !isRequestCancelled(error)) throw error;
-          }
-        }
-        if (cloudHydrated.current || !active()) {
+      try {
+        if (cloudHydrated.current) {
+          if (required && !cloudHydrationSucceeded.current && active()) throw new Error('Cloud hydration failed');
           registrationStatus = cloudRegistrationStatus.current;
         } else {
-          const promise = (async () => {
-            const { data } = await get('/settings/cloud');
-            if (!active()) {
-              cloudHydrationPromise.current = null;
-              return;
+          if (cloudHydrationPromise.current) {
+            try {
+              await cloudHydrationPromise.current;
+            } catch (error) {
+              if (!active() || !isRequestCancelled(error)) throw error;
             }
-            const settings = {
-              cloud_api_key: data.cloud_api_key || '',
-              cloud_store_id: data.cloud_store_id || '',
-              cloud_sync_enabled: !!data.cloud_sync_enabled,
-              cloud_orders_enabled: !!data.cloud_orders_enabled,
-              cloud_last_sync: data.cloud_last_sync || null,
-            };
-            registrationStatus = data.cloud_registration_status || 'unregistered';
-            cloudRegistrationStatus.current = registrationStatus;
-            const mergedCloudSettings = mergeHydratedValues(cloudSettingsRef.current, cloudSettingsAtHydrationStart, settings, hydrationTouchSnapshot);
-            setCloudSettings(mergedCloudSettings);
-            setSavedCloudSettings(settings);
-            setCloudStatus({
-              cloud_registration_status: data.cloud_registration_status || 'unregistered',
-              cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
-              cloud_connected: !!data.cloud_connected,
-              cloud_relay_mode: data.cloud_relay_mode || 'disconnected',
-              cloud_last_heartbeat: data.cloud_last_heartbeat || null,
-              cloud_last_error: data.cloud_last_error || null,
-              cloud_deletion_status: data.cloud_deletion_status || '',
-            });
-            cloudHydrated.current = true;
-          })();
-          cloudHydrationPromise.current = promise;
-          try {
-            await promise;
-          } catch (error) {
-            if (cloudHydrationPromise.current === promise) cloudHydrationPromise.current = null;
-            throw error;
+          }
+          if (cloudHydrated.current || !active()) {
+            if (required && !cloudHydrationSucceeded.current && active()) throw new Error('Cloud hydration failed');
+            registrationStatus = cloudRegistrationStatus.current;
+          } else {
+            const promise = (async () => {
+              const { data } = await get('/settings/cloud');
+              if (!active()) {
+                cloudHydrationPromise.current = null;
+                return;
+              }
+              const settings = {
+                cloud_api_key: data.cloud_api_key || '',
+                cloud_store_id: data.cloud_store_id || '',
+                cloud_sync_enabled: !!data.cloud_sync_enabled,
+                cloud_orders_enabled: !!data.cloud_orders_enabled,
+                cloud_last_sync: data.cloud_last_sync || null,
+              };
+              registrationStatus = data.cloud_registration_status || 'unregistered';
+              cloudRegistrationStatus.current = registrationStatus;
+              const mergedCloudSettings = mergeHydratedValues(cloudSettingsRef.current, cloudSettingsAtHydrationStart, settings, hydrationTouchSnapshot);
+              setCloudSettings(mergedCloudSettings);
+              setSavedCloudSettings(settings);
+              setCloudStatus({
+                cloud_registration_status: data.cloud_registration_status || 'unregistered',
+                cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
+                cloud_connected: !!data.cloud_connected,
+                cloud_relay_mode: data.cloud_relay_mode || 'disconnected',
+                cloud_last_heartbeat: data.cloud_last_heartbeat || null,
+                cloud_last_error: data.cloud_last_error || null,
+                cloud_deletion_status: data.cloud_deletion_status || '',
+              });
+              cloudHydrationSucceeded.current = true;
+              cloudHydrated.current = true;
+            })();
+            cloudHydrationPromise.current = promise;
+            try {
+              await promise;
+            } catch (error) {
+              if (cloudHydrationPromise.current === promise) cloudHydrationPromise.current = null;
+              throw error;
+            }
           }
         }
+      } catch (error) {
+        if (!active() || isRequestCancelled(error) || required) throw error;
+        cloudHydrationSucceeded.current = false;
+        cloudHydrated.current = true;
+        cloudRegistrationStatus.current = 'unregistered';
+        registrationStatus = 'unregistered';
+        setCloudStatus((previous) => ({
+          ...previous,
+          cloud_registration_status: 'unregistered',
+          cloud_connected: false,
+          cloud_relay_mode: 'disconnected',
+        }));
       }
 
       if (tab !== 'mobile-access' || !includeStatusOnly || !active()) return;
@@ -2147,7 +2166,7 @@ export default function SettingsPage() {
         setTelemetryEnabled(telemetryResponse ? telemetryResponse.data.setting?.value === 'true' : false);
         setDiagnosticsConsent(diagnosticsResponse ? diagnosticsResponse.data.setting?.value !== 'false' : true);
         const [cloudLoaded, accountLoaded] = await Promise.all([
-          loadCloud().then(() => true).catch((error) => {
+          loadCloud(true).then(() => true).catch((error) => {
             if (isRequestCancelled(error)) throw error;
             return false;
           }),
@@ -2193,7 +2212,7 @@ export default function SettingsPage() {
             if (isRequestCancelled(error)) throw error;
           }
         }
-        await loadCloud();
+        await loadCloud(!includeStatusOnly);
       }
     } catch (error) {
       if (!isRequestCancelled(error) && active()) {
@@ -2209,7 +2228,8 @@ export default function SettingsPage() {
     if (!tenantId) return Promise.resolve();
     const { signal } = controller;
     const key = `${tenantId}:${tab}${tab === 'mobile-access' && !includeStatusOnly ? ':status' : ''}`;
-    if (loadedSettingsTabs.current.has(key)) return Promise.resolve();
+    const requiresCloudHydration = tab === 'mobile-access' && !cloudHydrationSucceeded.current;
+    if (loadedSettingsTabs.current.has(key) && !requiresCloudHydration) return Promise.resolve();
     const existing = settingsTabLoadPromises.current.get(key);
     if (existing) return existing;
     const promise = loadSettingsTab(tab, signal, includeStatusOnly).then(() => {
@@ -2242,9 +2262,6 @@ export default function SettingsPage() {
     const tabLoadPromises = settingsTabLoadPromises.current;
     const controller = new AbortController();
     void startSettingsTabLoad(activeTab, controller)
-      .then(() => {
-        if (!controller.signal.aborted) loadedSettingsTabs.current.add(key);
-      })
       .catch(() => {});
     return () => {
       controller.abort();
@@ -2332,7 +2349,9 @@ export default function SettingsPage() {
       const res = await api.post('/settings/cloud/register', { email });
       const registrationStatus = res.data.cloud_registration_status || 'unregistered';
       cloudRegistrationStatus.current = registrationStatus;
-      cloudHydrated.current = true;
+      cloudHydrated.current = false;
+      cloudHydrationSucceeded.current = false;
+      cloudHydrationPromise.current = null;
       setCloudStatus({
         cloud_registration_status: registrationStatus,
         cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,

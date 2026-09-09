@@ -1,5 +1,6 @@
 /**
- * Native Electron e2e for gh-513 (dark theme + title bar sync).
+ * Native Electron e2e for gh-513 (dark theme + title bar sync) and gh-681
+ * (native select theming).
  *
  * Three serial tests against a real Electron + SQLite stack:
  *

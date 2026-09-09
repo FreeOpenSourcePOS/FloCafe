@@ -382,7 +382,7 @@ test('Rotating pairing code does not update the code after leaving and re-enteri
   await page.waitForTimeout(1200);
 
   expect(apiPaths.filter((path) => path === '/api/mobile/rotate-code')).toHaveLength(1);
-  expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(2);
+  expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
   await expect(page.getByText('STALECODE', { exact: true })).toHaveCount(0);
 });
 

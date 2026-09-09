@@ -2267,6 +2267,7 @@ export default function SettingsPage() {
       mobileAccessRequestGeneration.current += 1;
       mobileAccessRequestController.current?.abort();
       mobileAccessRequestController.current = null;
+      setRotatingCode(false);
     };
   }, [activeTab, currentTenant?.id]);
 

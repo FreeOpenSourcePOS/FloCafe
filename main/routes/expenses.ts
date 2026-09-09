@@ -15,11 +15,22 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const PAYMENT_METHODS = ['cash', 'card', 'upi'] as const;
 type PaymentMethod = typeof PAYMENT_METHODS[number];
 
-function normalizePaymentMethod(value: unknown): PaymentMethod {
-  if (typeof value !== 'string' || !PAYMENT_METHODS.includes(value as PaymentMethod)) {
-    throw Object.assign(new Error(`method is required and must be one of: ${PAYMENT_METHODS.join(', ')}`), { statusCode: 400 });
+// Built-ins plus any active custom method (same rule as bill payments in
+// main/routes/bills.ts, which resolve customs to their stored name): the
+// stored string is the audit trail, so match case-insensitively but keep
+// the canonical name. Only 'cash' ever counts as drawer cash downstream,
+// and custom names can never collide with it (reserved at creation).
+function normalizePaymentMethod(db: ReturnType<typeof getDatabase>, value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw Object.assign(new Error('method is required and must be cash, card, upi, or an active custom payment method'), { statusCode: 400 });
   }
-  return value as PaymentMethod;
+  const trimmed = value.trim();
+  if ((PAYMENT_METHODS as readonly string[]).includes(trimmed)) return trimmed;
+  const custom = db.prepare('SELECT name FROM payment_methods WHERE lower(name) = lower(?) AND is_active = 1').get(trimmed) as { name: string } | undefined;
+  if (!custom) {
+    throw Object.assign(new Error('method is required and must be cash, card, upi, or an active custom payment method'), { statusCode: 400 });
+  }
+  return custom.name;
 }
 
 const router = Router();
@@ -192,7 +203,7 @@ router.post('/payments', expenseWriteRateLimit, requireRole(...ROLE_ACCESS.allSt
     const amount = normalizeAmount(req.body?.amount);
     const note = normalizeNote(req.body?.note);
     const date = normalizeBusinessDate(req.body?.date);
-    const method = normalizePaymentMethod(req.body?.method);
+    const method = normalizePaymentMethod(db, req.body?.method);
     // A payment may legally exceed the category's current due (e.g. prepaying
     // a vendor) — this is allowed on purpose, not clamped or rejected.
     const result = db.prepare(`
@@ -222,23 +233,25 @@ router.get('/summary', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res:
       'SELECT category_id, COALESCE(SUM(amount), 0) AS total FROM expense_entries WHERE expense_date >= ? AND expense_date <= ? GROUP BY category_id'
     ).all(from, to) as { category_id: string; total: number }[]).map((row) => [row.category_id, row.total]));
 
-    const paymentTotals = new Map<string, { total: number; byMethod: Record<PaymentMethod, number> }>();
+    const paymentTotals = new Map<string, { total: number; byMethod: Record<PaymentMethod, number>; custom: Record<string, number> }>();
     for (const row of db.prepare(
       'SELECT category_id, method, COALESCE(SUM(amount), 0) AS total FROM expense_due_payments WHERE payment_date >= ? AND payment_date <= ? GROUP BY category_id, method'
     ).all(from, to) as { category_id: string; method: string | null; total: number }[]) {
       let bucket = paymentTotals.get(row.category_id);
       if (!bucket) {
-        bucket = { total: 0, byMethod: { cash: 0, card: 0, upi: 0 } };
+        bucket = { total: 0, byMethod: { cash: 0, card: 0, upi: 0 }, custom: {} };
         paymentTotals.set(row.category_id, bucket);
       }
       bucket.total = roundMoney(bucket.total + row.total);
       if (row.method && PAYMENT_METHODS.includes(row.method as PaymentMethod)) {
         bucket.byMethod[row.method as PaymentMethod] = row.total;
+      } else if (row.method) {
+        bucket.custom[row.method] = roundMoney((bucket.custom[row.method] || 0) + row.total);
       }
     }
 
     const categories = listCategories(false).map((category) => {
-      const payments = paymentTotals.get(category.id) ?? { total: 0, byMethod: { cash: 0, card: 0, upi: 0 } };
+      const payments = paymentTotals.get(category.id) ?? { total: 0, byMethod: { cash: 0, card: 0, upi: 0 }, custom: {} };
       return {
         category_id: category.id,
         category_name: category.name,
@@ -246,19 +259,24 @@ router.get('/summary', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res:
         total_expenses: expenseTotals.get(category.id) ?? 0,
         total_payments: payments.total,
         payments_by_method: payments.byMethod,
+        custom_payments: payments.custom,
       };
     });
 
+    const overallCustom: Record<string, number> = {};
     const overall = categories.reduce((acc, category) => {
       acc.total_expenses += category.total_expenses;
       acc.total_payments += category.total_payments;
       acc.payments_by_method.cash += category.payments_by_method.cash;
       acc.payments_by_method.card += category.payments_by_method.card;
       acc.payments_by_method.upi += category.payments_by_method.upi;
+      for (const [method, total] of Object.entries(category.custom_payments)) {
+        overallCustom[method] = roundMoney((overallCustom[method] || 0) + total);
+      }
       return acc;
     }, { total_expenses: 0, total_payments: 0, payments_by_method: { cash: 0, card: 0, upi: 0 } });
 
-    res.json({ month, from, to, categories, overall });
+    res.json({ month, from, to, categories, overall: { ...overall, custom_payments: overallCustom } });
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message || 'Unable to load the monthly expense summary' });
   }

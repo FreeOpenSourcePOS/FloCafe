@@ -223,6 +223,23 @@ async function main() {
     // ── Business-date validation ───────────────────────────────────────────
     const badCalendar = await api(baseUrl, '/api/expenses/entries', { method: 'POST', body: { category_id: vegId, amount: 5, date: '2026-02-30' }, headers: ownerAuth });
     assertEqual(badCalendar.status, 400, 'a non-existent calendar date is rejected');
+
+    // ── Custom payment methods ride the same validation as bill payments ───
+    db.prepare(`INSERT INTO payment_methods (name, is_active, sort_order, created_at, updated_at) VALUES ('Cheque', 1, 10, ?, ?)`).run(now(), now());
+    const chequePay = await api(baseUrl, '/api/expenses/payments', { method: 'POST', body: { category_id: vegId, amount: 40, method: 'Cheque' }, headers: ownerAuth });
+    assertEqual(chequePay.status, 201, 'a payment with an active custom method is accepted');
+    assertEqual(chequePay.data.payment.method, 'Cheque', 'the stored method keeps the canonical custom name');
+    const chequeLower = await api(baseUrl, '/api/expenses/payments', { method: 'POST', body: { category_id: vegId, amount: 5, method: 'cheque' }, headers: ownerAuth });
+    assertEqual(chequeLower.status, 201, 'custom method matching is case-insensitive');
+    assertEqual(chequeLower.data.payment.method, 'Cheque', 'a lowercase custom method is stored under its canonical name');
+    db.prepare(`UPDATE payment_methods SET is_active = 0 WHERE name = 'Cheque'`).run();
+    const inactivePay = await api(baseUrl, '/api/expenses/payments', { method: 'POST', body: { category_id: vegId, amount: 5, method: 'Cheque' }, headers: ownerAuth });
+    assertEqual(inactivePay.status, 400, 'a payment with a deactivated custom method is rejected');
+    const customSummary = await api(baseUrl, `/api/expenses/summary?month=${utcTodayDate().slice(0, 7)}`, { headers: ownerAuth });
+    assertEqual(customSummary.status, 200, 'summary loads after custom-method payments');
+    const vegRow = customSummary.data.categories.find((c: any) => c.category_id === vegId);
+    assertEqual(vegRow.custom_payments.Cheque, 45, 'the monthly report splits custom methods out of the built-in trio');
+    assertEqual(customSummary.data.overall.custom_payments.Cheque, 45, 'overall custom totals accumulate across categories');
   } finally {
     await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     closeDatabase();

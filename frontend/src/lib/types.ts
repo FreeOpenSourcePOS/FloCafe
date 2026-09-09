@@ -279,7 +279,7 @@ export interface ExpenseLedgerEntry {
   amount: number;
   note: string | null;
   date: string;
-  method: ExpensePaymentMethod | null;
+  method: string | null;
   created_by: string | null;
   created_by_name: string | null;
   created_at: string;
@@ -292,6 +292,7 @@ export interface ExpenseMonthSummaryCategory {
   total_expenses: number;
   total_payments: number;
   payments_by_method: Record<ExpensePaymentMethod, number>;
+  custom_payments: Record<string, number>;
 }
 
 export interface ExpenseMonthSummary {
@@ -303,6 +304,7 @@ export interface ExpenseMonthSummary {
     total_expenses: number;
     total_payments: number;
     payments_by_method: Record<ExpensePaymentMethod, number>;
+    custom_payments: Record<string, number>;
   };
 }
 

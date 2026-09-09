@@ -202,6 +202,13 @@ async function main() {
     assertEqual(monthlyAfterRefund.data.totals.total_cash_refunds, 10, 'month totals include cash refunds');
     assertEqual(monthlyAfterRefund.data.totals.net, Math.round((monthlyAfterRefund.data.totals.total_cash_from_orders - 10 - monthlyAfterRefund.data.totals.total_cash_expenses) * 100) / 100, 'month totals.net subtracts cash refunds');
 
+    // ── Custom-method expense payments never touch drawer cash ─────────────
+    db.prepare(`INSERT INTO payment_methods (name, is_active, sort_order, created_at, updated_at) VALUES ('Cheque', 1, 10, ?, ?)`).run(now(), now());
+    const chequePay = await api(baseUrl, '/api/expenses/payments', { method: 'POST', body: { category_id: categoryId, amount: 25, method: 'Cheque' }, headers: ownerAuth });
+    assertEqual(chequePay.status, 201, 'a custom-method expense payment is accepted');
+    const dailyAfterCheque = await api(baseUrl, `/api/cash-counter/daily?date=${today}`, { headers: ownerAuth });
+    assertEqual(dailyAfterCheque.data.cash_expenses.total, 30, 'a non-cash expense payment leaves cash-expenses untouched');
+
     // ── Store-timezone alignment uses fixed timestamps, host-clock free ─────
     db.prepare("UPDATE settings SET value = 'Asia/Kolkata' WHERE key = 'timezone'").run();
     const tzOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 1, items: [{ product_id: 'cc-cash-item', quantity: 1 }] }, headers: ownerAuth });

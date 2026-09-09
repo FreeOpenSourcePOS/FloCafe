@@ -42,7 +42,8 @@ export default function ExpensesPage() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(todayUtcDate());
-  const [method, setMethod] = useState<ExpensePaymentMethod>('cash');
+  const [method, setMethod] = useState<string>('cash');
+  const [customMethods, setCustomMethods] = useState<{ id: number; name: string }[]>([]);
 
   const [summaryMonth, setSummaryMonth] = useState(currentUtcMonth());
   const [summary, setSummary] = useState<ExpenseMonthSummary | null>(null);
@@ -53,8 +54,10 @@ export default function ExpensesPage() {
       api.get('/expenses/categories'),
       api.get('/expenses/entries', { params: ledgerParams }),
       api.get('/expenses/payments', { params: ledgerParams }),
+      api.get('/payment-methods'),
     ])
-      .then(([categoriesRes, entriesRes, paymentsRes]) => {
+      .then(([categoriesRes, entriesRes, paymentsRes, methodsRes]) => {
+        setCustomMethods(methodsRes.data.payment_methods || []);
         setCategories(categoriesRes.data.categories || []);
         const merged: LedgerRow[] = [
           ...(entriesRes.data.entries || []).map((row: ExpenseLedgerEntry) => ({ ...row, kind: 'expense' as const })),
@@ -145,6 +148,10 @@ export default function ExpensesPage() {
 
   if (loading) return <p className="text-center text-gray-500 py-12">{tCommon('loading')}</p>;
 
+  const customMethodNames = summary
+    ? Array.from(new Set(summary.categories.flatMap((c) => Object.keys(c.custom_payments))))
+    : [];
+
   return (
     <div>
       {ConfirmDialog}
@@ -210,6 +217,9 @@ export default function ExpensesPage() {
                   <th className="px-4 py-2 text-end">{t('paymentMethodCash')}</th>
                   <th className="px-4 py-2 text-end">{t('paymentMethodCard')}</th>
                   <th className="px-4 py-2 text-end">{t('paymentMethodUpi')}</th>
+                  {customMethodNames.map((m) => (
+                    <th key={m} className="px-4 py-2 text-end">{m}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -221,6 +231,9 @@ export default function ExpensesPage() {
                     <td className="px-4 py-2 text-end text-gray-600">{row.payments_by_method.cash.toFixed(2)}</td>
                     <td className="px-4 py-2 text-end text-gray-600">{row.payments_by_method.card.toFixed(2)}</td>
                     <td className="px-4 py-2 text-end text-gray-600">{row.payments_by_method.upi.toFixed(2)}</td>
+                    {customMethodNames.map((m) => (
+                      <td key={m} className="px-4 py-2 text-end text-gray-600">{(row.custom_payments[m] ?? 0).toFixed(2)}</td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
@@ -232,6 +245,9 @@ export default function ExpensesPage() {
                   <td className="px-4 py-2 text-end">{summary.overall.payments_by_method.cash.toFixed(2)}</td>
                   <td className="px-4 py-2 text-end">{summary.overall.payments_by_method.card.toFixed(2)}</td>
                   <td className="px-4 py-2 text-end">{summary.overall.payments_by_method.upi.toFixed(2)}</td>
+                  {customMethodNames.map((m) => (
+                    <td key={m} className="px-4 py-2 text-end">{(summary.overall.custom_payments[m] ?? 0).toFixed(2)}</td>
+                  ))}
                 </tr>
               </tfoot>
             </table>
@@ -269,7 +285,7 @@ export default function ExpensesPage() {
                     {row.date}
                     {' · '}
                     {row.kind === 'expense' ? t('entryTypeExpense') : t('entryTypePayment')}
-                    {row.kind === 'payment' && row.method ? ` · ${t(paymentMethodLabelKey(row.method))}` : ''}
+                    {row.kind === 'payment' && row.method ? ` · ${row.method === 'cash' || row.method === 'card' || row.method === 'upi' ? t(paymentMethodLabelKey(row.method)) : row.method}` : ''}
                     {row.created_by_name ? ` · ${t('recordedBy', { name: row.created_by_name })}` : ''}
                     {row.note ? ` · ${row.note}` : ''}
                   </p>
@@ -327,16 +343,17 @@ export default function ExpensesPage() {
               {modalMode === 'payment' && (
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-500">{t('paymentMethod')}</label>
-                  <div className="flex gap-2">
+                  <select
+                    value={method} onChange={(e) => setMethod(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
+                  >
                     {PAYMENT_METHODS.map((m) => (
-                      <button
-                        key={m} type="button" onClick={() => setMethod(m)}
-                        className={`flex-1 px-3 py-2 border rounded-lg text-sm ${method === m ? 'border-brand bg-brand/10 font-medium text-brand' : 'border-gray-200 text-gray-600'}`}
-                      >
-                        {t(paymentMethodLabelKey(m))}
-                      </button>
+                      <option key={m} value={m}>{t(paymentMethodLabelKey(m))}</option>
                     ))}
-                  </div>
+                    {customMethods.map((c) => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
                 </div>
               )}
               <input

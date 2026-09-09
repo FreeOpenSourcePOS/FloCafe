@@ -28,7 +28,7 @@ export function sanitizeLogText(value: unknown): string | null {
   const text = value instanceof Error ? value.message : String(value);
   return text
     .replace(/https?:\/\/\S+/gi, '[redacted-url]')
-    .replace(/\b\d{7,15}\b/g, '[redacted-number]')
+    .replace(/(?<!\d)\+?\d(?:[\s().-]*\d){6,14}(?!\d)/g, '[redacted-number]')
     .replace(/(?:token|secret|password|auth|key)=\S+/gi, '[redacted]')
     .slice(0, 240);
 }
@@ -862,7 +862,7 @@ export async function enable(userId: string): Promise<{ ok: boolean; error?: str
   // Reset shutdown flag so the auto-reconnect-on-disconnect logic in the
   // close handler is active again after a previous disable() round.
   state.shuttingDown = false;
-  whatsappAbortController = new AbortController();
+  if (whatsappAbortController.signal.aborted) whatsappAbortController = new AbortController();
   writeSetting('whatsapp_enabled', 'true');
   writeSetting('whatsapp_activated_by_user_id', userId);
   writeSetting('whatsapp_activated_at', now());

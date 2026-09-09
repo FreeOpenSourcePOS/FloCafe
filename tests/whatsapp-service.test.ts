@@ -18,6 +18,7 @@ const pendingPresence = new Promise<void>((resolve) => { releasePendingPresence 
 let presenceSettled = false;
 void pendingPresence.then(() => { presenceSettled = true; });
 let makeSocketCalls = 0;
+let authStateCalls = 0;
 let holdAuthState = false;
 let authStateStarted!: () => void;
 const authStateStartedPromise = new Promise<void>((resolve) => { authStateStarted = resolve; });
@@ -39,6 +40,7 @@ const fakeSocket = {
 const fakeBaileys = {
   fetchLatestWaWebVersion: async () => ({ version: [2, 3000, 1] }),
   useMultiFileAuthState: async () => {
+    authStateCalls++;
     if (holdAuthState) {
       authStateStarted();
       await authStateGate;
@@ -94,8 +96,9 @@ async function main(): Promise<void> {
   assert(typeof whatsapp.shutdown === 'function', 'exports shutdown()');
   assert(typeof whatsapp.initFromDb === 'function', 'exports initFromDb()');
   assert(
-    whatsapp.sanitizeLogText(new Error('failed https://wa.me/15555550100?text=private-bill')) === 'failed [redacted-url]',
-    'diagnostic sanitizer redacts share URLs',
+    whatsapp.sanitizeLogText(new Error('recipient +1 555 555 0100 via https://wa.me/15555550100?text=private-bill'))
+      === 'recipient [redacted-number] via [redacted-url]',
+    'diagnostic sanitizer redacts formatted phone numbers and share URLs',
   );
 
   // Send + storage
@@ -152,10 +155,12 @@ async function main(): Promise<void> {
     await new Promise((resolve) => setImmediate(resolve));
 
     holdRecoveryAuthState = true;
+    const authStateCallsBeforeRecovery = authStateCalls;
     whatsapp.disconnect();
     await whatsapp.enable('startup-recovery-test-user');
     const cancelledStartup = whatsapp.connectWithQr().catch(() => undefined);
     await recoveryAuthStateStartedPromise;
+    await whatsapp.enable('startup-recovery-test-user');
     const socketCallsBeforeRecovery = makeSocketCalls;
     whatsapp.disconnect();
     await whatsapp.enable('startup-recovery-test-user');
@@ -166,6 +171,7 @@ async function main(): Promise<void> {
     await cancelledStartup;
     assert(restartedResult.ok === true, 're-enable starts a fresh socket after cancellation');
     assert(makeSocketCalls === socketCallsBeforeRecovery + 1, 'cancelled startup does not create a duplicate socket');
+    assert(authStateCalls === authStateCallsBeforeRecovery + 2, 're-enable waits for the cancelled startup before retrying');
 
     const requestAbort = new AbortController();
     const sendPromise = whatsapp.sendMessage({

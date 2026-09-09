@@ -116,6 +116,37 @@ test('Privacy hydrates terminal cloud status before exposing deletion', async ({
   await expect(page.getByRole('button', { name: 'Request cloud data deletion', exact: true })).toHaveCount(0);
 });
 
+test('Privacy hydrates pending cloud account deletion before enabling deletion', async ({ page }) => {
+  await startMockedSettingsSession(page, true);
+  await page.route('**/api/settings/cloud/account', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        cloud_account_available: true,
+        email: 'owner@flo.local',
+        deletion_request: { id: 'deletion-1', status: 'pending' },
+      }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=privacy`);
+  const deleteButton = page.getByRole('button', { name: 'Request cloud data deletion', exact: true });
+  await expect(deleteButton).toBeVisible();
+  await expect(deleteButton).toBeDisabled();
+});
+
+test('About hydrates More Apps only when activated', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const apiPaths = collectApiPaths(page);
+
+  await page.goto(`${BASE}/settings?tab=about`);
+  await expect(page.getByRole('heading', { name: 'About FloCafe', exact: true })).toBeVisible();
+  await expect(page.getByText('No apps to show yet.', { exact: true })).toBeVisible();
+  expect(apiPaths.filter((path) => path === '/api/more-apps')).toHaveLength(1);
+  expect(apiPaths.filter((path) => path === '/api/more-apps/revflo')).toHaveLength(0);
+});
+
 test('Mobile Access loads cloud and pairing data only when activated, once per tenant', async ({ page }) => {
   await startMockedSettingsSession(page, true);
   const apiPaths = collectApiPaths(page);
@@ -135,7 +166,6 @@ test('Mobile Access loads cloud and pairing data only when activated, once per t
   expect(apiPaths.filter((path) => path === '/api/settings/cloud')).toHaveLength(1);
   expect(apiPaths.filter((path) => path === '/api/mobile/pairing-code')).toHaveLength(1);
   expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
-  expect(apiPaths.filter((path) => path === '/api/more-apps')).toHaveLength(1);
   expect(apiPaths.filter((path) => path === '/api/more-apps/revflo')).toHaveLength(1);
 
   await page.getByRole('button', { name: 'Store Details', exact: true }).click();
@@ -177,6 +207,32 @@ test('Changing tabs aborts an in-flight page loader', async ({ page }) => {
   await page.getByRole('button', { name: 'Store Details', exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/?$/);
   await expect(page.locator('input[type="text"]').first()).toHaveValue('active');
+});
+
+test('Save All preserves edits made during business hydration', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let savedBusinessName: string | undefined;
+  page.on('request', (request) => {
+    if (request.method() === 'PUT' && new URL(request.url()).pathname === '/api/settings/business') {
+      savedBusinessName = request.postDataJSON()?.business_name;
+    }
+  });
+  await page.unroute('**/api/settings/business');
+  await page.route('**/api/settings/business', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ business_name: 'Server Value' }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=store`);
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  await page.locator('input[type="text"]').first().fill('Edited While Loading');
+  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+
+  await expect.poll(() => savedBusinessName, { timeout: 10000 }).toBe('Edited While Loading');
 });
 
 test('Rapid Settings navigation stays below the read rate limit', async ({ page }) => {
@@ -259,4 +315,32 @@ test('Save All stops when required hydration fails', async ({ page }) => {
   await page.waitForTimeout(500);
 
   expect(writes).toEqual([]);
+});
+
+test('Save All stops when printing hydration fails', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'PUT' && path.startsWith('/api/settings/')) writes.push(path);
+  });
+  await page.route('**/api/settings/z_report_language_policy', async (route) => {
+    await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
+  });
+
+  await page.goto(`${BASE}/settings?tab=store`);
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
+  await page.waitForTimeout(500);
+
+  expect(writes).toEqual([]);
+});
+
+test('Health-check deep link loads from the existing store URL', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const apiPaths = collectApiPaths(page);
+
+  await page.goto(`${BASE}/settings?tab=store&action=health-check`);
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  await expect.poll(() => apiPaths.filter((path) => path === '/api/db-tools/health-check').length).toBe(1);
 });

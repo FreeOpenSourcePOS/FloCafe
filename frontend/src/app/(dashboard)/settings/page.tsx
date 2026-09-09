@@ -1374,7 +1374,7 @@ export default function SettingsPage() {
   const [showInitializeCloudConfirm, setShowInitializeCloudConfirm] = useState(false);
 
   const cloudServicesStopped = cloudStatus.cloud_services_disabled_by_user;
-  const cloudDeletionFinal = !cloudStatusHydrated || cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
+  const cloudDeletionFinal = !cloudStatusHydrated || cloudAccountLoadFailed || cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
   const cloudDeletionNeedsAction = !cloudDeletionFinal && (cloudDeletionNeedsResolution || ['processing', 'failed'].includes(cloudStatus.cloud_deletion_status));
 
   const refreshCloudStatus = async () => {
@@ -1615,6 +1615,14 @@ export default function SettingsPage() {
   const loadSettingsTab = async (tab: string, signal: AbortSignal, includeStatusOnly = true): Promise<void> => {
     const get = (path: string) => api.get(path, { signal });
     const active = () => !signal.aborted;
+    const readOptional = async (path: string) => {
+      try {
+        return await get(path);
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) return null;
+        throw error;
+      }
+    };
 
     const loadBusiness = async () => {
       const tenantId = currentTenant?.id ?? null;
@@ -1655,8 +1663,9 @@ export default function SettingsPage() {
           numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
           calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
         };
+        const preserveForm = JSON.stringify(form) !== JSON.stringify(savedBusiness);
         setSavedBusiness(loaded);
-        setForm(loaded);
+        if (!preserveForm) setForm(loaded);
         setTaxIdFormat(d.tax_id_format || null);
         setTaxIdFormatCountryCode(loaded.countryCode);
         const billDisplay = {
@@ -1778,11 +1787,11 @@ export default function SettingsPage() {
 
     const loadPrinting = async () => {
       const [trimResponse, cashEnabledResponse, cashMethodsResponse, billLanguageResponse, kotLanguageResponse] = await Promise.all([
-        get('/settings/printer_trim_decimals').catch(() => null),
-        get('/settings/cash_drawer_pulse_enabled').catch(() => null),
-        get('/settings/cash_drawer_pulse_methods').catch(() => null),
-        get('/settings/bill_language_policy').catch(() => null),
-        get('/settings/kot_language_policy').catch(() => null),
+        readOptional('/settings/printer_trim_decimals'),
+        readOptional('/settings/cash_drawer_pulse_enabled'),
+        readOptional('/settings/cash_drawer_pulse_methods'),
+        readOptional('/settings/bill_language_policy'),
+        readOptional('/settings/kot_language_policy'),
       ]);
       if (!active()) return;
 
@@ -1834,12 +1843,9 @@ export default function SettingsPage() {
           setSavedPrinting((p) => ({ ...p, ...formPatch }));
         }
       }
-      const zReportResult = await api.get('/settings/z_report_language_policy', { signal })
-        .then((response) => ({ response, error: null as unknown }))
-        .catch((error: unknown) => ({ response: null, error }));
+      const zReportResponse = await readOptional('/settings/z_report_language_policy');
       if (!active()) return;
-      if (zReportResult.response) {
-        const zReportResponse = zReportResult.response;
+      if (zReportResponse) {
         const policy = parseStoredReceiptLanguagePolicy(zReportResponse.data?.setting?.value);
         if (policy) {
           const formPatch = {
@@ -1850,14 +1856,14 @@ export default function SettingsPage() {
           setSavedPrinting((p) => ({ ...p, ...formPatch }));
           setZReportLanguagePolicyLoaded(true);
         }
-      } else if (axios.isAxiosError(zReportResult.error) && zReportResult.error.response?.status === 404) {
+      } else {
         setZReportLanguagePolicyLoaded(true);
       }
 
       const [templatesResponse, templateResponse, footerResponse] = await Promise.all([
-        get('/settings/bill-templates').catch(() => null),
-        get('/settings/bill_template').catch(() => null),
-        get('/settings/bill_footer_message').catch(() => null),
+        readOptional('/settings/bill-templates'),
+        readOptional('/settings/bill_template'),
+        readOptional('/settings/bill_footer_message'),
       ]);
       if (!active()) return;
       const pluginCards: TemplateCard[] = (templatesResponse?.data?.plugins || []).map((template: {
@@ -1959,12 +1965,12 @@ export default function SettingsPage() {
           fetchPrinters(signal),
           fetchDetectedPrinters(signal),
           loadPrinting(),
-          get('/settings/kot_printing_enabled').then((res) => {
+          readOptional('/settings/kot_printing_enabled').then((res) => {
             if (!active()) return;
-            const enabled = res.data.setting?.value !== 'false';
+            const enabled = res?.data.setting?.value !== 'false';
             setKotPrintingEnabledSetting(enabled);
             posSettings.setKotPrintingEnabled(enabled);
-          }).catch(() => {}),
+          }),
         ]);
         return;
       }
@@ -2025,11 +2031,16 @@ export default function SettingsPage() {
         const [telemetryResponse, diagnosticsResponse] = await Promise.all([
           get('/settings/telemetry_enabled').catch(() => null),
           get('/settings/diagnostics_consent').catch(() => null),
-          loadCloud(),
         ]);
         if (!active()) return;
         setTelemetryEnabled(telemetryResponse ? telemetryResponse.data.setting?.value === 'true' : false);
         setDiagnosticsConsent(diagnosticsResponse ? diagnosticsResponse.data.setting?.value !== 'false' : true);
+        await Promise.all([
+          loadCloud().catch((error) => {
+            if (isRequestCancelled(error)) throw error;
+          }),
+          isOwner ? fetchCloudAccount(signal) : Promise.resolve(),
+        ]);
         return;
       }
       if (tab === 'data') {
@@ -2040,13 +2051,28 @@ export default function SettingsPage() {
         if (isOwner) await fetchCloudAccount(signal);
         return;
       }
+      if (tab === 'about') {
+        setMoreAppsLoading(true);
+        try {
+          const moreAppsResponse = await get('/more-apps');
+          if (active()) {
+            setMoreApps(moreAppsResponse.data.apps || []);
+          }
+        } catch (error) {
+          if (isRequestCancelled(error)) throw error;
+        } finally {
+          if (active()) setMoreAppsLoading(false);
+        }
+        return;
+      }
       if (tab === 'mobile-access' || tab === 'orderflow') {
         if (tab === 'mobile-access' && includeStatusOnly) {
-          setMoreAppsLoading(true);
-          await Promise.all([
-            get('/more-apps').then((res) => { if (active()) setMoreApps(res.data.apps || []); }),
-            get('/more-apps/revflo').then((res) => { if (active()) setRevflo(res.data.app || null); }),
-          ]).catch(() => {}).finally(() => { if (active()) setMoreAppsLoading(false); });
+          try {
+            const revfloResponse = await get('/more-apps/revflo');
+            if (active()) setRevflo(revfloResponse.data.app || null);
+          } catch (error) {
+            if (isRequestCancelled(error)) throw error;
+          }
         }
         await loadCloud();
       }
@@ -2100,7 +2126,7 @@ export default function SettingsPage() {
   }, [activeTab, currentTenant?.id, isOwner]);
 
   useEffect(() => {
-    if (activeTab !== 'data' || requestedAction !== 'health-check' || !currentTenant?.id) return;
+    if (requestedAction !== 'health-check' || !currentTenant?.id) return;
     const key = `${currentTenant.id}:health-check`;
     if (healthCheckLoaded.current === key) return;
     const controller = new AbortController();

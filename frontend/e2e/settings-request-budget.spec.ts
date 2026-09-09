@@ -173,6 +173,21 @@ test('About hydrates More Apps only when activated', async ({ page }) => {
   expect(apiPaths.filter((path) => path === '/api/more-apps/revflo')).toHaveLength(0);
 });
 
+test('Appearance hydrates the persisted theme when activated', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  await page.route('**/api/settings/theme_mode', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ setting: { value: 'dark' } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=appearance`);
+  await expect(page.getByRole('radiogroup', { name: 'Theme', exact: true })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Dark', exact: true })).toBeChecked();
+});
+
 test('Mobile Access loads cloud and pairing data only when activated, once per tenant', async ({ page }) => {
   await startMockedSettingsSession(page, true);
   const apiPaths = collectApiPaths(page);
@@ -208,16 +223,29 @@ test('Mobile Access loads cloud and pairing data only when activated, once per t
 test('Cloud registration refreshes Mobile Access pairing data', async ({ page }) => {
   await startMockedSettingsSession(page);
   let registered = false;
+  let firstCloudRequest = true;
+  let releaseFirstCloudRequest: (() => void) | null = null;
+  const firstCloudRequestReleased = new Promise<void>((resolve) => {
+    releaseFirstCloudRequest = resolve;
+  });
   const apiPaths = collectApiPaths(page);
   await page.route('**/api/settings/cloud', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ cloud_registration_status: registered ? 'registered' : 'unregistered' }),
-    });
+    const statusAtRequest = registered ? 'registered' : 'unregistered';
+    if (firstCloudRequest) {
+      firstCloudRequest = false;
+      await firstCloudRequestReleased;
+    }
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ cloud_registration_status: statusAtRequest }),
+      });
+    } catch {}
   });
   await page.route('**/api/settings/cloud/register', async (route) => {
     registered = true;
+    releaseFirstCloudRequest?.();
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -236,6 +264,7 @@ test('Cloud registration refreshes Mobile Access pairing data', async ({ page })
   });
 
   await page.goto(`${BASE}/settings?tab=mobile-access`);
+  await expect.poll(() => firstCloudRequest).toBe(false);
   await expect(page.getByRole('button', { name: 'Initialize Cloud Services', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Initialize Cloud Services', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Accept & Initialize', exact: true })).toBeVisible();
@@ -320,6 +349,41 @@ test('Rotating pairing code does not refresh devices after leaving Mobile Access
   await page.waitForTimeout(1200);
 
   expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(1);
+});
+
+test('Rotating pairing code does not update the code after leaving and re-entering Mobile Access', async ({ page }) => {
+  await startMockedSettingsSession(page, true);
+  const apiPaths = collectApiPaths(page);
+  await page.route('**/api/mobile/pairing-code', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ pairing_code: 'INITIALCODE', expires_at: null, qr_data_url: null }),
+    });
+  });
+  await page.goto(`${BASE}/settings?tab=mobile-access`);
+  await expect(page.getByRole('heading', { name: 'Mobile Access', exact: true })).toBeVisible();
+  await expect(page.getByText('INITIALCODE', { exact: true })).toBeVisible();
+
+  await page.route('**/api/mobile/rotate-code', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ pairing_code: 'STALECODE', expires_at: null, qr_data_url: null }),
+      });
+    } catch {}
+  });
+  await page.getByRole('button', { name: 'Generate New Code', exact: true }).click();
+  await page.getByRole('button', { name: 'Store Details', exact: true }).click();
+  await page.getByRole('button', { name: 'Mobile Access', exact: true }).click();
+  await expect(page.getByText('INITIALCODE', { exact: true })).toBeVisible();
+  await page.waitForTimeout(1200);
+
+  expect(apiPaths.filter((path) => path === '/api/mobile/rotate-code')).toHaveLength(1);
+  expect(apiPaths.filter((path) => path === '/api/mobile/devices')).toHaveLength(2);
+  await expect(page.getByText('STALECODE', { exact: true })).toHaveCount(0);
 });
 
 test('Leaving KDS cancels station-user hydration', async ({ page }) => {

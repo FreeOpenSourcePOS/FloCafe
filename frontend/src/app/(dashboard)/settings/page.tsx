@@ -336,6 +336,9 @@ export default function SettingsPage() {
   };
   const loadedSettingsTabs = useRef(new Set<string>());
   const settingsTabLoadPromises = useRef(new Map<string, Promise<void>>());
+  const settingsTabLoadControllers = useRef(new Map<string, AbortController>());
+  const mobileAccessRequestGeneration = useRef(0);
+  const mobileAccessRequestController = useRef<AbortController | null>(null);
   const businessHydrationPromise = useRef<Promise<void> | null>(null);
   const businessHydrationTenant = useRef<number | null>(null);
   const businessHydrated = useRef(false);
@@ -2201,9 +2204,10 @@ export default function SettingsPage() {
     }
   };
 
-  const startSettingsTabLoad = (tab: string, signal: AbortSignal, includeStatusOnly = true): Promise<void> => {
+  const startSettingsTabLoad = (tab: string, controller: AbortController, includeStatusOnly = true): Promise<void> => {
     const tenantId = currentTenant?.id;
     if (!tenantId) return Promise.resolve();
+    const { signal } = controller;
     const key = `${tenantId}:${tab}${tab === 'mobile-access' && !includeStatusOnly ? ':status' : ''}`;
     if (loadedSettingsTabs.current.has(key)) return Promise.resolve();
     const existing = settingsTabLoadPromises.current.get(key);
@@ -2212,10 +2216,21 @@ export default function SettingsPage() {
       if (!signal.aborted) loadedSettingsTabs.current.add(key);
     });
     settingsTabLoadPromises.current.set(key, promise);
+    settingsTabLoadControllers.current.set(key, controller);
     void promise.then(() => {
-      if (settingsTabLoadPromises.current.get(key) === promise) settingsTabLoadPromises.current.delete(key);
+      if (settingsTabLoadPromises.current.get(key) === promise) {
+        settingsTabLoadPromises.current.delete(key);
+        if (settingsTabLoadControllers.current.get(key) === controller) {
+          settingsTabLoadControllers.current.delete(key);
+        }
+      }
     }, () => {
-      if (settingsTabLoadPromises.current.get(key) === promise) settingsTabLoadPromises.current.delete(key);
+      if (settingsTabLoadPromises.current.get(key) === promise) {
+        settingsTabLoadPromises.current.delete(key);
+        if (settingsTabLoadControllers.current.get(key) === controller) {
+          settingsTabLoadControllers.current.delete(key);
+        }
+      }
     });
     return promise;
   };
@@ -2226,7 +2241,7 @@ export default function SettingsPage() {
     if (loadedSettingsTabs.current.has(key)) return;
     const tabLoadPromises = settingsTabLoadPromises.current;
     const controller = new AbortController();
-    void startSettingsTabLoad(activeTab, controller.signal)
+    void startSettingsTabLoad(activeTab, controller)
       .then(() => {
         if (!controller.signal.aborted) loadedSettingsTabs.current.add(key);
       })
@@ -2236,10 +2251,24 @@ export default function SettingsPage() {
       if (tabLoadPromises.has(key)) {
         tabLoadPromises.delete(key);
       }
+      if (settingsTabLoadControllers.current.get(key) === controller) {
+        settingsTabLoadControllers.current.delete(key);
+      }
     };
   // The tab and tenant identity are the intentional hydration boundaries.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, currentTenant?.id, isOwner]);
+
+  useEffect(() => {
+    mobileAccessRequestGeneration.current += 1;
+    mobileAccessRequestController.current?.abort();
+    mobileAccessRequestController.current = null;
+    return () => {
+      mobileAccessRequestGeneration.current += 1;
+      mobileAccessRequestController.current?.abort();
+      mobileAccessRequestController.current = null;
+    };
+  }, [activeTab, currentTenant?.id]);
 
   useEffect(() => {
     if (requestedAction !== 'health-check' || !currentTenant?.id) return;
@@ -2320,12 +2349,19 @@ export default function SettingsPage() {
       await fetchCloudAccount();
       notifyCloudAccountStatusChanged();
       if (registrationStatus === 'registered') {
-        const mobileAccessKey = currentTenant?.id ? `${currentTenant.id}:mobile-access` : null;
-        if (mobileAccessKey) loadedSettingsTabs.current.delete(mobileAccessKey);
+        const mobileAccessKeys = currentTenant?.id
+          ? [`${currentTenant.id}:mobile-access`, `${currentTenant.id}:mobile-access:status`]
+          : [];
+        mobileAccessKeys.forEach((key) => {
+          settingsTabLoadControllers.current.get(key)?.abort();
+          settingsTabLoadControllers.current.delete(key);
+          settingsTabLoadPromises.current.delete(key);
+          loadedSettingsTabs.current.delete(key);
+        });
         if (activeTabRef.current === 'mobile-access') {
           const controller = new AbortController();
           try {
-            await startSettingsTabLoad('mobile-access', controller.signal);
+            await startSettingsTabLoad('mobile-access', controller);
           } finally {
             controller.abort();
           }
@@ -2673,11 +2709,10 @@ export default function SettingsPage() {
     savingAllSettingsInFlight.current = true;
     setSavingAllSettings(true);
     try {
-      const controller = new AbortController();
       await Promise.all(['store', 'receipts-printers', 'loyalty', 'discounts', 'mobile-access'].map((tab) => {
         const key = `${currentTenant?.id}:${tab}`;
         if (loadedSettingsTabs.current.has(key)) return Promise.resolve();
-        return startSettingsTabLoad(tab, controller.signal, false);
+        return startSettingsTabLoad(tab, new AbortController(), false);
       }));
       // Hydration updates state asynchronously. Let the next render run the
       // saves against the hydrated values instead of stale initial defaults.
@@ -2711,20 +2746,27 @@ export default function SettingsPage() {
 
   const rotatePairingCode = async () => {
     setRotatingCode(true);
+    const generation = mobileAccessRequestGeneration.current;
+    const controller = new AbortController();
+    mobileAccessRequestController.current = controller;
     try {
-      const res = await api.post('/mobile/rotate-code');
-      if (activeTabRef.current !== 'mobile-access') return;
+      const res = await api.post('/mobile/rotate-code', undefined, { signal: controller.signal });
+      if (controller.signal.aborted || generation !== mobileAccessRequestGeneration.current || activeTabRef.current !== 'mobile-access') return;
       setPairingCode(res.data.pairing_code);
       setPairingExpiresAt(res.data.expires_at);
       setPairingQrDataUrl(res.data.qr_data_url || null);
       setPairingUnavailable(false);
       toast.success(t('pairingCodeRotated'));
-      await loadPairedDevices();
-    } catch {
+      await loadPairedDevices(controller.signal);
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
       // Show a localized failure; the specific backend reason stays in logs.
       toast.error(t('pairingCodeFailed'));
     } finally {
-      setRotatingCode(false);
+      if (mobileAccessRequestController.current === controller) {
+        mobileAccessRequestController.current = null;
+        setRotatingCode(false);
+      }
     }
   };
 

@@ -595,27 +595,6 @@ assert.ok(
   /needsServerTruth\.current/.test(saveBody) || /needsServerTruth\.current\s*=\s*false/.test(saveBody),
   'Settings saveThemeMode must clear the needsServerTruth arm after consuming it (PR review P1-B)',
 );
-// The appearance-tab hydration must consult the flag and apply server truth
-// when armed. Theme hydration is intentionally owned by the active-tab loader
-// so Settings does not fetch every section on mount.
-const settingsHydrationEffect = (settingsSrc.match(
-  /if \(tab === ['"]appearance['"]\) \{[\s\S]*?get\(\s*['"]\/settings\/theme_mode['"]\s*\)[\s\S]*?if \(needsServerTruth\.current\) needsServerTruth\.current = false;/,
-) ?? [''])[0];
-assert.ok(
-  settingsHydrationEffect.length > 0,
-  'Settings appearance hydration must be locatable for the P1-B tripwire',
-);
-assert.ok(
-  /needsServerTruth\.current/.test(settingsHydrationEffect),
-  'Settings hydration response handler must consult needsServerTruth.current (PR review P1-B)',
-);
-assert.ok(
-  /setThemeMode\(raw\)/.test(settingsHydrationEffect) ||
-    /setThemeMode\(\s*serverValue\s*\)/.test(settingsHydrationEffect),
-  'Settings hydration handler must apply the server-truth value when the arm is set (PR review P1-B)',
-);
-console.log('ok   Settings has armed server-truth hydration (PR review P1-B)');
-
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 

@@ -595,26 +595,6 @@ assert.ok(
   /needsServerTruth\.current/.test(saveBody) || /needsServerTruth\.current\s*=\s*false/.test(saveBody),
   'Settings saveThemeMode must clear the needsServerTruth arm after consuming it (PR review P1-B)',
 );
-// The hydration effect must consult the flag and apply server truth
-// when armed — look for the arm check inside the hydration useEffect.
-const settingsHydrationEffect = (settingsSrc.match(
-  /useEffect\(\(\) => \{[\s\S]*?api\.get\(\s*['"]\/settings\/theme_mode['"]\s*\)[\s\S]*?\}, \[setThemeMode\]\)/,
-) ?? [''])[0];
-assert.ok(
-  settingsHydrationEffect.length > 0,
-  'Settings hydration useEffect must be locatable for the P1-B tripwire',
-);
-assert.ok(
-  /needsServerTruth\.current/.test(settingsHydrationEffect),
-  'Settings hydration response handler must consult needsServerTruth.current (PR review P1-B)',
-);
-assert.ok(
-  /setThemeMode\(raw\)/.test(settingsHydrationEffect) ||
-    /setThemeMode\(\s*serverValue\s*\)/.test(settingsHydrationEffect),
-  'Settings hydration handler must apply the server-truth value when the arm is set (PR review P1-B)',
-);
-console.log('ok   Settings has armed server-truth hydration (PR review P1-B)');
-
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 

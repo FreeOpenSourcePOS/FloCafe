@@ -53,6 +53,10 @@ function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' |
 
 const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
 
+function isRequestCancelled(error: unknown): boolean {
+  return axios.isCancel(error);
+}
+
 function notifyCloudAccountStatusChanged(): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(CLOUD_ACCOUNT_STATUS_CHANGED_EVENT));
 }
@@ -190,11 +194,14 @@ function KdsDefaultViewCard() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.get('/settings/kds').then((res) => {
+    const controller = new AbortController();
+    api.get('/settings/kds', { signal: controller.signal }).then((res) => {
+      if (controller.signal.aborted) return;
       const v = res.data?.kds_default_view === 'kanban' ? 'kanban' : 'tabs';
       setView(v);
       setSavedView(v);
     }).catch(() => {});
+    return () => controller.abort();
   }, []);
 
   const dirty = view !== savedView;
@@ -294,6 +301,7 @@ export default function SettingsPage() {
   const [savedLoyaltyEnabled, setSavedLoyaltyEnabled] = useState(false);
   const [globalCashbackPercent, setGlobalCashbackPercent] = useState('0');
   const [savedGlobalCashbackPercent, setSavedGlobalCashbackPercent] = useState('0');
+  const loyaltyFormRef = useRef({ loyaltyEnabled, globalCashbackPercent });
   const [globalRateCandidates, setGlobalRateCandidates] = useState(0);
   const [applyingGlobalRate, setApplyingGlobalRate] = useState(false);
   const [savingLoyalty, setSavingLoyalty] = useState(false);
@@ -309,6 +317,7 @@ export default function SettingsPage() {
   const [savedDiscountMode, setSavedDiscountMode] = useState('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [savedDiscountRequiresApproval, setSavedDiscountRequiresApproval] = useState(false);
+  const discountFormRef = useRef({ discountMaxPct, discountMaxAmount, discountMode, discountRequiresApproval });
   const [savingDiscount, setSavingDiscount] = useState(false);
 
   // Table info dialog
@@ -317,8 +326,29 @@ export default function SettingsPage() {
 
   const searchParams = useSearchParams();
   const requestedTab = searchParams?.get('tab') || 'store';
+  const requestedAction = searchParams?.get('action');
   // Deep-link query param state for active tab and database actions.
   const [activeTab, setActiveTab] = useState(requestedTab);
+  const activeTabRef = useRef(activeTab);
+  const hydrationTouchVersions = useRef(new Map<string, number>());
+  const markHydrationTouched = (field: string) => {
+    hydrationTouchVersions.current.set(field, (hydrationTouchVersions.current.get(field) || 0) + 1);
+  };
+  const loadedSettingsTabs = useRef(new Set<string>());
+  const settingsTabLoadPromises = useRef(new Map<string, Promise<void>>());
+  const settingsTabLoadControllers = useRef(new Map<string, AbortController>());
+  const mobileAccessRequestGeneration = useRef(0);
+  const mobileAccessRequestController = useRef<AbortController | null>(null);
+  const businessHydrationPromise = useRef<Promise<void> | null>(null);
+  const businessHydrationTenant = useRef<number | null>(null);
+  const businessHydrated = useRef(false);
+  const cloudHydrationPromise = useRef<Promise<void> | null>(null);
+  const cloudHydrationTenant = useRef<number | null>(null);
+  const cloudHydrationGeneration = useRef(0);
+  const cloudHydrated = useRef(false);
+  const cloudHydrationSucceeded = useRef(false);
+  const cloudRegistrationStatus = useRef('unregistered');
+  const healthCheckLoaded = useRef<string | null>(null);
   const [masterPinStatus, setMasterPinStatus] = useState<{ available: boolean; isSet: boolean; schemaVersion: number | null }>({ available: false, isSet: false, schemaVersion: null });
   const [healthCheckOpen, setHealthCheckOpen] = useState(() => searchParams?.get('action') === 'health-check');
   const [healthReport, setHealthReport] = useState<HealthCheckReport | null>(null);
@@ -326,6 +356,7 @@ export default function SettingsPage() {
   const [initializeDbOpen, setInitializeDbOpen] = useState(() => searchParams?.get('action') === 'initialize-db');
   const [shakeSaveBar, setShakeSaveBar] = useState(false);
   const [savingAllSettings, setSavingAllSettings] = useState(false);
+  const [saveAllHydrationRun, setSaveAllHydrationRun] = useState(0);
   const savingAllSettingsInFlight = useRef(false);
 
   const themeMode = useThemeMode((s) => s.mode);
@@ -342,32 +373,6 @@ export default function SettingsPage() {
   // Armed when a save fails outright; the next hydration applies server truth.
   const needsServerTruth = useRef(false);
   const [savingTheme, setSavingTheme] = useState(false);
-
-  // Hydrate theme_mode from server; missing setting defaults to 'system'.
-  useEffect(() => {
-    let cancelled = false;
-    const seqAtFetch = saveSeq.current;
-    api.get('/settings/theme_mode').then((res) => {
-      if (cancelled) return;
-      const raw = res.data?.setting?.value;
-      if (raw === 'light' || raw === 'dark' || raw === 'system') {
-        if (!userTouched.current || needsServerTruth.current) {
-          setThemeMode(raw);
-        }
-        // Only update committed baseline if no subsequent save was initiated.
-        if (saveSeq.current === seqAtFetch) {
-          lastCommitted.current = raw;
-        }
-        // Consume server truth flag after failed save recovery.
-        if (needsServerTruth.current) {
-          needsServerTruth.current = false;
-        }
-      }
-    }).catch(() => {
-      // 404 (no row yet), 401, network — keep 'system'.
-    });
-    return () => { cancelled = true; };
-  }, [setThemeMode]);
 
   // Optimistically updates theme store and rolls back on API failure.
   const saveThemeMode = async (next: ThemeMode) => {
@@ -440,8 +445,7 @@ export default function SettingsPage() {
     | null;
   const [pinGate, setPinGate] = useState<PinGate>(() => searchParams?.get('action') === 'master-pin' ? { mode: 'set' } : null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
-  // The mount effect below always fetches backups unconditionally, so this starts true
-  // rather than being set synchronously inside that effect.
+  // Starts true until the Data tab performs its first load.
   const [backupsLoading, setBackupsLoading] = useState(true);
   const [cloudAccount, setCloudAccount] = useState<{ email?: string | null; cloud_account_available?: boolean; verified?: boolean; verified_at?: string | null; verification_sent_at?: string | null; product_updates?: boolean; marketing?: boolean; deletion_request?: { id?: string; status?: 'pending' | 'processing' | 'approved' | 'completed' | 'deleted' | 'failed' | 'rejected' | 'cancelled'; requested_at?: string; reviewed_at?: string | null; decision_note?: string | null } | null } | null>(null);
   const [cloudAccountBusy, setCloudAccountBusy] = useState(false);
@@ -453,34 +457,46 @@ export default function SettingsPage() {
   const cloudDeletionNeedsResolution = ['pending', 'processing', 'failed'].includes(cloudDeletionStatus);
   const cloudDeletionCanCancel = ['pending', 'processing'].includes(cloudDeletionStatus) && Boolean(cloudAccount?.deletion_request?.id);
 
-  const fetchCloudAccount = async () => {
+  const fetchCloudAccount = async (signal?: AbortSignal): Promise<boolean> => {
     try {
-      const { data } = await api.get('/settings/cloud/account');
+      const { data } = await api.get('/settings/cloud/account', signal ? { signal } : undefined);
+      if (signal?.aborted) return false;
       setCloudAccount(data);
       setCloudAccountLoadFailed(false);
-    } catch {
+      return true;
+    } catch (error) {
+      if (isRequestCancelled(error)) return false;
       setCloudAccountLoadFailed(true);
+      return false;
     }
   };
 
-  const fetchMasterPinStatus = async () => {
+  const fetchMasterPinStatus = async (signal?: AbortSignal): Promise<boolean> => {
     try {
-      const { data } = await api.get('/db-tools/master-pin/status');
+      const { data } = await api.get('/db-tools/master-pin/status', signal ? { signal } : undefined);
+      if (signal?.aborted) return false;
       setMasterPinStatus(data);
-    } catch {
+      return true;
+    } catch (error) {
+      if (isRequestCancelled(error)) return false;
       // ignore — card just shows "Unknown" state until retried
+      return false;
     }
   };
 
-  const fetchBackups = async () => {
+  const fetchBackups = async (signal?: AbortSignal): Promise<boolean> => {
     setBackupsLoading(true);
     try {
-      const { data } = await api.get('/db-tools/backups');
+      const { data } = await api.get('/db-tools/backups', signal ? { signal } : undefined);
+      if (signal?.aborted) return false;
       setBackups(data.backups ?? []);
-    } catch {
+      return true;
+    } catch (error) {
+      if (isRequestCancelled(error)) return false;
       // ignore — history card just shows empty state until retried
+      return false;
     } finally {
-      setBackupsLoading(false);
+      if (!signal?.aborted) setBackupsLoading(false);
     }
   };
 
@@ -494,39 +510,6 @@ export default function SettingsPage() {
       setHealthCheckOpen(false);
     }
   };
-
-  useEffect(() => {
-    api.get('/db-tools/master-pin/status')
-      .then(({ data }) => setMasterPinStatus(data))
-      .catch(() => {
-        // ignore — card just shows "Unknown" state until retried
-      });
-
-    api.get('/db-tools/backups')
-      .then(({ data }) => setBackups(data.backups ?? []))
-      .catch(() => {
-        // ignore — history card just shows empty state until retried
-      })
-      .finally(() => setBackupsLoading(false));
-    if (isOwner) {
-      api.get('/settings/cloud/account')
-        .then(({ data }) => {
-          setCloudAccount(data);
-          setCloudAccountLoadFailed(false);
-        })
-        .catch(() => setCloudAccountLoadFailed(true));
-    }
-
-    if (searchParams?.get('action') === 'health-check') {
-      api.get('/db-tools/health-check')
-        .then(({ data }) => setHealthReport(data))
-        .catch(() => {
-          toast.error(t('healthCheckFailed'));
-          setHealthCheckOpen(false);
-        });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const applySafeFixes = async () => {
     setApplyingFixes(true);
@@ -775,17 +758,24 @@ export default function SettingsPage() {
     qr_data_url: string | null;
     ips_data?: { ip: string; url: string; qr_data: string | null }[];
   } | null>(null);
-  // Starts true as mount effect fetches unconditionally; fetchKdsInfo
+  // Starts true until the KDS tab performs its first load; fetchKdsInfo
   // sets it explicitly for manual refresh.
   const [kdsInfoLoading, setKdsInfoLoading] = useState(true);
 
-  const fetchKdsInfo = () => {
+  const fetchKdsInfo = async (signal?: AbortSignal): Promise<boolean> => {
     setKdsInfoLoading(true);
-    api.get('/kds-info').then((res) => {
+    try {
+      const res = await api.get('/kds-info', signal ? { signal } : undefined);
+      if (signal?.aborted) return false;
       setKdsInfo(res.data);
-    }).catch(() => {
-      toast.error(t('kdsInfoFetchFailed'));
-    }).finally(() => setKdsInfoLoading(false));
+      return true;
+    } catch (error) {
+      if (isRequestCancelled(error)) return false;
+      if (!signal?.aborted) toast.error(t('kdsInfoFetchFailed'));
+      return false;
+    } finally {
+      if (!signal?.aborted) setKdsInfoLoading(false);
+    }
   };
 
   // ── Server App pairing (tableside ordering) ───────────────────────────────
@@ -837,24 +827,9 @@ export default function SettingsPage() {
     available: boolean;
   };
   const [moreApps, setMoreApps] = useState<MoreApp[]>([]);
-  // The mount effect below always fetches this unconditionally, so this starts true rather
-  // than being set synchronously inside that effect.
+  // Starts true until the About tab performs its first load.
   const [moreAppsLoading, setMoreAppsLoading] = useState(true);
   const [revflo, setRevflo] = useState<MoreApp | null>(null);
-
-  useEffect(() => {
-    api.get('/more-apps').then((res) => {
-      setMoreApps(res.data.apps || []);
-    }).catch(() => {
-      // Silent — this tab is informational, not critical
-    }).finally(() => setMoreAppsLoading(false));
-
-    api.get('/more-apps/revflo').then((res) => {
-      setRevflo(res.data.app || null);
-    }).catch(() => {
-      // Silent — the card still shows the pairing code without the QR promo
-    });
-  }, []);
 
   // ── Updates ─────────────────────────────────────────────────────────────────
   const { updateStatus, appVersion, isElectron, checkForUpdates: handleCheckUpdates } = useUpdateStatus();
@@ -891,7 +866,7 @@ export default function SettingsPage() {
   const [savingPrinter, setSavingPrinter] = useState(false);
   const [testingPrinterId, setTestingPrinterId] = useState<string | null>(null);
   const [detectedPrinters, setDetectedPrinters] = useState<DetectedPrinter[]>([]);
-  // Starts true as mount effect detects unconditionally; fetchDetectedPrinters
+  // Starts true until the Printers tab performs its first load; fetchDetectedPrinters
   // sets it explicitly for manual refresh.
   const [detectingPrinters, setDetectingPrinters] = useState(true);
   const [addingDetectedName, setAddingDetectedName] = useState<string | null>(null);
@@ -920,16 +895,25 @@ export default function SettingsPage() {
     return fallback;
   };
 
-  const fetchPrinters = () => {
-    api.get('/printers').then((res) => setHwPrinters(res.data.printers || [])).catch(() => {});
+  const fetchPrinters = async (signal?: AbortSignal) => {
+    try {
+      const res = await api.get('/printers', signal ? { signal } : undefined);
+      if (!signal?.aborted) setHwPrinters(res.data.printers || []);
+    } catch (error) {
+      if (!isRequestCancelled(error)) return;
+    }
   };
 
-  const fetchDetectedPrinters = () => {
+  const fetchDetectedPrinters = async (signal?: AbortSignal) => {
     setDetectingPrinters(true);
-    api.get('/printers/detect')
-      .then((res) => setDetectedPrinters(res.data.printers || []))
-      .catch(() => setDetectedPrinters([]))
-      .finally(() => setDetectingPrinters(false));
+    try {
+      const res = await api.get('/printers/detect', signal ? { signal } : undefined);
+      if (!signal?.aborted) setDetectedPrinters(res.data.printers || []);
+    } catch (error) {
+      if (!signal?.aborted && !isRequestCancelled(error)) setDetectedPrinters([]);
+    } finally {
+      if (!signal?.aborted) setDetectingPrinters(false);
+    }
   };
 
   const quickAddDetected = async (p: DetectedPrinter) => {
@@ -1059,19 +1043,36 @@ export default function SettingsPage() {
   }>({ name: '', category_ids: [], printer_id: '', user_ids: [] });
   const [savingStation, setSavingStation] = useState(false);
 
-  const fetchStations = () => {
-    api.get('/kitchen-stations').then((res) => setStations(res.data.kitchenStations || [])).catch(() => {});
-  };
-  const fetchStationCategories = () => {
-    api.get('/categories').then((res) => setStationCategories(res.data.categories || [])).catch(() => {});
-  };
-  const fetchStationStaff = () => {
-    api.get('/staff').then((res) => setStationStaff(res.data.staff || [])).catch(() => {});
-  };
-  const fetchStationUsers = async (stationId: string) => {
+  const fetchStations = async (signal?: AbortSignal): Promise<boolean> => {
     try {
-      const res = await api.get(`/kitchen-stations/${stationId}`);
-      setStationUsersByStation((prev) => ({ ...prev, [stationId]: res.data.kitchenStation.users || [] }));
+      const res = await api.get('/kitchen-stations', signal ? { signal } : undefined);
+      if (signal?.aborted) return false;
+      setStations(res.data.kitchenStations || []);
+      return true;
+    } catch { return false; }
+  };
+  const fetchStationCategories = async (signal?: AbortSignal): Promise<boolean> => {
+    try {
+      const res = await api.get('/categories', signal ? { signal } : undefined);
+      if (signal?.aborted) return false;
+      setStationCategories(res.data.categories || []);
+      return true;
+    } catch { return false; }
+  };
+  const fetchStationStaff = async (signal?: AbortSignal): Promise<boolean> => {
+    try {
+      const res = await api.get('/staff', signal ? { signal } : undefined);
+      if (signal?.aborted) return false;
+      setStationStaff(res.data.staff || []);
+      return true;
+    } catch { return false; }
+  };
+  const fetchStationUsers = async (stationId: string, signal?: AbortSignal) => {
+    try {
+      const res = await api.get(`/kitchen-stations/${stationId}`, signal ? { signal } : undefined);
+      if (!signal?.aborted) {
+        setStationUsersByStation((prev) => ({ ...prev, [stationId]: res.data.kitchenStation.users || [] }));
+      }
     } catch { /* ignore */ }
   };
 
@@ -1148,11 +1149,14 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
+    if (activeTab !== 'kds') return;
+    const controller = new AbortController();
     stations.forEach((s) => {
-      if (!stationUsersByStation[s.id]) fetchStationUsers(s.id);
+      if (!stationUsersByStation[s.id]) fetchStationUsers(s.id, controller.signal);
     });
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stations]);
+  }, [stations, activeTab]);
 
   // Mobile App Pairing
   const [pairingCode, setPairingCode] = useState<string | null>(null);
@@ -1224,6 +1228,19 @@ export default function SettingsPage() {
   });
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
+  const printingFormRef = useRef(printingForm);
+  const mergeHydratedPrinting = (patch: Partial<PrintingForm>, initial: PrintingForm, touchedAtHydrationStart = new Map<string, number>()) => {
+    setPrintingForm((previous) => {
+      const applicablePatch = Object.fromEntries(
+        Object.entries(patch).filter(([key]) => {
+          const field = key as keyof PrintingForm;
+          const touchedAfterStart = (hydrationTouchVersions.current.get(key) || 0) > (touchedAtHydrationStart.get(key) || 0);
+          return !touchedAfterStart && Object.is(previous[field], initial[field]);
+        }),
+      ) as Partial<PrintingForm>;
+      return { ...previous, ...applicablePatch };
+    });
+  };
   const [cashDrawerMethodsOpen, setCashDrawerMethodsOpen] = useState(false);
   const [zReportLanguagePolicyLoaded, setZReportLanguagePolicyLoaded] = useState(false);
   const [savingPrinting, setSavingPrinting] = useState(false);
@@ -1319,6 +1336,7 @@ export default function SettingsPage() {
   });
   const [billForm, setBillForm] = useState<BillTemplateForm>(initBillTemplate);
   const [savedBillForm, setSavedBillForm] = useState<BillTemplateForm>(initBillTemplate);
+  const billFormRef = useRef(billForm);
   const [billTemplateCards, setBillTemplateCards] = useState<TemplateCard[]>(TEMPLATE_CARDS);
   const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
@@ -1359,6 +1377,7 @@ export default function SettingsPage() {
     calendar: 'locale',
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
+  const businessFormRef = useRef(form);
   const [savingBusiness, setSavingBusiness] = useState(false);
   // Server-resolved tax format from country tax pack or static fallback;
   // drives immediate warning feedback below the field.
@@ -1387,6 +1406,7 @@ export default function SettingsPage() {
     cloud_last_sync: null as string | null,
   });
   const [savedCloudSettings, setSavedCloudSettings] = useState(cloudSettings);
+  const cloudSettingsRef = useRef(cloudSettings);
   const [cloudStatus, setCloudStatus] = useState({
     cloud_registration_status: 'unregistered',
     cloud_services_disabled_by_user: false,
@@ -1396,13 +1416,14 @@ export default function SettingsPage() {
     cloud_last_error: null as string | null,
     cloud_deletion_status: '',
   });
+  const [cloudPrivacyHydrated, setCloudPrivacyHydrated] = useState(false);
    
   const [savingCloud, setSavingCloud] = useState(false);
   const [registeringCloud, setRegisteringCloud] = useState(false);
   const [showInitializeCloudConfirm, setShowInitializeCloudConfirm] = useState(false);
 
   const cloudServicesStopped = cloudStatus.cloud_services_disabled_by_user;
-  const cloudDeletionFinal = cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
+  const cloudDeletionFinal = !cloudPrivacyHydrated || cloudAccountLoadFailed || cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
   const cloudDeletionNeedsAction = !cloudDeletionFinal && (cloudDeletionNeedsResolution || ['processing', 'failed'].includes(cloudStatus.cloud_deletion_status));
 
   const refreshCloudStatus = async () => {
@@ -1512,7 +1533,44 @@ export default function SettingsPage() {
     invoiceFinancialYearStartDay: 1,
   });
   const [orderNumberForm, setOrderNumberForm] = useState<OrderNumberForm>(savedOrderNumberForm);
+  const orderNumberFormRef = useRef(orderNumberForm);
   const [savingOrderNumbering, setSavingOrderNumbering] = useState(false);
+
+  useEffect(() => {
+    loyaltyFormRef.current = { loyaltyEnabled, globalCashbackPercent };
+    discountFormRef.current = { discountMaxPct, discountMaxAmount, discountMode, discountRequiresApproval };
+    activeTabRef.current = activeTab;
+    printingFormRef.current = printingForm;
+    billFormRef.current = billForm;
+    businessFormRef.current = form;
+    cloudSettingsRef.current = cloudSettings;
+    orderNumberFormRef.current = orderNumberForm;
+  }, [
+    loyaltyEnabled,
+    globalCashbackPercent,
+    discountMaxPct,
+    discountMaxAmount,
+    discountMode,
+    discountRequiresApproval,
+    activeTab,
+    printingForm,
+    billForm,
+    form,
+    cloudSettings,
+    orderNumberForm,
+  ]);
+
+  const mergeHydratedValues = <T extends object>(previous: T, initial: T, loaded: T, touchedAtHydrationStart: Map<string, number>): T => {
+    const previousValues = previous as Record<string, unknown>;
+    const initialValues = initial as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(loaded).map(([key, value]) => [
+      key,
+      (hydrationTouchVersions.current.get(key) || 0) > (touchedAtHydrationStart.get(key) || 0)
+        || !Object.is(previousValues[key], initialValues[key])
+        ? previousValues[key]
+        : value,
+    ])) as T;
+  };
 
   const resetBusiness = async () => {
     try {
@@ -1602,8 +1660,10 @@ export default function SettingsPage() {
     }
   };
 
-  const fetchGoogleDriveStatus = () => {
-    api.get('/settings/google-drive').then((res) => {
+  const fetchGoogleDriveStatus = async (signal?: AbortSignal) => {
+    try {
+      const res = await api.get('/settings/google-drive', signal ? { signal } : undefined);
+      if (signal?.aborted) return;
       setGoogleDriveStatus({
         configured: !!res.data.configured,
         secure_storage_available: res.data.secure_storage_available !== false,
@@ -1616,164 +1676,320 @@ export default function SettingsPage() {
         last_backup_filename: res.data.last_backup_filename || null,
         last_error: res.data.last_error || null,
       });
-    }).catch(() => {
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
       // Leave defaults (not configured / not connected) — this section is
       // optional and must never block the rest of Settings from loading.
-    });
-  };
-
-  const loadPairedDevices = async () => {
-    setDevicesLoading(true);
-    try {
-      const res = await api.get('/mobile/devices');
-      setPairedDevices(res.data.devices || []);
-    } catch {
-      setPairedDevices([]);
-    } finally {
-      setDevicesLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchPrinters();
-    // Inlined rather than calling fetchDetectedPrinters() (used by the manual "refresh"
-    // button too) — detectingPrinters already starts true for this initial detection.
-    api.get('/printers/detect')
-      .then((res) => setDetectedPrinters(res.data.printers || []))
-      .catch(() => setDetectedPrinters([]))
-      .finally(() => setDetectingPrinters(false));
-    // Inlined rather than calling fetchKdsInfo() (used by the manual "refresh" button too) —
-    // kdsInfoLoading already starts true for this initial fetch.
-    api.get('/kds-info')
-      .then((res) => setKdsInfo(res.data))
-      .catch(() => toast.error(t('kdsInfoFetchFailed')))
-      .finally(() => setKdsInfoLoading(false));
-    fetchStations();
-    fetchStationCategories();
-    fetchStationStaff();
+  const loadPairedDevices = async (signal?: AbortSignal) => {
+    setDevicesLoading(true);
+    try {
+      const res = await api.get('/mobile/devices', signal ? { signal } : undefined);
+      if (signal?.aborted) return;
+      setPairedDevices(res.data.devices || []);
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
+      setPairedDevices([]);
+    } finally {
+      if (!signal?.aborted) setDevicesLoading(false);
+    }
+  };
 
-    api.get('/settings/loyalty').then((res) => {
-      setLoyaltyEnabled(!!res.data.loyalty_enabled);
-      setSavedLoyaltyEnabled(!!res.data.loyalty_enabled);
-      setGlobalCashbackPercent(String(res.data.global_cashback_percent ?? 0));
-      setSavedGlobalCashbackPercent(String(res.data.global_cashback_percent ?? 0));
-    }).catch(() => {});
-
-    api.get('/products/loyalty/global-rate-candidates')
-      .then((res) => setGlobalRateCandidates(Number(res.data.count) || 0))
-      .catch(() => {});
-
-    api.get('/settings/discount').then((res) => {
-      if (res.data.discount_max_percentage !== undefined) {
-        const value = normalizeDiscountPercentage(res.data.discount_max_percentage);
-        setDiscountMaxPct(value);
-        setSavedDiscountMaxPct(value);
-      }
-      if (res.data.discount_max_amount !== undefined) {
-        const value = normalizeDiscountAmount(res.data.discount_max_amount);
-        setDiscountMaxAmount(value);
-        setSavedDiscountMaxAmount(value);
-      }
-      if (res.data.discount_mode) { setDiscountMode(res.data.discount_mode); setSavedDiscountMode(res.data.discount_mode); }
-      if (res.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!res.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!res.data.discount_requires_approval); }
-    }).catch(() => {});
-
-    api.get('/settings/telemetry_enabled').then((res) => {
-      setTelemetryEnabled(res.data.setting?.value === 'true');
-    }).catch(() => {
-      // No row yet = consent never given (setup predates this feature, or
-      // declined) = stays off until explicitly turned on here.
-      setTelemetryEnabled(false);
-    });
-
-    api.get('/settings/diagnostics_consent').then((res) => {
-      setDiagnosticsConsent(res.data.setting?.value !== 'false');
-    }).catch(() => {
-      setDiagnosticsConsent(true);
-    });
-
-    fetchGoogleDriveStatus();
-
-    api.get('/settings/kds_enabled').then((res) => {
-      const enabled = res.data.setting?.value !== 'false';
-      setKdsEnabledSetting(enabled);
-      posSettings.setKdsEnabled(enabled);
-    }).catch(() => {});
-
-    api.get('/settings/server_app_enabled').then((res) => {
-      setServerAppEnabledSetting(res.data.setting?.value !== 'false');
-    }).catch(() => {});
-
-    api.get('/settings/kot_printing_enabled').then((res) => {
-      const enabled = res.data.setting?.value !== 'false';
-      setKotPrintingEnabledSetting(enabled);
-      posSettings.setKotPrintingEnabled(enabled);
-    }).catch(() => {});
-    api.get('/settings/printer_trim_decimals').then((res) => {
-      const enabled = res.data.setting?.value === 'true';
-      posSettings.setPrinterTrimDecimals(enabled);
-      setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
-      setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
-    }).catch(() => {});
-    api.get('/settings/cash_drawer_pulse_enabled').then((res) => {
-      const enabled = res.data.setting?.value === 'true';
-      setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
-      // Only applies while still undefined (untouched) — once the user
-      // toggles it, this load resolving afterwards must not revert them.
-      setPrintingForm((p) => (p.cashDrawerPulseEnabled === undefined ? { ...p, cashDrawerPulseEnabled: enabled } : p));
-    }).catch(() => {});
-    api.get('/settings/cash_drawer_pulse_methods').then((res) => {
+  const loadSettingsTab = async (tab: string, signal: AbortSignal, includeStatusOnly = true): Promise<void> => {
+    const get = (path: string) => api.get(path, { signal });
+    const active = () => !signal.aborted;
+    const hydrationTouchSnapshot = new Map(hydrationTouchVersions.current);
+    const readOptional = async (path: string) => {
       try {
-        const methods = JSON.parse(res.data.setting?.value || '[]');
-        if (!Array.isArray(methods)) return;
-        const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
-        // Restore safe defaults if non-empty array had no valid strings;
-        // keep empty array if user intentionally deselected all methods.
-        const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
-        setPrintingForm((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
-        setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
-      } catch { /* Use the safe defaults. */ }
-    }).catch(() => {});
-    api.get('/settings/bill_language_policy').then((res) => {
-      const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
-      if (!policy) return;
-      posSettings.setBillLanguagePolicy(policy);
-      const formPatch = {
-        receiptPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
-        receiptSecondLanguage: policy.additional[0] ?? 'none',
-      };
-      setPrintingForm((p) => ({ ...p, ...formPatch }));
-      setSavedPrinting((p) => ({ ...p, ...formPatch }));
-    }).catch(() => {});
-    api.get('/settings/kot_language_policy').then((res) => {
-      const policy = parseStoredKotLanguagePolicy(res.data?.setting?.value);
-      if (!policy) return;
-      posSettings.setKotLanguagePolicy(policy);
-      const formPatch = {
-        kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
-      };
-      setPrintingForm((p) => ({ ...p, ...formPatch }));
-      setSavedPrinting((p) => ({ ...p, ...formPatch }));
-    }).catch(() => {});
-    api.get('/settings/z_report_language_policy').then((res) => {
-      const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
-      if (!policy) return;
-      const formPatch = {
-        zReportPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
-        zReportSecondLanguage: policy.additional[0] ?? 'none',
-      };
-      setPrintingForm((p) => ({ ...p, ...formPatch }));
-      setSavedPrinting((p) => ({ ...p, ...formPatch }));
-      setZReportLanguagePolicyLoaded(true);
-    }).catch((error: unknown) => {
-      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-      if (status === 404) setZReportLanguagePolicyLoaded(true);
-    });
-    Promise.all([
-      api.get('/settings/bill-templates').catch(() => null),
-      api.get('/settings/bill_template').catch(() => null),
-      api.get('/settings/bill_footer_message').catch(() => null),
-    ]).then(([templatesResponse, templateResponse, footerResponse]) => {
+        return await get(path);
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) return null;
+        throw error;
+      }
+    };
+
+    const loadBusiness = async () => {
+      const tenantId = currentTenant?.id ?? null;
+      if (businessHydrationTenant.current !== tenantId) {
+        businessHydrationTenant.current = tenantId;
+        businessHydrated.current = false;
+        businessHydrationPromise.current = null;
+      }
+      if (businessHydrated.current) return;
+      if (businessHydrationPromise.current) {
+        try {
+          await businessHydrationPromise.current;
+        } catch (error) {
+          if (!active() || !isRequestCancelled(error)) throw error;
+        }
+        if (businessHydrated.current || !active()) return;
+      }
+
+      const businessFormAtHydrationStart = { ...businessFormRef.current };
+      const printingAtHydrationStart = { ...printingFormRef.current };
+      const promise = (async () => {
+        const { data: d } = await get('/settings/business');
+        if (!active()) {
+          businessHydrationPromise.current = null;
+          return;
+        }
+        const loaded: BusinessForm = {
+          businessName: d.business_name || '',
+          countryCode: d.country || '',
+          timezone: d.timezone || '',
+          currency: d.currency || '',
+          billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
+          tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
+          taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
+          taxRegistrationNumber: d.tax_registration_number || '',
+          businessAddress: d.business_address || '',
+          businessPhone: d.business_phone || '',
+          instagramHandle: d.instagram_handle || '',
+          currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
+          numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
+          calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
+        };
+        const mergedBusiness = mergeHydratedValues(
+          businessFormRef.current,
+          businessFormAtHydrationStart,
+          loaded,
+          hydrationTouchSnapshot,
+        );
+        setSavedBusiness(loaded);
+        setForm(mergedBusiness);
+        setTaxIdFormat(d.tax_id_format || null);
+        setTaxIdFormatCountryCode(loaded.countryCode);
+        const billDisplay = {
+          billShowName: d.bill_show_name !== false,
+          billShowAddress: d.bill_show_address !== false,
+          billShowPhone: d.bill_show_phone !== false,
+          billShowTaxId: d.bill_show_tax_id === true,
+          billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
+          billShowCustomerName: d.bill_show_customer_name !== false,
+          billShowCustomerPhone: d.bill_show_customer_phone !== false,
+          billShowTableNumber: d.bill_show_table_number !== false,
+        };
+        mergeHydratedPrinting(billDisplay, printingAtHydrationStart, hydrationTouchSnapshot);
+        setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
+        posSettings.setBillShowName(billDisplay.billShowName);
+        posSettings.setBillShowAddress(billDisplay.billShowAddress);
+        posSettings.setBillShowPhone(billDisplay.billShowPhone);
+        posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
+        posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
+        posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
+        posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
+        posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
+        if (d.tax_registration_number) posSettings.setBillTaxRegistrationNumber(d.tax_registration_number);
+        if (d.business_address) posSettings.setBillAddress(d.business_address);
+        if (d.business_phone) posSettings.setBillPhone(d.business_phone);
+        posSettings.setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
+        posSettings.setTablesRequired(typeof d.tables_required === 'boolean' ? d.tables_required : true);
+        businessHydrated.current = true;
+      })();
+      businessHydrationPromise.current = promise;
+      try {
+        await promise;
+      } catch (error) {
+        if (businessHydrationPromise.current === promise) businessHydrationPromise.current = null;
+        throw error;
+      }
+    };
+
+    const loadCloud = async (required = false) => {
+      const cloudSettingsAtHydrationStart = { ...cloudSettingsRef.current };
+      let registrationStatus = cloudRegistrationStatus.current;
+      const tenantId = currentTenant?.id ?? null;
+      if (cloudHydrationTenant.current !== tenantId) {
+        cloudHydrationTenant.current = tenantId;
+        cloudHydrationGeneration.current += 1;
+        cloudHydrated.current = false;
+        cloudHydrationSucceeded.current = false;
+        cloudHydrationPromise.current = null;
+        cloudRegistrationStatus.current = 'unregistered';
+        setCloudPrivacyHydrated(false);
+      }
+      const loadGeneration = cloudHydrationGeneration.current;
+      try {
+        if (cloudHydrated.current) {
+          if (required && !cloudHydrationSucceeded.current && active()) throw new Error('Cloud hydration failed');
+          registrationStatus = cloudRegistrationStatus.current;
+        } else {
+          if (cloudHydrationPromise.current) {
+            try {
+              await cloudHydrationPromise.current;
+            } catch (error) {
+              if (cloudHydrationGeneration.current !== loadGeneration || !active()) return;
+              if (!isRequestCancelled(error)) throw error;
+            }
+          }
+          if (cloudHydrationGeneration.current !== loadGeneration || !active()) {
+            return;
+          }
+          if (cloudHydrated.current) {
+            if (required && !cloudHydrationSucceeded.current && active()) throw new Error('Cloud hydration failed');
+            registrationStatus = cloudRegistrationStatus.current;
+          } else {
+            const requestGeneration = cloudHydrationGeneration.current;
+            const promise = (async () => {
+              const { data } = await get('/settings/cloud');
+              if (!active()) {
+                if (cloudHydrationGeneration.current === requestGeneration) {
+                  cloudHydrationPromise.current = null;
+                }
+                return;
+              }
+              if (cloudHydrationGeneration.current !== requestGeneration) return;
+              const settings = {
+                cloud_api_key: data.cloud_api_key || '',
+                cloud_store_id: data.cloud_store_id || '',
+                cloud_sync_enabled: !!data.cloud_sync_enabled,
+                cloud_orders_enabled: !!data.cloud_orders_enabled,
+                cloud_last_sync: data.cloud_last_sync || null,
+              };
+              registrationStatus = data.cloud_registration_status || 'unregistered';
+              cloudRegistrationStatus.current = registrationStatus;
+              const mergedCloudSettings = mergeHydratedValues(cloudSettingsRef.current, cloudSettingsAtHydrationStart, settings, hydrationTouchSnapshot);
+              setCloudSettings(mergedCloudSettings);
+              setSavedCloudSettings(settings);
+              setCloudStatus({
+                cloud_registration_status: data.cloud_registration_status || 'unregistered',
+                cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
+                cloud_connected: !!data.cloud_connected,
+                cloud_relay_mode: data.cloud_relay_mode || 'disconnected',
+                cloud_last_heartbeat: data.cloud_last_heartbeat || null,
+                cloud_last_error: data.cloud_last_error || null,
+                cloud_deletion_status: data.cloud_deletion_status || '',
+              });
+              cloudHydrationSucceeded.current = true;
+              cloudHydrated.current = true;
+            })();
+            cloudHydrationPromise.current = promise;
+            try {
+              await promise;
+            } catch (error) {
+              if (cloudHydrationPromise.current === promise && isRequestCancelled(error)) {
+                cloudHydrationPromise.current = null;
+              }
+              throw error;
+            }
+          }
+        }
+      } catch (error) {
+        if (!active() || isRequestCancelled(error) || required) throw error;
+        cloudHydrationSucceeded.current = false;
+        cloudHydrated.current = true;
+        cloudRegistrationStatus.current = 'unregistered';
+        registrationStatus = 'unregistered';
+        setCloudStatus((previous) => ({
+          ...previous,
+          cloud_registration_status: 'unregistered',
+          cloud_connected: false,
+          cloud_relay_mode: 'disconnected',
+        }));
+      }
+
+      if (tab !== 'mobile-access' || !includeStatusOnly || !active()) return;
+      if (registrationStatus !== 'registered') {
+        setPairingUnavailable(true);
+        return;
+      }
+      try {
+        const pairingResponse = await get('/mobile/pairing-code');
+        if (active()) {
+          setPairingCode(pairingResponse.data.pairing_code);
+          setPairingExpiresAt(pairingResponse.data.expires_at);
+          setPairingQrDataUrl(pairingResponse.data.qr_data_url || null);
+          setPairingUnavailable(false);
+        }
+      } catch (error) {
+        if (!isRequestCancelled(error) && active()) setPairingUnavailable(true);
+      }
+      await loadPairedDevices(signal);
+    };
+
+    const loadPrinting = async (printingAtHydrationStart: PrintingForm, billFormAtHydrationStart: BillTemplateForm) => {
+      const [trimResponse, cashEnabledResponse, cashMethodsResponse, billLanguageResponse, kotLanguageResponse] = await Promise.all([
+        readOptional('/settings/printer_trim_decimals'),
+        readOptional('/settings/cash_drawer_pulse_enabled'),
+        readOptional('/settings/cash_drawer_pulse_methods'),
+        readOptional('/settings/bill_language_policy'),
+        readOptional('/settings/kot_language_policy'),
+      ]);
+      if (!active()) return;
+
+      if (trimResponse) {
+        const enabled = trimResponse.data.setting?.value === 'true';
+        posSettings.setPrinterTrimDecimals(enabled);
+        mergeHydratedPrinting({ printerTrimDecimals: enabled }, printingAtHydrationStart, hydrationTouchSnapshot);
+        setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
+      }
+      if (cashEnabledResponse) {
+        const raw = cashEnabledResponse.data.setting?.value;
+        if (raw === 'true' || raw === 'false') {
+          const enabled = raw === 'true';
+          setSavedPrinting((p) => ({ ...p, cashDrawerPulseEnabled: enabled }));
+          // Missing rows intentionally remain undefined so thermal printing keeps
+          // its legacy per-printer fallback.
+          mergeHydratedPrinting({ cashDrawerPulseEnabled: enabled }, printingAtHydrationStart, hydrationTouchSnapshot);
+        }
+      }
+      if (cashMethodsResponse) {
+        try {
+          const methods = JSON.parse(cashMethodsResponse.data.setting?.value || '[]');
+          if (Array.isArray(methods)) {
+            const valid = methods.filter((method: unknown): method is string => typeof method === 'string');
+            const normalized = methods.length > 0 && valid.length === 0 ? ['cash', 'card'] : valid;
+            mergeHydratedPrinting({ cashDrawerPulseMethods: normalized }, printingAtHydrationStart, hydrationTouchSnapshot);
+            setSavedPrinting((p) => ({ ...p, cashDrawerPulseMethods: normalized }));
+          }
+        } catch { /* Use the safe defaults. */ }
+      }
+      if (billLanguageResponse) {
+        const policy = parseStoredReceiptLanguagePolicy(billLanguageResponse.data?.setting?.value);
+        if (policy) {
+          posSettings.setBillLanguagePolicy(policy);
+          const formPatch = {
+            receiptPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+            receiptSecondLanguage: policy.additional[0] ?? 'none',
+          };
+          mergeHydratedPrinting(formPatch, printingAtHydrationStart, hydrationTouchSnapshot);
+          setSavedPrinting((p) => ({ ...p, ...formPatch }));
+        }
+      }
+      if (kotLanguageResponse) {
+        const policy = parseStoredKotLanguagePolicy(kotLanguageResponse.data?.setting?.value);
+        if (policy) {
+          posSettings.setKotLanguagePolicy(policy);
+          const formPatch = { kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit' };
+          mergeHydratedPrinting(formPatch, printingAtHydrationStart, hydrationTouchSnapshot);
+          setSavedPrinting((p) => ({ ...p, ...formPatch }));
+        }
+      }
+      const zReportResponse = await readOptional('/settings/z_report_language_policy');
+      if (!active()) return;
+      if (zReportResponse) {
+        const policy = parseStoredReceiptLanguagePolicy(zReportResponse.data?.setting?.value);
+        if (policy) {
+          const formPatch = {
+            zReportPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+            zReportSecondLanguage: policy.additional[0] ?? 'none',
+          };
+          mergeHydratedPrinting(formPatch, printingAtHydrationStart, hydrationTouchSnapshot);
+          setSavedPrinting((p) => ({ ...p, ...formPatch }));
+          setZReportLanguagePolicyLoaded(true);
+        }
+      } else {
+        setZReportLanguagePolicyLoaded(true);
+      }
+
+      const [templatesResponse, templateResponse, footerResponse] = await Promise.all([
+        readOptional('/settings/bill-templates'),
+        readOptional('/settings/bill_template'),
+        readOptional('/settings/bill_footer_message'),
+      ]);
+      if (!active()) return;
       const pluginCards: TemplateCard[] = (templatesResponse?.data?.plugins || []).map((template: {
         id: string;
         displayName: string;
@@ -1787,8 +2003,6 @@ export default function SettingsPage() {
         selectionSource: 'pack' as const,
         description: `${template.country} tax template · ${template.paperColumns.join(', ')} columns`,
       }));
-      // Merchant templates: provenance is informational only without
-      // trust claims; the copy is an ordinary editable document.
       const merchantCards: TemplateCard[] = (templatesResponse?.data?.merchant || [])
         .filter((template: { status: string }) => template.status === 'active')
         .map((template: {
@@ -1811,146 +2025,300 @@ export default function SettingsPage() {
         }));
       const cards = [...TEMPLATE_CARDS, ...pluginCards, ...merchantCards];
       setBillTemplateCards(cards);
-      // Resolve stored bare ID or JSON { source, id } back to matching card,
-      // preserving selection source if pack ID collides with core name.
       let storedId: unknown = templateResponse?.data.setting?.value;
       let storedSource: string | null = null;
       if (typeof storedId === 'string' && storedId.trim().startsWith('{')) {
         try {
           const parsed = JSON.parse(storedId) as { source?: unknown; id?: unknown };
-          if (
-            parsed && typeof parsed === 'object'
-            && typeof parsed.id === 'string'
-            && (parsed.source === 'core' || parsed.source === 'pack' || parsed.source === 'merchant')
-          ) {
+          if (parsed && typeof parsed === 'object' && typeof parsed.id === 'string'
+            && (parsed.source === 'core' || parsed.source === 'pack' || parsed.source === 'merchant')) {
             storedId = parsed.id;
             storedSource = parsed.source;
           }
         } catch { /* keep raw value */ }
       }
-      const candidateCard = typeof storedId === 'string'
-        ? cards.find((card) => card.id === storedId)
-        : undefined;
+      const candidateCard = typeof storedId === 'string' ? cards.find((card) => card.id === storedId) : undefined;
       const matchedCard = candidateCard && storedSource !== null && candidateCard.selectionSource !== storedSource
         ? cards.find((card) => card.id === candidateCard.id && card.selectionSource === storedSource)
         : candidateCard;
       const billTemplate: BillTemplate = matchedCard ? matchedCard.id : 'classic';
-      const billTemplateSource: 'core' | 'pack' | 'merchant' = matchedCard
-        ? matchedCard.selectionSource
-        : 'core';
+      const billTemplateSource: 'core' | 'pack' | 'merchant' = matchedCard ? matchedCard.selectionSource : 'core';
       const billFooterMessage = footerResponse?.data.setting?.value ?? posSettings.billFooterMessage;
       const loadedBillForm = { billTemplate, billTemplateSource, billFooterMessage };
       posSettings.setBillTemplate(billTemplate);
       posSettings.setBillTemplateSource(billTemplateSource);
       posSettings.setBillFooterMessage(billFooterMessage);
-      setBillForm(loadedBillForm);
+      const mergedBillForm = mergeHydratedValues(billFormRef.current, billFormAtHydrationStart, loadedBillForm, hydrationTouchSnapshot);
+      setBillForm(mergedBillForm);
       setSavedBillForm(loadedBillForm);
-    });
+    };
 
-    api.get('/settings/order-numbering').then((res) => {
-      const loaded: OrderNumberForm = {
-        prefix: res.data.order_number_prefix == null ? 'ORD' : sanitizeStoredNumberPrefix(res.data.order_number_prefix),
-        includeDate: res.data.order_number_include_date !== false,
-        resetDaily: res.data.order_number_reset_daily !== false,
-        invoicePrefix: res.data.invoice_number_prefix == null ? 'INV' : sanitizeStoredNumberPrefix(res.data.invoice_number_prefix),
-        invoiceIncludePeriod: res.data.invoice_number_include_period !== false,
-        invoiceResetPeriod: (res.data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
-        invoiceFinancialYearStartMonth: Number(res.data.invoice_financial_year_start_month) || 4,
-        invoiceFinancialYearStartDay: Number(res.data.invoice_financial_year_start_day) || 1,
-      };
-      setOrderNumberForm(loaded);
-      setSavedOrderNumberForm(loaded);
-    }).catch(() => {});
-
-
-    api.get('/settings/cloud').then((res) => {
-      const settings = {
-        cloud_api_key: res.data.cloud_api_key || '',
-        cloud_store_id: res.data.cloud_store_id || '',
-        cloud_sync_enabled: !!res.data.cloud_sync_enabled,
-        cloud_orders_enabled: !!res.data.cloud_orders_enabled,
-        cloud_last_sync: res.data.cloud_last_sync || null,
-      };
-      setCloudSettings(settings);
-      setSavedCloudSettings(settings);
-      setCloudStatus({
-        cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
-        cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
-        cloud_connected: !!res.data.cloud_connected,
-        cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
-        cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
-        cloud_last_error: res.data.cloud_last_error || null,
-        cloud_deletion_status: res.data.cloud_deletion_status || '',
-      });
-
-      // Mobile pairing requires cloud registration — skip the requests entirely
-      // for unregistered stores to avoid 502 noise in the console.
-      if (res.data.cloud_registration_status === 'registered') {
-        api.get('/mobile/pairing-code').then((pcRes) => {
-          setPairingCode(pcRes.data.pairing_code);
-          setPairingExpiresAt(pcRes.data.expires_at);
-          setPairingQrDataUrl(pcRes.data.qr_data_url || null);
-          setPairingUnavailable(false);
-        }).catch(() => {
-          setPairingUnavailable(true);
-        });
-        loadPairedDevices();
-      } else {
-        setPairingUnavailable(true);
+    try {
+      if (tab === 'appearance') {
+        const seqAtFetch = saveSeq.current;
+        const { data } = await get('/settings/theme_mode');
+        if (!active()) return;
+        const raw = data?.setting?.value;
+        if (raw === 'light' || raw === 'dark' || raw === 'system') {
+          if (!userTouched.current || needsServerTruth.current) setThemeMode(raw);
+          if (saveSeq.current === seqAtFetch) lastCommitted.current = raw;
+          if (needsServerTruth.current) needsServerTruth.current = false;
+        }
+        return;
       }
-    }).catch(() => {});
+      if (tab === 'store') {
+        const orderNumberAtHydrationStart = { ...orderNumberFormRef.current };
+        await loadBusiness();
+        const { data } = await get('/settings/order-numbering');
+        if (!active()) return;
+        const loaded: OrderNumberForm = {
+          prefix: data.order_number_prefix == null ? 'ORD' : sanitizeStoredNumberPrefix(data.order_number_prefix),
+          includeDate: data.order_number_include_date !== false,
+          resetDaily: data.order_number_reset_daily !== false,
+          invoicePrefix: data.invoice_number_prefix == null ? 'INV' : sanitizeStoredNumberPrefix(data.invoice_number_prefix),
+          invoiceIncludePeriod: data.invoice_number_include_period !== false,
+          invoiceResetPeriod: (data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
+          invoiceFinancialYearStartMonth: Number(data.invoice_financial_year_start_month) || 4,
+          invoiceFinancialYearStartDay: Number(data.invoice_financial_year_start_day) || 1,
+        };
+        const mergedOrderNumbering = mergeHydratedValues(orderNumberFormRef.current, orderNumberAtHydrationStart, loaded, hydrationTouchSnapshot);
+        setOrderNumberForm(mergedOrderNumbering);
+        setSavedOrderNumberForm(loaded);
+        return;
+      }
+      if (tab === 'receipts-printers') {
+        const printingAtHydrationStart = { ...printingFormRef.current };
+        const billFormAtHydrationStart = { ...billFormRef.current };
+        await loadBusiness();
+        await Promise.all([
+          fetchPrinters(signal),
+          fetchDetectedPrinters(signal),
+          loadPrinting(printingAtHydrationStart, billFormAtHydrationStart),
+          readOptional('/settings/kot_printing_enabled').then((res) => {
+            if (!active()) return;
+            const enabled = res?.data.setting?.value !== 'false';
+            setKotPrintingEnabledSetting(enabled);
+            posSettings.setKotPrintingEnabled(enabled);
+          }),
+        ]);
+        return;
+      }
+      if (tab === 'kds') {
+        const [kdsInfoLoaded, stationsLoaded, categoriesLoaded, staffLoaded, settingLoaded] = await Promise.all([
+          fetchKdsInfo(signal),
+          fetchStations(signal),
+          fetchStationCategories(signal),
+          fetchStationStaff(signal),
+          get('/settings/kds_enabled').then((res) => {
+            if (!active()) return false;
+            const enabled = res.data.setting?.value !== 'false';
+            setKdsEnabledSetting(enabled);
+            posSettings.setKdsEnabled(enabled);
+            return true;
+          }).catch((error) => {
+            if (isRequestCancelled(error)) throw error;
+            return false;
+          }),
+        ]);
+        if (!kdsInfoLoaded || !stationsLoaded || !categoriesLoaded || !staffLoaded || !settingLoaded) {
+          throw new Error('KDS hydration failed');
+        }
+        return;
+      }
+      if (tab === 'server-app') {
+        const { data } = await get('/settings/server_app_enabled');
+        if (active()) setServerAppEnabledSetting(data.setting?.value !== 'false');
+        return;
+      }
+      if (tab === 'loyalty') {
+        const loyaltyAtHydrationStart = { ...loyaltyFormRef.current };
+        const [loyaltyResponse, candidatesResponse] = await Promise.all([
+          get('/settings/loyalty'),
+          get('/products/loyalty/global-rate-candidates'),
+        ]);
+        if (!active()) return;
+        const loadedLoyalty = {
+          loyaltyEnabled: !!loyaltyResponse.data.loyalty_enabled,
+          globalCashbackPercent: String(loyaltyResponse.data.global_cashback_percent ?? 0),
+        };
+        const mergedLoyalty = mergeHydratedValues(loyaltyFormRef.current, loyaltyAtHydrationStart, loadedLoyalty, hydrationTouchSnapshot);
+        setLoyaltyEnabled(mergedLoyalty.loyaltyEnabled);
+        setSavedLoyaltyEnabled(loadedLoyalty.loyaltyEnabled);
+        setGlobalCashbackPercent(mergedLoyalty.globalCashbackPercent);
+        setSavedGlobalCashbackPercent(loadedLoyalty.globalCashbackPercent);
+        setGlobalRateCandidates(Number(candidatesResponse.data.count) || 0);
+        return;
+      }
+      if (tab === 'discounts') {
+        const discountAtHydrationStart = { ...discountFormRef.current };
+        const { data } = await get('/settings/discount');
+        if (!active()) return;
+        const loadedDiscount = { ...discountAtHydrationStart };
+        if (data.discount_max_percentage !== undefined) loadedDiscount.discountMaxPct = normalizeDiscountPercentage(data.discount_max_percentage);
+        if (data.discount_max_amount !== undefined) loadedDiscount.discountMaxAmount = normalizeDiscountAmount(data.discount_max_amount);
+        if (data.discount_mode) loadedDiscount.discountMode = data.discount_mode;
+        if (data.discount_requires_approval !== undefined) loadedDiscount.discountRequiresApproval = !!data.discount_requires_approval;
+        const mergedDiscount = mergeHydratedValues(discountFormRef.current, discountAtHydrationStart, loadedDiscount, hydrationTouchSnapshot);
+        setDiscountMaxPct(mergedDiscount.discountMaxPct);
+        setSavedDiscountMaxPct(loadedDiscount.discountMaxPct);
+        setDiscountMaxAmount(mergedDiscount.discountMaxAmount);
+        setSavedDiscountMaxAmount(loadedDiscount.discountMaxAmount);
+        setDiscountMode(mergedDiscount.discountMode);
+        setSavedDiscountMode(loadedDiscount.discountMode);
+        setDiscountRequiresApproval(mergedDiscount.discountRequiresApproval);
+        setSavedDiscountRequiresApproval(loadedDiscount.discountRequiresApproval);
+        return;
+      }
+      if (tab === 'privacy') {
+        setCloudPrivacyHydrated(false);
+        const [telemetryResponse, diagnosticsResponse] = await Promise.all([
+          get('/settings/telemetry_enabled').catch(() => null),
+          get('/settings/diagnostics_consent').catch(() => null),
+        ]);
+        if (!active()) return;
+        setTelemetryEnabled(telemetryResponse ? telemetryResponse.data.setting?.value === 'true' : false);
+        setDiagnosticsConsent(diagnosticsResponse ? diagnosticsResponse.data.setting?.value !== 'false' : true);
+        const [cloudLoaded, accountLoaded] = await Promise.all([
+          loadCloud(true).then(() => true).catch((error) => {
+            if (isRequestCancelled(error)) throw error;
+            return false;
+          }),
+          isOwner ? fetchCloudAccount(signal) : Promise.resolve(true),
+        ]);
+        if (!cloudLoaded || !accountLoaded) throw new Error('Privacy hydration failed');
+        if (active()) setCloudPrivacyHydrated(true);
+        return;
+      }
+      if (tab === 'data') {
+        void fetchGoogleDriveStatus(signal);
+        const [masterPinLoaded, backupsLoaded] = await Promise.all([
+          fetchMasterPinStatus(signal),
+          fetchBackups(signal),
+        ]);
+        if (!masterPinLoaded || !backupsLoaded) throw new Error('Data hydration failed');
+        return;
+      }
+      if (tab === 'account') {
+        if (isOwner) await fetchCloudAccount(signal);
+        return;
+      }
+      if (tab === 'about') {
+        setMoreAppsLoading(true);
+        try {
+          const moreAppsResponse = await get('/more-apps');
+          if (active()) {
+            setMoreApps(moreAppsResponse.data.apps || []);
+          }
+        } catch (error) {
+          if (isRequestCancelled(error)) throw error;
+        } finally {
+          if (active()) setMoreAppsLoading(false);
+        }
+        return;
+      }
+      if (tab === 'mobile-access' || tab === 'orderflow') {
+        if (tab === 'mobile-access' && includeStatusOnly) {
+          try {
+            const revfloResponse = await get('/more-apps/revflo');
+            if (active()) setRevflo(revfloResponse.data.app || null);
+          } catch (error) {
+            if (isRequestCancelled(error)) throw error;
+          }
+        }
+        await loadCloud(!includeStatusOnly);
+      }
+    } catch (error) {
+      if (!isRequestCancelled(error) && active()) {
+        // Individual Settings sections are best-effort; the panel remains usable
+        // and its existing manual refresh actions remain available.
+      }
+      throw error;
+    }
+  };
 
-    api.get('/settings/business').then((res) => {
-      const d = res.data;
-      const loaded: BusinessForm = {
-        businessName: d.business_name || '',
-        countryCode: d.country || '',
-        timezone: d.timezone || '',
-        currency: d.currency || '',
-        billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
-        tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
-        taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
-        taxRegistrationNumber: d.tax_registration_number || '',
-        businessAddress: d.business_address || '',
-        businessPhone: d.business_phone || '',
-        instagramHandle: d.instagram_handle || '',
-        currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
-        numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
-        calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
-      };
-      setSavedBusiness(loaded);
-      setForm(loaded);
-      setTaxIdFormat(d.tax_id_format || null);
-      setTaxIdFormatCountryCode(loaded.countryCode);
-      // Sync to pos-settings store for bill printing
-      const billDisplay = {
-        billShowName: d.bill_show_name !== false,
-        billShowAddress: d.bill_show_address !== false,
-        billShowPhone: d.bill_show_phone !== false,
-        billShowTaxId: d.bill_show_tax_id === true,
-        billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
-        billShowCustomerName: d.bill_show_customer_name !== false,
-        billShowCustomerPhone: d.bill_show_customer_phone !== false,
-        billShowTableNumber: d.bill_show_table_number !== false,
-      };
-      setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
-      setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
-      posSettings.setBillShowName(billDisplay.billShowName);
-      posSettings.setBillShowAddress(billDisplay.billShowAddress);
-      posSettings.setBillShowPhone(billDisplay.billShowPhone);
-      posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
-      posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
-      posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
-      posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
-      posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
-      if (d.tax_registration_number) posSettings.setBillTaxRegistrationNumber(d.tax_registration_number);
-      if (d.business_address) posSettings.setBillAddress(d.business_address);
-      if (d.business_phone) posSettings.setBillPhone(d.business_phone);
-      posSettings.setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
-      posSettings.setTablesRequired(typeof d.tables_required === 'boolean' ? d.tables_required : true);
-    }).catch(() => {});
+  const startSettingsTabLoad = (tab: string, controller: AbortController, includeStatusOnly = true): Promise<void> => {
+    const tenantId = currentTenant?.id;
+    if (!tenantId) return Promise.resolve();
+    const { signal } = controller;
+    const key = `${tenantId}:${tab}${tab === 'mobile-access' && !includeStatusOnly ? ':status' : ''}`;
+    const requiresCloudHydration = tab === 'mobile-access' && !includeStatusOnly && !cloudHydrationSucceeded.current;
+    if (loadedSettingsTabs.current.has(key) && !requiresCloudHydration) return Promise.resolve();
+    const existing = settingsTabLoadPromises.current.get(key);
+    if (existing) return existing;
+    const promise = loadSettingsTab(tab, signal, includeStatusOnly).then(() => {
+      if (!signal.aborted) loadedSettingsTabs.current.add(key);
+    });
+    settingsTabLoadPromises.current.set(key, promise);
+    settingsTabLoadControllers.current.set(key, controller);
+    void promise.then(() => {
+      if (settingsTabLoadPromises.current.get(key) === promise) {
+        settingsTabLoadPromises.current.delete(key);
+        if (settingsTabLoadControllers.current.get(key) === controller) {
+          settingsTabLoadControllers.current.delete(key);
+        }
+      }
+    }, () => {
+      if (settingsTabLoadPromises.current.get(key) === promise) {
+        settingsTabLoadPromises.current.delete(key);
+        if (settingsTabLoadControllers.current.get(key) === controller) {
+          settingsTabLoadControllers.current.delete(key);
+        }
+      }
+    });
+    return promise;
+  };
+
+  useEffect(() => {
+    if (!currentTenant?.id) return;
+    const key = `${currentTenant.id}:${activeTab}`;
+    if (loadedSettingsTabs.current.has(key)) return;
+    const tabLoadPromises = settingsTabLoadPromises.current;
+    const tabLoadControllers = settingsTabLoadControllers.current;
+    const controller = new AbortController();
+    void startSettingsTabLoad(activeTab, controller)
+      .catch(() => {});
+    return () => {
+      controller.abort();
+      if (tabLoadPromises.has(key)) {
+        tabLoadPromises.delete(key);
+      }
+      if (tabLoadControllers.get(key) === controller) {
+        tabLoadControllers.delete(key);
+      }
+    };
+  // The tab and tenant identity are the intentional hydration boundaries.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeTab, currentTenant?.id, isOwner]);
+
+  useEffect(() => {
+    mobileAccessRequestGeneration.current += 1;
+    mobileAccessRequestController.current?.abort();
+    mobileAccessRequestController.current = null;
+    return () => {
+      mobileAccessRequestGeneration.current += 1;
+      mobileAccessRequestController.current?.abort();
+      mobileAccessRequestController.current = null;
+      setRotatingCode(false);
+    };
+  }, [activeTab, currentTenant?.id]);
+
+  useEffect(() => {
+    if (requestedAction !== 'health-check' || !currentTenant?.id) return;
+    const key = `${currentTenant.id}:health-check`;
+    if (healthCheckLoaded.current === key) return;
+    const controller = new AbortController();
+    api.get('/db-tools/health-check', { signal: controller.signal }).then(({ data }) => {
+      if (controller.signal.aborted) return;
+      healthCheckLoaded.current = key;
+      setHealthReport(data);
+    }).catch((error) => {
+      if (!isRequestCancelled(error) && !controller.signal.aborted) {
+        toast.error(t('healthCheckFailed'));
+        setHealthCheckOpen(false);
+      }
+    });
+    return () => controller.abort();
+  }, [activeTab, currentTenant?.id, requestedAction, t]);
 
   const saveCloud = async (silent = false) => {
     setSavingCloud(true);
@@ -1993,8 +2361,14 @@ export default function SettingsPage() {
     setRegisteringCloud(true);
     try {
       const res = await api.post('/settings/cloud/register', { email });
+      const registrationStatus = res.data.cloud_registration_status || 'unregistered';
+      cloudRegistrationStatus.current = registrationStatus;
+      cloudHydrationGeneration.current += 1;
+      cloudHydrated.current = false;
+      cloudHydrationSucceeded.current = false;
+      cloudHydrationPromise.current = null;
       setCloudStatus({
-        cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
+        cloud_registration_status: registrationStatus,
         cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
         cloud_connected: !!res.data.cloud_connected,
         cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
@@ -2009,10 +2383,32 @@ export default function SettingsPage() {
       }));
       await fetchCloudAccount();
       notifyCloudAccountStatusChanged();
-      if (res.data.cloud_registration_status === 'registered') {
+      if (registrationStatus === 'registered') {
+        const mobileAccessKeys = currentTenant?.id
+          ? [`${currentTenant.id}:mobile-access`, `${currentTenant.id}:mobile-access:status`]
+          : [];
+        mobileAccessKeys.forEach((key) => {
+          settingsTabLoadControllers.current.get(key)?.abort();
+          settingsTabLoadControllers.current.delete(key);
+          settingsTabLoadPromises.current.delete(key);
+          loadedSettingsTabs.current.delete(key);
+        });
+        if (activeTabRef.current === 'mobile-access') {
+          const controller = new AbortController();
+          mobileAccessRequestController.current = controller;
+          try {
+            await startSettingsTabLoad('mobile-access', controller);
+          } finally {
+            if (mobileAccessRequestController.current === controller) {
+              mobileAccessRequestController.current = null;
+            }
+            controller.abort();
+          }
+        }
         toast.success(t('cloudRegistrationSuccess'));
       }
-    } catch {
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
       toast.error(t('cloudRegistrationFailed'));
     } finally {
       setRegisteringCloud(false);
@@ -2353,33 +2749,64 @@ export default function SettingsPage() {
     savingAllSettingsInFlight.current = true;
     setSavingAllSettings(true);
     try {
-      await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
-      await savePrinting(true);
-      await saveBillTemplate(true);
-      toast.success(t('allSaved'));
+      await Promise.all(['store', 'receipts-printers', 'loyalty', 'discounts', 'mobile-access'].map((tab) => {
+        const key = `${currentTenant?.id}:${tab}${tab === 'mobile-access' ? ':status' : ''}`;
+        if (loadedSettingsTabs.current.has(key)) return Promise.resolve();
+        return startSettingsTabLoad(tab, new AbortController(), false);
+      }));
+      // Hydration updates state asynchronously. Let the next render run the
+      // saves against the hydrated values instead of stale initial defaults.
+      setSaveAllHydrationRun((run) => run + 1);
     } catch {
       toast.error(t('allSaveFailed'));
-    } finally {
       savingAllSettingsInFlight.current = false;
       setSavingAllSettings(false);
     }
   };
 
+  useEffect(() => {
+    if (saveAllHydrationRun === 0 || !savingAllSettingsInFlight.current) return;
+    void (async () => {
+      try {
+        await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
+        await savePrinting(true);
+        await saveBillTemplate(true);
+        toast.success(t('allSaved'));
+      } catch {
+        toast.error(t('allSaveFailed'));
+      } finally {
+        savingAllSettingsInFlight.current = false;
+        setSavingAllSettings(false);
+      }
+    })();
+  // This effect intentionally runs once per hydration run, using the state
+  // values produced by the loaders before it starts the writes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saveAllHydrationRun]);
+
   const rotatePairingCode = async () => {
     setRotatingCode(true);
+    const generation = mobileAccessRequestGeneration.current;
+    const controller = new AbortController();
+    mobileAccessRequestController.current = controller;
     try {
-      const res = await api.post('/mobile/rotate-code');
+      const res = await api.post('/mobile/rotate-code', undefined, { signal: controller.signal });
+      if (controller.signal.aborted || generation !== mobileAccessRequestGeneration.current || activeTabRef.current !== 'mobile-access') return;
       setPairingCode(res.data.pairing_code);
       setPairingExpiresAt(res.data.expires_at);
       setPairingQrDataUrl(res.data.qr_data_url || null);
       setPairingUnavailable(false);
       toast.success(t('pairingCodeRotated'));
-      loadPairedDevices();
-    } catch {
+      await loadPairedDevices(controller.signal);
+    } catch (error) {
+      if (isRequestCancelled(error)) return;
       // Show a localized failure; the specific backend reason stays in logs.
       toast.error(t('pairingCodeFailed'));
     } finally {
-      setRotatingCode(false);
+      if (mobileAccessRequestController.current === controller) {
+        mobileAccessRequestController.current = null;
+        setRotatingCode(false);
+      }
     }
   };
 
@@ -2516,7 +2943,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('businessName')}</label>
                   {isAdmin ? (
-                    <input type="text" value={form.businessName} onChange={(e) => setForm((p) => ({ ...p, businessName: e.target.value }))}
+                    <input type="text" value={form.businessName} onChange={(e) => { markHydrationTouched('businessName'); setForm((p) => ({ ...p, businessName: e.target.value })); }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                   ) : (
                     <p className="font-medium text-foreground">{form.businessName || currentTenant?.business_name}</p>
@@ -2537,6 +2964,12 @@ export default function SettingsPage() {
                       <select
                         value={form.countryCode}
                         onChange={(e) => {
+                           markHydrationTouched('countryCode');
+                           markHydrationTouched('currency');
+                           markHydrationTouched('timezone');
+                           markHydrationTouched('currencyDisplay');
+                           markHydrationTouched('numberDigits');
+                           markHydrationTouched('calendar');
                            const country = COUNTRIES.find(c => c.code === e.target.value);
                            setForm((p) => {
                              const previousCountry = getCountryByCode(p.countryCode);
@@ -2576,7 +3009,7 @@ export default function SettingsPage() {
                       </select>
                       <TimeZoneSelect
                         value={form.timezone}
-                        onChange={(timezone) => setForm((p) => ({ ...p, timezone }))}
+                        onChange={(timezone) => { markHydrationTouched('timezone'); setForm((p) => ({ ...p, timezone })); }}
                         placeholder={t('selectTimezone')}
                         className="px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                         ariaLabel={t('timezone')}
@@ -2611,18 +3044,23 @@ export default function SettingsPage() {
                   digits={form.numberDigits}
                   calendar={form.calendar}
                   isAdmin={isAdmin}
-                  onChange={(patch) => setForm((p) => ({
-                    ...p,
-                    ...(patch.currencyDisplay !== undefined ? { currencyDisplay: patch.currencyDisplay } : {}),
-                    ...(patch.digits !== undefined ? { numberDigits: patch.digits } : {}),
-                    ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
-                  }))}
+                  onChange={(patch) => {
+                    if (patch.currencyDisplay !== undefined) markHydrationTouched('currencyDisplay');
+                    if (patch.digits !== undefined) markHydrationTouched('numberDigits');
+                    if (patch.calendar !== undefined) markHydrationTouched('calendar');
+                    setForm((p) => ({
+                      ...p,
+                      ...(patch.currencyDisplay !== undefined ? { currencyDisplay: patch.currencyDisplay } : {}),
+                      ...(patch.digits !== undefined ? { numberDigits: patch.digits } : {}),
+                      ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
+                    }));
+                  }}
                 />
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('billingType')}</label>
                   {isAdmin ? (
                     <select value={form.billingType}
-                      onChange={(e) => setForm((p) => ({ ...p, billingType: e.target.value as 'postpaid' | 'prepaid' }))}
+                      onChange={(e) => { markHydrationTouched('billingType'); setForm((p) => ({ ...p, billingType: e.target.value as 'postpaid' | 'prepaid' })); }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">
                       <option value="postpaid">{t('billingTypePostpaid')}</option>
                       <option value="prepaid">{t('billingTypePrepaid')}</option>
@@ -2636,7 +3074,7 @@ export default function SettingsPage() {
                   {isAdmin ? (
                     <select
                       value={form.tablesRequired ? 'yes' : 'no'}
-                      onChange={(e) => setForm((p) => ({ ...p, tablesRequired: e.target.value === 'yes' }))}
+                      onChange={(e) => { markHydrationTouched('tablesRequired'); setForm((p) => ({ ...p, tablesRequired: e.target.value === 'yes' })); }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                     >
                       <option value="yes">{t('tablesRequiredYes')}</option>
@@ -2651,7 +3089,7 @@ export default function SettingsPage() {
                   {isAdmin ? (
                     <select
                       value={form.taxRegistered ? 'yes' : 'no'}
-                      onChange={(e) => setForm((p) => ({ ...p, taxRegistered: e.target.value === 'yes' }))}
+                      onChange={(e) => { markHydrationTouched('taxRegistered'); setForm((p) => ({ ...p, taxRegistered: e.target.value === 'yes' })); }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                     >
                       <option value="yes">{t('yes')}</option>
@@ -2666,7 +3104,7 @@ export default function SettingsPage() {
                     <label className="block text-sm text-muted-foreground mb-1">{t('taxIdLabel')}</label>
                     {isAdmin ? (
                       <>
-                        <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
+                        <input type="text" value={form.taxRegistrationNumber} onChange={(e) => { markHydrationTouched('taxRegistrationNumber'); setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value })); }}
                           placeholder={t('taxIdPlaceholder')}
                           className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                         {taxIdWarning ? (
@@ -2684,7 +3122,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('phone')}</label>
                   {isAdmin ? (
-                    <input type="text" value={form.businessPhone} onChange={(e) => setForm((p) => ({ ...p, businessPhone: e.target.value }))}
+                    <input type="text" value={form.businessPhone} onChange={(e) => { markHydrationTouched('businessPhone'); setForm((p) => ({ ...p, businessPhone: e.target.value })); }}
                       placeholder={t('phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1' })}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                   ) : (
@@ -2694,7 +3132,7 @@ export default function SettingsPage() {
                 <div className="md:col-span-2">
                   <label className="block text-sm text-muted-foreground mb-1">{t('address')}</label>
                   {isAdmin ? (
-                    <textarea value={form.businessAddress} onChange={(e) => setForm((p) => ({ ...p, businessAddress: e.target.value }))}
+                    <textarea value={form.businessAddress} onChange={(e) => { markHydrationTouched('businessAddress'); setForm((p) => ({ ...p, businessAddress: e.target.value })); }}
                       rows={2} placeholder={t('addressPlaceholder')}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none" />
                   ) : (
@@ -2704,7 +3142,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm text-muted-foreground mb-1">{t('instagramHandle')}</label>
                   {isAdmin ? (
-                    <input type="text" value={form.instagramHandle} onChange={(e) => setForm((p) => ({ ...p, instagramHandle: e.target.value }))}
+                    <input type="text" value={form.instagramHandle} onChange={(e) => { markHydrationTouched('instagramHandle'); setForm((p) => ({ ...p, instagramHandle: e.target.value })); }}
                       placeholder={t('instagramPlaceholder')}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                   ) : (
@@ -2740,7 +3178,10 @@ export default function SettingsPage() {
                     <input
                       type="text"
                       value={orderNumberForm.prefix}
-                      onChange={(e) => setOrderNumberForm((p) => ({ ...p, prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
+                      onChange={(e) => {
+                        markHydrationTouched('prefix');
+                        setOrderNumberForm((p) => ({ ...p, prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }));
+                      }}
                       placeholder="ORD"
                       maxLength={12}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
@@ -2769,7 +3210,10 @@ export default function SettingsPage() {
                   </div>
                   <Toggle
                     value={orderNumberForm.includeDate}
-                    onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, includeDate: v })) : () => {}}
+                    onChange={isAdmin ? (v) => {
+                      markHydrationTouched('includeDate');
+                      setOrderNumberForm((p) => ({ ...p, includeDate: v }));
+                    } : () => {}}
                   />
                 </div>
                 <div className="flex items-center justify-between py-2">
@@ -2779,7 +3223,10 @@ export default function SettingsPage() {
                   </div>
                   <Toggle
                     value={orderNumberForm.resetDaily}
-                    onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, resetDaily: v })) : () => {}}
+                    onChange={isAdmin ? (v) => {
+                      markHydrationTouched('resetDaily');
+                      setOrderNumberForm((p) => ({ ...p, resetDaily: v }));
+                    } : () => {}}
                   />
                 </div>
               </div>
@@ -2793,7 +3240,10 @@ export default function SettingsPage() {
                       <input
                         type="text"
                         value={orderNumberForm.invoicePrefix}
-                        onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoicePrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }))}
+                        onChange={(e) => {
+                          markHydrationTouched('invoicePrefix');
+                          setOrderNumberForm((p) => ({ ...p, invoicePrefix: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') }));
+                        }}
                         placeholder="INV"
                         maxLength={12}
                         className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
@@ -2821,7 +3271,10 @@ export default function SettingsPage() {
                     {isAdmin ? (
                       <select
                         value={orderNumberForm.invoiceResetPeriod}
-                        onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceResetPeriod: e.target.value as InvoiceResetPeriod }))}
+                        onChange={(e) => {
+                          markHydrationTouched('invoiceResetPeriod');
+                          setOrderNumberForm((p) => ({ ...p, invoiceResetPeriod: e.target.value as InvoiceResetPeriod }));
+                        }}
                         className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                       >
                         <option value="daily">{t('invoiceResetDaily')}</option>
@@ -2843,7 +3296,10 @@ export default function SettingsPage() {
                           max={12}
                           value={orderNumberForm.invoiceFinancialYearStartMonth}
                           disabled={!isAdmin}
-                          onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartMonth: Number(e.target.value) }))}
+                          onChange={(e) => {
+                            markHydrationTouched('invoiceFinancialYearStartMonth');
+                            setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartMonth: Number(e.target.value) }));
+                          }}
                           className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand disabled:bg-muted"
                         />
                       </div>
@@ -2855,7 +3311,10 @@ export default function SettingsPage() {
                           max={31}
                           value={orderNumberForm.invoiceFinancialYearStartDay}
                           disabled={!isAdmin}
-                          onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartDay: Number(e.target.value) }))}
+                          onChange={(e) => {
+                            markHydrationTouched('invoiceFinancialYearStartDay');
+                            setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartDay: Number(e.target.value) }));
+                          }}
                           className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand disabled:bg-muted"
                         />
                       </div>
@@ -2871,7 +3330,10 @@ export default function SettingsPage() {
                     </div>
                     <Toggle
                       value={orderNumberForm.invoiceIncludePeriod}
-                      onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, invoiceIncludePeriod: v })) : () => {}}
+                      onChange={isAdmin ? (v) => {
+                        markHydrationTouched('invoiceIncludePeriod');
+                        setOrderNumberForm((p) => ({ ...p, invoiceIncludePeriod: v }));
+                      } : () => {}}
                     />
                   </div>
                 </div>
@@ -3248,7 +3710,7 @@ export default function SettingsPage() {
                   )}
 
                   <div className="flex justify-end border-t border-border pt-4">
-                    <button onClick={fetchKdsInfo} disabled={kdsInfoLoading}
+                    <button onClick={() => { void fetchKdsInfo(); }} disabled={kdsInfoLoading}
                       className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
                       <RefreshCw size={14} className={kdsInfoLoading ? 'animate-spin' : ''} />
                       {t('refreshUrls')}
@@ -3262,7 +3724,7 @@ export default function SettingsPage() {
                   <p className="text-sm text-muted-foreground mb-3">
                     {t('kdsLoadHint')}
                   </p>
-                  <button onClick={fetchKdsInfo}
+                  <button onClick={() => { void fetchKdsInfo(); }}
                     className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
                     {t('loadKdsInfo')}
                   </button>
@@ -3544,7 +4006,10 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground">{t('loyaltyHint')}</p>
                   </div>
                   <button
-                    onClick={() => setLoyaltyEnabled(!loyaltyEnabled)}
+                    onClick={() => {
+                      markHydrationTouched('loyaltyEnabled');
+                      setLoyaltyEnabled(!loyaltyEnabled);
+                    }}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                       loyaltyEnabled ? 'bg-brand' : 'bg-gray-200'
                     }`}
@@ -3568,7 +4033,10 @@ export default function SettingsPage() {
                         max="100"
                         step="0.1"
                         value={globalCashbackPercent}
-                        onChange={(e) => setGlobalCashbackPercent(e.target.value)}
+                        onChange={(e) => {
+                          markHydrationTouched('globalCashbackPercent');
+                          setGlobalCashbackPercent(e.target.value);
+                        }}
                         placeholder="0"
                         className="w-20 px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-end"
                       />
@@ -3616,7 +4084,10 @@ export default function SettingsPage() {
                   <p className="font-medium text-foreground">{t('discountMode')}</p>
                   <p className="text-sm text-muted-foreground mb-2">{t('discountModeHint')}</p>
                   <select value={discountMode}
-                    onChange={(e) => setDiscountMode(e.target.value)}
+                    onChange={(e) => {
+                      markHydrationTouched('discountMode');
+                      setDiscountMode(e.target.value);
+                    }}
                     className="w-48 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand bg-card">
                     <option value="both">{t('discountBoth')}</option>
                     <option value="percentage">{t('discountPercentageOnly')}</option>
@@ -3630,7 +4101,10 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground mb-2">{t('maxDiscountPercentageHint')}</p>
                     <div className="flex items-center gap-3">
                       <input type="number" min={1} max={100} value={discountMaxPct}
-                        onChange={(e) => setDiscountMaxPct(normalizeDiscountPercentage(e.target.value))}
+                        onChange={(e) => {
+                          markHydrationTouched('discountMaxPct');
+                          setDiscountMaxPct(normalizeDiscountPercentage(e.target.value));
+                        }}
                         className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       <span className="text-sm text-muted-foreground">{t('percentMaximum')}</span>
                     </div>
@@ -3643,7 +4117,10 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground mb-2">{t('maxDiscountAmountHint')}</p>
                     <div className="flex items-center gap-3">
                       <input type="number" min={0} max={999999} value={discountMaxAmount}
-                        onChange={(e) => setDiscountMaxAmount(normalizeDiscountAmount(e.target.value))}
+                        onChange={(e) => {
+                          markHydrationTouched('discountMaxAmount');
+                          setDiscountMaxAmount(normalizeDiscountAmount(e.target.value));
+                        }}
                         className="w-24 px-3 py-1.5 text-sm border border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       <span className="text-sm text-muted-foreground">{t('zeroNoLimit')}</span>
                     </div>
@@ -3656,7 +4133,10 @@ export default function SettingsPage() {
                     <p className="text-sm text-muted-foreground">{t('requireApprovalHint')}</p>
                   </div>
                   <button
-                    onClick={() => setDiscountRequiresApproval(!discountRequiresApproval)}
+                    onClick={() => {
+                      markHydrationTouched('discountRequiresApproval');
+                      setDiscountRequiresApproval(!discountRequiresApproval);
+                    }}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                       discountRequiresApproval ? 'bg-brand' : 'bg-gray-200'
                     }`}
@@ -3834,7 +4314,7 @@ export default function SettingsPage() {
                 </div>
                 {!showPrinterForm && (
                   <div className="flex items-center gap-2">
-                    <button onClick={fetchDetectedPrinters} disabled={detectingPrinters}
+                    <button onClick={() => { void fetchDetectedPrinters(); }} disabled={detectingPrinters}
                       title={t('refreshList')}
                       className="flex items-center gap-2 px-3 py-2 text-sm border border-border text-muted-foreground rounded-lg hover:bg-muted font-medium disabled:opacity-50">
                       <RefreshCw size={14} className={detectingPrinters ? 'animate-spin' : ''} /> {t('refresh')}
@@ -4076,7 +4556,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">{t('enablePrinter')}</p>
                     <p className="text-sm text-muted-foreground">{t('enablePrinterHint')}</p>
                   </div>
-                  <Toggle value={printingForm.printerEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, printerEnabled: v }))} />
+                  <Toggle value={printingForm.printerEnabled} onChange={(v) => { markHydrationTouched('printerEnabled'); setPrintingForm((p) => ({ ...p, printerEnabled: v })); }} />
                 </div>
                 <div className="border-t border-border pt-4">
                   <div className="flex items-center justify-between gap-4">
@@ -4084,7 +4564,7 @@ export default function SettingsPage() {
                       <p className="font-medium text-foreground">{t('sendPulseToCashDrawer')}</p>
                       <p className="text-sm text-muted-foreground">{t('sendPulseToCashDrawerHint')}</p>
                     </div>
-                    <Toggle value={!!printingForm.cashDrawerPulseEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }))} />
+                    <Toggle value={!!printingForm.cashDrawerPulseEnabled} onChange={(v) => { markHydrationTouched('cashDrawerPulseEnabled'); setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v })); }} />
                   </div>
                   {printingForm.cashDrawerPulseEnabled && (
                     <div className="mt-3 rounded-lg border border-border overflow-hidden">
@@ -4103,12 +4583,15 @@ export default function SettingsPage() {
                               <input
                                 type="checkbox"
                                 checked={printingForm.cashDrawerPulseMethods.includes(value)}
-                                onChange={(e) => setPrintingForm((p) => ({
-                                  ...p,
-                                  cashDrawerPulseMethods: e.target.checked
-                                    ? [...p.cashDrawerPulseMethods, value]
-                                    : p.cashDrawerPulseMethods.filter((method) => method !== value),
-                                }))}
+                                onChange={(e) => {
+                                  markHydrationTouched('cashDrawerPulseMethods');
+                                  setPrintingForm((p) => ({
+                                    ...p,
+                                    cashDrawerPulseMethods: e.target.checked
+                                      ? [...p.cashDrawerPulseMethods, value]
+                                      : p.cashDrawerPulseMethods.filter((method) => method !== value),
+                                  }));
+                                }}
                                 className="h-4 w-4 rounded border-border text-brand focus:ring-brand"
                               />
                               {label}
@@ -4123,7 +4606,7 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-medium text-foreground mb-2">{t('printMethod')}</p>
                   <select value={printingForm.printMethod}
-                    onChange={(e) => setPrintingForm((p) => ({ ...p, printMethod: e.target.value as 'escpos' | 'browser' }))}
+                    onChange={(e) => { markHydrationTouched('printMethod'); setPrintingForm((p) => ({ ...p, printMethod: e.target.value as 'escpos' | 'browser' })); }}
                     className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand">
                     <option value="escpos">{t('printMethodEscpos')}</option>
                     <option value="browser">{t('printMethodBrowser')}</option>
@@ -4152,7 +4635,7 @@ export default function SettingsPage() {
                   </div>
                   <Toggle
                     value={printingForm.autoPrintKot && kotPrintingEnabledSetting}
-                    onChange={(v) => { if (kotPrintingEnabledSetting) setPrintingForm((p) => ({ ...p, autoPrintKot: v })); }}
+                    onChange={(v) => { if (kotPrintingEnabledSetting) { markHydrationTouched('autoPrintKot'); setPrintingForm((p) => ({ ...p, autoPrintKot: v })); } }}
                   />
                 </div>
                 {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
@@ -4168,7 +4651,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">{t('autoPrintBill')}</p>
                     <p className="text-sm text-muted-foreground">{t('autoPrintBillHint')}</p>
                   </div>
-                  <Toggle value={printingForm.autoPrintBill} onChange={(v) => setPrintingForm((p) => ({ ...p, autoPrintBill: v }))} />
+                  <Toggle value={printingForm.autoPrintBill} onChange={(v) => { markHydrationTouched('autoPrintBill'); setPrintingForm((p) => ({ ...p, autoPrintBill: v })); }} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -4177,21 +4660,21 @@ export default function SettingsPage() {
                       {t('printerUnicodeHint')}
                     </p>
                   </div>
-                  <Toggle value={printingForm.printerUseUnicode} onChange={(v) => setPrintingForm((p) => ({ ...p, printerUseUnicode: v }))} />
+                  <Toggle value={printingForm.printerUseUnicode} onChange={(v) => { markHydrationTouched('printerUseUnicode'); setPrintingForm((p) => ({ ...p, printerUseUnicode: v })); }} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground">{t('printerArabicShaping')}</p>
                     <p className="text-sm text-muted-foreground">{t('printerArabicShapingHint')}</p>
                   </div>
-                  <Toggle value={printingForm.printerArabicShaping} onChange={(v) => setPrintingForm((p) => ({ ...p, printerArabicShaping: v }))} />
+                  <Toggle value={printingForm.printerArabicShaping} onChange={(v) => { markHydrationTouched('printerArabicShaping'); setPrintingForm((p) => ({ ...p, printerArabicShaping: v })); }} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground">{t('trimDecimals')}</p>
                     <p className="text-sm text-muted-foreground">{t('trimDecimalsHint')}</p>
                   </div>
-                  <Toggle value={printingForm.printerTrimDecimals} onChange={(v) => setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }))} />
+                  <Toggle value={printingForm.printerTrimDecimals} onChange={(v) => { markHydrationTouched('printerTrimDecimals'); setPrintingForm((p) => ({ ...p, printerTrimDecimals: v })); }} />
                 </div>
                 <div className="pt-4 border-t border-border">
                   <p className="font-medium text-foreground mb-1">{t('receiptLanguage')}</p>
@@ -4202,7 +4685,7 @@ export default function SettingsPage() {
                       <select
                         id="receipt-primary-language"
                         value={printingForm.receiptPrimaryLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, receiptPrimaryLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('receiptPrimaryLanguage'); setPrintingForm((p) => ({ ...p, receiptPrimaryLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="inherit">{t('sameAsStore')}</option>
@@ -4216,7 +4699,7 @@ export default function SettingsPage() {
                       <select
                         id="receipt-second-language"
                         value={printingForm.receiptSecondLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, receiptSecondLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('receiptSecondLanguage'); setPrintingForm((p) => ({ ...p, receiptSecondLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="none">{t('secondLanguageNone')}</option>
@@ -4230,7 +4713,7 @@ export default function SettingsPage() {
                       <select
                         id="kot-language"
                         value={printingForm.kotLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, kotLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('kotLanguage'); setPrintingForm((p) => ({ ...p, kotLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="inherit">{t('sameAsStore')}</option>
@@ -4244,7 +4727,7 @@ export default function SettingsPage() {
                       <select
                         id="z-report-primary-language"
                         value={printingForm.zReportPrimaryLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, zReportPrimaryLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('zReportPrimaryLanguage'); setPrintingForm((p) => ({ ...p, zReportPrimaryLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="inherit">{t('sameAsStore')}</option>
@@ -4258,7 +4741,7 @@ export default function SettingsPage() {
                       <select
                         id="z-report-second-language"
                         value={printingForm.zReportSecondLanguage}
-                        onChange={(e) => setPrintingForm((p) => ({ ...p, zReportSecondLanguage: e.target.value }))}
+                        onChange={(e) => { markHydrationTouched('zReportSecondLanguage'); setPrintingForm((p) => ({ ...p, zReportSecondLanguage: e.target.value })); }}
                         className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                       >
                         <option value="none">{t('secondLanguageNone')}</option>
@@ -4289,7 +4772,7 @@ export default function SettingsPage() {
                         <span className="text-sm text-foreground">{item.label}</span>
                         <Toggle
                           value={printingForm[item.key]}
-                          onChange={(value) => setPrintingForm((previous) => ({ ...previous, [item.key]: value }))}
+                          onChange={(value) => { markHydrationTouched(item.key); setPrintingForm((previous) => ({ ...previous, [item.key]: value })); }}
                         />
                       </div>
                     ))}
@@ -4299,7 +4782,10 @@ export default function SettingsPage() {
                     <textarea id="footer-message" rows={2}
                       placeholder={t('footerMessagePlaceholder')}
                       value={billForm.billFooterMessage}
-                      onChange={(e) => setBillForm((p) => ({ ...p, billFooterMessage: e.target.value }))}
+                      onChange={(e) => {
+                        markHydrationTouched('billFooterMessage');
+                        setBillForm((p) => ({ ...p, billFooterMessage: e.target.value }));
+                      }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none" />
                     <p className="text-xs text-gray-400 mt-1">{t('footerMessageHint')}</p>
                   </div>
@@ -4317,7 +4803,7 @@ export default function SettingsPage() {
                   <p className="font-medium text-foreground">{t('enableWhatsappShare')}</p>
                   <p className="text-sm text-muted-foreground">{t('enableWhatsappShareHint')}</p>
                 </div>
-                <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }))} />
+                <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => { markHydrationTouched('whatsappShareEnabled'); setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v })); }} />
               </div>
             </div>
           </div>
@@ -4332,7 +4818,11 @@ export default function SettingsPage() {
                 {billTemplateCards.map((card) => {
                   const isSelected = isTemplateCardSelected(billForm, card);
                   return (
-                    <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id, billTemplateSource: card.selectionSource }))}
+                    <button key={card.id} onClick={() => {
+                      markHydrationTouched('billTemplate');
+                      markHydrationTouched('billTemplateSource');
+                      setBillForm((p) => ({ ...p, billTemplate: card.id, billTemplateSource: card.selectionSource }));
+                    }}
                       className={`text-start rounded-xl border-2 p-4 transition-all ${
                         isSelected ? 'border-brand bg-brand/5' : 'border-border hover:border-gray-300 dark:border-border bg-card'
                       }`}>
@@ -4436,7 +4926,7 @@ export default function SettingsPage() {
                   <h2 className="font-semibold text-foreground">{t('backupHistory')}</h2>
                 </div>
                 <button
-                  onClick={fetchBackups}
+                  onClick={() => { void fetchBackups(); }}
                   disabled={backupsLoading}
                   className="p-1.5 text-gray-400 hover:text-muted-foreground rounded-lg hover:bg-muted disabled:opacity-50"
                   title={t('refresh')}
@@ -4880,7 +5370,10 @@ export default function SettingsPage() {
                   <input
                     type="checkbox"
                     checked={cloudSettings.cloud_sync_enabled}
-                    onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_sync_enabled: e.target.checked })}
+                    onChange={(e) => {
+                      markHydrationTouched('cloud_sync_enabled');
+                      setCloudSettings({ ...cloudSettings, cloud_sync_enabled: e.target.checked });
+                    }}
                     className="mt-0.5 rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                   />
                   <div>
@@ -5049,7 +5542,10 @@ export default function SettingsPage() {
                 <input
                   type="checkbox"
                   checked={cloudSettings.cloud_orders_enabled}
-                  onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_orders_enabled: e.target.checked })}
+                    onChange={(e) => {
+                      markHydrationTouched('cloud_orders_enabled');
+                      setCloudSettings({ ...cloudSettings, cloud_orders_enabled: e.target.checked });
+                    }}
                   className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand"
                 />
                 <span className="text-sm text-foreground">{t('enableOnlineOrderPolling')}</span>

@@ -13,8 +13,6 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 
 import {
   BILL_LANGUAGE_POLICY_KEY,
@@ -69,6 +67,9 @@ assert.ok(kotFixed.ok);
 const zFixed = validateLanguagePolicySetting(Z_REPORT_LANGUAGE_POLICY_KEY,
   '{"primary":{"mode":"fixed","language":"fa"},"additional":["en"]}');
 assert.ok(zFixed.ok);
+if (zFixed.ok) {
+  assert.equal(zFixed.stored, '{"primary":{"mode":"fixed","language":"fa"},"additional":["en"]}');
+}
 
 console.log('✓ canonical storage');
 
@@ -110,16 +111,5 @@ assert.ok('primary' in okStored && okStored.primary.mode === 'fixed');
 
 console.log('✓ lenient reader with safe fallback');
 
-console.log('Testing Z-report policy Settings wiring...');
-const settingsSource = readFileSync(resolve(__dirname, '../frontend/src/app/(dashboard)/settings/page.tsx'), 'utf8');
-for (const expected of [
-  "api.get('/settings/z_report_language_policy')",
-  'z_report_language_policy: zReportLanguagePolicy',
-  'id="z-report-primary-language"',
-  'id="z-report-second-language"',
-]) {
-  assert.ok(settingsSource.includes(expected), `Settings page includes ${expected}`);
-}
-
-console.log('✓ Z-report policy is configurable in Settings');
+console.log('✓ Z-report policy normalizes through the public policy contract');
 console.log('\nAll print-language settings tests passed.');

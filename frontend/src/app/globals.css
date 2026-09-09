@@ -369,6 +369,12 @@ div:hover > .flo-toast-drain,
   body {
     @apply bg-background text-foreground;
   }
+  select {
+    color-scheme: light;
+  }
+  .dark select {
+    color-scheme: dark;
+  }
 }
 
 @keyframes shake-centered {

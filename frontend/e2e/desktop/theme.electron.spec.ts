@@ -56,6 +56,19 @@ async function clickThemeRadio(label: 'Light' | 'Dark' | 'System'): Promise<void
   await expect.poll(() => radio.isDisabled(), { timeout: 10_000 }).toBe(false);
 }
 
+async function expectNativeSelectColorScheme(expected: 'light' | 'dark'): Promise<void> {
+  await harness.page.goto(`http://localhost:${harness.ports.main}/orders`, {
+    waitUntil: 'domcontentloaded',
+  });
+  const select = harness.page.locator('select').first();
+  await select.waitFor({ state: 'visible', timeout: 10_000 });
+  await expect.poll(
+    () => select.evaluate((element) => getComputedStyle(element).colorScheme),
+    { timeout: 10_000 },
+  ).toBe(expected);
+  await navigateToAppearance();
+}
+
 test('real Electron flips the renderer palette when the owner toggles Dark in Settings', async () => {
   await harness.authenticateDashboard();
   await navigateToAppearance();
@@ -84,11 +97,16 @@ test('real Electron flips the renderer palette when the owner toggles Dark in Se
   expect(runtime.htmlHasDark).toBe(true);
   expect(runtime.mirror).toBe('dark');
 
+  await expectNativeSelectColorScheme('dark');
+
   if (process.env.FLO_E2E_EVIDENCE_DIR) {
     await harness.page.screenshot({
       path: `${process.env.FLO_E2E_EVIDENCE_DIR}/03-theme-dark-toggle.png`,
     });
   }
+
+  await clickThemeRadio('Light');
+  await expectNativeSelectColorScheme('light');
 });
 
 test('real System mode follows nativeTheme.themeSource through the renderer matchMedia listener', async () => {
@@ -106,6 +124,7 @@ test('real System mode follows nativeTheme.themeSource through the renderer matc
     undefined,
     { timeout: 10_000 },
   );
+  await expectNativeSelectColorScheme('dark');
 
   await harness.app.evaluate((electron) => {
     electron.nativeTheme.themeSource = 'light';
@@ -115,6 +134,7 @@ test('real System mode follows nativeTheme.themeSource through the renderer matc
     undefined,
     { timeout: 10_000 },
   );
+  await expectNativeSelectColorScheme('light');
 
   await harness.app.evaluate((electron) => {
     electron.nativeTheme.themeSource = 'system';

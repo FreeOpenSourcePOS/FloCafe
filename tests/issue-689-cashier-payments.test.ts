@@ -75,6 +75,18 @@ async function main() {
     }
 
     assertEqual(sequence, 2, 'a fresh fallback key is generated for each payment request');
+    const originalDateNow = Date.now;
+    const originalMathRandom = Math.random;
+    Date.now = () => 1;
+    Math.random = () => 0.5;
+    try {
+      const firstLegacyKey = createPaymentIdempotencyKey({});
+      const secondLegacyKey = createPaymentIdempotencyKey({});
+      assertEqual(firstLegacyKey === secondLegacyKey, false, 'legacy fallback keys remain unique');
+    } finally {
+      Date.now = originalDateNow;
+      Math.random = originalMathRandom;
+    }
     const persisted = db.prepare(`
       SELECT COUNT(*) AS count
       FROM bills

@@ -3,6 +3,8 @@ type PaymentCrypto = {
   getRandomValues?: (values: Uint32Array) => Uint32Array;
 };
 
+let fallbackSequence = 0;
+
 /** Creates a fresh payment request key in secure and plain-HTTP LAN contexts. */
 export function createPaymentIdempotencyKey(
   cryptoSource: PaymentCrypto | undefined = globalThis.crypto as PaymentCrypto | undefined,
@@ -14,5 +16,6 @@ export function createPaymentIdempotencyKey(
     const values = cryptoSource.getRandomValues(new Uint32Array(4));
     return `payment-${Array.from(values, (value) => value.toString(16).padStart(8, '0')).join('')}`;
   }
-  return `payment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  fallbackSequence += 1;
+  return `payment-${Date.now().toString(36)}-${fallbackSequence.toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }

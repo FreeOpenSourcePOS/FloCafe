@@ -46,7 +46,9 @@ async function main() {
   const tag = arg(argv, '--tag');
   const commit = arg(argv, '--commit').toLowerCase();
   const channel = arg(argv, '--channel');
-  const expectedLatest = arg(argv, '--expected-latest', { allowEmpty: true });
+  const expectedLatest = argv.includes('--expected-latest')
+    ? arg(argv, '--expected-latest', { allowEmpty: true })
+    : '';
   if (!SEMVER.test(tag)) throw new Error(`invalid release tag ${tag}`);
 
   const apiBase = `https://api.github.com/repos/${repo}`;
@@ -84,8 +86,10 @@ async function main() {
     channel,
     expectedAssetIds: manifest.assets.map((asset) => asset.id),
     availableAssetIds: manifest.assets.map((asset) => asset.id),
-    stableLatestBefore: expectedLatest,
-    stableLatestAfter: latest.tag_name || '',
+    ...(expectedLatest === '' ? {} : {
+      stableLatestBefore: expectedLatest,
+      stableLatestAfter: latest.tag_name || '',
+    }),
   });
   console.log(`published ${channel} release ${tag} is ready; candidate manifest SHA-256 ${manifestSha256(candidateBytes)}`);
 }

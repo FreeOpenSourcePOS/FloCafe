@@ -295,6 +295,37 @@ export function getLocaleSeparators(locale = 'en-US'): { group: string; decimal:
   }
 }
 
+function normalizeLocaleNumber(value: string, locale: string, separators: { group: string; decimal: string }): { value: string; group: string; decimal: string } {
+  let normalized = value;
+  let group = separators.group;
+  let decimal = separators.decimal;
+
+  try {
+    const digitMap = new Map<string, string>();
+    const digitFormatter = new Intl.NumberFormat(locale, { useGrouping: false });
+    for (let digit = 0; digit <= 9; digit++) {
+      digitMap.set(digitFormatter.format(digit), String(digit));
+    }
+    normalized = Array.from(normalized, (character) => digitMap.get(character) ?? character).join('');
+  } catch {
+    normalized = value;
+  }
+
+  if (group === "'" || group === '\u2019') {
+    normalized = normalized.replace(/[\u0027\u2019]/g, '');
+    group = ',';
+  } else if (group !== ',' && group !== '.') {
+    normalized = normalized.split(group).join('');
+    group = ',';
+  }
+  if (decimal !== ',' && decimal !== '.') {
+    normalized = normalized.split(decimal).join('.');
+    decimal = '.';
+  }
+
+  return { value: normalized, group, decimal };
+}
+
 /** Robust locale-aware string-to-number parser. */
 export function parseLocaleNumber(raw: unknown, locale = 'en-US', fractionDigits = 2): number {
   if (typeof raw === 'number') return raw;
@@ -309,12 +340,14 @@ export function parseLocaleNumber(raw: unknown, locale = 'en-US', fractionDigits
   s = s.replace(/\s+[A-Za-z]{2,5}$/u, '').trim();
   // Remove inner whitespace / non-breaking spaces
   s = s.replace(/[\u00A0\u202F\s]/g, '');
+  const normalized = normalizeLocaleNumber(s, locale, getLocaleSeparators(locale));
+  s = normalized.value;
   if (!s || /[^\d.,+-]/.test(s)) return NaN;
 
   const sign = s.startsWith('-') ? -1 : 1;
   if (s.startsWith('+') || s.startsWith('-')) s = s.slice(1);
 
-  const { group, decimal } = getLocaleSeparators(locale);
+  const { group, decimal } = normalized;
 
   if (fractionDigits === 0) {
     const lastDelimIndex = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));

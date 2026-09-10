@@ -139,6 +139,12 @@ test('parseLocaleNumber: handles COP / es-CO thousands dot and decimal comma', (
   assert.equal(parseLocaleNumber('11000', 'en-US', 0), 11000);
 });
 
+test('parseLocaleNumber: normalizes locale separators and digits', () => {
+  const { parseLocaleNumber } = require('../main/countries');
+  assert.equal(parseLocaleNumber('1\u2019234.50', 'de-CH', 2), 1234.5);
+  assert.equal(parseLocaleNumber('١٬٢٣٤٫٥٠', 'ar-EG', 2), 1234.5);
+});
+
 test('formatMoney: custom symbol and suffix position', () => {
   const { formatMoney } = require('../main/countries');
   // Colombian peso with suffix

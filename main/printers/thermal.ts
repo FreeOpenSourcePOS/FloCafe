@@ -1897,7 +1897,8 @@ export function formatCurrency(
     maximumFractionDigits: fractionDigits,
   }).replace(/[\u00A0\u202F]/g, ' ');
   if (position === 'suffix') {
-    return prefix ? `${formattedNum} ${prefix}` : formattedNum;
+    const suffix = prefix.trimStart();
+    return suffix ? `${formattedNum} ${suffix}` : formattedNum;
   }
   const needsSpace = /^[A-Za-z]/.test(prefix);
   return prefix + (needsSpace ? ' ' : '') + formattedNum;

@@ -9,6 +9,7 @@
 
 import {
   formatReceipt,
+  formatCurrency,
   formatKOT,
   buildEscPos,
   resolveCurrencyPrefix,
@@ -632,6 +633,7 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
   assert('backend BHD receipt falls back to the canonical code', !hasFinancialPrintWarning(bhdWarnings) && escPosToText(bhdReceipt).includes('BHD'));
   assert('currency prefix fallback uses the supplied canonical code', resolveCurrencyPrefix('د.ب.', false, undefined, false, 'BHD').includes('BHD'));
   assert('currency prefix fallback uses the supplied canonical code for empty symbol with capabilities', resolveCurrencyPrefix('', false, GENERIC_THERMAL_CAPABILITIES, false, 'USD') === 'USD');
+  assert('suffix currency formatting removes alignment padding', formatCurrency(1000, resolveCurrencyPrefix('$', false), 'en-US', false, 2, 'suffix') === '1,000.00 $');
 
   const xafWarnings: any[] = [];
   const xafReceipt = formatReceipt(

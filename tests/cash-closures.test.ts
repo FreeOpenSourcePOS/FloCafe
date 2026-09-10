@@ -986,8 +986,12 @@ async function main() {
         const hasCounted = countedDisplay !== 0
           ? text.includes(String(countedDisplay)) || text.includes(countedDisplay.toFixed(2))
           : true;
+        const visualText = thermalModule.escPosToText(bytes);
+        const varianceLine = visualText.split('\n').find((line: string) => line.includes('Variance')) || '';
         const hasVariance = varianceDisplay !== 0
           ? text.includes(String(varianceDisplay)) || text.includes(varianceDisplay.toFixed(2))
+            || (varianceDisplay < 0 && varianceLine.includes('-')
+              && varianceLine.includes(String(Math.abs(varianceDisplay))))
           : true;
         assert(hasExpected && hasCounted && hasVariance,
           `print: bytes include expected=${expectedDisplay}, counted=${countedDisplay}, variance=${varianceDisplay}`);

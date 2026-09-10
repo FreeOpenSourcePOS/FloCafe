@@ -158,6 +158,7 @@ function seedPosFixture() {
   for (const [key, value] of [
     ['country', 'TH'],
     ['currency', 'THB'],
+    ['currency_symbol', '฿'],
     ['timezone', 'Asia/Bangkok'],
     ['billing_type', 'prepaid'],
     ['business_type', 'restaurant'],

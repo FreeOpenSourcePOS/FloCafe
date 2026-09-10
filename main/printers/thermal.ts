@@ -1933,13 +1933,18 @@ export function formatCurrency(
     minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).replace(/[\u00A0\u202F]/g, ' ');
-  const sign = isNegative ? '-' : '';
   const safePrefix = escapeEscPosControlTokens(prefix);
   if (position === 'suffix') {
     const suffix = safePrefix.trimStart();
+    const sign = isNegative ? '-' : '';
     return suffix ? `${sign}${formattedNum} ${suffix}` : `${sign}${formattedNum}`;
   }
-  return `${sign}${safePrefix}${formattedNum}`;
+  if (isNegative) {
+    const trimmed = safePrefix.trimStart();
+    const leadingSpaces = safePrefix.slice(0, safePrefix.length - trimmed.length);
+    return `-${leadingSpaces}${trimmed}${formattedNum}`;
+  }
+  return `${safePrefix}${formattedNum}`;
 }
 
 export function rightAlign(text: string, width: number = 24): string {
@@ -2389,7 +2394,7 @@ const CURRENCY_TOKEN_RE = new RegExp(
 const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
 
 function escapeEscPosControlTokens(text: string): string {
-  return text.replace(ESC_POS_CONTROL_TOKEN_RE, (token) => token.replace('{', '{ ').replace('}', ' }'));
+  return text.replace(ESC_POS_CONTROL_TOKEN_RE, (token) => token.replaceAll('{', '{ ').replaceAll('}', ' }'));
 }
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {

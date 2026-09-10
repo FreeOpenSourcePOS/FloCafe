@@ -200,6 +200,7 @@ test('browser Electron fixture exposes the complete renderer API and explicit in
     'onMenuAction',
     'onUpdateStatus',
     'openKdsWindow',
+    'openWhatsAppShare',
     'platform',
     'rasterizeKotDocument',
     'rasterizePrintDocument',

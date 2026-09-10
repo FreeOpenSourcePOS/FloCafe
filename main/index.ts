@@ -17,7 +17,7 @@ import { initPrinter } from './printers/thermal';
 import { destroySharedRasterRenderer } from './printers/raster-renderer';
 import { registerIpcHandlers, isTrustedSender } from './ipc';
 import { authorizeMasterPin } from './services/master-pin';
-import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
+import { requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
@@ -1194,9 +1194,6 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Starting Server App on port 3003...');
     await startServerApp();
     if (isShutdownRequested()) return;
-
-    console.log('[Flo] Initializing WhatsApp service...');
-    initWhatsAppFromDb();
 
     // Native E2E owns an offline fixture; optional LAN discovery must not
     // contend with a developer session or keep the test process alive.

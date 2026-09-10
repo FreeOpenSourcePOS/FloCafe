@@ -69,16 +69,24 @@ export function getWhatsAppShareUrl(
   return `https://wa.me/?text=${encoded}`;
 }
 
-/** Opens WhatsApp share URL in a new window or tab. */
+/** Opens the WhatsApp share URL externally and reports whether it opened. */
 export function shareBillViaWhatsApp(
   bill: Bill,
   customerInfo: Pick<Customer, 'phone' | 'country_code'> | null,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WhatsAppShareOptions = {},
   localeOverride?: string,
-): void {
+): Promise<boolean> {
   const url = getWhatsAppShareUrl(bill, tenant, customerInfo, opts, localeOverride);
-  window.open(url, '_blank', 'noopener,noreferrer');
+  if (window.electronAPI?.openWhatsAppShare) {
+    return window.electronAPI.openWhatsAppShare(url)
+      .then((result) => 'success' in result && result.success === true);
+  }
+  const popup = window.open('', '_blank');
+  if (!popup) return Promise.resolve(false);
+  popup.opener = null;
+  popup.location.href = url;
+  return Promise.resolve(true);
 }
 
 /** Generates plain text bill summary message for clipboard copy. */

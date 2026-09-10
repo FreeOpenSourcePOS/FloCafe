@@ -680,7 +680,7 @@ export default function OrdersPage() {
     }
   };
 
-  const handleWhatsAppShare = (order: Order) => {
+  const handleWhatsAppShare = async (order: Order) => {
     if (!order.bill) {
       toast.error(tOrders('billNotFound'));
       return;
@@ -691,7 +691,7 @@ export default function OrdersPage() {
     }
 
     try {
-      shareBillViaWhatsApp(
+      const opened = await shareBillViaWhatsApp(
         order.bill,
         { phone: order.customer.phone, country_code: order.customer.country_code },
         {
@@ -702,6 +702,7 @@ export default function OrdersPage() {
         { pointsEarned: order.bill.points_earned ?? 0 },
         locale,
       );
+      if (!opened) toast.error(tOrders('whatsappFailed'));
     } catch {
       toast.error(tOrders('whatsappFailed'));
     }

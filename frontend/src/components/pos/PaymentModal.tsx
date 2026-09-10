@@ -429,19 +429,20 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     }
   };
 
-  const handleShareWhatsApp = () => {
+  const handleShareWhatsApp = async () => {
     if (!cartCustomer?.phone) {
       toast.error(tWhatsappSend('customerPhoneRequired'));
       return;
     }
     try {
-      shareBillViaWhatsApp(
+      const opened = await shareBillViaWhatsApp(
         bill,
         { phone: cartCustomer.phone, country_code: cartCustomer.country_code },
         tenantForShare,
         { pointsEarned },
         locale,
       );
+      if (!opened) toast.error(tOrders('whatsappFailed'));
     } catch {
       toast.error(tOrders('whatsappFailed'));
     }

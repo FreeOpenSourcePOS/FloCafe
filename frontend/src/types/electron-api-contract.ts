@@ -28,6 +28,7 @@ export type ElectronApiContractChecks = [
   Expect<Equal<ElectronAPI['setThemeEffective'], (isDark: boolean) => Promise<ElectronActionResult | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getKdsInfo'], () => Promise<KdsInfo | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['openKdsWindow'], () => Promise<void | ElectronIpcError>>>,
+  Expect<Equal<ElectronAPI['openWhatsAppShare'], (url: string) => Promise<ElectronActionResult | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getAppInfo'], () => Promise<ElectronAppInfo | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getPrinters'], () => Promise<ElectronPrinter[] | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['savePrinter'], (printer: ElectronPrinterInput) => Promise<ElectronActionResult | ElectronIpcError>>>,
@@ -51,6 +52,7 @@ export type ElectronApiMethodPresence = Pick<
   | 'setThemeEffective'
   | 'getKdsInfo'
   | 'openKdsWindow'
+  | 'openWhatsAppShare'
   | 'getAppInfo'
   | 'getStatus'
   | 'getPrinters'

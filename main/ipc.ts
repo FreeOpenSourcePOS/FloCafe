@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, BrowserWindow } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -9,7 +9,7 @@ import { clearJWTSecretCache } from './routes/auth';
 import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
-import { getStatus as getWhatsAppStatus } from './services/whatsapp';
+import { getStatus as getWhatsAppStatus, sanitizeLogText } from './services/whatsapp';
 import { createKdsWindow, applyWindowControlAction } from './window-options';
 import {
   isCurrentRendererFrame,
@@ -22,6 +22,7 @@ import { getCurrencyMinorUnitFactor } from './countries';
 import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from './printers/thermal';
 import { isKotDocument, isPrintDocument } from '../shared/print/document';
 import { sendEvent as sendTelemetryEvent } from './services/telemetry';
+import { isSafeWhatsAppShareUrl } from './security/url-allowlist';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -69,8 +70,9 @@ function isValidRasterColumns(value: unknown): value is number {
 /** Verifies that IPC sender origin is the localhost-served POS renderer. */
 export function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender'>): boolean {
   try {
-    const url = event.sender?.getURL?.() ?? '';
-    return url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
+    const url = new URL(event.sender?.getURL?.() ?? '');
+    if (url.protocol !== 'http:' || url.username || url.password) return false;
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
   } catch {
     return false;
   }
@@ -395,6 +397,19 @@ export function registerIpcHandlers(
       return { error: getErrorMessage(err) };
     }
   }));
+
+  handle('whatsapp-open-share', async (_event, rawUrl: unknown) => {
+    if (typeof rawUrl !== 'string' || !isSafeWhatsAppShareUrl(rawUrl)) {
+      return { success: false, error: 'Invalid WhatsApp share URL' };
+    }
+    try {
+      await shell.openExternal(rawUrl);
+      return { success: true };
+    } catch (error: unknown) {
+      console.error('[IPC] WhatsApp share open failed:', sanitizeLogText(error));
+      return { success: false, error: 'Failed to open WhatsApp' };
+    }
+  });
 
   // Module-level reference to ensure single instance
   let activeKdsWindow: BrowserWindow | null = null;

@@ -1,4 +1,4 @@
-import { isAllowedLocalWindowUrl, isSafeExternalUrl } from '../main/security/url-allowlist';
+import { isAllowedLocalWindowUrl, isSafeExternalUrl, isSafeWhatsAppShareUrl } from '../main/security/url-allowlist';
 
 function assertEqual(actual: boolean, expected: boolean, message: string): void {
   if (actual !== expected) throw new Error(`${message}: expected ${expected}, got ${actual}`);
@@ -31,5 +31,12 @@ assertEqual(isSafeExternalUrl('javascript:alert(1)'), false, 'javascript scheme 
 assertEqual(isSafeExternalUrl('data:text/html,<h1>test</h1>'), false, 'data scheme rejected for openExternal');
 assertEqual(isSafeExternalUrl('custom-protocol://action'), false, 'custom scheme rejected for openExternal');
 assertEqual(isSafeExternalUrl('invalid-url'), false, 'malformed URL rejected for openExternal');
+
+// ── WhatsApp share URL validation ────────────────────────────────────────────
+assertEqual(isSafeWhatsAppShareUrl('https://wa.me/15555550100?text=hello'), true, 'generated wa.me URL allowed');
+assertEqual(isSafeWhatsAppShareUrl('https://wa.me/?text=hello'), true, 'generic wa.me share URL allowed');
+assertEqual(isSafeWhatsAppShareUrl('http://wa.me/15555550100?text=hello'), false, 'http wa.me URL rejected');
+assertEqual(isSafeWhatsAppShareUrl('https://wa.me.evil.example/15555550100'), false, 'lookalike wa.me host rejected');
+assertEqual(isSafeWhatsAppShareUrl('https://wa.me/15555550100/path'), false, 'unexpected wa.me path rejected');
 
 console.log('URL allowlist tests passed');

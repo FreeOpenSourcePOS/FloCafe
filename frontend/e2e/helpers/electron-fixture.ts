@@ -116,6 +116,7 @@ export async function injectElectronFixture(
       setThemeEffective: async (_isDark: boolean) => result,
       getKdsInfo: async () => kdsInfo,
       openKdsWindow: async () => undefined,
+      openWhatsAppShare: async () => result,
       getAppInfo: async () => appInfo,
       getPrinters: async () => [],
       savePrinter: async () => result,

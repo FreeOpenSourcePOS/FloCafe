@@ -17,6 +17,29 @@ let releasePendingPresence!: () => void;
 const pendingPresence = new Promise<void>((resolve) => { releasePendingPresence = resolve; });
 let presenceSettled = false;
 void pendingPresence.then(() => { presenceSettled = true; });
+let makeSocketCalls = 0;
+let authStateCalls = 0;
+let holdAuthState = false;
+let authStateStarted!: () => void;
+const authStateStartedPromise = new Promise<void>((resolve) => { authStateStarted = resolve; });
+let releaseAuthState!: () => void;
+const authStateGate = new Promise<void>((resolve) => { releaseAuthState = resolve; });
+let holdRecoveryAuthState = false;
+let recoveryAuthStateStarted!: () => void;
+const recoveryAuthStateStartedPromise = new Promise<void>((resolve) => { recoveryAuthStateStarted = resolve; });
+let releaseRecoveryAuthState!: () => void;
+const recoveryAuthStateGate = new Promise<void>((resolve) => { releaseRecoveryAuthState = resolve; });
+let holdRequestAuthState = false;
+let requestAuthStateStarted!: () => void;
+const requestAuthStateStartedPromise = new Promise<void>((resolve) => { requestAuthStateStarted = resolve; });
+let releaseRequestAuthState!: () => void;
+const requestAuthStateGate = new Promise<void>((resolve) => { releaseRequestAuthState = resolve; });
+const baileysLogLines: string[] = [];
+let holdCredentialWrite = false;
+let credentialWriteStarted!: () => void;
+const credentialWriteStartedPromise = new Promise<void>((resolve) => { credentialWriteStarted = resolve; });
+let releaseCredentialWrite!: () => void;
+const credentialWriteGate = new Promise<void>((resolve) => { releaseCredentialWrite = resolve; });
 const fakeSocket = {
   ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
   onWhatsApp: async () => [{ exists: true, jid: '15555550100@s.whatsapp.net' }],
@@ -27,8 +50,35 @@ const fakeSocket = {
 };
 const fakeBaileys = {
   fetchLatestWaWebVersion: async () => ({ version: [2, 3000, 1] }),
-  useMultiFileAuthState: async () => ({ state: {}, saveCreds: () => {} }),
-  makeWASocket: () => fakeSocket,
+  useMultiFileAuthState: async () => {
+    authStateCalls++;
+    if (holdAuthState) {
+      authStateStarted();
+      await authStateGate;
+    }
+    if (holdRecoveryAuthState) {
+      recoveryAuthStateStarted();
+      await recoveryAuthStateGate;
+    }
+    if (holdRequestAuthState) {
+      requestAuthStateStarted();
+      await requestAuthStateGate;
+    }
+    return {
+      state: {},
+      saveCreds: async () => {
+        if (holdCredentialWrite) {
+          credentialWriteStarted();
+          await credentialWriteGate;
+        }
+      },
+    };
+  },
+  makeWASocket: (options: any) => {
+    makeSocketCalls++;
+    options.logger.warn({ body: 'private bill body', phone: '+15555550100' }, 'Baileys warning for +15555550100');
+    return fakeSocket;
+  },
   Browsers: { macOS: () => ({}) },
   proto: { Message: { create: () => ({}) } },
 };
@@ -54,6 +104,12 @@ const { createShutdownEntrypoints } = require('../main/shutdown');
 
 async function main(): Promise<void> {
   console.log('Testing WhatsApp service API surface...');
+  const originalConsoleWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    const line = String(args[0] ?? '');
+    if (line.includes('"event":"baileys_log"')) baileysLogLines.push(line);
+    originalConsoleWarn(...args);
+  };
   const failures: string[] = [];
   const assert = (cond: unknown, msg: string): void => {
     if (!cond) failures.push(msg);
@@ -69,6 +125,33 @@ async function main(): Promise<void> {
   assert(typeof whatsapp.disconnect === 'function', 'exports disconnect()');
   assert(typeof whatsapp.shutdown === 'function', 'exports shutdown()');
   assert(typeof whatsapp.initFromDb === 'function', 'exports initFromDb()');
+  assert(
+    whatsapp.sanitizeLogText(new Error('recipient +1 555 555 0100 via https://wa.me/15555550100?text=private-bill'))
+      === 'recipient [redacted-number] via [redacted-url]',
+    'diagnostic sanitizer redacts formatted phone numbers and share URLs',
+  );
+  const jsonCredentialDiagnostics = [
+    '{"password":"credential-value","token":"token-value"}',
+    '{ "auth": "auth-value", "api_key": "api-key-value" }',
+  ];
+  for (const diagnostic of jsonCredentialDiagnostics) {
+    const sanitized = whatsapp.sanitizeLogText(diagnostic) ?? '';
+    assert(
+      !sanitized.includes('credential-value')
+        && !sanitized.includes('token-value')
+        && !sanitized.includes('auth-value')
+        && !sanitized.includes('api-key-value')
+        && sanitized.includes('[redacted]'),
+      'diagnostic sanitizer redacts JSON-style credential fields',
+    );
+  }
+  for (const diagnostic of ['Authorization=Bearer secret-token', 'Authorization: Bearer secret-token']) {
+    const sanitized = whatsapp.sanitizeLogText(diagnostic) ?? '';
+    assert(
+      !sanitized.includes('secret-token') && sanitized.includes('[redacted]'),
+      'diagnostic sanitizer redacts assignment-style authorization tokens',
+    );
+  }
 
   // Send + storage
   assert(typeof whatsapp.sendMessage === 'function', 'exports sendMessage()');
@@ -103,15 +186,87 @@ async function main(): Promise<void> {
   const testDir = path.join(os.tmpdir(), 'flo-whatsapp-shutdown-test');
   const originalFetch = globalThis.fetch;
   const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
+  fs.rmSync(testDir, { recursive: true, force: true });
   initDatabase();
   globalThis.fetch = (() => Promise.reject(new Error('offline test network'))) as typeof fetch;
   try {
     await whatsapp.enable('shutdown-test-user');
+
+    holdAuthState = true;
+    const socketCallsBeforeRace = makeSocketCalls;
+    whatsapp.initFromDb();
+    whatsapp.initFromDb();
+    await authStateStartedPromise;
+    releaseAuthState();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(makeSocketCalls === socketCallsBeforeRace + 1, 'duplicate startup initialization creates one socket');
+    assert(
+      baileysLogLines.some((line) => line.includes('Baileys warning for [redacted-number]')),
+      'Baileys warning details are retained and sanitized in diagnostics',
+    );
+    assert(
+      baileysLogLines.every((line) => !line.includes('private bill body')),
+      'Baileys diagnostics do not include logger object message bodies',
+    );
+    holdAuthState = false;
+
     await whatsapp.connectWithQr();
     eventHandlers.get('connection.update')?.({ connection: 'open' });
     await new Promise((resolve) => setImmediate(resolve));
 
+    holdCredentialWrite = true;
+    const authStateCallsBeforeCredentialRecovery = authStateCalls;
+    eventHandlers.get('creds.update')?.({});
+    await credentialWriteStartedPromise;
+    whatsapp.disconnect();
+    await whatsapp.enable('credential-recovery-test-user');
+    const credentialRecovery = whatsapp.connectWithQr();
+    let credentialRecoverySettled = false;
+    void credentialRecovery.then(() => { credentialRecoverySettled = true; }, () => { credentialRecoverySettled = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(!credentialRecoverySettled, 'startup waits for asynchronous credential persistence before reopening auth');
+    releaseCredentialWrite();
+    holdCredentialWrite = false;
+    await credentialRecovery;
+    assert(authStateCalls === authStateCallsBeforeCredentialRecovery + 1, 'credential cleanup completes before the replacement startup');
+
+    holdRecoveryAuthState = true;
+    const authStateCallsBeforeRecovery = authStateCalls;
+    whatsapp.disconnect();
+    await whatsapp.enable('startup-recovery-test-user');
+    const cancelledStartup = whatsapp.connectWithQr().catch(() => undefined);
+    await recoveryAuthStateStartedPromise;
+    await whatsapp.enable('startup-recovery-test-user');
+    const socketCallsBeforeRecovery = makeSocketCalls;
+    whatsapp.disconnect();
+    releaseRecoveryAuthState();
+    holdRecoveryAuthState = false;
+    await cancelledStartup;
+    assert(whatsapp.getStatus().lastErrorReason === null, 'intentional startup cancellation does not report a failure');
+    await whatsapp.enable('startup-recovery-test-user');
+    const restartedStartup = whatsapp.connectWithQr();
+    const restartedResult = await restartedStartup;
+    assert(restartedResult.ok === true, 're-enable starts a fresh socket after cancellation');
+    assert(makeSocketCalls === socketCallsBeforeRecovery + 1, 'cancelled startup does not create a duplicate socket');
+    assert(authStateCalls === authStateCallsBeforeRecovery + 2, 're-enable waits for the cancelled startup before retrying');
+
+    holdRequestAuthState = true;
+    const authStateCallsBeforeRequestCancellation = authStateCalls;
+    whatsapp.disconnect();
+    await whatsapp.enable('request-cancellation-test-user');
     const requestAbort = new AbortController();
+    const cancelledRequest = whatsapp.connectWithQr(requestAbort.signal).then(() => 'resolved', () => 'rejected');
+    await requestAuthStateStartedPromise;
+    requestAbort.abort();
+    const retriedRequest = whatsapp.connectWithQr();
+    releaseRequestAuthState();
+    holdRequestAuthState = false;
+    const [cancelledRequestResult, retriedRequestResult] = await Promise.all([cancelledRequest, retriedRequest]);
+    assert(cancelledRequestResult === 'rejected', 'aborted connect request is rejected');
+    assert(retriedRequestResult.ok === true, 'retry joins request-independent startup');
+    assert(authStateCalls === authStateCallsBeforeRequestCancellation + 1, 'request cancellation does not restart shared auth loading');
+
+    const sendAbort = new AbortController();
     const sendPromise = whatsapp.sendMessage({
       phoneE164: '+15555550100',
       body: 'shutdown cancellation test',
@@ -119,7 +274,7 @@ async function main(): Promise<void> {
       customerId: null,
       kind: 'manual_reply',
       userId: null,
-      signal: requestAbort.signal,
+      signal: sendAbort.signal,
     });
     await presenceStartedPromise;
     const shutdownEntrypoints = createShutdownEntrypoints({
@@ -131,7 +286,7 @@ async function main(): Promise<void> {
       destroyWindow: () => {},
     });
     const shutdownPromise = shutdownEntrypoints.runCleanup();
-    requestAbort.abort();
+    sendAbort.abort();
     let sendSettled = false;
     void sendPromise.then(() => { sendSettled = true; }, () => { sendSettled = true; });
     let shutdownSettled = false;
@@ -152,6 +307,7 @@ async function main(): Promise<void> {
     assert(row.error === 'WhatsApp is shutting down.' && row.failed_at !== null, 'shutdown-cancelled send records its failure details');
     assert(presenceSettled, 'shutdown waits for the underlying WhatsApp operation to settle');
   } finally {
+    console.warn = originalConsoleWarn;
     globalThis.fetch = originalFetch;
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

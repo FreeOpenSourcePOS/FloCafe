@@ -309,8 +309,7 @@ export function startServer(): Promise<void> {
           console.log(`[Server] KDS WebSocket running on ws://localhost:${activePort}/kds`);
         }
 
-        // main/index.ts (Electron) also calls this; dev-server and pm2 boot
-        // through here instead and would otherwise start with module defaults.
+        // This is the single startup owner for WhatsApp in every server mode.
         try {
           initWhatsAppFromDb();
         } catch (error) {

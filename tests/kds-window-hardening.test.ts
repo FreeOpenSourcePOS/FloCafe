@@ -10,6 +10,7 @@ const originalLoad = Module._load;
 const registered = new Map<string, (...args: any[]) => any>();
 const registeredSync = new Map<string, (...args: any[]) => any>();
 const windows: any[] = [];
+let failExternalOpen = false;
 
 class FakeWebContents {
   handlers = new Map<string, Function[]>();
@@ -89,7 +90,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
       },
       app: { getPath: () => '/tmp/flo-kds-test', getVersion: () => '3.2.0', getName: () => 'FloCafe' },
       BrowserWindow: FakeBrowserWindow,
-      shell: { openExternal: () => Promise.resolve() },
+      shell: {
+        openExternal: async () => {
+          if (failExternalOpen) throw new Error('test external-open failure');
+        },
+      },
     };
   }
   if (request === './db') {
@@ -138,7 +143,11 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
     };
   }
   if (request === './services/whatsapp') {
-    return { getStatus: () => ({ connected: false, qrCode: null }) };
+    return {
+      getStatus: () => ({ connected: false, qrCode: null }),
+      sanitizeLogText: (error: unknown) => (error instanceof Error ? error.message : String(error))
+        .replace(/https?:\/\/\S+/gi, '[redacted-url]'),
+    };
   }
   return originalLoad.apply(this, arguments as any);
 };
@@ -198,6 +207,7 @@ async function run(): Promise<void> {
   const untrustedKds = { sender: { getURL: () => 'http://192.168.1.50:3002/kds' } };
   const untrustedExternal = { sender: { getURL: () => 'http://evil.example.com/' } };
   const untrustedSpoofedPrefix = { sender: { getURL: () => 'http://localhost.evil.com/' } };
+  const untrustedCredentialPrefix = { sender: { getURL: () => 'http://localhost:3001@evil.example/' } };
   const untrustedNullSender = { sender: { getURL: () => null } };
 
   // 1. Verify ALL non-PIN-gated handlers enforce sender identity
@@ -208,6 +218,7 @@ async function run(): Promise<void> {
     { channel: 'get-settings', args: [] },
     { channel: 'set-setting', args: ['business_name', 'My Cafe'] },
     { channel: 'whatsapp-get-status', args: [] },
+    { channel: 'whatsapp-open-share', args: ['https://wa.me/15555550100?text=test'] },
     { channel: 'get-kds-info', args: [] },
     { channel: 'open-kds-window', args: [] },
     { channel: 'get-app-info', args: [] },
@@ -232,6 +243,9 @@ async function run(): Promise<void> {
     const spoofRes = await listener(untrustedSpoofedPrefix, ...args);
     assert.deepEqual(spoofRes, { error: 'Unauthorized sender' }, `${channel} rejected spoofed prefix sender`);
 
+    const credentialPrefixRes = await listener(untrustedCredentialPrefix, ...args);
+    assert.deepEqual(credentialPrefixRes, { error: 'Unauthorized sender' }, `${channel} rejected credential-prefix sender`);
+
     const nullRes = await listener(untrustedNullSender, ...args);
     assert.deepEqual(nullRes, { error: 'Unauthorized sender' }, `${channel} rejected null sender`);
 
@@ -244,6 +258,16 @@ async function run(): Promise<void> {
 
     log(`  ✓ ${channel}: successfully blocks untrusted senders and admits trusted origins`);
   }
+
+  const openShareListener = registered.get('whatsapp-open-share')!;
+  const invalidShareRes = await openShareListener(trustedLocalhost, 'https://example.com/');
+  assert.deepEqual(invalidShareRes, { success: false, error: 'Invalid WhatsApp share URL' }, 'WhatsApp opener rejects non-wa.me URLs');
+  failExternalOpen = true;
+  const failedShareRes = await openShareListener(trustedLocalhost, 'https://wa.me/15555550100?text=test');
+  assert.deepEqual(failedShareRes, { success: false, error: 'Failed to open WhatsApp' }, 'WhatsApp opener reports shell failure');
+  failExternalOpen = false;
+  const successfulShareRes = await openShareListener(trustedLocalhost, 'https://wa.me/15555550100?text=test');
+  assert.deepEqual(successfulShareRes, { success: true }, 'WhatsApp opener reports shell success');
 
   // 2. PIN-gated handlers enforce master PIN
   log('\n[Phase 2] Verifying PIN-gated handlers require authorization...');

@@ -59,6 +59,7 @@ export interface ElectronAPI {
 
   // Status
   getStatus: () => Promise<ElectronStatus>;
+  openWhatsAppShare: (url: string) => Promise<ElectronActionResult | ElectronIpcError>;
   // Reports renderer readiness to main with epoch validation.
   windowReady: (payload: { epoch: number }) => Promise<ElectronActionResult | ElectronIpcError>;
 

@@ -1933,20 +1933,13 @@ export function formatCurrency(
     minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).replace(/[\u00A0\u202F]/g, ' ');
+  const sign = isNegative ? '-' : '';
   const safePrefix = escapeEscPosControlTokens(prefix);
   if (position === 'suffix') {
     const suffix = safePrefix.trimStart();
-    const sign = isNegative ? '-' : '';
     return suffix ? `${sign}${formattedNum} ${suffix}` : `${sign}${formattedNum}`;
   }
-  if (isNegative) {
-    const trimmed = safePrefix.trimStart();
-    const leadingSpaces = safePrefix.slice(0, safePrefix.length - trimmed.length);
-    const needsSpace = /^[A-Za-z]/.test(trimmed);
-    return `-${leadingSpaces}${trimmed}${needsSpace ? ' ' : ''}${formattedNum}`;
-  }
-  const needsSpace = /^[A-Za-z]/.test(safePrefix.trimStart());
-  return `${safePrefix}${needsSpace ? ' ' : ''}${formattedNum}`;
+  return `${sign}${safePrefix}${formattedNum}`;
 }
 
 export function rightAlign(text: string, width: number = 24): string {

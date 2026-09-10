@@ -332,6 +332,9 @@ export function parseLocaleNumber(raw: unknown, locale = 'en-US', fractionDigits
   if (!raw || typeof raw !== 'string') return NaN;
 
   let s = raw.trim();
+  if (/^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))[eE][+-]?\d+$/.test(s)) {
+    return Number(s);
+  }
   // Strip leading currency symbols (e.g. $, €, £, ¥, ₹) or leading currency codes followed by whitespace (e.g. "COP 11.000")
   s = s.replace(/^[\p{Sc}\u00A4]+\s*/u, '').trim();
   s = s.replace(/^[A-Za-z]{2,5}\s+/u, '').trim();

@@ -138,6 +138,7 @@ test('parseLocaleNumber: handles COP / es-CO thousands dot and decimal comma', (
   assert.equal(parseLocaleNumber('11,000.50', 'en-US', 2), 11000.5);
   assert.equal(parseLocaleNumber('11,000', 'en-US', 0), 11000);
   assert.equal(parseLocaleNumber('11000', 'en-US', 0), 11000);
+  assert.equal(parseLocaleNumber('1e3', 'en-US', 2), 1000);
 });
 
 test('parseLocaleNumber: normalizes locale separators and digits', () => {

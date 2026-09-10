@@ -296,6 +296,26 @@ async function main() {
     assertEqual(skippedActive.data.addons_reactivated, 0, 'active addon is not reported as reactivated');
     assertEqual(skippedActive.data.skipped, 1, 'active duplicate addon is skipped');
 
+    console.log('\n─── Locale-aware monetary values ───');
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run('country', 'CO', now());
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run('currency', 'COP', now());
+    const localeGrouped = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(',,Locale Grouped Price,CSV Category,11.000,Description,1,,,,,yes'),
+      },
+      headers: authHeader,
+    });
+    assertEqual(localeGrouped.data.created, 1, 'locale-grouped product is created');
+    const localeGroupedProduct = db.prepare('SELECT price FROM products WHERE name = ?').get('Locale Grouped Price') as any;
+    assertEqual(localeGroupedProduct.price, 11000, 'locale-grouped price is stored numerically');
+
     console.log('\n─── CSV resource bounds ───');
     const tooManyCells = await api(baseUrl, '/api/menu/csv/import/products', {
       method: 'POST',

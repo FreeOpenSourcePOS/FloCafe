@@ -160,7 +160,7 @@ function parseNumericField(
   }
 
   let parsed: number;
-  if (NUMBER_TOKEN.test(value)) {
+  if (NUMBER_TOKEN.test(value) && /[eE]/.test(value)) {
     parsed = Number(value);
   } else if (options.locale) {
     parsed = parseLocaleNumber(value, options.locale, options.fractionDigits ?? 2);

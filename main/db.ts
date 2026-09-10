@@ -4997,22 +4997,31 @@ function parseStartTimeOffsetMs(startTime: string = '00:00'): number {
   return (hours * 60 + minutes) * 60 * 1000;
 }
 
-/** Return the calendar date represented by an instant in an IANA timezone with an optional day start offset. */
-export function localDateInTimezone(instant: Date, timezone: string, startTime: string = '00:00'): string {
-  const offsetMs = parseStartTimeOffsetMs(startTime);
-  const adjustedInstant = offsetMs > 0 ? new Date(instant.getTime() - offsetMs) : instant;
+function calendarDateInTimezone(instant: Date, timezone: string): string {
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-    }).formatToParts(adjustedInstant);
+    }).formatToParts(instant);
     const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
     return `${get('year')}-${get('month')}-${get('day')}`;
   } catch {
-    return adjustedInstant.toISOString().slice(0, 10);
+    return instant.toISOString().slice(0, 10);
   }
+}
+
+/** Return the business date represented by an instant in an IANA timezone with an optional day start offset. */
+export function localDateInTimezone(instant: Date, timezone: string, startTime: string = '00:00'): string {
+  if (parseStartTimeOffsetMs(startTime) === 0) return calendarDateInTimezone(instant, timezone);
+
+  const calendarDate = calendarDateInTimezone(instant, timezone);
+  const [start] = dayBoundsInTimezone(calendarDate, timezone, startTime);
+  if (instant >= parseDbTimestamp(start)) return calendarDate;
+
+  const [year, month, day] = calendarDate.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
 }
 
 function timezoneOffsetMilliseconds(instant: Date, timezone: string): number {
@@ -5034,7 +5043,9 @@ function timezoneOffsetMilliseconds(instant: Date, timezone: string): number {
 export function dayBoundsInTimezone(date: string, timezone: string, startTime: string = '00:00'): [string, string] {
   const [y, m, d] = date.split('-').map(Number);
   const format = (instant: Date) => instant.toISOString().replace('T', ' ').replace(/\..*$/, '');
-  const offsetMs = parseStartTimeOffsetMs(startTime);
+  const offsetMinutes = parseStartTimeOffsetMs(startTime) / 60000;
+  const startHour = Math.floor(offsetMinutes / 60);
+  const startMinute = offsetMinutes % 60;
   try {
     const toUtc = (localWallTime: number): Date => {
       let instant = new Date(localWallTime);
@@ -5044,8 +5055,8 @@ export function dayBoundsInTimezone(date: string, timezone: string, startTime: s
       return instant;
     };
     return [
-      format(toUtc(Date.UTC(y, m - 1, d) + offsetMs)),
-      format(toUtc(Date.UTC(y, m - 1, d + 1) + offsetMs)),
+      format(toUtc(Date.UTC(y, m - 1, d, startHour, startMinute))),
+      format(toUtc(Date.UTC(y, m - 1, d + 1, startHour, startMinute))),
     ];
   } catch {
     return utcDayBounds(date, startTime);

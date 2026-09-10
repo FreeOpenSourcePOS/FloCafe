@@ -44,6 +44,7 @@ const cutoffCases = [
     instantPreCutoff: '2026-04-22T03:30:00Z',
     instantPostCutoff: '2026-04-22T04:00:00Z',
     date: '2026-04-21',
+    postCutoffDate: '2026-04-22',
     bounds: ['2026-04-21 04:00:00', '2026-04-22 04:00:00'],
   },
   {
@@ -51,6 +52,7 @@ const cutoffCases = [
     instantPreCutoff: '2026-04-21T20:00:00Z', // 01:30 IST on 2026-04-22 -> belongs to 2026-04-21
     instantPostCutoff: '2026-04-21T22:30:00Z', // 04:00 IST on 2026-04-22 -> rolls over to 2026-04-22
     date: '2026-04-21',
+    postCutoffDate: '2026-04-22',
     bounds: ['2026-04-20 22:30:00', '2026-04-21 22:30:00'],
   },
   {
@@ -58,7 +60,16 @@ const cutoffCases = [
     instantPreCutoff: '2026-04-22T08:30:00Z', // 01:30 PDT on 2026-04-22 -> belongs to 2026-04-21
     instantPostCutoff: '2026-04-22T11:00:00Z', // 04:00 PDT on 2026-04-22 -> rolls over to 2026-04-22
     date: '2026-04-21',
+    postCutoffDate: '2026-04-22',
     bounds: ['2026-04-21 11:00:00', '2026-04-22 11:00:00'],
+  },
+  {
+    timezone: 'America/Los_Angeles',
+    instantPreCutoff: '2026-03-08T10:59:59Z',
+    instantPostCutoff: '2026-03-08T11:00:00Z',
+    date: '2026-03-07',
+    postCutoffDate: '2026-03-08',
+    bounds: ['2026-03-07 12:00:00', '2026-03-08 11:00:00'],
   },
 ] as const;
 
@@ -70,7 +81,7 @@ for (const testCase of cutoffCases) {
   );
   assert.equal(
     localDateInTimezone(new Date(testCase.instantPostCutoff), testCase.timezone, '04:00'),
-    '2026-04-22',
+    testCase.postCutoffDate,
     `${testCase.timezone}: post-cutoff instant (04:00) rolls over to next business date`,
   );
   assert.deepEqual(

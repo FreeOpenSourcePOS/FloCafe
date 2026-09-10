@@ -1,7 +1,7 @@
 /**
  * Day-close (cierre de caja, issue #649).
  *
- * One close per store per tenant-local day. POST /api/cash-closures:
+ * One close per store per tenant business day. POST /api/cash-closures:
  *  - Owner-only (manager/cashier/server are 403).
  *  - Validates: YYYY-MM-DD format, not in the future, integer cents >= 0.
  *  - Recomputes the day's aggregates server-side (never trusts client totals)
@@ -32,6 +32,7 @@
 import { Router, Request, Response } from 'express';
 import {
   dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, now, withTxn,
+  tenantBusinessDayStartTime,
 } from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
@@ -59,6 +60,10 @@ function tenantTimezone(): string {
   return getSettingValue('timezone') || 'Asia/Kolkata';
 }
 
+function tenantStartTime(db?: ReturnType<typeof getDatabase>): string {
+  return tenantBusinessDayStartTime(db);
+}
+
 function validateBusinessDate(raw: unknown): string {
   if (typeof raw !== 'string' || !ISO_DATE_RE.test(raw)) {
     throw httpError('business_date must use YYYY-MM-DD format', 400);
@@ -77,11 +82,11 @@ function validateBusinessDate(raw: unknown): string {
   ) {
     throw httpError('business_date is not a real calendar date', 400);
   }
-  // Tenant-local today, not the host UTC clock: a date that is "today" in
-  // the store's configured timezone must never be rejected as future even
-  // when the host's UTC clock is still on yesterday. ISO date arithmetic on
-  // the YYYY-MM-DD string is timezone-safe.
-  const todayLocal = localDateInTimezone(new Date(), tenantTimezone());
+  // Tenant-local business date, not the host UTC clock: a date that is
+  // "today" in the store's configured timezone and cutoff must never be
+  // rejected as future even when the host's UTC clock is still on yesterday.
+  // ISO date arithmetic on the YYYY-MM-DD string is timezone-safe.
+  const todayLocal = localDateInTimezone(new Date(), tenantTimezone(), tenantStartTime());
   if (raw > todayLocal) {
     throw httpError('business_date cannot be in the future', 400);
   }
@@ -190,8 +195,9 @@ export function paymentMethodBreakdown(
   attributeRefundsToBillDate: boolean = false,
   keyByPaidAt: boolean = false,
 ): PaymentMethodRow[] {
-  const [start] = dayBoundsInTimezone(startDate, tenantTimezone());
-  const [, end] = dayBoundsInTimezone(endDate, tenantTimezone());
+  const startTime = tenantStartTime(db);
+  const [start] = dayBoundsInTimezone(startDate, tenantTimezone(), startTime);
+  const [, end] = dayBoundsInTimezone(endDate, tenantTimezone(), startTime);
   const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
   return db.prepare(`
     WITH payment_lines AS (
@@ -252,7 +258,7 @@ export function paymentMethodBreakdown(
  * plain `DayAggregates` shape already converted to INTEGER minor units.
  */
 export function computeDayAggregates(db: ReturnType<typeof getDatabase>, businessDate: string): DayAggregates {
-  const [start, end] = dayBoundsInTimezone(businessDate, tenantTimezone());
+  const [start, end] = dayBoundsInTimezone(businessDate, tenantTimezone(), tenantStartTime(db));
 
   // Display gross — `SUM(paid_amount)` over the paid_at day window (NOT
   // SUM(total) over created_at). This matches financial-summary so display
@@ -400,7 +406,7 @@ router.post('/', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response
     if (!closedBy) throw httpError('Authentication required', 401);
 
     const db = getDatabase();
-    const [periodStart, periodEnd] = dayBoundsInTimezone(businessDate, tenantTimezone());
+    const [periodStart, periodEnd] = dayBoundsInTimezone(businessDate, tenantTimezone(), tenantStartTime(db));
 
     // SELECT-then-INSERT inside withTxn matches the customers.ts uniqueness
     // pattern; the partial index `cash_closures_one_day ... WHERE scope='day'`

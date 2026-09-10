@@ -1565,6 +1565,51 @@ async function main() {
       assertEqual(z.body?.zReport?.closed_by_name, 'temp-closer', 'closed_by_name falls back to the raw id (not blank, not 500)');
     }
 
+    console.log('\n19. Configurable business_day_start_time cutoff (#692)');
+    {
+      const dayCutoffBase = new Date(Date.now() - 150 * 24 * 60 * 60 * 1000);
+      const day1 = dayCutoffBase.toISOString().slice(0, 10);
+      const day2 = new Date(dayCutoffBase.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+      // Set business_day_start_time to 04:00 (UTC)
+      db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_day_start_time', '04:00', CURRENT_TIMESTAMP)").run();
+      try {
+        // Bill paid at 01:30 UTC on day2 — with 04:00 cutoff, this belongs to day1
+        seedPaidBill({
+          billNumber: 'B-POST-MIDNIGHT', method: 'cash', amount: 150, businessDate: day1,
+          createdAt: dbTimestamp(new Date(`${day2}T01:30:00Z`)),
+          paidAt: dbTimestamp(new Date(`${day2}T01:30:00Z`)),
+        });
+
+        // Bill paid at 04:30 UTC on day2 — after 04:00 cutoff, rolls over to day2
+        seedPaidBill({
+          billNumber: 'B-MORNING-CUTOFF', method: 'cash', amount: 250, businessDate: day2,
+          createdAt: dbTimestamp(new Date(`${day2}T04:30:00Z`)),
+          paidAt: dbTimestamp(new Date(`${day2}T04:30:00Z`)),
+        });
+
+        // Close day1: B-POST-MIDNIGHT should contribute to day1
+        const close1 = await request(app).post('/api/cash-closures').set('Authorization', `Bearer ${ownerToken}`).send({
+          business_date: day1, opening_float_cents: 0, counted_cash_cents: 15000,
+        });
+        assertEqual(close1.status, 201, `day1 close with cutoff succeeds (got ${close1.status})`);
+        assertEqual(close1.body?.zReport?.bill_count, 1, 'day1: only post-midnight bill (01:30) counted in day1');
+        assertEqual(close1.body?.zReport?.expected_cash_cents, 15000, 'day1: expected cash = 15000');
+        assert(close1.body?.zReport?.period_start.endsWith('04:00:00'), 'day1 period_start reflects 04:00 cutoff');
+        assert(close1.body?.zReport?.period_end.endsWith('04:00:00'), 'day1 period_end reflects 04:00 cutoff');
+
+        // Close day2: B-MORNING-CUTOFF should contribute to day2
+        const close2 = await request(app).post('/api/cash-closures').set('Authorization', `Bearer ${ownerToken}`).send({
+          business_date: day2, opening_float_cents: 0, counted_cash_cents: 25000,
+        });
+        assertEqual(close2.status, 201, `day2 close with cutoff succeeds (got ${close2.status})`);
+        assertEqual(close2.body?.zReport?.bill_count, 1, 'day2: morning bill (04:30) counted in day2');
+        assertEqual(close2.body?.zReport?.expected_cash_cents, 25000, 'day2: expected cash = 25000');
+      } finally {
+        db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_day_start_time', '00:00', CURRENT_TIMESTAMP)").run();
+      }
+    }
+
   } finally {
     closeDatabase();
   }

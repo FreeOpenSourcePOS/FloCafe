@@ -161,6 +161,7 @@ function businessShape(s: Record<string, string>) {
   return {
     business_name: s.business_name || '',
     timezone: s.timezone || 'Asia/Kolkata',
+    business_day_start_time: s.business_day_start_time || '00:00',
     currency: s.currency || 'INR',
     country: s.country || 'IN',
     language: s.language || 'en',
@@ -213,7 +214,7 @@ router.get('/business', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res
 
 router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
-    const { business_name, timezone, currency, country, language,
+    const { business_name, timezone, business_day_start_time, currency, country, language,
       tax_registration_number, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
@@ -223,6 +224,12 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
     if (!validBusinessLocation(timezone, normalizedCurrency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
+    }
+
+    if (business_day_start_time !== undefined) {
+      if (typeof business_day_start_time !== 'string' || !/^(?:0\d|1[01]):[0-5]\d$/.test(business_day_start_time.trim())) {
+        return res.status(400).json({ error: 'Invalid business_day_start_time format (must be HH:mm between 00:00 and 11:59)' });
+      }
     }
 
     const db = getDatabase();
@@ -267,7 +274,9 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     }
 
     upsertSettings(db, {
-      business_name, timezone, currency: normalizedCurrency, country, language,
+      business_name, timezone,
+      business_day_start_time: business_day_start_time !== undefined ? business_day_start_time.trim() : undefined,
+      currency: normalizedCurrency, country, language,
       currency_symbol: (normalizedCurrency !== undefined || country !== undefined)
         ? deriveCurrencySymbol(effectiveCurrency, effectiveCountry)
         : undefined,

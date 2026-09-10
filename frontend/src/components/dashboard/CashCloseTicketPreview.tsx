@@ -70,6 +70,8 @@ export interface CashCloseTicketPreviewProps {
     closed_by: string;
     closed_by_name: string;
     notes: string | null;
+    period_start?: string;
+    period_end?: string;
   };
   minorFactor: number;
   formatter: (major: number) => string;
@@ -114,6 +116,11 @@ export function CashCloseTicketPreview({ z, minorFactor, formatter, labels }: Ca
             <p className="mt-0.5 text-xs text-zinc-500">
               {labels.closedAt(z.business_date)}
             </p>
+            {z.period_start && z.period_end && (
+              <p className="mt-0.5 text-[11px] text-zinc-500 font-mono">
+                <Ltr>{z.period_start} - {z.period_end}</Ltr>
+              </p>
+            )}
           </div>
 
           <div className={`mt-3 ${DASH}`} />

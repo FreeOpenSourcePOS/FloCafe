@@ -75,10 +75,26 @@ export function useCashClose() {
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
-  // Tenant-local today. Mirrors getLocalDateString in the dashboard
-  // page (kept there for its own date state); en-CA formats YYYY-MM-DD.
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const todayLocal = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const dayStartTime = currentTenant?.business_day_start_time || '00:00';
+  const startMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(dayStartTime.trim());
+  const nowInstant = new Date();
+  const localParts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(nowInstant);
+  const localPart = (type: string) => localParts.find((part) => part.type === type)?.value ?? '';
+  const localDate = `${localPart('year')}-${localPart('month')}-${localPart('day')}`;
+  const localMinutes = Number(localPart('hour')) * 60 + Number(localPart('minute'));
+  const startMinutes = startMatch ? Number(startMatch[1]) * 60 + Number(startMatch[2]) : 0;
+  const todayLocal = startMatch && localMinutes < startMinutes
+    ? new Date(Date.UTC(Number(localPart('year')), Number(localPart('month')) - 1, Number(localPart('day')) - 1)).toISOString().slice(0, 10)
+    : localDate;
   // ── Close-day modal state ────────────────────────────────────────────────
   // Modal flow: open → load X (live aggregates) + prior-day Z (default float)
   // → operator edits float + counted → POST /cash-closures → immutable Z view

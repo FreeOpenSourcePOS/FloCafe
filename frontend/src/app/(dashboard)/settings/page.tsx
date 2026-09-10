@@ -157,6 +157,33 @@ function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+const BUSINESS_DAY_START_OPTIONS = [
+  { value: '00:00', label: '00:00 (12:00 AM)' },
+  { value: '00:30', label: '00:30 (12:30 AM)' },
+  { value: '01:00', label: '01:00 (1:00 AM)' },
+  { value: '01:30', label: '01:30 (1:30 AM)' },
+  { value: '02:00', label: '02:00 (2:00 AM)' },
+  { value: '02:30', label: '02:30 (2:30 AM)' },
+  { value: '03:00', label: '03:00 (3:00 AM)' },
+  { value: '03:30', label: '03:30 (3:30 AM)' },
+  { value: '04:00', label: '04:00 (4:00 AM)' },
+  { value: '04:30', label: '04:30 (4:30 AM)' },
+  { value: '05:00', label: '05:00 (5:00 AM)' },
+  { value: '05:30', label: '05:30 (5:30 AM)' },
+  { value: '06:00', label: '06:00 (6:00 AM)' },
+  { value: '06:30', label: '06:30 (6:30 AM)' },
+  { value: '07:00', label: '07:00 (7:00 AM)' },
+  { value: '07:30', label: '07:30 (7:30 AM)' },
+  { value: '08:00', label: '08:00 (8:00 AM)' },
+  { value: '08:30', label: '08:30 (8:30 AM)' },
+  { value: '09:00', label: '09:00 (9:00 AM)' },
+  { value: '09:30', label: '09:30 (9:30 AM)' },
+  { value: '10:00', label: '10:00 (10:00 AM)' },
+  { value: '10:30', label: '10:30 (10:30 AM)' },
+  { value: '11:00', label: '11:00 (11:00 AM)' },
+  { value: '11:30', label: '11:30 (11:30 AM)' },
+];
+
 
 function SettingsNavItem({
   label, value, active, onClick, indent, attention,
@@ -1358,7 +1385,7 @@ export default function SettingsPage() {
 
   // Store / business fields — local form state (saved only on explicit Save)
   type BusinessForm = {
-    businessName: string; countryCode: string; timezone: string; currency: string;
+    businessName: string; countryCode: string; timezone: string; businessDayStartTime: string; currency: string;
     billingType: 'postpaid' | 'prepaid';
     tablesRequired: boolean;
     taxRegistered: boolean;
@@ -1368,7 +1395,7 @@ export default function SettingsPage() {
     calendar: CalendarMode;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
-    businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
+    businessName: '', countryCode: '', timezone: '', businessDayStartTime: '00:00', currency: '', billingType: 'postpaid',
     tablesRequired: true,
     taxRegistered: false,
     taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
@@ -1586,6 +1613,7 @@ export default function SettingsPage() {
         businessName: d.business_name || '',
         countryCode: d.country || '',
         timezone: d.timezone || '',
+        businessDayStartTime: d.business_day_start_time || '00:00',
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
@@ -1739,6 +1767,7 @@ export default function SettingsPage() {
           businessName: d.business_name || '',
           countryCode: d.country || '',
           timezone: d.timezone || '',
+          businessDayStartTime: d.business_day_start_time || '00:00',
           currency: d.currency || '',
           billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
           tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
@@ -2627,6 +2656,7 @@ export default function SettingsPage() {
       const putRes = await api.put('/settings/business', {
         business_name: form.businessName,
         timezone: form.timezone,
+        business_day_start_time: form.businessDayStartTime,
         currency: form.currency,
         country: form.countryCode,
         billing_type: form.billingType,
@@ -2681,7 +2711,7 @@ export default function SettingsPage() {
       posSettings.setBillPhone(normalizedBusinessPhone);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
-      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
+      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, business_day_start_time: form.businessDayStartTime, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
       if (!silent) toast.success(t('storeSaved'));
     } catch (err: unknown) {
       const responseData = (err as { response?: { data?: unknown } }).response?.data;
@@ -3038,6 +3068,40 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Business Day Start Time */}
+                <div className="md:col-span-2 space-y-1.5">
+                  <label htmlFor="business-day-start-time" className="text-sm text-muted-foreground">
+                    {t('businessDayStartTime')}
+                  </label>
+                  {isAdmin ? (
+                    <div className="max-w-xs">
+                      <select
+                        id="business-day-start-time"
+                        value={form.businessDayStartTime}
+                        onChange={(e) => {
+                          markHydrationTouched('businessDayStartTime');
+                          setForm((p) => ({ ...p, businessDayStartTime: e.target.value }));
+                        }}
+                        className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                      >
+                        {BUSINESS_DAY_START_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.value === '00:00' ? `${opt.label} (${t('defaultMidnight')})` : opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <p className="font-medium text-foreground">
+                      <Ltr>{form.businessDayStartTime || '00:00'}</Ltr>
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {t('businessDayStartTimeDesc')}
+                  </p>
+                </div>
+
                 <LocalePreferencesPanel
                   options={getCountryByCode(form.countryCode)?.localeOptions}
                   currencyDisplay={form.currencyDisplay}

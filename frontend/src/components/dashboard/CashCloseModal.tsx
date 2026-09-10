@@ -98,6 +98,11 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
               }}
               className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-brand/30"
             />
+            {xReport?.periodStart && xReport?.periodEnd && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {t('periodWindow', { start: xReport.periodStart, end: xReport.periodEnd })}
+              </p>
+            )}
           </div>
           {xReport && (
             <>
@@ -241,6 +246,11 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
               {t('closeAnotherDay')}
             </button>
           </div>
+          {closedZ.period_start && closedZ.period_end && (
+            <p className="text-xs text-muted-foreground">
+              {t('periodWindow', { start: closedZ.period_start, end: closedZ.period_end })}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg border border-border p-3">
               <p className="text-xs text-muted-foreground">{t('openingFloat')}</p>

@@ -20,6 +20,7 @@ export interface Tenant {
   country: string;
   currency: string;
   timezone: string;
+  business_day_start_time?: string;
   plan: string;
   status: string;
   role?: string;

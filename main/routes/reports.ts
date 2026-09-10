@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import Decimal from 'decimal.js';
-import { dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, parseDbTimestamp } from '../db';
+import {
+  dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, parseDbTimestamp,
+  tenantBusinessDayStartTime,
+} from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getOrdersWithItemsForBills } from './bills';
@@ -21,12 +24,16 @@ function tenantTimezone(): string {
   return getSettingValue('timezone') || 'Asia/Kolkata';
 }
 
+function tenantStartTime(): string {
+  return tenantBusinessDayStartTime();
+}
+
 function reportToday(): string {
-  return localDateInTimezone(new Date(), tenantTimezone());
+  return localDateInTimezone(new Date(), tenantTimezone(), tenantStartTime());
 }
 
 function reportDayBounds(date: string): [string, string] {
-  return dayBoundsInTimezone(date, tenantTimezone());
+  return dayBoundsInTimezone(date, tenantTimezone(), tenantStartTime());
 }
 
 function reportDate(value: unknown, fallback: string): string {
@@ -41,9 +48,8 @@ function reportDate(value: unknown, fallback: string): string {
  * IANA timezone support (only fixed offsets), so this bucketing happens
  * in JS via Intl instead of in SQL.
  */
-function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { hourCounts: number[]; dayCounts: number[] } {
+function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string, startTime?: string): { hourCounts: number[]; dayCounts: number[] } {
   const hourFmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' });
-  const weekdayFmt = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long' });
 
   const hourCounts = new Array(24).fill(0);
   const dayCounts = new Array(7).fill(0);
@@ -53,8 +59,9 @@ function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { 
     if (isNaN(d.getTime())) continue;
     const hour = parseInt(hourFmt.format(d), 10);
     if (hour >= 0 && hour <= 23) hourCounts[hour]++;
-    const dayIdx = WEEKDAY_NAMES.indexOf(weekdayFmt.format(d));
-    if (dayIdx >= 0) dayCounts[dayIdx]++;
+    const businessDate = localDateInTimezone(d, timeZone, startTime);
+    const dayIdx = new Date(`${businessDate}T12:00:00Z`).getUTCDay();
+    if (dayIdx >= 0 && dayIdx < 7) dayCounts[dayIdx]++;
   }
 
   return { hourCounts, dayCounts };
@@ -299,11 +306,11 @@ router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
     // #208: half-open UTC ranges so the orders/bills indexes apply instead
-    // of `date(...)` on every row. The bounds represent tenant-local days.
+    // of `date(...)` on every row. The bounds represent tenant business days.
     const windowStart = reportDayBounds(startDate)[0];
     const windowEnd = reportDayBounds(endDate)[1];
 
-    // Daily series is grouped by the tenant-local calendar date rather than
+    // Daily series is grouped by the tenant business date rather than
     // the UTC date stored in SQLite.
     const dailyRows = db.prepare(`
       SELECT created_at, total
@@ -312,8 +319,9 @@ router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
     `).all(windowStart, windowEnd) as { created_at: string; total: number }[];
     const dailyByDate = new Map<string, { orders: number; sales: number }>();
     const timeZone = tenantTimezone();
+    const startTime = tenantStartTime();
     for (const row of dailyRows) {
-      const date = localDateInTimezone(parseDbTimestamp(row.created_at), timeZone);
+      const date = localDateInTimezone(parseDbTimestamp(row.created_at), timeZone, startTime);
       const bucket = dailyByDate.get(date) || { orders: 0, sales: 0 };
       bucket.orders += 1;
       bucket.sales += Number(row.total || 0);
@@ -504,11 +512,11 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     // so the window filters on the index. The same timezone drives the
     // hour/day-of-week bucketing below.
     const timeZone = tenantTimezone();
-    const today = localDateInTimezone(new Date(), timeZone);
+    const today = reportToday();
     const startDateValue = new Date(`${today}T00:00:00Z`);
     startDateValue.setUTCDate(startDateValue.getUTCDate() - days);
     const startDate = startDateValue.toISOString().slice(0, 10);
-    const [windowStart] = dayBoundsInTimezone(startDate, timeZone);
+    const [windowStart] = reportDayBounds(startDate);
 
     // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
     const revenue = db.prepare(`
@@ -566,7 +574,7 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       `SELECT created_at FROM orders WHERE created_at >= ? AND status != 'cancelled'`
     ).all(windowStart) as { created_at: string }[]).map((r) => r.created_at);
 
-    const { hourCounts, dayCounts } = bucketByLocalHourAndWeekday(orderTimestamps, timeZone);
+    const { hourCounts, dayCounts } = bucketByLocalHourAndWeekday(orderTimestamps, timeZone, tenantStartTime());
 
     // Hours with zero orders are excluded from busiest/idlest — almost
     // certainly "closed overnight" rather than a meaningful idle signal,

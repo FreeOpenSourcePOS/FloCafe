@@ -594,7 +594,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                     max={discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))}
                     step={getDiscountInputStep(unitAdapter.maxDecimals, discountType)}
                     inputMode={discountType === 'percentage' ? 'numeric' : 'decimal'}
-                    className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                    className="w-full min-h-11 ps-8 pe-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                   />
                 </div>
                 <input
@@ -602,7 +602,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                   value={discountReason}
                   onChange={(e) => setDiscountReason(e.target.value)}
                   placeholder={t('discountReasonPlaceholder')}
-                  className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                  className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                 />
                 {discountRequiresApproval && parseFloat(discountValue) > 0 && (
                   <input
@@ -611,7 +611,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                     onChange={(e) => setDiscountPin(e.target.value)}
                     placeholder={t('managerPin')}
                     maxLength={6}
-                    className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
+                    className="w-full min-h-11 px-3 py-2 text-sm border border-purple-200 dark:border-purple-800/40 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-card"
                   />
                 )}
                 <Button

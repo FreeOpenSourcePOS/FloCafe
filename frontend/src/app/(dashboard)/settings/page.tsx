@@ -3604,7 +3604,7 @@ export default function SettingsPage() {
                             <Ltr as="a" href={posInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 dark:text-blue-400 break-all hover:underline">
                               {posInfo.mdns_url}
                             </Ltr>
-                            <p className="text-xs text-blue-600 mt-2">
+                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
                               {t('appleDevicesHint')}
                             </p>
                           </div>
@@ -3997,7 +3997,7 @@ export default function SettingsPage() {
                           <Ltr as="a" href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 dark:text-blue-400 break-all hover:underline">
                             {serverAppInfo.mdns_url}
                           </Ltr>
-                          <p className="text-xs text-blue-600 mt-2">{t('appleDevicesHint')}</p>
+                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">{t('appleDevicesHint')}</p>
                         </div>
                       </>
                     ) : (

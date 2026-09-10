@@ -163,7 +163,7 @@ export default function AddonModal({
                           key={addon.id}
                           className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${
                             isSel
-                              ? 'border-brand bg-brand-light text-brand dark:text-indigo-300'
+                              ? 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
                               : 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border'
                           }`}
                         >
@@ -211,7 +211,7 @@ export default function AddonModal({
                         key={addon.id}
                         className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${
                           isSel
-                            ? 'border-brand bg-brand-light text-brand dark:text-indigo-300'
+                            ? 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
                             : 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border'
                         }`}
                       >

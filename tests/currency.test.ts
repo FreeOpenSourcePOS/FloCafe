@@ -153,6 +153,7 @@ test('parseLocaleNumber: rejects malformed grouping and signs', () => {
   assert(Number.isNaN(parseLocaleNumber('-', 'es-CO', 0)));
   assert(Number.isNaN(parseLocaleNumber('--1', 'es-CO', 0)));
   assert.equal(parseLocaleNumber('1.234.567', 'es-CO', 0), 1234567);
+});
 
 test('formatMoney: custom symbol and suffix position', () => {
   const { formatMoney } = require('../main/countries');

@@ -634,6 +634,41 @@ exit 1
   );
   assert.doesNotMatch(publishStable.log, /make_latest=true/);
 
+  const fakeGhMovesLatest = `#!/bin/sh
+printf '%s\n' "$*" >> "$RELEASE_TEST_LOG"
+case "$*" in
+  *"releases --paginate --jq"*) printf '42\n' ;;
+  *"releases/latest --jq .tag_name"*)
+    if [ -f "$RUNNER_TEMP/latest-restored" ]; then
+      printf '3.7.5\n'
+    elif [ -f "$RUNNER_TEMP/published" ]; then
+      printf '3.7.6\n'
+    else
+      printf '3.7.5\n'
+    fi
+    ;;
+  *"--method PATCH"*"releases/42"*) touch "$RUNNER_TEMP/published"; printf '{}\n' ;;
+  *"releases/tags/3.7.5 --jq .id"*) printf '41\n' ;;
+  *"--method PATCH"*"releases/41"*"make_latest=true"*) touch "$RUNNER_TEMP/latest-restored"; printf '{}\n' ;;
+  *) printf '{}\n' ;;
+esac
+`;
+  const publishWithMovedLatest = executeWorkflowStep(publishStep, {
+    expressions: {
+      'needs.create-release.outputs.version': '3.7.6',
+      'needs.create-release.outputs.prerelease': 'false',
+      'needs.create-release.outputs.make_latest': 'false',
+      'needs.create-release.outputs.channel': 'stable',
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'github.sha': 'a'.repeat(40),
+    },
+    fakeNodeVersion: '3.7.6',
+    fakeCommands: { gh: fakeGhMovesLatest },
+  });
+  assert.equal(publishWithMovedLatest.status, 0, publishWithMovedLatest.stderr);
+  assert.match(publishWithMovedLatest.log, /releases\/tags\/3\.7\.5 --jq \.id/);
+  assert.match(publishWithMovedLatest.log, /--method PATCH repos\/FreeOpenSourcePOS\/FloCafe\/releases\/41 -f make_latest=true/);
+
   const publishBeta = executeWorkflowStep(publishStep, {
     expressions: {
       'needs.create-release.outputs.version': '3.3.1-beta.1',

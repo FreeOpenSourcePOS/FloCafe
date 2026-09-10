@@ -122,8 +122,10 @@ non-manifest assets are checked for positive size and HTTP availability; their
 SHA-512 is not independently recomputed because GitHub/electron-builder does
 not publish a second expected SHA-512 for them.
 6. The dedicated publish job changes `draft` to false. It sets `make_latest`
-   false for every normal release. A separate explicit stable-promotion dispatch
-   is the only path that changes GitHub's `Latest` pointer.
+   false for every normal release and restores the previously recorded Latest
+   release if GitHub moves the pointer while publishing the draft. A separate
+   explicit stable-promotion dispatch is the only path that intentionally
+   changes GitHub's `Latest` pointer.
 7. After all platform uploads, the workflow creates and attaches the immutable
    candidate manifest and sanitized release summary defined in the [release
    evidence index](release-evidence-index.md). The candidate manifest is made

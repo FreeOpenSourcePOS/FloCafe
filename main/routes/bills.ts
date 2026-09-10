@@ -1904,7 +1904,7 @@ function calculateCashback(db: ReturnType<typeof getDatabase>, bill: any, custom
   if (enabled !== 'true' && enabled !== '1') return 0;
   const globalRate = parseFloat((db.prepare(`SELECT value FROM settings WHERE key = 'global_cashback_percent'`).get() as any)?.value || '0');
   const order = db.prepare('SELECT subtotal, discount_amount FROM orders WHERE id = ?').get(bill.order_id) as any;
-  const items = db.prepare(`SELECT oi.subtotal, p.cb_percent FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ? AND oi.status != 'cancelled'`).all(bill.order_id) as { subtotal: number; cb_percent: number | null }[];
+  const items = db.prepare(`SELECT oi.subtotal, p.cb_percent FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ? AND oi.status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')`).all(bill.order_id) as { subtotal: number; cb_percent: number | null }[];
   const fullOrderCashback = items.reduce((sum, item) => {
     const discountShare = order?.discount_amount > 0 && order?.subtotal > 0 ? order.discount_amount * item.subtotal / order.subtotal : 0;
     const rate = item.cb_percent !== null ? item.cb_percent : globalRate;

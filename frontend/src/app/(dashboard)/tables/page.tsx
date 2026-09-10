@@ -120,10 +120,10 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
         {selected ? (
           <div className="flex items-center justify-between px-3 py-2.5 bg-brand-light rounded-xl mb-4">
             <div>
-              <p className="font-semibold text-brand text-sm">{selected.name}</p>
-              <p className="text-xs text-brand/70"><Ltr>{selected.phone}</Ltr></p>
+              <p className="font-semibold text-brand dark:text-indigo-300 text-sm">{selected.name}</p>
+              <p className="text-xs text-brand/70 dark:text-indigo-300"><Ltr>{selected.phone}</Ltr></p>
             </div>
-            <button onClick={() => setSelected(null)} className="text-brand hover:text-brand-hover">
+            <button onClick={() => setSelected(null)} className="text-brand dark:text-indigo-300 hover:text-brand-hover">
               <X size={14} />
             </button>
           </div>

@@ -1192,8 +1192,12 @@ export default function SettingsPage() {
     const controller = new AbortController();
     api.get('/payment-methods', { signal: controller.signal }).then(({ data }) => {
       setPulseCustomMethods((data.payment_methods || []).map((m: { name: string }) => m.name));
-    }).catch(() => {});
+    }).catch((error) => {
+      if (isRequestCancelled(error)) return;
+      toast.error(t('loadFailed'));
+    });
     return () => controller.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
 
   // Mobile App Pairing

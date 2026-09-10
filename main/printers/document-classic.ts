@@ -431,6 +431,7 @@ export function renderBillDocumentToClassicLines(
           trimDecimals,
           cols,
           fractionDigits,
+          currencyPosition,
         );
         const nameLen = itemNameWidth(cols, amtLen);
         segment.main.push(classicItemHeader(block, nameLen, amtLen, options.language, options.capabilities));

@@ -234,6 +234,7 @@ export function renderBillDocumentToCompactLines(
       trimDecimals,
       cols,
       fractionDigits,
+      currencyPosition,
     );
     const nameLen = itemNameWidth(cols, amtLen);
     lines.push(compactItemHeader(items, nameLen, amtLen, options.language, options.capabilities));

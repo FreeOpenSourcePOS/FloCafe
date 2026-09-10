@@ -10,6 +10,7 @@
 import {
   formatReceipt,
   formatCurrency,
+  itemAmountWidth,
   formatKOT,
   buildEscPos,
   resolveCurrencyPrefix,
@@ -635,6 +636,8 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
   assert('currency prefix fallback uses the supplied canonical code for empty symbol with capabilities', resolveCurrencyPrefix('', false, GENERIC_THERMAL_CAPABILITIES, false, 'USD') === 'USD');
   assert('suffix currency formatting removes alignment padding', formatCurrency(1000, resolveCurrencyPrefix('$', false), 'en-US', false, 2, 'suffix') === '1,000.00 $');
   assert('negative prefix currency formatting places sign before symbol', formatCurrency(-100, resolveCurrencyPrefix('$', false), 'en-US', false, 2) === '-  $100.00');
+  assert('suffix currency width includes the suffix symbol', itemAmountWidth({ items: [{ total: 1234567.89 }] }, '$', 'en-US', false, 48, 2, 'suffix') >= 15);
+  assert('custom currency control tokens are escaped', !formatCurrency(10, '{CUT}', 'en-US').includes('{CUT}'));
 
   const xafWarnings: any[] = [];
   const xafReceipt = formatReceipt(

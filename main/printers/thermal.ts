@@ -1449,6 +1449,18 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
   const currencyPosition = (biz.currency_symbol_position === 'suffix' ? 'suffix' : 'prefix') as 'prefix' | 'suffix';
+  const pluginAmountWidth = itemAmountWidth(
+    { items: (Array.isArray(order.items) ? order.items : []).map((item: any) => ({
+      total: item.total,
+      addons: parseAddons(item.addons).map((addon: any) => ({ price: addon.price })),
+    })) },
+    prefix,
+    locale,
+    trimDecimals,
+    cols,
+    fractionDigits,
+    currencyPosition,
+  );
   const normalize = (text: string): string => normalizeThermalText(text, capabilities);
   const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
@@ -1478,12 +1490,12 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (biz.show_customer_name !== false && biz.customer_name) lines.push(truncateShapedLine(printLabel(lang, 'pos.customer') + ': ' + biz.customer_name, cols, arabicShaping, lang, capabilities));
   if (biz.show_customer_phone !== false && biz.customer_phone) lines.push(normalize(printLabel(lang, 'print.numberShort')) + ': ' + biz.customer_phone);
   lines.push(dash);
-  lines.push(pluginItemHeader(layout, cols, lang, capabilities));
+  lines.push(pluginItemHeader(layout, cols, lang, capabilities, pluginAmountWidth));
   lines.push(dash);
 
   if (order.items) {
     for (const item of order.items) {
-      pushFinancialLines(pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang, capabilities, currencyPosition));
+      pushFinancialLines(pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang, capabilities, currencyPosition, pluginAmountWidth));
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
           const addonLines: string[] = [];
@@ -1618,7 +1630,7 @@ type PluginLineColumn = {
   ellipsis?: boolean;
 };
 
-function pluginLineItemColumns(layout: any, cols: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): PluginLineColumn[] {
+function pluginLineItemColumns(layout: any, cols: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities, amountWidth: number = 10): PluginLineColumn[] {
   const configured = layout?.lineItems?.columns;
   if (Array.isArray(configured) && configured.length > 0) {
     const columns = configured
@@ -1637,9 +1649,9 @@ function pluginLineItemColumns(layout: any, cols: number, lang: string = 'en', c
     if (columns.length > 0) return columns;
   }
   return [
-    { key: 'item', label: normalizeThermalText(printLabel(lang, 'receipt.item'), capabilities), width: itemNameWidth(cols, 10), align: 'left', wrap: true, maxLines: 2, ellipsis: true },
+    { key: 'item', label: normalizeThermalText(printLabel(lang, 'receipt.item'), capabilities), width: itemNameWidth(cols, amountWidth), align: 'left', wrap: true, maxLines: 2, ellipsis: true },
     { key: 'quantity', label: normalizeThermalText(printLabel(lang, 'receipt.qty'), capabilities), width: 4, align: 'left' },
-    { key: 'amount', label: normalizeThermalText(printLabel(lang, 'receipt.amount'), capabilities), width: 10, align: 'right' },
+    { key: 'amount', label: normalizeThermalText(printLabel(lang, 'receipt.amount'), capabilities), width: amountWidth, align: 'right' },
   ];
 }
 
@@ -1654,9 +1666,9 @@ function pluginDetailLines(layout: any): string[] {
   return detailLines.filter((line: unknown) => typeof line === 'string');
 }
 
-function pluginItemHeader(layout: any, cols: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): string {
+function pluginItemHeader(layout: any, cols: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities, amountWidth: number = 10): string {
   return composePluginColumns(
-    pluginLineItemColumns(layout, cols, lang, capabilities).map((column) => ({
+    pluginLineItemColumns(layout, cols, lang, capabilities, amountWidth).map((column) => ({
       ...column,
       value: column.label || column.key || '',
     })),
@@ -1665,8 +1677,8 @@ function pluginItemHeader(layout: any, cols: number, lang: string = 'en', capabi
   );
 }
 
-function pluginItemRows(item: any, layout: any, cols: number, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities, position: 'prefix' | 'suffix' = 'prefix'): string[] {
-  const columns = pluginLineItemColumns(layout, cols, lang, capabilities);
+function pluginItemRows(item: any, layout: any, cols: number, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities, position: 'prefix' | 'suffix' = 'prefix', amountWidth: number = 10): string[] {
+  const columns = pluginLineItemColumns(layout, cols, lang, capabilities, amountWidth);
   const gap = pluginLineGap(layout);
   const values = columns.map((column) => ({
     ...column,
@@ -1777,15 +1789,16 @@ export function itemAmountWidth(
   trimDecimals: boolean,
   cols: number,
   fractionDigits: number = 2,
+  position: 'prefix' | 'suffix' = 'prefix',
 ): number {
   // rightAlign() keeps at least one separator before an amount, so reserve
   // that separator when a long currency prefix expands the amount column.
   let width = 10;
   for (const item of order?.items ?? []) {
-    width = Math.max(width, formatCurrency(item.total ?? 0, prefix, locale, trimDecimals, fractionDigits).length + 1);
+    width = Math.max(width, formatCurrency(item.total ?? 0, prefix, locale, trimDecimals, fractionDigits, position).length + 1);
     for (const addon of parseAddons(item.addons)) {
       if (addon?.price) {
-        width = Math.max(width, formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits).length + 1);
+        width = Math.max(width, formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits, position).length + 1);
       }
     }
   }
@@ -1899,12 +1912,13 @@ export function formatCurrency(
     maximumFractionDigits: fractionDigits,
   }).replace(/[\u00A0\u202F]/g, ' ');
   const sign = isNegative ? '-' : '';
+  const safePrefix = escapeEscPosControlTokens(prefix);
   if (position === 'suffix') {
-    const suffix = prefix.trimStart();
+    const suffix = safePrefix.trimStart();
     return suffix ? `${sign}${formattedNum} ${suffix}` : `${sign}${formattedNum}`;
   }
-  const needsSpace = /^[A-Za-z]/.test(prefix);
-  return `${sign}${prefix}${needsSpace ? ' ' : ''}${formattedNum}`;
+  const needsSpace = /^[A-Za-z]/.test(safePrefix);
+  return `${sign}${safePrefix}${needsSpace ? ' ' : ''}${formattedNum}`;
 }
 
 export function rightAlign(text: string, width: number = 24): string {
@@ -2352,6 +2366,10 @@ const CURRENCY_TOKEN_RE = new RegExp(
 );
 
 const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
+
+function escapeEscPosControlTokens(text: string): string {
+  return text.replace(ESC_POS_CONTROL_TOKEN_RE, (token) => token.replace('{', '{ ').replace('}', ' }'));
+}
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
   if (capabilities.raster.enabled === true && !isThermalTextRepresentable(text, capabilities)) return text;

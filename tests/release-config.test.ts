@@ -128,6 +128,10 @@ function executeWorkflowStep(step: any, options: {
 const fakeGh = `#!/bin/sh
 printf '%s\\n' "$*" >> "$RELEASE_TEST_LOG"
 if [ "$1" = "release" ] && [ "$2" = "view" ]; then exit 1; fi
+if [ "$1" = "api" ] && [ "\${2:-}" = "repos/FreeOpenSourcePOS/FloCafe/releases/latest" ] && [ -n "\${RELEASE_TEST_LATEST_FAILURE:-}" ]; then
+  printf 'HTTP/2.0 %s Error\\n' "$RELEASE_TEST_LATEST_FAILURE"
+  exit 1
+fi
 if [ "$1" = "api" ] && [ "\${3:-}" = "--jq" ]; then printf '42\\n'; exit 0; fi
 if [ "$1" = "api" ] && [ "\${2:-}" != "--method" ]; then printf '{"draft":false,"prerelease":false,"id":42}\\n'; fi
 `;
@@ -661,6 +665,35 @@ exit 1
     betaLogLines.findIndex((line) => line.includes('/releases/latest')) < betaLogLines.findIndex((line) => line.includes('api --method PATCH')),
     'beta Latest snapshot must happen before publication',
   );
+
+  const publishBetaWithoutStableLatest = executeWorkflowStep(publishStep, {
+    env: { RELEASE_TEST_LATEST_FAILURE: '404' },
+    expressions: {
+      'needs.create-release.outputs.version': '3.3.1-beta.1',
+      'needs.create-release.outputs.prerelease': 'true',
+      'needs.create-release.outputs.make_latest': 'false',
+      'needs.create-release.outputs.channel': 'beta',
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'github.sha': 'a'.repeat(40),
+    },
+    fakeCommands: { gh: fakeGh, node: captureNodeArgs },
+  });
+  assert.equal(publishBetaWithoutStableLatest.status, 0, publishBetaWithoutStableLatest.stderr);
+
+  const publishBetaLatestFailure = executeWorkflowStep(publishStep, {
+    env: { RELEASE_TEST_LATEST_FAILURE: '500' },
+    expressions: {
+      'needs.create-release.outputs.version': '3.3.1-beta.1',
+      'needs.create-release.outputs.prerelease': 'true',
+      'needs.create-release.outputs.make_latest': 'false',
+      'needs.create-release.outputs.channel': 'beta',
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'github.sha': 'a'.repeat(40),
+    },
+    fakeCommands: { gh: fakeGh, node: captureNodeArgs },
+  });
+  assert.notEqual(publishBetaLatestFailure.status, 0, 'beta Latest preflight must reject non-404 failures');
+  assert.match(publishBetaLatestFailure.stderr, /HTTP\/2\.0 500 Error/);
 
   const promoteStep = findStep(promoteJob, 'Promote published stable release to GitHub Latest');
   const promoteStable = executeWorkflowStep(promoteStep, {

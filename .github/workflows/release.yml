@@ -950,7 +950,14 @@ jobs:
             --channel "$CHANNEL"
           )
           if [ "$CHANNEL" = "beta" ]; then
-            LATEST_BEFORE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
+            if LATEST_RESPONSE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name --include 2>&1); then
+              LATEST_BEFORE=$(printf '%s\n' "$LATEST_RESPONSE" | tail -n 1)
+            elif grep -qE '^HTTP/[^ ]+ 404 ' <<<"$LATEST_RESPONSE"; then
+              LATEST_BEFORE=""
+            else
+              printf '%s\n' "$LATEST_RESPONSE" >&2
+              exit 1
+            fi
             READINESS_ARGS+=(--expected-latest "$LATEST_BEFORE")
           fi
           # Draft and prerelease state are changed only after verification. The

@@ -1170,6 +1170,8 @@ Get business settings. Locale display preferences (`currency_display`, `number_d
   "timezone": "Asia/Kolkata",
   "business_day_start_time": "00:00",
   "currency": "INR",
+  "currency_symbol": "₹",
+  "currency_symbol_position": "prefix",
   "country": "IN",
   "tax_registration_number": "22AAAAA0000A1Z5",
   "currency_display": "rial",
@@ -1192,6 +1194,12 @@ to `00:00`, and is trimmed before persistence; invalid values return HTTP 400.
 `currency` accepts any three-letter ASCII currency code. Leading/trailing
 whitespace is trimmed and lowercase input is normalized to uppercase before
 the value is persisted; invalid codes return the same HTTP 400 response.
+
+`currency_symbol` is an optional custom display token. Non-empty values are
+trimmed before persistence; when the currency or country changes without a
+custom symbol, the symbol is derived from the selected currency and country.
+`currency_symbol_position` accepts `prefix` or `suffix` and defaults to
+`prefix` in the response when no suffix is stored.
 
 When `tax_registration_number` is provided, the backend validates it against the active country pack's registration format. A mismatch returns HTTP 400:
 

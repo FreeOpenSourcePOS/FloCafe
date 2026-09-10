@@ -123,7 +123,7 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
               <p className="font-semibold text-brand dark:text-indigo-300 text-sm">{selected.name}</p>
               <p className="text-xs text-brand/70 dark:text-indigo-300"><Ltr>{selected.phone}</Ltr></p>
             </div>
-            <button onClick={() => setSelected(null)} className="text-brand dark:text-indigo-300 hover:text-brand-hover">
+            <button onClick={() => setSelected(null)} className="text-brand dark:text-indigo-300 hover:text-brand-hover dark:hover:text-indigo-200">
               <X size={14} />
             </button>
           </div>

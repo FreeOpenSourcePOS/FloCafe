@@ -179,7 +179,7 @@ export default function AddonModal({
                                 <button
                                   type="button"
                                   onClick={() => updateAddonQuantity(group, addon, -1)}
-                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light active:bg-brand-light"
+                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
                                 >
                                   <Minus size={14} />
                                 </button>
@@ -187,7 +187,7 @@ export default function AddonModal({
                                 <button
                                   type="button"
                                   onClick={() => updateAddonQuantity(group, addon, 1)}
-                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light active:bg-brand-light"
+                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
                                 >
                                   <Plus size={14} />
                                 </button>
@@ -227,7 +227,7 @@ export default function AddonModal({
                               <button
                                 type="button"
                                 onClick={() => toggleAddonCheckbox(group, addon)}
-                                className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light active:bg-brand-light"
+                                className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
                               >
                                 <Minus size={14} />
                               </button>

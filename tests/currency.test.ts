@@ -132,6 +132,7 @@ test('parseLocaleNumber: handles COP / es-CO thousands dot and decimal comma', (
   assert.equal(parseLocaleNumber('11.000,50', 'es-CO', 2), 11000.5);
   assert.equal(parseLocaleNumber('11,50', 'es-CO', 2), 11.5);
   assert.equal(parseLocaleNumber('11000', 'es-CO', 2), 11000);
+  assert.equal(parseLocaleNumber('1,000', 'es-CO', 0), 1);
 
   // en-US standard comma thousands, dot decimal
   assert.equal(parseLocaleNumber('11,000.50', 'en-US', 2), 11000.5);
@@ -167,6 +168,12 @@ test('formatMoney: custom symbol and suffix position', () => {
     currencySymbolPosition: 'prefix',
   });
   assert.equal(coDollarPrefix, '$11.000');
+
+  const negativePrefix = formatMoney(-100, 'USD', 'en-US', {
+    currencySymbol: '$',
+    currencySymbolPosition: 'prefix',
+  });
+  assert.equal(negativePrefix, '-$100.00');
 
   // USD with suffix
   const usSuffix = formatMoney(1234.5, 'USD', 'en-US', {

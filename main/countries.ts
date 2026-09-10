@@ -350,6 +350,12 @@ export function parseLocaleNumber(raw: unknown, locale = 'en-US', fractionDigits
   const { group, decimal } = normalized;
 
   if (fractionDigits === 0) {
+    if (s.includes(decimal)) {
+      const decimalIndex = s.lastIndexOf(decimal);
+      const intPart = s.slice(0, decimalIndex).replace(/[\.,\x27\s]/g, '');
+      const decimalsPart = s.slice(decimalIndex + 1);
+      return sign * Number(`${intPart}.${decimalsPart}`);
+    }
     const lastDelimIndex = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
     if (lastDelimIndex !== -1) {
       const decimalsPart = s.slice(lastDelimIndex + 1);
@@ -430,17 +436,22 @@ export const formatMoney = (
   if (currencySymbol || currencySymbolPosition === 'suffix') {
     const sym = currencySymbol || getCurrencySymbol(currency, locale) || currency;
     const fractionDigits = getCurrencyFractionDigits(currency);
-    const formattedNum = new Intl.NumberFormat(locale, {
+    const formatter = new Intl.NumberFormat(locale, {
       minimumFractionDigits: fractionDigits,
       maximumFractionDigits: fractionDigits,
       numberingSystem,
-    }).format(amount);
+    });
+    const formattedNum = formatter.format(amount);
 
     if (currencySymbolPosition === 'suffix') {
       return `${formattedNum} ${sym}`;
     }
+    const sign = amount < 0 || Object.is(amount, -0)
+      ? formatter.formatToParts(-1).find((part) => part.type === 'minusSign')?.value || '-'
+      : '';
+    const prefixNumber = sign ? formatter.format(Math.abs(amount)) : formattedNum;
     const needsSpace = /^[A-Za-z]/.test(sym);
-    return `${sym}${needsSpace ? ' ' : ''}${formattedNum}`;
+    return `${sign}${sym}${needsSpace ? ' ' : ''}${prefixNumber}`;
   }
 
   if (!currency) return formatNumber(amount, locale, numberingSystem);

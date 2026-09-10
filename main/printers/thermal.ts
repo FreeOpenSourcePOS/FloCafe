@@ -1452,6 +1452,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const pluginAmountWidth = itemAmountWidth(
     { items: (Array.isArray(order.items) ? order.items : []).map((item: any) => ({
       total: item.total,
+      unit_price: item.unit_price ?? item.price,
       addons: parseAddons(item.addons).map((addon: any) => ({ price: addon.price })),
     })) },
     prefix,
@@ -1646,7 +1647,22 @@ function pluginLineItemColumns(layout: any, cols: number, lang: string = 'en', c
         ellipsis: column?.ellipsis !== false,
       }))
       .filter((column: PluginLineColumn) => column.key && Number.isInteger(column.width) && Number(column.width) > 0);
-    if (columns.length > 0) return columns;
+    if (columns.length > 0) {
+      const financialColumns = columns.filter((column) => column.key === 'rate' || column.key === 'amount');
+      const donorColumns = columns.filter((column) => column.key !== 'rate' && column.key !== 'amount');
+      for (const financialColumn of financialColumns) {
+        let deficit = Math.max(0, amountWidth - Number(financialColumn.width));
+        for (const donorColumn of donorColumns) {
+          if (deficit === 0) break;
+          const available = Math.max(0, Number(donorColumn.width) - 1);
+          const reduction = Math.min(available, deficit);
+          donorColumn.width = Number(donorColumn.width) - reduction;
+          deficit -= reduction;
+        }
+        if (deficit > 0) financialColumn.width = Number(financialColumn.width) + deficit;
+      }
+      return columns;
+    }
   }
   return [
     { key: 'item', label: normalizeThermalText(printLabel(lang, 'receipt.item'), capabilities), width: itemNameWidth(cols, amountWidth), align: 'left', wrap: true, maxLines: 2, ellipsis: true },
@@ -1739,10 +1755,12 @@ function pluginSummaryRow(label: string, amount: string, layout: any, cols: numb
   const labelWidth = Number(layout?.taxSummary?.labelWidth);
   const amountWidth = Number(layout?.taxSummary?.amountWidth);
   if (Number.isInteger(labelWidth) && Number.isInteger(amountWidth) && labelWidth > 0 && amountWidth > 0) {
+    const effectiveAmountWidth = Math.min(Math.max(amountWidth, amount.length), Math.max(1, cols - 1));
+    const effectiveLabelWidth = Math.max(1, Math.min(labelWidth, cols - effectiveAmountWidth - 1));
     return composePluginColumns([
-      { value: normalizedLabel, width: labelWidth, align: 'left', ellipsis: true },
-      { value: amount, width: amountWidth, align: 'right', ellipsis: true },
-    ], Math.max(0, cols - labelWidth - amountWidth), cols);
+      { value: normalizedLabel, width: effectiveLabelWidth, align: 'left', ellipsis: true },
+      { value: amount, width: effectiveAmountWidth, align: 'right', ellipsis: true },
+    ], Math.max(0, cols - effectiveLabelWidth - effectiveAmountWidth), cols);
   }
   const safeLabel = truncate(normalizedLabel, cols - 12, lang, capabilities);
   return safeLabel + rightAlign(amount, cols - safeLabel.length);
@@ -1783,7 +1801,7 @@ export function itemNameWidth(cols: number, amtLen: number): number {
 }
 
 export function itemAmountWidth(
-  order: { items?: Array<{ total?: number; addons?: unknown }> } | null | undefined,
+  order: { items?: Array<{ total?: number; unit_price?: number; addons?: unknown }> } | null | undefined,
   prefix: string,
   locale: string,
   trimDecimals: boolean,
@@ -1795,7 +1813,11 @@ export function itemAmountWidth(
   // that separator when a long currency prefix expands the amount column.
   let width = 10;
   for (const item of order?.items ?? []) {
-    width = Math.max(width, formatCurrency(item.total ?? 0, prefix, locale, trimDecimals, fractionDigits, position).length + 1);
+    for (const amount of [item.total, item.unit_price]) {
+      if (amount !== undefined) {
+        width = Math.max(width, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits, position).length + 1);
+      }
+    }
     for (const addon of parseAddons(item.addons)) {
       if (addon?.price) {
         width = Math.max(width, formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits, position).length + 1);

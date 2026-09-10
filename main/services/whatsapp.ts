@@ -821,7 +821,7 @@ function scheduleAuthWipe(): void {
     .then(() => wipeAuthDir());
 }
 
-function queueCredentialWrite(socket: BaileysSocket, saveCreds: (...values: any[]) => unknown, args: any[]): void {
+function queueCredentialWrite(socket: BaileysSocket, saveCreds: (...values: unknown[]) => unknown, args: unknown[]): void {
   if (!isActiveSocket(socket)) return;
   const write = credentialWriteTail.then(async () => {
     if (!isActiveSocket(socket)) return;

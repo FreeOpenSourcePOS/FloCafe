@@ -1185,6 +1185,17 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stations, activeTab]);
 
+  // Cash drawer pulse: active custom payment methods (beyond built-in cash/card)
+  const [pulseCustomMethods, setPulseCustomMethods] = useState<string[]>([]);
+  useEffect(() => {
+    if (activeTab !== 'receipts-printers') return;
+    const controller = new AbortController();
+    api.get('/payment-methods', { signal: controller.signal }).then(({ data }) => {
+      setPulseCustomMethods((data.payment_methods || []).map((m: { name: string }) => m.name));
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [activeTab]);
+
   // Mobile App Pairing
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
@@ -4638,11 +4649,11 @@ export default function SettingsPage() {
                       </button>
                       {cashDrawerMethodsOpen && (
                         <div className="border-t border-border bg-muted/30 px-3 py-2 space-y-2">
-                          {[
+                          {([
                             ['cash', t('paymentMethodCash')],
                             ['card', t('paymentMethodCard')],
-                            ['upi', t('paymentMethodUpi')],
-                          ].map(([value, label]) => (
+                            ...pulseCustomMethods.map((name): [string, string] => [name, name]),
+                          ]).map(([value, label]) => (
                             <label key={value} className="flex items-center gap-2 text-sm text-foreground">
                               <input
                                 type="checkbox"

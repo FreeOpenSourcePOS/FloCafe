@@ -183,7 +183,6 @@ test('formatMoney: custom symbol and suffix position', () => {
     currencySymbolPosition: 'prefix',
   });
   assert.equal(negativePrefix, '-$100.00');
-
   // USD with suffix
   const usSuffix = formatMoney(1234.5, 'USD', 'en-US', {
     currencySymbol: 'USD',

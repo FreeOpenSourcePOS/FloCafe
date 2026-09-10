@@ -40,6 +40,17 @@ test('formatCurrencyForTenant: US tenant uses en-US locale', () => {
   assert.equal(formatCurrencyForTenant(1234.5, 'US', 'USD'), '$1,234.50');
 });
 
+test('formatCurrencyForTenant: COP uses zero fraction digits', () => {
+  const out = formatCurrencyForTenant(11000, 'CO', 'COP');
+  assert.match(out, /11\.000/);
+  assert.doesNotMatch(out, /[,.]00(?:\D|$)/);
+});
+
+test('formatCurrencyForTenant: KWD uses three fraction digits', () => {
+  const out = formatCurrencyForTenant(1.25, 'KW', 'KWD');
+  assert.match(out, /١٫٢٥٠/);
+});
+
 test('formatCurrencyForTenant: unknown country falls back to en-US', () => {
   assert.equal(formatCurrencyForTenant(7, 'ZZ', 'USD'), '$7.00');
 });

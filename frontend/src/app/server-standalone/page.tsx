@@ -9,6 +9,7 @@ import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
+import { formatCurrencyForTenant } from '@/lib/countries';
 
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
@@ -17,6 +18,13 @@ type Table = { id: string; name?: string; number?: string; status?: string; acti
 type OrderItem = { id: number; product_name: string; quantity: number; status: string; special_instructions?: string | null };
 type Order = { id: number; order_number: string; table_id?: string | null; status: string; items?: OrderItem[]; customer?: { id: string; name: string; phone?: string } | null };
 type DraftLine = { product: Product; quantity: number; note: string };
+type ServerAppInfo = {
+  country: string;
+  currency: string;
+  currency_symbol: string;
+  currency_position: 'prefix' | 'suffix';
+  currency_fraction_digits: number;
+};
 
 type ServerAppKey = keyof AppConfig['Messages']['serverApp'];
 
@@ -46,8 +54,12 @@ function itemStatusIcon(status: string, t: (key: ServerAppKey) => string) {
   return <Circle size={15} className="text-gray-400" aria-label={t('statusWaiting')} />;
 }
 
-function money(value: number | string) {
-  return Number(value || 0).toFixed(2);
+function money(value: number | string, regional: ServerAppInfo | null) {
+  return formatCurrencyForTenant(
+    Number(value || 0),
+    regional?.country,
+    regional?.currency || 'INR',
+  );
 }
 
 export default function ServerStandalonePage() {
@@ -68,6 +80,7 @@ export default function ServerStandalonePage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [disabled, setDisabled] = useState(false);
+  const [regional, setRegional] = useState<ServerAppInfo | null>(null);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -114,8 +127,11 @@ export default function ServerStandalonePage() {
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
-    api.get('/api/server-app/info')
-      .then(() => api.get('/api/auth/me'))
+    api.get<ServerAppInfo>('/api/server-app/info')
+      .then((infoResponse) => {
+        if (!cancelled) setRegional(infoResponse.data);
+        return api.get('/api/auth/me');
+      })
       .then((res) => {
         if (!cancelled) setUser(res.data.user);
       })
@@ -212,7 +228,7 @@ export default function ServerStandalonePage() {
     if (!name && !rawPhone) return null;
     let normalizedPhone: string | undefined = undefined;
     if (rawPhone) {
-      const parsed = parsePhone(rawPhone, 'IN');
+      const parsed = regional?.country ? parsePhone(rawPhone, regional.country) : null;
       normalizedPhone = parsed ? parsed.e164 : rawPhone;
       try {
         const lookup = await api.get('/api/crm/lookup', { params: { phone: normalizedPhone } });
@@ -355,7 +371,7 @@ export default function ServerStandalonePage() {
               <button key={product.id} onClick={() => addProduct(product)}
                 className="min-h-24 rounded-lg border border-gray-200 bg-white p-3 text-start hover:border-brand">
                 <span className="line-clamp-2 text-sm font-semibold">{product.name}</span>
-                <span className="mt-2 block text-sm text-gray-500"><Ltr>{money(product.price)}</Ltr></span>
+                <span className="mt-2 block text-sm text-gray-500"><Ltr>{money(product.price, regional)}</Ltr></span>
               </button>
             ))}
           </div>
@@ -406,7 +422,7 @@ export default function ServerStandalonePage() {
 
           <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
             <span className="text-sm text-gray-500">{t('draftTotal')}</span>
-            <span className="text-lg font-bold"><Ltr>{money(draftTotal)}</Ltr></span>
+            <span className="text-lg font-bold"><Ltr>{money(draftTotal, regional)}</Ltr></span>
           </div>
           <button onClick={sendDraft} disabled={!selectedTableId || draft.length === 0 || sending}
             className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50">

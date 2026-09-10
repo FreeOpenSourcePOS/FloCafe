@@ -155,7 +155,7 @@ export default function TableCheckoutModal({
             </div>
             <p className="text-sm text-muted-foreground">{t('orderNumber', { number: order.order_number })}</p>
           </div>
-          <button onClick={onClose} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
+          <button onClick={onClose} className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />
           </button>
         </div>
@@ -163,7 +163,7 @@ export default function TableCheckoutModal({
         <div className="flex-1 overflow-y-auto p-5">
           {/* Existing order items - shown as disabled/reference */}
           <div className="mb-3">
-            <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">{t('previousItems')}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">{t('previousItems')}</p>
             <div className="space-y-1">
               {activeItems.map((item) => (
                 <div key={item.id} className="flex justify-between items-start py-1.5 px-2 bg-muted rounded-lg">
@@ -172,7 +172,7 @@ export default function TableCheckoutModal({
                       {item.quantity}x {item.product_name}
                     </p>
                     {item.special_instructions && (
-                      <p className="text-xs text-gray-400 italic">{item.special_instructions}</p>
+                      <p className="text-xs text-muted-foreground italic">{item.special_instructions}</p>
                     )}
                   </div>
                   <span className="text-xs text-muted-foreground ms-2 font-medium">

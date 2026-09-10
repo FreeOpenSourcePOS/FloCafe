@@ -450,8 +450,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
           {/* Cart-level discount editor. */}
           {discountOpen && (
-            <div className="overflow-hidden rounded-xl border border-purple-200 bg-purple-50 p-3 space-y-2">
-                <div className="flex rounded-lg overflow-hidden border border-purple-200">
+            <div className="overflow-hidden rounded-xl border border-purple-200 dark:border-purple-800/40 bg-purple-50 dark:bg-purple-950/40 p-3 space-y-2">
+                <div className="flex rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800/40">
                   {isDiscountTypeAllowed(discountMode, 'percentage') && (
                     <button
                       onClick={() => setDiscountType('percentage')}
@@ -471,7 +471,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                   )}
                 </div>
                 <div className="relative">
-                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">
                     {discountType === 'percentage' ? '%' : inputCurrencyLabel}
                   </span>
                   <input
@@ -531,7 +531,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                   <span className="truncate">{label}</span>
                 </button>
                 <div className="flex flex-1 items-center border border-s-0 border-border rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
-                  <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
+                  <span className="ps-3 text-muted-foreground text-xs">{inputCurrencyLabel}</span>
                   <input
                     type="number"
                     value={payment.amount}
@@ -559,11 +559,11 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                   const dueDisplay = toDisplayUnit(dueStored);
                   setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
                   setAmountTarget({ kind: 'wallet' });
-                }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-muted disabled:text-gray-400 disabled:border-border'}`}>
+                }} className={`touch-target w-36 shrink-0 justify-start rounded-s-xl border px-3 gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/40 disabled:bg-muted disabled:text-muted-foreground disabled:border-border'}`}>
                   <Wallet size={15} /><span className="truncate">{t('loyaltyWallet')}</span>
                 </button>
-                <div className="flex flex-1 items-center border border-s-0 border-purple-200 rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-purple-400">
-                  <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
+                <div className="flex flex-1 items-center border border-s-0 border-purple-200 dark:border-purple-800/40 rounded-e-xl bg-card focus-within:ring-2 focus-within:ring-purple-400">
+                  <span className="ps-3 text-muted-foreground text-xs">{inputCurrencyLabel}</span>
                   <input
                     type="number"
                     value={walletAmount}
@@ -585,14 +585,14 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                   />
                 </div>
               </div>
-              <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
+              <p className="px-1 text-[11px] text-muted-foreground text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
           )}
 
           {/* Loyalty Info Strip (staff reference) */}
           {loyaltySettings?.loyalty_enabled && customer && !walletLoadFailed && (
             <div className="flex items-center gap-2 px-3.5 py-2.5 bg-muted border border-border rounded-xl">
-              <Sparkles size={13} className="text-gray-400 shrink-0" />
+              <Sparkles size={13} className="text-muted-foreground shrink-0" />
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
                 <span className="text-foreground font-medium">{t('loyalty')}</span>
                 <span className="font-semibold text-foreground">
@@ -623,20 +623,20 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           {hasCash && (
             <div className={`rounded-xl px-4 py-2.5 flex items-center justify-between border transition-all duration-200 ${
               change > 0
-                ? 'bg-emerald-50 border-emerald-200'
+                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/40'
                 : 'bg-muted border-border'
             }`}>
               <div className="flex items-center gap-2.5">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
-                  change > 0 ? 'bg-emerald-100' : 'bg-gray-200'
+                  change > 0 ? 'bg-emerald-100 dark:bg-emerald-950/60' : 'bg-gray-200 dark:bg-muted'
                 }`}>
                   {change > 0
-                    ? <CheckCircle2 size={15} className="text-emerald-600" />
-                    : <ArrowLeftRight size={13} className="text-gray-400" />
+                    ? <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400" />
+                    : <ArrowLeftRight size={13} className="text-muted-foreground" />
                   }
                 </div>
                 <span className={`text-sm font-semibold ${
-                  change > 0 ? 'text-emerald-800' : 'text-gray-400'
+                  change > 0 ? 'text-emerald-800 dark:text-emerald-300' : 'text-muted-foreground'
                 }`}>
                   {t('changeReturned')}
                 </span>

@@ -128,7 +128,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${value ? 'bg-brand' : 'bg-gray-300'}`}
+      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${value ? 'bg-brand' : 'bg-gray-300 dark:bg-input'}`}
     >
       {/* start-0.5 + rtl:-translate-x-5 keeps the knob at the inline-start and slides it toward the inline-end in both directions. */}
       <span className={`absolute top-0.5 start-0.5 w-5 h-5 bg-card rounded-full shadow transition-transform ${value ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0'}`} />
@@ -2903,7 +2903,7 @@ export default function SettingsPage() {
 
             {/* General group */}
             <div className="hidden md:block px-3 pt-3 pb-2 mt-2 mb-1 border-b border-border">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupGeneral')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t('navGroupGeneral')}</p>
             </div>
             <SettingsNavItem label={t('storeDetails')} value="store" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabPrinters')} value="receipts-printers" active={activeTab} onClick={handleSettingsTabChange} />
@@ -2917,7 +2917,7 @@ export default function SettingsPage() {
 
             {/* Operations group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupOperations')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t('navGroupOperations')}</p>
             </div>
             <SettingsNavItem label={t('posWorkflow')} value="pos" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={handleSettingsTabChange} />
@@ -2928,14 +2928,14 @@ export default function SettingsPage() {
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupCustomers')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t('navGroupCustomers')}</p>
             </div>
             <SettingsNavItem label={t('loyalty')} value="loyalty" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('discounts')} value="discounts" active={activeTab} onClick={handleSettingsTabChange} />
 
             {/* Integrations group (formerly "Data") */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupData')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t('navGroupData')}</p>
             </div>
             <SettingsNavItem label={t('tabMobileAccess')} value="mobile-access" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabBackupData')} value="data" active={activeTab} onClick={handleSettingsTabChange} />
@@ -2943,7 +2943,7 @@ export default function SettingsPage() {
 
             {/* Account group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupAccount')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t('navGroupAccount')}</p>
             </div>
             <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={handleSettingsTabChange} attention={cloudDeletionNeedsAction || (cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))} />
             <SettingsNavItem label={t('privacy')} value="privacy" active={activeTab} onClick={handleSettingsTabChange} />
@@ -2963,7 +2963,7 @@ export default function SettingsPage() {
                 <Building2 size={20} className="text-muted-foreground" />
                 <h2 className="font-semibold text-foreground">{t('storeDetails')}</h2>
                 {!isAdmin && (
-                  <span className="ms-auto flex items-center gap-1 text-xs text-gray-400">
+                  <span className="ms-auto flex items-center gap-1 text-xs text-muted-foreground">
                     <Lock size={12} /> {t('adminOnly')}
                   </span>
                 )}
@@ -3228,7 +3228,7 @@ export default function SettingsPage() {
                 <Hash size={20} className="text-muted-foreground" />
                 <h2 className="font-semibold text-foreground">{t('orderNumberFormat')}</h2>
                 {!isAdmin && (
-                  <span className="ms-auto flex items-center gap-1 text-xs text-gray-400">
+                  <span className="ms-auto flex items-center gap-1 text-xs text-muted-foreground">
                     <Lock size={12} /> {t('adminOnly')}
                   </span>
                 )}
@@ -3588,7 +3588,7 @@ export default function SettingsPage() {
                               <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-card p-2 border border-border" />
                             ) : (
                               <div className="w-40 h-40 bg-muted rounded-lg flex items-center justify-center mb-3">
-                                <QrCode size={40} className="text-gray-400" />
+                                <QrCode size={40} className="text-muted-foreground" />
                               </div>
                             )}
                             <Ltr as="a" href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
@@ -3597,11 +3597,11 @@ export default function SettingsPage() {
                           </div>
                         ))}
                       </div>
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/40 rounded-lg p-4">
                         <div className="flex items-start gap-3">
                           <div className="flex-1">
-                            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
-                            <Ltr as="a" href={posInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
+                            <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
+                            <Ltr as="a" href={posInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 dark:text-blue-400 break-all hover:underline">
                               {posInfo.mdns_url}
                             </Ltr>
                             <p className="text-xs text-blue-600 mt-2">
@@ -3617,7 +3617,7 @@ export default function SettingsPage() {
                         {posInfo.qr_data_url ? (
                           <img src={posInfo.qr_data_url} alt={t('posQrAlt')} className="w-48 h-48 rounded-xl border border-border" />
                         ) : (
-                          <div className="w-48 h-48 rounded-xl border border-border flex items-center justify-center text-gray-400">
+                          <div className="w-48 h-48 rounded-xl border border-border flex items-center justify-center text-muted-foreground">
                             <QrCode size={48} />
                           </div>
                         )}
@@ -3677,9 +3677,9 @@ export default function SettingsPage() {
                 <Toggle value={kdsEnabledSetting} onChange={(v) => { if (!savingKdsEnabled) saveKdsEnabled(v); }} />
               </div>
               {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
-                <div className="mt-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800">
+                <div className="mt-4 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 rounded-lg">
+                  <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 dark:text-amber-300">
                     {t('kitchenWorkflowBothOffNote')}
                   </p>
                 </div>
@@ -3687,7 +3687,7 @@ export default function SettingsPage() {
             </div>
 
             {!kdsEnabledSetting && (
-              <p className="text-sm text-gray-400 italic">
+              <p className="text-sm text-muted-foreground italic">
                 {t('kdsPairingHiddenHint')}
               </p>
             )}
@@ -3722,7 +3722,7 @@ export default function SettingsPage() {
                               <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-card p-2 border border-border" />
                             ) : (
                               <div className="w-40 h-40 bg-muted rounded-lg flex items-center justify-center mb-3">
-                                <QrCode size={40} className="text-gray-400" />
+                                <QrCode size={40} className="text-muted-foreground" />
                               </div>
                             )}
                             <Ltr as="a" href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
@@ -3751,7 +3751,7 @@ export default function SettingsPage() {
                         {kdsInfo.qr_data_url ? (
                           <img src={kdsInfo.qr_data_url} alt={t('kdsQrAlt')} className="w-48 h-48 rounded-xl border border-border" />
                         ) : (
-                          <div className="w-48 h-48 rounded-xl border border-border flex items-center justify-center text-gray-400">
+                          <div className="w-48 h-48 rounded-xl border border-border flex items-center justify-center text-muted-foreground">
                             <QrCode size={48} />
                           </div>
                         )}
@@ -3812,7 +3812,7 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground mb-5">{t('kitchenStationsHint')}</p>
 
               {stations.length === 0 ? (
-                <p className="text-sm text-gray-400 py-4 text-center">{t('noStationsYet')}</p>
+                <p className="text-sm text-muted-foreground py-4 text-center">{t('noStationsYet')}</p>
               ) : (
                 <div className="space-y-2">
                   {stations.map((station) => {
@@ -3840,7 +3840,7 @@ export default function SettingsPage() {
                             {tCommon('edit')}
                           </button>
                           <button onClick={() => deleteStation(station.id)}
-                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
+                            className="p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded">
                             <Trash2 size={14} />
                           </button>
                         </div>
@@ -3869,7 +3869,7 @@ export default function SettingsPage() {
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-1">{t('stationCategories')}</label>
                         {stationCategories.length === 0 ? (
-                          <p className="text-xs text-gray-400">{t('noCategoriesYet')}</p>
+                          <p className="text-xs text-muted-foreground">{t('noCategoriesYet')}</p>
                         ) : (
                           <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
                             {stationCategories.map((cat) => (
@@ -3899,7 +3899,7 @@ export default function SettingsPage() {
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-1">{t('stationStaff')}</label>
                         {stationStaff.length === 0 ? (
-                          <p className="text-xs text-gray-400">{t('noStaffYet')}</p>
+                          <p className="text-xs text-muted-foreground">{t('noStaffYet')}</p>
                         ) : (
                           <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
                             {stationStaff.map((u) => (
@@ -3927,7 +3927,7 @@ export default function SettingsPage() {
 
             <KdsDefaultViewCard />
 
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+            <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/40 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300">
               <strong>{t('howItWorks')}</strong> {t('howItWorksBody')}
             </div>
           </div>
@@ -3948,7 +3948,7 @@ export default function SettingsPage() {
             </div>
 
             {!serverAppEnabledSetting && (
-              <p className="text-sm text-gray-400 italic">
+              <p className="text-sm text-muted-foreground italic">
                 {t('serverAppPairingHiddenHint')}
               </p>
             )}
@@ -3983,7 +3983,7 @@ export default function SettingsPage() {
                                 <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-card p-2 border border-border" />
                               ) : (
                                 <div className="w-40 h-40 bg-muted rounded-lg flex items-center justify-center mb-3">
-                                  <QrCode size={40} className="text-gray-400" />
+                                  <QrCode size={40} className="text-muted-foreground" />
                                 </div>
                               )}
                               <Ltr as="a" href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
@@ -3992,9 +3992,9 @@ export default function SettingsPage() {
                             </div>
                           ))}
                         </div>
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
-                          <Ltr as="a" href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
+                        <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/40 rounded-lg p-4">
+                          <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
+                          <Ltr as="a" href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 dark:text-blue-400 break-all hover:underline">
                             {serverAppInfo.mdns_url}
                           </Ltr>
                           <p className="text-xs text-blue-600 mt-2">{t('appleDevicesHint')}</p>
@@ -4006,7 +4006,7 @@ export default function SettingsPage() {
                           {serverAppInfo.qr_data_url ? (
                             <img src={serverAppInfo.qr_data_url} alt={t('serverAppQrAlt')} className="w-48 h-48 rounded-xl border border-border" />
                           ) : (
-                            <div className="w-48 h-48 rounded-xl border border-border flex items-center justify-center text-gray-400">
+                            <div className="w-48 h-48 rounded-xl border border-border flex items-center justify-center text-muted-foreground">
                               <QrCode size={48} />
                             </div>
                           )}
@@ -4075,7 +4075,7 @@ export default function SettingsPage() {
                       setLoyaltyEnabled(!loyaltyEnabled);
                     }}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      loyaltyEnabled ? 'bg-brand' : 'bg-gray-200'
+                      loyaltyEnabled ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
                     }`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
@@ -4202,7 +4202,7 @@ export default function SettingsPage() {
                       setDiscountRequiresApproval(!discountRequiresApproval);
                     }}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      discountRequiresApproval ? 'bg-brand' : 'bg-gray-200'
+                      discountRequiresApproval ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
                     }`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
@@ -4237,13 +4237,13 @@ export default function SettingsPage() {
               </div>
             </div>
             {isOwner && (
-              <div className={`rounded-xl border p-6 ${cloudAccountAvailable && cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 bg-red-50/40' : 'border-border bg-card'}`}>
+              <div className={`rounded-xl border p-6 ${cloudAccountAvailable && cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 dark:border-red-800/40 bg-red-50/40 dark:bg-red-950/20' : 'border-border bg-card'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h2 className="font-semibold text-foreground">{t('contactEmailTitle')}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">{cloudAccountLoadFailed ? t('cloudAccountLoadFailed') : cloudAccountAvailable ? <Ltr>{cloudAccount?.email || user?.email || t('noCloudContactEmail')}</Ltr> : t('cloudAccountUnavailable')}</p>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!cloudAccountAvailable ? 'bg-muted text-muted-foreground' : cloudAccount?.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!cloudAccountAvailable ? 'bg-muted text-muted-foreground' : cloudAccount?.verified ? 'bg-green-100 dark:bg-green-950/40 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-300'}`}>
                     {cloudAccountLoadFailed ? t('cloudStatusUnavailable') : !cloudAccountAvailable ? t('cloudUnavailableBadge') : cloudAccount?.verified ? t('cloudVerified') : t('cloudPendingVerification')}
                   </span>
                 </div>
@@ -4316,7 +4316,7 @@ export default function SettingsPage() {
                 <h2 className="font-semibold text-foreground">{t('cloudPrivacyControls')}</h2>
                 <p className="mt-2 text-sm text-muted-foreground">{t('cloudStopReversible')}</p>
                 {cloudAccount?.deletion_request && (
-                  <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' || cloudAccount.deletion_request.status === 'processing' ? 'border-amber-200 bg-amber-50 text-amber-900' : cloudAccount.deletion_request.status === 'approved' || cloudAccount.deletion_request.status === 'completed' || cloudAccount.deletion_request.status === 'deleted' ? 'border-green-200 bg-green-50 text-green-800' : cloudAccount.deletion_request.status === 'failed' ? 'border-red-200 bg-red-50 text-red-800' : 'border-border bg-muted text-foreground'}`}>
+                  <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' || cloudAccount.deletion_request.status === 'processing' ? 'border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300' : cloudAccount.deletion_request.status === 'approved' || cloudAccount.deletion_request.status === 'completed' || cloudAccount.deletion_request.status === 'deleted' ? 'border-green-200 dark:border-green-800/40 bg-green-50 dark:bg-green-950/40 text-green-800 dark:text-green-300' : cloudAccount.deletion_request.status === 'failed' ? 'border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-300' : 'border-border bg-muted text-foreground'}`}>
                     <p className="font-semibold">{t('cloudDeletionRequest', { status: cloudAccount.deletion_request.status || '' })}</p>
                     {cloudAccount.deletion_request.id && <p className="mt-1 font-mono text-xs"><Ltr>{cloudAccount.deletion_request.id}</Ltr></p>}
                     {cloudAccount.deletion_request.decision_note && <p className="mt-2">{cloudAccount.deletion_request.decision_note}</p>}
@@ -4403,12 +4403,12 @@ export default function SettingsPage() {
                     <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {t('installedOnThisComputer')} ({detectedPrinters.length})
                     </span>
-                    <ChevronDown size={16} className={`text-gray-400 transition-transform ${installedPrintersOpen ? 'rotate-180' : ''}`} />
+                    <ChevronDown size={16} className={`text-muted-foreground transition-transform ${installedPrintersOpen ? 'rotate-180' : ''}`} />
                   </button>
                   {installedPrintersOpen && (detectingPrinters && detectedPrinters.length === 0 ? (
-                    <div className="py-6 text-center text-gray-400 text-sm">{t('scanningForPrinters')}</div>
+                    <div className="py-6 text-center text-muted-foreground text-sm">{t('scanningForPrinters')}</div>
                   ) : detectedPrinters.length === 0 ? (
-                    <div className="mt-2 py-6 text-center text-gray-400 text-sm border border-dashed border-border rounded-lg">
+                    <div className="mt-2 py-6 text-center text-muted-foreground text-sm border border-dashed border-border rounded-lg">
                       {t('noInstalledPrinters')}
                     </div>
                   ) : (
@@ -4416,7 +4416,7 @@ export default function SettingsPage() {
                       {detectedPrinters.map((p) => {
                         const alreadyAdded = hwPrinters.some((h) => h.name.toLowerCase() === p.name.toLowerCase());
                         const isAdding = addingDetectedName === p.name;
-                        const dotColor = p.status === 'idle' ? 'bg-green-500' : p.status === 'printing' ? 'bg-yellow-500' : 'bg-gray-300';
+                        const dotColor = p.status === 'idle' ? 'bg-green-500' : p.status === 'printing' ? 'bg-yellow-500' : 'bg-gray-300 dark:bg-muted';
                         const statusLabel = p.status === 'idle' ? t('printerOnline') : p.status === 'printing' ? t('printerPrinting') : t('printerOffline');
                         return (
                           <div key={p.name} className="flex items-center gap-3 rounded-xl border border-border p-3">
@@ -4439,7 +4439,7 @@ export default function SettingsPage() {
                               </p>
                             </div>
                             {alreadyAdded ? (
-                              <span className="text-xs text-gray-400 px-3 py-1.5 flex items-center gap-1">
+                              <span className="text-xs text-muted-foreground px-3 py-1.5 flex items-center gap-1">
                                 <CheckCircle2 size={14} className="text-green-500" /> {t('printerAdded')}
                               </span>
                             ) : (
@@ -4458,7 +4458,7 @@ export default function SettingsPage() {
 
               {/* Configured printer list */}
               {hwPrinters.length === 0 && !showPrinterForm && (
-                <div className="py-6 text-center text-gray-400">
+                <div className="py-6 text-center text-muted-foreground">
                   <p className="text-sm">{t('noPrintersConfigured')}</p>
                   <p className="text-xs mt-1">{t('printerHint')}</p>
                 </div>
@@ -4493,17 +4493,17 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => testPrinterHw(p)} disabled={testingPrinterId === p.id}
                         title={t('testPrint')}
-                        className="p-2 rounded-lg hover:bg-muted text-gray-400 hover:text-foreground disabled:opacity-40">
+                        className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-40">
                         <TestTube2 size={15} />
                       </button>
                       {p.is_default !== 1 && (
                         <button onClick={() => setDefaultPrinter(p.id)} title={t('setAsDefault')}
-                          className="p-2 rounded-lg hover:bg-yellow-50 text-gray-400 hover:text-yellow-600">
+                          className="p-2 rounded-lg hover:bg-yellow-50 dark:hover:bg-yellow-950/40 text-muted-foreground hover:text-yellow-600 dark:hover:text-yellow-400">
                           <Star size={15} />
                         </button>
                       )}
                       <button onClick={() => openEditPrinter(p)} title={t('edit')}
-                        className="p-2 rounded-lg hover:bg-muted text-gray-400 hover:text-foreground">
+                        className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground">
                         <Settings size={15} />
                       </button>
                       <button onClick={() => deletePrinterHw(p.id)} title={t('delete')}
@@ -4606,7 +4606,7 @@ export default function SettingsPage() {
 
             {/* Print Options — merged into the same Printers page rather than a separate tab */}
             <div className="pt-4 border-t border-border">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">{t('tabPrinting')}</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t('tabPrinting')}</h2>
             </div>
 
             <div className="bg-card rounded-xl border border-border p-6">
@@ -4634,7 +4634,7 @@ export default function SettingsPage() {
                     <div className="mt-3 rounded-lg border border-border overflow-hidden">
                       <button type="button" onClick={() => setCashDrawerMethodsOpen((open) => !open)} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-start text-sm font-medium text-foreground hover:bg-muted">
                         <span>{t('cashDrawerPulsePaymentOptions')}</span>
-                        <ChevronDown size={16} className={`text-gray-400 transition-transform ${cashDrawerMethodsOpen ? 'rotate-180' : ''}`} />
+                        <ChevronDown size={16} className={`text-muted-foreground transition-transform ${cashDrawerMethodsOpen ? 'rotate-180' : ''}`} />
                       </button>
                       {cashDrawerMethodsOpen && (
                         <div className="border-t border-border bg-muted/30 px-3 py-2 space-y-2">
@@ -4815,8 +4815,8 @@ export default function SettingsPage() {
                       </select>
                     </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">{t('kotPrintLanguageHint')}</p>
-                  <p className="text-xs text-gray-400 mt-1">{t('zReportLanguageHint')}</p>
+                  <p className="text-xs text-muted-foreground mt-2">{t('kotPrintLanguageHint')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('zReportLanguageHint')}</p>
                 </div>
                 <div className="pt-4 border-t border-border">
                   <p className="font-medium text-foreground mb-1">{t('billContent')}</p>
@@ -4851,7 +4851,7 @@ export default function SettingsPage() {
                         setBillForm((p) => ({ ...p, billFooterMessage: e.target.value }));
                       }}
                       className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none" />
-                    <p className="text-xs text-gray-400 mt-1">{t('footerMessageHint')}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{t('footerMessageHint')}</p>
                   </div>
                 </div>
               </div>
@@ -4992,7 +4992,7 @@ export default function SettingsPage() {
                 <button
                   onClick={() => { void fetchBackups(); }}
                   disabled={backupsLoading}
-                  className="p-1.5 text-gray-400 hover:text-muted-foreground rounded-lg hover:bg-muted disabled:opacity-50"
+                  className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted disabled:opacity-50"
                   title={t('refresh')}
                 >
                   <RefreshCw size={16} className={backupsLoading ? 'animate-spin' : ''} />
@@ -5002,7 +5002,7 @@ export default function SettingsPage() {
                 {t('backupHistoryHint')}
               </p>
               {backups.length === 0 ? (
-                <p className="text-sm text-gray-400 py-4 text-center">
+                <p className="text-sm text-muted-foreground py-4 text-center">
                   {backupsLoading ? tCommon('loading') : t('backupHistoryEmpty')}
                 </p>
               ) : (
@@ -5024,7 +5024,7 @@ export default function SettingsPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-gray-400 truncate">
+                        <p className="text-xs text-muted-foreground truncate">
                           {formatBackupSize(backup.sizeBytes)}
                           {backup.schemaVersion != null && ` · ${t('backupSchemaVersion', { version: backup.schemaVersion })}`}
                         </p>
@@ -5038,7 +5038,7 @@ export default function SettingsPage() {
                         </button>
                         <button
                           onClick={() => handleDeleteBackup(backup)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50"
+                          className="p-1.5 text-muted-foreground hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40"
                           title={t('deleteBackup')}
                         >
                           <Trash2 size={14} />
@@ -5063,15 +5063,15 @@ export default function SettingsPage() {
               {!googleDriveStatus.configured ? (
                 <div className="bg-muted rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-2">
                   <div className="p-3 bg-card rounded-full shadow-sm">
-                    <HardDrive className="w-6 h-6 text-gray-400" />
+                    <HardDrive className="w-6 h-6 text-muted-foreground" />
                   </div>
                   <p className="text-sm font-medium text-foreground">{t('googleDriveNotConfigured')}</p>
                   <p className="text-xs text-muted-foreground max-w-sm">{t('googleDriveNotConfiguredHint')}</p>
                 </div>
               ) : !googleDriveStatus.secure_storage_available ? (
-                <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
-                  <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-                  <p className="text-sm text-amber-800">{t('googleDriveSecureStorageUnavailable')}</p>
+                <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-800/40 rounded-lg px-4 py-3">
+                  <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                  <p className="text-sm text-amber-800 dark:text-amber-300">{t('googleDriveSecureStorageUnavailable')}</p>
                 </div>
               ) : (
                 <>
@@ -5080,7 +5080,7 @@ export default function SettingsPage() {
                       {googleDriveStatus.connected ? (
                         <CheckCircle2 size={16} className="text-green-600 shrink-0" />
                       ) : (
-                        <CloudOff size={16} className="text-gray-400 shrink-0" />
+                        <CloudOff size={16} className="text-muted-foreground shrink-0" />
                       )}
                       <div>
                         <p className="text-sm font-medium text-foreground">
@@ -5389,7 +5389,7 @@ export default function SettingsPage() {
                   {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped ? (
                     <CheckCircle2 size={16} className="text-green-600 shrink-0" />
                   ) : (
-                    <CloudOff size={16} className="text-gray-400 shrink-0" />
+                    <CloudOff size={16} className="text-muted-foreground shrink-0" />
                   )}
                   <div>
                     <p className="text-sm font-medium text-foreground">
@@ -5447,7 +5447,7 @@ export default function SettingsPage() {
                 </label>
 
                     {cloudSettings.cloud_last_sync && (
-                      <p className="text-xs text-gray-400">{t('lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
+                      <p className="text-xs text-muted-foreground">{t('lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
                     )}
                   </div>
               )}
@@ -5472,7 +5472,7 @@ export default function SettingsPage() {
                       <img src={revflo.qr_data_url} alt={t('appQrAlt', { name: revflo.name })}
                         className="w-28 h-28 rounded-lg border border-border" />
                     ) : (
-                      <div className="w-28 h-28 rounded-lg border border-border flex items-center justify-center text-gray-400">
+                      <div className="w-28 h-28 rounded-lg border border-border flex items-center justify-center text-muted-foreground">
                         <QrCode size={32} />
                       </div>
                     )}
@@ -5519,7 +5519,7 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     {pairingExpiresAt && (
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-muted-foreground">
                         {t('codeExpires', { date: formatDate(pairingExpiresAt) })}
                       </p>
                     )}
@@ -5553,7 +5553,7 @@ export default function SettingsPage() {
                 <div className="pt-5 border-t border-border">
                   <p className="text-sm font-medium text-foreground mb-3">{t('pairedDevices')}</p>
                   {devicesLoading ? (
-                    <p className="text-sm text-gray-400">{t('loading')}</p>
+                    <p className="text-sm text-muted-foreground">{t('loading')}</p>
                   ) : pairedDevices.length === 0 ? (
                     <p className="text-sm text-muted-foreground">{t('noPairedDevices')}</p>
                   ) : (
@@ -5565,7 +5565,7 @@ export default function SettingsPage() {
                               {d.platform || t('unknownPlatform')}
                               {d.country ? ` · ${d.country}` : ''}
                             </span>
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-muted-foreground">
                               {t('lastActive', { date: formatDate(d.last_seen_at) })}
                             </span>
                           </div>
@@ -5574,7 +5574,7 @@ export default function SettingsPage() {
                             {d.app_version ? ` · v${d.app_version}` : ''}
                           </p>
                           {d.user_agent && (
-                            <p className="text-xs text-gray-400 mt-1 truncate" title={d.user_agent}>{d.user_agent}</p>
+                            <p className="text-xs text-muted-foreground mt-1 truncate" title={d.user_agent}>{d.user_agent}</p>
                           )}
                         </div>
                       ))}
@@ -5665,7 +5665,7 @@ export default function SettingsPage() {
                           <img src={app.qr_data_url} alt={t('appQrAlt', { name: app.name })}
                             className="w-32 h-32 rounded-lg border border-border" />
                         ) : (
-                          <div className="w-32 h-32 rounded-lg border border-border flex items-center justify-center text-gray-400">
+                          <div className="w-32 h-32 rounded-lg border border-border flex items-center justify-center text-muted-foreground">
                             <QrCode size={36} />
                           </div>
                         )}
@@ -5674,7 +5674,7 @@ export default function SettingsPage() {
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="font-semibold text-foreground">{app.name}</h3>
                           {!app.available && (
-                            <span className="text-xs font-medium text-gray-400 bg-muted px-2 py-0.5 rounded-full">{t('comingSoon')}</span>
+                            <span className="text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{t('comingSoon')}</span>
                           )}
                         </div>
                         <p className="text-sm text-muted-foreground mb-3">{app.tagline}</p>
@@ -5694,7 +5694,7 @@ export default function SettingsPage() {
                     </div>
                   ))}
                   {moreApps.length === 0 && (
-                    <p className="text-sm text-gray-400 text-center py-10">{t('noAppsToShow')}</p>
+                    <p className="text-sm text-muted-foreground text-center py-10">{t('noAppsToShow')}</p>
                   )}
                 </div>
               )}
@@ -5763,7 +5763,7 @@ export default function SettingsPage() {
                 )}
                 {updateStatus.percent !== undefined && (
                   <div className="mt-2">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full bg-gray-200 dark:bg-muted rounded-full h-2">
                       <div
                         className="bg-brand h-2 rounded-full transition-all"
                         style={{ width: `${updateStatus.percent}%` }}

@@ -117,7 +117,7 @@ export default function AddonModal({
             <h2 className="text-lg font-bold text-foreground">{product.name}</h2>
             <p className="text-brand font-semibold">{fmt(Number(product.price))}</p>
           </div>
-          <button onClick={onClose} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
+          <button onClick={onClose} className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />
           </button>
         </div>
@@ -151,7 +151,7 @@ export default function AddonModal({
                     })() : null}
                   </span>
                 </div>
-                {group.description && <p className="text-xs text-gray-400 mb-2">{group.description}</p>}
+                {group.description && <p className="text-xs text-muted-foreground mb-2">{group.description}</p>}
                 <div className="space-y-1">
                   {activeAddons.map((addon) => {
                     const addonQty = getAddonQuantity(group.id, addon.id);
@@ -277,7 +277,7 @@ export default function AddonModal({
               maxLength={100}
               className="w-full min-h-11 px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
             />
-            <p className="text-xs text-gray-400 text-end mt-0.5">{instructions.length}/100</p>
+            <p className="text-xs text-muted-foreground text-end mt-0.5">{instructions.length}/100</p>
           </div>
         </div>
 

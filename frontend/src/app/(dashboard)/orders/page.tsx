@@ -50,28 +50,28 @@ import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
 const itemStatusConfig: Record<OrderItem['status'], { dot: string; color: string; labelKey: OrdersKey }> = {
-  pending: { dot: 'bg-yellow-400', color: 'text-yellow-700', labelKey: 'itemStatusWaiting' },
-  preparing: { dot: 'bg-blue-500', color: 'text-blue-700', labelKey: 'itemStatusPreparing' },
-  ready: { dot: 'bg-green-500', color: 'text-green-700', labelKey: 'itemStatusReady' },
-  served: { dot: 'bg-purple-500', color: 'text-purple-700', labelKey: 'itemStatusServed' },
-  cancelled: { dot: 'bg-red-400', color: 'text-red-500', labelKey: 'itemStatusCancelled' },
-  voided: { dot: 'bg-red-500', color: 'text-red-600 line-through', labelKey: 'itemStatusVoided' },
-  void_adjustment: { dot: 'bg-red-300', color: 'text-red-500 italic', labelKey: 'itemStatusVoidAdjustment' },
+  pending: { dot: 'bg-yellow-400 dark:bg-yellow-400', color: 'text-yellow-700 dark:text-yellow-300', labelKey: 'itemStatusWaiting' },
+  preparing: { dot: 'bg-blue-500 dark:bg-blue-400', color: 'text-blue-700 dark:text-blue-300', labelKey: 'itemStatusPreparing' },
+  ready: { dot: 'bg-green-500 dark:bg-green-400', color: 'text-green-700 dark:text-green-300', labelKey: 'itemStatusReady' },
+  served: { dot: 'bg-purple-500 dark:bg-purple-400', color: 'text-purple-700 dark:text-purple-300', labelKey: 'itemStatusServed' },
+  cancelled: { dot: 'bg-red-400 dark:bg-red-400', color: 'text-red-500 dark:text-red-400', labelKey: 'itemStatusCancelled' },
+  voided: { dot: 'bg-red-500 dark:bg-red-400', color: 'text-red-600 dark:text-red-400 line-through', labelKey: 'itemStatusVoided' },
+  void_adjustment: { dot: 'bg-red-300 dark:bg-red-400', color: 'text-red-500 dark:text-red-400 italic', labelKey: 'itemStatusVoidAdjustment' },
 };
 
 const orderStatusBadge: Record<Order['status'], { bg: string; text: string; labelKey: OrdersKey }> = {
-  pending: { bg: 'bg-yellow-100', text: 'text-yellow-700', labelKey: 'pending' },
-  preparing: { bg: 'bg-blue-100', text: 'text-blue-700', labelKey: 'preparing' },
-  ready: { bg: 'bg-green-100', text: 'text-green-700', labelKey: 'ready' },
-  served: { bg: 'bg-purple-100', text: 'text-purple-700', labelKey: 'served' },
+  pending: { bg: 'bg-yellow-100 dark:bg-yellow-950/40', text: 'text-yellow-700 dark:text-yellow-300', labelKey: 'pending' },
+  preparing: { bg: 'bg-blue-100 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-300', labelKey: 'preparing' },
+  ready: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'ready' },
+  served: { bg: 'bg-purple-100 dark:bg-purple-950/40', text: 'text-purple-700 dark:text-purple-300', labelKey: 'served' },
   completed: { bg: 'bg-muted', text: 'text-muted-foreground', labelKey: 'completed' },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'cancelled' },
+  cancelled: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'cancelled' },
 };
 
 const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; text: string; labelKey: OrdersKey }> = {
-  paid: { bg: 'bg-green-100', text: 'text-green-700', labelKey: 'paid' },
-  partial: { bg: 'bg-amber-100', text: 'text-amber-700', labelKey: 'partiallyPaid' },
-  unpaid: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'unpaidBadge' },
+  paid: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'paid' },
+  partial: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'partiallyPaid' },
+  unpaid: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'unpaidBadge' },
 };
 
 // Typed leaf-key order-type map.

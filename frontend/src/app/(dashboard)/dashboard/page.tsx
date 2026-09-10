@@ -151,12 +151,12 @@ function formatWeekdayLabel(dayIndex: number, locale: string): string {
 }
 
 const orderStatusColor: Record<string, string> = {
-  pending: 'text-yellow-600',
-  preparing: 'text-blue-600',
-  ready: 'text-green-600',
-  served: 'text-purple-600',
+  pending: 'text-yellow-600 dark:text-yellow-400',
+  preparing: 'text-blue-600 dark:text-blue-400',
+  ready: 'text-green-600 dark:text-green-400',
+  served: 'text-purple-600 dark:text-purple-400',
   completed: 'text-muted-foreground',
-  cancelled: 'text-red-500',
+  cancelled: 'text-red-500 dark:text-red-400',
 };
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
@@ -280,16 +280,16 @@ export default function DashboardPage() {
           label: t('billsCollected'),
           value: financialSummary?.billCount ?? 0,
           icon: ReceiptText,
-          color: 'bg-blue-50 border-blue-200',
-          iconColor: 'text-blue-600',
+          color: 'bg-blue-50 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800/40',
+          iconColor: 'text-blue-600 dark:text-blue-400',
           href: '/orders',
         },
         {
           label: t('refundCount'),
           value: financialSummary?.refundCount ?? 0,
           icon: RotateCcw,
-          color: 'bg-red-50 border-red-200',
-          iconColor: 'text-red-600',
+          color: 'bg-red-50 border-red-200 dark:bg-red-950/40 dark:border-red-800/40',
+          iconColor: 'text-red-600 dark:text-red-400',
           href: '/orders',
         },
       ]
@@ -299,24 +299,24 @@ export default function DashboardPage() {
           label: t('runningOrders'),
           value: stats?.runningOrders ?? 0,
           icon: ChefHat,
-          color: 'bg-blue-50 border-blue-200',
-          iconColor: 'text-blue-600',
+          color: 'bg-blue-50 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800/40',
+          iconColor: 'text-blue-600 dark:text-blue-400',
           href: '/orders',
         },
         {
           label: t('pendingOrders'),
           value: stats?.pendingOrders ?? 0,
           icon: Clock,
-          color: 'bg-yellow-50 border-yellow-200',
-          iconColor: 'text-yellow-600',
+          color: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-950/40 dark:border-yellow-800/40',
+          iconColor: 'text-yellow-600 dark:text-yellow-400',
           href: '/orders',
         },
         {
           label: t('tablesOccupied'),
           value: stats?.tablesOccupied ?? 0,
           icon: LayoutGrid,
-          color: 'bg-purple-50 border-purple-200',
-          iconColor: 'text-purple-600',
+          color: 'bg-purple-50 border-purple-200 dark:bg-purple-950/40 dark:border-purple-800/40',
+          iconColor: 'text-purple-600 dark:text-purple-400',
           href: '/tables',
         },
         {
@@ -327,8 +327,8 @@ export default function DashboardPage() {
             return h > 0 ? tCommon('timeHoursMinutes', { h, m }) : tCommon('timeMinutes', { m });
           })(),
           icon: Hourglass,
-          color: 'bg-cyan-50 border-cyan-200',
-          iconColor: 'text-cyan-600',
+          color: 'bg-cyan-50 border-cyan-200 dark:bg-cyan-950/40 dark:border-cyan-800/40',
+          iconColor: 'text-cyan-600 dark:text-cyan-400',
           href: '/tables',
         },
       ]
@@ -337,16 +337,16 @@ export default function DashboardPage() {
           label: t('orders'),
           value: daySummary?.orders.count ?? 0,
           icon: ChefHat,
-          color: 'bg-blue-50 border-blue-200',
-          iconColor: 'text-blue-600',
+          color: 'bg-blue-50 border-blue-200 dark:bg-blue-950/40 dark:border-blue-800/40',
+          iconColor: 'text-blue-600 dark:text-blue-400',
           href: '/orders',
         },
         {
           label: t('newCustomers'),
           value: daySummary?.customers.new ?? 0,
           icon: Clock,
-          color: 'bg-yellow-50 border-yellow-200',
-          iconColor: 'text-yellow-600',
+          color: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-950/40 dark:border-yellow-800/40',
+          iconColor: 'text-yellow-600 dark:text-yellow-400',
           href: '/customers',
         },
       ];
@@ -357,16 +357,16 @@ export default function DashboardPage() {
           label: t('grossCollections'),
           value: fmt(financialSummary?.grossCollected ?? 0),
           icon: Banknote,
-          color: 'bg-emerald-50 border-emerald-200',
-          iconColor: 'text-emerald-700',
+          color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800/40',
+          iconColor: 'text-emerald-700 dark:text-emerald-400',
           href: '/orders',
         },
         {
           label: t('refunds'),
           value: fmt(financialSummary?.refunded ?? 0),
           icon: RotateCcw,
-          color: 'bg-red-50 border-red-200',
-          iconColor: 'text-red-600',
+          color: 'bg-red-50 border-red-200 dark:bg-red-950/40 dark:border-red-800/40',
+          iconColor: 'text-red-600 dark:text-red-400',
           href: '/orders',
         },
       ]
@@ -377,8 +377,8 @@ export default function DashboardPage() {
       label: periodMode === 'month' ? t('netCollections') : isToday ? t('todaySales') : t('sales'),
       value: fmt(financialSummary?.netCollected ?? 0),
       icon: Banknote,
-      color: 'bg-green-50 border-green-200',
-      iconColor: 'text-green-600',
+      color: 'bg-green-50 border-green-200 dark:bg-green-950/40 dark:border-green-800/40',
+      iconColor: 'text-green-600 dark:text-green-400',
       href: '/orders',
     },
     ...financialTiles,
@@ -387,16 +387,16 @@ export default function DashboardPage() {
       label: t('aov'),
       value: fmt(financialSummary?.averageOrderValue ?? 0),
       icon: TrendingUp,
-      color: 'bg-teal-50 border-teal-200',
-      iconColor: 'text-teal-600',
+      color: 'bg-teal-50 border-teal-200 dark:bg-teal-950/40 dark:border-teal-800/40',
+      iconColor: 'text-teal-600 dark:text-teal-400',
       href: '/orders',
     },
     ...(periodMode === 'day' ? [{
       label: t('avgPrepTime'),
       value: insights?.avgPrepTimeMinutes != null ? t('minutesValue', { minutes: insights.avgPrepTimeMinutes }) : '—',
       icon: Timer,
-      color: 'bg-orange-50 border-orange-200',
-      iconColor: 'text-orange-600',
+      color: 'bg-orange-50 border-orange-200 dark:bg-orange-950/40 dark:border-orange-800/40',
+      iconColor: 'text-orange-600 dark:text-orange-400',
       href: '/orders',
     }] : []),
   ];
@@ -492,7 +492,7 @@ export default function DashboardPage() {
                   <span className="text-sm font-medium text-muted-foreground">{tile.label}</span>
                   <tile.icon size={20} className={tile.iconColor} />
                 </div>
-                <p className="text-3xl font-bold text-gray-900">
+                <p className="text-3xl font-bold text-foreground">
                   {tile.value}
                 </p>
               </Link>
@@ -504,7 +504,7 @@ export default function DashboardPage() {
             <div className="bg-card rounded-xl border border-border dark:border-border overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border">
                 <h2 className="flex items-center gap-2 font-semibold text-foreground">
-                  <ClipboardList size={16} className="text-gray-400" />
+                  <ClipboardList size={16} className="text-muted-foreground" />
                   {isToday ? t('recentOrders') : periodMode === 'month' ? t('monthOrders') : t('orders')}
                 </h2>
                 <Link href="/orders" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
@@ -512,9 +512,9 @@ export default function DashboardPage() {
                 </Link>
               </div>
               {recentOrders.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-gray-400 text-center">{t('noOrdersYet')}</p>
+                <p className="px-4 py-6 text-sm text-muted-foreground text-center">{t('noOrdersYet')}</p>
               ) : (
-                <div className="divide-y divide-gray-50">
+                <div className="divide-y divide-border">
                   {recentOrders.map((order) => (
                     <Link
                       key={order.id}
@@ -528,7 +528,7 @@ export default function DashboardPage() {
                             {(() => { const k = (ORDER_STATUS_LABEL_KEYS as Record<string, OrdersKey | undefined>)[order.status]; return k ? tOrders(k) : order.status; })()}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-400 truncate">
+                        <p className="text-xs text-muted-foreground truncate">
                           {order.customer_name || order.table_name || t('walkIn')}
                         </p>
                       </div>
@@ -545,7 +545,7 @@ export default function DashboardPage() {
             <div className="bg-card rounded-xl border border-border dark:border-border overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border">
                 <h2 className="flex items-center gap-2 font-semibold text-foreground">
-                  <TrendingUp size={16} className="text-gray-400" />
+                  <TrendingUp size={16} className="text-muted-foreground" />
                   {periodMode === 'month' ? t('topProductsMonth') : isToday ? t('topProductsToday') : t('topProducts')}
                 </h2>
                 <Link href="/products" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
@@ -553,14 +553,14 @@ export default function DashboardPage() {
                 </Link>
               </div>
               {topProducts.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-gray-400 text-center">{t('noSalesYet')}</p>
+                <p className="px-4 py-6 text-sm text-muted-foreground text-center">{t('noSalesYet')}</p>
               ) : (
-                <div className="divide-y divide-gray-50">
+                <div className="divide-y divide-border">
                   {topProducts.map((product) => (
                     <div key={product.product_id} className="flex items-center justify-between px-4 py-2.5">
                       <div className="min-w-0">
                         <span className="text-sm font-medium text-foreground">{product.product_name}</span>
-                        <p className="text-xs text-gray-400">{t('productSoldOrders', { quantity: product.total_quantity, orders: product.order_count })}</p>
+                        <p className="text-xs text-muted-foreground">{t('productSoldOrders', { quantity: product.total_quantity, orders: product.order_count })}</p>
                       </div>
                       <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(product.total_revenue))}
@@ -577,7 +577,7 @@ export default function DashboardPage() {
             <div className="bg-card rounded-xl border border-border dark:border-border overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border">
                 <h2 className="flex items-center gap-2 font-semibold text-foreground">
-                  <Trophy size={16} className="text-gray-400" />
+                  <Trophy size={16} className="text-muted-foreground" />
                   {t('topStaff')}
                 </h2>
                 <Link href="/staff" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
@@ -585,14 +585,14 @@ export default function DashboardPage() {
                 </Link>
               </div>
               {(insights?.topStaff.length ?? 0) === 0 ? (
-                <p className="px-4 py-6 text-sm text-gray-400 text-center">{t('noSalesYet')}</p>
+                <p className="px-4 py-6 text-sm text-muted-foreground text-center">{t('noSalesYet')}</p>
               ) : (
-                <div className="divide-y divide-gray-50">
+                <div className="divide-y divide-border">
                   {insights!.topStaff.map((staff) => (
                     <div key={staff.user_id} className="flex items-center justify-between px-4 py-2.5">
                       <div className="min-w-0">
                         <span className="text-sm font-medium text-foreground">{staff.name}</span>
-                        <p className="text-xs text-gray-400">{t('staffOrderCount', { orders: staff.orderCount })}</p>
+                        <p className="text-xs text-muted-foreground">{t('staffOrderCount', { orders: staff.orderCount })}</p>
                       </div>
                       <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(staff.revenue))}
@@ -607,19 +607,19 @@ export default function DashboardPage() {
             <div className="bg-card rounded-xl border border-border dark:border-border overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-border dark:border-border">
                 <h2 className="flex items-center gap-2 font-semibold text-foreground">
-                  <Tags size={16} className="text-gray-400" />
+                  <Tags size={16} className="text-muted-foreground" />
                   {t('topCategories')}
                 </h2>
               </div>
               {(insights?.topCategories.length ?? 0) === 0 ? (
-                <p className="px-4 py-6 text-sm text-gray-400 text-center">{t('noSalesYet')}</p>
+                <p className="px-4 py-6 text-sm text-muted-foreground text-center">{t('noSalesYet')}</p>
               ) : (
-                <div className="divide-y divide-gray-50">
+                <div className="divide-y divide-border">
                   {insights!.topCategories.map((category) => (
                     <div key={category.category_id ?? category.name} className="flex items-center justify-between px-4 py-2.5">
                       <div className="min-w-0">
                         <span className="text-sm font-medium text-foreground">{category.name}</span>
-                        <p className="text-xs text-gray-400">{t('categoryQuantitySold', { quantity: category.quantity })}</p>
+                        <p className="text-xs text-muted-foreground">{t('categoryQuantitySold', { quantity: category.quantity })}</p>
                       </div>
                       <span className="text-sm font-semibold text-foreground shrink-0">
                         {fmt(Number(category.revenue))}
@@ -644,9 +644,9 @@ export default function DashboardPage() {
                 <span className="text-sm font-semibold text-red-600">{fmt(financialSummary?.refunded ?? 0)}</span>
               </div>
               {(financialSummary?.refunds.length ?? 0) === 0 ? (
-                <p className="px-4 py-8 text-sm text-gray-400 text-center">{t('noRefunds')}</p>
+                <p className="px-4 py-8 text-sm text-muted-foreground text-center">{t('noRefunds')}</p>
               ) : (
-                <div className="divide-y divide-gray-100">
+                <div className="divide-y divide-border">
                   {financialSummary!.refunds.map((refund) => (
                     <div key={refund.id} className="grid grid-cols-1 gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                       <div className="min-w-0">
@@ -676,11 +676,11 @@ export default function DashboardPage() {
           {/* Payment Methods */}
           <div className="bg-card rounded-xl border border-border dark:border-border p-4 mt-4">
             <div className="flex items-center gap-2 mb-4">
-              <Wallet size={16} className="text-gray-400" />
+              <Wallet size={16} className="text-muted-foreground" />
               <h2 className="font-semibold text-foreground">{t('paymentMethods')}</h2>
             </div>
             {paymentMethods.length === 0 ? (
-              <p className="text-sm text-gray-400 text-center py-6">{t('noPaymentsYet')}</p>
+              <p className="text-sm text-muted-foreground text-center py-6">{t('noPaymentsYet')}</p>
             ) : (
               <div className="space-y-3">
                 {paymentMethods.map((pm) => {
@@ -694,7 +694,7 @@ export default function DashboardPage() {
                     <div key={pm.method ?? 'unknown'}>
                       <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
-                          <Icon size={14} className="text-gray-400" />
+                          <Icon size={14} className="text-muted-foreground" />
                           <span className="text-sm font-medium text-foreground">{label}</span>
                         </div>
                         <span className="text-sm font-semibold text-foreground">{fmt(Number(pm.total))}</span>
@@ -703,7 +703,7 @@ export default function DashboardPage() {
                         <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                           <div className="h-full bg-brand rounded-full" style={{ width: `${percent}%` }} />
                         </div>
-                        <span className="text-xs text-gray-400 shrink-0">
+                        <span className="text-xs text-muted-foreground shrink-0">
                           {t('paymentMethodCount', { count: pm.count, percent })}
                         </span>
                       </div>
@@ -717,10 +717,10 @@ export default function DashboardPage() {
           {/* Business Patterns */}
           <div className="bg-card rounded-xl border border-border dark:border-border p-4 mt-4">
             <div className="flex items-center gap-2 mb-1">
-              <BarChart3 size={16} className="text-gray-400" />
+              <BarChart3 size={16} className="text-muted-foreground" />
               <h2 className="font-semibold text-foreground">{t('businessPatterns')}</h2>
             </div>
-            <p className="text-xs text-gray-400 mb-4">
+            <p className="text-xs text-muted-foreground mb-4">
               {t('businessPatternsHint', { days: insights?.windowDays ?? 30 })}
             </p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -730,7 +730,7 @@ export default function DashboardPage() {
                   {insights?.busiestHour ? formatHourLabel(insights.busiestHour.hour, locale) : t('notEnoughData')}
                 </p>
                 {insights?.busiestHour && (
-                  <p className="text-xs text-gray-400">{t('ordersCount', { count: insights.busiestHour.orderCount })}</p>
+                  <p className="text-xs text-muted-foreground">{t('ordersCount', { count: insights.busiestHour.orderCount })}</p>
                 )}
               </div>
               <div>
@@ -739,7 +739,7 @@ export default function DashboardPage() {
                   {insights?.idlestHour ? formatHourLabel(insights.idlestHour.hour, locale) : t('notEnoughData')}
                 </p>
                 {insights?.idlestHour && (
-                  <p className="text-xs text-gray-400">{t('ordersCount', { count: insights.idlestHour.orderCount })}</p>
+                  <p className="text-xs text-muted-foreground">{t('ordersCount', { count: insights.idlestHour.orderCount })}</p>
                 )}
               </div>
               <div>
@@ -748,7 +748,7 @@ export default function DashboardPage() {
                   {insights?.busiestDayOfWeek ? formatWeekdayLabel(insights.busiestDayOfWeek.dayIndex, locale) : t('notEnoughData')}
                 </p>
                 {insights?.busiestDayOfWeek && (
-                  <p className="text-xs text-gray-400">{t('ordersCount', { count: insights.busiestDayOfWeek.orderCount })}</p>
+                  <p className="text-xs text-muted-foreground">{t('ordersCount', { count: insights.busiestDayOfWeek.orderCount })}</p>
                 )}
               </div>
               <div>
@@ -757,7 +757,7 @@ export default function DashboardPage() {
                   {insights?.idlestDayOfWeek ? formatWeekdayLabel(insights.idlestDayOfWeek.dayIndex, locale) : t('notEnoughData')}
                 </p>
                 {insights?.idlestDayOfWeek && (
-                  <p className="text-xs text-gray-400">{t('ordersCount', { count: insights.idlestDayOfWeek.orderCount })}</p>
+                  <p className="text-xs text-muted-foreground">{t('ordersCount', { count: insights.idlestDayOfWeek.orderCount })}</p>
                 )}
               </div>
             </div>

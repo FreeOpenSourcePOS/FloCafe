@@ -21,10 +21,10 @@ interface Props {
 }
 
 const TAG_COLORS: Record<string, string> = {
-  veg:    'bg-green-100 text-green-700',
-  nonveg: 'bg-red-100 text-red-700',
-  vegan:  'bg-emerald-100 text-emerald-700',
-  spicy:  'bg-orange-100 text-orange-700',
+  veg:    'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300',
+  nonveg: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300',
+  vegan:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  spicy:  'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300',
 };
 
 function tagColor(tag: string) {
@@ -286,7 +286,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             onChange={handlePhoneChange}
             onKeyDown={handlePhoneKeyDown}
             placeholder={dialCode ? `${dialCode} ${t('phone')}` : t('phone')}
-            className="h-10 w-48 shrink-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none"
+            className="h-10 w-48 shrink-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 dark:border-amber-600 dark:bg-amber-950/40 dark:placeholder:text-amber-400/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 dark:focus:ring-amber-800 dark:focus:border-amber-600 outline-none"
             dir="ltr"
           />
           <input
@@ -304,7 +304,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             className={`h-10 w-48 shrink-0 px-3 text-sm border rounded-lg focus:ring-2 outline-none transition-colors duration-150 ${
               matched
                 ? 'border-border bg-muted cursor-pointer focus:ring-brand/20 focus:border-brand'
-                : 'border-indigo-200 bg-indigo-50 placeholder:text-indigo-400/80 focus:ring-indigo-200 focus:border-indigo-400'
+                : 'border-indigo-200 bg-indigo-50 placeholder:text-indigo-400/80 dark:border-indigo-600 dark:bg-indigo-950/40 dark:placeholder:text-indigo-400/60 focus:ring-indigo-200 focus:border-indigo-400 dark:focus:ring-indigo-800 dark:focus:border-indigo-600'
             }`}
             onClick={matched ? handleSelectMatched : undefined}
           />
@@ -330,9 +330,9 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         {searched && (
           <div className="absolute start-0 top-full mt-1 z-20 rounded-md border border-border bg-card px-2 py-1 shadow-sm">
             {matched ? (
-              <span className="text-xs text-green-600 font-medium">{t('customerFound')}</span>
+              <span className="text-xs text-green-600 dark:text-green-400 font-medium">{t('customerFound')}</span>
             ) : (
-              <span className="text-xs text-red-500 font-medium">{t('newCustomerEnterName')}</span>
+              <span className="text-xs text-red-500 dark:text-red-400 font-medium">{t('newCustomerEnterName')}</span>
             )}
           </div>
         )}
@@ -378,7 +378,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         <div className="space-y-1.5">
           {matched ? (
             <>
-              <p className="text-xs text-green-600 font-medium">{t('customerFoundClick')}</p>
+              <p className="text-xs text-green-600 dark:text-green-400 font-medium">{t('customerFoundClick')}</p>
               {matched.tag_counts && <TagBadges counts={matched.tag_counts} />}
               <button
                 onClick={handleSelectMatched}
@@ -389,7 +389,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             </>
           ) : (
             <>
-              <p className="text-xs text-red-500 font-medium">{t('newCustomerEnterName')}</p>
+              <p className="text-xs text-red-500 dark:text-red-400 font-medium">{t('newCustomerEnterName')}</p>
               {name.trim() && (
                 <button
                   onClick={handleCreate}

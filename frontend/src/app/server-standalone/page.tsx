@@ -228,7 +228,7 @@ export default function ServerStandalonePage() {
     if (!name && !rawPhone) return null;
     let normalizedPhone: string | undefined = undefined;
     if (rawPhone) {
-      const parsed = parsePhone(rawPhone, regional?.country || 'IN');
+      const parsed = regional?.country ? parsePhone(rawPhone, regional.country) : null;
       normalizedPhone = parsed ? parsed.e164 : rawPhone;
       try {
         const lookup = await api.get('/api/crm/lookup', { params: { phone: normalizedPhone } });

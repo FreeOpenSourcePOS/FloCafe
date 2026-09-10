@@ -961,8 +961,9 @@ jobs:
             READINESS_ARGS+=(--expected-latest "$LATEST_BEFORE")
           fi
           # Draft and prerelease state are changed only after verification. The
-          # explicit false prevents an ordinary stable or beta build from
-          # moving the stable pointer. Promotion remains a separate job.
+          # explicit false prevents the request from explicitly selecting this
+          # release as Latest. A newly published stable may still resolve via
+          # /releases/latest by created_at. Promotion remains a separate job.
           gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
             -F draft=false \
             -F prerelease="${PRERELEASE}" \

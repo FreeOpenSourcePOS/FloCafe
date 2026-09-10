@@ -69,7 +69,9 @@ async function main() {
   } catch (error) {
     if (expectedLatest !== '' || !String(error.message).includes('(404)')) throw error;
   }
-  assertStableLatestUnchanged(expectedLatest, latest.tag_name || '');
+  if (expectedLatest !== '') {
+    assertStableLatestUnchanged(expectedLatest, latest.tag_name || '');
+  }
   await verifyCandidateManifest(manifest, release, {
     requestAsset: (asset) => request(asset.url, 'application/octet-stream'),
     tag,

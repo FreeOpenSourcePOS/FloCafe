@@ -163,6 +163,12 @@ function releaseRefRequest({
     stableLatestBefore: '3.3.0',
     stableLatestAfter: '3.3.0',
   });
+  assertCandidateReadiness({
+    release: { draft: false, prerelease: false, tag_name: '3.3.0', assets: published.assets },
+    tag: '3.3.0',
+    channel: 'stable',
+    expectedAssetIds: manifest.assets.map((entry) => entry.id),
+  });
   assert.throws(() => assertCandidateReadiness({
     release: published,
     tag: release.tag_name,

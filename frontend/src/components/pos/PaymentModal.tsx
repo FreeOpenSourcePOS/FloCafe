@@ -28,6 +28,7 @@ import {
   type DiscountMode,
   type DiscountType,
 } from '@/lib/discount-settings';
+import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 
 interface Props {
   bill: Bill;
@@ -374,9 +375,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
       // Atomic call ensures all split payment lines succeed together
       // or fail together without leaving partial payments.
-      const idempotencyKey = idempotencyKeyRef.current || (typeof globalThis.crypto?.randomUUID === 'function'
-        ? globalThis.crypto.randomUUID()
-        : 'payment-req');
+      const idempotencyKey = idempotencyKeyRef.current || createPaymentIdempotencyKey();
       idempotencyKeyRef.current = idempotencyKey;
       const res = await api.post(
         `/bills/${bill.id}/payments`,

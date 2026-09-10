@@ -48,9 +48,8 @@ function reportDate(value: unknown, fallback: string): string {
  * IANA timezone support (only fixed offsets), so this bucketing happens
  * in JS via Intl instead of in SQL.
  */
-function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { hourCounts: number[]; dayCounts: number[] } {
+function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string, startTime?: string): { hourCounts: number[]; dayCounts: number[] } {
   const hourFmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' });
-  const weekdayFmt = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long' });
 
   const hourCounts = new Array(24).fill(0);
   const dayCounts = new Array(7).fill(0);
@@ -60,8 +59,9 @@ function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { 
     if (isNaN(d.getTime())) continue;
     const hour = parseInt(hourFmt.format(d), 10);
     if (hour >= 0 && hour <= 23) hourCounts[hour]++;
-    const dayIdx = WEEKDAY_NAMES.indexOf(weekdayFmt.format(d));
-    if (dayIdx >= 0) dayCounts[dayIdx]++;
+    const businessDate = localDateInTimezone(d, timeZone, startTime);
+    const dayIdx = new Date(`${businessDate}T12:00:00Z`).getUTCDay();
+    if (dayIdx >= 0 && dayIdx < 7) dayCounts[dayIdx]++;
   }
 
   return { hourCounts, dayCounts };
@@ -574,7 +574,7 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       `SELECT created_at FROM orders WHERE created_at >= ? AND status != 'cancelled'`
     ).all(windowStart) as { created_at: string }[]).map((r) => r.created_at);
 
-    const { hourCounts, dayCounts } = bucketByLocalHourAndWeekday(orderTimestamps, timeZone);
+    const { hourCounts, dayCounts } = bucketByLocalHourAndWeekday(orderTimestamps, timeZone, tenantStartTime());
 
     // Hours with zero orders are excluded from busiest/idlest — almost
     // certainly "closed overnight" rather than a meaningful idle signal,

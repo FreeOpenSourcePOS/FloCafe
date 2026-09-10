@@ -328,15 +328,12 @@ export function getSettingValue(key: string): string | null {
   return row?.value ?? null;
 }
 
-/**
- * Resolves the tenant's configured business day start time ('HH:mm').
- * Supports morning cutoff times: '00:00' to '11:59'. Defaults to '00:00'.
- */
+/** Resolves the tenant's configured business day start time ('HH:mm', 00:00 to 11:59). */
 export function tenantBusinessDayStartTime(customDb?: ReturnType<typeof getDatabase>): string {
   const raw = customDb
     ? (customDb.prepare("SELECT value FROM settings WHERE key = 'business_day_start_time'").get() as { value?: unknown } | undefined)?.value
     : getSettingValue('business_day_start_time');
-  if (typeof raw === 'string' && /^([01]\d):([0-5]\d)$/.test(raw.trim())) {
+  if (typeof raw === 'string' && /^(?:0\d|1[01]):[0-5]\d$/.test(raw.trim())) {
     return raw.trim();
   }
   return '00:00';

@@ -227,7 +227,7 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     }
 
     if (business_day_start_time !== undefined) {
-      if (typeof business_day_start_time !== 'string' || !/^([01]\d):([0-5]\d)$/.test(business_day_start_time.trim())) {
+      if (typeof business_day_start_time !== 'string' || !/^(?:0\d|1[01]):[0-5]\d$/.test(business_day_start_time.trim())) {
         return res.status(400).json({ error: 'Invalid business_day_start_time format (must be HH:mm between 00:00 and 11:59)' });
       }
     }

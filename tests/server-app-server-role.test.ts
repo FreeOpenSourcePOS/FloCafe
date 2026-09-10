@@ -41,9 +41,9 @@ async function postJson(baseUrl: string, pathName: string, body: unknown, token?
   return { status: response.status, body: await response.json() };
 }
 
-async function getJson(baseUrl: string, pathName: string, token: string) {
+async function getJson(baseUrl: string, pathName: string, token?: string) {
   const response = await fetch(`${baseUrl}${pathName}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
   return { status: response.status, body: await response.json() };
 }
@@ -73,6 +73,44 @@ async function main() {
   const baseUrl = `http://127.0.0.1:${getServerAppPort()}`;
 
   try {
+    db.prepare("UPDATE settings SET value = 'CO' WHERE key = 'country'").run();
+    db.prepare("UPDATE settings SET value = 'COP' WHERE key = 'currency'").run();
+    db.prepare("UPDATE settings SET value = '$' WHERE key = 'currency_symbol'").run();
+    const copInfo = await getJson(baseUrl, '/api/server-app/info');
+    assert.equal(copInfo.status, 200);
+    assert.deepEqual({
+      country: copInfo.body.country,
+      currency: copInfo.body.currency,
+      symbol: copInfo.body.currency_symbol,
+      position: copInfo.body.currency_position,
+      fractionDigits: copInfo.body.currency_fraction_digits,
+    }, {
+      country: 'CO',
+      currency: 'COP',
+      symbol: '$',
+      position: 'prefix',
+      fractionDigits: 0,
+    }, 'Server App exposes the COP regional values derived from current settings');
+
+    db.prepare("UPDATE settings SET value = 'KW' WHERE key = 'country'").run();
+    db.prepare("UPDATE settings SET value = 'KWD' WHERE key = 'currency'").run();
+    db.prepare("UPDATE settings SET value = 'KWD' WHERE key = 'currency_symbol'").run();
+    const kwdInfo = await getJson(baseUrl, '/api/server-app/info');
+    assert.equal(kwdInfo.status, 200);
+    assert.deepEqual({
+      country: kwdInfo.body.country,
+      currency: kwdInfo.body.currency,
+      symbol: kwdInfo.body.currency_symbol,
+      position: kwdInfo.body.currency_position,
+      fractionDigits: kwdInfo.body.currency_fraction_digits,
+    }, {
+      country: 'KW',
+      currency: 'KWD',
+      symbol: 'KWD',
+      position: 'suffix',
+      fractionDigits: 3,
+    }, 'Server App exposes the KWD regional values derived from current settings');
+
     for (const role of ['cashier', 'chef']) {
       const response = await postJson(baseUrl, '/api/auth/login', {
         email: `${role}@server-app.test`,

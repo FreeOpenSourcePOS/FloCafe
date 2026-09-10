@@ -1150,7 +1150,7 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole(...ROL
   }
 });
 
-router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -1349,7 +1349,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
   }
 });
 
-router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;

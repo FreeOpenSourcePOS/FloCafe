@@ -1,4 +1,3 @@
-/** Regression coverage for #689: sequential cashier payments from LAN browsers. */
 const Module = require('module');
 const originalLoad = Module._load;
 const fs = require('fs');

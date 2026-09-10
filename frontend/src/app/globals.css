@@ -367,10 +367,12 @@ div:hover > .flo-toast-drain,
   --color-brand-light: oklch(0.20 0.03 270);
 }
 
+html.dark::-webkit-scrollbar-thumb,
 .dark ::-webkit-scrollbar-thumb {
   background: #4b5563;
 }
 
+html.dark::-webkit-scrollbar-thumb:hover,
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
 }

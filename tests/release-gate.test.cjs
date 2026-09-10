@@ -263,7 +263,10 @@ function releaseRefRequest({
       if (requestUrl.endsWith('/releases/tags/3.7.6')) return { status: 200, json: async () => release };
       if (requestUrl === 'https://assets.test/candidate') return { status: 200, arrayBuffer: async () => candidateBytes };
       if (requestUrl === 'https://assets.test/summary') return { status: 200, arrayBuffer: async () => summaryBytes };
-      if (requestUrl.endsWith('/releases/latest')) return { status: 200, json: async () => ({ tag_name: latestTag }) };
+      if (requestUrl.endsWith('/releases/latest')) {
+        if (!process.argv.includes('--expected-latest')) throw new Error('stable readiness should not request Latest');
+        return { status: 200, json: async () => ({ tag_name: latestTag }) };
+      }
       throw new Error(`unexpected readiness request ${requestUrl}`);
     };
 

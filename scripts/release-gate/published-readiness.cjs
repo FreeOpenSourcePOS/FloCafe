@@ -65,14 +65,10 @@ async function main() {
   const manifest = JSON.parse(candidateBytes.toString('utf8'));
   const summary = JSON.parse(summaryBytes.toString('utf8'));
   assertReleaseSummary(summary, { manifest, candidateManifestBytes: candidateBytes });
-  let latest = { tag_name: '' };
-  try {
-    latest = await json(`${apiBase}/releases/latest`);
-  } catch (error) {
-    if (expectedLatest !== '' || !String(error.message).includes('(404)')) throw error;
-  }
+  let latestTag = '';
   if (expectedLatest !== '') {
-    assertStableLatestUnchanged(expectedLatest, latest.tag_name || '');
+    latestTag = (await json(`${apiBase}/releases/latest`)).tag_name || '';
+    assertStableLatestUnchanged(expectedLatest, latestTag);
   }
   await verifyCandidateManifest(manifest, release, {
     requestAsset: (asset) => request(asset.url, 'application/octet-stream'),
@@ -88,7 +84,7 @@ async function main() {
     availableAssetIds: manifest.assets.map((asset) => asset.id),
     ...(expectedLatest === '' ? {} : {
       stableLatestBefore: expectedLatest,
-      stableLatestAfter: latest.tag_name || '',
+      stableLatestAfter: latestTag,
     }),
   });
   console.log(`published ${channel} release ${tag} is ready; candidate manifest SHA-256 ${manifestSha256(candidateBytes)}`);

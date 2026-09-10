@@ -219,7 +219,7 @@ function releaseRefRequest({
   const latestChecks = [];
   const candidateBytes = Buffer.from(JSON.stringify({ assets: [] }));
   const summaryBytes = Buffer.from('{}');
-  let release = {
+  let publishedReadinessRelease = {
     draft: false,
     prerelease: false,
     tag_name: '3.7.6',
@@ -260,7 +260,7 @@ function releaseRefRequest({
     process.env.GH_TOKEN = 'test';
     global.fetch = async (url) => {
       const requestUrl = String(url);
-      if (requestUrl.endsWith('/releases/tags/3.7.6')) return { status: 200, json: async () => release };
+      if (requestUrl.endsWith('/releases/tags/3.7.6')) return { status: 200, json: async () => publishedReadinessRelease };
       if (requestUrl === 'https://assets.test/candidate') return { status: 200, arrayBuffer: async () => candidateBytes };
       if (requestUrl === 'https://assets.test/summary') return { status: 200, arrayBuffer: async () => summaryBytes };
       if (requestUrl.endsWith('/releases/latest')) {
@@ -276,7 +276,7 @@ function releaseRefRequest({
     assert.equal(Object.hasOwn(readinessCalls[0], 'stableLatestBefore'), false);
     assert.equal(Object.hasOwn(readinessCalls[0], 'stableLatestAfter'), false);
 
-    release = { ...release, prerelease: true };
+    publishedReadinessRelease = { ...publishedReadinessRelease, prerelease: true };
     latestTag = '3.7.5';
     process.argv = ['node', publishedReadinessPath, '--repo', 'example/repo', '--tag', '3.7.6', '--commit', 'A'.repeat(40), '--channel', 'beta', '--expected-latest', '3.7.5'];
     await publishedReadiness();

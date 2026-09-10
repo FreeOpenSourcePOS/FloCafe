@@ -229,6 +229,7 @@ function releaseRefRequest({
     ],
   };
   let latestTag = '3.7.6';
+  let latestStatus = 200;
   try {
     require.cache[releaseStatePath] = {
       id: releaseStatePath,
@@ -265,6 +266,7 @@ function releaseRefRequest({
       if (requestUrl === 'https://assets.test/summary') return { status: 200, arrayBuffer: async () => summaryBytes };
       if (requestUrl.endsWith('/releases/latest')) {
         if (!process.argv.includes('--expected-latest')) throw new Error('stable readiness should not request Latest');
+        if (latestStatus !== 200) return { status: latestStatus, text: async () => '' };
         return { status: 200, json: async () => ({ tag_name: latestTag }) };
       }
       throw new Error(`unexpected readiness request ${requestUrl}`);
@@ -283,6 +285,20 @@ function releaseRefRequest({
     assert.deepEqual(latestChecks, [['3.7.5', '3.7.5']]);
     assert.equal(readinessCalls[1].stableLatestBefore, '3.7.5');
     assert.equal(readinessCalls[1].stableLatestAfter, '3.7.5');
+
+    latestStatus = 404;
+    process.argv = ['node', publishedReadinessPath, '--repo', 'example/repo', '--tag', '3.7.6', '--commit', 'A'.repeat(40), '--channel', 'beta', '--expected-latest', ''];
+    await publishedReadiness();
+    assert.deepEqual(latestChecks, [['3.7.5', '3.7.5'], ['', '']]);
+    assert.equal(readinessCalls[2].stableLatestBefore, '');
+    assert.equal(readinessCalls[2].stableLatestAfter, '');
+
+    latestStatus = 500;
+    await assert.rejects(
+      publishedReadiness(),
+      /GitHub request failed \(500\)/,
+      'beta readiness must not swallow non-404 Latest lookup failures',
+    );
   } finally {
     process.argv = previousArgv;
     global.fetch = previousFetch;

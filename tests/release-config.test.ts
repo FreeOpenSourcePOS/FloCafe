@@ -656,6 +656,11 @@ exit 1
   assert.doesNotMatch(publishBeta.log, /make_latest=true/);
   assert.match(publishBeta.log, /releases\/latest/);
   assert.match(publishBeta.log, /--expected-latest 42/);
+  const betaLogLines = publishBeta.log.trim().split('\n');
+  assert.ok(
+    betaLogLines.findIndex((line) => line.includes('/releases/latest')) < betaLogLines.findIndex((line) => line.includes('api --method PATCH')),
+    'beta Latest snapshot must happen before publication',
+  );
 
   const promoteStep = findStep(promoteJob, 'Promote published stable release to GitHub Latest');
   const promoteStable = executeWorkflowStep(promoteStep, {

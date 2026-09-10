@@ -938,13 +938,6 @@ jobs:
             echo "::error::No release found for tag $VERSION"
             exit 1
           fi
-          # Draft and prerelease state are changed only after verification. The
-          # explicit false prevents an ordinary stable or beta build from
-          # moving the stable pointer. Promotion remains a separate job.
-          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
-            -F draft=false \
-            -F prerelease="${PRERELEASE}" \
-            -f make_latest=false
           # Beta publishing must not change Stable Latest; capture the current
           # Latest before publishing so the readiness check can assert
           # immutability. Stable publishing skips this assertion because GitHub's
@@ -960,6 +953,13 @@ jobs:
             LATEST_BEFORE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
             READINESS_ARGS+=(--expected-latest "$LATEST_BEFORE")
           fi
+          # Draft and prerelease state are changed only after verification. The
+          # explicit false prevents an ordinary stable or beta build from
+          # moving the stable pointer. Promotion remains a separate job.
+          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
+            -F draft=false \
+            -F prerelease="${PRERELEASE}" \
+            -f make_latest=false
           node scripts/release-gate/published-readiness.cjs "${READINESS_ARGS[@]}"
           echo "Published ${VERSION} (${CHANNEL})"
         env:

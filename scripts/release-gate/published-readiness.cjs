@@ -46,7 +46,8 @@ async function main() {
   const tag = arg(argv, '--tag');
   const commit = arg(argv, '--commit').toLowerCase();
   const channel = arg(argv, '--channel');
-  const expectedLatest = argv.includes('--expected-latest')
+  const hasExpectedLatest = argv.includes('--expected-latest');
+  const expectedLatest = hasExpectedLatest
     ? arg(argv, '--expected-latest', { allowEmpty: true })
     : '';
   if (!SEMVER.test(tag)) throw new Error(`invalid release tag ${tag}`);
@@ -66,8 +67,12 @@ async function main() {
   const summary = JSON.parse(summaryBytes.toString('utf8'));
   assertReleaseSummary(summary, { manifest, candidateManifestBytes: candidateBytes });
   let latestTag = '';
-  if (expectedLatest !== '') {
-    latestTag = (await json(`${apiBase}/releases/latest`)).tag_name || '';
+  if (hasExpectedLatest) {
+    try {
+      latestTag = (await json(`${apiBase}/releases/latest`)).tag_name || '';
+    } catch (error) {
+      if (expectedLatest !== '' || !String(error.message).includes('(404)')) throw error;
+    }
     assertStableLatestUnchanged(expectedLatest, latestTag);
   }
   await verifyCandidateManifest(manifest, release, {
@@ -82,10 +87,10 @@ async function main() {
     channel,
     expectedAssetIds: manifest.assets.map((asset) => asset.id),
     availableAssetIds: manifest.assets.map((asset) => asset.id),
-    ...(expectedLatest === '' ? {} : {
+    ...(hasExpectedLatest ? {
       stableLatestBefore: expectedLatest,
       stableLatestAfter: latestTag,
-    }),
+    } : {}),
   });
   console.log(`published ${channel} release ${tag} is ready; candidate manifest SHA-256 ${manifestSha256(candidateBytes)}`);
 }

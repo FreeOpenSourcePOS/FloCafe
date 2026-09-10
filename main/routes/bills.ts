@@ -592,7 +592,8 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
     });
 
     notifyOrderUpdated();
-    res.status(result.isNew ? 201 : 200).json({ bill: result.bill });
+    const orderWithItems = getOrderWithItems(db, order_id, Number(result.bill.id));
+    res.status(result.isNew ? 201 : 200).json({ bill: { ...result.bill, order: orderWithItems } });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

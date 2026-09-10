@@ -692,7 +692,7 @@ export default function OrdersPage() {
 
     try {
       const opened = await shareBillViaWhatsApp(
-        order.bill,
+        { ...order.bill, order },
         { phone: order.customer.phone, country_code: order.customer.country_code },
         {
           business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
@@ -720,7 +720,7 @@ export default function OrdersPage() {
     setSendingWaOrderId(order.id);
     try {
       await sendBillViaFlo(
-        order.bill,
+        { ...order.bill, order },
         order.customer.phone,
         {
           business_name: currentTenant?.business_name || tCommon('businessNameFallback'),

@@ -46,7 +46,10 @@ async function main() {
   const tag = arg(argv, '--tag');
   const commit = arg(argv, '--commit').toLowerCase();
   const channel = arg(argv, '--channel');
-  const expectedLatest = arg(argv, '--expected-latest', { allowEmpty: true });
+  const hasExpectedLatest = argv.includes('--expected-latest');
+  const expectedLatest = hasExpectedLatest
+    ? arg(argv, '--expected-latest', { allowEmpty: true })
+    : '';
   if (!SEMVER.test(tag)) throw new Error(`invalid release tag ${tag}`);
 
   const apiBase = `https://api.github.com/repos/${repo}`;
@@ -63,13 +66,15 @@ async function main() {
   const manifest = JSON.parse(candidateBytes.toString('utf8'));
   const summary = JSON.parse(summaryBytes.toString('utf8'));
   assertReleaseSummary(summary, { manifest, candidateManifestBytes: candidateBytes });
-  let latest = { tag_name: '' };
-  try {
-    latest = await json(`${apiBase}/releases/latest`);
-  } catch (error) {
-    if (expectedLatest !== '' || !String(error.message).includes('(404)')) throw error;
+  let latestTag = '';
+  if (hasExpectedLatest) {
+    try {
+      latestTag = (await json(`${apiBase}/releases/latest`)).tag_name || '';
+    } catch (error) {
+      if (expectedLatest !== '' || !String(error.message).includes('(404)')) throw error;
+    }
+    assertStableLatestUnchanged(expectedLatest, latestTag);
   }
-  assertStableLatestUnchanged(expectedLatest, latest.tag_name || '');
   await verifyCandidateManifest(manifest, release, {
     requestAsset: (asset) => request(asset.url, 'application/octet-stream'),
     tag,
@@ -82,8 +87,10 @@ async function main() {
     channel,
     expectedAssetIds: manifest.assets.map((asset) => asset.id),
     availableAssetIds: manifest.assets.map((asset) => asset.id),
-    stableLatestBefore: expectedLatest,
-    stableLatestAfter: latest.tag_name || '',
+    ...(hasExpectedLatest ? {
+      stableLatestBefore: expectedLatest,
+      stableLatestAfter: latestTag,
+    } : {}),
   });
   console.log(`published ${channel} release ${tag} is ready; candidate manifest SHA-256 ${manifestSha256(candidateBytes)}`);
 }

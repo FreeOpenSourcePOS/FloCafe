@@ -60,8 +60,10 @@ separate concepts. Every release is created with `--draft --latest=false`.
 After all platform uploads have completed, CI downloads each manifest and every
 artifact it references from the same draft release, checks HTTP success, and
 recomputes the manifest SHA-512 values. Only the separate `publish-release` job
-can then publish it. Stable tag pushes publish without moving GitHub's `Latest`
-pointer. To promote an already verified stable release, dispatch the workflow
+can then publish it. Stable tag pushes request publication without explicitly
+selecting the release as GitHub's `Latest`; GitHub may still resolve
+`/releases/latest` to a newly published stable release by `created_at`. To
+promote an already verified stable release intentionally, dispatch the workflow
 from that exact tag with `release_tag` set to the same tag,
 `channel=stable`, `promote_stable=true`, and the candidate manifest asset ID
 and SHA-256 from the verified release; the promotion-only job checks that the
@@ -122,8 +124,11 @@ non-manifest assets are checked for positive size and HTTP availability; their
 SHA-512 is not independently recomputed because GitHub/electron-builder does
 not publish a second expected SHA-512 for them.
 6. The dedicated publish job changes `draft` to false. It sets `make_latest`
-   false for every normal release. A separate explicit stable-promotion dispatch
-   is the only path that changes GitHub's `Latest` pointer.
+   false for every normal release, which avoids explicitly selecting the
+   release as GitHub's `Latest`; GitHub may still resolve `/releases/latest` to
+   the newest published non-prerelease release by `created_at`. A separate
+   explicit stable-promotion dispatch is the only path that intentionally
+   promotes a verified release as the default update target.
 7. After all platform uploads, the workflow creates and attaches the immutable
    candidate manifest and sanitized release summary defined in the [release
    evidence index](release-evidence-index.md). The candidate manifest is made

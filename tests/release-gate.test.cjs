@@ -163,6 +163,12 @@ function releaseRefRequest({
     stableLatestBefore: '3.3.0',
     stableLatestAfter: '3.3.0',
   });
+  assertCandidateReadiness({
+    release: { draft: false, prerelease: false, tag_name: '3.3.0', assets: published.assets },
+    tag: '3.3.0',
+    channel: 'stable',
+    expectedAssetIds: manifest.assets.map((entry) => entry.id),
+  });
   assert.throws(() => assertCandidateReadiness({
     release: published,
     tag: release.tag_name,
@@ -198,6 +204,111 @@ function releaseRefRequest({
   assert.throws(() => assertOrdering(['draft-verified', 'published', 'readiness-verified', 'matrix-completed'], { channel: 'beta', requireMatrix: true }), /readiness-verified.*matrix-started/);
   assertOrdering(['draft-verified', 'snap-published', 'published', 'promoted-latest'], { channel: 'stable' });
   assert.throws(() => assertOrdering(['draft-verified', 'published', 'promoted-latest'], { channel: 'stable' }), /snap-published.*published/);
+
+  const publishedReadinessPath = require.resolve('../scripts/release-gate/published-readiness.cjs');
+  const releaseStatePath = require.resolve('../scripts/release-gate/release-state.cjs');
+  const evidencePath = require.resolve('../scripts/release-gate/evidence.cjs');
+  const candidateManifestPath = require.resolve('../scripts/release-gate/candidate-manifest.cjs');
+  const modulePaths = [publishedReadinessPath, releaseStatePath, evidencePath, candidateManifestPath];
+  const previousModules = new Map(modulePaths.map((modulePath) => [modulePath, require.cache[modulePath]]));
+  const previousArgv = process.argv;
+  const previousFetch = global.fetch;
+  const hadGhToken = Object.hasOwn(process.env, 'GH_TOKEN');
+  const previousGhToken = process.env.GH_TOKEN;
+  const readinessCalls = [];
+  const latestChecks = [];
+  const candidateBytes = Buffer.from(JSON.stringify({ assets: [] }));
+  const summaryBytes = Buffer.from('{}');
+  let publishedReadinessRelease = {
+    draft: false,
+    prerelease: false,
+    tag_name: '3.7.6',
+    assets: [
+      { name: 'candidate-manifest.json', id: 1, url: 'https://assets.test/candidate' },
+      { name: 'release-summary.json', id: 2, url: 'https://assets.test/summary' },
+    ],
+  };
+  let latestTag = '3.7.6';
+  let latestStatus = 200;
+  try {
+    require.cache[releaseStatePath] = {
+      id: releaseStatePath,
+      filename: releaseStatePath,
+      loaded: true,
+      exports: {
+        assertCandidateReadiness: (value) => readinessCalls.push(value),
+        assertPublishedRelease: () => {},
+        assertStableLatestUnchanged: (before, after) => latestChecks.push([before, after]),
+      },
+    };
+    require.cache[evidencePath] = {
+      id: evidencePath,
+      filename: evidencePath,
+      loaded: true,
+      exports: { assertReleaseSummary: () => {} },
+    };
+    require.cache[candidateManifestPath] = {
+      id: candidateManifestPath,
+      filename: candidateManifestPath,
+      loaded: true,
+      exports: {
+        manifestSha256: () => 'digest',
+        resolveTagCommit: async () => 'a'.repeat(40),
+        verifyCandidateManifest: async () => {},
+      },
+    };
+    const { main: publishedReadiness } = require(publishedReadinessPath);
+    process.env.GH_TOKEN = 'test';
+    global.fetch = async (url) => {
+      const requestUrl = String(url);
+      if (requestUrl.endsWith('/releases/tags/3.7.6')) return { status: 200, json: async () => publishedReadinessRelease };
+      if (requestUrl === 'https://assets.test/candidate') return { status: 200, arrayBuffer: async () => candidateBytes };
+      if (requestUrl === 'https://assets.test/summary') return { status: 200, arrayBuffer: async () => summaryBytes };
+      if (requestUrl.endsWith('/releases/latest')) {
+        if (!process.argv.includes('--expected-latest')) throw new Error('stable readiness should not request Latest');
+        if (latestStatus !== 200) return { status: latestStatus, text: async () => '' };
+        return { status: 200, json: async () => ({ tag_name: latestTag }) };
+      }
+      throw new Error(`unexpected readiness request ${requestUrl}`);
+    };
+
+    process.argv = ['node', publishedReadinessPath, '--repo', 'example/repo', '--tag', '3.7.6', '--commit', 'A'.repeat(40), '--channel', 'stable'];
+    await publishedReadiness();
+    assert.equal(latestChecks.length, 0);
+    assert.equal(Object.hasOwn(readinessCalls[0], 'stableLatestBefore'), false);
+    assert.equal(Object.hasOwn(readinessCalls[0], 'stableLatestAfter'), false);
+
+    publishedReadinessRelease = { ...publishedReadinessRelease, prerelease: true };
+    latestTag = '3.7.5';
+    process.argv = ['node', publishedReadinessPath, '--repo', 'example/repo', '--tag', '3.7.6', '--commit', 'A'.repeat(40), '--channel', 'beta', '--expected-latest', '3.7.5'];
+    await publishedReadiness();
+    assert.deepEqual(latestChecks, [['3.7.5', '3.7.5']]);
+    assert.equal(readinessCalls[1].stableLatestBefore, '3.7.5');
+    assert.equal(readinessCalls[1].stableLatestAfter, '3.7.5');
+
+    latestStatus = 404;
+    process.argv = ['node', publishedReadinessPath, '--repo', 'example/repo', '--tag', '3.7.6', '--commit', 'A'.repeat(40), '--channel', 'beta', '--expected-latest', ''];
+    await publishedReadiness();
+    assert.deepEqual(latestChecks, [['3.7.5', '3.7.5'], ['', '']]);
+    assert.equal(readinessCalls[2].stableLatestBefore, '');
+    assert.equal(readinessCalls[2].stableLatestAfter, '');
+
+    latestStatus = 500;
+    await assert.rejects(
+      publishedReadiness(),
+      /GitHub request failed \(500\)/,
+      'beta readiness must not swallow non-404 Latest lookup failures',
+    );
+  } finally {
+    process.argv = previousArgv;
+    global.fetch = previousFetch;
+    if (hadGhToken) process.env.GH_TOKEN = previousGhToken;
+    else delete process.env.GH_TOKEN;
+    for (const [modulePath, previousModule] of previousModules) {
+      if (previousModule) require.cache[modulePath] = previousModule;
+      else delete require.cache[modulePath];
+    }
+  }
 
   const summary = createReleaseSummary({ manifest, candidateManifestBytes: Buffer.from('manifest') });
   assertReleaseSummary(summary, { manifest, candidateManifestBytes: Buffer.from('manifest') });

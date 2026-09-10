@@ -927,6 +927,7 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
           PRERELEASE="${{ needs.create-release.outputs.prerelease }}"
+          CHANNEL="${{ needs.create-release.outputs.channel }}"
           # Draft releases are not addressable via /releases/tags/{tag} (that
           # endpoint only matches published releases), so resolve the draft's
           # ID through the releases list. Same root cause as the draft-asset
@@ -937,21 +938,38 @@ jobs:
             echo "::error::No release found for tag $VERSION"
             exit 1
           fi
-          LATEST_BEFORE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
+          # Beta publishing must not change Stable Latest; capture the current
+          # Latest before publishing so the readiness check can assert
+          # immutability. Stable publishing skips this assertion because GitHub's
+          # /releases/latest returns the newest published non-prerelease by
+          # created_at, making the assertion impossible for new stable releases.
+          READINESS_ARGS=(
+            --repo "${{ github.repository }}"
+            --tag "$VERSION"
+            --commit "${{ github.sha }}"
+            --channel "$CHANNEL"
+          )
+          if [ "$CHANNEL" = "beta" ]; then
+            if LATEST_RESPONSE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name --include 2>&1); then
+              LATEST_BEFORE=$(printf '%s\n' "$LATEST_RESPONSE" | tail -n 1)
+            elif grep -qE '^HTTP/[^ ]+ 404 ' <<<"$LATEST_RESPONSE"; then
+              LATEST_BEFORE=""
+            else
+              printf '%s\n' "$LATEST_RESPONSE" >&2
+              exit 1
+            fi
+            READINESS_ARGS+=(--expected-latest "$LATEST_BEFORE")
+          fi
           # Draft and prerelease state are changed only after verification. The
-          # explicit false prevents an ordinary stable or beta build from
-          # moving the stable pointer. Promotion remains a separate job.
+          # explicit false prevents the request from explicitly selecting this
+          # release as Latest. A newly published stable may still resolve via
+          # /releases/latest by created_at. Promotion remains a separate job.
           gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
             -F draft=false \
             -F prerelease="${PRERELEASE}" \
             -f make_latest=false
-          node scripts/release-gate/published-readiness.cjs \
-            --repo "${{ github.repository }}" \
-            --tag "$VERSION" \
-            --commit "${{ github.sha }}" \
-            --channel "${{ needs.create-release.outputs.channel }}" \
-            --expected-latest "$LATEST_BEFORE"
-          echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }}); Stable Latest remained ${LATEST_BEFORE:-'(none)'}"
+          node scripts/release-gate/published-readiness.cjs "${READINESS_ARGS[@]}"
+          echo "Published ${VERSION} (${CHANNEL})"
         env:
           GH_TOKEN: ${{ github.token }}
 

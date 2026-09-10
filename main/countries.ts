@@ -325,7 +325,6 @@ function normalizeLocaleNumber(value: string, locale: string, separators: { grou
 
   return { value: normalized, group, decimal };
 }
-
 /** Robust locale-aware string-to-number parser. */
 export function parseLocaleNumber(raw: unknown, locale = 'en-US', fractionDigits = 2): number {
   if (typeof raw === 'number') return raw;

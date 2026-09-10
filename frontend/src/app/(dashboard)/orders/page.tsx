@@ -50,11 +50,11 @@ import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
 const itemStatusConfig: Record<OrderItem['status'], { dot: string; color: string; labelKey: OrdersKey }> = {
-  pending: { dot: 'bg-yellow-400 dark:bg-yellow-400', color: 'text-yellow-700 dark:text-yellow-300', labelKey: 'itemStatusWaiting' },
+  pending: { dot: 'bg-yellow-400', color: 'text-yellow-700 dark:text-yellow-300', labelKey: 'itemStatusWaiting' },
   preparing: { dot: 'bg-blue-500 dark:bg-blue-400', color: 'text-blue-700 dark:text-blue-300', labelKey: 'itemStatusPreparing' },
   ready: { dot: 'bg-green-500 dark:bg-green-400', color: 'text-green-700 dark:text-green-300', labelKey: 'itemStatusReady' },
   served: { dot: 'bg-purple-500 dark:bg-purple-400', color: 'text-purple-700 dark:text-purple-300', labelKey: 'itemStatusServed' },
-  cancelled: { dot: 'bg-red-400 dark:bg-red-400', color: 'text-red-500 dark:text-red-400', labelKey: 'itemStatusCancelled' },
+  cancelled: { dot: 'bg-red-400', color: 'text-red-500 dark:text-red-400', labelKey: 'itemStatusCancelled' },
   voided: { dot: 'bg-red-500 dark:bg-red-400', color: 'text-red-600 dark:text-red-400 line-through', labelKey: 'itemStatusVoided' },
   void_adjustment: { dot: 'bg-red-300 dark:bg-red-400', color: 'text-red-500 dark:text-red-400 italic', labelKey: 'itemStatusVoidAdjustment' },
 };

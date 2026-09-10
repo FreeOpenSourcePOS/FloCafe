@@ -30,7 +30,7 @@ export function sanitizeLogText(value: unknown): string | null {
     .replace(/https?:\/\/\S+/gi, '[redacted-url]')
     .replace(/(?<!\d)\+?\d(?:[\s().-]*\d){6,14}(?!\d)/g, '[redacted-number]')
     .replace(
-      /(["']?(?:access[_-]?token|refresh[_-]?token|token|secret|password|auth|credential|api[_-]?key|key)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}]+)/gi,
+      /(["']?(?:access[_-]?token|refresh[_-]?token|token|secret|password|auth|authorization|credential|api[_-]?key|key)["']?\s*[:=]\s*)(?:Bearer\s+)?(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}]+)/gi,
       '$1[redacted]',
     )
     .slice(0, 240);

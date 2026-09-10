@@ -145,6 +145,13 @@ async function main(): Promise<void> {
       'diagnostic sanitizer redacts JSON-style credential fields',
     );
   }
+  for (const diagnostic of ['Authorization=Bearer secret-token', 'Authorization: Bearer secret-token']) {
+    const sanitized = whatsapp.sanitizeLogText(diagnostic) ?? '';
+    assert(
+      !sanitized.includes('secret-token') && sanitized.includes('[redacted]'),
+      'diagnostic sanitizer redacts assignment-style authorization tokens',
+    );
+  }
 
   // Send + storage
   assert(typeof whatsapp.sendMessage === 'function', 'exports sendMessage()');

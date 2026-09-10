@@ -927,6 +927,7 @@ jobs:
           set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
           PRERELEASE="${{ needs.create-release.outputs.prerelease }}"
+          CHANNEL="${{ needs.create-release.outputs.channel }}"
           # Draft releases are not addressable via /releases/tags/{tag} (that
           # endpoint only matches published releases), so resolve the draft's
           # ID through the releases list. Same root cause as the draft-asset
@@ -944,18 +945,23 @@ jobs:
             -F draft=false \
             -F prerelease="${PRERELEASE}" \
             -f make_latest=false
+          # Beta publishing must not change Stable Latest; capture the current
+          # Latest before publishing so the readiness check can assert
+          # immutability. Stable publishing skips this assertion because GitHub's
+          # /releases/latest returns the newest published non-prerelease by
+          # created_at, making the assertion impossible for new stable releases.
           READINESS_ARGS=(
             --repo "${{ github.repository }}"
             --tag "$VERSION"
             --commit "${{ github.sha }}"
-            --channel "${{ needs.create-release.outputs.channel }}"
+            --channel "$CHANNEL"
           )
-          if [ "${{ needs.create-release.outputs.channel }}" = "beta" ]; then
+          if [ "$CHANNEL" = "beta" ]; then
             LATEST_BEFORE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
             READINESS_ARGS+=(--expected-latest "$LATEST_BEFORE")
           fi
           node scripts/release-gate/published-readiness.cjs "${READINESS_ARGS[@]}"
-          echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }})"
+          echo "Published ${VERSION} (${CHANNEL})"
         env:
           GH_TOKEN: ${{ github.token }}
 

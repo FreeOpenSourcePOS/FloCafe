@@ -29,7 +29,10 @@ export function sanitizeLogText(value: unknown): string | null {
   return text
     .replace(/https?:\/\/\S+/gi, '[redacted-url]')
     .replace(/(?<!\d)\+?\d(?:[\s().-]*\d){6,14}(?!\d)/g, '[redacted-number]')
-    .replace(/(?:token|secret|password|auth|key)=\S+/gi, '[redacted]')
+    .replace(
+      /(["']?(?:access[_-]?token|refresh[_-]?token|token|secret|password|auth|credential|api[_-]?key|key)["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}]+)/gi,
+      '$1[redacted]',
+    )
     .slice(0, 240);
 }
 

@@ -130,6 +130,21 @@ async function main(): Promise<void> {
       === 'recipient [redacted-number] via [redacted-url]',
     'diagnostic sanitizer redacts formatted phone numbers and share URLs',
   );
+  const jsonCredentialDiagnostics = [
+    '{"password":"credential-value","token":"token-value"}',
+    '{ "auth": "auth-value", "api_key": "api-key-value" }',
+  ];
+  for (const diagnostic of jsonCredentialDiagnostics) {
+    const sanitized = whatsapp.sanitizeLogText(diagnostic) ?? '';
+    assert(
+      !sanitized.includes('credential-value')
+        && !sanitized.includes('token-value')
+        && !sanitized.includes('auth-value')
+        && !sanitized.includes('api-key-value')
+        && sanitized.includes('[redacted]'),
+      'diagnostic sanitizer redacts JSON-style credential fields',
+    );
+  }
 
   // Send + storage
   assert(typeof whatsapp.sendMessage === 'function', 'exports sendMessage()');

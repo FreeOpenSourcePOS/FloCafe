@@ -147,6 +147,13 @@ test('parseLocaleNumber: normalizes locale separators and digits', () => {
   assert.equal(parseLocaleNumber('١٬٢٣٤٫٥٠', 'ar-EG', 2), 1234.5);
 });
 
+test('parseLocaleNumber: accepts locale-specific Indian grouping', () => {
+  const { parseLocaleNumber } = require('../main/countries');
+  assert.equal(parseLocaleNumber('1,23,456', 'en-IN', 2), 123456);
+  assert.equal(parseLocaleNumber('12,34,56,789', 'en-IN', 0), 123456789);
+  assert(Number.isNaN(parseLocaleNumber('1,2,345', 'en-IN', 0)));
+});
+
 test('parseLocaleNumber: rejects malformed grouping and signs', () => {
   const { parseLocaleNumber } = require('../main/countries');
   assert(Number.isNaN(parseLocaleNumber('1.2.3', 'es-CO', 0)));

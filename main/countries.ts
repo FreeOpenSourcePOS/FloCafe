@@ -357,7 +357,25 @@ export function parseLocaleNumber(raw: unknown, locale = 'en-US', fractionDigits
       : null;
   if (repeatedDelimiter && s.split(repeatedDelimiter).length > 2) {
     const parts = s.split(repeatedDelimiter);
-    if (repeatedDelimiter === decimal || !/^\d{1,3}$/.test(parts[0]) || parts.slice(1).some((part) => !/^\d{3}$/.test(part))) return NaN;
+    if (repeatedDelimiter === decimal) return NaN;
+    let groupingSizes: number[] = [3];
+    try {
+      groupingSizes = new Intl.NumberFormat(locale, { useGrouping: true, maximumFractionDigits: 0 })
+        .formatToParts(123456789)
+        .filter((part) => part.type === 'integer')
+        .map((part) => Array.from(part.value).length)
+        .reverse();
+    } catch {
+      groupingSizes = [3];
+    }
+    const validGrouping = parts.every((part, index) => {
+      const positionFromRight = parts.length - index - 1;
+      const expectedLength = groupingSizes[Math.min(positionFromRight, groupingSizes.length - 1)] ?? 3;
+      return index === 0
+        ? /^\d+$/.test(part) && part.length >= 1 && part.length <= expectedLength
+        : /^\d+$/.test(part) && part.length === expectedLength;
+    });
+    if (!validGrouping) return NaN;
   }
 
   if (fractionDigits === 0) {

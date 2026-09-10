@@ -1,7 +1,7 @@
 /**
  * Day-close (cierre de caja, issue #649).
  *
- * One close per store per tenant-local day. POST /api/cash-closures:
+ * One close per store per tenant business day. POST /api/cash-closures:
  *  - Owner-only (manager/cashier/server are 403).
  *  - Validates: YYYY-MM-DD format, not in the future, integer cents >= 0.
  *  - Recomputes the day's aggregates server-side (never trusts client totals)
@@ -82,10 +82,10 @@ function validateBusinessDate(raw: unknown): string {
   ) {
     throw httpError('business_date is not a real calendar date', 400);
   }
-  // Tenant-local today, not the host UTC clock: a date that is "today" in
-  // the store's configured timezone must never be rejected as future even
-  // when the host's UTC clock is still on yesterday. ISO date arithmetic on
-  // the YYYY-MM-DD string is timezone-safe.
+  // Tenant-local business date, not the host UTC clock: a date that is
+  // "today" in the store's configured timezone and cutoff must never be
+  // rejected as future even when the host's UTC clock is still on yesterday.
+  // ISO date arithmetic on the YYYY-MM-DD string is timezone-safe.
   const todayLocal = localDateInTimezone(new Date(), tenantTimezone(), tenantStartTime());
   if (raw > todayLocal) {
     throw httpError('business_date cannot be in the future', 400);

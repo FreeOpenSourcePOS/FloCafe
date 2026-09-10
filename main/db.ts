@@ -334,7 +334,7 @@ export function getSettingValue(key: string): string | null {
  */
 export function tenantBusinessDayStartTime(customDb?: ReturnType<typeof getDatabase>): string {
   const raw = customDb
-    ? (customDb.prepare("SELECT value FROM settings WHERE key = 'business_day_start_time'").get() as any)?.value
+    ? (customDb.prepare("SELECT value FROM settings WHERE key = 'business_day_start_time'").get() as { value?: unknown } | undefined)?.value
     : getSettingValue('business_day_start_time');
   if (typeof raw === 'string' && /^([01]\d):([0-5]\d)$/.test(raw.trim())) {
     return raw.trim();

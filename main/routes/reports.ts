@@ -306,11 +306,11 @@ router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
     // #208: half-open UTC ranges so the orders/bills indexes apply instead
-    // of `date(...)` on every row. The bounds represent tenant-local days.
+    // of `date(...)` on every row. The bounds represent tenant business days.
     const windowStart = reportDayBounds(startDate)[0];
     const windowEnd = reportDayBounds(endDate)[1];
 
-    // Daily series is grouped by the tenant-local calendar date rather than
+    // Daily series is grouped by the tenant business date rather than
     // the UTC date stored in SQLite.
     const dailyRows = db.prepare(`
       SELECT created_at, total

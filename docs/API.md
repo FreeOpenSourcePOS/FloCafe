@@ -847,10 +847,17 @@ Historical FloCafe databases operated exclusively under two-decimal currencies, 
 
 ## Reports
 
+Report date parameters use tenant business dates: each `YYYY-MM-DD` value is
+interpreted in the store's configured timezone and business-day start time.
+The default start time is `00:00`; a later configured start time assigns the
+post-midnight interval before that time to the previous business date. Omitted
+dates default to the tenant's current business date. Period fields expose the
+corresponding UTC bounds where an endpoint returns them.
+
 ### GET `/api/reports/sales`
 Daily/monthly sales report. Date query parameters use the tenant's configured
-store timezone: each `YYYY-MM-DD` value identifies that tenant-local calendar
-day, and omitted dates default to the tenant-local current day.
+store timezone and business-day start time; see the report date convention
+above.
 
 **Headers:** `Authorization: Bearer <token>`
 
@@ -871,8 +878,9 @@ day, and omitted dates default to the tenant-local current day.
 ### GET `/api/reports/financial-summary`
 Owner-only collection summary and refund audit for a date range. Refunds are attributed to the original bill payment date so gross, refund, net, and payment-method totals reconcile for the selected period.
 
-`start_date` and `end_date` use tenant-local `YYYY-MM-DD` calendar days and
-are converted to UTC ranges using the store timezone.
+`start_date` and `end_date` use tenant business dates and are converted to UTC
+ranges using the store timezone and configured business-day start time; see the
+report date convention above.
 
 **Headers:** `Authorization: Bearer <owner-token>`
 
@@ -890,7 +898,7 @@ Live day report (cierre de caja, issue #649). Recomputes the day's aggregates on
 
 **Headers:** `Authorization: Bearer <owner-or-manager-token>`
 
-**Query params:** `?date=YYYY-MM-DD` — tenant-local calendar day (defaults to tenant-local current day)
+**Query params:** `?date=YYYY-MM-DD` — tenant business date (defaults to the current business date; see the report date convention above)
 
 **Response (200):**
 ```json
@@ -924,7 +932,7 @@ Live day report (cierre de caja, issue #649). Recomputes the day's aggregates on
 |-------|------|-------------|
 | `grossCollected`, `refunded`, `netCollected`, `paymentMethods[].total`, `staffSales[].revenue`, `taxComponents[].amount` | number | **Display major units** (minor-factor-divided; matches `financial-summary` / tax-components). |
 | `expectedCashCents` | integer | **INTEGER cents.** Cash sales by `bills.paid_at` minus cash refunds by `refunds.created_at`. Excludes the opening float. The consuming client must convert any counted-cash input to cents before comparing. |
-| `businessDate` / `periodStart` / `periodEnd` | string | `businessDate` is a tenant-local `YYYY-MM-DD`. `periodStart` and `periodEnd` are UTC bounds of that tenant-local day, formatted `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`, no `Z`, no millis — produced by `dayBoundsInTimezone()` and matching the SQLite `CURRENT_TIMESTAMP` family). |
+| `businessDate` / `periodStart` / `periodEnd` | string | `businessDate` is a tenant business date (`YYYY-MM-DD`). `periodStart` and `periodEnd` are UTC bounds of that business date's configured 24-hour period, formatted `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`, no `Z`, no millis — produced by `dayBoundsInTimezone()` and matching the SQLite `CURRENT_TIMESTAMP` family). |
 | `alreadyClosed` | boolean | `true` when a `cash_closures` row exists for the day. |
 | `priorClosedCashCents` | integer \| null | INTEGER cents counted-cash from the most recent prior `scope='day'` `cash_closures` row (used to default the next day's opening float). `null` when no prior day close exists. |
 | `priorBusinessDate` | string \| null | `business_date` of that prior close (`YYYY-MM-DD`). `null` when no prior day close exists. |
@@ -948,7 +956,7 @@ Stored day-close snapshot. Reads the immutable `cash_closures` row for the reque
 
 **Headers:** `Authorization: Bearer <owner-or-manager-token>`
 
-**Query params:** `?date=YYYY-MM-DD` — tenant-local calendar day (defaults to tenant-local current day)
+**Query params:** `?date=YYYY-MM-DD` — tenant business date (defaults to the current business date; see the report date convention above)
 
 **Response (200):**
 ```json
@@ -997,7 +1005,7 @@ Stored day-close snapshot. Reads the immutable `cash_closures` row for the reque
 | `closed_by_name` | string | Display name of that operator (`users.name`), with `closed_by` used as fallback when the user row is missing. Resolved server-side on read for the Z JSON and on print for the receipt body. |
 | `notes` | string \| null | Free-form operator notes from the close request, or `null` if none were provided. |
 | `created_at` | string | UTC close timestamp, formatted `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`, no `Z`, no millis — matches `db.now()` and SQLite `CURRENT_TIMESTAMP`). |
-| `business_date` / `period_start` / `period_end` | string | `business_date` is a tenant-local `YYYY-MM-DD`. `period_start` and `period_end` are UTC bounds of that tenant-local day, formatted `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`, no `Z`, no millis — produced by `dayBoundsInTimezone()` and matching the SQLite `CURRENT_TIMESTAMP` family). |
+| `business_date` / `period_start` / `period_end` | string | `business_date` is a tenant business date (`YYYY-MM-DD`). `period_start` and `period_end` are UTC bounds of that business date's configured 24-hour period, formatted `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`, no `Z`, no millis — produced by `dayBoundsInTimezone()` and matching the SQLite `CURRENT_TIMESTAMP` family). |
 
 **Error (404):** the day is not yet closed.
 ```json
@@ -1010,7 +1018,7 @@ Stored day-close snapshot. Reads the immutable `cash_closures` row for the reque
 
 ### POST `/api/cash-closures`
 
-Close the current tenant-local day (cierre de caja, issue #649). One close per day per store. The backend recomputes every aggregate server-side — it never trusts client totals — and stores one immutable row in `cash_closures` inside a single transaction. The stored Z is the closed day's authoritative figure; no reopen endpoint exists in v1.
+Close the current tenant business day (cierre de caja, issue #649). One close per business date per store. The backend recomputes every aggregate server-side — it never trusts client totals — and stores one immutable row in `cash_closures` inside a single transaction. The stored Z is the closed day's authoritative figure; no reopen endpoint exists in v1.
 
 **Role:** owner (manager / cashier / server → 403)
 
@@ -1028,7 +1036,7 @@ Close the current tenant-local day (cierre de caja, issue #649). One close per d
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `business_date` | string | Tenant-local `YYYY-MM-DD`. Must be a real calendar date (regex match is not enough — `2026-02-30` is rejected). Not in the future relative to tenant-local today. |
+| `business_date` | string | Tenant business date (`YYYY-MM-DD`). Must be a real calendar date (regex match is not enough — `2026-02-30` is rejected). Not in the future relative to the current tenant business date. |
 | `opening_float_cents` | integer | INTEGER cents, `>= 0`. Cash float the operator is starting the day with. |
 | `counted_cash_cents` | integer | INTEGER cents, `>= 0`. Cash the operator counted in the drawer at close. |
 | `notes` | string \| optional | Free-form notes, ≤ 500 characters. |
@@ -1160,6 +1168,7 @@ Get business settings. Locale display preferences (`currency_display`, `number_d
 {
   "business_name": "My Restaurant",
   "timezone": "Asia/Kolkata",
+  "business_day_start_time": "00:00",
   "currency": "INR",
   "country": "IN",
   "tax_registration_number": "22AAAAA0000A1Z5",
@@ -1175,6 +1184,10 @@ Get business settings. Locale display preferences (`currency_display`, `number_d
 Update business settings.
 
 `timezone` is validated as an IANA identifier; invalid values return HTTP 400 with `"Invalid timezone, currency, or country"`.
+
+`business_day_start_time` configures the local start of the 24-hour business
+period used by reports and cash closures. It is returned as `HH:mm`, defaults
+to `00:00`, and is trimmed before persistence; invalid values return HTTP 400.
 
 `currency` accepts any three-letter ASCII currency code. Leading/trailing
 whitespace is trimmed and lowercase input is normalized to uppercase before

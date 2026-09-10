@@ -345,12 +345,21 @@ export function parseLocaleNumber(raw: unknown, locale = 'en-US', fractionDigits
   s = s.replace(/[\u00A0\u202F\s]/g, '');
   const normalized = normalizeLocaleNumber(s, locale, getLocaleSeparators(locale));
   s = normalized.value;
-  if (!s || /[^\d.,+-]/.test(s)) return NaN;
+  if (!/^[+-]?(?=.*\d)[\d.,]+$/.test(s)) return NaN;
 
   const sign = s.startsWith('-') ? -1 : 1;
   if (s.startsWith('+') || s.startsWith('-')) s = s.slice(1);
 
   const { group, decimal } = normalized;
+  const repeatedDelimiter = s.includes('.') && !s.includes(',')
+    ? '.'
+    : s.includes(',') && !s.includes('.')
+      ? ','
+      : null;
+  if (repeatedDelimiter && s.split(repeatedDelimiter).length > 2) {
+    const parts = s.split(repeatedDelimiter);
+    if (repeatedDelimiter === decimal || !/^\d{1,3}$/.test(parts[0]) || parts.slice(1).some((part) => !/^\d{3}$/.test(part))) return NaN;
+  }
 
   if (fractionDigits === 0) {
     if (s.includes(decimal)) {

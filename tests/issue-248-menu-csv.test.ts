@@ -316,6 +316,19 @@ async function main() {
     const localeGroupedProduct = db.prepare('SELECT price FROM products WHERE name = ?').get('Locale Grouped Price') as any;
     assertEqual(localeGroupedProduct.price, 11000, 'locale-grouped price is stored numerically');
 
+    const invalidLocaleNumbers = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          ',,Malformed Grouping,CSV Category,1.2.3,Description,1,,,,,yes',
+          ',,Sign Only,CSV Category,-,Description,1,,,,,yes',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqual(invalidLocaleNumbers.data.failed, 2, 'malformed locale numbers are rejected');
+    assertEqual(db.prepare('SELECT id FROM products WHERE name IN (?, ?)').all('Malformed Grouping', 'Sign Only').length, 0, 'malformed locale numbers are not persisted');
+
     console.log('\n─── CSV resource bounds ───');
     const tooManyCells = await api(baseUrl, '/api/menu/csv/import/products', {
       method: 'POST',

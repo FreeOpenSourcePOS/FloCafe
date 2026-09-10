@@ -147,6 +147,14 @@ test('parseLocaleNumber: normalizes locale separators and digits', () => {
   assert.equal(parseLocaleNumber('١٬٢٣٤٫٥٠', 'ar-EG', 2), 1234.5);
 });
 
+test('parseLocaleNumber: rejects malformed grouping and signs', () => {
+  const { parseLocaleNumber } = require('../main/countries');
+  assert(Number.isNaN(parseLocaleNumber('1.2.3', 'es-CO', 0)));
+  assert(Number.isNaN(parseLocaleNumber('-', 'es-CO', 0)));
+  assert(Number.isNaN(parseLocaleNumber('--1', 'es-CO', 0)));
+  assert.equal(parseLocaleNumber('1.234.567', 'es-CO', 0), 1234567);
+});
+
 test('formatMoney: custom symbol and suffix position', () => {
   const { formatMoney } = require('../main/countries');
   // Colombian peso with suffix

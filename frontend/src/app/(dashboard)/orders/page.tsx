@@ -1138,7 +1138,7 @@ export default function OrdersPage() {
                     </div>
                     <button
                       onClick={() => handleCreateNewOrderForCustomer(order)}
-                      className="flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2.5 py-1 rounded-lg transition-colors shrink-0"
+                      className="flex items-center gap-1 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-200 bg-blue-100 dark:bg-blue-950/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 px-2.5 py-1 rounded-lg transition-colors shrink-0"
                       title={tOrders('startNewOrderForCustomer')}
                     >
                       <Plus size={12} /> {tOrders('newOrder')}

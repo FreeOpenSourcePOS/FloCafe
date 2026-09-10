@@ -1450,10 +1450,10 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
   const currencyPosition = (biz.currency_symbol_position === 'suffix' ? 'suffix' : 'prefix') as 'prefix' | 'suffix';
   const pluginAmountWidth = itemAmountWidth(
-    { items: (Array.isArray(order.items) ? order.items : []).map((item: any) => ({
+    { items: (Array.isArray(order.items) ? order.items : []).map((item: { total?: number; unit_price?: number; price?: number; addons?: unknown }) => ({
       total: item.total,
       unit_price: item.unit_price ?? item.price,
-      addons: parseAddons(item.addons).map((addon: any) => ({ price: addon.price })),
+      addons: parseAddons(item.addons).map((addon: { price?: number }) => ({ price: addon.price })),
     })) },
     prefix,
     locale,

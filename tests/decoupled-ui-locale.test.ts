@@ -60,7 +60,7 @@ React.useSyncExternalStore = function (subscribe: any, getSnapshot: any, getServ
 const { IntlProvider, useLocale } = frontendRequire('use-intl');
 const { formatDateForTenant, getCountryByCode } = require('../main/countries');
 const { generateBillHtml } = require('../frontend/src/lib/printer/web-print');
-const { getWhatsAppMessage, getWhatsAppShareUrl, sendBillViaFlo } = require('../frontend/src/lib/whatsapp-share');
+const { getWhatsAppMessage, getWhatsAppShareUrl, sendBillViaFlo, shareBillViaWhatsApp } = require('../frontend/src/lib/whatsapp-share');
 const whatsappApi = frontendRequire('./src/lib/api').default;
 const { LANGUAGES } = require('../frontend/src/lib/i18n/languages');
 const { useFormatDate } = require('../frontend/src/hooks/useFormatDate');
@@ -313,6 +313,32 @@ async function runTests() {
     'en-US',
   );
   assert.ok(enWaUrl.startsWith('https://wa.me/1155551234?text='), `Expected valid wa.me URL, got: ${enWaUrl}`);
+
+  const originalWindow = (globalThis as any).window;
+  let popupOpener: unknown = {};
+  const popup = {
+    location: { href: '' },
+    get opener() { return popupOpener; },
+    set opener(value: unknown) { popupOpener = value; },
+  };
+  (globalThis as any).window = {
+    electronAPI: undefined,
+    open: (targetUrl: string) => targetUrl ? null : popup,
+  };
+  try {
+    const browserShareOpened = await shareBillViaWhatsApp(
+      mockBill as any,
+      null,
+      mockArgentinaTenant,
+      {},
+      'en-US',
+    );
+    assert.equal(browserShareOpened, true, 'browser WhatsApp share reports a successfully navigated popup');
+    assert.equal(popupOpener, null, 'browser WhatsApp share clears the popup opener');
+    assert.ok(popup.location.href.startsWith('https://wa.me/?text='), 'browser WhatsApp share navigates the popup to wa.me');
+  } finally {
+    (globalThis as any).window = originalWindow;
+  }
 
   // Connected Flo sends must use the same active UI locale as browser shares.
   const originalPost = whatsappApi.post;

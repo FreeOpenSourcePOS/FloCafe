@@ -34,6 +34,7 @@ let requestAuthStateStarted!: () => void;
 const requestAuthStateStartedPromise = new Promise<void>((resolve) => { requestAuthStateStarted = resolve; });
 let releaseRequestAuthState!: () => void;
 const requestAuthStateGate = new Promise<void>((resolve) => { releaseRequestAuthState = resolve; });
+const baileysLogLines: string[] = [];
 let holdCredentialWrite = false;
 let credentialWriteStarted!: () => void;
 const credentialWriteStartedPromise = new Promise<void>((resolve) => { credentialWriteStarted = resolve; });
@@ -73,8 +74,9 @@ const fakeBaileys = {
       },
     };
   },
-  makeWASocket: () => {
+  makeWASocket: (options: any) => {
     makeSocketCalls++;
+    options.logger.warn({ body: 'private bill body', phone: '+15555550100' }, 'Baileys warning for +15555550100');
     return fakeSocket;
   },
   Browsers: { macOS: () => ({}) },
@@ -102,6 +104,12 @@ const { createShutdownEntrypoints } = require('../main/shutdown');
 
 async function main(): Promise<void> {
   console.log('Testing WhatsApp service API surface...');
+  const originalConsoleWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    const line = String(args[0] ?? '');
+    if (line.includes('"event":"baileys_log"')) baileysLogLines.push(line);
+    originalConsoleWarn(...args);
+  };
   const failures: string[] = [];
   const assert = (cond: unknown, msg: string): void => {
     if (!cond) failures.push(msg);
@@ -170,6 +178,14 @@ async function main(): Promise<void> {
     releaseAuthState();
     await new Promise((resolve) => setImmediate(resolve));
     assert(makeSocketCalls === socketCallsBeforeRace + 1, 'duplicate startup initialization creates one socket');
+    assert(
+      baileysLogLines.some((line) => line.includes('Baileys warning for [redacted-number]')),
+      'Baileys warning details are retained and sanitized in diagnostics',
+    );
+    assert(
+      baileysLogLines.every((line) => !line.includes('private bill body')),
+      'Baileys diagnostics do not include logger object message bodies',
+    );
     holdAuthState = false;
 
     await whatsapp.connectWithQr();
@@ -269,6 +285,7 @@ async function main(): Promise<void> {
     assert(row.error === 'WhatsApp is shutting down.' && row.failed_at !== null, 'shutdown-cancelled send records its failure details');
     assert(presenceSettled, 'shutdown waits for the underlying WhatsApp operation to settle');
   } finally {
+    console.warn = originalConsoleWarn;
     globalThis.fetch = originalFetch;
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

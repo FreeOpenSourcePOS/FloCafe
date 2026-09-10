@@ -207,6 +207,7 @@ async function run(): Promise<void> {
   const untrustedKds = { sender: { getURL: () => 'http://192.168.1.50:3002/kds' } };
   const untrustedExternal = { sender: { getURL: () => 'http://evil.example.com/' } };
   const untrustedSpoofedPrefix = { sender: { getURL: () => 'http://localhost.evil.com/' } };
+  const untrustedCredentialPrefix = { sender: { getURL: () => 'http://localhost:3001@evil.example/' } };
   const untrustedNullSender = { sender: { getURL: () => null } };
 
   // 1. Verify ALL non-PIN-gated handlers enforce sender identity
@@ -241,6 +242,9 @@ async function run(): Promise<void> {
 
     const spoofRes = await listener(untrustedSpoofedPrefix, ...args);
     assert.deepEqual(spoofRes, { error: 'Unauthorized sender' }, `${channel} rejected spoofed prefix sender`);
+
+    const credentialPrefixRes = await listener(untrustedCredentialPrefix, ...args);
+    assert.deepEqual(credentialPrefixRes, { error: 'Unauthorized sender' }, `${channel} rejected credential-prefix sender`);
 
     const nullRes = await listener(untrustedNullSender, ...args);
     assert.deepEqual(nullRes, { error: 'Unauthorized sender' }, `${channel} rejected null sender`);

@@ -70,8 +70,9 @@ function isValidRasterColumns(value: unknown): value is number {
 /** Verifies that IPC sender origin is the localhost-served POS renderer. */
 export function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender'>): boolean {
   try {
-    const url = event.sender?.getURL?.() ?? '';
-    return url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
+    const url = new URL(event.sender?.getURL?.() ?? '');
+    if (url.protocol !== 'http:' || url.username || url.password) return false;
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
   } catch {
     return false;
   }

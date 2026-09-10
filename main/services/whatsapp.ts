@@ -52,9 +52,13 @@ function logWhatsApp(level: WhatsAppLogLevel, event: string, details: Record<str
 // debug stream is opt-in because it is otherwise too noisy for production.
 type MinimalLogger = { level: string; trace: (...a: unknown[]) => void; debug: (...a: unknown[]) => void; info: (...a: unknown[]) => void; warn: (...a: unknown[]) => void; error: (...a: unknown[]) => void; fatal: (...a: unknown[]) => void; child: (obj: Record<string, unknown>) => MinimalLogger };
 function makeBaileysLogger(): MinimalLogger {
-  const emit = (level: WhatsAppLogLevel) => (..._args: unknown[]): void => {
+  const emit = (level: WhatsAppLogLevel) => (...args: unknown[]): void => {
     if (WHATSAPP_LOG_LEVELS[level] < WHATSAPP_LOG_LEVELS[WHATSAPP_LOG_LEVEL]) return;
-    logWhatsApp(level === 'debug' ? 'debug' : level, 'baileys_log', { level });
+    const message = typeof args[1] === 'string' ? args[1] : null;
+    logWhatsApp(level === 'debug' ? 'debug' : level, 'baileys_log', {
+      level,
+      detail: sanitizeLogText(message),
+    });
   };
   const logger: MinimalLogger = {
     level: WHATSAPP_LOG_LEVEL,

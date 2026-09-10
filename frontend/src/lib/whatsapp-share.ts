@@ -82,7 +82,11 @@ export function shareBillViaWhatsApp(
     return window.electronAPI.openWhatsAppShare(url)
       .then((result) => 'success' in result && result.success === true);
   }
-  return Promise.resolve(window.open(url, '_blank', 'noopener,noreferrer') !== null);
+  const popup = window.open('', '_blank');
+  if (!popup) return Promise.resolve(false);
+  popup.opener = null;
+  popup.location.href = url;
+  return Promise.resolve(true);
 }
 
 /** Generates plain text bill summary message for clipboard copy. */

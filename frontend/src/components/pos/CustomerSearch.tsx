@@ -211,7 +211,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     if (variant === 'topbar') {
       return (
         <>
-          <div className="min-h-11 flex items-center gap-2 px-3 bg-brand-light rounded-lg min-w-0 w-full">
+          <div className="min-h-11 flex items-center gap-2 px-3 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg min-w-0 w-full">
             <button
               onClick={() => setEditingCustomer(true)}
               title={t('editCustomer')}
@@ -245,7 +245,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
     return (
       <div className="space-y-1">
-        <div className="flex items-center justify-between px-3 py-2 bg-brand-light rounded-lg text-sm">
+        <div className="flex items-center justify-between px-3 py-2 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-lg text-sm">
           <button onClick={() => setEditingCustomer(true)} className="touch-target flex-1 min-w-0 justify-start gap-2 text-start">
             <span className="font-medium text-brand dark:text-indigo-300 truncate">{customer.name}</span>
             {customer.phone && <span className="text-xs text-muted-foreground"><Ltr>{customer.phone}</Ltr></span>}
@@ -256,7 +256,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           </button>
         </div>
         {!!loyaltyPoints && loyaltyPoints > 0 && (
-          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-brand dark:text-indigo-300 bg-brand-light rounded-full px-1.5 py-0.5">
+          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-brand dark:text-indigo-300 bg-brand-light dark:bg-[var(--color-brand-light)] rounded-full px-1.5 py-0.5">
             <Gift size={11} />
             {t('loyaltyPointsShort', { count: loyaltyPoints })}
           </span>

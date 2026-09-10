@@ -328,6 +328,20 @@ export function getSettingValue(key: string): string | null {
   return row?.value ?? null;
 }
 
+/**
+ * Resolves the tenant's configured business day start time ('HH:mm').
+ * Supports morning cutoff times: '00:00' to '11:59'. Defaults to '00:00'.
+ */
+export function tenantBusinessDayStartTime(customDb?: ReturnType<typeof getDatabase>): string {
+  const raw = customDb
+    ? (customDb.prepare("SELECT value FROM settings WHERE key = 'business_day_start_time'").get() as any)?.value
+    : getSettingValue('business_day_start_time');
+  if (typeof raw === 'string' && /^([01]\d):([0-5]\d)$/.test(raw.trim())) {
+    return raw.trim();
+  }
+  return '00:00';
+}
+
 export function upsertSettings(entries: Record<string, string | undefined | null>): void {
   const stmt = db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -4748,6 +4762,7 @@ function seedInstallDefaults(): void {
   insert('currency', 'INR');
   insert('currency_symbol', '₹');
   insert('timezone', 'Asia/Kolkata');
+  insert('business_day_start_time', '00:00');
   insert('address', '');
   insert('phone', '');
   insert('email', '');
@@ -4974,19 +4989,29 @@ export function utcTodayDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Return the calendar date represented by an instant in an IANA timezone. */
-export function localDateInTimezone(instant: Date, timezone: string): string {
+function parseStartTimeOffsetMs(startTime: string = '00:00'): number {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(startTime.trim());
+  if (!match) return 0;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return (hours * 60 + minutes) * 60 * 1000;
+}
+
+/** Return the calendar date represented by an instant in an IANA timezone with an optional day start offset. */
+export function localDateInTimezone(instant: Date, timezone: string, startTime: string = '00:00'): string {
+  const offsetMs = parseStartTimeOffsetMs(startTime);
+  const adjustedInstant = offsetMs > 0 ? new Date(instant.getTime() - offsetMs) : instant;
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-    }).formatToParts(instant);
+    }).formatToParts(adjustedInstant);
     const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
     return `${get('year')}-${get('month')}-${get('day')}`;
   } catch {
-    return instant.toISOString().slice(0, 10);
+    return adjustedInstant.toISOString().slice(0, 10);
   }
 }
 
@@ -5005,10 +5030,11 @@ function timezoneOffsetMilliseconds(instant: Date, timezone: string): number {
   return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - instant.getTime();
 }
 
-/** Half-open UTC ranges `[start, end)` for one date in the tenant timezone. */
-export function dayBoundsInTimezone(date: string, timezone: string): [string, string] {
+/** Half-open UTC ranges `[start, end)` for one date in the tenant timezone with an optional day start offset. */
+export function dayBoundsInTimezone(date: string, timezone: string, startTime: string = '00:00'): [string, string] {
   const [y, m, d] = date.split('-').map(Number);
   const format = (instant: Date) => instant.toISOString().replace('T', ' ').replace(/\..*$/, '');
+  const offsetMs = parseStartTimeOffsetMs(startTime);
   try {
     const toUtc = (localWallTime: number): Date => {
       let instant = new Date(localWallTime);
@@ -5018,18 +5044,19 @@ export function dayBoundsInTimezone(date: string, timezone: string): [string, st
       return instant;
     };
     return [
-      format(toUtc(Date.UTC(y, m - 1, d))),
-      format(toUtc(Date.UTC(y, m - 1, d + 1))),
+      format(toUtc(Date.UTC(y, m - 1, d) + offsetMs)),
+      format(toUtc(Date.UTC(y, m - 1, d + 1) + offsetMs)),
     ];
   } catch {
-    return utcDayBounds(date);
+    return utcDayBounds(date, startTime);
   }
 }
 
-/** Half-open UTC range strings `[start, end)` for a UTC calendar date. */
-export function utcDayBounds(date: string): [string, string] {
+/** Half-open UTC range strings `[start, end)` for a UTC calendar date with an optional day start offset. */
+export function utcDayBounds(date: string, startTime: string = '00:00'): [string, string] {
   const [y, m, d] = date.split('-').map(Number);
-  const start = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
+  const offsetMs = parseStartTimeOffsetMs(startTime);
+  const start = new Date(Date.UTC(y, m - 1, d, 0, 0, 0) + offsetMs);
   const end = new Date(start.getTime() + 24 * 3600 * 1000);
   const fmt = (dt: Date) => dt.toISOString().replace('T', ' ').replace(/\..*$/, '');
   return [fmt(start), fmt(end)];

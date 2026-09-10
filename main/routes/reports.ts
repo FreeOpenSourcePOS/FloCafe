@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express';
 import Decimal from 'decimal.js';
-import { dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, parseDbTimestamp } from '../db';
+import {
+  dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, parseDbTimestamp,
+  tenantBusinessDayStartTime,
+} from '../db';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getOrdersWithItemsForBills } from './bills';
@@ -21,12 +24,16 @@ function tenantTimezone(): string {
   return getSettingValue('timezone') || 'Asia/Kolkata';
 }
 
+function tenantStartTime(): string {
+  return tenantBusinessDayStartTime();
+}
+
 function reportToday(): string {
-  return localDateInTimezone(new Date(), tenantTimezone());
+  return localDateInTimezone(new Date(), tenantTimezone(), tenantStartTime());
 }
 
 function reportDayBounds(date: string): [string, string] {
-  return dayBoundsInTimezone(date, tenantTimezone());
+  return dayBoundsInTimezone(date, tenantTimezone(), tenantStartTime());
 }
 
 function reportDate(value: unknown, fallback: string): string {
@@ -312,8 +319,9 @@ router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
     `).all(windowStart, windowEnd) as { created_at: string; total: number }[];
     const dailyByDate = new Map<string, { orders: number; sales: number }>();
     const timeZone = tenantTimezone();
+    const startTime = tenantStartTime();
     for (const row of dailyRows) {
-      const date = localDateInTimezone(parseDbTimestamp(row.created_at), timeZone);
+      const date = localDateInTimezone(parseDbTimestamp(row.created_at), timeZone, startTime);
       const bucket = dailyByDate.get(date) || { orders: 0, sales: 0 };
       bucket.orders += 1;
       bucket.sales += Number(row.total || 0);
@@ -504,11 +512,11 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     // so the window filters on the index. The same timezone drives the
     // hour/day-of-week bucketing below.
     const timeZone = tenantTimezone();
-    const today = localDateInTimezone(new Date(), timeZone);
+    const today = reportToday();
     const startDateValue = new Date(`${today}T00:00:00Z`);
     startDateValue.setUTCDate(startDateValue.getUTCDate() - days);
     const startDate = startDateValue.toISOString().slice(0, 10);
-    const [windowStart] = dayBoundsInTimezone(startDate, timeZone);
+    const [windowStart] = reportDayBounds(startDate);
 
     // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
     const revenue = db.prepare(`

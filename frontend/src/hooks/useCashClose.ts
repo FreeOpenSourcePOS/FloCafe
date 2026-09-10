@@ -75,10 +75,13 @@ export function useCashClose() {
   const t = useTranslations('dashboard');
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
-  // Tenant-local today. Mirrors getLocalDateString in the dashboard
-  // page (kept there for its own date state); en-CA formats YYYY-MM-DD.
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const todayLocal = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const dayStartTime = currentTenant?.business_day_start_time || '00:00';
+  const startMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(dayStartTime.trim());
+  const startOffsetMs = startMatch ? (Number(startMatch[1]) * 60 + Number(startMatch[2])) * 60 * 1000 : 0;
+  const nowInstant = new Date();
+  const adjustedInstant = startOffsetMs > 0 ? new Date(nowInstant.getTime() - startOffsetMs) : nowInstant;
+  const todayLocal = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(adjustedInstant);
   // ── Close-day modal state ────────────────────────────────────────────────
   // Modal flow: open → load X (live aggregates) + prior-day Z (default float)
   // → operator edits float + counted → POST /cash-closures → immutable Z view

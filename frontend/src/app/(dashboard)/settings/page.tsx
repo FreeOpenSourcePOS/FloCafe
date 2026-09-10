@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { COUNTRIES, getCountryByCode, getLocalizedCountryName, sortCountriesByLocalizedName, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
+import { COUNTRIES, getCountryByCode, getLocalizedCountryName, sortCountriesByLocalizedName, formatCurrencyForTenant, getCurrencySymbol, type CurrencyDisplay, type DigitMode, type CalendarMode, type CurrencySymbolPosition } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
@@ -1386,6 +1386,8 @@ export default function SettingsPage() {
   // Store / business fields — local form state (saved only on explicit Save)
   type BusinessForm = {
     businessName: string; countryCode: string; timezone: string; businessDayStartTime: string; currency: string;
+    currencySymbol: string;
+    currencySymbolPosition: CurrencySymbolPosition;
     billingType: 'postpaid' | 'prepaid';
     tablesRequired: boolean;
     taxRegistered: boolean;
@@ -1395,7 +1397,10 @@ export default function SettingsPage() {
     calendar: CalendarMode;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
-    businessName: '', countryCode: '', timezone: '', businessDayStartTime: '00:00', currency: '', billingType: 'postpaid',
+    businessName: '', countryCode: '', timezone: '', businessDayStartTime: '00:00', currency: '',
+    currencySymbol: '',
+    currencySymbolPosition: 'prefix',
+    billingType: 'postpaid',
     tablesRequired: true,
     taxRegistered: false,
     taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
@@ -1615,6 +1620,8 @@ export default function SettingsPage() {
         timezone: d.timezone || '',
         businessDayStartTime: d.business_day_start_time || '00:00',
         currency: d.currency || '',
+        currencySymbol: d.currency_symbol || '',
+        currencySymbolPosition: d.currency_symbol_position === 'suffix' ? 'suffix' : 'prefix',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
         taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
@@ -1769,6 +1776,8 @@ export default function SettingsPage() {
           timezone: d.timezone || '',
           businessDayStartTime: d.business_day_start_time || '00:00',
           currency: d.currency || '',
+          currencySymbol: d.currency_symbol || '',
+          currencySymbolPosition: d.currency_symbol_position === 'suffix' ? 'suffix' : 'prefix',
           billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
           tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
           taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
@@ -2658,6 +2667,8 @@ export default function SettingsPage() {
         timezone: form.timezone,
         business_day_start_time: form.businessDayStartTime,
         currency: form.currency,
+        currency_symbol: form.currencySymbol,
+        currency_symbol_position: form.currencySymbolPosition,
         country: form.countryCode,
         billing_type: form.billingType,
         tables_required: form.tablesRequired,
@@ -2711,7 +2722,17 @@ export default function SettingsPage() {
       posSettings.setBillPhone(normalizedBusinessPhone);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
-      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, business_day_start_time: form.businessDayStartTime, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
+      updateCurrentTenant({
+        currency: form.currency,
+        currency_symbol: form.currencySymbol,
+        currency_symbol_position: form.currencySymbolPosition,
+        business_day_start_time: form.businessDayStartTime,
+        timezone: form.timezone,
+        country: form.countryCode,
+        currency_display: form.currencyDisplay,
+        number_digits: form.numberDigits,
+        calendar: form.calendar,
+      });
       if (!silent) toast.success(t('storeSaved'));
     } catch (err: unknown) {
       const responseData = (err as { response?: { data?: unknown } }).response?.data;
@@ -3016,10 +3037,13 @@ export default function SettingsPage() {
                              const calendar = (options?.calendar?.includes(p.calendar) || p.calendar === 'locale')
                                ? p.calendar
                                : 'locale';
+                             const currency = country?.currency || p.currency;
+                             const defaultSymbol = country ? (getCurrencySymbol(country.currency, country.locale) || country.currency) : p.currencySymbol;
                              return {
                                ...p,
                                countryCode: e.target.value,
-                               currency: country?.currency || p.currency,
+                               currency,
+                               currencySymbol: defaultSymbol,
                                timezone: timezoneWasDefault
                                  ? (country?.timezone || p.timezone)
                                  : p.timezone,
@@ -3102,6 +3126,66 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
+                {/* Currency Symbol & Display Position (#693) */}
+                <div className="md:col-span-2 space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-muted-foreground mb-1">
+                        {t('currencySymbolLabel')}
+                      </label>
+                      {isAdmin ? (
+                        <input
+                          type="text"
+                          value={form.currencySymbol}
+                          onChange={(e) => {
+                            markHydrationTouched('currencySymbol');
+                            setForm((p) => ({ ...p, currencySymbol: e.target.value }));
+                          }}
+                          placeholder={getCurrencySymbol(form.currency, getCountryByCode(form.countryCode)?.locale) || form.currency}
+                          className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                          dir="ltr"
+                        />
+                      ) : (
+                        <p className="font-medium text-foreground">
+                          {form.currencySymbol || getCurrencySymbol(form.currency, getCountryByCode(form.countryCode)?.locale) || form.currency}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm text-muted-foreground mb-1">
+                        {t('currencyPositionLabel')}
+                      </label>
+                      {isAdmin ? (
+                        <select
+                          value={form.currencySymbolPosition}
+                          onChange={(e) => {
+                            markHydrationTouched('currencySymbolPosition');
+                            setForm((p) => ({ ...p, currencySymbolPosition: e.target.value as CurrencySymbolPosition }));
+                          }}
+                          className="w-full px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                        >
+                          <option value="prefix">{t('currencyPositionPrefix')}</option>
+                          <option value="suffix">{t('currencyPositionSuffix')}</option>
+                        </select>
+                      ) : (
+                        <p className="font-medium text-foreground capitalize">
+                          {form.currencySymbolPosition === 'suffix' ? t('currencyPositionSuffix') : t('currencyPositionPrefix')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                   <p className="text-xs text-muted-foreground">
+                     {t('currencyPreviewLabel')}:{' '}
+                    <span className="font-semibold text-foreground">
+                      {formatCurrencyForTenant(11000, form.countryCode, form.currency, {
+                        currencySymbol: form.currencySymbol || undefined,
+                        currencySymbolPosition: form.currencySymbolPosition,
+                        currencyDisplay: form.currencyDisplay,
+                        digits: form.numberDigits,
+                      })}
+                    </span>
+                   </p>
+                 </div>
                 <LocalePreferencesPanel
                   options={getCountryByCode(form.countryCode)?.localeOptions}
                   currencyDisplay={form.currencyDisplay}

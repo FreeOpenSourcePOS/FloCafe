@@ -22,6 +22,7 @@ import {
   formatMoney,
   formatCurrencyForTenant,
   formatNumberForTenant,
+  parseLocaleNumber,
 } from '../main/countries';
 
 const ROOT = path.join(__dirname, '..');
@@ -429,6 +430,7 @@ async function runCatalogSaveBoundaryTests() {
       getCurrencySymbol: () => 'JPY',
       getCountryByCode: () => ({ locale: 'ja-JP' }),
       getCurrencyUnitAdapter: () => getCurrencyUnitAdapter('JPY', 'JP'),
+      parseLocaleNumber,
     },
     '@/lib/currency-input': { roundCurrencyValue },
     '@/lib/image-utils': { nameToColor: () => '#000000' },

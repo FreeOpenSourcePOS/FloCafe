@@ -225,6 +225,8 @@ export interface PrintContext {
   readonly currency: string;
   /** Currency symbol as configured for the business. KOT rendering does not read this field. */
   readonly currencySymbol: string;
+  /** Whether the currency symbol should be formatted as prefix or suffix. */
+  readonly currencySymbolPosition?: 'prefix' | 'suffix';
   /** Whether trailing `.00` decimals are trimmed on amounts. */
   readonly trimDecimals: boolean;
   /** Optional IANA timezone for business-local date presentation. */

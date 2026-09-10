@@ -10,7 +10,7 @@ import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import { parseDbTimestamp } from '@/lib/utils';
 import ImageUploader from '@/components/products/ImageUploader';
-import { getCurrencySymbol, getCountryByCode, getCurrencyUnitAdapter } from '@/lib/countries';
+import { getCurrencySymbol, getCountryByCode, getCurrencyUnitAdapter, parseLocaleNumber } from '@/lib/countries';
 import { roundCurrencyValue } from '@/lib/currency-input';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
@@ -300,8 +300,8 @@ export default function ProductsPage() {
       const payload: Record<string, unknown> = {
         name: form.name,
         category_id: form.category_id || null,
-        price: roundCurrencyValue(Number(form.price), unitAdapter.maxDecimals),
-        cost_price: form.cost_price ? roundCurrencyValue(Number(form.cost_price), unitAdapter.maxDecimals) : null,
+        price: roundCurrencyValue(parseLocaleNumber(form.price, getCountryByCode(currentTenant?.country ?? 'IN')?.locale, unitAdapter.maxDecimals), unitAdapter.maxDecimals),
+        cost_price: form.cost_price ? roundCurrencyValue(parseLocaleNumber(form.cost_price, getCountryByCode(currentTenant?.country ?? 'IN')?.locale, unitAdapter.maxDecimals), unitAdapter.maxDecimals) : null,
         cb_percent: cbPercentVal,
         sku: form.sku || null,
         barcode: form.barcode || null,
@@ -454,7 +454,7 @@ export default function ProductsPage() {
         max_selection: addonForm.max_selection,
         addons: addonList.map((addon) => ({
           ...addon,
-          price: roundCurrencyValue(Number(addon.price), unitAdapter.maxDecimals),
+          price: roundCurrencyValue(parseLocaleNumber(addon.price, getCountryByCode(currentTenant?.country ?? 'IN')?.locale, unitAdapter.maxDecimals), unitAdapter.maxDecimals),
         })),
       };
       if (editingAddonGroup) {

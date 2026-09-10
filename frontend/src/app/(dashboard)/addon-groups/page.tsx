@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AddonGroup, Addon } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
-import { getCurrencyUnitAdapter } from '@/lib/countries';
+import { getCountryByCode, getCurrencyUnitAdapter, parseLocaleNumber } from '@/lib/countries';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
 import { roundCurrencyValue } from '@/lib/currency-input';
@@ -140,9 +140,10 @@ export default function AddonGroupsPage() {
     if (!addonForm.name.trim()) return;
     try {
       setMutating(true);
+      const tenantLocale = getCountryByCode(currentTenant?.country ?? 'IN')?.locale;
       await api.post(`/addon-groups/${groupId}/addons`, {
         name: addonForm.name,
-        price: roundCurrencyValue(Number(addonForm.price), unitAdapter.maxDecimals),
+        price: roundCurrencyValue(parseLocaleNumber(addonForm.price, tenantLocale, unitAdapter.maxDecimals), unitAdapter.maxDecimals),
       });
       toast.success(t('addonAdded'));
       setAddonForm({ name: '', price: '0' });
@@ -160,9 +161,10 @@ export default function AddonGroupsPage() {
     if (!editingAddon || !addonForm.name.trim()) return;
     try {
       setMutating(true);
+      const tenantLocale = getCountryByCode(currentTenant?.country ?? 'IN')?.locale;
       await api.put(`/addon-groups/${editingAddon.groupId}/addons/${editingAddon.addon.id}`, {
         name: addonForm.name,
-        price: roundCurrencyValue(Number(addonForm.price), unitAdapter.maxDecimals),
+        price: roundCurrencyValue(parseLocaleNumber(addonForm.price, tenantLocale, unitAdapter.maxDecimals), unitAdapter.maxDecimals),
       });
       toast.success(t('addonUpdated'));
       setAddonForm({ name: '', price: '0' });

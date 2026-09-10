@@ -119,3 +119,53 @@ test('getCurrencyUnitAdapter: zero-decimal currencies use whole integer steps', 
   assert.equal(usdAdapter.toStored(12.34), 12.34);
   assert.equal(usdAdapter.formatInput(12.34), '12.34');
 });
+
+test('parseLocaleNumber: handles COP / es-CO thousands dot and decimal comma', () => {
+  const { parseLocaleNumber } = require('../main/countries');
+  // COP has 0 fraction digits
+  assert.equal(parseLocaleNumber('11.000', 'es-CO', 0), 11000);
+  assert.equal(parseLocaleNumber('11.000 COP', 'es-CO', 0), 11000);
+  assert.equal(parseLocaleNumber('$11.000', 'es-CO', 0), 11000);
+  assert.equal(parseLocaleNumber('11000', 'es-CO', 0), 11000);
+
+  // General number with 2 fraction digits in es-CO
+  assert.equal(parseLocaleNumber('11.000,50', 'es-CO', 2), 11000.5);
+  assert.equal(parseLocaleNumber('11,50', 'es-CO', 2), 11.5);
+  assert.equal(parseLocaleNumber('11000', 'es-CO', 2), 11000);
+
+  // en-US standard comma thousands, dot decimal
+  assert.equal(parseLocaleNumber('11,000.50', 'en-US', 2), 11000.5);
+  assert.equal(parseLocaleNumber('11,000', 'en-US', 0), 11000);
+  assert.equal(parseLocaleNumber('11000', 'en-US', 0), 11000);
+});
+
+test('formatMoney: custom symbol and suffix position', () => {
+  const { formatMoney } = require('../main/countries');
+  // Colombian peso with suffix
+  const coSuffix = formatMoney(11000, 'COP', 'es-CO', {
+    currencySymbol: 'COP',
+    currencySymbolPosition: 'suffix',
+  });
+  assert.equal(coSuffix, '11.000 COP');
+
+  // Colombian peso with prefix starting with letter (e.g. Col$) gets a space separator
+  const coPrefix = formatMoney(11000, 'COP', 'es-CO', {
+    currencySymbol: 'Col$',
+    currencySymbolPosition: 'prefix',
+  });
+  assert.equal(coPrefix, 'Col$ 11.000');
+
+  // Colombian peso with standard $ prefix gets no space
+  const coDollarPrefix = formatMoney(11000, 'COP', 'es-CO', {
+    currencySymbol: '$',
+    currencySymbolPosition: 'prefix',
+  });
+  assert.equal(coDollarPrefix, '$11.000');
+
+  // USD with suffix
+  const usSuffix = formatMoney(1234.5, 'USD', 'en-US', {
+    currencySymbol: 'USD',
+    currencySymbolPosition: 'suffix',
+  });
+  assert.equal(usSuffix, '1,234.50 USD');
+});

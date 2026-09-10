@@ -1448,6 +1448,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
+  const currencyPosition = (biz.currency_symbol_position === 'suffix' ? 'suffix' : 'prefix') as 'prefix' | 'suffix';
   const normalize = (text: string): string => normalizeThermalText(text, capabilities);
   const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
@@ -1482,11 +1483,11 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 
   if (order.items) {
     for (const item of order.items) {
-      pushFinancialLines(pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang, capabilities));
+      pushFinancialLines(pluginItemRows(item, layout, cols, prefix, locale, trimDecimals, fractionDigits, lang, capabilities, currencyPosition));
       if (pluginDetailLines(layout).includes('addons')) {
         for (const addon of parseAddons(item.addons)) {
           const addonLines: string[] = [];
-          pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits) : ''), cols, lang, capabilities);
+          pushWrapped(addonLines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits, currencyPosition) : ''), cols, lang, capabilities);
           if (addon.price) pushFinancialLines(addonLines);
           else lines.push(...addonLines);
         }
@@ -1502,21 +1503,21 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const rowLabelWidth = Math.max(8, cols - 12);
   if (payload?.totals?.showSubtotal !== false) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'subtotal', lang)), rowLabelWidth);
-    pushFinancialLines(financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, formatCurrency(bill.subtotal, prefix, locale, trimDecimals, fractionDigits, currencyPosition), cols, lang, capabilities));
   }
   if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'discount', lang)), rowLabelWidth);
-    pushFinancialLines(financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals, fractionDigits, currencyPosition), cols, lang, capabilities));
   }
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
       const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      pushFinancialLines([pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits), layout, cols, lang, capabilities)]);
+      pushFinancialLines([pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals, fractionDigits, currencyPosition), layout, cols, lang, capabilities)]);
     }
   } else if (Number(bill.tax_amount) !== 0) {
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'tax', lang)), rowLabelWidth);
-    pushFinancialLines(financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, formatCurrency(bill.tax_amount, prefix, locale, trimDecimals, fractionDigits, currencyPosition), cols, lang, capabilities));
   }
   // chargeRows capability declaration preserves stable country/legal row order.
   const chargeAmounts: Record<TemplateChargeRowId, number> = {
@@ -1528,12 +1529,12 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     const amount = chargeAmounts[row];
     if (amount === 0) continue;
     const label = fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, row, lang)), rowLabelWidth);
-    pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+    pushFinancialLines(financialRows(label, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits, currencyPosition), cols, lang, capabilities));
   }
   lines.push(bar);
   // Label precedence: template literal wins, then labels map, then localized catalog.
   const totalLabel = fitTemplateLabel(normalize(String(payload?.totals?.grandTotalLabel || '')), rowLabelWidth) || fitTemplateLabel(normalize(resolveTemplateLabel(payload?.labels, 'total', lang)), rowLabelWidth);
-  pushFinancialLines(financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
+  pushFinancialLines(financialRows(totalLabel, formatCurrency(bill.total, prefix, locale, trimDecimals, fractionDigits, currencyPosition), cols, lang, capabilities).map((line) => `{BOLD}${line}{/BOLD}`));
 
   if (bill.payment_details) {
     lines.push(dash);
@@ -1543,7 +1544,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
         for (const payment of payments) {
           if (payment && payment.method) {
             const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12, lang, capabilities);
-            pushFinancialLines(financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+            pushFinancialLines(financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals, fractionDigits, currencyPosition), cols, lang, capabilities));
           }
         }
       }
@@ -1664,12 +1665,12 @@ function pluginItemHeader(layout: any, cols: number, lang: string = 'en', capabi
   );
 }
 
-function pluginItemRows(item: any, layout: any, cols: number, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities): string[] {
+function pluginItemRows(item: any, layout: any, cols: number, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number, lang: string = 'en', capabilities?: ThermalPrinterCapabilities, position: 'prefix' | 'suffix' = 'prefix'): string[] {
   const columns = pluginLineItemColumns(layout, cols, lang, capabilities);
   const gap = pluginLineGap(layout);
   const values = columns.map((column) => ({
     ...column,
-    value: normalizeThermalText(pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits), capabilities),
+    value: normalizeThermalText(pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals, fractionDigits, position), capabilities),
   }));
   const wrappedValues = values.map((column) => {
     if (!column.wrap) return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
@@ -1692,7 +1693,7 @@ function pluginItemRows(item: any, layout: any, cols: number, prefix: string, lo
   return rows;
 }
 
-function pluginItemColumnValue(key: string, item: any, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number): string {
+function pluginItemColumnValue(key: string, item: any, prefix: string, locale: string, trimDecimals: boolean, fractionDigits: number, position: 'prefix' | 'suffix' = 'prefix'): string {
   switch (key) {
     case 'item':
       return String(item.product_name || '');
@@ -1701,12 +1702,12 @@ function pluginItemColumnValue(key: string, item: any, prefix: string, locale: s
     case 'rate': {
       const quantity = Number(item.quantity) || 0;
       const rate = Number(item.unit_price ?? item.price ?? (quantity ? Number(item.total) / quantity : 0));
-      return formatCurrency(rate, prefix, locale, trimDecimals, fractionDigits);
+      return formatCurrency(rate, prefix, locale, trimDecimals, fractionDigits, position);
     }
     case 'taxRate':
       return pluginItemTaxRate(item);
     case 'amount':
-      return formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
+      return formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits, position);
     default:
       return '';
   }
@@ -1791,10 +1792,10 @@ export function itemAmountWidth(
   return Math.min(width, Math.max(1, cols - 5));
 }
 
-export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
+export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities, position: 'prefix' | 'suffix' = 'prefix'): string[] {
   const qtyW = 4;
   const productName = normalizeThermalText(item.product_name, capabilities);
-  const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
+  const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits, position);
   const qty = String(item.quantity).padEnd(qtyW);
   const maxLine1Name = Math.max(1, nameLen - 1);
 
@@ -1815,7 +1816,7 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
   return result;
 }
 
-export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
+export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities, position: 'prefix' | 'suffix' = 'prefix'): string[] {
   const addonName = normalizeThermalText(addon.name, capabilities);
   const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
   const fullName = '  + ' + addonName + quantity;
@@ -1825,7 +1826,7 @@ export function addonRows(addon: any, nameLen: number, amtLen: number, cols: num
     return lines.map((l) => l + ' '.repeat(Math.max(0, cols - l.length)));
   }
 
-  const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits);
+  const price = formatCurrency(addon.price, prefix, locale, trimDecimals, fractionDigits, position);
 
   if (fullName.length <= nameLen) {
     const label = fullName.padEnd(nameLen);
@@ -1879,7 +1880,14 @@ function getSafeLatnLocale(locale: string | undefined): string {
   return `${locale}-u-nu-latn`;
 }
 
-export function formatCurrency(amount: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, fractionDigits: number = 2): string {
+export function formatCurrency(
+  amount: number,
+  prefix: string,
+  locale: string = 'en-US',
+  trimDecimals: boolean = false,
+  fractionDigits: number = 2,
+  position: 'prefix' | 'suffix' = 'prefix',
+): string {
   const numeric = Number(amount) || 0;
   const factor = 10 ** fractionDigits;
   const hasDecimals = Math.round(numeric * factor) % factor !== 0;
@@ -1888,7 +1896,11 @@ export function formatCurrency(amount: number, prefix: string, locale: string = 
     minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).replace(/[\u00A0\u202F]/g, ' ');
-  return prefix + formattedNum;
+  if (position === 'suffix') {
+    return prefix ? `${formattedNum} ${prefix}` : formattedNum;
+  }
+  const needsSpace = /^[A-Za-z]/.test(prefix);
+  return prefix + (needsSpace ? ' ' : '') + formattedNum;
 }
 
 export function rightAlign(text: string, width: number = 24): string {

@@ -176,6 +176,7 @@ export function buildBillPrintContext(opts: {
     locale,
     currency,
     currencySymbol: String(opts.business?.currency_symbol || getCurrencySymbol(currency, locale) || currency),
+    currencySymbolPosition: (opts.business?.currency_symbol_position === 'suffix' ? 'suffix' : 'prefix') as 'prefix' | 'suffix',
     trimDecimals: opts.business?.trim_decimals === true,
     ...(opts.business?.timezone ? { timezone: String(opts.business.timezone) } : {}),
     resolveLabel: (conceptId, language) => printLabel(language, conceptId as PrintConceptId),
@@ -194,6 +195,7 @@ export interface ClassicDocumentRenderOptions {
   /** Currency prefix preference (symbol + unicode mode). */
   readonly currency: string;
   readonly currencySymbol: string;
+  readonly currencySymbolPosition?: 'prefix' | 'suffix';
   readonly trimDecimals: boolean;
   readonly useUnicode: boolean;
   readonly arabicShaping: boolean;
@@ -261,6 +263,8 @@ export function renderBillDocumentToClassicLines(
   const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode, options.capabilities, options.preserveCurrencySymbol === true, options.currency);
   const fractionDigits = getCurrencyFractionDigits(options.currency || 'INR');
   const trimDecimals = options.trimDecimals === true;
+  const currencyPosition = (options.currencySymbolPosition === 'suffix' ? 'suffix' : 'prefix') as 'prefix' | 'suffix';
+  const format = (amt: number): string => formatCurrency(amt, prefix, options.locale, trimDecimals, fractionDigits, currencyPosition);
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const dash = '-'.repeat(cols);
   const normalize = (text: string): string => normalizeThermalText(text, options.capabilities);
@@ -307,24 +311,24 @@ export function renderBillDocumentToClassicLines(
 
   const renderGrandTotal = (block: TotalsBlock, target = segmentOf('totals')): void => {
     const label = labelOf(block.grandTotal.label);
-    const value = formatCurrency(block.grandTotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
+    const value = format(block.grandTotal.amount);
     appendFinancial(target, financialRows(label, value, cols, options.language, options.capabilities), true, label, value);
   };
 
   const renderCharges = (block: TotalsBlock, target: BlockSegments): void => {
     if (block.serviceCharge) {
       const label = labelOf(block.serviceCharge.label);
-      const value = formatCurrency(block.serviceCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      const value = format(block.serviceCharge.amount);
       appendFinancial(target, financialRows(label, value, cols, options.language, options.capabilities), false, label, value);
     }
     if (block.deliveryCharge) {
       const label = labelOf(block.deliveryCharge.label);
-      const value = formatCurrency(block.deliveryCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      const value = format(block.deliveryCharge.amount);
       appendFinancial(target, financialRows(label, value, cols, options.language, options.capabilities), false, label, value);
     }
     if (block.packagingCharge) {
       const label = labelOf(block.packagingCharge.label);
-      const value = formatCurrency(block.packagingCharge.amount, prefix, options.locale, trimDecimals, fractionDigits);
+      const value = format(block.packagingCharge.amount);
       appendFinancial(target, financialRows(label, value, cols, options.language, options.capabilities), false, label, value);
     }
   };
@@ -448,10 +452,11 @@ export function renderBillDocumentToClassicLines(
             options.language,
             fractionDigits,
             options.capabilities,
+            currencyPosition,
           );
           segment.financialRanges.main.push({ start, count: rowLines.length });
           segment.main.push(...rowLines);
-          const amount = formatCurrency(row.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          const amount = format(row.amount);
           const sourceLines = [`${row.name.text} ${row.quantity} ${amount}`];
           const sourceControlLines = [rowLines[0] ?? ''];
           const sourceLayouts: Array<RasterTextLayout | undefined> = [{
@@ -465,14 +470,14 @@ export function renderBillDocumentToClassicLines(
           const financialSourceLines = [true];
           for (const addon of row.addons) {
             const addonStart = segment.main.length;
-            const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities);
+            const addonLines = addonRows({ name: addon.name.text, price: addon.price, quantity: addon.quantity }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals, options.language, fractionDigits, options.capabilities, currencyPosition);
             segment.main.push(...addonLines);
             if (addon.price) {
               segment.financialRanges.main.push({ start: addonStart, count: addonLines.length });
             }
             const quantitySuffix = (addon.quantity ?? 1) > 1 ? ` x${addon.quantity}` : '';
             const addonLabel = `  + ${addon.name.text}${quantitySuffix}`;
-            const addonAmount = addon.price ? formatCurrency(addon.price, prefix, options.locale, trimDecimals, fractionDigits) : '';
+            const addonAmount = addon.price ? format(addon.price) : '';
             sourceLines.push(`${addonLabel}${addon.price ? ` ${addonAmount}` : ''}`);
             sourceControlLines.push(addonLines[0] ?? '');
             sourceLayouts.push(addon.price ? {
@@ -508,7 +513,7 @@ export function renderBillDocumentToClassicLines(
           const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
           const rawLabel = labelOf(line.label) + rateSuffix;
           const label = truncate(rawLabel, cols - 12, options.language, options.capabilities);
-          const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          const value = format(line.amount);
           appendFinancial(segment, financialRows(label, value, cols, options.language, options.capabilities), false, rawLabel, value);
         }
         // When breakdown follows totals, grand total closes the breakdown segment.
@@ -532,12 +537,12 @@ export function renderBillDocumentToClassicLines(
         }
         {
           const label = labelOf(block.subtotal.label);
-          const value = formatCurrency(block.subtotal.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          const value = format(block.subtotal.amount);
           appendFinancial(segment, financialRows(label, value, cols, options.language, options.capabilities), false, label, value);
         }
         if (block.discount) {
           const label = labelOf(block.discount.label);
-          const value = '-' + formatCurrency(block.discount.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          const value = '-' + format(block.discount.amount);
           appendFinancial(segment, financialRows(label, value, cols, options.language, options.capabilities), false, label, value);
         }
         const hasBreakdownLines = blocks.some(
@@ -546,7 +551,7 @@ export function renderBillDocumentToClassicLines(
         );
         if (!hasBreakdownLines && block.tax) {
           const label = labelOf(block.tax.label);
-          const value = formatCurrency(block.tax.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          const value = format(block.tax.amount);
           appendFinancial(segment, financialRows(label, value, cols, options.language, options.capabilities), false, label, value);
         }
         if (!hasBreakdownLines || breakdownIndex < totalsIndex) {
@@ -605,7 +610,7 @@ export function renderBillDocumentToClassicLines(
         for (const line of block.lines) {
           const rawMethodLabel = paymentLabel(line.label);
           const methodLabel = truncate(rawMethodLabel, cols - 12, options.language, options.capabilities);
-          const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
+          const value = format(line.amount);
           const rendered = financialRows(methodLabel, value, cols, options.language, options.capabilities);
           const start = segment.main.length;
           segment.main.push(...rendered);
@@ -794,6 +799,7 @@ export function renderClassicReceiptViaDocument(
     ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
     currency: printContext.currency,
     currencySymbol: printContext.currencySymbol,
+    currencySymbolPosition: (semanticBusiness?.currency_symbol_position === 'suffix' ? 'suffix' : 'prefix') as 'prefix' | 'suffix',
     trimDecimals: printContext.trimDecimals,
     useUnicode: opts.useUnicode,
     arabicShaping: opts.arabicShaping,

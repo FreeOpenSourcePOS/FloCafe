@@ -300,9 +300,16 @@ export function parseLocaleNumber(raw: unknown, locale = 'en-US', fractionDigits
   if (typeof raw === 'number') return raw;
   if (!raw || typeof raw !== 'string') return NaN;
 
-  let s = raw.trim().replace(/[\u00A0\u202F\s]/g, '');
-  s = s.replace(/^[^\d+.-]+/, '').replace(/[^\d]+$/, '');
-  if (!s) return NaN;
+  let s = raw.trim();
+  // Strip leading currency symbols (e.g. $, €, £, ¥, ₹) or leading currency codes followed by whitespace (e.g. "COP 11.000")
+  s = s.replace(/^[\p{Sc}\u00A4]+\s*/u, '').trim();
+  s = s.replace(/^[A-Za-z]{2,5}\s+/u, '').trim();
+  // Strip trailing currency symbols or trailing currency codes separated by whitespace (e.g. "11.000 COP", "11.000€")
+  s = s.replace(/\s*[\p{Sc}\u00A4]+$/u, '').trim();
+  s = s.replace(/\s+[A-Za-z]{2,5}$/u, '').trim();
+  // Remove inner whitespace / non-breaking spaces
+  s = s.replace(/[\u00A0\u202F\s]/g, '');
+  if (!s || /[^\d.,+-]/.test(s)) return NaN;
 
   const sign = s.startsWith('-') ? -1 : 1;
   if (s.startsWith('+') || s.startsWith('-')) s = s.slice(1);

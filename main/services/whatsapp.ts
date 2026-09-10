@@ -804,8 +804,8 @@ async function startSocketImpl(attemptId: number): Promise<void> {
   state.socket = socket;
   state.state = 'connecting';
   attachSocketHandlers(socket);
-  socket.ev.on('creds.update', (...args: any[]) => {
-    queueCredentialWrite(socket, saveCreds as (...values: any[]) => unknown, args);
+  socket.ev.on('creds.update', (...args: unknown[]) => {
+    queueCredentialWrite(socket, saveCreds as (...values: unknown[]) => unknown, args);
   });
   logWhatsApp('info', 'socket_created', { attemptId, state: state.state });
 }

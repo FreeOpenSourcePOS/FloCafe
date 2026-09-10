@@ -49,7 +49,7 @@ export interface CompactDocumentRenderOptions {
   readonly language: string;
   readonly locale: string;
   readonly timezone?: string;
-  /** Currency prefix preference (symbol + unicode mode). */
+  /** Currency display preference (symbol, placement, and unicode mode). */
   readonly currency: string;
   readonly currencySymbol: string;
   readonly currencySymbolPosition?: 'prefix' | 'suffix';

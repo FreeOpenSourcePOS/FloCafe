@@ -27,7 +27,7 @@ Companion documents:
         ▼
  PrintData snapshot + PrintContext          (shared/print/document.ts)
  (printed truth, no recomputation)          (columns, languages, direction,
-        │                                    locale, currency, currency symbol,
+        │                                    locale, currency, symbol, placement,
         │                                    label resolver)
         ├── buildBillDocument() → PrintDocument v1
         │          │

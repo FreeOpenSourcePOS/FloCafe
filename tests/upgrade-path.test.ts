@@ -30,6 +30,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+process.env.FLOCAFE_TEST_VERBOSE = '1';
+
 const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-upgrade-path-'));

@@ -4112,6 +4112,7 @@ export class SchemaVersionMismatchError extends Error {
 function runMigrations(): void {
   const current = getCurrentSchemaVersion();
   const target = MIGRATIONS.length > 0 ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
+  const verboseMigrationLogs = process.env.FLOCAFE_TEST_VERBOSE === '1';
 
   if (current > target) {
     // Fail startup if database schema version is newer than supported by this build.
@@ -4132,12 +4133,16 @@ function runMigrations(): void {
   for (const migration of MIGRATIONS) {
     if (migration.version <= current) continue;
 
-    console.log(`[DB] Applying migration v${migration.version}: ${migration.name}`);
+    if (verboseMigrationLogs) {
+      console.log(`[DB] Applying migration v${migration.version}: ${migration.name}`);
+    }
     db.transaction(() => {
       migration.up();
       db.pragma(`user_version = ${migration.version}`);
     })();
-    console.log(`[DB] Migration v${migration.version} complete`);
+    if (verboseMigrationLogs) {
+      console.log(`[DB] Migration v${migration.version} complete`);
+    }
   }
 }
 

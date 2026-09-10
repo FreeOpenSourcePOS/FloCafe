@@ -1939,8 +1939,7 @@ export function formatCurrency(
     const suffix = safePrefix.trimStart();
     return suffix ? `${sign}${formattedNum} ${suffix}` : `${sign}${formattedNum}`;
   }
-  const needsSpace = /^[A-Za-z]/.test(safePrefix);
-  return `${sign}${safePrefix}${needsSpace ? ' ' : ''}${formattedNum}`;
+  return `${sign}${safePrefix}${formattedNum}`;
 }
 
 export function rightAlign(text: string, width: number = 24): string {

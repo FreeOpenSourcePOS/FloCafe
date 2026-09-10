@@ -14,37 +14,46 @@ const TEST_EXCLUSIONS = {
   'test:currency-split': 'Subset alias already executed by test:currency in the default suite.',
 };
 
-const packagePath = path.join(__dirname, '..', '..', 'package.json');
-const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-const scripts = pkg.scripts || {};
-const reachable = new Set(['pretest', 'test']);
-const pending = ['pretest', 'test'];
-const npmRunPattern = /npm\s+run\s+(test(?::[\w:-]+)?)/g;
+function extractExecutedTestScripts(command) {
+  const commandPattern = /(?:^|&&|\|\||;)\s*(?:bash\s+tests\/run-test\.sh\s+)?npm\s+run\s+(test(?::[\w:-]+)?)(?=\s|$)/g;
+  return [...command.matchAll(commandPattern)].map((match) => match[1]);
+}
 
-while (pending.length > 0) {
-  const scriptName = pending.shift();
-  const command = scripts[scriptName] || '';
-  for (const match of command.matchAll(npmRunPattern)) {
-    const dependency = match[1];
-    if (!reachable.has(dependency)) {
-      reachable.add(dependency);
-      pending.push(dependency);
+function main() {
+  const packagePath = path.join(__dirname, '..', '..', 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  const scripts = pkg.scripts || {};
+  const reachable = new Set(['pretest', 'test']);
+  const pending = ['pretest', 'test'];
+
+  while (pending.length > 0) {
+    const scriptName = pending.shift();
+    const command = scripts[scriptName] || '';
+    for (const dependency of extractExecutedTestScripts(command)) {
+      if (!reachable.has(dependency)) {
+        reachable.add(dependency);
+        pending.push(dependency);
+      }
     }
   }
+
+  const testScripts = Object.keys(scripts).filter((name) => name.startsWith('test:'));
+  const missing = testScripts.filter((name) => !reachable.has(name) && !TEST_EXCLUSIONS[name]);
+  const stale = Object.keys(TEST_EXCLUSIONS).filter((name) => !scripts[name] || reachable.has(name));
+  const invalidReasons = Object.entries(TEST_EXCLUSIONS)
+    .filter(([, reason]) => typeof reason !== 'string' || reason.trim().length < 12)
+    .map(([name]) => name);
+
+  if (missing.length || stale.length || invalidReasons.length) {
+    if (missing.length) console.error(`Uncovered test scripts: ${missing.join(', ')}`);
+    if (stale.length) console.error(`Stale test exclusions: ${stale.join(', ')}`);
+    if (invalidReasons.length) console.error(`Test exclusions without a useful reason: ${invalidReasons.join(', ')}`);
+    process.exit(1);
+  }
+
+  console.log(`Test script coverage OK: ${testScripts.length - Object.keys(TEST_EXCLUSIONS).length} reachable, ${Object.keys(TEST_EXCLUSIONS).length} explicitly excluded.`);
 }
 
-const testScripts = Object.keys(scripts).filter((name) => name.startsWith('test:'));
-const missing = testScripts.filter((name) => !reachable.has(name) && !TEST_EXCLUSIONS[name]);
-const stale = Object.keys(TEST_EXCLUSIONS).filter((name) => !scripts[name] || reachable.has(name));
-const invalidReasons = Object.entries(TEST_EXCLUSIONS)
-  .filter(([, reason]) => typeof reason !== 'string' || reason.trim().length < 12)
-  .map(([name]) => name);
+if (require.main === module) main();
 
-if (missing.length || stale.length || invalidReasons.length) {
-  if (missing.length) console.error(`Uncovered test scripts: ${missing.join(', ')}`);
-  if (stale.length) console.error(`Stale test exclusions: ${stale.join(', ')}`);
-  if (invalidReasons.length) console.error(`Test exclusions without a useful reason: ${invalidReasons.join(', ')}`);
-  process.exit(1);
-}
-
-console.log(`Test script coverage OK: ${testScripts.length - Object.keys(TEST_EXCLUSIONS).length} reachable, ${Object.keys(TEST_EXCLUSIONS).length} explicitly excluded.`);
+module.exports = { extractExecutedTestScripts };

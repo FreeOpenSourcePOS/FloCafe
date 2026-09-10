@@ -2387,9 +2387,12 @@ const CURRENCY_TOKEN_RE = new RegExp(
 );
 
 const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
+const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;
 
 function escapeEscPosControlTokens(text: string): string {
-  return text.replace(ESC_POS_CONTROL_TOKEN_RE, (token) => token.replaceAll('{', '{ ').replaceAll('}', ' }'));
+  return text
+    .replace(ESCPOS_TEXT_CONTROL_RE, '')
+    .replace(ESC_POS_CONTROL_TOKEN_RE, (token) => token.replaceAll('{', '{ ').replaceAll('}', ' }'));
 }
 
 export function normalizeThermalText(text: string, capabilities: ThermalPrinterCapabilities = GENERIC_THERMAL_CAPABILITIES): string {
@@ -2430,7 +2433,6 @@ export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean, capab
 // Arabic/Persian scripts require contextual shaping; allowed only when profile declares support.
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
 const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
-const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;
 
 function hasArabicScript(text: string): boolean {
   return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);

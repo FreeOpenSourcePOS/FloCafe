@@ -638,6 +638,7 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
   assert('negative prefix currency formatting places sign before symbol', formatCurrency(-100, resolveCurrencyPrefix('$', false), 'en-US', false, 2) === '-  $100.00');
   assert('suffix currency width includes the suffix symbol', itemAmountWidth({ items: [{ total: 1234567.89 }] }, '$', 'en-US', false, 48, 2, 'suffix') >= 15);
   assert('custom currency control tokens are escaped', !formatCurrency(10, '{CUT}', 'en-US').includes('{CUT}'));
+  assert('custom currency raw control bytes are stripped', !formatCurrency(10, '\x1bp\x00\x19', 'en-US').includes('\x1b'));
 
   const xafWarnings: any[] = [];
   const xafReceipt = formatReceipt(

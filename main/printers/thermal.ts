@@ -1889,19 +1889,22 @@ export function formatCurrency(
   position: 'prefix' | 'suffix' = 'prefix',
 ): string {
   const numeric = Number(amount) || 0;
+  const isNegative = numeric < 0 || Object.is(numeric, -0);
+  const absoluteNumeric = Math.abs(numeric);
   const factor = 10 ** fractionDigits;
-  const hasDecimals = Math.round(numeric * factor) % factor !== 0;
+  const hasDecimals = Math.round(absoluteNumeric * factor) % factor !== 0;
   const safeLocale = getSafeLatnLocale(locale);
-  const formattedNum = numeric.toLocaleString(safeLocale, {
+  const formattedNum = absoluteNumeric.toLocaleString(safeLocale, {
     minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : fractionDigits,
     maximumFractionDigits: fractionDigits,
   }).replace(/[\u00A0\u202F]/g, ' ');
+  const sign = isNegative ? '-' : '';
   if (position === 'suffix') {
     const suffix = prefix.trimStart();
-    return suffix ? `${formattedNum} ${suffix}` : formattedNum;
+    return suffix ? `${sign}${formattedNum} ${suffix}` : `${sign}${formattedNum}`;
   }
   const needsSpace = /^[A-Za-z]/.test(prefix);
-  return prefix + (needsSpace ? ' ' : '') + formattedNum;
+  return `${sign}${prefix}${needsSpace ? ' ' : ''}${formattedNum}`;
 }
 
 export function rightAlign(text: string, width: number = 24): string {

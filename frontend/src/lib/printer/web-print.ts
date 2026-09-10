@@ -284,7 +284,7 @@ export function generateBillHtml(
   const styles = getPaperStyles(paperSize);
 
   const items = itemsBlock?.rows ?? [];
-  const fmtAmount = (value: number) => formatAmount(value, tenant, trimDecimals);
+  const fmtAmount = (value: number) => escapeHtml(formatAmount(value, tenant, trimDecimals));
   const fmtQuantity = (value: number) => formatNumberForTenant(
     Number(value) || 0,
     tenant.country,

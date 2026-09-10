@@ -634,6 +634,7 @@ console.log('\n✅ Test 1c: Unsupported financial receipt text refuses before tr
   assert('currency prefix fallback uses the supplied canonical code', resolveCurrencyPrefix('د.ب.', false, undefined, false, 'BHD').includes('BHD'));
   assert('currency prefix fallback uses the supplied canonical code for empty symbol with capabilities', resolveCurrencyPrefix('', false, GENERIC_THERMAL_CAPABILITIES, false, 'USD') === 'USD');
   assert('suffix currency formatting removes alignment padding', formatCurrency(1000, resolveCurrencyPrefix('$', false), 'en-US', false, 2, 'suffix') === '1,000.00 $');
+  assert('negative prefix currency formatting places sign before symbol', formatCurrency(-100, resolveCurrencyPrefix('$', false), 'en-US', false, 2) === '-  $100.00');
 
   const xafWarnings: any[] = [];
   const xafReceipt = formatReceipt(
@@ -1338,6 +1339,8 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
 
   const browserHtml = generateBillHtml(frontendBill as any, frontendTenant, { useUnicode: false });
   assert('browser printing preserves the Persian Rial symbol', browserHtml.includes('ریال') && !browserHtml.includes('IRR'));
+  const unsafeCurrencyHtml = generateBillHtml(frontendBill as any, { ...frontendTenant, currency_symbol: '<img src=x onerror=alert(1)>' }, { useUnicode: false });
+  assert('browser printing escapes custom currency symbols', unsafeCurrencyHtml.includes('&lt;img src=x onerror=alert(1)&gt;') && !unsafeCurrencyHtml.includes('<img src=x onerror=alert(1)>'));
   assert('shared currency normalization maps the Persian Rial token to ASCII IRR', normalizeCurrencyToAscii('ریال') === 'IRR');
   const browserTaxHtml = generateBillHtml(frontendBill as any, frontendTenant, { useUnicode: false });
   assert('browser tax-bill printing preserves Persian Rial output', browserTaxHtml.includes('ریال') && !browserTaxHtml.includes('IRR'));

@@ -80,6 +80,17 @@ async function main() {
     const carriageReturnLineFeedProduct = db.prepare('SELECT description FROM products WHERE name = ?').get('CRLF Product') as any;
     assertEqual(carriageReturnLineFeedProduct.description, 'line1\r\nline2', 'quoted CRLF sequences are preserved exactly');
 
+    const scientific = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(',,Scientific Price,CSV Category,1e3,Description,1,,,,,yes'),
+      },
+      headers: authHeader,
+    });
+    assertEqual(scientific.status, 200, 'scientific notation price is accepted');
+    const scientificProduct = db.prepare('SELECT price FROM products WHERE name = ?').get('Scientific Price') as any;
+    assertEqual(scientificProduct.price, 1000, 'scientific notation price is stored numerically');
+
     const malformedPostQuote = await api(baseUrl, '/api/menu/csv/import/products', {
       method: 'POST',
       body: {

@@ -3731,14 +3731,14 @@ export default function SettingsPage() {
                           </div>
                         ))}
                       </div>
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/40 rounded-lg p-4">
                         <div className="flex items-start gap-3">
                           <div className="flex-1">
-                            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
-                            <Ltr as="a" href={kdsInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
+                            <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
+                            <Ltr as="a" href={kdsInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 dark:text-blue-400 break-all hover:underline">
                               {kdsInfo.mdns_url}
                             </Ltr>
-                            <p className="text-xs text-blue-600 mt-2">
+                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
                               {t('appleDevicesHint')}
                             </p>
                           </div>
@@ -4566,7 +4566,7 @@ export default function SettingsPage() {
                     </>)}
 
                     {printerForm.connection_type === 'webusb' && (
-                      <div className="md:col-span-2 bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
+                      <div className="md:col-span-2 bg-blue-50 dark:bg-blue-950/40 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
                         {t('webusbHint')}
                       </div>
                     )}
@@ -4600,7 +4600,7 @@ export default function SettingsPage() {
               )}
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 rounded-xl p-4 text-sm text-amber-800 dark:text-amber-300">
               <strong>{t('defaultPrinterTipTitle')}</strong> {t('defaultPrinterTipBody')}
             </div>
 
@@ -4703,9 +4703,9 @@ export default function SettingsPage() {
                   />
                 </div>
                 {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
-                  <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                    <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                    <p className="text-xs text-amber-800">
+                  <div className="flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 rounded-lg">
+                    <AlertTriangle size={16} className="text-amber-600 dark:text-amber-300 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800 dark:text-amber-300">
                       {t('kitchenWorkflowBothOffNote')}
                     </p>
                   </div>

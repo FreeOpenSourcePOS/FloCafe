@@ -1119,8 +1119,8 @@ export default function OrdersPage() {
 
                 {/* Order notes */}
                 {order.special_instructions && (
-                  <div className="px-4 py-2 bg-amber-50 border-b border-amber-100">
-                    <p className="text-sm text-amber-700 font-medium break-words">
+                  <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-100 dark:border-amber-800/40">
+                    <p className="text-sm text-amber-700 dark:text-amber-300 font-medium break-words">
                       📝 {order.special_instructions}
                     </p>
                   </div>
@@ -1128,12 +1128,12 @@ export default function OrdersPage() {
 
                 {/* Customer info strip */}
                 {order.customer ? (
-                  <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
+                  <div className="px-4 py-2 bg-blue-50 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-800/40 flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
-                      <User size={14} className="text-blue-600 shrink-0" />
-                      <span className="text-sm font-medium text-blue-800 truncate">{order.customer.name}</span>
+                      <User size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span className="text-sm font-medium text-blue-800 dark:text-blue-300 truncate">{order.customer.name}</span>
                       {order.customer.phone && (
-                        <span className="text-xs text-blue-600 shrink-0"><Ltr>{order.customer.phone}</Ltr></span>
+                        <span className="text-xs text-blue-600 dark:text-blue-400 shrink-0"><Ltr>{order.customer.phone}</Ltr></span>
                       )}
                     </div>
                     <button

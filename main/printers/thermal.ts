@@ -1942,9 +1942,11 @@ export function formatCurrency(
   if (isNegative) {
     const trimmed = safePrefix.trimStart();
     const leadingSpaces = safePrefix.slice(0, safePrefix.length - trimmed.length);
-    return `-${leadingSpaces}${trimmed}${formattedNum}`;
+    const needsSpace = /^[A-Za-z]/.test(trimmed);
+    return `-${leadingSpaces}${trimmed}${needsSpace ? ' ' : ''}${formattedNum}`;
   }
-  return `${safePrefix}${formattedNum}`;
+  const needsSpace = /^[A-Za-z]/.test(safePrefix.trimStart());
+  return `${safePrefix}${needsSpace ? ' ' : ''}${formattedNum}`;
 }
 
 export function rightAlign(text: string, width: number = 24): string {

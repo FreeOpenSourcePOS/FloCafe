@@ -17,9 +17,9 @@ export function getTurnoverTier(minutes: number): TurnoverTier {
 }
 
 export const TURNOVER_TIER_CLASSES: Record<TurnoverTier, string> = {
-  fresh: 'bg-emerald-100 text-emerald-700',
-  mid: 'bg-amber-100 text-amber-700',
-  extended: 'bg-rose-100 text-rose-700',
+  fresh: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  mid: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+  extended: 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300',
 };
 
 /** Splits total minutes into {h, m} for `common.timeHoursMinutes`/`common.timeMinutes`. */

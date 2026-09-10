@@ -117,7 +117,7 @@ export default function AddonModal({
             <h2 className="text-lg font-bold text-foreground">{product.name}</h2>
             <p className="text-brand font-semibold">{fmt(Number(product.price))}</p>
           </div>
-          <button onClick={onClose} className="touch-target rounded-full text-gray-400 hover:text-muted-foreground active:bg-muted" aria-label={t('close')}>
+          <button onClick={onClose} className="touch-target rounded-full text-muted-foreground hover:text-foreground active:bg-muted" aria-label={t('close')}>
             <X size={20} />
           </button>
         </div>
@@ -151,7 +151,7 @@ export default function AddonModal({
                     })() : null}
                   </span>
                 </div>
-                {group.description && <p className="text-xs text-gray-400 mb-2">{group.description}</p>}
+                {group.description && <p className="text-xs text-muted-foreground mb-2">{group.description}</p>}
                 <div className="space-y-1">
                   {activeAddons.map((addon) => {
                     const addonQty = getAddonQuantity(group.id, addon.id);
@@ -163,13 +163,13 @@ export default function AddonModal({
                           key={addon.id}
                           className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${
                             isSel
-                              ? 'border-brand bg-brand-light text-brand'
+                              ? 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
                               : 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border'
                           }`}
                         >
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{addon.name}</span>
-                            <span className={`text-xs ${isSel ? 'text-brand font-semibold' : 'text-muted-foreground'}`}>
+                            <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
                               {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                             </span>
                           </div>
@@ -179,15 +179,15 @@ export default function AddonModal({
                                 <button
                                   type="button"
                                   onClick={() => updateAddonQuantity(group, addon, -1)}
-                                  className="touch-target rounded flex items-center justify-center text-brand hover:bg-brand-light active:bg-brand-light"
+                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
                                 >
                                   <Minus size={14} />
                                 </button>
-                                <span className="text-sm font-bold w-5 text-center text-brand tabular-nums">{addonQty}</span>
+                                <span className="text-sm font-bold w-5 text-center text-brand dark:text-indigo-300 tabular-nums">{addonQty}</span>
                                 <button
                                   type="button"
                                   onClick={() => updateAddonQuantity(group, addon, 1)}
-                                  className="touch-target rounded flex items-center justify-center text-brand hover:bg-brand-light active:bg-brand-light"
+                                  className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
                                 >
                                   <Plus size={14} />
                                 </button>
@@ -211,13 +211,13 @@ export default function AddonModal({
                         key={addon.id}
                         className={`w-full min-h-14 flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border text-sm transition-colors ${
                           isSel
-                            ? 'border-brand bg-brand-light text-brand'
+                            ? 'border-brand bg-[var(--color-brand-light)] text-brand dark:text-indigo-300'
                             : 'border-border hover:border-gray-300 dark:hover:border-border dark:border-border'
                         }`}
                       >
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{addon.name}</span>
-                          <span className={`text-xs ${isSel ? 'text-brand font-semibold' : 'text-muted-foreground'}`}>
+                          <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
                             {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                           </span>
                         </div>
@@ -227,11 +227,11 @@ export default function AddonModal({
                               <button
                                 type="button"
                                 onClick={() => toggleAddonCheckbox(group, addon)}
-                                className="touch-target rounded flex items-center justify-center text-brand hover:bg-brand-light active:bg-brand-light"
+                                className="touch-target rounded flex items-center justify-center text-brand dark:text-indigo-300 hover:bg-brand-light dark:hover:bg-[var(--color-brand-light)] active:bg-brand-light dark:active:bg-[var(--color-brand-light)]"
                               >
                                 <Minus size={14} />
                               </button>
-                              <span className="text-sm font-bold w-5 text-center text-brand tabular-nums">1</span>
+                              <span className="text-sm font-bold w-5 text-center text-brand dark:text-indigo-300 tabular-nums">1</span>
                               <button
                                 type="button"
                                 disabled
@@ -277,7 +277,7 @@ export default function AddonModal({
               maxLength={100}
               className="w-full min-h-11 px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
             />
-            <p className="text-xs text-gray-400 text-end mt-0.5">{instructions.length}/100</p>
+            <p className="text-xs text-muted-foreground text-end mt-0.5">{instructions.length}/100</p>
           </div>
         </div>
 

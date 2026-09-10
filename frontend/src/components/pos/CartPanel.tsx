@@ -110,7 +110,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         {/* Delivery address — shown inline when delivery is selected */}
         {cart.orderType === 'delivery' && (
           <div className="flex items-center gap-2">
-            <MapPin size={14} className="text-gray-400 shrink-0" />
+            <MapPin size={14} className="text-muted-foreground shrink-0" />
             <input
               type="text"
               value={cart.deliveryAddress}
@@ -125,7 +125,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         {cart.orderType === 'online' && (
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <Globe size={14} className="text-gray-400 shrink-0" />
+              <Globe size={14} className="text-muted-foreground shrink-0" />
               <input
                 type="text"
                 value={cart.onlinePlatform}
@@ -150,12 +150,12 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         {/* Previously ordered items (add-items mode) */}
         {existingOrder && existingOrder.items && existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').length > 0 && (
           <div className="mb-3 pb-3 border-b border-dashed border-border">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{t('alreadyOrdered')}</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t('alreadyOrdered')}</p>
             <div className="space-y-1.5">
               {existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').map((item: OrderItem) => (
                 <div key={item.id} className="flex justify-between items-center">
                   <span className="text-xs text-muted-foreground">{item.quantity}× {item.product_name}</span>
-                  <span className="text-xs text-gray-400">{fmt(Number(item.total))}</span>
+                  <span className="text-xs text-muted-foreground">{fmt(Number(item.total))}</span>
                 </div>
               ))}
             </div>
@@ -163,7 +163,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         )}
 
         {cart.items.length === 0 ? (
-          <div className={`flex flex-col items-center justify-center text-gray-400 ${existingOrder ? 'py-4' : isDrawer ? 'py-8' : 'h-full'}`}>
+          <div className={`flex flex-col items-center justify-center text-muted-foreground ${existingOrder ? 'py-4' : isDrawer ? 'py-8' : 'h-full'}`}>
             <ShoppingCart size={existingOrder ? 24 : 40} />
             <p className="mt-2 text-sm">{existingOrder ? t('addNewItemsAbove') : t('cartEmpty')}</p>
           </div>
@@ -177,7 +177,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                   </p>
                   <button
                     onClick={() => cart.removeItem(item.id)}
-                    className="touch-target -me-2 -mt-2 shrink-0 rounded-full text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500 active:bg-red-50"
+                    className="touch-target -me-2 -mt-2 shrink-0 rounded-full text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 dark:hover:text-red-400 active:bg-red-50 dark:active:bg-red-950/40"
                     aria-label={t('remove')}
                   >
                     <Trash2 size={16} />
@@ -187,14 +187,14 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                   {item.addons.length > 0 && (
                     <div className="mt-0.5">
                       {item.addons.map((a) => (
-                        <p key={a.id} className="break-words text-xs text-gray-400">
+                        <p key={a.id} className="break-words text-xs text-muted-foreground">
                           + {a.name}{(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''} {Number(a.price) > 0 && `(${fmt(Number(a.price) * (a.quantity || 1))})`}
                         </p>
                       ))}
                     </div>
                   )}
                   {item.special_instructions && (
-                    <p className="text-xs text-gray-400 italic mt-0.5 break-words">{item.special_instructions}</p>
+                    <p className="text-xs text-muted-foreground italic mt-0.5 break-words">{item.special_instructions}</p>
                   )}
                 </div>
                 <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
@@ -205,7 +205,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                     {onEditItem && (
                       <button
                         onClick={() => onEditItem(item)}
-                        className="touch-target shrink-0 gap-1 rounded-full bg-amber-100 px-3 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-200 active:bg-amber-200"
+                        className="touch-target shrink-0 gap-1 rounded-full bg-amber-100 px-3 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60 dark:active:bg-amber-950/60 transition-colors hover:bg-amber-200 active:bg-amber-200"
                       >
                         <SquarePen size={12} />
                         {tCommon('edit')}
@@ -247,7 +247,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               maxLength={200}
               className="w-full min-h-20 px-3 py-2 text-sm border border-border bg-card rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
-            <p className="text-xs text-gray-400 text-end mt-0.5">{cart.orderNotes.length}/200</p>
+            <p className="text-xs text-muted-foreground text-end mt-0.5">{cart.orderNotes.length}/200</p>
           </div>
         )}
         <div className="flex justify-between mb-1 text-sm">

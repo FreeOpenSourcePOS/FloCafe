@@ -41,7 +41,7 @@ export type PaperSize = 'thermal58' | 'thermal80';
 /** The slice of a tenant a browser receipt needs to render locale-correctly. */
 export type ReceiptTenant = Pick<
   Tenant,
-  'business_name' | 'currency' | 'country' | 'timezone' | 'currency_display' | 'number_digits' | 'calendar'
+  'business_name' | 'currency' | 'country' | 'timezone' | 'currency_display' | 'number_digits' | 'calendar' | 'currency_symbol' | 'currency_symbol_position'
 >;
 
 /** Encodes HTML entity characters so database-sourced values can't inject markup/scripts into the bill print window. */
@@ -508,7 +508,12 @@ function getPaperStyles(size: PaperSize): string {
 /** Format amount per tenant currency display, digit mode, and trimDecimals prefs. */
 function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false): string {
   const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
-  const prefs = { currencyDisplay: tenant.currency_display, digits: tenant.number_digits };
+  const prefs = {
+    currencyDisplay: tenant.currency_display,
+    digits: tenant.number_digits,
+    currencySymbol: tenant.currency_symbol,
+    currencySymbolPosition: tenant.currency_symbol_position,
+  };
   const fractionDigits = getCurrencyFractionDigits(tenant.currency ?? 'INR');
   const factor = 10 ** fractionDigits;
   const hasDecimals = fractionDigits > 0 && Math.round(numeric * factor) % factor !== 0;

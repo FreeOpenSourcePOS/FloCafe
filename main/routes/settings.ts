@@ -163,6 +163,8 @@ function businessShape(s: Record<string, string>) {
     timezone: s.timezone || 'Asia/Kolkata',
     business_day_start_time: s.business_day_start_time || '00:00',
     currency: s.currency || 'INR',
+    currency_symbol: s.currency_symbol || deriveCurrencySymbol(s.currency || 'INR', s.country || 'IN'),
+    currency_symbol_position: s.currency_symbol_position === 'suffix' ? 'suffix' : 'prefix',
     country: s.country || 'IN',
     language: s.language || 'en',
     tax_registration_number: s.tax_registration_number || '',
@@ -219,7 +221,7 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
-      currency_display, number_digits, calendar } = req.body;
+      currency_display, number_digits, calendar, currency_symbol, currency_symbol_position } = req.body;
     const normalizedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
 
     if (!validBusinessLocation(timezone, normalizedCurrency, country)) {
@@ -273,13 +275,23 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       normalizedPhone = phoneRes.e164 || '';
     }
 
+    const resolvedCurrencySymbol = typeof currency_symbol === 'string' && currency_symbol.trim()
+      ? currency_symbol.trim()
+      : (normalizedCurrency !== undefined || country !== undefined)
+        ? deriveCurrencySymbol(effectiveCurrency, effectiveCountry)
+        : undefined;
+    const resolvedCurrencySymbolPosition = currency_symbol_position === 'suffix'
+      ? 'suffix'
+      : currency_symbol_position === 'prefix'
+        ? 'prefix'
+        : undefined;
+
     upsertSettings(db, {
       business_name, timezone,
       business_day_start_time: business_day_start_time !== undefined ? business_day_start_time.trim() : undefined,
       currency: normalizedCurrency, country, language,
-      currency_symbol: (normalizedCurrency !== undefined || country !== undefined)
-        ? deriveCurrencySymbol(effectiveCurrency, effectiveCountry)
-        : undefined,
+      currency_symbol: resolvedCurrencySymbol,
+      currency_symbol_position: resolvedCurrencySymbolPosition,
       tax_registration_number, state_code, business_address,
       business_phone: normalizedPhone !== undefined ? normalizedPhone : undefined,
       instagram_handle,
@@ -335,7 +347,7 @@ router.put('/tax', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       state_code,
       tax_scheme,
       country,
-      currency_symbol: country !== undefined
+      currency_symbol: country !== undefined && !currentSettings.currency_symbol
         ? deriveCurrencySymbol(currentSettings.currency || 'INR', country || currentSettings.country || 'IN')
         : undefined,
     });

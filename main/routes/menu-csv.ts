@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
+import { getCountryByCode, getCurrencyFractionDigits, parseLocaleNumber } from '../countries';
 
 const router = Router();
 
@@ -149,7 +150,7 @@ type NumericParseResult = { ok: true; value: number } | { ok: false; error: stri
 function parseNumericField(
   raw: string | undefined | null,
   fieldName: string,
-  options: { optional?: boolean; defaultValue?: number; integer?: boolean; min?: number; max?: number } = {},
+  options: { optional?: boolean; defaultValue?: number; integer?: boolean; min?: number; max?: number; locale?: string; fractionDigits?: number } = {},
 ): NumericParseResult {
   const rawValue = raw ?? '';
   const value = rawValue.trim();
@@ -157,9 +158,16 @@ function parseNumericField(
     if (options.optional) return { ok: true, value: options.defaultValue ?? 0 };
     return { ok: false, error: `invalid ${fieldName} "${rawValue}"` };
   }
-  if (!NUMBER_TOKEN.test(value)) return { ok: false, error: `invalid ${fieldName} "${rawValue}"` };
 
-  const parsed = Number(value);
+  let parsed: number;
+  if (options.locale) {
+    parsed = parseLocaleNumber(value, options.locale, options.fractionDigits ?? 2);
+  } else if (NUMBER_TOKEN.test(value)) {
+    parsed = Number(value);
+  } else {
+    parsed = parseLocaleNumber(value, 'en-US', options.fractionDigits ?? 2);
+  }
+
   if (!Number.isFinite(parsed)
     || (options.integer && !Number.isInteger(parsed))
     || (options.min !== undefined && parsed < options.min)
@@ -396,6 +404,9 @@ router.post('/import/products', requireRole(...ROLE_ACCESS.ownerManager), (req: 
     for (const c of catRows) catMap[c.name.toLowerCase()] = c.id;
 
     const country = getSettingValue('country') || 'IN';
+    const currency = getSettingValue('currency') || 'INR';
+    const locale = getCountryByCode(country)?.locale || 'en-US';
+    const fractionDigits = getCurrencyFractionDigits(currency);
     const businessType = getSettingValue('business_type') || 'restaurant';
     const activePack = getActiveCountryPack(country);
     const taxCategoriesConfigured = hasConfiguredTaxCategories(activePack, businessType);
@@ -408,7 +419,7 @@ router.post('/import/products', requireRole(...ROLE_ACCESS.ownerManager), (req: 
       const r = rows[i];
       if (!r.name) { failed++; errors.push(`Row ${i + 2}: missing name`); continue; }
 
-      const priceResult = parseNumericField(r.price, 'price', { min: 0 });
+      const priceResult = parseNumericField(r.price, 'price', { min: 0, locale, fractionDigits });
       if (!priceResult.ok) {
         failed++;
         errors.push(`Row ${i + 2} (${r.name}): ${priceResult.error}`);
@@ -416,7 +427,7 @@ router.post('/import/products', requireRole(...ROLE_ACCESS.ownerManager), (req: 
       }
       const price = priceResult.value;
 
-      const costResult = parseNumericField(r.cost, 'cost', { optional: true, defaultValue: 0, min: 0 });
+      const costResult = parseNumericField(r.cost, 'cost', { optional: true, defaultValue: 0, min: 0, locale, fractionDigits });
       if (!costResult.ok) {
         failed++;
         errors.push(`Row ${i + 2} (${r.name}): ${costResult.error}`);
@@ -543,6 +554,10 @@ router.post('/import/addons', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
     let skipped = 0, failed = 0;
     const errors: string[] = [];
     const groupCache: Record<string, string> = {};
+    const country = getSettingValue('country') || 'IN';
+    const currency = getSettingValue('currency') || 'INR';
+    const locale = getCountryByCode(country)?.locale || 'en-US';
+    const fractionDigits = getCurrencyFractionDigits(currency);
     type AddonGroupImportPlan = {
       existing?: { id: string; is_active: number; is_required: number; min_selection: number; max_selection: number };
       activeAddonNames: Set<string>;
@@ -557,7 +572,7 @@ router.post('/import/addons', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
     for (const row of rows) {
       if (!row.group_name || !row.addon_name) continue;
 
-      const priceResult = parseNumericField(row.price, 'price', { min: 0 });
+      const priceResult = parseNumericField(row.price, 'price', { min: 0, locale, fractionDigits });
       const minResult = parseNumericField(row.group_min_select, 'group_min_select', { optional: true, defaultValue: 0, integer: true, min: 0 });
       const maxResult = parseNumericField(row.group_max_select, 'group_max_select', { optional: true, defaultValue: 1, integer: true, min: 0 });
       if (!priceResult.ok || !minResult.ok || !maxResult.ok) continue;
@@ -610,7 +625,7 @@ router.post('/import/addons', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
         continue;
       }
 
-      const priceResult = parseNumericField(r.price, 'price', { min: 0 });
+      const priceResult = parseNumericField(r.price, 'price', { min: 0, locale, fractionDigits });
       if (!priceResult.ok) {
         failed++;
         errors.push(`Row ${i + 2} (${r.group_name}/${r.addon_name}): ${priceResult.error}`);

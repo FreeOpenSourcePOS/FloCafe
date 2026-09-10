@@ -1,5 +1,5 @@
 import type { Language } from '@/lib/i18n';
-import type { CurrencyDisplay, DigitMode, CalendarMode } from '@/lib/countries';
+import type { CurrencyDisplay, DigitMode, CalendarMode, CurrencySymbolPosition } from '@/lib/countries';
 
 export interface User {
   id: number;
@@ -33,6 +33,8 @@ export interface Tenant {
   currency_display?: CurrencyDisplay;
   number_digits?: DigitMode;
   calendar?: CalendarMode;
+  currency_symbol?: string;
+  currency_symbol_position?: CurrencySymbolPosition;
 }
 
 export interface Category {

@@ -13,6 +13,8 @@ export {
   formatNumber,
   formatNumberForTenant,
   formatDateForTenant,
+  getLocaleSeparators,
+  parseLocaleNumber,
   getCurrencyFractionDigits,
   getCurrencyMinorUnitFactor,
   getCurrencyUnitAdapter,
@@ -24,6 +26,7 @@ export {
   type CurrencyDisplay,
   type DigitMode,
   type CalendarMode,
+  type CurrencySymbolPosition,
   type CurrencyUnitAdapter,
 } from '@countries';
 

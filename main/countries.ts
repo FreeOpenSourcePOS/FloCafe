@@ -253,20 +253,25 @@ export const getCurrencySymbol = (currency: string, locale = 'en-US'): string =>
 export type CurrencyDisplay = 'rial' | 'toman' | 'toman_short';
 export type DigitMode = 'locale' | 'latin';
 export type CalendarMode = 'locale' | 'persian' | 'gregorian';
+export type CurrencySymbolPosition = 'prefix' | 'suffix';
 
 export interface LocalePreferences {
   currencyDisplay?: CurrencyDisplay;
   digits?: DigitMode;
   calendar?: CalendarMode;
+  currencySymbol?: string;
+  currencySymbolPosition?: CurrencySymbolPosition;
 }
 
 const IRAN_CURRENCY = 'IRR';
 const TOMAN_PER_RIAL = 10;
 
-const normalizePreferences = (prefs?: LocalePreferences): Required<LocalePreferences> => ({
+const normalizePreferences = (prefs?: LocalePreferences): Required<Omit<LocalePreferences, 'currencySymbol' | 'currencySymbolPosition'>> & Pick<LocalePreferences, 'currencySymbol' | 'currencySymbolPosition'> => ({
   currencyDisplay: prefs?.currencyDisplay ?? 'rial',
   digits: prefs?.digits ?? 'locale',
   calendar: prefs?.calendar ?? 'locale',
+  currencySymbol: prefs?.currencySymbol,
+  currencySymbolPosition: prefs?.currencySymbolPosition,
 });
 
 export const formatCurrency = (amount: number, currency: string, locale = 'en-US'): string => {
@@ -278,6 +283,90 @@ export const formatCurrency = (amount: number, currency: string, locale = 'en-US
   }
 };
 
+/** Get grouping and decimal separators for a locale. */
+export function getLocaleSeparators(locale = 'en-US'): { group: string; decimal: string } {
+  try {
+    const parts = new Intl.NumberFormat(locale).formatToParts(1000.1);
+    const group = parts.find((p) => p.type === 'group')?.value || ',';
+    const decimal = parts.find((p) => p.type === 'decimal')?.value || '.';
+    return { group, decimal };
+  } catch {
+    return { group: ',', decimal: '.' };
+  }
+}
+
+/** Robust locale-aware string-to-number parser. */
+export function parseLocaleNumber(raw: unknown, locale = 'en-US', fractionDigits = 2): number {
+  if (typeof raw === 'number') return raw;
+  if (!raw || typeof raw !== 'string') return NaN;
+
+  let s = raw.trim().replace(/[\u00A0\u202F\s]/g, '');
+  s = s.replace(/^[^\d+.-]+/, '').replace(/[^\d]+$/, '');
+  if (!s) return NaN;
+
+  const sign = s.startsWith('-') ? -1 : 1;
+  if (s.startsWith('+') || s.startsWith('-')) s = s.slice(1);
+
+  const { group, decimal } = getLocaleSeparators(locale);
+
+  if (fractionDigits === 0) {
+    const lastDelimIndex = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
+    if (lastDelimIndex !== -1) {
+      const decimalsPart = s.slice(lastDelimIndex + 1);
+      if (decimalsPart.length !== 3 && decimalsPart.length <= 2) {
+        const intPart = s.slice(0, lastDelimIndex).replace(/[\.,\x27\s]/g, '');
+        return sign * Number(`${intPart}.${decimalsPart}`);
+      }
+    }
+    const cleaned = s.replace(/[\.,\x27\s]/g, '');
+    return sign * Number(cleaned);
+  }
+
+  const hasDot = s.includes('.');
+  const hasComma = s.includes(',');
+
+  if (hasDot && hasComma) {
+    const lastDot = s.lastIndexOf('.');
+    const lastComma = s.lastIndexOf(',');
+    if (lastComma > lastDot) {
+      const intPart = s.slice(0, lastComma).replace(/[^0-9]/g, '');
+      const decPart = s.slice(lastComma + 1).replace(/[^0-9]/g, '');
+      return sign * Number(`${intPart}.${decPart}`);
+    } else {
+      const intPart = s.slice(0, lastDot).replace(/[^0-9]/g, '');
+      const decPart = s.slice(lastDot + 1).replace(/[^0-9]/g, '');
+      return sign * Number(`${intPart}.${decPart}`);
+    }
+  }
+
+  const delim = hasDot ? '.' : hasComma ? ',' : null;
+  if (!delim) {
+    return sign * Number(s);
+  }
+
+  const parts = s.split(delim);
+  if (parts.length > 2) {
+    return sign * Number(parts.join(''));
+  }
+
+  const afterDelim = parts[1];
+  if (delim === decimal) {
+    return sign * Number(`${parts[0]}.${afterDelim}`);
+  }
+
+  if (delim === group) {
+    if (afterDelim.length === 3) {
+      return sign * Number(`${parts[0]}${afterDelim}`);
+    }
+    return sign * Number(`${parts[0]}.${afterDelim}`);
+  }
+
+  if (afterDelim.length === 3) {
+    return sign * Number(`${parts[0]}${afterDelim}`);
+  }
+  return sign * Number(`${parts[0]}.${afterDelim}`);
+}
+
 // Currency display with Iran currencyDisplay/digits preferences applied.
 export const formatMoney = (
   amount: number,
@@ -285,7 +374,7 @@ export const formatMoney = (
   locale = 'en-US',
   prefs?: LocalePreferences,
 ): string => {
-  const { currencyDisplay, digits } = normalizePreferences(prefs);
+  const { currencyDisplay, digits, currencySymbol, currencySymbolPosition } = normalizePreferences(prefs);
   const numberingSystem = digits === 'latin' ? 'latn' : undefined;
 
   if (currency === IRAN_CURRENCY && currencyDisplay !== 'rial') {
@@ -296,6 +385,22 @@ export const formatMoney = (
     }
     // toman_short — colloquial shorthand, Persian/Latin suffix by digit mode.
     return `${formatNumber(toman, locale, numberingSystem)}${digits === 'latin' ? 'T' : 'ت'}`;
+  }
+
+  if (currencySymbol || currencySymbolPosition === 'suffix') {
+    const sym = currencySymbol || getCurrencySymbol(currency, locale) || currency;
+    const fractionDigits = getCurrencyFractionDigits(currency);
+    const formattedNum = new Intl.NumberFormat(locale, {
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+      numberingSystem,
+    }).format(amount);
+
+    if (currencySymbolPosition === 'suffix') {
+      return `${formattedNum} ${sym}`;
+    }
+    const needsSpace = /^[A-Za-z]/.test(sym);
+    return `${sym}${needsSpace ? ' ' : ''}${formattedNum}`;
   }
 
   if (!currency) return formatNumber(amount, locale, numberingSystem);

@@ -765,6 +765,7 @@
     "genericHint": "Les lignes ci-dessous contiennent des caractères que cette imprimante thermique ne peut pas restituer.",
     "moreLines": "…et {count} de plus",
     "languageLoadError": "Les modules de langue d’impression \"{languages}\" n’ont pas pu être chargés. Vérifiez le module de langue et rechargez l’application pour réessayer.",
+    "printerOfflineHint": "L’imprimante ne répond pas. Vérifiez qu’elle est allumée et connectée, puis dans Windows assurez-vous que l’option « Utiliser l’imprimante hors connexion » est désactivée.",
     "templateFallback": "Le modèle de facture sélectionné n’est pas pris en charge par ce mode d’impression. La mise en page de reçu intégrée a donc été utilisée."
   },
   "print": {
@@ -1974,6 +1975,9 @@
     }
   },
   "support": {
+    "askAi": "Demander à l’IA",
+    "askAiCopied": "Erreur copiée pour {provider} — collez-la dans la conversation qui vient de s’ouvrir.",
+    "askAiCopyFailed": "Impossible de copier automatiquement — copiez l’erreur ci-dessus et collez-la dans {provider}.",
     "category": "Type de problème",
     "categoryAccount": "Compte ou services infonuagiques",
     "categoryBug": "Rapport d’anomalie",

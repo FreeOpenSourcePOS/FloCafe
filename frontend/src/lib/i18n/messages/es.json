@@ -765,6 +765,7 @@
     "genericHint": "Las líneas siguientes contienen caracteres que esta impresora térmica no puede mostrar.",
     "moreLines": "…y {count} más",
     "languageLoadError": "No se pudieron cargar los paquetes de idioma de impresión \"{languages}\". Revisa el paquete de idioma y vuelve a cargar la aplicación para intentarlo de nuevo.",
+    "printerOfflineHint": "La impresora no responde. Fijate que esté encendida y conectada, y en Windows verificá que la opción \"Usar impresora sin conexión\" esté desactivada.",
     "templateFallback": "La plantilla de factura seleccionada no es compatible con esta ruta de impresión; se utilizó el diseño de recibo integrado."
   },
   "print": {
@@ -1974,6 +1975,9 @@
     }
   },
   "support": {
+    "askAi": "Preguntar a la IA",
+    "askAiCopied": "Copiamos el error para {provider} — pegalo en el chat que se abrió.",
+    "askAiCopyFailed": "No se pudo copiar automáticamente — copiá el error de arriba y pegalo en {provider}.",
     "category": "Tipo de problema",
     "categoryAccount": "Cuenta o nube",
     "categoryBug": "Reporte de error",

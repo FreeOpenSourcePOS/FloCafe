@@ -1,4 +1,5 @@
 /** Shared logic to skip unsupported characters and preserve printing on ESC/POS encoders. */
+import { createTranslator } from 'use-intl/core';
 import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii, normalizeThermalText } from './unicode';
 import {
   isArabicShapingSafeLine as isCapabilityArabicShapingSafeLine,
@@ -8,6 +9,9 @@ import {
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
 import type { PrintWarning } from '@print/warnings';
+import { getCachedMessages } from '@/lib/i18n/loader';
+import { LANGUAGES } from '@/lib/i18n/languages';
+import { usePosSettingsStore } from '@/store/pos-settings';
 
 export type { PrintWarning } from '@print/warnings';
 
@@ -191,10 +195,27 @@ export function extractPrinterErrorMessage(err: unknown): string {
   return typeof err === 'string' ? err.trim() : '';
 }
 
+/** Same as PRINTER_ATTRIBUTE_WORK_OFFLINE detection on the backend (main/printers/thermal.ts). */
+const PRINTER_OFFLINE_DETAIL_RE = /\boffline\b/i;
+
+/** Translator bootstrap outside React, matching the pattern in warnings-toast.ts / kot-web-print.ts. */
+function printerOfflineFixHint(): string {
+  try {
+    const lang = usePosSettingsStore.getState().language ?? 'en';
+    const locale = LANGUAGES[lang]?.locale ?? 'en';
+    const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
+    const t = createTranslator({ locale, messages }) as unknown as (key: string) => string;
+    return t('printWarnings.printerOfflineHint');
+  } catch {
+    return "Printer isn't responding. Make sure it's powered on and connected, then check Windows: open the printer's queue and turn off \"Use Printer Offline\" if it's checked.";
+  }
+}
+
 /** Formats a user-facing receipt print error message with operational detail when available. */
 export function formatReceiptErrorToast(detail?: string, fallbackTranslation = 'Receipt print failed'): string {
   const msg = String(detail || '').trim();
   if (msg.startsWith('Receipt not printed:')) return msg;
+  if (PRINTER_OFFLINE_DETAIL_RE.test(msg)) return printerOfflineFixHint();
   if (msg && msg !== 'print failed' && msg !== 'Print failed') {
     return `${fallbackTranslation} (${msg})`;
   }
@@ -205,6 +226,7 @@ export function formatReceiptErrorToast(detail?: string, fallbackTranslation = '
 /** Formats a user-facing KOT print error message with operational detail when available. */
 export function formatKotErrorToast(detail?: string, fallbackTranslation = 'KOT print failed'): string {
   const msg = String(detail || '').trim();
+  if (PRINTER_OFFLINE_DETAIL_RE.test(msg)) return printerOfflineFixHint();
   if (msg && msg !== 'print failed' && msg !== 'KOT print failed') {
     return `${fallbackTranslation}: ${msg}`;
   }

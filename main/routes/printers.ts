@@ -588,10 +588,6 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.sales), asyncHandler(async 
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    const authUser = (req as any).user;
-    if (authUser?.role === 'server' && order.user_id !== authUser.userId) {
-      return res.status(403).json({ error: 'Servers can only print their own orders' });
-    }
 
     const kotLanguage = resolveTenantKotLanguage(db);
 

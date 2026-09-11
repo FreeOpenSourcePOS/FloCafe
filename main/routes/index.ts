@@ -300,9 +300,6 @@ export function registerRoutes(app: Express): void {
           throw Object.assign(new Error('Authentication required'), { statusCode: 403 });
         }
         const userRole = actor.role;
-        if (userRole === 'server' && String(currentOrder.user_id) !== actorId) {
-          throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
-        }
 
         // Idempotent no-op for already-terminal items.
         if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {

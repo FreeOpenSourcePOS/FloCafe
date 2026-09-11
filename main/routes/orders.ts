@@ -172,7 +172,6 @@ function resolveItemAddons(
 
 router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const db = getDatabase();
     const wheres: string[] = [];
     const params: any[] = [];
@@ -211,10 +210,6 @@ router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Req
     if (req.query.table_id) {
       wheres.push('table_id = ?');
       params.push(req.query.table_id);
-    }
-    if (user.role === 'server') {
-      wheres.push('user_id = ?');
-      params.push(user.userId);
     }
     // Cursor pagination: `before` / `after` are ORDER BY keys (created_at),
     // composed with `id` to break ties when many orders share a second.
@@ -358,14 +353,10 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
 
 router.get('/:id', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const db = getDatabase();
     const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id));
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
-    }
-    if (user.role === 'server' && (order as any).user_id !== user.userId) {
-      return res.status(403).json({ error: 'Servers can only view their own orders' });
     }
 
     // Hydrate relations using batchHydrateOrders.
@@ -657,11 +648,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const authUser = (req as any).user;
-    if (authUser?.role === 'server' && order.user_id !== authUser.userId) {
-      return res.status(403).json({ error: 'Servers can only modify their own orders' });
-    }
-
     // Return stored idempotent replay if already processed.
     if (idempotencyKey && requestHash) {
       const replayResponse = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash);
@@ -691,9 +677,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-      }
-      if (authUser?.role === 'server' && currentOrder.user_id !== authUser.userId) {
-        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
       }
 
       // Re-check idempotency under transaction lock.
@@ -925,9 +908,6 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
         : undefined;
       if (!currentUser || currentUser.is_active !== 1 || !hasRole(currentUser.role, ROLE_ACCESS.orderStatus)) {
         throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
-      }
-      if (currentUser.role === 'server' && String(currentOrder.user_id) !== String(authUser.userId)) {
-        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
       }
 
       if (currentOrder.status === status) {

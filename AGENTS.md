@@ -41,8 +41,9 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 3. **Architecture boundaries:** UI language, tenant regional settings, and tax/compliance behavior are separate, decoupled domains.
 4. **Business timestamps:** Persisted timestamps follow FloCafe's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.
 5. **Backend authority:** Security-critical, payment, and tax calculations remain backend-authoritative.
-6. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
-7. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
+6. **Orders are never ownership-gated:** FloCafe is an open system for order visibility — any staff role with order access can see and act on any order, regardless of who created it. Authorization is restricted by role (page/feature access) and by specific action (e.g. KDS stage transitions are chef/manager/owner-only, narrowed further by station/category assignment), never by comparing `order.user_id`/item creator against the current user. Accountability comes from audit attribution (every write is recorded against the authenticated actor), not from hiding orders between staff. Do not add or reintroduce a `role === 'server' && order.user_id !== user.userId`-style check anywhere in the backend; see `docs/roles-and-permissions.md`.
+7. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
+8. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
 
 ## Lessons from past mistakes
 

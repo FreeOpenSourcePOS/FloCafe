@@ -79,13 +79,13 @@ async function main() {
     });
     assertEqual(cashierStatus.status, 200, 'cashier can advance an order to preparing');
 
-    for (const [role, auth] of [['cashier', cashierAuth], ['server', waiterAuth]] as const) {
-      const order = seedOrderWithItem(db, role.toUpperCase(), role === 'server' ? 'server-authz' : 'cashier-authz');
+    {
+      const order = seedOrderWithItem(db, 'CASHIER-VOID', 'cashier-authz');
       const response = await api(baseUrl, `/api/orders/${order.orderId}/items/${order.itemId}/cancel`, {
-        method: 'PATCH', body: { override_pin: '1234' }, headers: auth,
+        method: 'PATCH', body: { override_pin: '1234' }, headers: cashierAuth,
       });
-      assertEqual(response.status, 200, `${role} can void an in-progress item with a valid manager PIN`);
-      assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(order.itemId) as any).status, 'voided', `${role} void marks the original item voided`);
+      assertEqual(response.status, 200, 'cashier can void an in-progress item with a valid manager PIN');
+      assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(order.itemId) as any).status, 'voided', 'cashier void marks the original item voided');
     }
 
     const ownerOrder = seedOrderWithItem(db, 'OWNER-PIN', 'owner-authz');
@@ -100,33 +100,31 @@ async function main() {
     });
     assertEqual(cashierPin.status, 403, 'cashier PIN cannot authorize an in-progress item void');
 
+    // Orders are never ownership-gated: any sales-role user can advance, cancel,
+    // void, or print-kot any order, regardless of who created it. Only role and
+    // (for in-progress cancellation) manager-PIN approval apply.
     const waiterOwnOrder = seedOrderWithItem(db, 'WAITER-OWN', 'server-authz');
     const waiterCanAdvance = await api(baseUrl, `/api/orders/${waiterOwnOrder.orderId}/status`, {
       method: 'PATCH', body: { status: 'preparing' }, headers: waiterAuth,
     });
-    assertEqual(waiterCanAdvance.status, 200, 'server can advance their own order');
+    assertEqual(waiterCanAdvance.status, 200, 'server can advance any order, including their own');
     const otherOrder = seedOrderWithItem(db, 'WAITER-OTHER', 'cashier-authz');
     const waiterOtherStatus = await api(baseUrl, `/api/orders/${otherOrder.orderId}/status`, {
       method: 'PATCH', body: { status: 'cancelled', override_pin: '1234' }, headers: waiterAuth,
     });
-    assertEqual(waiterOtherStatus.status, 403, 'server cannot cancel another user\'s order');
-    const waiterOtherItem = await api(baseUrl, `/api/orders/${otherOrder.orderId}/items/${otherOrder.itemId}/cancel`, {
+    assertEqual(waiterOtherStatus.status, 200, 'server can cancel an order created by another user, given a valid manager PIN');
+    const otherItemOrder = seedOrderWithItem(db, 'WAITER-OTHER-ITEM', 'cashier-authz');
+    const waiterOtherItem = await api(baseUrl, `/api/orders/${otherItemOrder.orderId}/items/${otherItemOrder.itemId}/cancel`, {
       method: 'PATCH', body: { override_pin: '1234' }, headers: waiterAuth,
     });
-    assertEqual(waiterOtherItem.status, 403, 'server cannot void another user\'s item');
+    assertEqual(waiterOtherItem.status, 200, 'server can void an item on an order created by another user');
 
-    // print-kot: server role may print its own orders but not another user's.
-    const waiterKotOwnOrder = seedOrderWithItem(db, 'WAITER-KOT-OWN', 'server-authz');
-    db.prepare(`UPDATE order_items SET status = 'ready' WHERE order_id = ?`).run(waiterKotOwnOrder.orderId);
-    const waiterKotOwn = await api(baseUrl, '/api/printers/print-kot', {
-      method: 'POST', body: { orderId: waiterKotOwnOrder.orderId }, headers: waiterAuth,
-    });
-    assertEqual(waiterKotOwn.status, 200, 'server can print-kot for their own order');
+    const waiterKotOtherOrder = seedOrderWithItem(db, 'WAITER-KOT-OTHER', 'cashier-authz');
+    db.prepare(`UPDATE order_items SET status = 'ready' WHERE order_id = ?`).run(waiterKotOtherOrder.orderId);
     const waiterKotOther = await api(baseUrl, '/api/printers/print-kot', {
-      method: 'POST', body: { orderId: otherOrder.orderId }, headers: waiterAuth,
+      method: 'POST', body: { orderId: waiterKotOtherOrder.orderId }, headers: waiterAuth,
     });
-    assertEqual(waiterKotOther.status, 403, 'server cannot print-kot for another user\'s order');
-    assertEqual(waiterKotOther.data.error, 'Servers can only print their own orders', 'print-kot ownership error identifies the restriction');
+    assertEqual(waiterKotOther.status, 200, 'server can print-kot for an order created by another user');
 
     const invalidPinOrder = seedOrderWithItem(db, 'INVALID-PIN', 'cashier-authz');
     const invalidPin = await api(baseUrl, `/api/orders/${invalidPinOrder.orderId}/items/${invalidPinOrder.itemId}/cancel`, {

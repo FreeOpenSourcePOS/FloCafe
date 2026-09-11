@@ -78,18 +78,19 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             .filter((type) => isRestaurant || type !== 'dine_in')
             .map((type) => {
               const Icon = orderTypeIcons[type];
+              const showIcon = type !== 'dine_in' && type !== 'online';
               const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : type === 'delivery' ? t('orderTypeDelivery') : t('orderTypeOnline');
               return (
                 <button
                   key={type}
                   onClick={() => cart.setOrderType(type)}
-                  className={`touch-target flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors ${
+                  className={`touch-target flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
                     cart.orderType === type
                       ? 'bg-card text-brand shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <Icon size={14} />
+                  {showIcon && <Icon size={14} />}
                   {label}
                 </button>
               );

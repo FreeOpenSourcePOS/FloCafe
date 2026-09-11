@@ -284,6 +284,9 @@ async function runTests() {
 
     const missingOrderRes = await request(app).post('/api/printers/print-bill').send({ orderId: 999999, preview: true });
     assert(missingOrderRes.status === 404, `unknown orderId with no bill returns 404 (got ${missingOrderRes.status})`);
+
+    const conflictingRes = await request(app).post('/api/printers/print-bill').send({ billId: 1, orderId, preview: true });
+    assert(conflictingRes.status === 400, `conflicting billId and orderId together are rejected (got ${conflictingRes.status})`);
   }
 
   // ── Test 9: unsupported financial rows refuse before transport ──────────

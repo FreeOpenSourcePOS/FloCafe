@@ -353,6 +353,10 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async
       console.log('[Print Bill] Rejected: missing bill or order reference');
       return res.status(400).json({ error: 'billId or orderId is required' });
     }
+    if (billId && orderId) {
+      console.log('[Print Bill] Rejected: conflicting bill and order references');
+      return res.status(400).json({ error: 'Provide either billId or orderId, not both' });
+    }
 
     const db = getDatabase();
     let printer = db.prepare(

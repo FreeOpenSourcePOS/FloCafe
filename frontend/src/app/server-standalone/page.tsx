@@ -3,7 +3,7 @@
 import axios, { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
 import { Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, RefreshCw, Search, Send, Smartphone, UserRound } from 'lucide-react';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { parsePhone } from '@/lib/phone';
 import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -99,6 +99,8 @@ export default function ServerStandalonePage() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [sending, setSending] = useState(false);
+  // Synchronous re-entry guard: `sending` state updates too late to stop a second click fired before the first render.
+  const sendInFlightRef = useRef(false);
 
   async function loadAll() {
     if (!api) return;
@@ -302,7 +304,8 @@ export default function ServerStandalonePage() {
   }
 
   async function sendDraft() {
-    if (!api || !selectedTableId || draft.length === 0) return;
+    if (!api || !selectedTableId || draft.length === 0 || sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
     setSending(true);
     try {
       const customerId = await ensureCustomer();
@@ -315,7 +318,9 @@ export default function ServerStandalonePage() {
       let rawOrder: Record<string, unknown>;
       let newItems: OrderItem[];
       if (currentOrder?.id) {
-        const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items });
+        const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items }, {
+          headers: { 'Idempotency-Key': idempotencyKeyFor(String(currentOrder.id)) },
+        });
         orderId = data.order.id;
         rawOrder = data.order;
         // Print only what this call added — omitting items reprints every pending item on the order.
@@ -347,6 +352,7 @@ export default function ServerStandalonePage() {
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {
+      sendInFlightRef.current = false;
       setSending(false);
     }
   }

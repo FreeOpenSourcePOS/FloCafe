@@ -60,7 +60,8 @@ export type PermissionArea =
   | 'settings'
   | 'integrations'
   | 'system'
-  | 'support';
+  | 'support'
+  | 'expenses';
 
 export type PermissionCapability = {
   id: string;
@@ -118,6 +119,9 @@ export const PERMISSION_CAPABILITIES = [
   { id: 'databaseTools', area: 'system', labelKey: 'databaseTools', allowedRoles: ROLE_ACCESS.owner },
   { id: 'serverApp', area: 'orders', labelKey: 'serverApp', allowedRoles: ROLE_ACCESS.serverApp },
   { id: 'support', area: 'support', labelKey: 'support', allowedRoles: ROLE_ACCESS.allStaff },
+  { id: 'expenseCategoriesManage', area: 'expenses', labelKey: 'expenseCategoriesManage', allowedRoles: ROLE_ACCESS.ownerManager },
+  { id: 'expenseEntriesRecord', area: 'expenses', labelKey: 'expenseEntriesRecord', allowedRoles: ROLE_ACCESS.allStaff },
+  { id: 'cashCounterRecord', area: 'expenses', labelKey: 'cashCounterRecord', allowedRoles: ROLE_ACCESS.allStaff },
 ] as const satisfies readonly PermissionCapability[];
 
 export type PermissionCapabilityId = typeof PERMISSION_CAPABILITIES[number]['id'];

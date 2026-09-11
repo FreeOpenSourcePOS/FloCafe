@@ -86,6 +86,37 @@
   "businessType": {
     "restaurant": "Restaurant"
   },
+  "cashCounter": {
+    "cashExpenses": "Cash Expenses",
+    "cashFromOrders": "Cash from Orders",
+    "counted": "Counted",
+    "countedAmount": "Counted amount",
+    "cashRefunds": "Cash Refunds",
+    "countLog": "Count Log",
+    "countRecorded": "Cash count recorded",
+    "date": "Date",
+    "expectedCash": "Expected Cash",
+    "failedToLoad": "Failed to load the cash counter",
+    "failedToLoadMonthly": "Failed to load the monthly cash report",
+    "monthlyReport": "Monthly report",
+    "netCash": "Net cash",
+    "noCounts": "No counts recorded yet",
+    "noPayments": "No payments yet",
+    "openingFloat": "Opening Float",
+    "openingFloatAlreadySet": "Opening float already set for this date",
+    "openingFloatSet": "Opening float set",
+    "overall": "Overall",
+    "recordCount": "Record Count",
+    "recordedBy": "by {name}",
+    "selectDate": "Select date",
+    "selectMonth": "Select month",
+    "setOpeningFloat": "Set Opening Float",
+    "title": "Cash Counter",
+    "variance": "Variance",
+    "varianceMatch": "Matches",
+    "varianceOverage": "+{amount} over",
+    "varianceShortage": "-{amount} short"
+  },
   "common": {
     "active": "Active",
     "add": "Add",
@@ -149,6 +180,9 @@
     "total": "Total",
     "unknown": "Unknown",
     "update": "Update",
+    "confirmVoid": "Void this entry? Its amount will no longer count.",
+    "void": "Void",
+    "voided": "Voided",
     "windowControls": "Window controls",
     "yes": "Yes",
     "back": "Back"
@@ -302,6 +336,43 @@
     "refundsCount": "{count} refunds",
     "ticketNoPayments": "No payments for this day"
   },
+  "expenses": {
+    "addCategory": "Add Category",
+    "addExpense": "Add Expense",
+    "category": "Category",
+    "categoryCreated": "Expense category created",
+    "categoryDeleted": "Expense category deleted",
+    "categoryName": "Category name",
+    "clearDateFilter": "Clear",
+    "confirmDeleteCategory": "Delete the \"{name}\" category? This cannot be undone.",
+    "date": "Date",
+    "deleteCategory": "Delete category",
+    "deleteCategoryBlocked": "Settle the outstanding due before deleting this category",
+    "due": "Due",
+    "entryAdded": "Expense recorded",
+    "entryTypeExpense": "Expense",
+    "entryTypePayment": "Payment",
+    "failedToLoad": "Failed to load expenses",
+    "failedToLoadSummary": "Failed to load the monthly report",
+    "filterByDate": "Filter by date",
+    "history": "Recent activity",
+    "monthlyReport": "Monthly report",
+    "noCategories": "No expense categories yet",
+    "noEntries": "No expense activity yet",
+    "note": "Note",
+    "overall": "Overall",
+    "paymentMethod": "Payment method",
+    "paymentMethodCard": "Card",
+    "paymentMethodCash": "Cash",
+    "paymentMethodUpi": "UPI",
+    "paymentRecorded": "Payment recorded",
+    "recordPayment": "Record Payment",
+    "recordedBy": "by {name}",
+    "selectMonth": "Select month",
+    "title": "Expenses",
+    "totalExpenses": "Total expenses",
+    "totalPaid": "Total paid"
+  },
   "kds": {
     "addonsLabel": "Add-ons",
     "authFailed": "Authentication failed",
@@ -347,10 +418,12 @@
     "wsConnected": "WebSocket connected"
   },
   "nav": {
+    "cashCounter": "Cash Counter",
     "collapse": "Collapse",
     "confirmLogout": "Are you sure you want to log out?",
     "customers": "Customers",
     "dashboard": "Dashboard",
+    "expenses": "Expenses",
     "heapLabel": "Heap: ",
     "kds": "KDS",
     "logout": "Logout",
@@ -1926,7 +1999,8 @@
       "settings": "Settings",
       "integrations": "Integrations",
       "system": "System",
-      "support": "Support"
+      "support": "Support",
+      "expenses": "Expenses"
     },
     "capabilities": {
       "pos": "Use the POS terminal",
@@ -1972,7 +2046,10 @@
       "cloudAccountData": "Manage cloud account and data controls",
       "databaseTools": "Use database tools and backups",
       "serverApp": "Use the standalone Server App",
-      "support": "Contact support and view diagnostics"
+      "support": "Contact support and view diagnostics",
+      "expenseCategoriesManage": "Add or delete expense categories",
+      "expenseEntriesRecord": "Record expenses and due payments",
+      "cashCounterRecord": "Log opening floats and cash counts"
     }
   },
   "support": {

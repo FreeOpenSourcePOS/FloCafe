@@ -86,6 +86,37 @@
   "businessType": {
     "restaurant": "Restaurant & Cafe"
   },
+    "cashCounter": {
+    "cashExpenses": "Cash Expenses",
+    "cashFromOrders": "Cash from Orders",
+    "counted": "Counted",
+    "countedAmount": "Counted amount",
+    "cashRefunds": "Cash Refunds",
+    "countLog": "Count Log",
+    "countRecorded": "Cash count recorded",
+    "date": "Date",
+    "expectedCash": "Expected Cash",
+    "failedToLoad": "Failed to load the cash counter",
+    "failedToLoadMonthly": "Failed to load the monthly cash report",
+    "monthlyReport": "Monthly report",
+    "netCash": "Net cash",
+    "noCounts": "No counts recorded yet",
+    "noPayments": "No payments yet",
+    "openingFloat": "Opening Float",
+    "openingFloatAlreadySet": "Opening float already set for this date",
+    "openingFloatSet": "Opening float set",
+    "overall": "Overall",
+    "recordCount": "Record Count",
+    "recordedBy": "by {name}",
+    "selectDate": "Select date",
+    "selectMonth": "Select month",
+    "setOpeningFloat": "Set Opening Float",
+    "title": "Cash Counter",
+    "variance": "Variance",
+    "varianceMatch": "Matches",
+    "varianceOverage": "+{amount} over",
+    "varianceShortage": "-{amount} short"
+  },
   "common": {
     "active": "Aktibo",
     "add": "Magdagdag",
@@ -149,6 +180,9 @@
     "total": "Kabuuan",
     "unknown": "Hindi alam",
     "update": "I-update",
+    "confirmVoid": "Void this entry? Its amount will no longer count.",
+    "void": "Void",
+    "voided": "Voided",
     "windowControls": "Mga Kontrol sa Window",
     "yes": "Oo",
     "back": "Bumalik"
@@ -302,6 +336,43 @@
     "refundsCount": "{count} refundo",
     "ticketNoPayments": "Walang bayad sa araw na ito"
   },
+    "expenses": {
+    "addCategory": "Add Category",
+    "addExpense": "Add Expense",
+    "category": "Category",
+    "categoryCreated": "Expense category created",
+    "categoryDeleted": "Expense category deleted",
+    "categoryName": "Category name",
+    "clearDateFilter": "Clear",
+    "confirmDeleteCategory": "Delete the \"{name}\" category? This cannot be undone.",
+    "date": "Date",
+    "deleteCategory": "Delete category",
+    "deleteCategoryBlocked": "Settle the outstanding due before deleting this category",
+    "due": "Due",
+    "entryAdded": "Expense recorded",
+    "entryTypeExpense": "Expense",
+    "entryTypePayment": "Payment",
+    "failedToLoad": "Failed to load expenses",
+    "failedToLoadSummary": "Failed to load the monthly report",
+    "filterByDate": "Filter by date",
+    "history": "Recent activity",
+    "monthlyReport": "Monthly report",
+    "noCategories": "No expense categories yet",
+    "noEntries": "No expense activity yet",
+    "note": "Note",
+    "overall": "Overall",
+    "paymentMethod": "Payment method",
+    "paymentMethodCard": "Card",
+    "paymentMethodCash": "Cash",
+    "paymentMethodUpi": "UPI",
+    "paymentRecorded": "Payment recorded",
+    "recordPayment": "Record Payment",
+    "recordedBy": "by {name}",
+    "selectMonth": "Select month",
+    "title": "Expenses",
+    "totalExpenses": "Total expenses",
+    "totalPaid": "Total paid"
+  },
   "kds": {
     "addonsLabel": "Mga Addon",
     "authFailed": "Nabigo ang pagpapatunay",
@@ -347,10 +418,12 @@
     "wsConnected": "Konektado ang WebSocket"
   },
   "nav": {
+        "cashCounter": "Cash Counter",
     "collapse": "I-collapse ang Sidebar",
     "confirmLogout": "Sigurado ka bang gusto mong mag-sign out?",
     "customers": "Mga Customer",
     "dashboard": "Dashboard",
+        "expenses": "Expenses",
     "heapLabel": "Memory",
     "kds": "KDS",
     "logout": "Mag-sign Out",
@@ -1926,7 +1999,8 @@
       "settings": "Mga Setting",
       "integrations": "Mga Integration",
       "system": "System",
-      "support": "Suporta"
+      "support": "Suporta",
+      "expenses": "Expenses"
     },
     "capabilities": {
       "pos": "Gamitin ang POS terminal",
@@ -1972,7 +2046,10 @@
       "cloudAccountData": "Pamahalaan ang cloud account at mga kontrol sa data",
       "databaseTools": "Gamitin ang mga tool sa database at backup",
       "serverApp": "Gamitin ang standalone Server App",
-      "support": "Makipag-ugnayan sa suporta at tingnan ang diagnostics"
+      "support": "Makipag-ugnayan sa suporta at tingnan ang diagnostics",
+      "expenseCategoriesManage": "Add or delete expense categories",
+      "expenseEntriesRecord": "Record expenses and due payments",
+      "cashCounterRecord": "Log opening floats and cash counts"
     }
   },
   "support": {

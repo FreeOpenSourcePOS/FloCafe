@@ -21,6 +21,8 @@ import {
   Sun,
   Moon,
   Monitor,
+  Receipt,
+  Banknote,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -75,6 +77,8 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, roles: ROLE_ACCESS.ownerManager, businessTypes: ['restaurant'] },
   { href: '/customers', labelKey: 'customers', icon: Users, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
   { href: '/staff', labelKey: 'staff', icon: UserCog, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
+  { href: '/expenses', labelKey: 'expenses', icon: Receipt, roles: ROLE_ACCESS.allStaff, businessTypes: null },
+  { href: '/cash-counter', labelKey: 'cashCounter', icon: Banknote, roles: ROLE_ACCESS.allStaff, businessTypes: null },
   { href: '/settings', labelKey: 'settings', icon: Settings, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
 ];
 

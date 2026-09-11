@@ -86,6 +86,37 @@
   "businessType": {
     "restaurant": "Restaurant"
   },
+        "cashCounter":     {
+      "cashExpenses": "Dépenses en espèces",
+      "cashFromOrders": "Encaissé en espèces",
+      "cashRefunds": "Remboursements en espèces",
+      "countLog": "Relevés de caisse",
+      "countRecorded": "Comptage enregistré",
+      "counted": "Compté",
+      "countedAmount": "Montant compté",
+      "date": "Date",
+      "expectedCash": "Espèces attendues",
+      "failedToLoad": "Échec du chargement de la caisse",
+      "failedToLoadMonthly": "Échec du chargement du rapport mensuel",
+      "monthlyReport": "Rapport mensuel",
+      "netCash": "Espèces nettes",
+      "noCounts": "Aucun comptage pour le moment",
+      "noPayments": "Aucun paiement pour le moment",
+      "openingFloat": "Fond de caisse",
+      "openingFloatAlreadySet": "Fond de caisse déjà défini pour cette date",
+      "openingFloatSet": "Fond de caisse défini",
+      "overall": "Total",
+      "recordCount": "Enregistrer un comptage",
+      "recordedBy": "par {name}",
+      "selectDate": "Choisir une date",
+      "selectMonth": "Choisir un mois",
+      "setOpeningFloat": "Définir le fond de caisse",
+      "title": "Caisse",
+      "variance": "Écart",
+      "varianceMatch": "Conforme",
+      "varianceOverage": "+{amount} en trop",
+      "varianceShortage": "-{amount} manquant"
+    },
   "common": {
     "active": "Actif",
     "add": "Ajouter",
@@ -149,6 +180,9 @@
     "total": "Total",
     "unknown": "Inconnu",
     "update": "Mettre à jour",
+    "confirmVoid": "Annuler cette écriture ? Son montant ne sera plus compté.",
+    "void": "Annuler",
+    "voided": "Annulé",
     "windowControls": "Commandes de la fenêtre",
     "yes": "Oui",
     "back": "Retour"
@@ -302,6 +336,43 @@
     "refundsCount": "{count} remboursements",
     "ticketNoPayments": "Aucun paiement ce jour"
   },
+        "expenses":     {
+      "addCategory": "Ajouter une catégorie",
+      "addExpense": "Ajouter une dépense",
+      "category": "Catégorie",
+      "categoryCreated": "Catégorie de dépense créée",
+      "categoryDeleted": "Catégorie de dépense supprimée",
+      "categoryName": "Nom de la catégorie",
+      "clearDateFilter": "Effacer",
+      "confirmDeleteCategory": "Supprimer la catégorie \"{name}\" ? Action irréversible.",
+      "date": "Date",
+      "deleteCategory": "Supprimer la catégorie",
+      "deleteCategoryBlocked": "Soldez le montant dû avant de supprimer cette catégorie",
+      "due": "Dû",
+      "entryAdded": "Dépense enregistrée",
+      "entryTypeExpense": "Dépense",
+      "entryTypePayment": "Paiement",
+      "failedToLoad": "Échec du chargement des dépenses",
+      "failedToLoadSummary": "Échec du chargement du rapport mensuel",
+      "filterByDate": "Filtrer par date",
+      "history": "Activité récente",
+      "monthlyReport": "Rapport mensuel",
+      "noCategories": "Aucune catégorie de dépense",
+      "noEntries": "Aucune dépense pour le moment",
+      "note": "Note",
+      "overall": "Total",
+      "paymentMethod": "Mode de paiement",
+      "paymentMethodCard": "Carte",
+      "paymentMethodCash": "Espèces",
+      "paymentMethodUpi": "UPI",
+      "paymentRecorded": "Paiement enregistré",
+      "recordPayment": "Enregistrer un paiement",
+      "recordedBy": "par {name}",
+      "selectMonth": "Choisir un mois",
+      "title": "Dépenses",
+      "totalExpenses": "Dépenses totales",
+      "totalPaid": "Total payé"
+    },
   "kds": {
     "addonsLabel": "Options",
     "authFailed": "Échec de l’authentification",
@@ -347,10 +418,12 @@
     "wsConnected": "WebSocket connecté"
   },
   "nav": {
+        "cashCounter": "Caisse",
     "collapse": "Réduire",
     "confirmLogout": "Voulez-vous vraiment vous déconnecter ?",
     "customers": "Clients",
     "dashboard": "Tableau de bord",
+        "expenses": "Dépenses",
     "heapLabel": "Tas : ",
     "kds": "KDS",
     "logout": "Déconnexion",
@@ -1926,7 +1999,8 @@
       "settings": "Paramètres",
       "integrations": "Intégrations",
       "system": "Système",
-      "support": "Assistance"
+      "support": "Assistance",
+      "expenses": "Dépenses"
     },
     "capabilities": {
       "pos": "Utiliser le terminal de caisse",
@@ -1972,7 +2046,10 @@
       "cloudAccountData": "Gérer le compte infonuagique et les paramètres de données",
       "databaseTools": "Utiliser les outils de base de données et les sauvegardes",
       "serverApp": "Utiliser l’application serveur autonome",
-      "support": "Contacter l’assistance et afficher les diagnostics"
+      "support": "Contacter l’assistance et afficher les diagnostics",
+      "expenseCategoriesManage": "Ajouter ou supprimer les catégories de dépenses",
+      "expenseEntriesRecord": "Enregistrer les dépenses et les paiements",
+      "cashCounterRecord": "Enregistrer les fonds de caisse et les comptages"
     }
   },
   "support": {

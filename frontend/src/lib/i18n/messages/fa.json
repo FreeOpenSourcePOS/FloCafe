@@ -86,6 +86,37 @@
   "businessType": {
     "restaurant": "رستوران"
   },
+  "cashCounter": {
+    "cashExpenses": "هزینه‌های نقدی",
+    "cashFromOrders": "نقدی از سفارش‌ها",
+    "counted": "شمارش‌شده",
+    "countedAmount": "مبلغ شمارش‌شده",
+    "cashRefunds": "Cash Refunds",
+    "countLog": "گزارش شمارش‌ها",
+    "countRecorded": "شمارش نقدی ثبت شد",
+    "date": "تاریخ",
+    "expectedCash": "نقدی مورد انتظار",
+    "failedToLoad": "بارگذاری شمارشگر نقدی انجام نشد",
+    "failedToLoadMonthly": "بارگذاری گزارش ماهانه نقدی انجام نشد",
+    "monthlyReport": "گزارش ماهانه",
+    "netCash": "نقدی خالص",
+    "noCounts": "هنوز شمارشی ثبت نشده است",
+    "noPayments": "هنوز پرداختی وجود ندارد",
+    "openingFloat": "موجودی اولیه",
+    "openingFloatAlreadySet": "موجودی اولیه برای این تاریخ پیش‌تر تنظیم شده است",
+    "openingFloatSet": "موجودی اولیه تنظیم شد",
+    "overall": "مجموع کل",
+    "recordCount": "ثبت شمارش",
+    "recordedBy": "توسط {name}",
+    "selectDate": "انتخاب تاریخ",
+    "selectMonth": "انتخاب ماه",
+    "setOpeningFloat": "تنظیم موجودی اولیه",
+    "title": "شمارشگر نقدی",
+    "variance": "اختلاف",
+    "varianceMatch": "مطابقت دارد",
+    "varianceOverage": "{amount}+ مازاد",
+    "varianceShortage": "{amount}- کسری"
+  },
   "common": {
     "active": "فعال",
     "add": "افزودن",
@@ -149,6 +180,9 @@
     "total": "جمع کل",
     "unknown": "ناشناخته",
     "update": "به‌روزرسانی",
+    "confirmVoid": "Void this entry? Its amount will no longer count.",
+    "void": "Void",
+    "voided": "Voided",
     "windowControls": "دکمه‌های پنجره",
     "yes": "بله",
     "back": "بازگشت"
@@ -302,6 +336,43 @@
     "refundsCount": "{count} بازپرداخت",
     "ticketNoPayments": "در این روز پرداختی نشده"
   },
+  "expenses": {
+    "addCategory": "افزودن دسته",
+    "addExpense": "افزودن هزینه",
+    "category": "دسته",
+    "categoryCreated": "دسته هزینه ایجاد شد",
+    "categoryDeleted": "دسته هزینه حذف شد",
+    "categoryName": "نام دسته",
+    "clearDateFilter": "پاک کردن",
+    "confirmDeleteCategory": "دسته «{name}» حذف شود؟ این کار بازگشت‌پذیر نیست.",
+    "date": "تاریخ",
+    "deleteCategory": "حذف دسته",
+    "deleteCategoryBlocked": "پیش از حذف این دسته، بدهی باقی‌مانده را تسویه کنید",
+    "due": "بدهی",
+    "entryAdded": "هزینه ثبت شد",
+    "entryTypeExpense": "هزینه",
+    "entryTypePayment": "پرداخت",
+    "failedToLoad": "بارگذاری هزینه‌ها انجام نشد",
+    "failedToLoadSummary": "بارگذاری گزارش ماهانه انجام نشد",
+    "filterByDate": "پالایش بر اساس تاریخ",
+    "history": "فعالیت اخیر",
+    "monthlyReport": "گزارش ماهانه",
+    "noCategories": "هنوز دسته هزینه‌ای وجود ندارد",
+    "noEntries": "هنوز فعالیت هزینه‌ای وجود ندارد",
+    "note": "یادداشت",
+    "overall": "مجموع کل",
+    "paymentMethod": "روش پرداخت",
+    "paymentMethodCard": "کارت",
+    "paymentMethodCash": "نقدی",
+    "paymentMethodUpi": "UPI",
+    "paymentRecorded": "پرداخت ثبت شد",
+    "recordPayment": "ثبت پرداخت",
+    "recordedBy": "توسط {name}",
+    "selectMonth": "انتخاب ماه",
+    "title": "هزینه‌ها",
+    "totalExpenses": "مجموع هزینه‌ها",
+    "totalPaid": "مجموع پرداختی"
+  },
   "kds": {
     "addonsLabel": "افزودنی‌ها",
     "authFailed": "احراز هویت انجام نشد",
@@ -347,10 +418,12 @@
     "wsConnected": "WebSocket پیوند داده شد"
   },
   "nav": {
+    "cashCounter": "شمارشگر نقدی",
     "collapse": "جمع کردن",
     "confirmLogout": "آیا از خروج مطمئن هستید؟",
     "customers": "مشتریان",
     "dashboard": "داشبورد",
+    "expenses": "هزینه‌ها",
     "heapLabel": "حافظه: ",
     "kds": "نمایشگر آشپزخانه",
     "logout": "خروج",
@@ -1926,7 +1999,8 @@
       "settings": "تنظیمات",
       "integrations": "یکپارچه‌سازی‌ها",
       "system": "سیستم",
-      "support": "پشتیبانی"
+      "support": "پشتیبانی",
+      "expenses": "هزینه‌ها"
     },
     "capabilities": {
       "pos": "استفاده از پایانه فروش",
@@ -1972,7 +2046,10 @@
       "cloudAccountData": "مدیریت حساب و کنترل‌های داده ابری",
       "databaseTools": "استفاده از ابزار پایگاه‌داده و پشتیبان‌گیری",
       "serverApp": "استفاده از برنامه مستقل پیش‌خدمت",
-      "support": "تماس با پشتیبانی و مشاهده عیب‌یابی"
+      "support": "تماس با پشتیبانی و مشاهده عیب‌یابی",
+      "expenseCategoriesManage": "افزودن یا حذف دسته‌های هزینه",
+      "expenseEntriesRecord": "ثبت هزینه‌ها و پرداخت بدهی",
+      "cashCounterRecord": "ثبت موجودی اولیه و شمارش نقدی"
     }
   },
   "support": {

@@ -86,6 +86,37 @@
   "businessType": {
     "restaurant": "Restaurante"
   },
+  "cashCounter": {
+    "cashExpenses": "Gastos en Efectivo",
+    "cashFromOrders": "Efectivo de Pedidos",
+    "counted": "Contado",
+    "countedAmount": "Monto contado",
+    "cashRefunds": "Reembolsos en efectivo",
+    "countLog": "Registro de Conteos",
+    "countRecorded": "Conteo de efectivo registrado",
+    "date": "Fecha",
+    "expectedCash": "Efectivo Esperado",
+    "failedToLoad": "No se pudo cargar el contador de efectivo",
+    "failedToLoadMonthly": "No se pudo cargar el informe mensual de efectivo",
+    "monthlyReport": "Informe mensual",
+    "netCash": "Efectivo neto",
+    "noCounts": "Todavía no hay conteos registrados",
+    "noPayments": "Todavía no hay pagos",
+    "openingFloat": "Fondo Inicial",
+    "openingFloatAlreadySet": "Ya se estableció el fondo inicial para esta fecha",
+    "openingFloatSet": "Fondo inicial establecido",
+    "overall": "Total general",
+    "recordCount": "Registrar Conteo",
+    "recordedBy": "por {name}",
+    "selectDate": "Seleccionar fecha",
+    "selectMonth": "Seleccionar mes",
+    "setOpeningFloat": "Establecer Fondo Inicial",
+    "title": "Contador de Efectivo",
+    "variance": "Diferencia",
+    "varianceMatch": "Coincide",
+    "varianceOverage": "+{amount} de sobrante",
+    "varianceShortage": "-{amount} de faltante"
+  },
   "common": {
     "active": "Activo",
     "add": "Agregar",
@@ -149,6 +180,9 @@
     "total": "Total",
     "unknown": "Desconocido",
     "update": "Actualizar",
+    "confirmVoid": "¿Anular este registro? Su importe dejará de contar.",
+    "void": "Anular",
+    "voided": "Anulado",
     "windowControls": "Controles de ventana",
     "yes": "Sí",
     "back": "Atrás"
@@ -302,6 +336,43 @@
     "refundsCount": "{count} reembolsos",
     "ticketNoPayments": "No hay pagos en este día"
   },
+  "expenses": {
+    "addCategory": "Agregar Categoría",
+    "addExpense": "Agregar Gasto",
+    "category": "Categoría",
+    "categoryCreated": "Categoría de gasto creada",
+    "categoryDeleted": "Categoría de gasto eliminada",
+    "categoryName": "Nombre de la categoría",
+    "clearDateFilter": "Limpiar",
+    "confirmDeleteCategory": "¿Eliminar la categoría \"{name}\"? Esta acción no se puede deshacer.",
+    "date": "Fecha",
+    "deleteCategory": "Eliminar categoría",
+    "deleteCategoryBlocked": "Salda la deuda pendiente antes de eliminar esta categoría",
+    "due": "Deuda",
+    "entryAdded": "Gasto registrado",
+    "entryTypeExpense": "Gasto",
+    "entryTypePayment": "Pago",
+    "failedToLoad": "No se pudieron cargar los gastos",
+    "failedToLoadSummary": "No se pudo cargar el informe mensual",
+    "filterByDate": "Filtrar por fecha",
+    "history": "Actividad reciente",
+    "monthlyReport": "Informe mensual",
+    "noCategories": "Todavía no hay categorías de gastos",
+    "noEntries": "Todavía no hay actividad de gastos",
+    "note": "Nota",
+    "overall": "Total general",
+    "paymentMethod": "Método de pago",
+    "paymentMethodCard": "Tarjeta",
+    "paymentMethodCash": "Efectivo",
+    "paymentMethodUpi": "UPI",
+    "paymentRecorded": "Pago registrado",
+    "recordPayment": "Registrar Pago",
+    "recordedBy": "por {name}",
+    "selectMonth": "Seleccionar mes",
+    "title": "Gastos",
+    "totalExpenses": "Total de gastos",
+    "totalPaid": "Total pagado"
+  },
   "kds": {
     "addonsLabel": "Adicionales",
     "authFailed": "Falló la autenticación",
@@ -347,10 +418,12 @@
     "wsConnected": "WebSocket conectado"
   },
   "nav": {
+    "cashCounter": "Contador de Efectivo",
     "collapse": "Contraer",
     "confirmLogout": "¿Estás seguro de que quieres cerrar la sesión?",
     "customers": "Clientes",
     "dashboard": "Panel",
+    "expenses": "Gastos",
     "heapLabel": "Memoria: ",
     "kds": "KDS",
     "logout": "Cerrar sesión",
@@ -1926,7 +1999,8 @@
       "settings": "Configuración",
       "integrations": "Integraciones",
       "system": "Sistema",
-      "support": "Soporte"
+      "support": "Soporte",
+      "expenses": "Gastos"
     },
     "capabilities": {
       "pos": "Usar el terminal POS",
@@ -1972,7 +2046,10 @@
       "cloudAccountData": "Gestionar la cuenta y los controles de datos en la nube",
       "databaseTools": "Usar herramientas y copias de seguridad de la base de datos",
       "serverApp": "Usar la aplicación independiente para servidores",
-      "support": "Contactar con soporte y ver diagnósticos"
+      "support": "Contactar con soporte y ver diagnósticos",
+      "expenseCategoriesManage": "Agregar o eliminar categorías de gastos",
+      "expenseEntriesRecord": "Registrar gastos y pagos de deuda",
+      "cashCounterRecord": "Registrar fondos iniciales y conteos de efectivo"
     }
   },
   "support": {

@@ -3924,8 +3924,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           created_at TEXT NOT NULL,
           PRIMARY KEY (user_id, idempotency_key)
         );
-        CREATE INDEX IF NOT EXISTS idx_refund_idempotency_bill ON refund_idempotency(bill_id);
-      `);
+        CREATE INDEX IF NOT EXISTS idx_refund_idempotency_bill ON refund_idempotency(bill_id);      `);
     },
   },
   {
@@ -3941,8 +3940,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         db.exec(`ALTER TABLE products ADD COLUMN allow_fractional_quantity INTEGER NOT NULL DEFAULT 0`);
       }
       if (!hasColumn('weight_precision')) {
-        db.exec(`ALTER TABLE products ADD COLUMN weight_precision INTEGER NOT NULL DEFAULT 3 CHECK (weight_precision BETWEEN 0 AND 4)`);
-      }
+        db.exec(`ALTER TABLE products ADD COLUMN weight_precision INTEGER NOT NULL DEFAULT 3 CHECK (weight_precision BETWEEN 0 AND 4)`);      }
     },
   },
   {
@@ -4033,7 +4031,122 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
         CREATE UNIQUE INDEX IF NOT EXISTS cash_closures_one_day
-          ON cash_closures(business_date) WHERE scope = 'day';
+          ON cash_closures(business_date) WHERE scope = 'day';      `);
+    },
+  },
+  {
+    // One migration for the whole expense/cash-counter feature: these tables
+    // never shipped in a release, so there is no old install carrying the
+    // intermediate shapes and nothing to preserve step by step.
+    version: 82,
+    name: 'add_expense_tracker_and_cash_counter',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS expense_categories (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          deleted_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          created_by TEXT REFERENCES users(id)
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_expense_categories_name_active
+          ON expense_categories(name COLLATE NOCASE) WHERE deleted_at IS NULL;
+
+        CREATE TABLE IF NOT EXISTS expense_entries (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          category_id TEXT NOT NULL REFERENCES expense_categories(id),
+          amount REAL NOT NULL CHECK (amount > 0),
+          note TEXT,
+          expense_date TEXT,
+          created_by TEXT REFERENCES users(id),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_expense_entries_category ON expense_entries(category_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_expense_entries_created_at ON expense_entries(created_at);
+        CREATE INDEX IF NOT EXISTS idx_expense_entries_category_date ON expense_entries(category_id, expense_date);
+        CREATE INDEX IF NOT EXISTS idx_expense_entries_date ON expense_entries(expense_date);
+
+        CREATE TABLE IF NOT EXISTS expense_due_payments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          category_id TEXT NOT NULL REFERENCES expense_categories(id),
+          amount REAL NOT NULL CHECK (amount > 0),
+          note TEXT,
+          payment_date TEXT,
+          method TEXT,
+          created_by TEXT REFERENCES users(id),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_expense_due_payments_category ON expense_due_payments(category_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_expense_due_payments_created_at ON expense_due_payments(created_at);
+        CREATE INDEX IF NOT EXISTS idx_expense_due_payments_category_date ON expense_due_payments(category_id, payment_date);
+        CREATE INDEX IF NOT EXISTS idx_expense_due_payments_date ON expense_due_payments(payment_date);
+
+        CREATE TABLE IF NOT EXISTS cash_opening_floats (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL UNIQUE,
+          amount REAL NOT NULL CHECK (amount >= 0),
+          note TEXT,
+          created_by TEXT REFERENCES users(id),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_cash_opening_floats_date ON cash_opening_floats(date);
+
+        CREATE TABLE IF NOT EXISTS cash_count_records (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          date TEXT NOT NULL,
+          counted_amount REAL NOT NULL CHECK (counted_amount >= 0),
+          note TEXT,
+          created_by TEXT REFERENCES users(id),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_cash_count_records_date ON cash_count_records(date, created_at);
+      `);
+    },
+  },
+  {
+    // Corrections without rewriting history: voiding stamps voided_at and
+    // every sum/ledger read ignores voided rows. The row stays as the audit
+    // trail; staff re-enter the correct figure as a new row.
+    version: 83,
+    name: 'add_finance_void_flags',
+    up: () => {
+      for (const table of ['expense_entries', 'expense_due_payments']) {
+        if (!getColumns(db, table).includes('voided_at')) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN voided_at TEXT`);
+        }
+      }
+      // A voided opening float must not block its replacement, so uniqueness
+      // moves from the inline constraint to a live-rows-only partial index.
+      // (SQLite cannot drop an inline UNIQUE; the table is rebuilt around it.)
+      const floatColumns = getColumns(db, 'cash_opening_floats');
+      if (!floatColumns.includes('voided_at')) {
+        db.exec(`
+          CREATE TABLE cash_opening_floats_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            amount REAL NOT NULL CHECK (amount >= 0),
+            note TEXT,
+            voided_at TEXT,
+            created_by TEXT REFERENCES users(id),
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+          );
+          INSERT INTO cash_opening_floats_new (id, date, amount, note, created_by, created_at)
+            SELECT id, date, amount, note, created_by, created_at FROM cash_opening_floats;
+          DROP TABLE cash_opening_floats;
+          ALTER TABLE cash_opening_floats_new RENAME TO cash_opening_floats;
+          CREATE INDEX IF NOT EXISTS idx_cash_opening_floats_date ON cash_opening_floats(date);
+        `);
+      }
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_opening_floats_live_date
+          ON cash_opening_floats(date) WHERE voided_at IS NULL;
       `);
     },
   },
@@ -4161,6 +4274,101 @@ function createSchema(): void {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS expense_categories (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      deleted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_by TEXT REFERENCES users(id)
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_expense_categories_name_active
+      ON expense_categories(name COLLATE NOCASE) WHERE deleted_at IS NULL;
+
+    -- Append-only: no UPDATE/DELETE statement ever targets this table. Each
+    -- row increases the owed balance for its category (see expense_due_payments).
+    CREATE TABLE IF NOT EXISTS expense_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category_id TEXT NOT NULL REFERENCES expense_categories(id),
+      amount REAL NOT NULL CHECK (amount > 0),
+      note TEXT,
+      -- Business date the expense was for (YYYY-MM-DD, UTC calendar day —
+      -- see utcTodayDate()); may be backdated by the caller. Distinct from
+      -- created_at, which is the immutable moment the row was recorded.
+      -- Nullable at the schema level (not NOT NULL/DEFAULT); every insert
+      -- path in main/routes/expenses.ts always supplies a value.
+      expense_date TEXT,
+      created_by TEXT REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      -- Void stamp for typo corrections (see v83): voided rows stay as the
+      -- audit trail while every sum and ledger read ignores them.
+      voided_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_expense_entries_category ON expense_entries(category_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_expense_entries_created_at ON expense_entries(created_at);
+    CREATE INDEX IF NOT EXISTS idx_expense_entries_category_date ON expense_entries(category_id, expense_date);
+    CREATE INDEX IF NOT EXISTS idx_expense_entries_date ON expense_entries(expense_date);
+
+    -- Append-only, same as expense_entries. Each row reduces the owed balance
+    -- for its category; due = SUM(expense_entries) - SUM(expense_due_payments).
+    CREATE TABLE IF NOT EXISTS expense_due_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category_id TEXT NOT NULL REFERENCES expense_categories(id),
+      amount REAL NOT NULL CHECK (amount > 0),
+      note TEXT,
+      -- Business date the payment was made (YYYY-MM-DD, UTC calendar day);
+      -- may be backdated. Distinct from created_at (see expense_entries).
+      -- Nullable at the schema level — see expense_entries.expense_date.
+      payment_date TEXT,
+      -- How the payment was settled: 'cash' | 'card' | 'upi', validated in
+      -- main/routes/expenses.ts, not by a DB CHECK constraint.
+      method TEXT,
+      created_by TEXT REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      -- Void stamp, same as expense_entries.voided_at (see v83).
+      voided_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_expense_due_payments_category ON expense_due_payments(category_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_expense_due_payments_created_at ON expense_due_payments(created_at);
+    CREATE INDEX IF NOT EXISTS idx_expense_due_payments_category_date ON expense_due_payments(category_id, payment_date);
+    CREATE INDEX IF NOT EXISTS idx_expense_due_payments_date ON expense_due_payments(payment_date);
+
+    -- Append-only, one per calendar day. The starting cash amount for the
+    -- Cash Counter's daily reconciliation (main/routes/cash-counter.ts).
+    CREATE TABLE IF NOT EXISTS cash_opening_floats (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      amount REAL NOT NULL CHECK (amount >= 0),
+      note TEXT,
+      -- Void stamp, same as expense_entries.voided_at (see v83). Uniqueness
+      -- applies to live rows only, so a voided float never blocks its re-entry.
+      voided_at TEXT,
+      created_by TEXT REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cash_opening_floats_date ON cash_opening_floats(date);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_opening_floats_live_date
+      ON cash_opening_floats(date) WHERE voided_at IS NULL;
+
+    -- Append-only. A staff-logged physical cash count for a day — purely a
+    -- reference fact compared against the calculated expected_cash; it never
+    -- overrides or replaces the calculated figure (see cash-counter.ts).
+    CREATE TABLE IF NOT EXISTS cash_count_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      counted_amount REAL NOT NULL CHECK (counted_amount >= 0),
+      note TEXT,
+      created_by TEXT REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cash_count_records_date ON cash_count_records(date, created_at);
 
     CREATE TABLE IF NOT EXISTS products (
       id TEXT PRIMARY KEY,

@@ -11,3 +11,25 @@ export function parseDbTimestamp(ts: string | null | undefined): Date {
   if (!ts) return new Date(NaN)
   return /^\d{4}-\d{2}-\d{2} /.test(ts) ? new Date(`${ts.replace(' ', 'T')}Z`) : new Date(ts)
 }
+
+// UTC calendar day — matches the backend's utcTodayDate() convention, so a
+// date picked here is never rejected as "in the future" by a client whose
+// local clock has already rolled past midnight UTC.
+export function todayUtcDate(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+export function currentUtcMonth(): string {
+  return todayUtcDate().slice(0, 7)
+}
+
+// Store-local calendar day (YYYY-MM-DD) for business-date defaults and picker
+// limits. Falls back to the UTC day when the zone is missing or invalid.
+export function todayInTimezone(timezone: string | null | undefined): string {
+  if (!timezone) return todayUtcDate()
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+  } catch {
+    return todayUtcDate()
+  }
+}

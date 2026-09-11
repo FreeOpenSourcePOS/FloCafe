@@ -86,6 +86,37 @@
   "businessType": {
     "restaurant": "Restoran & Kafe"
   },
+    "cashCounter": {
+    "cashExpenses": "Cash Expenses",
+    "cashFromOrders": "Cash from Orders",
+    "counted": "Counted",
+    "countedAmount": "Counted amount",
+    "cashRefunds": "Cash Refunds",
+    "countLog": "Count Log",
+    "countRecorded": "Cash count recorded",
+    "date": "Date",
+    "expectedCash": "Expected Cash",
+    "failedToLoad": "Failed to load the cash counter",
+    "failedToLoadMonthly": "Failed to load the monthly cash report",
+    "monthlyReport": "Monthly report",
+    "netCash": "Net cash",
+    "noCounts": "No counts recorded yet",
+    "noPayments": "No payments yet",
+    "openingFloat": "Opening Float",
+    "openingFloatAlreadySet": "Opening float already set for this date",
+    "openingFloatSet": "Opening float set",
+    "overall": "Overall",
+    "recordCount": "Record Count",
+    "recordedBy": "by {name}",
+    "selectDate": "Select date",
+    "selectMonth": "Select month",
+    "setOpeningFloat": "Set Opening Float",
+    "title": "Cash Counter",
+    "variance": "Variance",
+    "varianceMatch": "Matches",
+    "varianceOverage": "+{amount} over",
+    "varianceShortage": "-{amount} short"
+  },
   "common": {
     "active": "Aktif",
     "add": "Ekle",
@@ -149,6 +180,9 @@
     "total": "Toplam",
     "unknown": "Bilinmiyor",
     "update": "Güncelle",
+    "confirmVoid": "Void this entry? Its amount will no longer count.",
+    "void": "Void",
+    "voided": "Voided",
     "windowControls": "Pencere Kontrolleri",
     "yes": "Evet",
     "back": "Geri"
@@ -302,6 +336,43 @@
     "refundsCount": "{count} iade",
     "ticketNoPayments": "Bu gün ödeme yok"
   },
+    "expenses": {
+    "addCategory": "Add Category",
+    "addExpense": "Add Expense",
+    "category": "Category",
+    "categoryCreated": "Expense category created",
+    "categoryDeleted": "Expense category deleted",
+    "categoryName": "Category name",
+    "clearDateFilter": "Clear",
+    "confirmDeleteCategory": "Delete the \"{name}\" category? This cannot be undone.",
+    "date": "Date",
+    "deleteCategory": "Delete category",
+    "deleteCategoryBlocked": "Settle the outstanding due before deleting this category",
+    "due": "Due",
+    "entryAdded": "Expense recorded",
+    "entryTypeExpense": "Expense",
+    "entryTypePayment": "Payment",
+    "failedToLoad": "Failed to load expenses",
+    "failedToLoadSummary": "Failed to load the monthly report",
+    "filterByDate": "Filter by date",
+    "history": "Recent activity",
+    "monthlyReport": "Monthly report",
+    "noCategories": "No expense categories yet",
+    "noEntries": "No expense activity yet",
+    "note": "Note",
+    "overall": "Overall",
+    "paymentMethod": "Payment method",
+    "paymentMethodCard": "Card",
+    "paymentMethodCash": "Cash",
+    "paymentMethodUpi": "UPI",
+    "paymentRecorded": "Payment recorded",
+    "recordPayment": "Record Payment",
+    "recordedBy": "by {name}",
+    "selectMonth": "Select month",
+    "title": "Expenses",
+    "totalExpenses": "Total expenses",
+    "totalPaid": "Total paid"
+  },
   "kds": {
     "addonsLabel": "Eklentiler",
     "authFailed": "Yetkilendirme başarısız",
@@ -347,10 +418,12 @@
     "wsConnected": "WebSocket Bağlı"
   },
   "nav": {
+        "cashCounter": "Cash Counter",
     "collapse": "Menüyü Daralt",
     "confirmLogout": "Çıkış yapmak istediğinizden emin misiniz?",
     "customers": "Müşteriler",
     "dashboard": "Genel Bakış",
+        "expenses": "Expenses",
     "heapLabel": "Bellek (Heap)",
     "kds": "Mutfak Ekranı",
     "logout": "Çıkış Yap",
@@ -1926,7 +1999,8 @@
       "settings": "Ayarlar",
       "integrations": "Entegrasyonlar",
       "system": "Sistem",
-      "support": "Destek"
+      "support": "Destek",
+      "expenses": "Expenses"
     },
     "capabilities": {
       "pos": "Satış noktasını (POS) kullanma ve sipariş girme",
@@ -1972,7 +2046,10 @@
       "cloudAccountData": "Bulut hesabı ve veri kontrollerini yönetme",
       "databaseTools": "Veritabanı araçlarını ve yedeklemeyi kullanma",
       "serverApp": "Bağımsız Garson Uygulamasını kullanma",
-      "support": "Destek ekibiyle iletişime geçme ve sistem tanılamayı görme"
+      "support": "Destek ekibiyle iletişime geçme ve sistem tanılamayı görme",
+      "expenseCategoriesManage": "Add or delete expense categories",
+      "expenseEntriesRecord": "Record expenses and due payments",
+      "cashCounterRecord": "Log opening floats and cash counts"
     }
   },
   "support": {

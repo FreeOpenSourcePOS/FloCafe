@@ -335,11 +335,8 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
   }
 }));
 
-// POST /api/printers/print-bill — print bill via backend (desktop app)
-// Uses `sales` so the waiter terminal's "server" role can reach this route;
-// the owner-configurable server_app_bill_printing_enabled check below then
-// decides whether that role is actually allowed through (print-bill is
-// payment-adjacent and stays off for servers by default).
+// POST /api/printers/print-bill — print bill via backend (desktop app).
+// `sales` gets the server role past this gate; the setting check below decides if it's actually allowed.
 router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
   const authUser = (req as any).user;
   if (authUser?.role === 'server' && !isServerBillPrintingEnabled()) {
@@ -375,11 +372,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async
       return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
     }
 
-    // Get bill and order data. If billId was given the bill must already
-    // exist; if only orderId was given and the order hasn't been checked
-    // out yet, synthesize an unpaid "running" bill straight from the order
-    // so staff can print an itemized slip before checkout (e.g. tableside
-    // ordering, which has no billing step of its own).
+    // If only orderId is given and no bill exists yet, synthesize an unpaid running bill from the order.
     let bill: any;
     if (billId) {
       bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId);

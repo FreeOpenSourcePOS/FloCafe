@@ -4066,9 +4066,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 83,
     name: 'add_server_app_bill_printing_toggle',
     up: () => {
-      // Owner-configurable: whether the tableside "server" role may print
-      // bills/order-slips, not just KOTs. Defaults off (print-bill stays
-      // payment-adjacent unless the owner opts in).
+      // Owner opt-in for tableside servers to print bills; defaults off (print-bill stays payment-adjacent).
       insertSettingIfMissing('server_app_bill_printing_enabled', 'false');
     },
   },

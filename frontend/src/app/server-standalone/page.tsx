@@ -64,6 +64,10 @@ function money(value: number | string, regional: ServerAppInfo | null) {
   );
 }
 
+function idempotencyKeyFor(tableId: string): string {
+  return `server-app-${Date.now()}-${tableId}`;
+}
+
 export default function ServerStandalonePage() {
   // Syncs tenant language preference from /api/server-app/info.
   useSyncServerLanguage('/api/server-app/info');
@@ -242,18 +246,13 @@ export default function ServerStandalonePage() {
     return res.data.customer?.id || null;
   }
 
-  // Prints via this tenant's configured network/USB printer first; if none is
-  // configured (400), falls back to this device's own browser print dialog
-  // instead of silently dropping the ticket, matching the main POS page's
-  // resilience for tablets with no ESC/POS hardware of their own.
+  // Falls back to this device's browser print dialog when no hardware printer is configured (400).
   async function printKotForOrder(orderId: number, orderForPrint: Record<string, unknown>) {
     if (!api) return;
     try {
       await api.post('/api/printers/print-kot', { orderId, items: orderForPrint.items });
       return;
     } catch (printError: unknown) {
-      // A printer is configured but the print itself failed — surface it rather
-      // than silently falling back, so staff know the kitchen never saw it.
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
       if (status !== 400) {
         toastApiError(printError, t('kotPrintFailed'), apiErrorT);
@@ -273,20 +272,32 @@ export default function ServerStandalonePage() {
     }
   }
 
-  // Prints a running (unpaid) itemized slip for the table via the configured
-  // printer. Stays quiet on 400 (no printer configured) and 403 (an owner
-  // hasn't turned on server bill printing in Settings) — both are expected,
-  // not-yet-configured states rather than print failures worth interrupting
-  // the punch flow for.
-  async function printOrderSlip(orderId: number) {
+  // Same browser-print fallback as KOT above on 400; stays quiet on 403 (owner hasn't enabled server bill printing).
+  async function printOrderSlip(orderId: number, orderForPrint: Record<string, unknown>) {
     if (!api) return;
     try {
       await api.post('/api/printers/print-bill', { orderId });
+      return;
     } catch (printError: unknown) {
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
-      if (status !== 400 && status !== 403) {
+      if (status === 403) return;
+      if (status !== 400) {
         toastApiError(printError, t('billPrintFailed'), apiErrorT);
+        return;
       }
+    }
+    try {
+      const { generateOrderSlipHtml } = await import('@/lib/printer/order-slip-web-print');
+      const html = generateOrderSlipHtml(orderForPrint as unknown as FullOrder, {
+        title: t('orderSlipTitle'),
+        subtotal: t('orderSlipSubtotal'),
+        discount: t('orderSlipDiscount'),
+        tax: t('orderSlipTax'),
+        total: t('orderSlipTotal'),
+      }, { paperWidth: 80, country: regional?.country, currency: regional?.currency });
+      await printerService.printViaBrowser(html, 80);
+    } catch (fallbackError: unknown) {
+      toastApiError(fallbackError, t('billPrintFailed'), apiErrorT);
     }
   }
 
@@ -316,7 +327,7 @@ export default function ServerStandalonePage() {
           customer_id: customerId,
           type: 'dine_in',
           items,
-        }, { headers: { 'Idempotency-Key': `server-app-${Date.now()}-${selectedTableId}` } });
+        }, { headers: { 'Idempotency-Key': idempotencyKeyFor(selectedTableId) } });
         orderId = data.order.id;
         rawOrder = data.order;
         newItems = data.order.items || [];
@@ -324,8 +335,15 @@ export default function ServerStandalonePage() {
       setDraft([]);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));
-      await printKotForOrder(orderId, { ...rawOrder, items: newItems });
-      await printOrderSlip(orderId);
+      // rawOrder only has table_id/customer_id; the KOT/slip renderers need the nested table/customer for display.
+      const trimmedCustomerName = customerName.trim();
+      const enrichedOrder = {
+        ...rawOrder,
+        table: activeTable ? { name: activeTable.name || activeTable.number } : undefined,
+        customer: currentOrder?.customer || (trimmedCustomerName ? { name: trimmedCustomerName } : undefined),
+      };
+      await printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
+      await printOrderSlip(orderId, enrichedOrder);
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {

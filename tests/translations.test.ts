@@ -476,6 +476,7 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'receipt.date', // same word in French
   'receipt.table', // same word in French
   'serverApp.emailPlaceholder', // example email
+  'serverApp.orderSlipTotal', // same word in French
   'serverApp.tableLabel', // same word in French
   'serverApp.tables', // same word in French
   'settings.apiKeyInputPlaceholder', // example API key
@@ -696,6 +697,8 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'receipt.reprint',
   'receipt.serviceCharge',
   'serverApp.emailPlaceholder',
+  'serverApp.orderSlipSubtotal',
+  'serverApp.orderSlipTitle',
   'serverApp.title',
   'settings.aboutGithub',
   'settings.account',

@@ -68,9 +68,9 @@ export default function KdsStandalonePage() {
 
   if (kdsDisabled) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-3 text-center px-6 bg-gray-900 text-white">
+      <div className="flex flex-col items-center justify-center h-screen gap-3 text-center px-6 bg-background text-foreground">
         <h1 className="text-lg font-semibold">{t('disabledTitle')}</h1>
-        <p className="text-sm text-gray-400 max-w-sm">
+        <p className="text-sm text-muted-foreground max-w-sm">
           {t('disabledHint')}
         </p>
       </div>
@@ -79,8 +79,8 @@ export default function KdsStandalonePage() {
 
   if (conn.loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900">
-        <div className="w-10 h-10 border-4 border-white/40 border-t-transparent rounded-full animate-spin" />
+      <div className="flex items-center justify-center h-screen bg-background">
+        <div className="w-10 h-10 border-4 border-brand border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }

@@ -1276,6 +1276,7 @@
     "discountModeFlat": "Nur Festbetrag",
     "discountModeHint": "Welche Rabattarten verfügbar sind",
     "discountModePercentage": "Nur Prozentual",
+    "discountNone": "Deaktiviert (keine Rabatte)",
     "discountPercentageOnly": "Nur Prozentual",
     "discountSaved": "Rabatteinstellungen gespeichert",
     "discounts": "Rabatte",

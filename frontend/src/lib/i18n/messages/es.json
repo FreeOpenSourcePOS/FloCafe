@@ -1276,6 +1276,7 @@
     "discountModeFlat": "Solo monto fijo",
     "discountModeHint": "Qué tipos de descuento están disponibles",
     "discountModePercentage": "Solo porcentaje",
+    "discountNone": "Desactivado (sin descuentos)",
     "discountPercentageOnly": "Solo porcentaje",
     "discountSaved": "Configuración de descuentos guardada",
     "discounts": "Descuentos",

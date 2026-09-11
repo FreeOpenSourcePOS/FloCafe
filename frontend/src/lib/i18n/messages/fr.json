@@ -1276,6 +1276,7 @@
     "discountModeFlat": "Montant fixe uniquement",
     "discountModeHint": "Types de remises disponibles",
     "discountModePercentage": "Pourcentage uniquement",
+    "discountNone": "Désactivées (aucune remise)",
     "discountPercentageOnly": "Pourcentage uniquement",
     "discountSaved": "Paramètres de remise enregistrés",
     "discounts": "Remises",

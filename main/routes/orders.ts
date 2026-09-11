@@ -1203,6 +1203,9 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
     // Check discount mode
     if (discount_value > 0) {
       const discountMode = getSettingValue('discount_mode') || 'percentage';
+      if (discountMode === 'none') {
+        return res.status(400).json({ error: 'Discounts are disabled' });
+      }
       if (discountMode === 'flat' && discount_type === 'percentage') {
         return res.status(400).json({ error: 'Percentage discounts are disabled' });
       }
@@ -1407,6 +1410,9 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
 
     // Check discount mode
     const discountMode = getSettingValue('discount_mode') || 'percentage';
+    if (discountMode === 'none') {
+      return res.status(400).json({ error: 'Discounts are disabled' });
+    }
     if (discountMode === 'flat' && discount_type === 'percentage') {
       return res.status(400).json({ error: 'Percentage discounts are disabled' });
     }

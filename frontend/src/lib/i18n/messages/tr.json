@@ -1276,6 +1276,7 @@
     "discountModeFlat": "Yalnızca sabit tutar",
     "discountModeHint": "Kasada hangi indirim türlerinin kullanılabileceğini belirler",
     "discountModePercentage": "Yalnızca yüzde",
+    "discountNone": "Devre dışı (indirim yok)",
     "discountPercentageOnly": "Yalnızca yüzde",
     "discountSaved": "İndirim ayarları kaydedildi",
     "discounts": "İndirimler",

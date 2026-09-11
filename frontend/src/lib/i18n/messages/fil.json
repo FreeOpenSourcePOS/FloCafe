@@ -1276,6 +1276,7 @@
     "discountModeFlat": "Fixed lamang",
     "discountModeHint": "Aling mga uri ng discount ang available sa counter",
     "discountModePercentage": "Porsyento lamang",
+    "discountNone": "Naka-disable (walang diskwento)",
     "discountPercentageOnly": "Porsyento lamang",
     "discountSaved": "Nai-save ang mga setting ng discount",
     "discounts": "Mga Discount",

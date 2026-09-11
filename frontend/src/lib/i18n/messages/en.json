@@ -1276,6 +1276,7 @@
     "discountModeFlat": "Flat only",
     "discountModeHint": "Which discount types are available",
     "discountModePercentage": "Percentage only",
+    "discountNone": "Disabled (no discounts)",
     "discountPercentageOnly": "Percentage only",
     "discountSaved": "Discount settings saved",
     "discounts": "Discounts",

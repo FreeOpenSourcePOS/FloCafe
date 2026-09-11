@@ -435,21 +435,23 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={() => setDiscountOpen((open) => !open)}
-            className="mt-2 inline-flex h-7 items-center gap-1 rounded-md border border-border bg-muted px-2 text-xs font-medium text-foreground transition-colors hover:border-brand hover:text-brand"
-            aria-expanded={discountOpen}
-          >
-            {preview?.discountAmount ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}` : t('discounts')}
-            <ChevronDown size={12} className={`transition-transform ${discountOpen ? 'rotate-180' : ''}`} />
-          </button>
+          {discountMode !== 'none' && (
+            <button
+              type="button"
+              onClick={() => setDiscountOpen((open) => !open)}
+              className="mt-2 inline-flex h-7 items-center gap-1 rounded-md border border-border bg-muted px-2 text-xs font-medium text-foreground transition-colors hover:border-brand hover:text-brand"
+              aria-expanded={discountOpen}
+            >
+              {preview?.discountAmount ? `${t('discount')}: -${currencyFmt(preview.discountAmount)}` : t('discounts')}
+              <ChevronDown size={12} className={`transition-transform ${discountOpen ? 'rotate-180' : ''}`} />
+            </button>
+          )}
         </div>
 
         <div className="min-h-0 space-y-3 overflow-y-auto px-5 py-3">
 
           {/* Cart-level discount editor. */}
-          {discountOpen && (
+          {discountOpen && discountMode !== 'none' && (
             <div className="overflow-hidden rounded-xl border border-purple-200 dark:border-purple-800/40 bg-purple-50 dark:bg-purple-950/40 p-3 space-y-2">
                 <div className="flex rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800/40">
                   {isDiscountTypeAllowed(discountMode, 'percentage') && (

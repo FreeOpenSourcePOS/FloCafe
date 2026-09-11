@@ -1276,6 +1276,7 @@
     "discountModeFlat": "فقط ثابت",
     "discountModeHint": "کدام نوع تخفیف در دسترس است",
     "discountModePercentage": "فقط درصدی",
+    "discountNone": "غیرفعال (بدون تخفیف)",
     "discountPercentageOnly": "فقط درصدی",
     "discountSaved": "تنظیمات تخفیف ذخیره شد",
     "discounts": "تخفیف‌ها",

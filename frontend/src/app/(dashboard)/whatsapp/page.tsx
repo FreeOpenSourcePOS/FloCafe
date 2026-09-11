@@ -281,11 +281,12 @@ export default function WhatsAppPage() {
   }, []);
 
   const refreshInbox = useCallback(async () => {
+    if (!isAdmin) return;
     try {
       const { data } = await api.get('/whatsapp/inbox', { params: { limit: 100 } });
       setInbox(data.messages ?? []);
     } catch { /* ignore */ }
-  }, []);
+  }, [isAdmin]);
 
   const refreshBlocklist = useCallback(async () => {
     if (!isAdmin) return;

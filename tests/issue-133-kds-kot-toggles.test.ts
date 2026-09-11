@@ -112,10 +112,7 @@ async function main() {
       403,
       'server remains forbidden from POST /api/printers/print-bill',
     );
-    // The table/waiter terminal (server role) can create orders but never
-    // reaches the main POS, so it needs print-kot access to notify the
-    // kitchen of orders it places — unlike print-bill, which stays owner/
-    // manager/cashier-only.
+    // The waiter terminal (server role) needs print-kot to notify the kitchen; print-bill stays restricted.
     const waiterKotRes = await request(app)
       .post('/api/printers/print-kot')
       .set(waiterAuth)

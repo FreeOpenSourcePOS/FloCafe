@@ -107,6 +107,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const [discountValue, setDiscountValue] = useState('');
   const [discountReason, setDiscountReason] = useState('');
   const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
+  const [discountModeLoaded, setDiscountModeLoaded] = useState(false);
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
@@ -150,6 +151,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     setDiscountReason('');
     setDiscountPin('');
     setPaymentsTouched(false);
+    setAmountTarget((target) => target?.kind === 'discount' ? null : target);
   }
 
   useEffect(() => {
@@ -161,7 +163,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
         setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
         setDiscountRequiresApproval(!!res.data.discount_requires_approval);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setDiscountModeLoaded(true));
     api.get('/payment-methods')
       .then((res) => {
         const methods: CustomPaymentMethod[] = res.data.payment_methods || [];
@@ -435,7 +438,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
             </div>
           )}
 
-          {discountMode !== 'none' && (
+          {discountModeLoaded && discountMode !== 'none' && (
             <button
               type="button"
               onClick={() => setDiscountOpen((open) => !open)}
@@ -451,7 +454,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
         <div className="min-h-0 space-y-3 overflow-y-auto px-5 py-3">
 
           {/* Cart-level discount editor. */}
-          {discountOpen && discountMode !== 'none' && (
+          {discountOpen && discountModeLoaded && discountMode !== 'none' && (
             <div className="overflow-hidden rounded-xl border border-purple-200 dark:border-purple-800/40 bg-purple-50 dark:bg-purple-950/40 p-3 space-y-2">
                 <div className="flex rounded-lg overflow-hidden border border-purple-200 dark:border-purple-800/40">
                   {isDiscountTypeAllowed(discountMode, 'percentage') && (

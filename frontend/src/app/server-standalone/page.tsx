@@ -251,9 +251,13 @@ export default function ServerStandalonePage() {
         special_instructions: line.note.trim() || undefined,
       }));
       let orderId: number;
+      let newItems: OrderItem[];
       if (currentOrder?.id) {
         const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items });
         orderId = data.order.id;
+        // Print only what this call added — omitting items reprints every pending item on the order.
+        const existingIds = new Set((currentOrder.items || []).map((item) => item.id));
+        newItems = (data.order.items || []).filter((item: OrderItem) => !existingIds.has(item.id));
       } else {
         const { data } = await api.post('/api/orders', {
           table_id: selectedTableId,
@@ -262,12 +266,13 @@ export default function ServerStandalonePage() {
           items,
         }, { headers: { 'Idempotency-Key': `server-app-${Date.now()}-${selectedTableId}` } });
         orderId = data.order.id;
+        newItems = data.order.items || [];
       }
       setDraft([]);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));
       try {
-        await api.post('/api/printers/print-kot', { orderId });
+        await api.post('/api/printers/print-kot', { orderId, items: newItems });
       } catch (printError: unknown) {
         // Printing isn't configured/enabled for every business — stay quiet for
         // that expected case, but surface genuine failures (spooler, offline, etc.)

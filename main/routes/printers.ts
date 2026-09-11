@@ -557,9 +557,7 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
 }
 
 // POST /api/printers/print-kot — print KOT via backend (desktop app).
-// Uses `sales` (not `ownerManagerCashier`) so the waiter/table terminal's
-// "server" role — which can create orders but not access the main POS —
-// can trigger the kitchen ticket for an order it just placed.
+// Uses `sales` so the waiter terminal's "server" role can print its own orders.
 router.post('/print-kot', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
   // Enforce master KOT printing toggle for all automatic and manual print requests.
   if (!isKotPrintingEnabled()) {
@@ -589,6 +587,10 @@ router.post('/print-kot', requireRole(...ROLE_ACCESS.sales), asyncHandler(async 
     const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+    const authUser = (req as any).user;
+    if (authUser?.role === 'server' && order.user_id !== authUser.userId) {
+      return res.status(403).json({ error: 'Servers can only print their own orders' });
     }
 
     const kotLanguage = resolveTenantKotLanguage(db);

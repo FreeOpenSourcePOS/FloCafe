@@ -2136,6 +2136,9 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
 
     // Check discount mode
     const discountMode = getSettingValue('discount_mode') || 'percentage';
+    if (discountMode === 'none') {
+      return res.status(400).json({ error: 'Discounts are disabled' });
+    }
     if (discountMode === 'flat' && type === 'percentage') {
       return res.status(400).json({ error: 'Percentage discounts are disabled' });
     }

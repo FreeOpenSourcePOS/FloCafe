@@ -150,6 +150,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     setDiscountValue('');
     setDiscountReason('');
     setDiscountPin('');
+    setAmountTarget((target) => target?.kind === 'discount' ? null : target);
   }
 
   // Proportionally update payment inputs when remaining balance changes,

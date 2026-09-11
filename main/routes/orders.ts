@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate } from '../db';
+import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate, recordOrderAudit } from '../db';
 import {
   calculateConfiguredChargeTaxes,
   calculateItemTax,
@@ -172,7 +172,6 @@ function resolveItemAddons(
 
 router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const db = getDatabase();
     const wheres: string[] = [];
     const params: any[] = [];
@@ -211,10 +210,6 @@ router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Req
     if (req.query.table_id) {
       wheres.push('table_id = ?');
       params.push(req.query.table_id);
-    }
-    if (user.role === 'server') {
-      wheres.push('user_id = ?');
-      params.push(user.userId);
     }
     // Cursor pagination: `before` / `after` are ORDER BY keys (created_at),
     // composed with `id` to break ties when many orders share a second.
@@ -358,14 +353,10 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
 
 router.get('/:id', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
     const db = getDatabase();
     const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id));
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
-    }
-    if (user.role === 'server' && (order as any).user_id !== user.userId) {
-      return res.status(403).json({ error: 'Servers can only view their own orders' });
     }
 
     // Hydrate relations using batchHydrateOrders.
@@ -657,11 +648,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const authUser = (req as any).user;
-    if (authUser?.role === 'server' && order.user_id !== authUser.userId) {
-      return res.status(403).json({ error: 'Servers can only modify their own orders' });
-    }
-
     // Return stored idempotent replay if already processed.
     if (idempotencyKey && requestHash) {
       const replayResponse = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash);
@@ -691,9 +677,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-      }
-      if (authUser?.role === 'server' && currentOrder.user_id !== authUser.userId) {
-        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
       }
 
       // Re-check idempotency under transaction lock.
@@ -730,6 +713,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
+      const insertedItemIds: (number | bigint)[] = [];
       for (const item of items) {
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
         if (!product) {
@@ -779,6 +763,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
           item.special_instructions || null, itemCreatedAt, itemCreatedAt
         );
         insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
+        insertedItemIds.push(insertItemResult.lastInsertRowid);
 
         if (product.track_inventory) {
           db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
@@ -868,6 +853,8 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
           .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, currentOrder.service_charge || 0, billRoundOff, now(), existingBill.id);
       }
 
+      recordOrderAudit(db, { orderId: req.params.id as string, actorUserId: idempotencyUserId, action: 'items_added', details: { item_ids: insertedItemIds } });
+
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const updatedItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
       const response = { order: Object.assign({}, updatedOrder, { items: updatedItems }) };
@@ -926,9 +913,6 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
       if (!currentUser || currentUser.is_active !== 1 || !hasRole(currentUser.role, ROLE_ACCESS.orderStatus)) {
         throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
       }
-      if (currentUser.role === 'server' && String(currentOrder.user_id) !== String(authUser.userId)) {
-        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
-      }
 
       if (currentOrder.status === status) {
         // Idempotent same-state request for order
@@ -963,6 +947,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
       const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
       const requiresOverride = (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
 
+      let approvedByUserId: string | undefined;
       if (requiresOverride) {
         if (!override_pin) {
           throw Object.assign(new Error('Manager PIN required to cancel order in progress'), { statusCode: 400 });
@@ -977,11 +962,12 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
 
         const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
           .all(...ROLE_ACCESS.ownerManager)
-          .find((u: any) => verifyPin(u.pin_hash, override_pin));
+          .find((u: any) => verifyPin(u.pin_hash, override_pin)) as any;
 
         if (!user) {
           throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
         }
+        approvedByUserId = user.id;
       }
 
       switch (status) {
@@ -1043,6 +1029,13 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
           break;
         }
       }
+
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        actorUserId: authUser.userId,
+        action: 'status_changed',
+        details: { from: currentOrder.status, to: status, ...(approvedByUserId && { approved_by: approvedByUserId }) },
+      });
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
@@ -1150,7 +1143,7 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole(...ROL
   }
 });
 
-router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -1179,6 +1172,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
     }
 
     // Check if approval is required
+    let approvedByUserId: string | undefined;
     if (discount_value > 0) {
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval) {
@@ -1193,16 +1187,20 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         }
         const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
           .all(...ROLE_ACCESS.ownerManager)
-          .find((u: any) => verifyPin(u.pin_hash, override_pin));
+          .find((u: any) => verifyPin(u.pin_hash, override_pin)) as any;
         if (!user) {
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
+        approvedByUserId = user.id;
       }
     }
 
     // Check discount mode
     if (discount_value > 0) {
       const discountMode = getSettingValue('discount_mode') || 'percentage';
+      if (discountMode === 'none') {
+        return res.status(400).json({ error: 'Discounts are disabled' });
+      }
       if (discountMode === 'flat' && discount_type === 'percentage') {
         return res.status(400).json({ error: 'Percentage discounts are disabled' });
       }
@@ -1337,6 +1335,13 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         );
       }
 
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        actorUserId: (req as any).user.userId,
+        action: 'order_discount_applied',
+        details: { discount_type, discount_value, ...(approvedByUserId && { approved_by: approvedByUserId }) },
+      });
+
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       return updatedOrder;
     });
@@ -1349,7 +1354,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
   }
 });
 
-router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -1386,6 +1391,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
     }
 
     // Check if approval is required
+    let approvedByUserId: string | undefined;
     const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
     if (requiresApproval) {
       const { override_pin } = req.body;
@@ -1399,14 +1405,18 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       }
       const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
         .all(...ROLE_ACCESS.ownerManager)
-        .find((u: any) => verifyPin(u.pin_hash, override_pin));
+        .find((u: any) => verifyPin(u.pin_hash, override_pin)) as any;
       if (!user) {
         return res.status(403).json({ error: 'Invalid manager PIN' });
       }
+      approvedByUserId = user.id;
     }
 
     // Check discount mode
     const discountMode = getSettingValue('discount_mode') || 'percentage';
+    if (discountMode === 'none') {
+      return res.status(400).json({ error: 'Discounts are disabled' });
+    }
     if (discountMode === 'flat' && discount_type === 'percentage') {
       return res.status(400).json({ error: 'Percentage discounts are disabled' });
     }
@@ -1545,6 +1555,14 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
         db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
           .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, order.service_charge || 0, billRoundOff, now(), existingBill.id);
       }
+
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        orderItemId: req.params.itemId as string,
+        actorUserId: (req as any).user.userId,
+        action: 'item_discount_applied',
+        details: { discount_type, discount_value, ...(approvedByUserId && { approved_by: approvedByUserId }) },
+      });
 
       return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.itemId) as any;
     });

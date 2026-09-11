@@ -427,8 +427,8 @@ router.put('/discount', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
         return res.status(400).json({ error: 'discount_max_amount must be a number between 0 and 999999' });
       }
     }
-    if (discount_mode !== undefined && !['percentage', 'flat', 'both'].includes(discount_mode)) {
-      return res.status(400).json({ error: 'discount_mode must be "percentage", "flat", or "both"' });
+    if (discount_mode !== undefined && !['percentage', 'flat', 'both', 'none'].includes(discount_mode)) {
+      return res.status(400).json({ error: 'discount_mode must be "percentage", "flat", "both", or "none"' });
     }
 
     const db = getDatabase();

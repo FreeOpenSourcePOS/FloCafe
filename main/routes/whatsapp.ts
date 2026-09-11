@@ -150,7 +150,7 @@ router.get('/messages', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: R
   res.json({ messages: whatsapp.listMessages({ direction, status, phone, billId, limit, offset }) });
 });
 
-router.get('/inbox', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.get('/inbox', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   const limitValue = parsePaginationParam(req.query.limit, 50, 200);
   const offset = parsePaginationParam(req.query.offset, 0);
   if (limitValue === null || limitValue < 1) {
@@ -163,7 +163,7 @@ router.get('/inbox', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Requ
   res.json({ messages: whatsapp.listInbox(limit, offset) });
 });
 
-router.post('/inbox/:messageId/reply', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req, res) => {
+router.post('/inbox/:messageId/reply', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req, res) => {
   const { body } = req.body ?? {};
   if (!body || typeof body !== 'string') {
     res.status(400).json({ error: 'body required', reason: 'body_required' });

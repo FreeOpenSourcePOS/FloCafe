@@ -76,6 +76,7 @@ function assertEqual(actual: any, expected: any, message: string) {
 }
 
 function assertIncludes(haystack: string, needle: string, message: string) {
+  total++;
   const ok = haystack.includes(needle);
   if (ok) {
     passed++;

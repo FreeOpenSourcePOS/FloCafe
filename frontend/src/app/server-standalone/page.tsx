@@ -274,15 +274,17 @@ export default function ServerStandalonePage() {
   }
 
   // Prints a running (unpaid) itemized slip for the table via the configured
-  // printer. Same "not every business has a printer configured" convention as
-  // KOT above — stays quiet on 400, surfaces genuine print failures.
+  // printer. Stays quiet on 400 (no printer configured) and 403 (an owner
+  // hasn't turned on server bill printing in Settings) — both are expected,
+  // not-yet-configured states rather than print failures worth interrupting
+  // the punch flow for.
   async function printOrderSlip(orderId: number) {
     if (!api) return;
     try {
       await api.post('/api/printers/print-bill', { orderId });
     } catch (printError: unknown) {
       const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
-      if (status !== 400) {
+      if (status !== 400 && status !== 403) {
         toastApiError(printError, t('billPrintFailed'), apiErrorT);
       }
     }

@@ -744,6 +744,11 @@ export function isKotPrintingEnabled(): boolean {
   return getSettingValue('kot_printing_enabled') !== 'false';
 }
 
+/** Whether the tableside "server" role may print bills/order-slips. Defaults to disabled. */
+export function isServerBillPrintingEnabled(): boolean {
+  return getSettingValue('server_app_bill_printing_enabled') === 'true';
+}
+
 export function upsertTelemetryLastPing(): void {
   upsertSetting('telemetry_last_ping_at', now());
 }
@@ -4057,6 +4062,16 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 83,
+    name: 'add_server_app_bill_printing_toggle',
+    up: () => {
+      // Owner-configurable: whether the tableside "server" role may print
+      // bills/order-slips, not just KOTs. Defaults off (print-bill stays
+      // payment-adjacent unless the owner opts in).
+      insertSettingIfMissing('server_app_bill_printing_enabled', 'false');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4814,6 +4829,7 @@ function seedInstallDefaults(): void {
   insert('kds_enabled', 'true');
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
+  insert('server_app_bill_printing_enabled', 'false');
   insert('printer_trim_decimals', 'false');
   insert('bill_template', 'classic');
   insert('bill_footer_message', '');

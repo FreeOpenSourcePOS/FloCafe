@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
+import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, isServerBillPrintingEnabled, parseItemJson } from '../db';
 import { getOrderWithItems } from './bills';
 import { randomUUID } from 'node:crypto';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
@@ -336,9 +336,15 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
 }));
 
 // POST /api/printers/print-bill — print bill via backend (desktop app)
-// Uses `sales` so the waiter terminal's "server" role can print an
-// unbilled order's running slip, matching the print-kot role gate below.
+// Uses `sales` so the waiter terminal's "server" role can reach this route;
+// the owner-configurable server_app_bill_printing_enabled check below then
+// decides whether that role is actually allowed through (print-bill is
+// payment-adjacent and stays off for servers by default).
 router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
+  const authUser = (req as any).user;
+  if (authUser?.role === 'server' && !isServerBillPrintingEnabled()) {
+    return res.status(403).json({ error: 'Bill printing is disabled for the server role. An owner or manager can enable it in Settings.' });
+  }
   try {
     const { billId, orderId, useUnicode = false, isReprint = false, preview = false } = req.body;
     // Renderer's global "Arabic/Persian shaping" setting (#437). Only an

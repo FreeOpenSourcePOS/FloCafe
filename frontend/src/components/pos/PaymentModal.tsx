@@ -150,6 +150,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     setDiscountValue('');
     setDiscountReason('');
     setDiscountPin('');
+    setAmountTarget((target) => target?.kind === 'discount' ? null : target);
   }
 
   // Proportionally update payment inputs when remaining balance changes,
@@ -549,7 +550,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           )}
 
           {/* Discount */}
-          {!bill.split_group_id && <div className="rounded-xl border border-border overflow-hidden">
+          {!bill.split_group_id && discountMode !== 'none' && <div className="rounded-xl border border-border overflow-hidden">
             <button type="button" onClick={() => setShowDiscount((open) => !open)} className="touch-target w-full justify-between gap-3 px-3 bg-muted text-start">
               <span className="text-sm font-medium text-foreground">
                 {Number(bill.discount_amount) > 0

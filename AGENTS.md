@@ -8,9 +8,10 @@ Before starting non-trivial work:
 
 1. **Understand task scope:** Read the task and any linked issue/PR, then identify scope and acceptance criteria.
 2. **Consult documentation index:** Check [docs/README.md](docs/README.md) to locate relevant `CURRENT` or `ACTIVE DESIGN` documents.
-3. **Inspect current code:** Verify active runtime paths and existing patterns.
-4. **Identify tests:** Locate existing test coverage in `tests/`.
-5. **Plan and execute:** Keep changes focused on the approved task.
+3. **Check business decisions:** If the task touches authorization, access control, defaults, or other product-behavior rules, check [docs/business-decisions.md](docs/business-decisions.md) — it's a verifiable log of deliberate product decisions that a plausible-looking implementation can otherwise easily contradict. If a task seems to require deviating from an entry there, stop and confirm with the user rather than assuming the decision is stale.
+4. **Inspect current code:** Verify active runtime paths and existing patterns.
+5. **Identify tests:** Locate existing test coverage in `tests/`.
+6. **Plan and execute:** Keep changes focused on the approved task.
 
 For minor typos or isolated one-line edits, formal planning is not required.
 
@@ -19,6 +20,7 @@ For minor typos or isolated one-line edits, formal planning is not required.
 - **Current runtime behavior:** Current code and automated tests define what FloCafe does today.
 - **Intended change:** The approved task description, issue, or PR defines what the specific change must achieve.
 - **Project invariants:** This document (`AGENTS.md`) and documentation marked `CURRENT` define project-wide boundaries.
+- **Business decisions:** [docs/business-decisions.md](docs/business-decisions.md) is the fuller, growing log of specific product decisions (of which the numbered invariants above are only the small, load-bearing subset). Check it before changing authorization, access control, or other established behavior.
 - **Active design:** Documents marked `ACTIVE DESIGN` or `FORWARD-LOOKING` in `docs/` describe target architecture and may be ahead of current code.
 - **Historical records:** Docs marked `HISTORICAL` provide context only.
 
@@ -41,8 +43,9 @@ docs/           Documentation, design specifications, and audits (see docs/READM
 3. **Architecture boundaries:** UI language, tenant regional settings, and tax/compliance behavior are separate, decoupled domains.
 4. **Business timestamps:** Persisted timestamps follow FloCafe's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.
 5. **Backend authority:** Security-critical, payment, and tax calculations remain backend-authoritative.
-6. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
-7. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
+6. **Orders are never ownership-gated:** FloCafe is an open system for order visibility — any staff role with order access can see and act on any order, regardless of who created it. Authorization is restricted by role (page/feature access) and by specific action (e.g. KDS stage transitions are chef/manager/owner-only, narrowed further by station/category assignment), never by comparing `order.user_id`/item creator against the current user. Accountability comes from audit attribution (every write is recorded against the authenticated actor), not from hiding orders between staff. Do not add or reintroduce a `role === 'server' && order.user_id !== user.userId`-style check anywhere in the backend; see `docs/business-decisions.md` and `docs/roles-and-permissions.md`.
+7. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
+8. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
 
 ## Lessons from past mistakes
 

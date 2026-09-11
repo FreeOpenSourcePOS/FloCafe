@@ -4037,6 +4037,26 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 82,
+    name: 'add_order_audit_log',
+    up: () => {
+      // Append-only actor log for order/item mutations (docs/business-decisions.md).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS order_audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_id INTEGER NOT NULL REFERENCES orders(id),
+          order_item_id INTEGER REFERENCES order_items(id),
+          actor_user_id TEXT NOT NULL REFERENCES users(id),
+          action TEXT NOT NULL,
+          details_json TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_order_audit_log_order ON order_audit_log(order_id);
+        CREATE INDEX IF NOT EXISTS idx_order_audit_log_actor ON order_audit_log(actor_user_id);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4977,6 +4997,24 @@ export function generateBillNumber(): string {
 export function now(): string {
   // Returns SQLite CURRENT_TIMESTAMP format (`YYYY-MM-DD HH:MM:SS`, UTC).
   return new Date().toISOString().replace('T', ' ').replace(/\..*$/, '');
+}
+
+/** Records who performed an order/item mutation (docs/business-decisions.md). */
+export function recordOrderAudit(
+  db: ReturnType<typeof getDatabase>,
+  params: { orderId: number | string; orderItemId?: number | string | null; actorUserId: string; action: string; details?: Record<string, unknown> },
+): void {
+  db.prepare(`
+    INSERT INTO order_audit_log (order_id, order_item_id, actor_user_id, action, details_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    params.orderId,
+    params.orderItemId ?? null,
+    params.actorUserId,
+    params.action,
+    params.details ? JSON.stringify(params.details) : null,
+    now(),
+  );
 }
 
 /** Parse DB timestamp into Date, ensuring space-delimited timestamps parse as UTC. */

@@ -33,7 +33,7 @@ import { heldOrderRoutes } from './held-orders';
 import { printTemplateRoutes } from './print-templates';
 import { whatsappRoutes } from './whatsapp';
 import { supportTicketRoutes } from './support-ticket';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin, recordOrderAudit } from '../db';
 import { checkPinRateLimit } from './orders';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 
@@ -341,6 +341,7 @@ export function registerRoutes(app: Express): void {
         if (!isPrivilegedRole && !canUseOverride) {
           throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
         }
+        let approvedByUserId: string | undefined;
         if (isItemVoid) {
           if (!override_pin) {
             throw Object.assign(new Error('Manager PIN required to void an item already in progress'), { statusCode: 400 });
@@ -373,6 +374,7 @@ export function registerRoutes(app: Express): void {
           if (!pinUser) {
             throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
           }
+          approvedByUserId = pinUser.id;
         }
 
         if (isItemVoid) {
@@ -506,6 +508,14 @@ export function registerRoutes(app: Express): void {
           serviceCharge: order.service_charge || 0,
           total,
         }, tenantInfo.country);
+
+        recordOrderAudit(db, {
+          orderId,
+          orderItemId: itemId,
+          actorUserId: actorId,
+          action: isItemVoid ? 'item_voided' : 'item_cancelled',
+          details: { ...(approvedByUserId && { approved_by: approvedByUserId }) },
+        });
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
@@ -678,6 +688,8 @@ export function registerRoutes(app: Express): void {
           serviceCharge: order.service_charge || 0,
           total,
         }, tenantInfo.country);
+
+        recordOrderAudit(db, { orderId, orderItemId: itemId, actorUserId: actorId, action: 'item_restored' });
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);

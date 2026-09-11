@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate } from '../db';
+import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate, recordOrderAudit } from '../db';
 import {
   calculateConfiguredChargeTaxes,
   calculateItemTax,
@@ -713,6 +713,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
+      const insertedItemIds: (number | bigint)[] = [];
       for (const item of items) {
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
         if (!product) {
@@ -762,6 +763,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
           item.special_instructions || null, itemCreatedAt, itemCreatedAt
         );
         insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
+        insertedItemIds.push(insertItemResult.lastInsertRowid);
 
         if (product.track_inventory) {
           db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
@@ -850,6 +852,8 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
           .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, currentOrder.service_charge || 0, billRoundOff, now(), existingBill.id);
       }
+
+      recordOrderAudit(db, { orderId: req.params.id as string, actorUserId: idempotencyUserId, action: 'items_added', details: { item_ids: insertedItemIds } });
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const updatedItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
@@ -943,6 +947,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
       const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
       const requiresOverride = (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
 
+      let approvedByUserId: string | undefined;
       if (requiresOverride) {
         if (!override_pin) {
           throw Object.assign(new Error('Manager PIN required to cancel order in progress'), { statusCode: 400 });
@@ -957,11 +962,12 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
 
         const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
           .all(...ROLE_ACCESS.ownerManager)
-          .find((u: any) => verifyPin(u.pin_hash, override_pin));
+          .find((u: any) => verifyPin(u.pin_hash, override_pin)) as any;
 
         if (!user) {
           throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
         }
+        approvedByUserId = user.id;
       }
 
       switch (status) {
@@ -1023,6 +1029,13 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
           break;
         }
       }
+
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        actorUserId: authUser.userId,
+        action: 'status_changed',
+        details: { from: currentOrder.status, to: status, ...(approvedByUserId && { approved_by: approvedByUserId }) },
+      });
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
@@ -1159,6 +1172,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
     }
 
     // Check if approval is required
+    let approvedByUserId: string | undefined;
     if (discount_value > 0) {
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval) {
@@ -1173,10 +1187,11 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         }
         const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
           .all(...ROLE_ACCESS.ownerManager)
-          .find((u: any) => verifyPin(u.pin_hash, override_pin));
+          .find((u: any) => verifyPin(u.pin_hash, override_pin)) as any;
         if (!user) {
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }
+        approvedByUserId = user.id;
       }
     }
 
@@ -1320,6 +1335,13 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         );
       }
 
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        actorUserId: (req as any).user.userId,
+        action: 'order_discount_applied',
+        details: { discount_type, discount_value, ...(approvedByUserId && { approved_by: approvedByUserId }) },
+      });
+
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       return updatedOrder;
     });
@@ -1369,6 +1391,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
     }
 
     // Check if approval is required
+    let approvedByUserId: string | undefined;
     const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
     if (requiresApproval) {
       const { override_pin } = req.body;
@@ -1382,10 +1405,11 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       }
       const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
         .all(...ROLE_ACCESS.ownerManager)
-        .find((u: any) => verifyPin(u.pin_hash, override_pin));
+        .find((u: any) => verifyPin(u.pin_hash, override_pin)) as any;
       if (!user) {
         return res.status(403).json({ error: 'Invalid manager PIN' });
       }
+      approvedByUserId = user.id;
     }
 
     // Check discount mode
@@ -1531,6 +1555,14 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
         db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
           .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, order.service_charge || 0, billRoundOff, now(), existingBill.id);
       }
+
+      recordOrderAudit(db, {
+        orderId: req.params.id as string,
+        orderItemId: req.params.itemId as string,
+        actorUserId: (req as any).user.userId,
+        action: 'item_discount_applied',
+        details: { discount_type, discount_value, ...(approvedByUserId && { approved_by: approvedByUserId }) },
+      });
 
       return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.itemId) as any;
     });

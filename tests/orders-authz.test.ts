@@ -100,9 +100,7 @@ async function main() {
     });
     assertEqual(cashierPin.status, 403, 'cashier PIN cannot authorize an in-progress item void');
 
-    // Orders are never ownership-gated: any sales-role user can advance, cancel,
-    // void, or print-kot any order, regardless of who created it. Only role and
-    // (for in-progress cancellation) manager-PIN approval apply.
+    // Orders are never ownership-gated (docs/business-decisions.md).
     const waiterOwnOrder = seedOrderWithItem(db, 'WAITER-OWN', 'server-authz');
     const waiterCanAdvance = await api(baseUrl, `/api/orders/${waiterOwnOrder.orderId}/status`, {
       method: 'PATCH', body: { status: 'preparing' }, headers: waiterAuth,
@@ -113,11 +111,17 @@ async function main() {
       method: 'PATCH', body: { status: 'cancelled', override_pin: '1234' }, headers: waiterAuth,
     });
     assertEqual(waiterOtherStatus.status, 200, 'server can cancel an order created by another user, given a valid manager PIN');
+    const statusAuditRow = db.prepare(`SELECT * FROM order_audit_log WHERE order_id = ? AND action = 'status_changed' ORDER BY id DESC LIMIT 1`).get(otherOrder.orderId) as any;
+    assertEqual(statusAuditRow?.actor_user_id, 'server-authz', 'audit log records the server as the actor, not the order\'s original creator');
+    assert(JSON.parse(statusAuditRow?.details_json || '{}').approved_by === 'manager-authz', 'audit log records which manager PIN approved the cancellation');
+
     const otherItemOrder = seedOrderWithItem(db, 'WAITER-OTHER-ITEM', 'cashier-authz');
     const waiterOtherItem = await api(baseUrl, `/api/orders/${otherItemOrder.orderId}/items/${otherItemOrder.itemId}/cancel`, {
       method: 'PATCH', body: { override_pin: '1234' }, headers: waiterAuth,
     });
     assertEqual(waiterOtherItem.status, 200, 'server can void an item on an order created by another user');
+    const itemAuditRow = db.prepare(`SELECT * FROM order_audit_log WHERE order_item_id = ? AND action = 'item_voided' ORDER BY id DESC LIMIT 1`).get(otherItemOrder.itemId) as any;
+    assertEqual(itemAuditRow?.actor_user_id, 'server-authz', 'audit log records the server as the actor for a cross-user item void');
 
     const waiterKotOtherOrder = seedOrderWithItem(db, 'WAITER-KOT-OTHER', 'cashier-authz');
     db.prepare(`UPDATE order_items SET status = 'ready' WHERE order_id = ?`).run(waiterKotOtherOrder.orderId);

@@ -10,6 +10,8 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
 import { formatCurrencyForTenant } from '@/lib/countries';
+import { printerService } from '@/lib/printer/PrinterService';
+import type { Order as FullOrder } from '@/lib/types';
 
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
@@ -240,6 +242,52 @@ export default function ServerStandalonePage() {
     return res.data.customer?.id || null;
   }
 
+  // Prints via this tenant's configured network/USB printer first; if none is
+  // configured (400), falls back to this device's own browser print dialog
+  // instead of silently dropping the ticket, matching the main POS page's
+  // resilience for tablets with no ESC/POS hardware of their own.
+  async function printKotForOrder(orderId: number, orderForPrint: Record<string, unknown>) {
+    if (!api) return;
+    try {
+      await api.post('/api/printers/print-kot', { orderId, items: orderForPrint.items });
+      return;
+    } catch (printError: unknown) {
+      // A printer is configured but the print itself failed — surface it rather
+      // than silently falling back, so staff know the kitchen never saw it.
+      const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
+      if (status !== 400) {
+        toastApiError(printError, t('kotPrintFailed'), apiErrorT);
+        return;
+      }
+    }
+    try {
+      const { generateKotHtml, resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+      const html = generateKotHtml(orderForPrint as unknown as FullOrder, {
+        paperWidth: 80,
+        language: resolveKotTicketLanguage(),
+        stationName: t('kitchen'),
+      });
+      await printerService.printViaBrowser(html, 80);
+    } catch (fallbackError: unknown) {
+      toastApiError(fallbackError, t('kotPrintFailed'), apiErrorT);
+    }
+  }
+
+  // Prints a running (unpaid) itemized slip for the table via the configured
+  // printer. Same "not every business has a printer configured" convention as
+  // KOT above — stays quiet on 400, surfaces genuine print failures.
+  async function printOrderSlip(orderId: number) {
+    if (!api) return;
+    try {
+      await api.post('/api/printers/print-bill', { orderId });
+    } catch (printError: unknown) {
+      const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
+      if (status !== 400) {
+        toastApiError(printError, t('billPrintFailed'), apiErrorT);
+      }
+    }
+  }
+
   async function sendDraft() {
     if (!api || !selectedTableId || draft.length === 0) return;
     setSending(true);
@@ -251,10 +299,12 @@ export default function ServerStandalonePage() {
         special_instructions: line.note.trim() || undefined,
       }));
       let orderId: number;
+      let rawOrder: Record<string, unknown>;
       let newItems: OrderItem[];
       if (currentOrder?.id) {
         const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items });
         orderId = data.order.id;
+        rawOrder = data.order;
         // Print only what this call added — omitting items reprints every pending item on the order.
         const existingIds = new Set((currentOrder.items || []).map((item) => item.id));
         newItems = (data.order.items || []).filter((item: OrderItem) => !existingIds.has(item.id));
@@ -266,22 +316,14 @@ export default function ServerStandalonePage() {
           items,
         }, { headers: { 'Idempotency-Key': `server-app-${Date.now()}-${selectedTableId}` } });
         orderId = data.order.id;
+        rawOrder = data.order;
         newItems = data.order.items || [];
       }
       setDraft([]);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));
-      try {
-        await api.post('/api/printers/print-kot', { orderId, items: newItems });
-      } catch (printError: unknown) {
-        // Printing isn't configured/enabled for every business — stay quiet for
-        // that expected case, but surface genuine failures (spooler, offline, etc.)
-        // so staff know the kitchen never saw the ticket.
-        const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
-        if (status !== 400 && status !== 403) {
-          toastApiError(printError, t('kotPrintFailed'), apiErrorT);
-        }
-      }
+      await printKotForOrder(orderId, { ...rawOrder, items: newItems });
+      await printOrderSlip(orderId);
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {

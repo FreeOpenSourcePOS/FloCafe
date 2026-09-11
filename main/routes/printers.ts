@@ -336,7 +336,9 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
 }));
 
 // POST /api/printers/print-bill — print bill via backend (desktop app)
-router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
+// Uses `sales` so the waiter terminal's "server" role can print an
+// unbilled order's running slip, matching the print-kot role gate below.
+router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { billId, orderId, useUnicode = false, isReprint = false, preview = false } = req.body;
     // Renderer's global "Arabic/Persian shaping" setting (#437). Only an
@@ -367,30 +369,63 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
     }
 
-    // Get bill and order data
+    // Get bill and order data. If billId was given the bill must already
+    // exist; if only orderId was given and the order hasn't been checked
+    // out yet, synthesize an unpaid "running" bill straight from the order
+    // so staff can print an itemized slip before checkout (e.g. tableside
+    // ordering, which has no billing step of its own).
     let bill: any;
     if (billId) {
       bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId);
+      if (!bill) {
+        console.log('[Print Bill] Error: Bill not found');
+        return res.status(404).json({ error: 'Bill not found' });
+      }
     } else {
       bill = db.prepare('SELECT b.* FROM bills b WHERE b.order_id = ?').get(orderId);
     }
 
-    if (!bill) {
-      console.log('[Print Bill] Error: Bill not found');
-      return res.status(404).json({ error: 'Bill not found' });
+    let order: any;
+    if (bill) {
+      order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
+      if (!order) {
+        console.log('[Print Bill] Rejected: order not found');
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      order.items = getOrderWithItems(db, Number(bill.order_id), Number(bill.id))?.items || [];
+    } else {
+      order = getOrderWithItems(db, Number(orderId));
+      if (!order) {
+        console.log('[Print Bill] Rejected: order not found');
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      bill = {
+        id: 0,
+        bill_number: order.order_number,
+        order_id: order.id,
+        customer_id: order.customer_id,
+        subtotal: order.subtotal,
+        tax_amount: order.tax_amount,
+        tax_breakdown: order.tax_breakdown,
+        tax_snapshot: order.tax_snapshot,
+        discount_amount: order.discount_amount || 0,
+        discount_type: order.discount_type || null,
+        discount_value: order.discount_value || null,
+        discount_reason: order.discount_reason || null,
+        service_charge: order.service_charge || 0,
+        delivery_charge: order.delivery_charge || 0,
+        packaging_charge: order.packaging_charge || 0,
+        round_off: order.round_off || 0,
+        total: order.total,
+        paid_amount: 0,
+        balance: order.total,
+        payment_status: 'unpaid',
+        payment_details: null,
+      };
     }
-
-    const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
-    if (!order) {
-      console.log('[Print Bill] Rejected: order not found');
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    // Fetch order items
-    order.items = getOrderWithItems(db, Number(bill.order_id), Number(bill.id))?.items || [];
 
     // Fetch table info
-    if (order.table_id) {
+    if (order.table_id && !order.table) {
       const table: any = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
       if (table) {
         order.table = { name: table.number };

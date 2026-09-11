@@ -1041,6 +1041,7 @@
   },
   "serverApp": {
     "addToOrder": "Zur Bestellung hinzufügen",
+    "billPrintFailed": "Bestellung gesendet, aber die Rechnung wurde nicht gedruckt",
     "couldNotLoadData": "Server-App-Daten konnten nicht geladen werden",
     "couldNotSendOrder": "Bestellung konnte nicht an die Küche gesendet werden",
     "currentTicket": "Aktueller Bon",

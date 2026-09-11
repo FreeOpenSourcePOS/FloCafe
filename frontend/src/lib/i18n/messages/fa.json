@@ -1041,6 +1041,7 @@
   },
   "serverApp": {
     "addToOrder": "افزودن به سفارش",
+    "billPrintFailed": "سفارش ارسال شد، اما صورت‌حساب چاپ نشد",
     "couldNotLoadData": "بارگذاری داده‌های برنامه سرور انجام نشد",
     "couldNotSendOrder": "ارسال سفارش انجام نشد",
     "currentTicket": "صورتحساب جاری",

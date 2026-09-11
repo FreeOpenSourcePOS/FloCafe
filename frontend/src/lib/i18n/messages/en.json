@@ -1041,6 +1041,7 @@
   },
   "serverApp": {
     "addToOrder": "Add to order",
+    "billPrintFailed": "Order sent, but the bill didn't print",
     "couldNotLoadData": "Could not load Server App data",
     "couldNotSendOrder": "Could not send order",
     "currentTicket": "Current ticket",

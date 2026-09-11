@@ -1041,6 +1041,7 @@
   },
   "serverApp": {
     "addToOrder": "Adicionar ao pedido",
+    "billPrintFailed": "Pedido enviado, mas a conta não foi impressa",
     "couldNotLoadData": "Não foi possível carregar os dados do App do Garçom",
     "couldNotSendOrder": "Não foi possível enviar o pedido",
     "currentTicket": "Comanda atual",

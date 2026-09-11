@@ -1041,6 +1041,7 @@
   },
   "serverApp": {
     "addToOrder": "Agregar al pedido",
+    "billPrintFailed": "Pedido enviado, pero la cuenta no se imprimió",
     "couldNotLoadData": "No se pudieron cargar los datos de la App de mesero",
     "couldNotSendOrder": "No se pudo enviar el pedido",
     "currentTicket": "Comanda actual",

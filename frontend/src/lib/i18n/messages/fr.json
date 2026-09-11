@@ -1041,6 +1041,7 @@
   },
   "serverApp": {
     "addToOrder": "Ajouter à la commande",
+    "billPrintFailed": "Commande envoyée, mais l’addition ne s’est pas imprimée",
     "couldNotLoadData": "Impossible de charger les données de l’application serveur",
     "couldNotSendOrder": "Impossible d’envoyer la commande",
     "currentTicket": "Addition actuelle",

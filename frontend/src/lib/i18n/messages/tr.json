@@ -1041,6 +1041,7 @@
   },
   "serverApp": {
     "addToOrder": "Siparişe Ekle",
+    "billPrintFailed": "Sipariş gönderildi, ancak hesap fişi yazdırılamadı",
     "couldNotLoadData": "Garson Uygulaması verileri yüklenemedi",
     "couldNotSendOrder": "Sipariş gönderilemedi",
     "currentTicket": "Mevcut Fiş",

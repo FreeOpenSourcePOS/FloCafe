@@ -1041,6 +1041,7 @@
   },
   "serverApp": {
     "addToOrder": "Magdagdag to order",
+    "billPrintFailed": "Naipadala ang order, pero hindi na-print ang kwenta",
     "couldNotLoadData": "Hindi ma-load ang data ng Server App",
     "couldNotSendOrder": "Hindi maipadala ang order",
     "currentTicket": "Kasalukuyang ticket",

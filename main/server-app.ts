@@ -282,6 +282,7 @@ export function startServerApp(): Promise<void> {
     app.get('/api/crm/lookup', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/crm/lookup'));
     app.post('/api/customers', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers'));
     app.post('/api/printers/print-kot', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/printers/print-kot'));
+    app.post('/api/printers/print-bill', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/printers/print-bill'));
 
     const staticDir = getStaticDir();
     if (staticDir) {

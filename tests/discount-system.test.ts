@@ -142,6 +142,12 @@ function seedTestData() {
     `INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)`
   ).run('prod-disc', 'cat-disc', 'Test Item', 500, 1, 1);
 
+  // Real user row — order_audit_log.actor_user_id is a FK, so the mocked
+  // auth identity below must resolve to an actual users row.
+  db.prepare(
+    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`
+  ).run('owner-disc-test', 'Test Owner', 'owner-disc-test@test.local', 'unused', 'owner', now(), now());
+
   // Create an order with a known total (500 for 1 item)
   db.prepare(
     `INSERT INTO orders (order_number, table_id, type, status, subtotal, tax_amount, total, created_at, updated_at)
@@ -184,7 +190,7 @@ async function main() {
   app.use(express.json());
   // Mock auth middleware — must run before routes
   app.use((req: any, _res: any, next: any) => {
-    req.user = { id: 1, role: 'owner', name: 'Test Owner' };
+    req.user = { id: 'owner-disc-test', userId: 'owner-disc-test', role: 'owner', name: 'Test Owner' };
     next();
   });
   app.use('/api/orders', orderRoutes);

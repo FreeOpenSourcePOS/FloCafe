@@ -76,7 +76,7 @@ export default function TableCheckoutModal({
     setGenerating(true);
     try {
       if (order.bill) {
-        onPayment(order.bill);
+        onPayment({ ...order.bill, order });
         return;
       }
       const { data } = await api.post('/bills/generate', { order_id: order.id });
@@ -92,7 +92,7 @@ export default function TableCheckoutModal({
     if (!order) return;
     setGenerating(true);
     try {
-      const bill = order.bill || (await api.post('/bills/generate', { order_id: order.id })).data.bill;
+      const bill = order.bill ? { ...order.bill, order } : (await api.post('/bills/generate', { order_id: order.id })).data.bill;
       setSplitBill(bill);
     } catch {
       toast.error(t('generateBillFailed'));

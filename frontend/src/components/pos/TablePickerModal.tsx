@@ -21,10 +21,10 @@ type PosKey = keyof AppConfig['Messages']['pos'];
 
 const statusStyles: Record<string, { border: string; badge: string; badgeKey: PosKey | null }> = {
   available: { border: 'border-border hover:border-brand/40', badge: '', badgeKey: null },
-  occupied: { border: 'border-orange-300 bg-orange-50', badge: 'bg-orange-500', badgeKey: 'tableOccupied' },
-  reserved: { border: 'border-yellow-300 bg-yellow-50', badge: 'bg-yellow-500', badgeKey: 'tableReserved' },
+  occupied: { border: 'border-orange-300 dark:border-orange-800/40 bg-orange-50 dark:bg-orange-950/40', badge: 'bg-orange-500', badgeKey: 'tableOccupied' },
+  reserved: { border: 'border-yellow-300 dark:border-yellow-800/40 bg-yellow-50 dark:bg-yellow-950/40', badge: 'bg-yellow-500', badgeKey: 'tableReserved' },
   cleaning: { border: 'border-gray-300 dark:border-border bg-muted', badge: 'bg-gray-500', badgeKey: 'tableCleaning' },
-  held: { border: 'border-blue-400 bg-blue-50', badge: 'bg-blue-500', badgeKey: 'tableHeld' },
+  held: { border: 'border-blue-400 dark:border-blue-800/40 bg-blue-50 dark:bg-blue-950/40', badge: 'bg-blue-500', badgeKey: 'tableHeld' },
 };
 
 export default function TablePickerModal({

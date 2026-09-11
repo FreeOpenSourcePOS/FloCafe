@@ -1185,6 +1185,21 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stations, activeTab]);
 
+  // Cash drawer pulse: active custom payment methods (beyond built-in cash/card)
+  const [pulseCustomMethods, setPulseCustomMethods] = useState<string[]>([]);
+  useEffect(() => {
+    if (activeTab !== 'receipts-printers') return;
+    const controller = new AbortController();
+    api.get('/payment-methods', { signal: controller.signal }).then(({ data }) => {
+      setPulseCustomMethods((data.payment_methods || []).map((m: { name: string }) => m.name));
+    }).catch((error) => {
+      if (isRequestCancelled(error)) return;
+      toast.error(t('loadFailed'));
+    });
+    return () => controller.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   // Mobile App Pairing
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
@@ -4156,6 +4171,7 @@ export default function SettingsPage() {
                     <option value="both">{t('discountBoth')}</option>
                     <option value="percentage">{t('discountPercentageOnly')}</option>
                     <option value="flat">{t('discountFlatOnly')}</option>
+                    <option value="none">{t('discountNone')}</option>
                   </select>
                 </div>
 
@@ -4191,25 +4207,27 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-foreground">{t('requireApproval')}</p>
-                    <p className="text-sm text-muted-foreground">{t('requireApprovalHint')}</p>
+                {discountMode !== 'none' && (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-foreground">{t('requireApproval')}</p>
+                      <p className="text-sm text-muted-foreground">{t('requireApprovalHint')}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        markHydrationTouched('discountRequiresApproval');
+                        setDiscountRequiresApproval(!discountRequiresApproval);
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        discountRequiresApproval ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
+                        discountRequiresApproval ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
+                      }`} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      markHydrationTouched('discountRequiresApproval');
-                      setDiscountRequiresApproval(!discountRequiresApproval);
-                    }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      discountRequiresApproval ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
-                    }`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
-                      discountRequiresApproval ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
-                    }`} />
-                  </button>
-                </div>
+                )}
 
               </div>
             </div>
@@ -4638,11 +4656,11 @@ export default function SettingsPage() {
                       </button>
                       {cashDrawerMethodsOpen && (
                         <div className="border-t border-border bg-muted/30 px-3 py-2 space-y-2">
-                          {[
+                          {([
                             ['cash', t('paymentMethodCash')],
                             ['card', t('paymentMethodCard')],
-                            ['upi', t('paymentMethodUpi')],
-                          ].map(([value, label]) => (
+                            ...pulseCustomMethods.map((name): [string, string] => [name, name]),
+                          ]).map(([value, label]) => (
                             <label key={value} className="flex items-center gap-2 text-sm text-foreground">
                               <input
                                 type="checkbox"

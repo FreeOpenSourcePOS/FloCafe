@@ -250,19 +250,33 @@ export default function ServerStandalonePage() {
         quantity: line.quantity,
         special_instructions: line.note.trim() || undefined,
       }));
+      let orderId: number;
       if (currentOrder?.id) {
-        await api.post(`/api/orders/${currentOrder.id}/items`, { items });
+        const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items });
+        orderId = data.order.id;
       } else {
-        await api.post('/api/orders', {
+        const { data } = await api.post('/api/orders', {
           table_id: selectedTableId,
           customer_id: customerId,
           type: 'dine_in',
           items,
         }, { headers: { 'Idempotency-Key': `server-app-${Date.now()}-${selectedTableId}` } });
+        orderId = data.order.id;
       }
       setDraft([]);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));
+      try {
+        await api.post('/api/printers/print-kot', { orderId });
+      } catch (printError: unknown) {
+        // Printing isn't configured/enabled for every business — stay quiet for
+        // that expected case, but surface genuine failures (spooler, offline, etc.)
+        // so staff know the kitchen never saw the ticket.
+        const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
+        if (status !== 400 && status !== 403) {
+          toastApiError(printError, t('kotPrintFailed'), apiErrorT);
+        }
+      }
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {

@@ -1052,6 +1052,7 @@
     "guestFallbackName": "Guest {last4}",
     "itemNotePlaceholder": "Item note",
     "kitchen": "Kitchen",
+    "kotPrintFailed": "Order sent, but the kitchen ticket didn't print",
     "loginHint": "Tableside ordering for server, manager, and owner accounts",
     "loginSubtitle": "Tableside ordering for service staff",
     "newItems": "New items",

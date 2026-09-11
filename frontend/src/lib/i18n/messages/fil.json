@@ -1052,6 +1052,7 @@
     "guestFallbackName": "Bisita {last4}",
     "itemNotePlaceholder": "Tala sa item",
     "kitchen": "Kusina",
+    "kotPrintFailed": "Naipadala ang order, pero hindi na-print ang resibo ng kusina",
     "loginHint": "Pag-order sa lamesa para sa mga server, manager, at may-ari",
     "loginSubtitle": "Pag-order sa lamesa para sa service staff",
     "newItems": "Mga bagong item",

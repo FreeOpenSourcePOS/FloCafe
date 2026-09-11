@@ -556,8 +556,11 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
   return result;
 }
 
-// POST /api/printers/print-kot — print KOT via backend (desktop app)
-router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
+// POST /api/printers/print-kot — print KOT via backend (desktop app).
+// Uses `sales` (not `ownerManagerCashier`) so the waiter/table terminal's
+// "server" role — which can create orders but not access the main POS —
+// can trigger the kitchen ticket for an order it just placed.
+router.post('/print-kot', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
   // Enforce master KOT printing toggle for all automatic and manual print requests.
   if (!isKotPrintingEnabled()) {
     return res.status(403).json({ error: 'KOT printing is disabled for this business' });

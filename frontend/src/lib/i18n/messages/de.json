@@ -765,6 +765,7 @@
     "genericHint": "Die folgenden Zeilen enthalten Zeichen, die dieser Thermodrucker nicht darstellen kann.",
     "moreLines": "…und {count} weitere",
     "languageLoadError": "Die Drucksprachpakete \"{languages}\" konnten nicht geladen werden. Prüfen Sie das Sprachpaket und laden Sie die App erneut, um es noch einmal zu versuchen.",
+    "printerOfflineHint": "Der Drucker reagiert nicht. Stellen Sie sicher, dass er eingeschaltet und verbunden ist, und deaktivieren Sie in Windows die Option „Drucker offline verwenden“.",
     "templateFallback": "Die gewählte Druckvorlage wird auf diesem Pfad nicht unterstützt. Das integrierte Standard-Layout wurde verwendet."
   },
   "print": {
@@ -1976,6 +1977,9 @@
     }
   },
   "support": {
+    "askAi": "KI fragen",
+    "askAiCopied": "Fehler für {provider} kopiert — fügen Sie ihn in den gerade geöffneten Chat ein.",
+    "askAiCopyFailed": "Automatisches Kopieren fehlgeschlagen — kopieren Sie den obigen Fehler und fügen Sie ihn in {provider} ein.",
     "category": "Problemkategorie",
     "categoryAccount": "Konto oder Cloud",
     "categoryBug": "Fehlerbericht",

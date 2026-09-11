@@ -765,6 +765,7 @@
     "genericHint": "Naglalaman ang mga linya sa ibaba ng mga character na hindi mai-render ng thermal printer na ito.",
     "moreLines": "…at {count} pa",
     "languageLoadError": "Hindi ma-load ang print language bundle(s) na \"{languages}\". Suriin ang locale bundle at i-reload ang app para subukan muli.",
+    "printerOfflineHint": "Hindi tumutugon ang printer. Tiyaking naka-on at nakakonekta ito, tapos sa Windows, i-off ang \"Use Printer Offline\" kung naka-check ito.",
     "templateFallback": "Hindi sinusuportahan ang napiling template ng bill sa print path na ito, kaya ginamit ang built-in na layout ng resibo."
   },
   "print": {
@@ -1976,6 +1977,9 @@
     }
   },
   "support": {
+    "askAi": "Magtanong sa AI",
+    "askAiCopied": "Kinopya ang error para sa {provider} — i-paste ito sa chat na kakabukas lang.",
+    "askAiCopyFailed": "Hindi awtomatikong nakopya — kopyahin ang error sa itaas at i-paste sa {provider}.",
     "category": "Uri ng Isyu",
     "categoryAccount": "Account o Cloud",
     "categoryBug": "Ulat ng Bug",

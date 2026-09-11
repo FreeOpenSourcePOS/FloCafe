@@ -765,6 +765,7 @@
     "genericHint": "Aşağıdaki satırlar bu termal yazıcının basamadığı karakterler içeriyor.",
     "moreLines": "…ve {count} satır daha",
     "languageLoadError": "Yazdırma dili paketleri (\"{languages}\") yüklenemedi. Dil paketini kontrol edip uygulamayı yeniden yükleyin.",
+    "printerOfflineHint": "Yazıcı yanıt vermiyor. Yazıcının açık ve bağlı olduğundan emin olun, ardından Windows'ta \"Yazıcıyı Çevrimdışı Kullan\" seçeneğinin kapalı olduğunu kontrol edin.",
     "templateFallback": "Seçilen fiş şablonu bu yazdırma yolunda desteklenmediği için dahili fiş düzeni kullanıldı."
   },
   "print": {
@@ -1976,6 +1977,9 @@
     }
   },
   "support": {
+    "askAi": "Yapay Zekaya Sor",
+    "askAiCopied": "Hata {provider} için kopyalandı — az önce açılan sohbete yapıştırın.",
+    "askAiCopyFailed": "Otomatik kopyalanamadı — yukarıdaki hatayı kopyalayıp {provider} içine yapıştırın.",
     "category": "Sorun Türü",
     "categoryAccount": "Hesap veya Bulut",
     "categoryBug": "Hata Bildirimi",

@@ -27,6 +27,7 @@ import PosTopbar from '@/components/pos/PosTopbar';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
+import { AI_HELP_PROVIDERS, copyPrinterDiagnostic } from '@/lib/printer/ai-help';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -989,7 +990,7 @@ export default function POSPage() {
                   null, 2,
                 )}</Ltr>
               </details>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <button
                   className="rounded bg-brand px-3 py-2 text-sm font-medium text-white"
                   onClick={async () => {
@@ -1008,6 +1009,22 @@ export default function POSPage() {
                     }
                   }}
                 >{tSupport('getHelp')}</button>
+                {AI_HELP_PROVIDERS.map((provider) => (
+                  <button
+                    key={provider.id}
+                    className="rounded border px-3 py-2 text-sm"
+                    onClick={() => {
+                      window.open(provider.url, '_blank', 'noopener,noreferrer');
+                      void (async () => {
+                        const diagnosticsMessage = typeof supportError.payload.message === 'string'
+                          ? supportError.payload.message
+                          : undefined;
+                        const copied = await copyPrinterDiagnostic(supportError.message, diagnosticsMessage);
+                        toast(copied ? tSupport('askAiCopied', { provider: provider.label }) : tSupport('askAiCopyFailed', { provider: provider.label }), { icon: copied ? '📋' : 'ℹ️' });
+                      })();
+                    }}
+                  >{tSupport('askAi')} · {provider.label}</button>
+                ))}
                 <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>{tSupport('dismiss')}</button>
               </div>
             </>

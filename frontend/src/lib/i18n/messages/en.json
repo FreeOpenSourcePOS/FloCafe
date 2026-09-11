@@ -765,6 +765,7 @@
     "genericHint": "The lines below contain characters this thermal printer cannot render.",
     "moreLines": "…and {count} more",
     "languageLoadError": "Print language bundle(s) \"{languages}\" could not be loaded. Check the locale bundle and reload the app to retry.",
+    "printerOfflineHint": "Printer isn't responding. Make sure it's powered on and connected, then in Windows open the printer's queue and turn off \"Use Printer Offline\".",
     "templateFallback": "The selected bill template is not supported on this print path, so the built-in receipt layout was used."
   },
   "print": {
@@ -1976,6 +1977,9 @@
     }
   },
   "support": {
+    "askAi": "Ask AI",
+    "askAiCopied": "Copied the error for {provider} — paste it in the chat that just opened.",
+    "askAiCopyFailed": "Could not copy automatically — copy the error above and paste it into {provider}.",
     "category": "Issue type",
     "categoryAccount": "Account or cloud",
     "categoryBug": "Bug report",

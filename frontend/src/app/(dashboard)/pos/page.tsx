@@ -1013,13 +1013,15 @@ export default function POSPage() {
                   <button
                     key={provider.id}
                     className="rounded border px-3 py-2 text-sm"
-                    onClick={async () => {
-                      const diagnosticsMessage = typeof supportError.payload.diagnostics === 'object' && supportError.payload.diagnostics
-                        ? String((supportError.payload.diagnostics as Record<string, unknown>).message ?? '')
-                        : undefined;
-                      const copied = await copyPrinterDiagnostic(supportError.message, diagnosticsMessage);
-                      toast(copied ? tSupport('askAiCopied', { provider: provider.label }) : tSupport('askAiCopyFailed', { provider: provider.label }), { icon: copied ? '📋' : 'ℹ️' });
+                    onClick={() => {
                       window.open(provider.url, '_blank', 'noopener,noreferrer');
+                      void (async () => {
+                        const diagnosticsMessage = typeof supportError.payload.message === 'string'
+                          ? supportError.payload.message
+                          : undefined;
+                        const copied = await copyPrinterDiagnostic(supportError.message, diagnosticsMessage);
+                        toast(copied ? tSupport('askAiCopied', { provider: provider.label }) : tSupport('askAiCopyFailed', { provider: provider.label }), { icon: copied ? '📋' : 'ℹ️' });
+                      })();
                     }}
                   >{tSupport('askAi')} · {provider.label}</button>
                 ))}

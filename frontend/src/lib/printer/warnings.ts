@@ -195,8 +195,8 @@ export function extractPrinterErrorMessage(err: unknown): string {
   return typeof err === 'string' ? err.trim() : '';
 }
 
-/** Same as PRINTER_ATTRIBUTE_WORK_OFFLINE detection on the backend (main/printers/thermal.ts). */
-const PRINTER_OFFLINE_DETAIL_RE = /\boffline\b/i;
+/** Matches only the Windows PRINTER_ATTRIBUTE_WORK_OFFLINE message (main/printers/thermal.ts), not generic offline/disconnected statuses. */
+const PRINTER_OFFLINE_DETAIL_RE = /\buse printer offline\b/i;
 
 /** Translator bootstrap outside React, matching the pattern in warnings-toast.ts / kot-web-print.ts. */
 function printerOfflineFixHint(): string {
@@ -214,8 +214,8 @@ function printerOfflineFixHint(): string {
 /** Formats a user-facing receipt print error message with operational detail when available. */
 export function formatReceiptErrorToast(detail?: string, fallbackTranslation = 'Receipt print failed'): string {
   const msg = String(detail || '').trim();
-  if (msg.startsWith('Receipt not printed:')) return msg;
   if (PRINTER_OFFLINE_DETAIL_RE.test(msg)) return printerOfflineFixHint();
+  if (msg.startsWith('Receipt not printed:')) return msg;
   if (msg && msg !== 'print failed' && msg !== 'Print failed') {
     return `${fallbackTranslation} (${msg})`;
   }

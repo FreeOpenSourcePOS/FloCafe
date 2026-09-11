@@ -1978,7 +1978,7 @@
   },
   "support": {
     "askAi": "Magtanong sa AI",
-    "askAiCopied": "Kinopya ang error para sa {provider} — i-paste ito sa chat na kararating lang bukas.",
+    "askAiCopied": "Kinopya ang error para sa {provider} — i-paste ito sa chat na kakabukas lang.",
     "askAiCopyFailed": "Hindi awtomatikong nakopya — kopyahin ang error sa itaas at i-paste sa {provider}.",
     "category": "Uri ng Isyu",
     "categoryAccount": "Account o Cloud",

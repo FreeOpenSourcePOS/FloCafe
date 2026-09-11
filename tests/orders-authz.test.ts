@@ -57,6 +57,8 @@ async function main() {
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('authz-category', 'Authz', 1)`).run();
   db.prepare(`INSERT INTO products (id, category_id, name, price, is_active, sort_order)
     VALUES ('authz-product', 'authz-category', 'Authz item', 100, 1, 1)`).run();
+  db.prepare(`INSERT INTO printers (id, name, connection_type, ip_address, port, is_default, paper_width, created_at, updated_at)
+    VALUES ('authz-printer', 'Authz Printer', 'network', '127.0.0.1', 9100, 1, '80mm', ?, ?)`).run(now(), now());
 
   const app = express();
   app.use(express.json());
@@ -112,6 +114,19 @@ async function main() {
       method: 'PATCH', body: { override_pin: '1234' }, headers: waiterAuth,
     });
     assertEqual(waiterOtherItem.status, 403, 'server cannot void another user\'s item');
+
+    // print-kot: server role may print its own orders but not another user's.
+    const waiterKotOwnOrder = seedOrderWithItem(db, 'WAITER-KOT-OWN', 'server-authz');
+    db.prepare(`UPDATE order_items SET status = 'ready' WHERE order_id = ?`).run(waiterKotOwnOrder.orderId);
+    const waiterKotOwn = await api(baseUrl, '/api/printers/print-kot', {
+      method: 'POST', body: { orderId: waiterKotOwnOrder.orderId }, headers: waiterAuth,
+    });
+    assertEqual(waiterKotOwn.status, 200, 'server can print-kot for their own order');
+    const waiterKotOther = await api(baseUrl, '/api/printers/print-kot', {
+      method: 'POST', body: { orderId: otherOrder.orderId }, headers: waiterAuth,
+    });
+    assertEqual(waiterKotOther.status, 403, 'server cannot print-kot for another user\'s order');
+    assertEqual(waiterKotOther.data.error, 'Servers can only print their own orders', 'print-kot ownership error identifies the restriction');
 
     const invalidPinOrder = seedOrderWithItem(db, 'INVALID-PIN', 'cashier-authz');
     const invalidPin = await api(baseUrl, `/api/orders/${invalidPinOrder.orderId}/items/${invalidPinOrder.itemId}/cancel`, {

@@ -4171,6 +4171,7 @@ export default function SettingsPage() {
                     <option value="both">{t('discountBoth')}</option>
                     <option value="percentage">{t('discountPercentageOnly')}</option>
                     <option value="flat">{t('discountFlatOnly')}</option>
+                    <option value="none">{t('discountNone')}</option>
                   </select>
                 </div>
 
@@ -4206,25 +4207,27 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-foreground">{t('requireApproval')}</p>
-                    <p className="text-sm text-muted-foreground">{t('requireApprovalHint')}</p>
+                {discountMode !== 'none' && (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-foreground">{t('requireApproval')}</p>
+                      <p className="text-sm text-muted-foreground">{t('requireApprovalHint')}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        markHydrationTouched('discountRequiresApproval');
+                        setDiscountRequiresApproval(!discountRequiresApproval);
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        discountRequiresApproval ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
+                        discountRequiresApproval ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
+                      }`} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      markHydrationTouched('discountRequiresApproval');
-                      setDiscountRequiresApproval(!discountRequiresApproval);
-                    }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      discountRequiresApproval ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
-                    }`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
-                      discountRequiresApproval ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
-                    }`} />
-                  </button>
-                </div>
+                )}
 
               </div>
             </div>

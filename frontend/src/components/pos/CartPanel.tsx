@@ -84,7 +84,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                 <button
                   key={type}
                   onClick={() => cart.setOrderType(type)}
-                  className={`touch-target flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                  className={`touch-target flex-1 gap-1 px-2 rounded-md text-xs font-medium transition-colors ${showIcon ? '' : 'whitespace-nowrap'} ${
                     cart.orderType === type
                       ? 'bg-card text-brand shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'

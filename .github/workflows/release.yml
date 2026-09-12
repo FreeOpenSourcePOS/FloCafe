@@ -257,7 +257,7 @@ jobs:
             gh release create "${TAG}" \
               --repo "${{ github.repository }}" \
               --verify-tag \
-              --title "${VERSION} (${CHANNEL})" \
+              --title "${VERSION}" \
               --notes-file /tmp/release-notes.md \
               "${RELEASE_ARGS[@]}"
           fi

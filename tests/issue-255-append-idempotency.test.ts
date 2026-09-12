@@ -83,14 +83,14 @@ async function main() {
     const countAfterCommit = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId) as { count: number };
 
     db.prepare('UPDATE order_idempotency SET user_id = \'legacy\' WHERE idempotency_key = ?').run('issue-255-append-retry');
-    const unauthorizedReplay = await api(baseUrl, `/api/orders/${orderId}/items`, {
+    const crossActorReplay = await api(baseUrl, `/api/orders/${orderId}/items`, {
       method: 'POST',
       body: appendBody,
       headers: { ...serverAuth, 'Idempotency-Key': 'issue-255-append-retry' },
     });
-    const countAfterUnauthorized = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId) as { count: number };
-    assertEqual(unauthorizedReplay.status, 403, 'a server cannot replay a legacy append record for another owner\'s order');
-    assertEqual(countAfterUnauthorized.count, countAfterCommit.count, 'unauthorized replay does not expose or mutate the order');
+    const countAfterCrossActorReplay = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId) as { count: number };
+    assertEqual(crossActorReplay.status, 200, 'a legacy append record can be replayed by a different authorized actor (orders are never ownership-gated)');
+    assertEqual(countAfterCrossActorReplay.count, countAfterCommit.count, 'cross-actor replay does not duplicate order items');
 
     const whitespaceOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',

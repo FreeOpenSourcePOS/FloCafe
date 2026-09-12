@@ -360,8 +360,10 @@ export default function ServerStandalonePage() {
         table: activeTable ? { name: activeTable.name || activeTable.number } : undefined,
         customer: currentOrder?.customer || (trimmedCustomerName ? { name: trimmedCustomerName } : undefined),
       };
-      await printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
-      await printOrderSlip(orderId, enrichedOrder);
+      // Printing can hang on an unreachable printer; run it in the background instead of
+      // keeping the terminal blocked on "sending" once the order itself is safely placed.
+      void printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
+      void printOrderSlip(orderId, enrichedOrder);
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {

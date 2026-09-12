@@ -360,7 +360,13 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "notarize": true,
-      "artifactName": "flocafe-${version}-mac-${arch}.${ext}"
+      "artifactName": "flocafe-${version}-mac-${arch}.${ext}",
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Flo Cafe connects to thermal printers, KDS displays, and the Waiter & Table Terminal on your local network.",
+        "NSBonjourServices": [
+          "_http._tcp"
+        ]
+      }
     },
     "mas": {
       "category": "public.app-category.business",
@@ -373,7 +379,11 @@
       "gatekeeperAssess": false,
       "type": "distribution",
       "extendInfo": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "Flo Cafe connects to thermal printers, KDS displays, and the Waiter & Table Terminal on your local network.",
+        "NSBonjourServices": [
+          "_http._tcp"
+        ]
       },
       "target": [
         {

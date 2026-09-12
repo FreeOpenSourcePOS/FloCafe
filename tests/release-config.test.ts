@@ -584,6 +584,7 @@ if [ "$1" = "release" ] && [ "$2" = "view" ]; then
     *) exit 0 ;;
   esac
 fi
+if [ "$1" = "release" ] && [ "$2" = "edit" ]; then exit 0; fi
 exit 1
 `;
   const draftExisting = executeWorkflowStep(draftReleaseStep, {
@@ -594,6 +595,11 @@ exit 1
   assert.equal(draftExisting.status, 0, draftExisting.stderr);
   assert.match(draftExisting.stdout, /Draft release 3\.3\.0 already exists, extracting existing release notes/);
   assert.doesNotMatch(draftExisting.log, /release create/);
+  assert.match(
+    draftExisting.log,
+    /release edit 3\.3\.0 .*--title 3\.3\.0(?:\s|$)/,
+    'a rerun against an existing draft must re-normalize its title, in case it predates a title-format change'
+  );
   assert.ok(
     readReleaseNotes().includes('Existing draft release notes for 3.3.0'),
     'existing draft rerun must extract existing release notes directly from GitHub release body'

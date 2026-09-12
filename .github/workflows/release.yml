@@ -195,6 +195,9 @@ jobs:
               exit 1
             fi
             printf '%s\n' "${BODY}" > /tmp/release-notes.md
+            # Normalize the title on every rerun, in case the draft was created before
+            # the title format last changed (e.g. still carries a stale "(channel)" suffix).
+            gh release edit "${TAG}" --repo "${{ github.repository }}" --title "${VERSION}"
           else
             # Generate release notes using git-cliff, falling back to changelog-notes.sh
             if npx --yes git-cliff@2.8.0 --latest --strip header > /tmp/release-notes.md 2>/dev/null && [ -s /tmp/release-notes.md ]; then

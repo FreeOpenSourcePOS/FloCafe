@@ -347,7 +347,7 @@ export function generateBillHtml(
           <tr>
             <td>
               ${escapeHtml(row.name.text)}
-              ${row.addons.length > 0 ? `<br><small class="text-muted">${row.addons.map(a => `+ ${escapeHtml(a.name.text)}${(a.quantity ?? 1) > 1 ? ` ×${escapeHtml(a.quantity)}` : ''}`).join(', ')}</small>` : ''}
+              ${row.addons.length > 0 ? `<br><small class="text-muted">${row.addons.map(a => `+ ${escapeHtml(a.name.text)}${(a.quantity ?? 1) > 1 ? ` ×${escapeHtml(a.quantity)}` : ''}${a.price > 0 ? ` (${fmtAmount(a.price)})` : ''}`).join(', ')}</small>` : ''}
               ${row.specialInstructions ? `<br><small class="text-italic">${escapeHtml(row.specialInstructions.text)}</small>` : ''}
             </td>
             <td class="text-end num">${fmtQuantity(row.quantity)}</td>

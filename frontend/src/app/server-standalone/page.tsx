@@ -3,13 +3,15 @@
 import axios, { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
 import { Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, RefreshCw, Search, Send, Smartphone, UserRound } from 'lucide-react';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { parsePhone } from '@/lib/phone';
 import { useSyncServerLanguage } from '@/lib/i18n';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
 import { formatCurrencyForTenant } from '@/lib/countries';
+import { printerService } from '@/lib/printer/PrinterService';
+import type { Order as FullOrder } from '@/lib/types';
 
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
@@ -62,6 +64,11 @@ function money(value: number | string, regional: ServerAppInfo | null) {
   );
 }
 
+function sendAttemptSignature(scopeId: string, draft: DraftLine[], customerName: string, customerPhone: string): string {
+  const items = draft.map((line) => `${line.product.id}:${line.quantity}:${line.note.trim()}`).join('|');
+  return `${scopeId}|${items}|${customerName.trim()}|${customerPhone.trim()}`;
+}
+
 export default function ServerStandalonePage() {
   // Syncs tenant language preference from /api/server-app/info.
   useSyncServerLanguage('/api/server-app/info');
@@ -93,6 +100,11 @@ export default function ServerStandalonePage() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [sending, setSending] = useState(false);
+  // Synchronous re-entry guard: `sending` state updates too late to stop a second click fired before the first render.
+  const sendInFlightRef = useRef(false);
+  // Nonce for the in-flight send attempt, paired with a signature of what defines it (draft/customer/order).
+  // Reused only while retrying that exact same attempt; a content change or a success both rotate it.
+  const sendAttemptRef = useRef<{ signature: string; nonce: string } | null>(null);
 
   async function loadAll() {
     if (!api) return;
@@ -240,9 +252,73 @@ export default function ServerStandalonePage() {
     return res.data.customer?.id || null;
   }
 
+  // Falls back to this device's browser print dialog when no hardware printer is configured (400).
+  async function printKotForOrder(orderId: number, orderForPrint: Record<string, unknown>) {
+    if (!api) return;
+    try {
+      await api.post('/api/printers/print-kot', { orderId, items: orderForPrint.items });
+      return;
+    } catch (printError: unknown) {
+      const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
+      if (status !== 400) {
+        toastApiError(printError, t('kotPrintFailed'), apiErrorT);
+        return;
+      }
+    }
+    try {
+      const { generateKotHtml, resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+      const html = generateKotHtml(orderForPrint as unknown as FullOrder, {
+        paperWidth: 80,
+        language: resolveKotTicketLanguage(),
+        stationName: t('kitchen'),
+      });
+      await printerService.printViaBrowser(html, 80);
+    } catch (fallbackError: unknown) {
+      toastApiError(fallbackError, t('kotPrintFailed'), apiErrorT);
+    }
+  }
+
+  // Same browser-print fallback as KOT above on 400; stays quiet on 403 (owner hasn't enabled server bill printing).
+  async function printOrderSlip(orderId: number, orderForPrint: Record<string, unknown>) {
+    if (!api) return;
+    try {
+      await api.post('/api/printers/print-bill', { orderId });
+      return;
+    } catch (printError: unknown) {
+      const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
+      if (status === 403) return;
+      if (status !== 400) {
+        toastApiError(printError, t('billPrintFailed'), apiErrorT);
+        return;
+      }
+    }
+    try {
+      const { generateOrderSlipHtml } = await import('@/lib/printer/order-slip-web-print');
+      const html = generateOrderSlipHtml(orderForPrint as unknown as FullOrder, {
+        title: t('orderSlipTitle'),
+        subtotal: t('orderSlipSubtotal'),
+        discount: t('orderSlipDiscount'),
+        serviceCharge: t('orderSlipServiceCharge'),
+        deliveryCharge: t('orderSlipDeliveryCharge'),
+        packagingCharge: t('orderSlipPackagingCharge'),
+        tax: t('orderSlipTax'),
+        total: t('orderSlipTotal'),
+      }, { paperWidth: 80, country: regional?.country, currency: regional?.currency });
+      await printerService.printViaBrowser(html, 80);
+    } catch (fallbackError: unknown) {
+      toastApiError(fallbackError, t('billPrintFailed'), apiErrorT);
+    }
+  }
+
   async function sendDraft() {
-    if (!api || !selectedTableId || draft.length === 0) return;
+    if (!api || !selectedTableId || draft.length === 0 || sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
     setSending(true);
+    const signature = sendAttemptSignature(selectedTableId, draft, customerName, customerPhone);
+    if (sendAttemptRef.current?.signature !== signature) {
+      sendAttemptRef.current = { signature, nonce: crypto.randomUUID() };
+    }
+    const idempotencyKey = `server-app-${selectedTableId}-${sendAttemptRef.current.nonce}`;
     try {
       const customerId = await ensureCustomer();
       const items = draft.map((line) => ({
@@ -251,10 +327,14 @@ export default function ServerStandalonePage() {
         special_instructions: line.note.trim() || undefined,
       }));
       let orderId: number;
+      let rawOrder: Record<string, unknown>;
       let newItems: OrderItem[];
       if (currentOrder?.id) {
-        const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items });
+        const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items }, {
+          headers: { 'Idempotency-Key': idempotencyKey },
+        });
         orderId = data.order.id;
+        rawOrder = data.order;
         // Print only what this call added — omitting items reprints every pending item on the order.
         const existingIds = new Set((currentOrder.items || []).map((item) => item.id));
         newItems = (data.order.items || []).filter((item: OrderItem) => !existingIds.has(item.id));
@@ -264,27 +344,28 @@ export default function ServerStandalonePage() {
           customer_id: customerId,
           type: 'dine_in',
           items,
-        }, { headers: { 'Idempotency-Key': `server-app-${Date.now()}-${selectedTableId}` } });
+        }, { headers: { 'Idempotency-Key': idempotencyKey } });
         orderId = data.order.id;
+        rawOrder = data.order;
         newItems = data.order.items || [];
       }
+      sendAttemptRef.current = null;
       setDraft([]);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));
-      try {
-        await api.post('/api/printers/print-kot', { orderId, items: newItems });
-      } catch (printError: unknown) {
-        // Printing isn't configured/enabled for every business — stay quiet for
-        // that expected case, but surface genuine failures (spooler, offline, etc.)
-        // so staff know the kitchen never saw the ticket.
-        const status = axios.isAxiosError(printError) ? printError.response?.status : undefined;
-        if (status !== 400 && status !== 403) {
-          toastApiError(printError, t('kotPrintFailed'), apiErrorT);
-        }
-      }
+      // rawOrder only has table_id/customer_id; the KOT/slip renderers need the nested table/customer for display.
+      const trimmedCustomerName = customerName.trim();
+      const enrichedOrder = {
+        ...rawOrder,
+        table: activeTable ? { name: activeTable.name || activeTable.number } : undefined,
+        customer: currentOrder?.customer || (trimmedCustomerName ? { name: trimmedCustomerName } : undefined),
+      };
+      await printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
+      await printOrderSlip(orderId, enrichedOrder);
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {
+      sendInFlightRef.current = false;
       setSending(false);
     }
   }

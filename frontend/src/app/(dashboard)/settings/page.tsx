@@ -1551,6 +1551,8 @@ export default function SettingsPage() {
   const [savingKdsEnabled, setSavingKdsEnabled] = useState(false);
   const [serverAppEnabledSetting, setServerAppEnabledSetting] = useState(true);
   const [savingServerAppEnabled, setSavingServerAppEnabled] = useState(false);
+  const [serverAppBillPrintingEnabledSetting, setServerAppBillPrintingEnabledSetting] = useState(false);
+  const [savingServerAppBillPrintingEnabled, setSavingServerAppBillPrintingEnabled] = useState(false);
   const [kotPrintingEnabledSetting, setKotPrintingEnabledSetting] = useState(true);
   const [savingKotPrintingEnabled, setSavingKotPrintingEnabled] = useState(false);
 
@@ -2170,8 +2172,14 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'server-app') {
-        const { data } = await get('/settings/server_app_enabled');
-        if (active()) setServerAppEnabledSetting(data.setting?.value !== 'false');
+        const [{ data }, { data: billPrintData }] = await Promise.all([
+          get('/settings/server_app_enabled'),
+          get('/settings/server_app_bill_printing_enabled'),
+        ]);
+        if (active()) {
+          setServerAppEnabledSetting(data.setting?.value !== 'false');
+          setServerAppBillPrintingEnabledSetting(billPrintData.setting?.value === 'true');
+        }
         return;
       }
       if (tab === 'loyalty') {
@@ -2582,6 +2590,23 @@ export default function SettingsPage() {
       toast.error(t('saveFailed'));
     } finally {
       setSavingServerAppEnabled(false);
+    }
+  };
+
+  const saveServerAppBillPrintingEnabled = async (enabled: boolean) => {
+    const previous = serverAppBillPrintingEnabledSetting;
+    setServerAppBillPrintingEnabledSetting(enabled);
+    setSavingServerAppBillPrintingEnabled(true);
+    try {
+      await api.put('/settings/server_app_bill_printing_enabled', { value: enabled ? 'true' : 'false' });
+      toast.success(enabled
+        ? t('serverAppBillPrintingEnabledOn')
+        : t('serverAppBillPrintingEnabledOff'));
+    } catch {
+      setServerAppBillPrintingEnabledSetting(previous);
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingServerAppBillPrintingEnabled(false);
     }
   };
 
@@ -3966,6 +3991,20 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground italic">
                 {t('serverAppPairingHiddenHint')}
               </p>
+            )}
+
+            {serverAppEnabledSetting && (
+              <div className="bg-card rounded-xl border border-border p-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-foreground">{t('serverAppBillPrinting')}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t('serverAppBillPrintingHint')}
+                    </p>
+                  </div>
+                  <Toggle value={serverAppBillPrintingEnabledSetting} onChange={(v) => { if (!savingServerAppBillPrintingEnabled) saveServerAppBillPrintingEnabled(v); }} />
+                </div>
+              </div>
             )}
 
             {serverAppEnabledSetting && (

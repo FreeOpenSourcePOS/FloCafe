@@ -360,10 +360,8 @@ export default function ServerStandalonePage() {
         table: activeTable ? { name: activeTable.name || activeTable.number } : undefined,
         customer: currentOrder?.customer || (trimmedCustomerName ? { name: trimmedCustomerName } : undefined),
       };
-      // Printing can hang on an unreachable printer; run it in the background instead of
-      // keeping the terminal blocked on "sending" once the order itself is safely placed.
-      // Sequenced, not concurrent: KOT and bill can resolve to the same default printer,
-      // and simultaneous raw socket writes to one thermal printer can corrupt output.
+      // Backgrounded so an unreachable printer can't block Send; sequenced (not concurrent)
+      // since KOT and bill can share a default printer and race its socket connection.
       void (async () => {
         await printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
         await printOrderSlip(orderId, enrichedOrder);

@@ -260,7 +260,13 @@ async function main() {
   }
   assert(rateLimitHit, 'owner hits authRateLimit after 10 requests to PUT /api/staff/:id');
 
-  // ── vuln-0007: IDOR on Order List Endpoints ──────────────────────────────
+  // ── Order access is role-gated, never ownership-gated ────────────────────
+  // FloCafe is an open system for order visibility: any staff whose role can
+  // reach the orders page/API can see and act on any order, regardless of who
+  // created it. Access is restricted by role (this block) and by specific
+  // action (e.g. KDS stage transitions are chef/manager/owner-only), never by
+  // `order.user_id`. Accountability comes from the audit trail below, not
+  // from hiding orders between staff.
   // 1. Chef cannot access orders at all
   const chefOrdersRes = await request(app).get('/api/orders/').set(chefAuth);
   assertEqual(chefOrdersRes.status, 403, 'chef cannot access /api/orders/');
@@ -269,8 +275,7 @@ async function main() {
   const ownerOrdersRes = await request(app).get('/api/orders/').set(ownerAuth);
   assertEqual(ownerOrdersRes.status, 200, 'owner can access /api/orders/');
 
-  // Seed two orders: one by server, one by manager
-  // But wait, we need to create orders through the API to ensure they are created correctly
+  // Seed two orders: one by manager, one by server (different creators)
   const prodId = 'test-prod-1';
   db.prepare("INSERT OR REPLACE INTO products (id, name, price, stock_quantity, tax_type) VALUES (?, 'Test', 100, 10, 'exclusive')").run(prodId);
 
@@ -284,36 +289,30 @@ async function main() {
   });
   const waiterOrderId = waiterOrderRes.body.order.id;
 
-  // 3. Server fetching /api/orders/ should ONLY see their own order
+  // 3. A server sees every order in the list, including ones other staff created.
   const waiterListRes = await request(app).get('/api/orders/').set(waiterAuth);
   assertEqual(waiterListRes.status, 200, 'server can access /api/orders/');
   const waiterSeenIds = waiterListRes.body.orders.map((o: any) => o.id);
   assert(waiterSeenIds.includes(waiterOrderId), 'server sees their own order');
-  assert(!waiterSeenIds.includes(managerOrderId), 'server does NOT see manager order (vuln-0007 IDOR)');
+  assert(waiterSeenIds.includes(managerOrderId), 'server also sees an order created by another user');
 
-  // 4. Server fetching /api/orders/:id for manager's order should return 403
+  // 4. Reading another user's order by id succeeds too.
   const waiterGetManagerOrder = await request(app).get(`/api/orders/${managerOrderId}`).set(waiterAuth);
-  assertEqual(waiterGetManagerOrder.status, 403, 'server gets 403 for other user order (vuln-0007)');
+  assertEqual(waiterGetManagerOrder.status, 200, 'server can read an order created by another user');
 
-  // 5. Server fetching /api/orders/:id for their own order should return 200
+  // 5. And their own order, same as anyone else's.
   const waiterGetOwnOrder = await request(app).get(`/api/orders/${waiterOrderId}`).set(waiterAuth);
   assertEqual(waiterGetOwnOrder.status, 200, 'server gets 200 for their own order');
 
-  // ── user_id attribution: the real POS frontend never sends user_id — it
-  // must come from the authenticated session, not the request body. Without
-  // this, every order gets user_id=NULL and a server can never see any order
-  // they place (the /api/orders/ list scopes servers to `user_id = <their
-  // id>`, which NULL never matches).
+  // ── user_id attribution: kept for the audit trail (who placed this order),
+  // not for access control. The real POS frontend never sends user_id — it
+  // must come from the authenticated session, not the request body, so the
+  // audit trail can't be spoofed by the client.
   const noBodyUserIdRes = await request(app).post('/api/orders/').set(waiterAuth).send({
     type: 'dine_in', items: [{ product_id: prodId, quantity: 1 }]
   });
   assertEqual(noBodyUserIdRes.status, 201, 'server can create an order without sending user_id');
-  const noBodyUserIdOrderId = noBodyUserIdRes.body.order.id;
   assertEqual(noBodyUserIdRes.body.order.user_id, 'security-server', 'order is attributed to the authenticated server, not left NULL');
-
-  const waiterSeesOwnUnattributedOrder = await request(app).get('/api/orders/').set(waiterAuth);
-  const seenAfterCreate = waiterSeesOwnUnattributedOrder.body.orders.map((o: any) => o.id);
-  assert(seenAfterCreate.includes(noBodyUserIdOrderId), 'the order the server just placed (no user_id in the request) shows up in their own order list');
 
   // A spoofed user_id in the body must be ignored — attribution always comes
   // from the session, never the client.

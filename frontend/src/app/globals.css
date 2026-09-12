@@ -51,6 +51,19 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Custom +/- controls exist next to numeric fields throughout the POS UI;
+ * the native spinner is redundant and its narrow hit target invites mis-taps. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 .touch-target {
   min-height: 44px;
   min-width: 44px;

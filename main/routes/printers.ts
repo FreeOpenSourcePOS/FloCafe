@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
+import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, isServerBillPrintingEnabled, parseItemJson } from '../db';
 import { getOrderWithItems } from './bills';
 import { randomUUID } from 'node:crypto';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
@@ -335,8 +335,13 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
   }
 }));
 
-// POST /api/printers/print-bill — print bill via backend (desktop app)
-router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
+// POST /api/printers/print-bill — print bill via backend (desktop app).
+// `sales` gets the server role past this gate; the setting check below decides if it's actually allowed.
+router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
+  const authUser = (req as any).user;
+  if (authUser?.role === 'server' && !isServerBillPrintingEnabled()) {
+    return res.status(403).json({ error: 'Bill printing is disabled for the server role. An owner or manager can enable it in Settings.' });
+  }
   try {
     const { billId, orderId, useUnicode = false, isReprint = false, preview = false } = req.body;
     // Renderer's global "Arabic/Persian shaping" setting (#437). Only an
@@ -347,6 +352,10 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
     if (!billId && !orderId) {
       console.log('[Print Bill] Rejected: missing bill or order reference');
       return res.status(400).json({ error: 'billId or orderId is required' });
+    }
+    if (billId && orderId) {
+      console.log('[Print Bill] Rejected: conflicting bill and order references');
+      return res.status(400).json({ error: 'Provide either billId or orderId, not both' });
     }
 
     const db = getDatabase();
@@ -367,30 +376,59 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyn
       return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
     }
 
-    // Get bill and order data
+    // If only orderId is given and no bill exists yet, synthesize an unpaid running bill from the order.
     let bill: any;
     if (billId) {
       bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId);
+      if (!bill) {
+        console.log('[Print Bill] Error: Bill not found');
+        return res.status(404).json({ error: 'Bill not found' });
+      }
     } else {
       bill = db.prepare('SELECT b.* FROM bills b WHERE b.order_id = ?').get(orderId);
     }
 
-    if (!bill) {
-      console.log('[Print Bill] Error: Bill not found');
-      return res.status(404).json({ error: 'Bill not found' });
+    let order: any;
+    if (bill) {
+      order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
+      if (!order) {
+        console.log('[Print Bill] Rejected: order not found');
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      order.items = getOrderWithItems(db, Number(bill.order_id), Number(bill.id))?.items || [];
+    } else {
+      order = getOrderWithItems(db, Number(orderId));
+      if (!order) {
+        console.log('[Print Bill] Rejected: order not found');
+        return res.status(404).json({ error: 'Order not found' });
+      }
+      bill = {
+        id: 0,
+        bill_number: order.order_number,
+        order_id: order.id,
+        customer_id: order.customer_id,
+        subtotal: order.subtotal,
+        tax_amount: order.tax_amount,
+        tax_breakdown: order.tax_breakdown,
+        tax_snapshot: order.tax_snapshot,
+        discount_amount: order.discount_amount || 0,
+        discount_type: order.discount_type || null,
+        discount_value: order.discount_value || null,
+        discount_reason: order.discount_reason || null,
+        service_charge: order.service_charge || 0,
+        delivery_charge: order.delivery_charge || 0,
+        packaging_charge: order.packaging_charge || 0,
+        round_off: order.round_off || 0,
+        total: order.total,
+        paid_amount: 0,
+        balance: order.total,
+        payment_status: 'unpaid',
+        payment_details: null,
+      };
     }
-
-    const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
-    if (!order) {
-      console.log('[Print Bill] Rejected: order not found');
-      return res.status(404).json({ error: 'Order not found' });
-    }
-
-    // Fetch order items
-    order.items = getOrderWithItems(db, Number(bill.order_id), Number(bill.id))?.items || [];
 
     // Fetch table info
-    if (order.table_id) {
+    if (order.table_id && !order.table) {
       const table: any = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
       if (table) {
         order.table = { name: table.number };
@@ -556,8 +594,9 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
   return result;
 }
 
-// POST /api/printers/print-kot — print KOT via backend (desktop app)
-router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
+// POST /api/printers/print-kot — print KOT via backend (desktop app).
+// Uses `sales` so the waiter terminal's "server" role can print its own orders.
+router.post('/print-kot', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
   // Enforce master KOT printing toggle for all automatic and manual print requests.
   if (!isKotPrintingEnabled()) {
     return res.status(403).json({ error: 'KOT printing is disabled for this business' });

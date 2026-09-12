@@ -8,9 +8,10 @@ import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, 
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import CreateCustomerModal from '@/components/pos/CreateCustomerModal';
+import AddonModal from '@/components/pos/AddonModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
-import type { OrderItem, Table, Product, Customer } from '@/lib/types';
+import type { OrderItem, Table, Product, Customer, Addon } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
@@ -193,8 +194,9 @@ export default function OrdersPage() {
   // Add Item modal states
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState('');
-  const [selectedItems, setSelectedItems] = useState<{ product_id: string; product_name: string; quantity: number; special_instructions: string }[]>([]);
+  const [selectedItems, setSelectedItems] = useState<{ key: string; product_id: string; product_name: string; quantity: number; special_instructions: string; addons: Addon[] }[]>([]);
   const [addingItems, setAddingItems] = useState(false);
+  const [addonPickerProduct, setAddonPickerProduct] = useState<Product | null>(null);
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
   const appendAttemptStorageRef = useRef<AppendAttemptStorage | null>(null);
   const appendRecoveryStartedUsersRef = useRef<Set<string>>(new Set());
@@ -692,7 +694,7 @@ export default function OrdersPage() {
 
     try {
       const opened = await shareBillViaWhatsApp(
-        order.bill,
+        { ...order.bill, order },
         { phone: order.customer.phone, country_code: order.customer.country_code },
         {
           business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
@@ -720,7 +722,7 @@ export default function OrdersPage() {
     setSendingWaOrderId(order.id);
     try {
       await sendBillViaFlo(
-        order.bill,
+        { ...order.bill, order },
         order.customer.phone,
         {
           business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
@@ -804,26 +806,50 @@ export default function OrdersPage() {
   }, [addItemsOrder, tOrders]);
 
   const handleAddItemToSelection = (product: Product) => {
+    if ((product.addon_groups || []).length > 0) {
+      setAddonPickerProduct(product);
+      return;
+    }
     setSelectedItems(prev => {
-      const existing = prev.find(i => i.product_id === product.id);
+      const existing = prev.find(i => i.product_id === product.id && i.addons.length === 0);
       if (existing) {
-        return prev.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
+        return prev.map(i => i === existing ? { ...i, quantity: i.quantity + 1 } : i);
       }
-      return [...prev, { product_id: product.id, product_name: product.name, quantity: 1, special_instructions: '' }];
+      const key = typeof globalThis.crypto?.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID()
+        : `item-${prev.length}-${Math.random().toString(36).slice(2)}`;
+      return [...prev, { key, product_id: product.id, product_name: product.name, quantity: 1, special_instructions: '', addons: [] }];
     });
   };
 
-  const handleRemoveFromSelection = (productId: string) => {
-    setSelectedItems(prev => prev.filter(i => i.product_id !== productId));
+  const handleAddonPickerAdd = (product: Product, quantity: number, addons: Addon[], instructions: string) => {
+    setSelectedItems(prev => {
+      const key = typeof globalThis.crypto?.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID()
+        : `item-${prev.length}-${Math.random().toString(36).slice(2)}`;
+      return [...prev, {
+        key,
+        product_id: product.id,
+        product_name: product.name,
+        quantity,
+        special_instructions: instructions,
+        addons,
+      }];
+    });
+    setAddonPickerProduct(null);
   };
 
-  const handleUpdateSelectionQty = (productId: string, quantity: number) => {
+  const handleRemoveFromSelection = (key: string) => {
+    setSelectedItems(prev => prev.filter(i => i.key !== key));
+  };
+
+  const handleUpdateSelectionQty = (key: string, quantity: number) => {
     if (quantity < 1) return;
-    setSelectedItems(prev => prev.map(i => i.product_id === productId ? { ...i, quantity } : i));
+    setSelectedItems(prev => prev.map(i => i.key === key ? { ...i, quantity } : i));
   };
 
-  const handleUpdateSelectionNotes = (productId: string, notes: string) => {
-    setSelectedItems(prev => prev.map(i => i.product_id === productId ? { ...i, special_instructions: notes } : i));
+  const handleUpdateSelectionNotes = (key: string, notes: string) => {
+    setSelectedItems(prev => prev.map(i => i.key === key ? { ...i, special_instructions: notes } : i));
   };
 
   const handleSubmitAddItems = async () => {
@@ -834,6 +860,9 @@ export default function OrdersPage() {
         product_id: i.product_id,
         quantity: i.quantity,
         special_instructions: i.special_instructions || undefined,
+        addons: i.addons.length > 0
+          ? i.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
+          : undefined,
       }));
       const fingerprint = buildAppendItemsFingerprint(addItemsOrder.id, items);
       const storage = getAppendAttemptStorage();
@@ -1764,7 +1793,7 @@ placeholder={tOrders('managerPin')}
                   <button
                     key={product.id}
                     onClick={() => handleAddItemToSelection(product)}
-                    className="w-full flex items-center justify-between px-3 py-2 hover:bg-green-50 text-start border-b border-gray-50 last:border-0 transition-colors"
+                    className="w-full flex items-center justify-between px-3 py-2 hover:bg-green-50 dark:hover:bg-green-950/40 text-start border-b border-gray-50 last:border-0 transition-colors"
                   >
                     <div>
                       <span className="text-sm font-medium text-foreground">{product.name}</span>
@@ -1786,31 +1815,36 @@ placeholder={tOrders('managerPin')}
               <div className="space-y-2 mb-3">
                 <p className="text-xs font-medium text-muted-foreground uppercase">{tOrders('selectedItems')}</p>
                 {selectedItems.map(item => (
-                  <div key={item.product_id} className="flex items-center gap-2 bg-muted rounded-lg p-2">
+                  <div key={item.key} className="flex items-center gap-2 bg-muted rounded-lg p-2">
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-medium text-foreground truncate block">{item.product_name}</span>
+                      {item.addons.length > 0 && (
+                        <span className="text-xs text-muted-foreground truncate block">
+                          {item.addons.map((a) => a.name).join(', ')}
+                        </span>
+                      )}
                       <input
                         type="text"
                         placeholder={tOrders('notesOptional')}
                         value={item.special_instructions}
                         maxLength={100}
-                        onChange={(e) => handleUpdateSelectionNotes(item.product_id, e.target.value.slice(0, 100))}
+                        onChange={(e) => handleUpdateSelectionNotes(item.key, e.target.value.slice(0, 100))}
                         className="w-full text-xs text-muted-foreground bg-transparent border-0 p-0 focus:outline-none placeholder:text-gray-300"
                       />
                     </div>
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => handleUpdateSelectionQty(item.product_id, item.quantity - 1)}
+                        onClick={() => handleUpdateSelectionQty(item.key, item.quantity - 1)}
                         className="w-6 h-6 rounded bg-gray-200 text-muted-foreground text-xs hover:bg-gray-300"
                       >-</button>
                       <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
                       <button
-                        onClick={() => handleUpdateSelectionQty(item.product_id, item.quantity + 1)}
+                        onClick={() => handleUpdateSelectionQty(item.key, item.quantity + 1)}
                         className="w-6 h-6 rounded bg-gray-200 text-muted-foreground text-xs hover:bg-gray-300"
                       >+</button>
                     </div>
                     <button
-                      onClick={() => handleRemoveFromSelection(item.product_id)}
+                      onClick={() => handleRemoveFromSelection(item.key)}
                       className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600"
                     >
                       <Trash2 size={14} />
@@ -1841,6 +1875,14 @@ placeholder={tOrders('managerPin')}
             </div>
           </div>
         </div>
+      )}
+      {addonPickerProduct && (
+        <AddonModal
+          product={addonPickerProduct}
+          currency={currency}
+          onAdd={handleAddonPickerAdd}
+          onClose={() => setAddonPickerProduct(null)}
+        />
       )}
       {createCustomerOrderId !== null && (
         <CreateCustomerModal

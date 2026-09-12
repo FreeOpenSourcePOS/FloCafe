@@ -260,6 +260,35 @@ async function runTests() {
     assert(directPrintRes.ok === false && directPrintRes.detail === 'No printer configured', 'direct printReceipt without printers fails fast');
   }
 
+  // ── Test 8b: print-bill synthesizes an unpaid slip from orderId alone ───
+  console.log('\nTest 8b: print-bill for an order with no bill yet (tableside "punch" slip)');
+  {
+    // Printers table is still empty from Test 8.
+    const orderRes = db.prepare(
+      `INSERT INTO orders (order_number, status, type, subtotal, tax_amount, total, created_at, updated_at)
+       VALUES ('ORD-NOBILL-1', 'pending', 'dine_in', 200, 0, 200, datetime('now'), datetime('now'))`
+    ).run();
+    const orderId = Number(orderRes.lastInsertRowid);
+
+    db.prepare(
+      `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, created_at, updated_at)
+       VALUES (?, 'prod-nobill-1', 'Latte', 100, 2, 200, 200, datetime('now'), datetime('now'))`
+    ).run(orderId);
+
+    const previewRes = await request(app).post('/api/printers/print-bill').send({ orderId, preview: true });
+    assert(previewRes.status === 200, `preview for an unbilled order succeeds (got ${previewRes.status})`);
+    assert(typeof previewRes.body.text === 'string' && previewRes.body.text.includes('200'), 'preview reflects the order total (qty 2 x 100)');
+
+    const realPrintRes = await request(app).post('/api/printers/print-bill').send({ orderId, preview: false });
+    assert(realPrintRes.status === 400, `direct print for an unbilled order still requires a configured printer (got ${realPrintRes.status})`);
+
+    const missingOrderRes = await request(app).post('/api/printers/print-bill').send({ orderId: 999999, preview: true });
+    assert(missingOrderRes.status === 404, `unknown orderId with no bill returns 404 (got ${missingOrderRes.status})`);
+
+    const conflictingRes = await request(app).post('/api/printers/print-bill').send({ billId: 1, orderId, preview: true });
+    assert(conflictingRes.status === 400, `conflicting billId and orderId together are rejected (got ${conflictingRes.status})`);
+  }
+
   // ── Test 9: unsupported financial rows refuse before transport ──────────
   console.log('\nTest 9: unsupported financial rows refuse before transport');
   {

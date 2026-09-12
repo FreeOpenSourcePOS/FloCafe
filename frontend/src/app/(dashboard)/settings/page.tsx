@@ -1185,6 +1185,21 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stations, activeTab]);
 
+  // Cash drawer pulse: active custom payment methods (beyond built-in cash/card)
+  const [pulseCustomMethods, setPulseCustomMethods] = useState<string[]>([]);
+  useEffect(() => {
+    if (activeTab !== 'receipts-printers') return;
+    const controller = new AbortController();
+    api.get('/payment-methods', { signal: controller.signal }).then(({ data }) => {
+      setPulseCustomMethods((data.payment_methods || []).map((m: { name: string }) => m.name));
+    }).catch((error) => {
+      if (isRequestCancelled(error)) return;
+      toast.error(t('loadFailed'));
+    });
+    return () => controller.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   // Mobile App Pairing
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
@@ -1536,6 +1551,8 @@ export default function SettingsPage() {
   const [savingKdsEnabled, setSavingKdsEnabled] = useState(false);
   const [serverAppEnabledSetting, setServerAppEnabledSetting] = useState(true);
   const [savingServerAppEnabled, setSavingServerAppEnabled] = useState(false);
+  const [serverAppBillPrintingEnabledSetting, setServerAppBillPrintingEnabledSetting] = useState(false);
+  const [savingServerAppBillPrintingEnabled, setSavingServerAppBillPrintingEnabled] = useState(false);
   const [kotPrintingEnabledSetting, setKotPrintingEnabledSetting] = useState(true);
   const [savingKotPrintingEnabled, setSavingKotPrintingEnabled] = useState(false);
 
@@ -2155,8 +2172,14 @@ export default function SettingsPage() {
         return;
       }
       if (tab === 'server-app') {
-        const { data } = await get('/settings/server_app_enabled');
-        if (active()) setServerAppEnabledSetting(data.setting?.value !== 'false');
+        const [{ data }, { data: billPrintData }] = await Promise.all([
+          get('/settings/server_app_enabled'),
+          get('/settings/server_app_bill_printing_enabled'),
+        ]);
+        if (active()) {
+          setServerAppEnabledSetting(data.setting?.value !== 'false');
+          setServerAppBillPrintingEnabledSetting(billPrintData.setting?.value === 'true');
+        }
         return;
       }
       if (tab === 'loyalty') {
@@ -2567,6 +2590,23 @@ export default function SettingsPage() {
       toast.error(t('saveFailed'));
     } finally {
       setSavingServerAppEnabled(false);
+    }
+  };
+
+  const saveServerAppBillPrintingEnabled = async (enabled: boolean) => {
+    const previous = serverAppBillPrintingEnabledSetting;
+    setServerAppBillPrintingEnabledSetting(enabled);
+    setSavingServerAppBillPrintingEnabled(true);
+    try {
+      await api.put('/settings/server_app_bill_printing_enabled', { value: enabled ? 'true' : 'false' });
+      toast.success(enabled
+        ? t('serverAppBillPrintingEnabledOn')
+        : t('serverAppBillPrintingEnabledOff'));
+    } catch {
+      setServerAppBillPrintingEnabledSetting(previous);
+      toast.error(t('saveFailed'));
+    } finally {
+      setSavingServerAppBillPrintingEnabled(false);
     }
   };
 
@@ -3955,6 +3995,20 @@ export default function SettingsPage() {
 
             {serverAppEnabledSetting && (
               <div className="bg-card rounded-xl border border-border p-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-foreground">{t('serverAppBillPrinting')}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {t('serverAppBillPrintingHint')}
+                    </p>
+                  </div>
+                  <Toggle value={serverAppBillPrintingEnabledSetting} onChange={(v) => { if (!savingServerAppBillPrintingEnabled) saveServerAppBillPrintingEnabled(v); }} />
+                </div>
+              </div>
+            )}
+
+            {serverAppEnabledSetting && (
+              <div className="bg-card rounded-xl border border-border p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Smartphone size={20} className="text-muted-foreground" />
                   <h2 className="font-semibold text-foreground">{t('tablesideOrdering')}</h2>
@@ -4156,6 +4210,7 @@ export default function SettingsPage() {
                     <option value="both">{t('discountBoth')}</option>
                     <option value="percentage">{t('discountPercentageOnly')}</option>
                     <option value="flat">{t('discountFlatOnly')}</option>
+                    <option value="none">{t('discountNone')}</option>
                   </select>
                 </div>
 
@@ -4191,25 +4246,27 @@ export default function SettingsPage() {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-foreground">{t('requireApproval')}</p>
-                    <p className="text-sm text-muted-foreground">{t('requireApprovalHint')}</p>
+                {discountMode !== 'none' && (
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-foreground">{t('requireApproval')}</p>
+                      <p className="text-sm text-muted-foreground">{t('requireApprovalHint')}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        markHydrationTouched('discountRequiresApproval');
+                        setDiscountRequiresApproval(!discountRequiresApproval);
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        discountRequiresApproval ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
+                      }`}
+                    >
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
+                        discountRequiresApproval ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
+                      }`} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      markHydrationTouched('discountRequiresApproval');
-                      setDiscountRequiresApproval(!discountRequiresApproval);
-                    }}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      discountRequiresApproval ? 'bg-brand' : 'bg-gray-200 dark:bg-input'
-                    }`}
-                  >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-card transition-transform ${
-                      discountRequiresApproval ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
-                    }`} />
-                  </button>
-                </div>
+                )}
 
               </div>
             </div>
@@ -4638,11 +4695,11 @@ export default function SettingsPage() {
                       </button>
                       {cashDrawerMethodsOpen && (
                         <div className="border-t border-border bg-muted/30 px-3 py-2 space-y-2">
-                          {[
+                          {([
                             ['cash', t('paymentMethodCash')],
                             ['card', t('paymentMethodCard')],
-                            ['upi', t('paymentMethodUpi')],
-                          ].map(([value, label]) => (
+                            ...pulseCustomMethods.map((name): [string, string] => [name, name]),
+                          ]).map(([value, label]) => (
                             <label key={value} className="flex items-center gap-2 text-sm text-foreground">
                               <input
                                 type="checkbox"

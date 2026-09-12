@@ -744,6 +744,11 @@ export function isKotPrintingEnabled(): boolean {
   return getSettingValue('kot_printing_enabled') !== 'false';
 }
 
+/** Whether the tableside "server" role may print bills/order-slips. Defaults to disabled. */
+export function isServerBillPrintingEnabled(): boolean {
+  return getSettingValue('server_app_bill_printing_enabled') === 'true';
+}
+
 export function upsertTelemetryLastPing(): void {
   upsertSetting('telemetry_last_ping_at', now());
 }
@@ -4037,6 +4042,34 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 82,
+    name: 'add_order_audit_log',
+    up: () => {
+      // Append-only actor log for order/item mutations (docs/business-decisions.md).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS order_audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_id INTEGER NOT NULL REFERENCES orders(id),
+          order_item_id INTEGER REFERENCES order_items(id),
+          actor_user_id TEXT NOT NULL REFERENCES users(id),
+          action TEXT NOT NULL,
+          details_json TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_order_audit_log_order ON order_audit_log(order_id);
+        CREATE INDEX IF NOT EXISTS idx_order_audit_log_actor ON order_audit_log(actor_user_id);
+      `);
+    },
+  },
+  {
+    version: 83,
+    name: 'add_server_app_bill_printing_toggle',
+    up: () => {
+      // Owner opt-in for tableside servers to print bills; defaults off (print-bill stays payment-adjacent).
+      insertSettingIfMissing('server_app_bill_printing_enabled', 'false');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4112,6 +4145,7 @@ export class SchemaVersionMismatchError extends Error {
 function runMigrations(): void {
   const current = getCurrentSchemaVersion();
   const target = MIGRATIONS.length > 0 ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
+  const verboseMigrationLogs = process.env.FLOCAFE_TEST_VERBOSE === '1';
 
   if (current > target) {
     // Fail startup if database schema version is newer than supported by this build.
@@ -4132,12 +4166,16 @@ function runMigrations(): void {
   for (const migration of MIGRATIONS) {
     if (migration.version <= current) continue;
 
-    console.log(`[DB] Applying migration v${migration.version}: ${migration.name}`);
+    if (verboseMigrationLogs) {
+      console.log(`[DB] Applying migration v${migration.version}: ${migration.name}`);
+    }
     db.transaction(() => {
       migration.up();
       db.pragma(`user_version = ${migration.version}`);
     })();
-    console.log(`[DB] Migration v${migration.version} complete`);
+    if (verboseMigrationLogs) {
+      console.log(`[DB] Migration v${migration.version} complete`);
+    }
   }
 }
 
@@ -4789,6 +4827,7 @@ function seedInstallDefaults(): void {
   insert('kds_enabled', 'true');
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
+  insert('server_app_bill_printing_enabled', 'false');
   insert('printer_trim_decimals', 'false');
   insert('bill_template', 'classic');
   insert('bill_footer_message', '');
@@ -4972,6 +5011,24 @@ export function generateBillNumber(): string {
 export function now(): string {
   // Returns SQLite CURRENT_TIMESTAMP format (`YYYY-MM-DD HH:MM:SS`, UTC).
   return new Date().toISOString().replace('T', ' ').replace(/\..*$/, '');
+}
+
+/** Records who performed an order/item mutation (docs/business-decisions.md). */
+export function recordOrderAudit(
+  db: ReturnType<typeof getDatabase>,
+  params: { orderId: number | string; orderItemId?: number | string | null; actorUserId: string; action: string; details?: Record<string, unknown> },
+): void {
+  db.prepare(`
+    INSERT INTO order_audit_log (order_id, order_item_id, actor_user_id, action, details_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    params.orderId,
+    params.orderItemId ?? null,
+    params.actorUserId,
+    params.action,
+    params.details ? JSON.stringify(params.details) : null,
+    now(),
+  );
 }
 
 /** Parse DB timestamp into Date, ensuring space-delimited timestamps parse as UTC. */

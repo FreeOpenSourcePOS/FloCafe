@@ -17,6 +17,7 @@
 import * as assert from 'node:assert/strict';
 import * as http from 'node:http';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
@@ -269,7 +270,7 @@ async function run(): Promise<void> {
   // Write evidence file
   const evidenceDir =
     process.env.EVIDENCE_DIR ||
-    '/Users/gurkiratkhaira/.no-mistakes/evidence/01M0X477YW5R40AKNFPT47AMHZ';
+    path.join(os.tmpdir(), 'flo-window-load-retry-evidence');
   try {
     fs.mkdirSync(evidenceDir, { recursive: true });
     const evidencePath = path.join(evidenceDir, 'window-load-retry-resilience.log');

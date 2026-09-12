@@ -212,9 +212,9 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
               <p className="text-xs text-muted-foreground">{t('expectedCash')}</p>
               <p className="text-xl font-bold text-foreground ltr-island"><Ltr>{amountsValid ? fmt(expectedCashTotalCents / minorFactor) : '—'}</Ltr></p>
             </div>
-            <div className={`rounded-lg border p-3 ${varianceCents === 0 ? 'border-border bg-muted/40' : varianceCents < 0 ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+            <div className={`rounded-lg border p-3 ${varianceCents === 0 ? 'border-border bg-muted/40' : varianceCents < 0 ? 'border-red-300 dark:border-red-800/40 bg-red-50 dark:bg-red-950/40' : 'border-amber-300 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/40'}`}>
               <p className="text-xs text-muted-foreground">{t('variance')}</p>
-              <p className={`text-xl font-bold ltr-island ${varianceCents === 0 ? 'text-foreground' : varianceCents < 0 ? 'text-red-700' : 'text-amber-700'}`}>
+              <p className={`text-xl font-bold ltr-island ${varianceCents === 0 ? 'text-foreground' : varianceCents < 0 ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
                 {/* Invalid/empty input renders no figure: the ?? 0 fallback
                     below would show a plausible-but-wrong variance while
                     Close stays disabled. */}
@@ -223,7 +223,7 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
             </div>
           </div>
           {submitError && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+            <div className="flex items-start gap-2 rounded-lg border border-red-300 dark:border-red-800/40 bg-red-50 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">
               <AlertTriangle size={16} className="shrink-0 mt-0.5" />
               <span>{submitError}</span>
             </div>
@@ -264,9 +264,9 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
               <p className="text-xs text-muted-foreground">{t('countedCash')}</p>
               <p className="text-base font-semibold text-foreground"><Ltr>{fmt(closedZ.counted_cash_cents / minorFactor)}</Ltr></p>
             </div>
-            <div className={`rounded-lg border p-3 ${closedZ.variance_cents === 0 ? 'border-border' : closedZ.variance_cents < 0 ? 'border-red-300 bg-red-50' : 'border-amber-300 bg-amber-50'}`}>
+            <div className={`rounded-lg border p-3 ${closedZ.variance_cents === 0 ? 'border-border' : closedZ.variance_cents < 0 ? 'border-red-300 dark:border-red-800/40 bg-red-50 dark:bg-red-950/40' : 'border-amber-300 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/40'}`}>
               <p className="text-xs text-muted-foreground">{t('variance')}</p>
-              <p className={`text-base font-semibold ltr-island ${closedZ.variance_cents === 0 ? 'text-foreground' : closedZ.variance_cents < 0 ? 'text-red-700' : 'text-amber-700'}`}>
+              <p className={`text-base font-semibold ltr-island ${closedZ.variance_cents === 0 ? 'text-foreground' : closedZ.variance_cents < 0 ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
                 <Ltr>{fmt(closedZ.variance_cents / minorFactor)}</Ltr>
               </p>
             </div>

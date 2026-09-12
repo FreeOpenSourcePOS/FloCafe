@@ -246,7 +246,8 @@ export default function WhatsAppPage() {
     }
   }, []);
 
-  const effectiveTab = userTab ?? (status?.state === 'connected' ? 'sent' : 'connection');
+  const defaultTab = status?.state === 'connected' ? 'sent' : 'connection';
+  const effectiveTab = (userTab === 'inbox' && !isAdmin) ? defaultTab : userTab ?? defaultTab;
   const onTabChange = (v: string) => {
     setUserTab(v);
     if (typeof window !== 'undefined') window.localStorage.setItem('whatsapp.activeTab', v);
@@ -280,11 +281,12 @@ export default function WhatsAppPage() {
   }, []);
 
   const refreshInbox = useCallback(async () => {
+    if (!isAdmin) return;
     try {
       const { data } = await api.get('/whatsapp/inbox', { params: { limit: 100 } });
       setInbox(data.messages ?? []);
     } catch { /* ignore */ }
-  }, []);
+  }, [isAdmin]);
 
   const refreshBlocklist = useCallback(async () => {
     if (!isAdmin) return;
@@ -457,7 +459,9 @@ export default function WhatsAppPage() {
       <Tabs value={effectiveTab} onValueChange={onTabChange}>
         <TabsList>
           <TabsTrigger value="sent"><Send className="size-4" /> {tTabs('sent')}</TabsTrigger>
-          <TabsTrigger value="inbox"><Inbox className="size-4" /> {tTabs('inbox')}</TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="inbox"><Inbox className="size-4" /> {tTabs('inbox')}</TabsTrigger>
+          )}
           <TabsTrigger value="connection"><QrCode className="size-4" /> {tTabs('connection')}</TabsTrigger>
         </TabsList>
 
@@ -756,65 +760,67 @@ export default function WhatsAppPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="inbox" className="space-y-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>{tInbox('title')}</CardTitle>
-              <CardDescription>{tInbox('description')}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {inbox.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-center text-sm text-muted-foreground">
-                  <Inbox className="size-8 mb-2 opacity-40" />
-                  <p className="font-medium text-foreground">{tInbox('empty')}</p>
-                  <p className="mt-1 max-w-sm">{tInbox('emptyHint')}</p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{tSent('colWhen')}</TableHead>
-                      <TableHead>{tSent('colPhone')}</TableHead>
-                      <TableHead>{tSent('colBody')}</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {inbox.map((m) => {
-                      const isBlocked = blocklist.some((b) => b.phone_e164 === m.phone_e164);
-                      return (
-                        <TableRow key={m.id}>
-                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmt(m.queued_at)}</TableCell>
-                          <TableCell className="font-mono text-xs">
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(m.phone_e164, m.phone_e164)}
-                              className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
-                              title={tInbox('copyPhone')}
-                            >
-                              <Copy className="size-3 opacity-0 group-hover:opacity-100" />
-                              <Ltr>{m.phone_e164}</Ltr>
-                            </button>
-                          </TableCell>
-                          <TableCell className="text-sm whitespace-pre-line break-words max-w-md">{m.body}</TableCell>
-                          <TableCell>
-                            {isBlocked ? (
-                              <Badge variant="secondary">{tInbox('blocked')}</Badge>
-                            ) : (
-                              <Button size="sm" variant="outline" onClick={() => blockFromInbox(m.phone_e164)}>
-                                <Ban className="size-3" /> {tInbox('blockCta')}
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+        {isAdmin && (
+          <TabsContent value="inbox" className="space-y-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>{tInbox('title')}</CardTitle>
+                <CardDescription>{tInbox('description')}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {inbox.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center text-sm text-muted-foreground">
+                    <Inbox className="size-8 mb-2 opacity-40" />
+                    <p className="font-medium text-foreground">{tInbox('empty')}</p>
+                    <p className="mt-1 max-w-sm">{tInbox('emptyHint')}</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{tSent('colWhen')}</TableHead>
+                        <TableHead>{tSent('colPhone')}</TableHead>
+                        <TableHead>{tSent('colBody')}</TableHead>
+                        <TableHead></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {inbox.map((m) => {
+                        const isBlocked = blocklist.some((b) => b.phone_e164 === m.phone_e164);
+                        return (
+                          <TableRow key={m.id}>
+                            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{fmt(m.queued_at)}</TableCell>
+                            <TableCell className="font-mono text-xs">
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(m.phone_e164, m.phone_e164)}
+                                className="inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer"
+                                title={tInbox('copyPhone')}
+                              >
+                                <Copy className="size-3 opacity-0 group-hover:opacity-100" />
+                                <Ltr>{m.phone_e164}</Ltr>
+                              </button>
+                            </TableCell>
+                            <TableCell className="text-sm whitespace-pre-line break-words max-w-md">{m.body}</TableCell>
+                            <TableCell>
+                              {isBlocked ? (
+                                <Badge variant="secondary">{tInbox('blocked')}</Badge>
+                              ) : (
+                                <Button size="sm" variant="outline" onClick={() => blockFromInbox(m.phone_e164)}>
+                                  <Ban className="size-3" /> {tInbox('blockCta')}
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       {status?.lastError && status.state !== 'cooldown' && (

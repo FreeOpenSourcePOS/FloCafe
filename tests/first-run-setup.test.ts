@@ -4,6 +4,8 @@ import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+process.env.FLOCAFE_TEST_VERBOSE = '1';
+
 const Module = require('module');
 const originalLoad = Module._load;
 // `let` (not `const`) — the cloud-services setup scenario below re-points

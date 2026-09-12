@@ -14,9 +14,47 @@ const TEST_EXCLUSIONS = {
   'test:currency-split': 'Subset alias already executed by test:currency in the default suite.',
 };
 
+// Splits on top-level `&&`, `||`, and `;`, leaving text inside '...' or "..."
+// quotes untouched so a quoted operator can't fake a command boundary.
+function splitTopLevelCommands(command) {
+  const segments = [];
+  let current = '';
+  let quote = null;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      current += ch;
+      continue;
+    }
+    if ((ch === '&' && command[i + 1] === '&') || (ch === '|' && command[i + 1] === '|')) {
+      segments.push(current);
+      current = '';
+      i++;
+      continue;
+    }
+    if (ch === ';') {
+      segments.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  segments.push(current);
+  return segments;
+}
+
 function extractExecutedTestScripts(command) {
-  const commandPattern = /(?:^|&&|\|\||;)\s*(?:bash\s+tests\/run-test\.sh\s+)?npm\s+run\s+(test(?::[\w:-]+)?)(?=\s|$)/g;
-  return [...command.matchAll(commandPattern)].map((match) => match[1]);
+  const commandStartPattern = /^(?:bash\s+tests\/run-test\.sh\s+)?npm\s+run\s+(test(?::[\w:-]+)?)(?:\s|$)/;
+  return splitTopLevelCommands(command)
+    .map((segment) => segment.trim().match(commandStartPattern))
+    .filter(Boolean)
+    .map((match) => match[1]);
 }
 
 function main() {

@@ -15,5 +15,13 @@ assert.deepEqual(
   extractExecutedTestScripts('node helper.cjs npm run test:argument'),
   [],
 );
+assert.deepEqual(
+  extractExecutedTestScripts('echo "&& npm run test:phantom --note"'),
+  [],
+);
+assert.deepEqual(
+  extractExecutedTestScripts("echo '; npm run test:phantom' && npm run test:executed"),
+  ['test:executed'],
+);
 
 console.log('Test-script command parsing verified.');

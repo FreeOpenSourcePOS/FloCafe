@@ -64,8 +64,19 @@ function money(value: number | string, regional: ServerAppInfo | null) {
   );
 }
 
-function idempotencyKeyFor(tableId: string): string {
-  return `server-app-${Date.now()}-${tableId}`;
+function fnv1aHash(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+// Keyed by draft content (not a timestamp) so retrying the same failed send reuses one key — a fresh key would defeat the backend's replay protection.
+function idempotencyKeyForDraft(scopeId: string, draft: DraftLine[]): string {
+  const signature = draft.map((line) => `${line.product.id}:${line.quantity}:${line.note.trim()}`).join('|');
+  return `server-app-${scopeId}-${fnv1aHash(signature)}`;
 }
 
 export default function ServerStandalonePage() {
@@ -294,6 +305,9 @@ export default function ServerStandalonePage() {
         title: t('orderSlipTitle'),
         subtotal: t('orderSlipSubtotal'),
         discount: t('orderSlipDiscount'),
+        serviceCharge: t('orderSlipServiceCharge'),
+        deliveryCharge: t('orderSlipDeliveryCharge'),
+        packagingCharge: t('orderSlipPackagingCharge'),
         tax: t('orderSlipTax'),
         total: t('orderSlipTotal'),
       }, { paperWidth: 80, country: regional?.country, currency: regional?.currency });
@@ -319,7 +333,7 @@ export default function ServerStandalonePage() {
       let newItems: OrderItem[];
       if (currentOrder?.id) {
         const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items }, {
-          headers: { 'Idempotency-Key': idempotencyKeyFor(String(currentOrder.id)) },
+          headers: { 'Idempotency-Key': idempotencyKeyForDraft(String(currentOrder.id), draft) },
         });
         orderId = data.order.id;
         rawOrder = data.order;
@@ -332,7 +346,7 @@ export default function ServerStandalonePage() {
           customer_id: customerId,
           type: 'dine_in',
           items,
-        }, { headers: { 'Idempotency-Key': idempotencyKeyFor(selectedTableId) } });
+        }, { headers: { 'Idempotency-Key': idempotencyKeyForDraft(selectedTableId, draft) } });
         orderId = data.order.id;
         rawOrder = data.order;
         newItems = data.order.items || [];

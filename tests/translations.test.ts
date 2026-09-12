@@ -697,6 +697,7 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'receipt.reprint',
   'receipt.serviceCharge',
   'serverApp.emailPlaceholder',
+  'serverApp.orderSlipServiceCharge',
   'serverApp.orderSlipSubtotal',
   'serverApp.orderSlipTitle',
   'serverApp.title',

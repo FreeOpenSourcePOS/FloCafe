@@ -15,6 +15,9 @@ export interface OrderSlipLabels {
   title: string;
   subtotal: string;
   discount: string;
+  serviceCharge: string;
+  deliveryCharge: string;
+  packagingCharge: string;
   tax: string;
   total: string;
 }
@@ -52,6 +55,9 @@ export function generateOrderSlipHtml(order: Order, labels: OrderSlipLabels, opt
       <hr style="border:1px dashed #000;margin:${padding} 0;">
       <div style="display:flex;justify-content:space-between;"><span>${escapeHtml(labels.subtotal)}</span><span>${escapeHtml(money(order.subtotal))}</span></div>
       ${order.discount_amount ? `<div style="display:flex;justify-content:space-between;"><span>${escapeHtml(labels.discount)}</span><span>-${escapeHtml(money(order.discount_amount))}</span></div>` : ''}
+      ${order.service_charge ? `<div style="display:flex;justify-content:space-between;"><span>${escapeHtml(labels.serviceCharge)}</span><span>${escapeHtml(money(order.service_charge))}</span></div>` : ''}
+      ${order.delivery_charge ? `<div style="display:flex;justify-content:space-between;"><span>${escapeHtml(labels.deliveryCharge)}</span><span>${escapeHtml(money(order.delivery_charge))}</span></div>` : ''}
+      ${order.packaging_charge ? `<div style="display:flex;justify-content:space-between;"><span>${escapeHtml(labels.packagingCharge)}</span><span>${escapeHtml(money(order.packaging_charge))}</span></div>` : ''}
       ${order.tax_amount ? `<div style="display:flex;justify-content:space-between;"><span>${escapeHtml(labels.tax)}</span><span>${escapeHtml(money(order.tax_amount))}</span></div>` : ''}
       <div style="display:flex;justify-content:space-between;font-weight:bold;margin-top:${padding};"><span>${escapeHtml(labels.total)}</span><span>${escapeHtml(money(order.total))}</span></div>
     </div>

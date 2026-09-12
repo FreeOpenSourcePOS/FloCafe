@@ -64,6 +64,10 @@ function money(value: number | string, regional: ServerAppInfo | null) {
   );
 }
 
+function sendAttemptSignature(scopeId: string, draft: DraftLine[], customerName: string, customerPhone: string): string {
+  const items = draft.map((line) => `${line.product.id}:${line.quantity}:${line.note.trim()}`).join('|');
+  return `${scopeId}|${items}|${customerName.trim()}|${customerPhone.trim()}`;
+}
 
 export default function ServerStandalonePage() {
   // Syncs tenant language preference from /api/server-app/info.
@@ -98,8 +102,9 @@ export default function ServerStandalonePage() {
   const [sending, setSending] = useState(false);
   // Synchronous re-entry guard: `sending` state updates too late to stop a second click fired before the first render.
   const sendInFlightRef = useRef(false);
-  // One idempotency nonce per send attempt: reused across retries of that attempt, rotated after it succeeds.
-  const sendNonceRef = useRef<string | null>(null);
+  // Nonce for the in-flight send attempt, paired with a signature of what defines it (draft/customer/order).
+  // Reused only while retrying that exact same attempt; a content change or a success both rotate it.
+  const sendAttemptRef = useRef<{ signature: string; nonce: string } | null>(null);
 
   async function loadAll() {
     if (!api) return;
@@ -309,8 +314,11 @@ export default function ServerStandalonePage() {
     if (!api || !selectedTableId || draft.length === 0 || sendInFlightRef.current) return;
     sendInFlightRef.current = true;
     setSending(true);
-    if (!sendNonceRef.current) sendNonceRef.current = crypto.randomUUID();
-    const idempotencyKey = `server-app-${selectedTableId}-${sendNonceRef.current}`;
+    const signature = sendAttemptSignature(selectedTableId, draft, customerName, customerPhone);
+    if (sendAttemptRef.current?.signature !== signature) {
+      sendAttemptRef.current = { signature, nonce: crypto.randomUUID() };
+    }
+    const idempotencyKey = `server-app-${selectedTableId}-${sendAttemptRef.current.nonce}`;
     try {
       const customerId = await ensureCustomer();
       const items = draft.map((line) => ({
@@ -341,7 +349,7 @@ export default function ServerStandalonePage() {
         rawOrder = data.order;
         newItems = data.order.items || [];
       }
-      sendNonceRef.current = null;
+      sendAttemptRef.current = null;
       setDraft([]);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));

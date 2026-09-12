@@ -64,20 +64,6 @@ function money(value: number | string, regional: ServerAppInfo | null) {
   );
 }
 
-function fnv1aHash(input: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16);
-}
-
-// Keyed by draft content (not a timestamp) so retrying the same failed send reuses one key — a fresh key would defeat the backend's replay protection.
-function idempotencyKeyForDraft(scopeId: string, draft: DraftLine[]): string {
-  const signature = draft.map((line) => `${line.product.id}:${line.quantity}:${line.note.trim()}`).join('|');
-  return `server-app-${scopeId}-${fnv1aHash(signature)}`;
-}
 
 export default function ServerStandalonePage() {
   // Syncs tenant language preference from /api/server-app/info.
@@ -112,6 +98,8 @@ export default function ServerStandalonePage() {
   const [sending, setSending] = useState(false);
   // Synchronous re-entry guard: `sending` state updates too late to stop a second click fired before the first render.
   const sendInFlightRef = useRef(false);
+  // One idempotency nonce per send attempt: reused across retries of that attempt, rotated after it succeeds.
+  const sendNonceRef = useRef<string | null>(null);
 
   async function loadAll() {
     if (!api) return;
@@ -321,6 +309,8 @@ export default function ServerStandalonePage() {
     if (!api || !selectedTableId || draft.length === 0 || sendInFlightRef.current) return;
     sendInFlightRef.current = true;
     setSending(true);
+    if (!sendNonceRef.current) sendNonceRef.current = crypto.randomUUID();
+    const idempotencyKey = `server-app-${selectedTableId}-${sendNonceRef.current}`;
     try {
       const customerId = await ensureCustomer();
       const items = draft.map((line) => ({
@@ -333,7 +323,7 @@ export default function ServerStandalonePage() {
       let newItems: OrderItem[];
       if (currentOrder?.id) {
         const { data } = await api.post(`/api/orders/${currentOrder.id}/items`, { items }, {
-          headers: { 'Idempotency-Key': idempotencyKeyForDraft(String(currentOrder.id), draft) },
+          headers: { 'Idempotency-Key': idempotencyKey },
         });
         orderId = data.order.id;
         rawOrder = data.order;
@@ -346,11 +336,12 @@ export default function ServerStandalonePage() {
           customer_id: customerId,
           type: 'dine_in',
           items,
-        }, { headers: { 'Idempotency-Key': idempotencyKeyForDraft(selectedTableId, draft) } });
+        }, { headers: { 'Idempotency-Key': idempotencyKey } });
         orderId = data.order.id;
         rawOrder = data.order;
         newItems = data.order.items || [];
       }
+      sendNonceRef.current = null;
       setDraft([]);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));

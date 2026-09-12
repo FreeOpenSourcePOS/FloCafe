@@ -559,6 +559,8 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   assert.match(draftStable.log, /release create 3\.3\.0/);
   assert.match(draftStable.log, /--latest=false/);
   assert.doesNotMatch(draftStable.log, /--prerelease/);
+  assert.match(draftStable.log, /--title 3\.3\.0(?:\s|$)/);
+  assert.doesNotMatch(draftStable.log, /--title 3\.3\.0 \(/, 'release title must not carry a "(channel)" suffix — GitHub already badges pre-releases');
   assert.ok(
     readReleaseNotes().includes('compare/3.2.3...3.3.0'),
     'draft release notes must contain comparison link to predecessor tag'

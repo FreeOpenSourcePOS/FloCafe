@@ -360,8 +360,12 @@ export default function ServerStandalonePage() {
         table: activeTable ? { name: activeTable.name || activeTable.number } : undefined,
         customer: currentOrder?.customer || (trimmedCustomerName ? { name: trimmedCustomerName } : undefined),
       };
-      await printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
-      await printOrderSlip(orderId, enrichedOrder);
+      // Backgrounded so an unreachable printer can't block Send; sequenced (not concurrent)
+      // since KOT and bill can share a default printer and race its socket connection.
+      void (async () => {
+        await printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
+        await printOrderSlip(orderId, enrichedOrder);
+      })();
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {

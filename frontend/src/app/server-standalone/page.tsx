@@ -362,8 +362,12 @@ export default function ServerStandalonePage() {
       };
       // Printing can hang on an unreachable printer; run it in the background instead of
       // keeping the terminal blocked on "sending" once the order itself is safely placed.
-      void printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
-      void printOrderSlip(orderId, enrichedOrder);
+      // Sequenced, not concurrent: KOT and bill can resolve to the same default printer,
+      // and simultaneous raw socket writes to one thermal printer can corrupt output.
+      void (async () => {
+        await printKotForOrder(orderId, { ...enrichedOrder, items: newItems });
+        await printOrderSlip(orderId, enrichedOrder);
+      })();
     } catch (error: unknown) {
       toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {

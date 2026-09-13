@@ -1407,7 +1407,7 @@ export default function OrdersPage() {
                     )}
                     {isOwnerOrManager && (() => {
                       const orderBills = order.bills?.length ? order.bills : (order.bill ? [order.bill] : []);
-                      const paidBills = orderBills.filter((b) => Number(b.paid_amount) > 0);
+                      const paidBills = orderBills.filter((b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded');
                       if (paidBills.length === 0) return null;
                       return (
                         <Button

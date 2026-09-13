@@ -50,6 +50,11 @@ async function main() {
   });
   const { baseUrl, server } = await startServer(app);
 
+  // Freeze the clock so business-day fixtures can't flake near a real day boundary.
+  const originalDateNow = Date.now;
+  const FIXED_NOW = Date.UTC(2025, 5, 15, 12, 0, 0);
+  Date.now = () => FIXED_NOW;
+
   async function newPaidBill(productId: string, quantity = 1, headers = ownerAuth) {
     const order = await api(baseUrl, '/api/orders', {
       method: 'POST',
@@ -68,7 +73,7 @@ async function main() {
   try {
     // ── Same business day, past the 1-hour window: manager PIN insufficient ──
     const lateBill = await newPaidBill('prod-refund-co');
-    db.prepare("UPDATE orders SET created_at = datetime('now', '-90 minutes') WHERE id = ?").run(lateBill.order.id);
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 10:30:00' WHERE id = ?").run(lateBill.order.id);
 
     const managerAttempt = await api(baseUrl, '/api/refunds', {
       method: 'POST',
@@ -103,7 +108,7 @@ async function main() {
 
     // ── A prior business day is closed even to an owner PIN ─────────────────
     const priorDayBill = await newPaidBill('prod-refund-co');
-    db.prepare("UPDATE orders SET created_at = datetime('now', '-2 days') WHERE id = ?").run(priorDayBill.order.id);
+    db.prepare("UPDATE orders SET created_at = '2025-06-13 12:00:00' WHERE id = ?").run(priorDayBill.order.id);
     const priorDayAttempt = await api(baseUrl, '/api/refunds', {
       method: 'POST',
       body: { bill_id: priorDayBill.bill.id, amount: priorDayBill.bill.paid_amount, method: 'cash', override_pin: '9999', manager_id: ownerId },
@@ -115,7 +120,7 @@ async function main() {
     const itemBill = await newPaidBill('prod-refund-co');
     const itemRow = db.prepare('SELECT * FROM order_items WHERE order_id = ?').get(itemBill.order.id) as any;
     db.prepare("UPDATE order_items SET status = 'completed' WHERE id = ?").run(itemRow.id);
-    db.prepare("UPDATE orders SET created_at = datetime('now', '-90 minutes') WHERE id = ?").run(itemBill.order.id);
+    db.prepare("UPDATE orders SET created_at = '2025-06-15 10:30:00' WHERE id = ?").run(itemBill.order.id);
     const completedItemRefund = await api(baseUrl, '/api/refunds', {
       method: 'POST',
       body: { bill_id: itemBill.bill.id, order_item_id: itemRow.id, method: 'cash', override_pin: '9999', manager_id: ownerId },
@@ -164,6 +169,7 @@ async function main() {
     });
     assertEqual(disabledCreditRefund.status, 400, 'a store-credit refund is rejected when loyalty is disabled');
   } finally {
+    Date.now = originalDateNow;
     server.close();
     closeDatabase();
     try { fs.rmSync(testDir, { recursive: true }); } catch {}

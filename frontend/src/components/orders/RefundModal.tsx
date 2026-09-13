@@ -13,9 +13,13 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { getCountryByCode, getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { useAuthStore } from '@/store/auth';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
+import { parseDbTimestamp } from '@/lib/utils';
 
 // Kept in sync with REFUND_ITEM_ELIGIBLE_STATUSES in main/services/refund.ts.
 const REFUND_ELIGIBLE_ITEM_STATUSES = ['preparing', 'ready', 'served', 'completed'];
+// Approximation of REFUND_WINDOW_MS in main/services/refund.ts, for the PIN hint only —
+// the backend's business-day check is authoritative.
+const REFUND_IN_PROGRESS_WINDOW_MS = 60 * 60 * 1000;
 
 // Mirrors BUILT_IN_PAYMENT_KEYS in PaymentModal.tsx.
 const BUILT_IN_PAYMENT_KEYS = {
@@ -43,10 +47,12 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   const unitAdapter = useCurrencyUnitAdapter();
   const { toDisplay: toDisplayUnit, toStored: toStoredUnit, formatInput } = unitAdapter;
   const formatCurrency = useFormatCurrency();
+  const [mountedAt] = useState(() => Date.now());
+  const isLikelyLate = mountedAt - parseDbTimestamp(order.created_at).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
 
-  // Split checks mean an order can have several paid bills — only bills that were
-  // actually paid have anything left to refund, and each has its own allocated items.
-  const paidBills = bills.filter((b) => Number(b.paid_amount) > 0);
+  // Split checks mean an order can have several paid bills, each with its own allocated
+  // items; a fully refunded bill has nothing left, so exclude it from selection.
+  const paidBills = bills.filter((b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded');
   const [selectedBillId, setSelectedBillId] = useState<number | ''>(paidBills[0]?.id ?? '');
   const selectedBill = paidBills.find((b) => b.id === selectedBillId) || paidBills[0] || null;
 
@@ -290,7 +296,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
               onChange={(e) => setOverridePin(e.target.value)}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
             />
-            <p className="text-xs text-muted-foreground mt-1">{t('refundOwnerPinNotice')}</p>
+            {isLikelyLate && <p className="text-xs text-muted-foreground mt-1">{t('refundOwnerPinNotice')}</p>}
           </div>
         </div>
 

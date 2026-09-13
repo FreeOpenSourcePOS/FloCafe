@@ -219,7 +219,7 @@ export interface Bill {
   total: number;
   paid_amount: number;
   balance: number;
-  payment_status: 'unpaid' | 'partial' | 'paid';
+  payment_status: 'unpaid' | 'partial' | 'paid' | 'refunded' | 'partially_refunded';
   payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string }[] | null;
   split_group_id?: string | null;
   split_label?: string | null;

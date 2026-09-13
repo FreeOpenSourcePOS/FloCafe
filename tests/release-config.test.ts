@@ -866,21 +866,28 @@ exit 1
 
   const ciWorkflow = loadWorkflow('ci.yml');
   const requiredGateJob = ciWorkflow.jobs['required-checks-gate'];
-  assert.deepEqual(requiredGateJob.needs, ['linux-baseline', 'e2e-playwright', 'windows-uninstaller']);
+  assert.deepEqual(requiredGateJob.needs, ['changes', 'linux-baseline', 'e2e-playwright', 'windows-uninstaller']);
   assert.equal(requiredGateJob.if, 'always()', 'the gate must still report a conclusion when a path-filtered dependency is skipped');
   const requiredGateStep = findStep(requiredGateJob, 'Verify no required job actually failed');
   assertShellStep(requiredGateJob, 'Verify no required job actually failed');
-  const gateExpressions = (results: [string, string, string]) => ({
+  const gateExpressions = (changesResult: string, results: [string, string, string]) => ({
+    'needs.changes.result': changesResult,
     'needs.linux-baseline.result': results[0],
     'needs.e2e-playwright.result': results[1],
     'needs.windows-uninstaller.result': results[2],
   });
-  const gatePassesAllSkipped = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions(['skipped', 'skipped', 'skipped']) });
+  const gatePassesAllSkipped = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('success', ['skipped', 'skipped', 'skipped']) });
   assert.equal(gatePassesAllSkipped.status, 0, 'a docs/workflow-only PR that skips every path-filtered job must still pass the gate');
-  const gatePassesMixed = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions(['success', 'skipped', 'success']) });
+  const gatePassesMixed = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('success', ['success', 'skipped', 'success']) });
   assert.equal(gatePassesMixed.status, 0, gatePassesMixed.stderr);
-  const gateFailsOnRealFailure = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions(['success', 'failure', 'success']) });
+  const gateFailsOnRealFailure = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('success', ['success', 'failure', 'success']) });
   assert.notEqual(gateFailsOnRealFailure.status, 0, 'the gate must not mask an actual job failure as passing');
+  const gateFailsWhenChangesFails = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('failure', ['skipped', 'skipped', 'skipped']) });
+  assert.notEqual(
+    gateFailsWhenChangesFails.status,
+    0,
+    'a failed Path Filtering job makes every dependent "skipped" for the wrong reason — the gate must not treat that as passing',
+  );
 
   const e2eJob = ciWorkflow.jobs['e2e-playwright'];
   const releaseRegression = findStep(e2eJob, 'Run renderer and printer regression suites');

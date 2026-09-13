@@ -40,7 +40,11 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (req.path.startsWith('/api/products/') && req.path.endsWith('/image') && req.method === 'GET') { next(); return; }
   // Support-ticket submission from the login screen, before any session exists.
   // Rate-limited in main/routes/support-ticket.ts to bound anonymous abuse.
-  if (req.path.startsWith('/api/support-ticket/pre-login')) { next(); return; }
+  // Matched exactly (not by prefix) so a lookalike path can never ride along
+  // and skip authentication.
+  if (req.method === 'POST' && req.path === '/api/support-ticket/pre-login') { next(); return; }
+  if (req.method === 'GET' && req.path === '/api/support-ticket/pre-login/profile') { next(); return; }
+  if (req.method === 'GET' && /^\/api\/support-ticket\/pre-login\/[0-9a-f-]{36}\/status$/i.test(req.path)) { next(); return; }
 
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {

@@ -882,10 +882,8 @@ jobs:
       - name: Download and verify every release manifest and referenced artifact
         # Verification includes the immutable candidate binding, per-arch Snap
         # publication markers, and the permanent sanitized summary before the
-        # draft can become a public feed. Also surfaces the candidate manifest's
-        # asset ID and SHA-256 as job outputs so a stable release can promote
-        # itself to GitHub Latest later in this same run without re-deriving
-        # them from a manual dispatch input.
+        # draft can become a public feed. Also outputs the candidate manifest
+        # asset ID and SHA-256 for promote-stable below.
         id: verify-assets
         run: |
           CANDIDATE_MANIFEST_ASSET_ID=$(gh api "repos/${{ github.repository }}/releases" --paginate \
@@ -910,7 +908,8 @@ jobs:
             --candidate-manifest-commit "${{ github.sha }}"
           )
           node "${VERIFY_ARGS[@]}"
-          CANDIDATE_MANIFEST_SHA256=$(sha256sum "$RUNNER_TEMP/candidate-manifest.json" | cut -d' ' -f1)
+          CANDIDATE_MANIFEST_SHA256=$(gh api "repos/${{ github.repository }}/releases/assets/$CANDIDATE_MANIFEST_ASSET_ID" \
+            -H 'Accept: application/octet-stream' | sha256sum | cut -d' ' -f1)
           {
             echo "candidate_manifest_asset_id=$CANDIDATE_MANIFEST_ASSET_ID"
             echo "candidate_manifest_sha256=$CANDIDATE_MANIFEST_SHA256"
@@ -990,14 +989,14 @@ jobs:
 
   promote-stable:
     name: Promote stable release to GitHub Latest
-    # Every stable tag push promotes itself automatically once verification
-    # and publish both succeed, using the same candidate-manifest asset ID and
-    # SHA-256 verify-release already derived — no separate manual dispatch.
-    # Beta releases never reach this job (needs.create-release.outputs.channel
-    # gates it to stable), so they stay invisible to stable installs exactly
-    # as before.
+    # Auto-promotes every verified stable release; beta never reaches this job.
     needs: [create-release, verify-release, publish-release]
     if: needs.create-release.outputs.promotion_only != 'true' && needs.create-release.outputs.channel == 'stable'
+    # Shared with promote-release below (not per-ref) so two promotions for
+    # different tags can never race and move Latest backward.
+    concurrency:
+      group: promote-to-latest-${{ github.repository }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1013,9 +1012,7 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Verify stable Snap publication and permanent evidence
-        # Re-checks the same immutable manifest, asset, and Snap-evidence
-        # boundary the manual promotion path checks (verify-stable-promotion.cjs),
-        # just fed from this run's own outputs instead of dispatch inputs.
+        # Same check the manual promotion path uses, fed from this run's outputs.
         run: |
           node scripts/release-gate/verify-stable-promotion.cjs \
             --repo "${{ github.repository }}" \
@@ -1046,12 +1043,13 @@ jobs:
 
   promote-release:
     name: Promote a historical release to GitHub Latest
-    # Manual/historical path: promotes an already-published release from a
-    # prior run (predates this workflow's auto-promotion, or needed a re-run)
-    # given its candidate-manifest asset ID and SHA-256 by hand. New stable
-    # tag pushes no longer need this — see promote-stable above.
+    # Manual re-promotion of an already-published release; new tag pushes use promote-stable instead.
     needs: create-release
     if: needs.create-release.outputs.promotion_only == 'true'
+    # Shared with promote-stable above — see that job's comment.
+    concurrency:
+      group: promote-to-latest-${{ github.repository }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

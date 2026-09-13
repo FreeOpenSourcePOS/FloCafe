@@ -6,11 +6,14 @@ import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { formatCurrencyForTenant } from '@/lib/countries';
 import type { Product, Addon, AddonGroup } from '@/lib/types';
 
 interface Props {
   product: Product;
   currency: string;
+  /** Overrides the signed-in tenant's currency formatting (e.g. for standalone pages with no auth store). */
+  country?: string;
   onAdd: (product: Product, quantity: number, addons: Addon[], specialInstructions: string) => void;
   onClose: () => void;
   initialQuantity?: number;
@@ -30,11 +33,12 @@ function groupInitialAddons(addons: Addon[]): Record<string | number, Addon[]> {
 }
 
 export default function AddonModal({
-  product, onAdd, onClose,
+  product, currency, country, onAdd, onClose,
   initialQuantity = 1, initialAddons = [], initialInstructions = '', mode = 'add',
 }: Props) {
   const t = useTranslations('pos');
-  const fmt = useFormatCurrency();
+  const tenantFmt = useFormatCurrency();
+  const fmt = country ? (n: number) => formatCurrencyForTenant(n, country, currency) : tenantFmt;
   const [selected, setSelected] = useState<Record<string | number, Addon[]>>(() => groupInitialAddons(initialAddons));
   const [quantity, setQuantity] = useState(initialQuantity);
   const [instructions, setInstructions] = useState(initialInstructions);
@@ -168,7 +172,7 @@ export default function AddonModal({
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">{addon.name}</span>
+                            <span className="font-medium text-foreground">{addon.name}</span>
                             <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
                               {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                             </span>
@@ -216,7 +220,7 @@ export default function AddonModal({
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{addon.name}</span>
+                          <span className="font-medium text-foreground">{addon.name}</span>
                           <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
                             {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                           </span>

@@ -107,7 +107,7 @@ function resolveItemAddons(
   productId: string,
   addons: any[] | null | undefined,
 ): { id: string; name: string; price: number; quantity: number }[] {
-  if (!addons || !Array.isArray(addons) || addons.length === 0) return [];
+  const addonInputs = Array.isArray(addons) ? addons : [];
 
   const linkedGroupIds = new Set(
     (db.prepare('SELECT addon_group_id FROM addon_group_product WHERE product_id = ?').all(productId) as { addon_group_id: string }[])
@@ -117,7 +117,7 @@ function resolveItemAddons(
   const resolved: { id: string; name: string; price: number; quantity: number }[] = [];
   const groupSelections = new Map<string, { totalQty: number; hasMultiQty: boolean }>();
 
-  for (const addon of addons) {
+  for (const addon of addonInputs) {
     if (!addon) continue;
     if (!addon.id || typeof addon.id !== 'string') {
       throw new Error('Each add-on must reference a valid catalog add-on ID');
@@ -150,9 +150,12 @@ function resolveItemAddons(
     });
   }
 
-  for (const [groupId, selection] of groupSelections.entries()) {
+  // Validate every group linked to the product, not just ones with a selection —
+  // otherwise a required group (e.g. Size) can be silently skipped by omitting `addons`.
+  for (const groupId of linkedGroupIds) {
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ? AND is_active = 1').get(groupId) as any;
     if (!group) continue;
+    const selection = groupSelections.get(groupId) || { totalQty: 0, hasMultiQty: false };
 
     if (!group.allow_multiple_quantities && selection.hasMultiQty) {
       throw new Error(`Add-on group "${group.name}" does not allow multiple quantities`);
@@ -162,8 +165,9 @@ function resolveItemAddons(
       throw new Error(`Total add-on quantity for group "${group.name}" exceeds maximum allowed (${group.max_selection})`);
     }
 
-    if (group.min_selection && selection.totalQty < group.min_selection) {
-      throw new Error(`Selection for group "${group.name}" requires at least ${group.min_selection} item(s)`);
+    const requiredMin = group.is_required ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
+    if (requiredMin > 0 && selection.totalQty < requiredMin) {
+      throw new Error(`Selection for group "${group.name}" requires at least ${requiredMin} item(s)`);
     }
   }
 

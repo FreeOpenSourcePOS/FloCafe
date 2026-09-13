@@ -143,6 +143,17 @@ async function main() {
     `INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES (?, ?, ?, ?, ?)`
   ).run('addon-ai-wrong-group', 'ag-other', 'Wrong Group', 20, 1);
 
+  // A product with a *required* addon group (e.g. Size: Small/Medium/Large) — used to verify
+  // the server rejects an item that omits the required selection instead of silently pricing
+  // it at the base product price.
+  db.prepare(`INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run('prod-ai-required', 'cat-ai', 'Coffee', 80, 1, 2);
+  db.prepare(`INSERT INTO addon_groups (id, name, is_required, min_selection, max_selection) VALUES (?, ?, ?, ?, ?)`)
+    .run('ag-required', 'Size', 1, 1, 1);
+  db.prepare(`INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)`).run('prod-ai-required', 'ag-required');
+  db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES (?, ?, ?, ?, ?)`)
+    .run('addon-ai-size-large', 'ag-required', 'Large', 30, 1);
+
   const app = express();
   app.use(express.json());
   app.use((req: any, res: any, next: any) => {
@@ -237,6 +248,45 @@ async function main() {
         body: orderBody([{ name: 'Ghost Topping', price: 5 }]),
       });
       assertEqual(res.status, 400, `id-less add-on rejected (got ${res.status}, ${JSON.stringify(res.data)})`);
+    }
+
+    // ── Case 6: a required add-on group cannot be silently skipped ────────
+    console.log('\n6. Required add-on group must be selected');
+    function requiredProductBody(addons: any[] | null): string {
+      return JSON.stringify({
+        type: 'takeaway',
+        items: [{ product_id: 'prod-ai-required', quantity: 1, addons }],
+      });
+    }
+    {
+      const resOmitted = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: JSON.stringify({ type: 'takeaway', items: [{ product_id: 'prod-ai-required', quantity: 1 }] }),
+      });
+      assertEqual(resOmitted.status, 400, `item with addons field omitted entirely is rejected (got ${resOmitted.status}, ${JSON.stringify(resOmitted.data)})`);
+
+      const resEmpty = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: requiredProductBody([]),
+      });
+      assertEqual(resEmpty.status, 400, `item with an empty addons array is rejected (got ${resEmpty.status}, ${JSON.stringify(resEmpty.data)})`);
+
+      const resNull = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: requiredProductBody(null),
+      });
+      assertEqual(resNull.status, 400, `item with addons: null is rejected (got ${resNull.status}, ${JSON.stringify(resNull.data)})`);
+
+      const resSatisfied = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: requiredProductBody([{ id: 'addon-ai-size-large' }]),
+      });
+      assertEqual(resSatisfied.status, 201, `item with the required selection made succeeds (got ${resSatisfied.status}, ${JSON.stringify(resSatisfied.data)})`);
+      assertEqual(resSatisfied.data.order?.subtotal, 110, 'subtotal includes the required add-on price (80 + 30)');
     }
   } finally {
     server.close();

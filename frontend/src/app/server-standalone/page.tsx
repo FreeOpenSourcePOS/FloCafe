@@ -2,7 +2,8 @@
 
 import axios, { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
-import { Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, RefreshCw, Search, Send, Smartphone, UserRound } from 'lucide-react';
+import { Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, RefreshCw, Search, Send, ShoppingCart, Smartphone, SquarePen, Trash2, UserRound } from 'lucide-react';
+import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/drawer';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { parsePhone } from '@/lib/phone';
 import { useSyncServerLanguage } from '@/lib/i18n';
@@ -11,15 +12,16 @@ import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { printerService } from '@/lib/printer/PrinterService';
-import type { Order as FullOrder } from '@/lib/types';
+import { generateCartItemId } from '@/lib/cart-identity';
+import AddonModal from '@/components/pos/AddonModal';
+import type { Order as FullOrder, Product, Addon, CartItem } from '@/lib/types';
 
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
-type Product = { id: string; category_id: string | null; name: string; price: number | string; is_active: number };
 type Table = { id: string; name?: string; number?: string; status?: string; activeOrder?: Order | null; current_order?: Order | null };
 type OrderItem = { id: number; product_name: string; quantity: number; status: string; special_instructions?: string | null };
 type Order = { id: number; order_number: string; table_id?: string | null; status: string; items?: OrderItem[]; customer?: { id: string; name: string; phone?: string } | null };
-type DraftLine = { product: Product; quantity: number; note: string };
+type DraftLine = CartItem;
 type ServerAppInfo = {
   country: string;
   currency: string;
@@ -65,7 +67,7 @@ function money(value: number | string, regional: ServerAppInfo | null) {
 }
 
 function sendAttemptSignature(scopeId: string, draft: DraftLine[], customerName: string, customerPhone: string): string {
-  const items = draft.map((line) => `${line.product.id}:${line.quantity}:${line.note.trim()}`).join('|');
+  const items = draft.map((line) => `${line.id}:${line.quantity}`).join('|');
   return `${scopeId}|${items}|${customerName.trim()}|${customerPhone.trim()}`;
 }
 
@@ -76,6 +78,8 @@ export default function ServerStandalonePage() {
   const tAuth = useTranslations('auth');
   const tOrders = useTranslations('orders');
   const tTables = useTranslations('tables');
+  const tCommon = useTranslations('common');
+  const tPos = useTranslations('pos');
 
   // Fall back to caller-supplied localized message for server-app errors without dotted error codes.
   const apiErrorT = (key: string): string => key;
@@ -96,9 +100,16 @@ export default function ServerStandalonePage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState<DraftLine[]>([]);
+  const [addonModalProduct, setAddonModalProduct] = useState<Product | null>(null);
+  const [editingDraftLine, setEditingDraftLine] = useState<DraftLine | null>(null);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerMatch, setCustomerMatch] = useState<{ id: string; name: string } | null>(null);
+  const [customerSearched, setCustomerSearched] = useState(false);
+  const phoneDebounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const phoneAbortRef = useRef<AbortController | null>(null);
   const [sending, setSending] = useState(false);
   // Synchronous re-entry guard: `sending` state updates too late to stop a second click fired before the first render.
   const sendInFlightRef = useRef(false);
@@ -134,6 +145,8 @@ export default function ServerStandalonePage() {
       setCustomerName('');
       setCustomerPhone('');
     }
+    setCustomerMatch(null);
+    setCustomerSearched(false);
   }
 
   useEffect(() => {
@@ -190,11 +203,60 @@ export default function ServerStandalonePage() {
         setCustomerName('');
         setCustomerPhone('');
       }
+      setCustomerMatch(null);
+      setCustomerSearched(false);
     }).catch(() => {
       if (!cancelled) setCurrentOrder(null);
     });
     return () => { cancelled = true; };
   }, [api, selectedTableId, user]);
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(phoneDebounceRef.current);
+      phoneAbortRef.current?.abort();
+    };
+  }, []);
+
+  function searchCustomerByPhone(rawPhone: string) {
+    clearTimeout(phoneDebounceRef.current);
+    phoneAbortRef.current?.abort();
+    const digits = rawPhone.replace(/\D/g, '');
+    if (digits.length < 3) {
+      setCustomerMatch(null);
+      setCustomerSearched(false);
+      return;
+    }
+    phoneDebounceRef.current = setTimeout(async () => {
+      if (!api) return;
+      const controller = new AbortController();
+      phoneAbortRef.current = controller;
+      try {
+        const parsed = regional?.country ? parsePhone(rawPhone, regional.country) : null;
+        const lookupPhone = parsed ? parsed.e164 : rawPhone;
+        const { data } = await api.get('/api/crm/lookup', { params: { phone: lookupPhone }, signal: controller.signal });
+        if (data.found && data.customer) {
+          setCustomerMatch({ id: data.customer.id, name: data.customer.name });
+          setCustomerName(data.customer.name || '');
+        } else {
+          setCustomerMatch(null);
+        }
+        setCustomerSearched(true);
+      } catch {
+        if (controller.signal.aborted) return;
+        setCustomerMatch(null);
+        setCustomerSearched(true);
+      }
+    }, 300);
+  }
+
+  function handleCustomerPhoneChange(value: string) {
+    setCustomerPhone(value);
+    setCustomerMatch(null);
+    setCustomerSearched(false);
+    setCustomerName('');
+    searchCustomerByPhone(value);
+  }
 
   async function handleLogin(event: FormEvent) {
     event.preventDefault();
@@ -217,19 +279,45 @@ export default function ServerStandalonePage() {
     setUser(null);
   }
 
-  function addProduct(product: Product) {
+  function addDraftLine(product: Product, quantity: number, addons: Addon[], specialInstructions: string) {
     setDraft((lines) => {
-      const existing = lines.find((line) => line.product.id === product.id && line.note === '');
+      const lineId = generateCartItemId(product.id, addons, specialInstructions);
+      const existing = lines.find((line) => line.id === lineId);
       if (existing) {
-        return lines.map((line) => line === existing ? { ...line, quantity: line.quantity + 1 } : line);
+        return lines.map((line) => line.id === lineId ? { ...line, quantity: line.quantity + quantity } : line);
       }
-      return [...lines, { product, quantity: 1, note: '' }];
+      return [...lines, { id: lineId, product, quantity, addons, special_instructions: specialInstructions }];
     });
   }
 
-  function changeQty(productId: string, delta: number) {
+  function updateDraftLine(lineId: string, quantity: number, addons: Addon[], specialInstructions: string) {
+    setDraft((lines) => {
+      const target = lines.find((line) => line.id === lineId);
+      if (!target) return lines;
+
+      const newId = generateCartItemId(target.product.id, addons, specialInstructions);
+      if (newId === lineId) {
+        return lines.map((line) => line.id === lineId ? { ...line, quantity, addons, special_instructions: specialInstructions } : line);
+      }
+
+      // The edit produced a config that matches another existing line — merge into it.
+      const collision = lines.find((line) => line.id === newId && line.id !== lineId);
+      if (collision) {
+        return lines
+          .filter((line) => line.id !== lineId)
+          .map((line) => line.id === newId ? { ...line, quantity: line.quantity + quantity } : line);
+      }
+      return lines.map((line) => line.id === lineId ? { ...line, id: newId, quantity, addons, special_instructions: specialInstructions } : line);
+    });
+  }
+
+  function removeDraftLine(lineId: string) {
+    setDraft((lines) => lines.filter((line) => line.id !== lineId));
+  }
+
+  function changeQty(lineId: string, delta: number) {
     setDraft((lines) => lines
-      .map((line) => line.product.id === productId ? { ...line, quantity: line.quantity + delta } : line)
+      .map((line) => line.id === lineId ? { ...line, quantity: line.quantity + delta } : line)
       .filter((line) => line.quantity > 0));
   }
 
@@ -324,7 +412,10 @@ export default function ServerStandalonePage() {
       const items = draft.map((line) => ({
         product_id: line.product.id,
         quantity: line.quantity,
-        special_instructions: line.note.trim() || undefined,
+        addons: line.addons.length > 0
+          ? line.addons.map((addon) => ({ id: addon.id, name: addon.name, price: addon.price, quantity: addon.quantity || 1 }))
+          : null,
+        special_instructions: line.special_instructions.trim() || undefined,
       }));
       let orderId: number;
       let rawOrder: Record<string, unknown>;
@@ -351,6 +442,7 @@ export default function ServerStandalonePage() {
       }
       sendAttemptRef.current = null;
       setDraft([]);
+      setMobileCartOpen(false);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('orderSent'));
       // rawOrder only has table_id/customer_id; the KOT/slip renderers need the nested table/customer for display.
@@ -380,15 +472,26 @@ export default function ServerStandalonePage() {
     const matchesQuery = !query || product.name.toLowerCase().includes(query.toLowerCase());
     return matchesCategory && matchesQuery;
   });
-  const draftTotal = draft.reduce((sum, line) => sum + Number(line.product.price || 0) * line.quantity, 0);
+  const draftTotal = draft.reduce((sum, line) => {
+    const addonTotal = line.addons.reduce((addonSum, addon) => addonSum + Number(addon.price || 0) * (addon.quantity || 1), 0);
+    return sum + (Number(line.product.price || 0) + addonTotal) * line.quantity;
+  }, 0);
+  const draftQuantities = useMemo(() => {
+    const quantities = new Map<string, number>();
+    for (const line of draft) {
+      quantities.set(line.product.id, (quantities.get(line.product.id) || 0) + line.quantity);
+    }
+    return quantities;
+  }, [draft]);
+  const draftItemCount = draft.reduce((sum, line) => sum + line.quantity, 0);
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center"><div className="h-10 w-10 rounded-full border-4 border-brand border-t-transparent animate-spin" /></div>;
+    return <div className="server-app-light flex h-screen items-center justify-center"><div className="h-10 w-10 rounded-full border-4 border-brand border-t-transparent animate-spin" /></div>;
   }
 
   if (disabled) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
+      <div className="server-app-light flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
         <Smartphone size={44} className="text-gray-400" />
         <h1 className="text-lg font-semibold text-gray-900">{t('disabledTitle')}</h1>
         <p className="max-w-sm text-sm text-gray-500">{t('disabledHint')}</p>
@@ -398,7 +501,7 @@ export default function ServerStandalonePage() {
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
+      <div className="server-app-light flex min-h-screen items-center justify-center p-4">
         <form onSubmit={handleLogin} className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-6 text-center">
             <UserRound size={42} className="mx-auto mb-3 text-brand" />
@@ -406,8 +509,8 @@ export default function ServerStandalonePage() {
             <p className="mt-1 text-sm text-gray-500">{t('loginSubtitle')}</p>
           </div>
           <div className="space-y-3">
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" placeholder={t('emailPlaceholder')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={tAuth('password')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" placeholder={t('emailPlaceholder')} required className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={tAuth('password')} required className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
             <label className="flex items-center gap-2 text-sm text-gray-600">
               <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="rounded border-gray-300 text-brand focus:ring-brand" />
               {tAuth('rememberMe')}
@@ -422,8 +525,98 @@ export default function ServerStandalonePage() {
     );
   }
 
+  const ticketPanelBody = (
+    <>
+      <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <input value={customerPhone} onChange={(event) => handleCustomerPhoneChange(event.target.value)} dir="ltr" placeholder={t('phonePlaceholder')} className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand focus:outline-none" />
+        <input
+          value={customerName}
+          onChange={customerMatch ? undefined : (event) => setCustomerName(event.target.value)}
+          readOnly={!!customerMatch}
+          placeholder={customerSearched ? (customerMatch ? '' : t('customerNamePlaceholder')) : t('customerNamePlaceholder')}
+          className={`h-10 rounded-lg border px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand focus:outline-none ${customerMatch ? 'border-gray-200 bg-gray-50' : 'border-gray-200 bg-white'}`}
+        />
+      </div>
+      {customerSearched && (
+        <p className={`mt-1 text-xs font-medium ${customerMatch ? 'text-green-600' : 'text-red-500'}`}>
+          {customerMatch ? tPos('customerFound') : tPos('newCustomerEnterName')}
+        </p>
+      )}
+
+      {currentOrder?.items && currentOrder.items.length > 0 && (
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('kitchen')}</p>
+          <div className="space-y-2">
+            {currentOrder.items.map((item) => (
+              <div key={item.id} className="flex items-center gap-2 text-sm">
+                {itemStatusIcon(item.status, t)}
+                <span className="min-w-0 flex-1 truncate"><Ltr>{item.quantity}</Ltr> x {item.product_name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 border-t border-gray-100 pt-3">
+        <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('newItems')}</p>
+        {draft.length === 0 ? (
+          <p className="py-6 text-center text-sm text-gray-400">{t('emptyDraft')}</p>
+        ) : (
+          <div className="space-y-3">
+            {draft.map((line) => (
+              <div key={line.id} className="rounded-lg border border-gray-100 p-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{line.product.name}</span>
+                    {line.addons.length > 0 && (
+                      <div className="mt-0.5 space-y-0.5">
+                        {line.addons.map((addon) => (
+                          <p key={addon.id} className="truncate text-xs text-gray-500">
+                            + {addon.name}{(addon.quantity || 1) > 1 ? ` x${addon.quantity}` : ''}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {line.special_instructions && (
+                      <p className="mt-0.5 truncate text-xs italic text-gray-500">{line.special_instructions}</p>
+                    )}
+                  </div>
+                  <button onClick={() => removeDraftLine(line.id)} aria-label={tCommon('removeItem')}
+                    className="shrink-0 rounded-md p-1 text-gray-400 hover:text-red-500"><Trash2 size={14} /></button>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => changeQty(line.id, -1)} className="rounded-md border border-gray-200 p-1"><Minus size={14} /></button>
+                    <span className="w-6 text-center text-sm font-semibold"><Ltr>{line.quantity}</Ltr></span>
+                    <button onClick={() => changeQty(line.id, 1)} className="rounded-md border border-gray-200 p-1"><Plus size={14} /></button>
+                  </div>
+                  <button onClick={() => setEditingDraftLine(line)}
+                    className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-200">
+                    <SquarePen size={12} />
+                    {tCommon('edit')}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
+        <span className="text-sm text-gray-500">{t('draftTotal')}</span>
+        <span className="text-lg font-bold"><Ltr>{money(draftTotal, regional)}</Ltr></span>
+      </div>
+      <button onClick={sendDraft} disabled={!selectedTableId || draft.length === 0 || sending}
+        className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50">
+        <Send size={17} />
+        {sending ? t('sending') : currentOrder ? t('addToOrder') : t('sendToKitchen')}
+      </button>
+    </>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50 text-gray-900">
+    <div className="server-app-light min-h-screen bg-slate-50 text-gray-900">
       <header className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-3 py-2 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white"><ChefHat size={18} /></div>
@@ -458,7 +651,7 @@ export default function ServerStandalonePage() {
           <div className="mb-3 flex gap-2">
             <div className="relative flex-1">
               <Search size={16} className="absolute start-3 top-3 text-gray-400" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchMenu')} className="h-10 w-full rounded-lg border border-gray-200 ps-9 pe-3 text-sm focus:border-brand focus:outline-none" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchMenu')} className="h-10 w-full rounded-lg border border-gray-200 bg-white ps-9 pe-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand focus:outline-none" />
             </div>
           </div>
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
@@ -471,70 +664,70 @@ export default function ServerStandalonePage() {
             ))}
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-            {filteredProducts.map((product) => (
-              <button key={product.id} onClick={() => addProduct(product)}
-                className="min-h-24 rounded-lg border border-gray-200 bg-white p-3 text-start hover:border-brand">
-                <span className="line-clamp-2 text-sm font-semibold">{product.name}</span>
-                <span className="mt-2 block text-sm text-gray-500"><Ltr>{money(product.price, regional)}</Ltr></span>
-              </button>
-            ))}
+            {filteredProducts.map((product) => {
+              const inCartQty = draftQuantities.get(product.id) || 0;
+              return (
+                <button key={product.id} onClick={() => setAddonModalProduct(product)}
+                  className="relative min-h-24 rounded-lg border border-gray-200 bg-white p-3 text-start hover:border-brand">
+                  {inCartQty > 0 && (
+                    <span className="absolute top-0 end-0 z-10 flex h-6 w-6 items-center justify-center rounded-es-lg bg-brand text-xs font-bold text-white">
+                      <Ltr>{inCartQty}</Ltr>
+                    </span>
+                  )}
+                  <span className="line-clamp-2 text-sm font-semibold">{product.name}</span>
+                  <span className="mt-2 block text-sm text-gray-500"><Ltr>{money(product.price, regional)}</Ltr></span>
+                </button>
+              );
+            })}
           </div>
         </section>
 
-        <section className="rounded-lg border border-gray-200 bg-white p-3 lg:sticky lg:top-16 lg:self-start">
-          <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder={t('customerNamePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
-            <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} dir="ltr" placeholder={t('phonePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
-          </div>
-
-          {currentOrder?.items && currentOrder.items.length > 0 && (
-            <div className="mt-4 border-t border-gray-100 pt-3">
-              <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('kitchen')}</p>
-              <div className="space-y-2">
-                {currentOrder.items.map((item) => (
-                  <div key={item.id} className="flex items-center gap-2 text-sm">
-                    {itemStatusIcon(item.status, t)}
-                    <span className="min-w-0 flex-1 truncate"><Ltr>{item.quantity}</Ltr> x {item.product_name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 border-t border-gray-100 pt-3">
-            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('newItems')}</p>
-            {draft.length === 0 ? (
-              <p className="py-6 text-center text-sm text-gray-400">{t('emptyDraft')}</p>
-            ) : (
-              <div className="space-y-3">
-                {draft.map((line) => (
-                  <div key={line.product.id} className="rounded-lg border border-gray-100 p-2">
-                    <div className="flex items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{line.product.name}</span>
-                      <button onClick={() => changeQty(line.product.id, -1)} className="rounded-md border border-gray-200 p-1"><Minus size={14} /></button>
-                      <span className="w-6 text-center text-sm font-semibold"><Ltr>{line.quantity}</Ltr></span>
-                      <button onClick={() => changeQty(line.product.id, 1)} className="rounded-md border border-gray-200 p-1"><Plus size={14} /></button>
-                    </div>
-                    <input value={line.note} onChange={(event) => setDraft((lines) => lines.map((draftLine) => draftLine.product.id === line.product.id ? { ...draftLine, note: event.target.value } : draftLine))}
-                      placeholder={t('itemNotePlaceholder')} className="mt-2 h-9 w-full rounded-md border border-gray-200 px-2 text-sm focus:border-brand focus:outline-none" />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
-            <span className="text-sm text-gray-500">{t('draftTotal')}</span>
-            <span className="text-lg font-bold"><Ltr>{money(draftTotal, regional)}</Ltr></span>
-          </div>
-          <button onClick={sendDraft} disabled={!selectedTableId || draft.length === 0 || sending}
-            className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50">
-            <Send size={17} />
-            {sending ? t('sending') : currentOrder ? t('addToOrder') : t('sendToKitchen')}
-          </button>
+        <section className="hidden rounded-lg border border-gray-200 bg-white p-3 md:block md:sticky md:top-16 md:self-start">
+          {ticketPanelBody}
         </section>
       </main>
+
+      <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
+        <DrawerTrigger asChild>
+          <button className="fixed bottom-5 end-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-white shadow-lg hover:bg-brand-hover active:bg-brand-hover md:hidden" aria-label={t('currentTicket')}>
+            <ShoppingCart size={22} />
+            {draftItemCount > 0 && (
+              <span className="absolute -top-0.5 -end-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+                <Ltr>{draftItemCount}</Ltr>
+              </span>
+            )}
+          </button>
+        </DrawerTrigger>
+        <DrawerContent className="server-app-light max-h-[85vh]">
+          <div className="max-h-[80vh] overflow-y-auto px-3 pb-3">
+            {ticketPanelBody}
+          </div>
+        </DrawerContent>
+      </Drawer>
+
+      {addonModalProduct && (
+        <AddonModal
+          product={addonModalProduct}
+          currency={regional?.currency || 'INR'}
+          country={regional?.country}
+          onAdd={(addedProduct, quantity, addons, instructions) => addDraftLine(addedProduct, quantity, addons, instructions)}
+          onClose={() => setAddonModalProduct(null)}
+        />
+      )}
+
+      {editingDraftLine && (
+        <AddonModal
+          product={editingDraftLine.product}
+          currency={regional?.currency || 'INR'}
+          country={regional?.country}
+          mode="edit"
+          initialQuantity={editingDraftLine.quantity}
+          initialAddons={editingDraftLine.addons}
+          initialInstructions={editingDraftLine.special_instructions}
+          onAdd={(_editedProduct, quantity, addons, instructions) => updateDraftLine(editingDraftLine.id, quantity, addons, instructions)}
+          onClose={() => setEditingDraftLine(null)}
+        />
+      )}
     </div>
   );
 }

@@ -37,11 +37,14 @@ The existing ticket payload gains one new, optional, top-level string field:
 - **`log_tail`** — plain UTF-8 text, or **absent** (not `null`, not `""`) when the
   user unchecked "Attach log file", or when this build predates this feature.
   Treat missing as "no log provided," not an error.
-- Size cap: FloCafe truncates to the **most recent 200,000 characters** before
-  sending (tail, not head — oldest lines are dropped first). Enforced both
-  client-side (the log is read via IPC with the same cap) and again server-side in
-  `submitTicketHandler` as a defense-in-depth measure. Expect payloads up to
-  roughly 200 KB larger than before for tickets with a log attached.
+- Size cap: FloCafe truncates to the **most recent 200,000 bytes** (UTF-8
+  encoded) before sending (tail, not head — oldest lines are dropped first).
+  Enforced both client-side (the log is read via IPC with the same byte cap)
+  and again server-side in `submitTicketHandler` as a defense-in-depth
+  measure — both truncate at a byte boundary, which for multibyte UTF-8
+  content can occasionally split a character at the edge of the cut. Expect
+  payloads up to roughly 200 KB larger than before for tickets with a log
+  attached.
 - Format: raw electron-log line output (timestamp, level, message per line), the
   same format visible via the app's "Open Logs Folder" menu action. No
   compression, no structured/JSON framing — it's a plain text blob.
@@ -78,7 +81,7 @@ Concrete steps for `POST /api/pos/support-ticket` to go from "JSON field" to
 "a `.log` file a support agent can open":
 
 1. **Re-check the size server-side, don't trust the client cap.** FloCafe
-   truncates to 200,000 characters before sending, but a modified or future
+   truncates to 200,000 bytes before sending, but a modified or future
    client could send more. Reject or hard-truncate anything over, say,
    256 KB before it touches storage:
    ```js

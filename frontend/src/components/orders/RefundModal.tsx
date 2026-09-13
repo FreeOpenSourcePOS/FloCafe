@@ -27,6 +27,14 @@ const BUILT_IN_PAYMENT_KEYS = {
   card: 'methodCard',
 } as const;
 
+// Refunds fail for many distinct, actionable reasons (expired window, wrong PIN tier,
+// insufficient balance, missing customer for store credit) — surface the backend's own
+// message instead of a single generic toast that hides which one applies.
+function extractRefundErrorMessage(error: unknown): string | null {
+  const data = (error as { response?: { data?: { error?: unknown } } } | undefined)?.response?.data;
+  return typeof data?.error === 'string' && data.error.trim() ? data.error.trim() : null;
+}
+
 interface Props {
   order: Order;
   bills: Bill[];
@@ -172,8 +180,8 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
       toast.success(t('refundIssued'));
       onRefunded();
       onClose();
-    } catch {
-      toast.error(t('refundFailed'));
+    } catch (error) {
+      toast.error(extractRefundErrorMessage(error) || t('refundFailed'));
     } finally {
       setSubmitting(false);
     }

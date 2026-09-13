@@ -320,3 +320,27 @@ jobs:
       # Do not run the application lifecycle or install its dependencies here.
       - name: Run Windows uninstaller Pester tests
         run: node tests/run-windows-uninstaller-tests.cjs
+
+  # 7. Required Checks Gate
+  # linux-baseline, e2e-playwright, and windows-uninstaller are all path-filtered
+  # and report "skipped" for a PR that never touches their paths (e.g. docs- or
+  # release-workflow-only changes). A repo ruleset's required status checks treat
+  # "skipped" as unsatisfied, not passing, so listing those job names directly as
+  # required permanently blocks every PR that legitimately skips them. This job
+  # always runs and reports success for a skipped dependency, so the *ruleset*
+  # can require this job's name instead of the three conditional ones.
+  required-checks-gate:
+    name: Required Checks Gate
+    needs: [linux-baseline, e2e-playwright, windows-uninstaller]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Verify no required job actually failed
+        run: |
+          for result in "${{ needs.linux-baseline.result }}" "${{ needs.e2e-playwright.result }}" "${{ needs.windows-uninstaller.result }}"; do
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "::error::A required job did not succeed (status: $result)."
+              exit 1
+            fi
+          done

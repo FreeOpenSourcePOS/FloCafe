@@ -478,6 +478,37 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   assert.notEqual(promoteStablePromoteRejectsDraft.status, 0, 'promotion must refuse an unpublished draft');
   assert.match(promoteStablePromoteRejectsDraft.stdout, /must already be published/);
 
+  function fakeGhForPromotion(currentLatestTag: string | null): string {
+    const latestBranch = currentLatestTag === null ? 'exit 1' : `printf '%s\\n' '${currentLatestTag}'`;
+    return `#!/bin/sh
+case "$*" in
+  *"releases/tags/"*) printf '{"draft":false,"prerelease":false,"id":42}\\n' ;;
+  *"releases/latest"*) ${latestBranch} ;;
+  *) exit 0 ;;
+esac
+`;
+  }
+  const promoteStableAllowsNewer = executeWorkflowStep(promoteStablePromote, {
+    env: { RELEASE_TAG: '3.5.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhForPromotion('3.4.0') },
+  });
+  assert.equal(promoteStableAllowsNewer.status, 0, promoteStableAllowsNewer.stderr);
+  assert.match(promoteStableAllowsNewer.stdout, /Promoted 3\.5\.0 to GitHub Latest/);
+  const promoteStableAllowsWhenNoCurrentLatest = executeWorkflowStep(promoteStablePromote, {
+    env: { RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhForPromotion(null) },
+  });
+  assert.equal(promoteStableAllowsWhenNoCurrentLatest.status, 0, promoteStableAllowsWhenNoCurrentLatest.stderr);
+  const promoteStableRefusesOlder = executeWorkflowStep(promoteStablePromote, {
+    env: { RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhForPromotion('3.5.0') },
+  });
+  assert.notEqual(promoteStableRefusesOlder.status, 0, 'promotion must refuse to move GitHub Latest backward');
+  assert.match(promoteStableRefusesOlder.stdout, /must never move Latest backward/);
+
   const candidateWorkflow = loadWorkflow('release-candidate-gate.yml');
   const candidateTriggers = candidateWorkflow.on || candidateWorkflow['true'];
   assert.ok(candidateTriggers.workflow_dispatch, 'candidate gate must be manual and must not publish on pushes');

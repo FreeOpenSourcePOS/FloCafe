@@ -886,6 +886,7 @@ jobs:
         # asset ID and SHA-256 for promote-stable below.
         id: verify-assets
         run: |
+          set -euo pipefail
           CANDIDATE_MANIFEST_ASSET_ID=$(gh api "repos/${{ github.repository }}/releases" --paginate \
             --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .assets[] | select(.name == \"candidate-manifest.json\") | .id" | head -1)
           if [ -z "$CANDIDATE_MANIFEST_ASSET_ID" ]; then
@@ -1025,6 +1026,7 @@ jobs:
 
       - name: Promote published stable release to GitHub Latest
         run: |
+          set -euo pipefail
           RELEASE_JSON=$(gh api "repos/${{ github.repository }}/releases/tags/${RELEASE_TAG}")
           if [ "$(jq -r '.draft' <<<"$RELEASE_JSON")" != "false" ]; then
             echo "::error::Release ${RELEASE_TAG} must already be published before promotion."
@@ -1032,6 +1034,13 @@ jobs:
           fi
           if [ "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" != "false" ]; then
             echo "::error::Release ${RELEASE_TAG} must not be prerelease."
+            exit 1
+          fi
+          # Promotion is stable-only, so both tags are always plain X.Y.Z (create-release
+          # rejects a prerelease version on this channel) — sort -V is a safe comparator.
+          CURRENT_LATEST_TAG=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
+          if [ -n "$CURRENT_LATEST_TAG" ] && [ "$(printf '%s\n%s\n' "$CURRENT_LATEST_TAG" "$RELEASE_TAG" | sort -V | tail -1)" != "$RELEASE_TAG" ]; then
+            echo "::error::Refusing to promote ${RELEASE_TAG}: current GitHub Latest ${CURRENT_LATEST_TAG} is newer; promotion must never move Latest backward."
             exit 1
           fi
           RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")

@@ -37,7 +37,11 @@ The existing ticket payload gains one new, optional, top-level string field:
 - **`log_tail`** — plain UTF-8 text, or **absent** (not `null`, not `""`) when the
   user unchecked "Attach log file", or when this build predates this feature.
   Treat missing as "no log provided," not an error.
-- Size cap: FloCafe truncates to the **most recent 200,000 bytes** (UTF-8
+- Time window: FloCafe first excludes log lines older than **7 days** (electron-log
+  timestamps each line), so a quiet store's content doesn't include stale,
+  unrelated history — falling back to the full file if no line has a
+  parseable in-window timestamp.
+- Size cap: on top of that, FloCafe truncates to the **most recent 200,000 bytes** (UTF-8
   encoded) before sending (tail, not head — oldest lines are dropped first).
   Enforced both client-side (the log is read via IPC with the same byte cap)
   and again server-side in `submitTicketHandler` as a defense-in-depth

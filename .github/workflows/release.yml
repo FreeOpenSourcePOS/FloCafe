@@ -1118,9 +1118,7 @@ jobs:
             echo "::error::Release ${RELEASE_TAG} must not be prerelease."
             exit 1
           fi
-          # No version-ordering guard here (unlike promote-stable): this job's purpose
-          # includes deliberate historical re-promotion/rollback to an older release,
-          # which a human dispatching it by hand has already decided to do.
+          # No version-ordering guard here: unlike promote-stable, this job's purpose includes deliberate rollback.
           RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")
           gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -f make_latest=true
           echo "Promoted ${RELEASE_TAG} to GitHub Latest"

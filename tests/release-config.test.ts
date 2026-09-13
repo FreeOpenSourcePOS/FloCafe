@@ -802,17 +802,8 @@ exit 1
   assert.notEqual(publishBetaLatestFailure.status, 0, 'beta Latest preflight must reject non-404 failures');
   assert.match(publishBetaLatestFailure.stderr, /HTTP\/2\.0 500 Error/);
 
-  // Dedicated fake: fakeGh's generic --jq catchall returns the opaque "42"
-  // sentinel other tests rely on, which isn't a valid comparison target for
-  // this step's own current-Latest version check.
-  const promoteStepGh = `#!/bin/sh
-printf '%s\\n' "$*" >> "$RELEASE_TEST_LOG"
-case "$*" in
-  *"releases/latest"*) printf 'HTTP/2.0 404 Not Found\\n'; exit 1 ;;
-  *) printf '{"draft":false,"prerelease":false,"id":42}\\n' ;;
-esac
-`;
   const promoteStep = findStep(promoteJob, 'Promote published stable release to GitHub Latest');
+  assert.doesNotMatch(promoteStep.run, /releases\/latest/, 'historical promotion must not gate on version order — it exists to re-promote an older release');
   const promoteStable = executeWorkflowStep(promoteStep, {
     env: { RELEASE_TAG: '3.3.0', RELEASE_CHANNEL: 'stable' },
     expressions: {
@@ -820,7 +811,7 @@ esac
       'needs.create-release.outputs.version': '3.3.0',
       'needs.create-release.outputs.channel': 'stable',
     },
-    fakeCommands: { gh: promoteStepGh, jq: fakeJq },
+    fakeCommands: { gh: fakeGh, jq: fakeJq },
   });
   assert.equal(promoteStable.status, 0, promoteStable.stderr);
   assert.match(promoteStable.log, /-f make_latest=true/);

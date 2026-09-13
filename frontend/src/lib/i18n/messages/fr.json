@@ -2009,7 +2009,7 @@
     "askAiCopied": "Erreur copiée pour {provider} — collez-la dans la conversation qui vient de s’ouvrir.",
     "askAiCopyFailed": "Impossible de copier automatiquement — copiez l’erreur ci-dessus et collez-la dans {provider}.",
     "attachLog": "Joindre le fichier journal",
-    "attachLogHint": "Inclut l'activité récente de l'application pour nous aider à diagnostiquer le problème plus rapidement.",
+    "attachLogHint": "Peut inclure des détails de commande, des noms de clients ou d'autres activités à l'écran de cet appareil — décochez pour l'exclure.",
     "category": "Type de problème",
     "categoryAccount": "Compte ou services infonuagiques",
     "categoryBug": "Rapport d’anomalie",

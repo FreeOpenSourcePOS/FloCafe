@@ -2009,7 +2009,7 @@
     "askAiCopied": "Hata {provider} için kopyalandı — az önce açılan sohbete yapıştırın.",
     "askAiCopyFailed": "Otomatik kopyalanamadı — yukarıdaki hatayı kopyalayıp {provider} içine yapıştırın.",
     "attachLog": "Günlük dosyasını ekle",
-    "attachLogHint": "Sorunu daha hızlı teşhis etmemize yardımcı olmak için son uygulama etkinliğini içerir.",
+    "attachLogHint": "Sipariş ayrıntılarını, müşteri adlarını veya bu cihazdaki diğer ekran etkinliklerini içerebilir — hariç tutmak için işareti kaldırın.",
     "category": "Sorun Türü",
     "categoryAccount": "Hesap veya Bulut",
     "categoryBug": "Hata Bildirimi",

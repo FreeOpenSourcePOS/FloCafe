@@ -2009,7 +2009,7 @@
     "askAiCopied": "Kinopya ang error para sa {provider} — i-paste ito sa chat na kakabukas lang.",
     "askAiCopyFailed": "Hindi awtomatikong nakopya — kopyahin ang error sa itaas at i-paste sa {provider}.",
     "attachLog": "Ilakip ang log file",
-    "attachLogHint": "Kasama ang kamakailang aktibidad ng app para makatulong sa amin na mas mabilis na masuri ang problema.",
+    "attachLogHint": "Maaaring kasama ang mga detalye ng order, pangalan ng customer, o iba pang aktibidad sa screen ng device na ito — i-uncheck para hindi isama.",
     "category": "Uri ng Isyu",
     "categoryAccount": "Account o Cloud",
     "categoryBug": "Ulat ng Bug",

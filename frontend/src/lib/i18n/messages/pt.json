@@ -2009,7 +2009,7 @@
     "askAiCopied": "Erro copiado para o {provider} — cole no chat que acabou de abrir.",
     "askAiCopyFailed": "Não foi possível copiar automaticamente — copie o erro acima e cole no {provider}.",
     "attachLog": "Anexar arquivo de registro",
-    "attachLogHint": "Inclui a atividade recente do aplicativo para nos ajudar a diagnosticar o problema mais rápido.",
+    "attachLogHint": "Pode incluir detalhes de pedidos, nomes de clientes ou outra atividade na tela deste dispositivo — desmarque para excluir.",
     "category": "Tipo de problema",
     "categoryAccount": "Conta ou nuvem",
     "categoryBug": "Relatório de erro",

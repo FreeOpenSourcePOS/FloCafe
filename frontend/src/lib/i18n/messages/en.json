@@ -2009,7 +2009,7 @@
     "askAiCopied": "Copied the error for {provider} — paste it in the chat that just opened.",
     "askAiCopyFailed": "Could not copy automatically — copy the error above and paste it into {provider}.",
     "attachLog": "Attach log file",
-    "attachLogHint": "Includes recent app activity to help our team diagnose the issue faster.",
+    "attachLogHint": "May include order details, customer names, or other on-screen activity from this device — uncheck to leave it out.",
     "category": "Issue type",
     "categoryAccount": "Account or cloud",
     "categoryBug": "Bug report",

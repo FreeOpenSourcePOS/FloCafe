@@ -14,8 +14,9 @@ const router = Router();
 const ALLOWED_CATEGORIES = new Set(['general', 'bug', 'feature', 'account', 'printer', 'tax']);
 const ALLOWED_SEVERITIES = new Set(['low', 'normal', 'high', 'urgent']);
 const CLIENT_TICKET_ID_RE = /^[0-9a-f-]{36}$/i;
-// Defensive server-side cap; the client already truncates to this size (see get-log-tail IPC).
-const LOG_TAIL_MAX_CHARS = 200_000;
+// Defensive server-side cap on the *byte* size of an attached log tail; the
+// client already truncates to this size (see get-log-tail IPC).
+const LOG_TAIL_MAX_BYTES = 200_000;
 
 /** Rate limit for the unauthenticated pre-login support endpoints (no session to key off yet). */
 function preLoginRateLimit(max: number) {
@@ -23,6 +24,15 @@ function preLoginRateLimit(max: number) {
 }
 type SupportUser = { name?: string; email?: string; role?: string };
 type AuthenticatedRequest = Request & { user?: { userId?: string; role?: string } };
+
+const BLANK_PROFILE = {
+  contact_name: '', contact_email: '', contact_phone: '',
+  restaurant_name: '', country: '', timezone: '', submitted_by_role: '',
+};
+
+function isAuthenticatedRequest(req: Request): boolean {
+  return !!(req as AuthenticatedRequest).user?.userId;
+}
 
 function supportProfile(req: Request) {
   const db = getDatabase();
@@ -48,6 +58,15 @@ function supportProfile(req: Request) {
   };
 }
 
+/**
+ * The pre-login routes are reachable by any unauthenticated LAN client, so
+ * they must never disclose the owner's name/email/phone or the business's
+ * identity — only an authenticated caller gets the real profile.
+ */
+function resolveProfile(req: Request) {
+  return isAuthenticatedRequest(req) ? supportProfile(req) : BLANK_PROFILE;
+}
+
 function resolveCategory(value: unknown): string {
   return ALLOWED_CATEGORIES.has(String(value || '')) ? String(value) : 'general';
 }
@@ -55,7 +74,7 @@ function resolveCategory(value: unknown): string {
 function buildSystemDiagnostics(req: Request, category: string) {
   const db = getDatabase();
   const schemaVersion = db.pragma('user_version', { simple: true }) as number;
-  const profile = supportProfile(req);
+  const profile = resolveProfile(req);
   return {
     category,
     restaurant_name: profile.restaurant_name,
@@ -82,7 +101,7 @@ function buildSystemDiagnostics(req: Request, category: string) {
 }
 
 function profileHandler(req: Request, res: Response) {
-  const profile = supportProfile(req);
+  const profile = resolveProfile(req);
   res.json({ ...profile, app_version: require('../../package.json').version, platform: process.platform });
 }
 
@@ -108,7 +127,7 @@ async function submitTicketHandler(req: Request, res: Response) {
   const category = resolveCategory(body.category);
   const severity = ALLOWED_SEVERITIES.has(String(body.severity || ''))
     ? String(body.severity) as 'low' | 'normal' | 'high' | 'urgent' : 'normal';
-  const profile = supportProfile(req);
+  const profile = resolveProfile(req);
   const contactEmail = String(body.contact_email || profile.contact_email).trim().slice(0, 255);
   if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
     return res.status(400).json({ error: 'contact_email must be a valid email address' });
@@ -132,7 +151,7 @@ async function submitTicketHandler(req: Request, res: Response) {
   if (JSON.stringify(diagnostics).length > 15000) return res.status(400).json({ error: 'diagnostics are too large' });
 
   const logTail = typeof body.log_tail === 'string' && body.log_tail.trim()
-    ? body.log_tail.slice(-LOG_TAIL_MAX_CHARS)
+    ? Buffer.from(body.log_tail, 'utf8').subarray(-LOG_TAIL_MAX_BYTES).toString('utf8')
     : undefined;
 
   const queued = await cloudSync.queueSupportTicket({

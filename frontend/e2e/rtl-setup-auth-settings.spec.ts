@@ -83,7 +83,7 @@ test('login page is LTR in English and RTL in Persian with LTR email and end-ali
   // The password eye toggle sits at the inline-end: in RTL that is the left
   // side of the input, so it must sit on the left half of the input.
   const input = page.locator('#password');
-  const toggle = page.locator('button', { has: page.locator('svg') }).last();
+  const toggle = page.getByTestId('password-visibility-toggle');
   const inputBox = await input.boundingBox();
   const toggleBox = await toggle.boundingBox();
   expect(inputBox).not.toBeNull();

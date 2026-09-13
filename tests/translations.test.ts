@@ -914,6 +914,7 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'setup.finedineLabel', // FloCafe product flow name
   'setup.pinLabel',
   'staff.roleManager',
+  'support.menuLabel', // same loanword in German
   'support.version',
   'tax.auditCreateOverride',
   'tax.auditSystem',

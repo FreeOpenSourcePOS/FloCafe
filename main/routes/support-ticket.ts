@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import * as os from 'os';
-import { requireRole } from '../middleware/security';
+import { requireRole, rateLimit } from '../middleware/security';
 import { asyncHandler } from '../middleware/async-handler';
 import { cloudSync } from '../services/cloud-sync';
 import { getDatabase } from '../db';
@@ -14,8 +14,25 @@ const router = Router();
 const ALLOWED_CATEGORIES = new Set(['general', 'bug', 'feature', 'account', 'printer', 'tax']);
 const ALLOWED_SEVERITIES = new Set(['low', 'normal', 'high', 'urgent']);
 const CLIENT_TICKET_ID_RE = /^[0-9a-f-]{36}$/i;
+// Defensive server-side cap on the *byte* size of an attached log tail; the
+// client already truncates to this size (see get-log-tail IPC).
+const LOG_TAIL_MAX_BYTES = 200_000;
+
+/** Rate limit for the unauthenticated pre-login support endpoints (no session to key off yet). */
+function preLoginRateLimit(max: number) {
+  return rateLimit({ windowMs: 15 * 60 * 1000, max, message: 'Too many requests. Please try again later.', bypassPrivateIp: false });
+}
 type SupportUser = { name?: string; email?: string; role?: string };
 type AuthenticatedRequest = Request & { user?: { userId?: string; role?: string } };
+
+const BLANK_PROFILE = {
+  contact_name: '', contact_email: '', contact_phone: '',
+  restaurant_name: '', country: '', timezone: '', submitted_by_role: '',
+};
+
+function isAuthenticatedRequest(req: Request): boolean {
+  return !!(req as AuthenticatedRequest).user?.userId;
+}
 
 function supportProfile(req: Request) {
   const db = getDatabase();
@@ -41,6 +58,11 @@ function supportProfile(req: Request) {
   };
 }
 
+/** Pre-login routes are reachable by any unauthenticated LAN client; never disclose owner/business PII there. */
+function resolveProfile(req: Request) {
+  return isAuthenticatedRequest(req) ? supportProfile(req) : BLANK_PROFILE;
+}
+
 function resolveCategory(value: unknown): string {
   return ALLOWED_CATEGORIES.has(String(value || '')) ? String(value) : 'general';
 }
@@ -48,7 +70,7 @@ function resolveCategory(value: unknown): string {
 function buildSystemDiagnostics(req: Request, category: string) {
   const db = getDatabase();
   const schemaVersion = db.pragma('user_version', { simple: true }) as number;
-  const profile = supportProfile(req);
+  const profile = resolveProfile(req);
   return {
     category,
     restaurant_name: profile.restaurant_name,
@@ -74,16 +96,12 @@ function buildSystemDiagnostics(req: Request, category: string) {
   };
 }
 
-router.get('/profile', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
-  const profile = supportProfile(req);
+function profileHandler(req: Request, res: Response) {
+  const profile = resolveProfile(req);
   res.json({ ...profile, app_version: require('../../package.json').version, platform: process.platform });
-});
+}
 
-router.get('/diagnostics-preview', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
-  res.json(buildSystemDiagnostics(req, resolveCategory(req.query.category)));
-});
-
-router.get('/:clientTicketId/status', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
+function statusHandler(req: Request, res: Response) {
   const clientTicketId = String(req.params.clientTicketId || '');
   if (!CLIENT_TICKET_ID_RE.test(clientTicketId)) return res.status(400).json({ error: 'invalid client_ticket_id' });
   const row = getDatabase().prepare(
@@ -91,9 +109,9 @@ router.get('/:clientTicketId/status', requireRole(...ROLE_ACCESS.allStaff), (req
   ).get(clientTicketId) as { status: string; support_code: string | null; last_error: string | null } | undefined;
   if (!row) return res.status(404).json({ error: 'not found' });
   res.json({ status: row.status, support_code: row.support_code, last_error: row.last_error });
-});
+}
 
-router.post('/', requireRole(...ROLE_ACCESS.allStaff), asyncHandler(async (req: Request, res: Response) => {
+async function submitTicketHandler(req: Request, res: Response) {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const subject = String(body.subject || '').trim().slice(0, 255);
   const message = String(body.message || '').trim().slice(0, 20000);
@@ -105,7 +123,7 @@ router.post('/', requireRole(...ROLE_ACCESS.allStaff), asyncHandler(async (req: 
   const category = resolveCategory(body.category);
   const severity = ALLOWED_SEVERITIES.has(String(body.severity || ''))
     ? String(body.severity) as 'low' | 'normal' | 'high' | 'urgent' : 'normal';
-  const profile = supportProfile(req);
+  const profile = resolveProfile(req);
   const contactEmail = String(body.contact_email || profile.contact_email).trim().slice(0, 255);
   if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
     return res.status(400).json({ error: 'contact_email must be a valid email address' });
@@ -128,6 +146,10 @@ router.post('/', requireRole(...ROLE_ACCESS.allStaff), asyncHandler(async (req: 
   const diagnostics = { ...suppliedDiagnostics, ...buildSystemDiagnostics(req, category) };
   if (JSON.stringify(diagnostics).length > 15000) return res.status(400).json({ error: 'diagnostics are too large' });
 
+  const logTail = typeof body.log_tail === 'string' && body.log_tail.trim()
+    ? Buffer.from(body.log_tail, 'utf8').subarray(-LOG_TAIL_MAX_BYTES).toString('utf8')
+    : undefined;
+
   const queued = await cloudSync.queueSupportTicket({
     client_ticket_id: clientTicketId,
     subject,
@@ -139,6 +161,7 @@ router.post('/', requireRole(...ROLE_ACCESS.allStaff), asyncHandler(async (req: 
     contact_email: contactEmail || undefined,
     contact_phone: contactPhone,
     diagnostics,
+    log_tail: logTail,
   }, getHttpRequestSignal(req));
   res.status(queued.queued ? 202 : 503).json({
     ...queued,
@@ -147,6 +170,19 @@ router.post('/', requireRole(...ROLE_ACCESS.allStaff), asyncHandler(async (req: 
       ? 'Your request is queued and will be sent when FloCafe is online.'
       : 'Cloud data deletion is in progress; please try again later.',
   });
-}));
+}
+
+router.get('/profile', requireRole(...ROLE_ACCESS.allStaff), profileHandler);
+router.get('/diagnostics-preview', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
+  res.json(buildSystemDiagnostics(req, resolveCategory(req.query.category)));
+});
+router.get('/:clientTicketId/status', requireRole(...ROLE_ACCESS.allStaff), statusHandler);
+router.post('/', requireRole(...ROLE_ACCESS.allStaff), asyncHandler(submitTicketHandler));
+
+// Unauthenticated (login-screen) variants, exempted in main/server.ts;
+// rate-limited here (private IPs included) since there is no user to key off.
+router.get('/pre-login/profile', preLoginRateLimit(30), profileHandler);
+router.get('/pre-login/:clientTicketId/status', preLoginRateLimit(60), statusHandler);
+router.post('/pre-login', preLoginRateLimit(5), asyncHandler(submitTicketHandler));
 
 export const supportTicketRoutes = router;

@@ -88,7 +88,14 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   }, [selectedBill]);
 
   const effectiveBill = scopedBill && scopedBill.id === selectedBill?.id ? scopedBill : selectedBill;
-  const eligibleItems: OrderItem[] = scopedItems.filter((item) => REFUND_ELIGIBLE_ITEM_STATUSES.includes(item.status));
+  // A split item only allocated in part to this bill has a smaller quantity here than in
+  // the order-wide list; the backend refuses to refund those as a whole item.
+  const originalItemById = new Map((order.items || []).map((item) => [item.id, item]));
+  const eligibleItems: OrderItem[] = scopedItems.filter((item) => {
+    if (!REFUND_ELIGIBLE_ITEM_STATUSES.includes(item.status)) return false;
+    const original = originalItemById.get(item.id);
+    return !!original && Number(item.quantity) === Number(original.quantity);
+  });
 
   // Reset item/amount selection when the cashier switches bills (during render, so it
   // settles before paint instead of flashing the previous bill's values).
@@ -102,15 +109,18 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
 
   useEffect(() => {
     if (!effectiveBill) return;
+    let cancelled = false;
     api.get('/payment-methods').then((res) => setCustomMethods(res.data.payment_methods || [])).catch(() => setCustomMethods([]));
     api.get('/settings/loyalty').then((res) => setLoyaltyEnabled(!!res.data?.loyalty_enabled)).catch(() => {});
     api.get('/refunds', { params: { bill_id: effectiveBill.id, limit: 500 } })
       .then((res) => {
+        if (cancelled) return;
         const refunds: { amount_cents?: number }[] = res.data?.refunds || [];
         const total = refunds.reduce((sum, r) => sum + Number(r.amount_cents || 0), 0);
         setRefundedSoFarCents(total);
       })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [effectiveBill]);
 
   const paidCents = Math.round(Number(effectiveBill?.paid_amount || 0) * minorFactor);

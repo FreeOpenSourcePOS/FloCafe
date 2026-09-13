@@ -36,6 +36,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [title-bar-platform-matrix.md](title-bar-platform-matrix.md) | Cross-platform verification matrix for the custom title bar, runner/local evidence, and findings (#457/#462). | CURRENT |
 | [roles-and-permissions.md](roles-and-permissions.md) | Fixed staff roles, the read-only in-app permission matrix, and its code source of truth. | CURRENT |
 | [business-decisions.md](business-decisions.md) | Running, verifiable log of explicit product/business decisions (e.g. orders are never ownership-gated) that code must not silently contradict. | CURRENT |
+| [floadmin-support-ticket-log-handoff.md](floadmin-support-ticket-log-handoff.md) | Handoff for the external cloud/floadmin service: the optional `log_tail` field now included in support ticket submissions, its size cap, and storage/retention recommendations. | CURRENT |
 
 ### Active design & forward-looking plans
 

@@ -23,6 +23,10 @@ import { rasterizeKotDocumentForWebUsb, rasterizePrintDocumentForWebUsb } from '
 import { isKotDocument, isPrintDocument } from '../shared/print/document';
 import { sendEvent as sendTelemetryEvent } from './services/telemetry';
 import { isSafeWhatsAppShareUrl } from './security/url-allowlist';
+import log from 'electron-log/main';
+
+// Cap on the log content attached to a support ticket (most recent bytes only).
+const LOG_TAIL_MAX_BYTES = 200_000;
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -471,6 +475,26 @@ export function registerIpcHandlers(
       node: process.versions.node,
       platform: process.platform,
     };
+  });
+
+  // Tail of the current session's log file, for attaching to support tickets.
+  handle('get-log-tail', async () => {
+    try {
+      const logFilePath = log.transports.file.getFile().path;
+      const stat = fs.statSync(logFilePath);
+      const start = Math.max(0, stat.size - LOG_TAIL_MAX_BYTES);
+      const length = stat.size - start;
+      const buffer = Buffer.alloc(length);
+      const fd = fs.openSync(logFilePath, 'r');
+      try {
+        fs.readSync(fd, buffer, 0, length, start);
+      } finally {
+        fs.closeSync(fd);
+      }
+      return { text: buffer.toString('utf8'), truncated: start > 0 };
+    } catch (error: unknown) {
+      return { error: getErrorMessage(error) };
+    }
   });
 
   // Reports a caught renderer-side exception via anonymous telemetry.

@@ -38,6 +38,9 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (req.path.startsWith('/api/auth')) { next(); return; }
   // Allow unauthenticated GET requests for product images (so <img> tags work)
   if (req.path.startsWith('/api/products/') && req.path.endsWith('/image') && req.method === 'GET') { next(); return; }
+  // Support-ticket submission from the login screen, before any session exists.
+  // Rate-limited in main/routes/support-ticket.ts to bound anonymous abuse.
+  if (req.path.startsWith('/api/support-ticket/pre-login')) { next(); return; }
 
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {

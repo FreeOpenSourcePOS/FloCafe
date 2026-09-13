@@ -38,10 +38,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (req.path.startsWith('/api/auth')) { next(); return; }
   // Allow unauthenticated GET requests for product images (so <img> tags work)
   if (req.path.startsWith('/api/products/') && req.path.endsWith('/image') && req.method === 'GET') { next(); return; }
-  // Support-ticket submission from the login screen, before any session exists.
-  // Rate-limited in main/routes/support-ticket.ts to bound anonymous abuse.
-  // Matched exactly (not by prefix) so a lookalike path can never ride along
-  // and skip authentication.
+  // Login-screen support-ticket paths, rate-limited in support-ticket.ts.
+  // Matched exactly (not by prefix) so a lookalike path can't skip auth.
   if (req.method === 'POST' && req.path === '/api/support-ticket/pre-login') { next(); return; }
   if (req.method === 'GET' && req.path === '/api/support-ticket/pre-login/profile') { next(); return; }
   if (req.method === 'GET' && /^\/api\/support-ticket\/pre-login\/[0-9a-f-]{36}\/status$/i.test(req.path)) { next(); return; }
@@ -149,10 +147,8 @@ export function startServer(): Promise<void> {
     app = express();
 
     app.use(cors(corsOptions));
-    // The anonymous pre-login support-ticket route never legitimately needs
-    // more than a ticket plus its ~200KB log-tail cap; scope it to a much
-    // smaller body limit than the general API import limit below so an
-    // unauthenticated caller can't force a large allocation per request.
+    // Scope the anonymous pre-login route to a body limit far below the
+    // general API import limit, so it can't force a large allocation.
     app.use('/api/support-ticket/pre-login', express.json({ limit: '300kb' }));
     app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
     app.use((error: any, req: Request, res: Response, next: NextFunction) => {

@@ -58,11 +58,7 @@ function supportProfile(req: Request) {
   };
 }
 
-/**
- * The pre-login routes are reachable by any unauthenticated LAN client, so
- * they must never disclose the owner's name/email/phone or the business's
- * identity — only an authenticated caller gets the real profile.
- */
+/** Pre-login routes are reachable by any unauthenticated LAN client; never disclose owner/business PII there. */
 function resolveProfile(req: Request) {
   return isAuthenticatedRequest(req) ? supportProfile(req) : BLANK_PROFILE;
 }
@@ -183,9 +179,8 @@ router.get('/diagnostics-preview', requireRole(...ROLE_ACCESS.allStaff), (req: R
 router.get('/:clientTicketId/status', requireRole(...ROLE_ACCESS.allStaff), statusHandler);
 router.post('/', requireRole(...ROLE_ACCESS.allStaff), asyncHandler(submitTicketHandler));
 
-// Unauthenticated variants reachable from the login screen, before any session
-// exists. Exempted from the global auth gate in main/server.ts; rate-limited
-// here (private IPs included) since there is no user/role to key off.
+// Unauthenticated (login-screen) variants, exempted in main/server.ts;
+// rate-limited here (private IPs included) since there is no user to key off.
 router.get('/pre-login/profile', preLoginRateLimit(30), profileHandler);
 router.get('/pre-login/:clientTicketId/status', preLoginRateLimit(60), statusHandler);
 router.post('/pre-login', preLoginRateLimit(5), asyncHandler(submitTicketHandler));

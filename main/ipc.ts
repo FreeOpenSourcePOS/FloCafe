@@ -484,20 +484,13 @@ export function registerIpcHandlers(
   // Tail of the current session's log file, for attaching to support tickets.
   handle('get-log-tail', async () => {
     try {
+      // electron-log rotates main.log at ~1MB, so reading it whole is cheap.
       const logFilePath = log.transports.file.getFile().path;
-      // electron-log rotates main.log at ~1MB (see its default file transport
-      // config), so reading the whole current file is always cheap — no need
-      // for a byte-offset seek.
       const content = fs.readFileSync(logFilePath, 'utf8');
       const lines = content.split('\n');
 
-      // Prefer a time boundary over a raw byte cut: for a quiet store the
-      // 1MB file can span weeks, and "last N bytes" wouldn't line up with
-      // "recent enough to be relevant to this ticket." Cut at the first line
-      // whose timestamp falls inside the window; everything after it
-      // (including untimestamped continuation lines, e.g. stack traces) is
-      // chronologically at least that recent. Falls back to the full content
-      // if no line has a parseable in-window timestamp.
+      // Cut at the first line whose timestamp is within the window (a byte
+      // cut wouldn't line up with "recent enough" for a quiet store's log).
       const cutoff = Date.now() - LOG_TAIL_MAX_AGE_MS;
       let cutIndex = -1;
       for (let i = 0; i < lines.length; i++) {

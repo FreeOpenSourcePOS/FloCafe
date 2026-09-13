@@ -168,15 +168,21 @@ async function main() {
     });
     assertEqual(noBalanceLeft.status, 400, 'a further refund on a fully refunded bill is rejected before touching the PIN budget');
 
-    // ── One-hour eligibility window (rejected before PIN budget) ─────────
+    // ── Business-day eligibility window (rejected before PIN budget) ───────
+    // A prior business day is fully closed to refunds regardless of who approves
+    // (see docs/business-decisions.md: completed-order refunds stay open only
+    // through the end of the order's own business day). A same-day, past-the-
+    // 1-hour-window refund is covered separately in refund-completed-orders.test.ts,
+    // since verifying it needs to reach PIN approval and would perturb this file's
+    // tightly budgeted rate-limit sequence (see file header).
     const expiredBill = await newPaidBill('prod-refund');
-    db.prepare("UPDATE orders SET created_at = datetime('now', '-61 minutes') WHERE id = ?").run(expiredBill.order.id);
+    db.prepare("UPDATE orders SET created_at = datetime('now', '-2 days') WHERE id = ?").run(expiredBill.order.id);
     const expiredRefund = await api(baseUrl, '/api/refunds', {
       method: 'POST',
       body: { bill_id: expiredBill.bill.id, amount: expiredBill.bill.paid_amount, method: 'cash', override_pin: '1234', manager_id: managerId },
       headers: ownerAuth,
     });
-    assertEqual(expiredRefund.status, 409, 'a refund more than one hour after order creation is rejected');
+    assertEqual(expiredRefund.status, 409, 'a refund on an order from a prior business day is rejected');
     assertEqual(
       (db.prepare('SELECT COUNT(*) AS count FROM refunds WHERE bill_id = ?').get(expiredBill.bill.id) as any).count,
       0,

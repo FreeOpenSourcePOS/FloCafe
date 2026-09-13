@@ -60,19 +60,25 @@ separate concepts. Every release is created with `--draft --latest=false`.
 After all platform uploads have completed, CI downloads each manifest and every
 artifact it references from the same draft release, checks HTTP success, and
 recomputes the manifest SHA-512 values. Only the separate `publish-release` job
-can then publish it. Stable tag pushes request publication without explicitly
-selecting the release as GitHub's `Latest`; GitHub may still resolve
-`/releases/latest` to a newly published stable release by `created_at`. To
-promote an already verified stable release intentionally, dispatch the workflow
-from that exact tag with `release_tag` set to the same tag,
-`channel=stable`, `promote_stable=true`, and the candidate manifest asset ID
-and SHA-256 from the verified release; the promotion-only job checks that the
-release is already published before selecting it. Beta releases never move
-that pointer: they stay prerelease-flagged with `make_latest=false`, which is
-what keeps them invisible to stable installs (electron-updater's stable path
-follows GitHub's Latest pointer and ignores prereleases entirely).
-Promotion from beta to stable is always a deliberate human action; there is no
-automatic promotion path.
+can then publish it. Stable tag pushes publish without explicitly selecting the
+release as GitHub's `Latest` (`make_latest=false`), and then the `promote-stable`
+job automatically promotes it in the same run: it re-verifies the immutable
+candidate manifest (asset ID and SHA-256, both derived from this run, not a
+manual input), the Snap publication markers, and the permanent sanitized
+summary via `verify-stable-promotion.cjs`, then flips `make_latest=true`. A
+stable release that fails any of those checks is published but never promoted,
+so `/releases/latest` keeps pointing at the last release that passed. Beta
+releases never reach this job (gated on `channel == stable`): they stay
+prerelease-flagged with `make_latest=false`, which is what keeps them invisible
+to stable installs (electron-updater's stable path follows GitHub's Latest
+pointer and ignores prereleases entirely).
+
+To (re-)promote an already-published historical release by hand — one cut
+before this automatic path existed, or one that needs a manual re-run —
+dispatch the workflow from that exact tag with `release_tag` set to the same
+tag, `channel=stable`, `promote_stable=true`, and the candidate manifest asset
+ID and SHA-256 from the verified release; the `promote-release` promotion-only
+job checks that the release is already published before selecting it.
 
 This follows electron-builder's channel model: GitHub publishing requires an
 explicit `publish.channel`, while prerelease versions select prerelease releases
@@ -124,11 +130,15 @@ non-manifest assets are checked for positive size and HTTP availability; their
 SHA-512 is not independently recomputed because GitHub/electron-builder does
 not publish a second expected SHA-512 for them.
 6. The dedicated publish job changes `draft` to false. It sets `make_latest`
-   false for every normal release, which avoids explicitly selecting the
-   release as GitHub's `Latest`; GitHub may still resolve `/releases/latest` to
-   the newest published non-prerelease release by `created_at`. A separate
-   explicit stable-promotion dispatch is the only path that intentionally
-   promotes a verified release as the default update target.
+   false for every release, so publishing itself never selects a release as
+   GitHub's `Latest`. For a stable channel, the `promote-stable` job then runs
+   automatically in the same workflow run: it re-verifies the immutable
+   candidate manifest, Snap evidence, and permanent summary, and only then
+   flips `make_latest=true`. A stable release that fails that re-verification
+   stays published but unpromoted. Beta releases are never eligible for this
+   job and stay reachable only through `/releases/latest` never selecting
+   them. The separate manual `promote-release` dispatch remains for promoting
+   an already-published historical release outside this automatic path.
 7. After all platform uploads, the workflow creates and attaches the immutable
    candidate manifest and sanitized release summary defined in the [release
    evidence index](release-evidence-index.md). The candidate manifest is made
@@ -160,9 +170,9 @@ tag push from reaching the workflow at all.
 Beta-prep branches are temporary working branches; release tags and GitHub
 Releases are the authoritative history. Commit the version bump to `main`,
 create an annotated signed tag from that `main` history, and push the exact
-`X.Y.Z-beta.N` or `X.Y.Z` tag. Stable promotion creates a new `X.Y.Z` stable
-release and uses the explicit `promote_stable` step. A beta is never moved
-directly to GitHub `Latest`.
+`X.Y.Z-beta.N` or `X.Y.Z` tag. A stable tag's release promotes itself to
+GitHub `Latest` automatically once verification passes; a beta is never moved
+there.
 
 ## Cutting a beta release
 
@@ -199,22 +209,19 @@ directly to GitHub `Latest`.
 
 ## Promoting a beta (or any verified release) to stable
 
-There is no automatic promotion. Promoting a beta means cutting the real
-stable release:
+Promoting a beta means cutting the real stable release; becoming the default
+update target then happens automatically as part of that same release run:
 
 1. Decide the final stable version `X.Y.Z`, bump `package.json` (dropping the
    prerelease suffix), update `CHANGELOG.md` via `npm run changelog:generate` if needed, commit to `main`,
    tag `X.Y.Z`, and push the tag.
-2. Let the tag push run the full stable release. It publishes with
-   `make_latest=false` like every release.
-3. To make it the default update target, dispatch **Release** once more from
-   that exact tag with `release_tag=X.Y.Z`, `channel=stable`,
-   `promote_stable=true`, plus the candidate-manifest asset ID and SHA-256. The
-   promotion-only job uses the historical-promotion binding path for this
-   already-published release from current `main`, then revalidates the immutable
-   manifest against every current release asset and requires the permanent
-   candidate summary and both stable Snap publication markers. It refuses
-   anything unpublished or prerelease-flagged before selecting it as GitHub
+2. The tag push runs the full stable release: it publishes with
+   `make_latest=false` like every release, and then the `promote-stable` job
+   re-verifies the immutable candidate manifest against every uploaded asset,
+   the permanent candidate summary, and both stable Snap publication markers,
+   using the asset ID and SHA-256 this same run already produced — no manual
+   dispatch needed. It refuses anything unpublished or prerelease-flagged
+   before selecting the release as GitHub
    Latest. Stable installs see it on their next update check.
 
 Betas also act as the N+1 update source for runtime upgrade matrix testing

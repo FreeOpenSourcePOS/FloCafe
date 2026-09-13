@@ -820,6 +820,9 @@ jobs:
     if: needs.create-release.outputs.promotion_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      candidate_manifest_asset_id: ${{ steps.verify-assets.outputs.candidate_manifest_asset_id }}
+      candidate_manifest_sha256: ${{ steps.verify-assets.outputs.candidate_manifest_sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -879,7 +882,11 @@ jobs:
       - name: Download and verify every release manifest and referenced artifact
         # Verification includes the immutable candidate binding, per-arch Snap
         # publication markers, and the permanent sanitized summary before the
-        # draft can become a public feed.
+        # draft can become a public feed. Also surfaces the candidate manifest's
+        # asset ID and SHA-256 as job outputs so a stable release can promote
+        # itself to GitHub Latest later in this same run without re-deriving
+        # them from a manual dispatch input.
+        id: verify-assets
         run: |
           CANDIDATE_MANIFEST_ASSET_ID=$(gh api "repos/${{ github.repository }}/releases" --paginate \
             --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .assets[] | select(.name == \"candidate-manifest.json\") | .id" | head -1)
@@ -903,6 +910,11 @@ jobs:
             --candidate-manifest-commit "${{ github.sha }}"
           )
           node "${VERIFY_ARGS[@]}"
+          CANDIDATE_MANIFEST_SHA256=$(sha256sum "$RUNNER_TEMP/candidate-manifest.json" | cut -d' ' -f1)
+          {
+            echo "candidate_manifest_asset_id=$CANDIDATE_MANIFEST_ASSET_ID"
+            echo "candidate_manifest_sha256=$CANDIDATE_MANIFEST_SHA256"
+          } >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.create-release.outputs.version }}
@@ -976,8 +988,68 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  promote-stable:
+    name: Promote stable release to GitHub Latest
+    # Every stable tag push promotes itself automatically once verification
+    # and publish both succeed, using the same candidate-manifest asset ID and
+    # SHA-256 verify-release already derived — no separate manual dispatch.
+    # Beta releases never reach this job (needs.create-release.outputs.channel
+    # gates it to stable), so they stay invisible to stable installs exactly
+    # as before.
+    needs: [create-release, verify-release, publish-release]
+    if: needs.create-release.outputs.promotion_only != 'true' && needs.create-release.outputs.channel == 'stable'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify stable Snap publication and permanent evidence
+        # Re-checks the same immutable manifest, asset, and Snap-evidence
+        # boundary the manual promotion path checks (verify-stable-promotion.cjs),
+        # just fed from this run's own outputs instead of dispatch inputs.
+        run: |
+          node scripts/release-gate/verify-stable-promotion.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$RELEASE_TAG" \
+            --candidate-asset-id "${{ needs.verify-release.outputs.candidate_manifest_asset_id }}" \
+            --manifest-sha256 "${{ needs.verify-release.outputs.candidate_manifest_sha256 }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+
+      - name: Promote published stable release to GitHub Latest
+        run: |
+          RELEASE_JSON=$(gh api "repos/${{ github.repository }}/releases/tags/${RELEASE_TAG}")
+          if [ "$(jq -r '.draft' <<<"$RELEASE_JSON")" != "false" ]; then
+            echo "::error::Release ${RELEASE_TAG} must already be published before promotion."
+            exit 1
+          fi
+          if [ "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" != "false" ]; then
+            echo "::error::Release ${RELEASE_TAG} must not be prerelease."
+            exit 1
+          fi
+          RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")
+          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -f make_latest=true
+          echo "Promoted ${RELEASE_TAG} to GitHub Latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+
   promote-release:
-    name: Promote verified stable release
+    name: Promote a historical release to GitHub Latest
+    # Manual/historical path: promotes an already-published release from a
+    # prior run (predates this workflow's auto-promotion, or needed a re-run)
+    # given its candidate-manifest asset ID and SHA-256 by hand. New stable
+    # tag pushes no longer need this — see promote-stable above.
     needs: create-release
     if: needs.create-release.outputs.promotion_only == 'true'
     runs-on: ubuntu-latest

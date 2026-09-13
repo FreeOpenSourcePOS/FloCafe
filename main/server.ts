@@ -149,11 +149,18 @@ export function startServer(): Promise<void> {
     app = express();
 
     app.use(cors(corsOptions));
+    // The anonymous pre-login support-ticket route never legitimately needs
+    // more than a ticket plus its ~200KB log-tail cap; scope it to a much
+    // smaller body limit than the general API import limit below so an
+    // unauthenticated caller can't force a large allocation per request.
+    app.use('/api/support-ticket/pre-login', express.json({ limit: '300kb' }));
     app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
-    app.use((error: any, _req: Request, res: Response, next: NextFunction) => {
+    app.use((error: any, req: Request, res: Response, next: NextFunction) => {
       if (error?.type === 'entity.too.large') {
         res.status(413).json({
-          error: `Request body is too large. JSON imports are limited to ${API_JSON_BODY_LIMIT}; use Backup/Restore for full database migration.`,
+          error: req.path === '/api/support-ticket/pre-login'
+            ? 'Request body is too large.'
+            : `Request body is too large. JSON imports are limited to ${API_JSON_BODY_LIMIT}; use Backup/Restore for full database migration.`,
         });
         return;
       }

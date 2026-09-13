@@ -47,8 +47,14 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   const unitAdapter = useCurrencyUnitAdapter();
   const { toDisplay: toDisplayUnit, toStored: toStoredUnit, formatInput } = unitAdapter;
   const formatCurrency = useFormatCurrency();
-  const [mountedAt] = useState(() => Date.now());
-  const isLikelyLate = mountedAt - parseDbTimestamp(order.created_at).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
+  // Ticks while the modal is open so the hint doesn't go stale if it's left open across
+  // the 1-hour mark; the backend re-checks the real time at submission regardless.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
+  const isLikelyLate = now - parseDbTimestamp(order.created_at).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
 
   // Split checks mean an order can have several paid bills, each with its own allocated
   // items; a fully refunded bill has nothing left, so exclude it from selection.

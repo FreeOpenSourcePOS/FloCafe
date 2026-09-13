@@ -320,3 +320,26 @@ jobs:
       # Do not run the application lifecycle or install its dependencies here.
       - name: Run Windows uninstaller Pester tests
         run: node tests/run-windows-uninstaller-tests.cjs
+
+  # 7. Required Checks Gate
+  # Always report a conclusion so path-filtered skips can satisfy the ruleset's
+  # required check without hiding actual job failures.
+  required-checks-gate:
+    name: Required Checks Gate
+    needs: [changes, linux-baseline, e2e-playwright, windows-uninstaller]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Verify no required job actually failed
+        run: |
+          if [ "${{ needs.changes.result }}" != "success" ]; then
+            echo "::error::Path Filtering did not succeed (status: ${{ needs.changes.result }}); its dependents' skipped status cannot be trusted."
+            exit 1
+          fi
+          for result in "${{ needs.linux-baseline.result }}" "${{ needs.e2e-playwright.result }}" "${{ needs.windows-uninstaller.result }}"; do
+            if [ "$result" != "success" ] && [ "$result" != "skipped" ]; then
+              echo "::error::A required job did not succeed (status: $result)."
+              exit 1
+            fi
+          done

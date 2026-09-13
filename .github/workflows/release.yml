@@ -820,6 +820,9 @@ jobs:
     if: needs.create-release.outputs.promotion_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      candidate_manifest_asset_id: ${{ steps.verify-assets.outputs.candidate_manifest_asset_id }}
+      candidate_manifest_sha256: ${{ steps.verify-assets.outputs.candidate_manifest_sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -879,8 +882,11 @@ jobs:
       - name: Download and verify every release manifest and referenced artifact
         # Verification includes the immutable candidate binding, per-arch Snap
         # publication markers, and the permanent sanitized summary before the
-        # draft can become a public feed.
+        # draft can become a public feed. Also outputs the candidate manifest
+        # asset ID and SHA-256 for promote-stable below.
+        id: verify-assets
         run: |
+          set -euo pipefail
           CANDIDATE_MANIFEST_ASSET_ID=$(gh api "repos/${{ github.repository }}/releases" --paginate \
             --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .assets[] | select(.name == \"candidate-manifest.json\") | .id" | head -1)
           if [ -z "$CANDIDATE_MANIFEST_ASSET_ID" ]; then
@@ -903,6 +909,12 @@ jobs:
             --candidate-manifest-commit "${{ github.sha }}"
           )
           node "${VERIFY_ARGS[@]}"
+          CANDIDATE_MANIFEST_SHA256=$(gh api "repos/${{ github.repository }}/releases/assets/$CANDIDATE_MANIFEST_ASSET_ID" \
+            -H 'Accept: application/octet-stream' | sha256sum | cut -d' ' -f1)
+          {
+            echo "candidate_manifest_asset_id=$CANDIDATE_MANIFEST_ASSET_ID"
+            echo "candidate_manifest_sha256=$CANDIDATE_MANIFEST_SHA256"
+          } >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.create-release.outputs.version }}
@@ -976,10 +988,83 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+  promote-stable:
+    name: Promote stable release to GitHub Latest
+    # Auto-promotes every verified stable release; beta never reaches this job.
+    needs: [create-release, verify-release, publish-release]
+    if: needs.create-release.outputs.promotion_only != 'true' && needs.create-release.outputs.channel == 'stable'
+    # Shared with promote-release below (not per-ref) so two promotions for
+    # different tags can never race and move Latest backward.
+    concurrency:
+      group: promote-to-latest-${{ github.repository }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Verify stable Snap publication and permanent evidence
+        # Same check the manual promotion path uses, fed from this run's outputs.
+        run: |
+          node scripts/release-gate/verify-stable-promotion.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$RELEASE_TAG" \
+            --candidate-asset-id "${{ needs.verify-release.outputs.candidate_manifest_asset_id }}" \
+            --manifest-sha256 "${{ needs.verify-release.outputs.candidate_manifest_sha256 }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+
+      - name: Promote published stable release to GitHub Latest
+        run: |
+          set -euo pipefail
+          RELEASE_JSON=$(gh api "repos/${{ github.repository }}/releases/tags/${RELEASE_TAG}")
+          if [ "$(jq -r '.draft' <<<"$RELEASE_JSON")" != "false" ]; then
+            echo "::error::Release ${RELEASE_TAG} must already be published before promotion."
+            exit 1
+          fi
+          if [ "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" != "false" ]; then
+            echo "::error::Release ${RELEASE_TAG} must not be prerelease."
+            exit 1
+          fi
+          # Only a 404 means "no current Latest"; any other failure must fail the job.
+          if LATEST_RESPONSE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name --include 2>&1); then
+            CURRENT_LATEST_TAG=$(printf '%s\n' "$LATEST_RESPONSE" | tail -n 1)
+          elif grep -qE '^HTTP/[^ ]+ 404 ' <<<"$LATEST_RESPONSE"; then
+            CURRENT_LATEST_TAG=""
+          else
+            printf '%s\n' "$LATEST_RESPONSE" >&2
+            exit 1
+          fi
+          if [ -n "$CURRENT_LATEST_TAG" ] && [ "$(printf '%s\n%s\n' "$CURRENT_LATEST_TAG" "$RELEASE_TAG" | sort -V | tail -1)" != "$RELEASE_TAG" ]; then
+            echo "::error::Refusing to promote ${RELEASE_TAG}: current GitHub Latest ${CURRENT_LATEST_TAG} is newer; promotion must never move Latest backward."
+            exit 1
+          fi
+          RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")
+          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -f make_latest=true
+          echo "Promoted ${RELEASE_TAG} to GitHub Latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+
   promote-release:
-    name: Promote verified stable release
+    name: Promote a historical release to GitHub Latest
+    # Manual re-promotion of an already-published release; new tag pushes use promote-stable instead.
     needs: create-release
     if: needs.create-release.outputs.promotion_only == 'true'
+    # Shared with promote-stable above — see that job's comment.
+    concurrency:
+      group: promote-to-latest-${{ github.repository }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -1019,6 +1104,7 @@ jobs:
 
       - name: Promote published stable release to GitHub Latest
         run: |
+          set -euo pipefail
           if [ "$RELEASE_CHANNEL" != "stable" ]; then
             echo "::error::Only a stable release can be promoted to GitHub Latest."
             exit 1
@@ -1032,6 +1118,7 @@ jobs:
             echo "::error::Release ${RELEASE_TAG} must not be prerelease."
             exit 1
           fi
+          # No version-ordering guard here: unlike promote-stable, this job's purpose includes deliberate rollback.
           RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")
           gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -f make_latest=true
           echo "Promoted ${RELEASE_TAG} to GitHub Latest"

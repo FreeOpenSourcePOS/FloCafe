@@ -340,6 +340,8 @@ function run() {
   const verifyJob = jobs['verify-release'];
   const verifierDependencies = findStep(verifyJob, 'Install verifier dependencies');
   assert.equal(verifierDependencies.run, 'npm ci --ignore-scripts --no-audit --no-fund');
+  assert.equal(verifyJob.outputs.candidate_manifest_asset_id, '${{ steps.verify-assets.outputs.candidate_manifest_asset_id }}');
+  assert.equal(verifyJob.outputs.candidate_manifest_sha256, '${{ steps.verify-assets.outputs.candidate_manifest_sha256 }}');
   const publishJob = jobs['publish-release'];
   assert.deepEqual(verifyJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows']);
   assert.deepEqual(publishJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release']);
@@ -356,6 +358,8 @@ function run() {
   });
   assert.equal(betaVerify.status, 0, betaVerify.stderr);
   assert.doesNotMatch(betaVerify.log, /--require-snap-evidence/, 'beta Snap permission degradation must not require stable evidence');
+  assert.match(betaVerify.outputs.candidate_manifest_asset_id, /\S/, 'candidate manifest asset ID must be surfaced as a job output');
+  assert.match(betaVerify.outputs.candidate_manifest_sha256, /^[0-9a-f]{64}$/, 'candidate manifest SHA-256 output must be a full hex digest');
   const stableVerify = executeWorkflowStep(verifyAssetsStep, {
     env: {
       RELEASE_TAG: '3.3.0',
@@ -427,6 +431,101 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   );
   assert.equal(promoteBoundary.status, 0, promoteBoundary.stderr);
   assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
+
+  const promoteStableJob = jobs['promote-stable'];
+  assert.deepEqual(promoteStableJob.needs, ['create-release', 'verify-release', 'publish-release']);
+  assert.equal(
+    promoteStableJob.concurrency.group,
+    promoteJob.concurrency.group,
+    'automatic and manual promotion must share one concurrency group so they cannot race and move Latest backward',
+  );
+  assert.equal(promoteStableJob.concurrency['cancel-in-progress'], false);
+  assert.equal(
+    promoteStableJob.if,
+    "needs.create-release.outputs.promotion_only != 'true' && needs.create-release.outputs.channel == 'stable'",
+    'beta releases and manual promotion-only runs must never reach automatic promotion',
+  );
+  const promoteStableCheckout = promoteStableJob.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(promoteStableCheckout?.with?.ref, '${{ github.sha }}', 'automatic promotion must verify the exact release commit');
+  const promoteStableVerifier = findStep(promoteStableJob, 'Verify stable Snap publication and permanent evidence');
+  assertShellStep(promoteStableJob, 'Verify stable Snap publication and permanent evidence');
+  assert.equal(promoteStableVerifier.env.RELEASE_TAG, '${{ needs.create-release.outputs.version }}');
+  const promoteStableVerifierExecution = executeWorkflowStep(promoteStableVerifier, {
+    env: { RELEASE_TAG: '3.4.0' },
+    expressions: {
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'needs.verify-release.outputs.candidate_manifest_asset_id': '299',
+      'needs.verify-release.outputs.candidate_manifest_sha256': 'a'.repeat(64),
+    },
+    fakeCommands: { node: captureNodeArgs },
+  });
+  assert.equal(promoteStableVerifierExecution.status, 0, promoteStableVerifierExecution.stderr);
+  assert.equal(
+    promoteStableVerifierExecution.log.trim(),
+    `node scripts/release-gate/verify-stable-promotion.cjs --repo FreeOpenSourcePOS/FloCafe --tag 3.4.0 --candidate-asset-id 299 --manifest-sha256 ${'a'.repeat(64)}`,
+    'automatic promotion must feed the same script the run already verified, not a re-derived or dispatch-provided value',
+  );
+  const promoteStablePromote = findStep(promoteStableJob, 'Promote published stable release to GitHub Latest');
+  assertShellStep(promoteStableJob, 'Promote published stable release to GitHub Latest');
+  assert.equal(promoteStablePromote.env.RELEASE_TAG, '${{ needs.create-release.outputs.version }}');
+  const promoteStablePromoteRejectsDraft = executeWorkflowStep(promoteStablePromote, {
+    env: { RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    // Real jq parses this fake gh's JSON — jq itself isn't faked so the
+    // draft:true value actually flows through to the script's own check.
+    fakeCommands: { gh: '#!/bin/sh\nprintf \'{"draft":true,"prerelease":false,"id":42}\\n\'\n' },
+  });
+  assert.notEqual(promoteStablePromoteRejectsDraft.status, 0, 'promotion must refuse an unpublished draft');
+  assert.match(promoteStablePromoteRejectsDraft.stdout, /must already be published/);
+
+  function fakeGhForPromotion(currentLatestTag: string | 'not-found' | 'server-error'): string {
+    let latestBranch: string;
+    if (currentLatestTag === 'not-found') {
+      latestBranch = "printf 'HTTP/2.0 404 Not Found\\n'; exit 1";
+    } else if (currentLatestTag === 'server-error') {
+      latestBranch = "printf 'HTTP/2.0 500 Error\\n'; exit 1";
+    } else {
+      latestBranch = `printf 'HTTP/2.0 200 OK\\n\\n%s\\n' '${currentLatestTag}'`;
+    }
+    return `#!/bin/sh
+case "$*" in
+  *"releases/tags/"*) printf '{"draft":false,"prerelease":false,"id":42}\\n' ;;
+  *"releases/latest"*) ${latestBranch} ;;
+  *) exit 0 ;;
+esac
+`;
+  }
+  const promoteStableAllowsNewer = executeWorkflowStep(promoteStablePromote, {
+    env: { RELEASE_TAG: '3.5.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhForPromotion('3.4.0') },
+  });
+  assert.equal(promoteStableAllowsNewer.status, 0, promoteStableAllowsNewer.stderr);
+  assert.match(promoteStableAllowsNewer.stdout, /Promoted 3\.5\.0 to GitHub Latest/);
+  const promoteStableAllowsWhenNoCurrentLatest = executeWorkflowStep(promoteStablePromote, {
+    env: { RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhForPromotion('not-found') },
+  });
+  assert.equal(promoteStableAllowsWhenNoCurrentLatest.status, 0, promoteStableAllowsWhenNoCurrentLatest.stderr);
+  const promoteStableRefusesOlder = executeWorkflowStep(promoteStablePromote, {
+    env: { RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhForPromotion('3.5.0') },
+  });
+  assert.notEqual(promoteStableRefusesOlder.status, 0, 'promotion must refuse to move GitHub Latest backward');
+  assert.match(promoteStableRefusesOlder.stdout, /must never move Latest backward/);
+  const promoteStableFailsOnLatestLookupError = executeWorkflowStep(promoteStablePromote, {
+    env: { RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhForPromotion('server-error') },
+  });
+  assert.notEqual(
+    promoteStableFailsOnLatestLookupError.status,
+    0,
+    'a non-404 Latest lookup failure (auth, rate limit, 5xx) must fail the job, not silently skip the ordering check',
+  );
+  assert.match(promoteStableFailsOnLatestLookupError.stderr, /HTTP\/2\.0 500 Error/);
 
   const candidateWorkflow = loadWorkflow('release-candidate-gate.yml');
   const candidateTriggers = candidateWorkflow.on || candidateWorkflow['true'];
@@ -704,6 +803,7 @@ exit 1
   assert.match(publishBetaLatestFailure.stderr, /HTTP\/2\.0 500 Error/);
 
   const promoteStep = findStep(promoteJob, 'Promote published stable release to GitHub Latest');
+  assert.doesNotMatch(promoteStep.run, /releases\/latest/, 'historical promotion must not gate on version order — it exists to re-promote an older release');
   const promoteStable = executeWorkflowStep(promoteStep, {
     env: { RELEASE_TAG: '3.3.0', RELEASE_CHANNEL: 'stable' },
     expressions: {
@@ -765,6 +865,30 @@ exit 1
   assert.equal(matrixUpload.with.name, 'flocafe-build-${{ matrix.name }}');
 
   const ciWorkflow = loadWorkflow('ci.yml');
+  const requiredGateJob = ciWorkflow.jobs['required-checks-gate'];
+  assert.deepEqual(requiredGateJob.needs, ['changes', 'linux-baseline', 'e2e-playwright', 'windows-uninstaller']);
+  assert.equal(requiredGateJob.if, 'always()', 'the gate must still report a conclusion when a path-filtered dependency is skipped');
+  const requiredGateStep = findStep(requiredGateJob, 'Verify no required job actually failed');
+  assertShellStep(requiredGateJob, 'Verify no required job actually failed');
+  const gateExpressions = (changesResult: string, results: [string, string, string]) => ({
+    'needs.changes.result': changesResult,
+    'needs.linux-baseline.result': results[0],
+    'needs.e2e-playwright.result': results[1],
+    'needs.windows-uninstaller.result': results[2],
+  });
+  const gatePassesAllSkipped = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('success', ['skipped', 'skipped', 'skipped']) });
+  assert.equal(gatePassesAllSkipped.status, 0, 'a docs/workflow-only PR that skips every path-filtered job must still pass the gate');
+  const gatePassesMixed = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('success', ['success', 'skipped', 'success']) });
+  assert.equal(gatePassesMixed.status, 0, gatePassesMixed.stderr);
+  const gateFailsOnRealFailure = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('success', ['success', 'failure', 'success']) });
+  assert.notEqual(gateFailsOnRealFailure.status, 0, 'the gate must not mask an actual job failure as passing');
+  const gateFailsWhenChangesFails = executeWorkflowStep(requiredGateStep, { expressions: gateExpressions('failure', ['skipped', 'skipped', 'skipped']) });
+  assert.notEqual(
+    gateFailsWhenChangesFails.status,
+    0,
+    'a failed Path Filtering job makes every dependent "skipped" for the wrong reason — the gate must not treat that as passing',
+  );
+
   const e2eJob = ciWorkflow.jobs['e2e-playwright'];
   const releaseRegression = findStep(e2eJob, 'Run renderer and printer regression suites');
   assertShellStep(e2eJob, 'Run renderer and printer regression suites');

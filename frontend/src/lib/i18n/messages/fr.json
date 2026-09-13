@@ -478,6 +478,7 @@
     "receiptPrintFailedHint": "Échec de l’impression du reçu - vérifiez la connexion de l’imprimante",
     "refundAmountLabel": "Montant du remboursement",
     "refundBalanceLabel": "Solde remboursable : {amount}",
+    "refundBillLabel": "Addition",
     "refundButton": "Rembourser",
     "refundFailed": "Impossible de traiter le remboursement",
     "refundIssued": "Remboursement effectué",

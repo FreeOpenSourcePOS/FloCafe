@@ -478,6 +478,7 @@
     "receiptPrintFailedHint": "Falló la impresión del comprobante — revisá la conexión de la impresora",
     "refundAmountLabel": "Monto del reembolso",
     "refundBalanceLabel": "Saldo reembolsable: {amount}",
+    "refundBillLabel": "Cuenta",
     "refundButton": "Reembolsar",
     "refundFailed": "No se pudo procesar el reembolso",
     "refundIssued": "Reembolso realizado",

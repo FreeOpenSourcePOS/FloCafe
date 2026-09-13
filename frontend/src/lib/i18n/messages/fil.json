@@ -478,6 +478,7 @@
     "receiptPrintFailedHint": "Nabigo ang pag-print ng resibo — pakisuri ang koneksyon ng printer",
     "refundAmountLabel": "Halaga ng refund",
     "refundBalanceLabel": "Maaaring i-refund na balanse: {amount}",
+    "refundBillLabel": "Kuwenta",
     "refundButton": "I-refund",
     "refundFailed": "Hindi maproseso ang refund",
     "refundIssued": "Naibigay ang refund",

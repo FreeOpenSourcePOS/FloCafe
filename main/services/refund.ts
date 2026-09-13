@@ -106,9 +106,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   const orderCreatedAt = parseDbTimestamp(order.created_at).getTime();
   if (!Number.isFinite(orderCreatedAt)) throw httpError('Order creation time is invalid', 500);
   const nowMs = Date.now();
-  // Within the short window, in-progress refunds keep today's owner-or-manager approval.
-  // Past it, the order is treated as already completed: refund stays possible for the
-  // rest of that business day, but only an owner's PIN can approve it (docs/business-decisions.md).
+  // Past the short window, an owner-only PIN is required for the rest of the business day (docs/business-decisions.md).
   let lateRefund = false;
   if (nowMs - orderCreatedAt > REFUND_WINDOW_MS) {
     const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
@@ -215,9 +213,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   db.prepare('UPDATE bills SET payment_status = ?, updated_at = ? WHERE id = ?').run(paymentStatus, timestamp, req.billId);
 
   if (isStoreCreditRefund) {
-    // Store credit is a plain 'credit' ledger entry so it's immediately spendable as a wallet
-    // payment; wallet-funded spend is already excluded from the cashback base (calculateCashback
-    // in bills.ts), so this can't compound into further cashback on respend.
+    // A plain 'credit' row — wallet-funded spend is already excluded from the cashback base.
     const creditAmount = (amountCents / minorFactor) * LOYALTY_REDEMPTION_RATE;
     db.prepare(`
       INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)

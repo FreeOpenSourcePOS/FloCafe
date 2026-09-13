@@ -478,6 +478,7 @@
     "receiptPrintFailedHint": "چاپ رسید انجام نشد — پیوند چاپگر را بررسی کنید",
     "refundAmountLabel": "مبلغ بازپرداخت",
     "refundBalanceLabel": "مانده قابل بازپرداخت: {amount}",
+    "refundBillLabel": "صورت‌حساب",
     "refundButton": "بازپرداخت",
     "refundFailed": "پردازش بازپرداخت انجام نشد",
     "refundIssued": "بازپرداخت ثبت شد",

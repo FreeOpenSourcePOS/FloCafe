@@ -14,9 +14,7 @@ import { getCountryByCode, getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { useAuthStore } from '@/store/auth';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 
-// Items still in these stages, or already served/completed, can all be refunded once
-// a bill has been paid — kept in sync with REFUND_ITEM_ELIGIBLE_STATUSES in
-// main/services/refund.ts.
+// Kept in sync with REFUND_ITEM_ELIGIBLE_STATUSES in main/services/refund.ts.
 const REFUND_ELIGIBLE_ITEM_STATUSES = ['preparing', 'ready', 'served', 'completed'];
 
 // Mirrors BUILT_IN_PAYMENT_KEYS in PaymentModal.tsx.
@@ -27,12 +25,12 @@ const BUILT_IN_PAYMENT_KEYS = {
 
 interface Props {
   order: Order;
-  bill: Bill;
+  bills: Bill[];
   onClose: () => void;
   onRefunded: () => void;
 }
 
-export default function RefundModal({ order, bill, onClose, onRefunded }: Props) {
+export default function RefundModal({ order, bills, onClose, onRefunded }: Props) {
   const t = useTranslations('orders');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
@@ -46,9 +44,11 @@ export default function RefundModal({ order, bill, onClose, onRefunded }: Props)
   const { toDisplay: toDisplayUnit, toStored: toStoredUnit, formatInput } = unitAdapter;
   const formatCurrency = useFormatCurrency();
 
-  const eligibleItems: OrderItem[] = (order.items || []).filter((item) =>
-    REFUND_ELIGIBLE_ITEM_STATUSES.includes(item.status),
-  );
+  // Split checks mean an order can have several paid bills — only bills that were
+  // actually paid have anything left to refund, and each has its own allocated items.
+  const paidBills = bills.filter((b) => Number(b.paid_amount) > 0);
+  const [selectedBillId, setSelectedBillId] = useState<number | ''>(paidBills[0]?.id ?? '');
+  const selectedBill = paidBills.find((b) => b.id === selectedBillId) || paidBills[0] || null;
 
   const [scope, setScope] = useState<'whole' | 'item'>('whole');
   const [itemId, setItemId] = useState<number | ''>('');
@@ -62,26 +62,58 @@ export default function RefundModal({ order, bill, onClose, onRefunded }: Props)
   const [refundedSoFarCents, setRefundedSoFarCents] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
+  // Bill-scoped view: order.items is order-wide and includes other split bills' items,
+  // which the backend would reject for this bill.
+  const [scopedBill, setScopedBill] = useState<Bill | null>(null);
+  const [scopedItems, setScopedItems] = useState<OrderItem[]>([]);
   useEffect(() => {
+    if (!selectedBill) return;
+    let cancelled = false;
+    api.get(`/bills/${selectedBill.id}`).then((res) => {
+      if (cancelled) return;
+      setScopedBill(res.data.bill);
+      setScopedItems(res.data.bill.order?.items || []);
+    }).catch(() => {
+      if (cancelled) return;
+      setScopedBill(selectedBill);
+      setScopedItems([]);
+    });
+    return () => { cancelled = true; };
+  }, [selectedBill]);
+
+  const effectiveBill = scopedBill && scopedBill.id === selectedBill?.id ? scopedBill : selectedBill;
+  const eligibleItems: OrderItem[] = scopedItems.filter((item) => REFUND_ELIGIBLE_ITEM_STATUSES.includes(item.status));
+
+  // Reset item/amount selection when the cashier switches bills (during render, so it
+  // settles before paint instead of flashing the previous bill's values).
+  const [syncedBillId, setSyncedBillId] = useState(selectedBillId);
+  if (selectedBillId !== syncedBillId) {
+    setSyncedBillId(selectedBillId);
+    setItemId('');
+    setAmountTouched(false);
+    setScope('whole');
+  }
+
+  useEffect(() => {
+    if (!effectiveBill) return;
     api.get('/payment-methods').then((res) => setCustomMethods(res.data.payment_methods || [])).catch(() => setCustomMethods([]));
     api.get('/settings/loyalty').then((res) => setLoyaltyEnabled(!!res.data?.loyalty_enabled)).catch(() => {});
-    api.get('/refunds', { params: { bill_id: bill.id, limit: 500 } })
+    api.get('/refunds', { params: { bill_id: effectiveBill.id, limit: 500 } })
       .then((res) => {
         const refunds: { amount_cents?: number }[] = res.data?.refunds || [];
         const total = refunds.reduce((sum, r) => sum + Number(r.amount_cents || 0), 0);
         setRefundedSoFarCents(total);
       })
       .catch(() => {});
-  }, [bill.id]);
+  }, [effectiveBill]);
 
-  const paidCents = Math.round(Number(bill.paid_amount || 0) * minorFactor);
+  const paidCents = Math.round(Number(effectiveBill?.paid_amount || 0) * minorFactor);
   const refundableCents = Math.max(0, paidCents - refundedSoFarCents);
   const refundableDisplay = toDisplayUnit(refundableCents / minorFactor);
 
-  // Default the whole-bill amount field to the remaining refundable balance until the
-  // cashier edits it directly (mirrors the discount-sync pattern in PaymentModal: adjust
-  // state during render instead of in an effect, so the field never flashes a stale value).
-  const [syncedRefundable, setSyncedRefundable] = useState(refundableDisplay);
+  // Default the whole-bill amount to the refundable balance until edited; null sentinel
+  // ensures this fires on first render even when there are no prior refunds to react to.
+  const [syncedRefundable, setSyncedRefundable] = useState<number | null>(null);
   if (!amountTouched && refundableDisplay !== syncedRefundable) {
     setSyncedRefundable(refundableDisplay);
     setAmount(formatInput(refundableDisplay));
@@ -92,6 +124,7 @@ export default function RefundModal({ order, bill, onClose, onRefunded }: Props)
 
   const canSubmit =
     !submitting &&
+    !!effectiveBill &&
     overridePin.trim().length > 0 &&
     method &&
     amountValue > 0 &&
@@ -99,11 +132,11 @@ export default function RefundModal({ order, bill, onClose, onRefunded }: Props)
     (scope === 'whole' || !!selectedItem);
 
   const submit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || !effectiveBill) return;
     setSubmitting(true);
     try {
       const body: Record<string, unknown> = {
-        bill_id: bill.id,
+        bill_id: effectiveBill.id,
         method,
         reason: reason.trim() || undefined,
         override_pin: overridePin,
@@ -132,6 +165,26 @@ export default function RefundModal({ order, bill, onClose, onRefunded }: Props)
         </h2>
 
         <div className="space-y-4">
+          {paidBills.length > 1 && (
+            <div>
+              <label htmlFor="refundBill" className="block text-sm font-medium text-foreground mb-1">
+                {t('refundBillLabel')}
+              </label>
+              <select
+                id="refundBill"
+                value={selectedBillId}
+                onChange={(e) => setSelectedBillId(e.target.value ? Number(e.target.value) : '')}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              >
+                {paidBills.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.split_label || `#${b.bill_number}`} — {formatCurrency(Number(b.paid_amount))}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -206,7 +259,7 @@ export default function RefundModal({ order, bill, onClose, onRefunded }: Props)
               {customMethods.filter((m) => m.is_active).map((m) => (
                 <option key={m.id} value={m.name}>{m.name}</option>
               ))}
-              {loyaltyEnabled && bill.customer_id && (
+              {loyaltyEnabled && effectiveBill?.customer_id && (
                 <option value="wallet">{t('refundMethodStoreCredit')}</option>
               )}
             </select>

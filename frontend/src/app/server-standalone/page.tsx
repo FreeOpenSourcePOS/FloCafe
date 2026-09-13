@@ -131,8 +131,14 @@ export default function ServerStandalonePage() {
     if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
   }
 
+  function cancelPendingCustomerLookup() {
+    clearTimeout(phoneDebounceRef.current);
+    phoneAbortRef.current?.abort();
+  }
+
   async function loadOrder(tableId: string) {
     if (!api || !tableId) return;
+    cancelPendingCustomerLookup();
     const res = await api.get('/api/orders', {
       params: { table_id: tableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
     });
@@ -190,6 +196,7 @@ export default function ServerStandalonePage() {
   useEffect(() => {
     if (!selectedTableId || !user || !api) return;
     let cancelled = false;
+    cancelPendingCustomerLookup();
     api.get('/api/orders', {
       params: { table_id: selectedTableId, type: 'dine_in', status: 'pending,preparing,ready', per_page: 1 },
     }).then((res) => {

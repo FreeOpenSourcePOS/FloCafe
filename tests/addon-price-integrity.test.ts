@@ -143,9 +143,7 @@ async function main() {
     `INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES (?, ?, ?, ?, ?)`
   ).run('addon-ai-wrong-group', 'ag-other', 'Wrong Group', 20, 1);
 
-  // A product with a *required* addon group (e.g. Size: Small/Medium/Large) — used to verify
-  // the server rejects an item that omits the required selection instead of silently pricing
-  // it at the base product price.
+  // Verify that omitting a required add-on selection is rejected rather than priced at the base price.
   db.prepare(`INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)`)
     .run('prod-ai-required', 'cat-ai', 'Coffee', 80, 1, 2);
   db.prepare(`INSERT INTO addon_groups (id, name, is_required, min_selection, max_selection) VALUES (?, ?, ?, ?, ?)`)

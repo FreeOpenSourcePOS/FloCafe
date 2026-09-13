@@ -380,12 +380,8 @@ div:hover > .flo-toast-drain,
   --color-brand-light: oklch(0.20 0.03 270);
 }
 
-/* server-standalone (Server App) nests its own <html>/<body> inside the
- * dashboard's real root layout rather than replacing it, so the dashboard's
- * dark-mode FOUC script can add `dark` to the real <html> before this
- * always-light, kiosk-style page ever renders. It has no dark-mode design of
- * its own, so pin the shared tokens its reused components (e.g. AddonModal)
- * read back to their light values for anything under this wrapper. */
+/* The standalone Server App is always light, even when the root layout enables dark mode.
+ * Reset shared tokens here so reused components retain their light appearance. */
 .server-app-light {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

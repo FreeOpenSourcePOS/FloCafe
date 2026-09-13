@@ -27,9 +27,8 @@ const BUILT_IN_PAYMENT_KEYS = {
   card: 'methodCard',
 } as const;
 
-// Refunds fail for many distinct, actionable reasons (expired window, wrong PIN tier,
-// insufficient balance, missing customer for store credit) — surface the backend's own
-// message instead of a single generic toast that hides which one applies.
+// Refunds fail for many distinct reasons — surface the backend's own message instead
+// of one generic toast that hides which one applies.
 function extractRefundErrorMessage(error: unknown): string | null {
   const data = (error as { response?: { data?: { error?: unknown } } } | undefined)?.response?.data;
   return typeof data?.error === 'string' && data.error.trim() ? data.error.trim() : null;

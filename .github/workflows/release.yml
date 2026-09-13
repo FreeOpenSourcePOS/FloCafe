@@ -1038,7 +1038,16 @@ jobs:
           fi
           # Promotion is stable-only, so both tags are always plain X.Y.Z (create-release
           # rejects a prerelease version on this channel) — sort -V is a safe comparator.
-          CURRENT_LATEST_TAG=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
+          # Only a 404 (no release published yet) means "no current Latest" — any other
+          # failure (auth, rate limit, 5xx) must fail the job, not silently skip the check.
+          if LATEST_RESPONSE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name --include 2>&1); then
+            CURRENT_LATEST_TAG=$(printf '%s\n' "$LATEST_RESPONSE" | tail -n 1)
+          elif grep -qE '^HTTP/[^ ]+ 404 ' <<<"$LATEST_RESPONSE"; then
+            CURRENT_LATEST_TAG=""
+          else
+            printf '%s\n' "$LATEST_RESPONSE" >&2
+            exit 1
+          fi
           if [ -n "$CURRENT_LATEST_TAG" ] && [ "$(printf '%s\n%s\n' "$CURRENT_LATEST_TAG" "$RELEASE_TAG" | sort -V | tail -1)" != "$RELEASE_TAG" ]; then
             echo "::error::Refusing to promote ${RELEASE_TAG}: current GitHub Latest ${CURRENT_LATEST_TAG} is newer; promotion must never move Latest backward."
             exit 1
@@ -1098,6 +1107,7 @@ jobs:
 
       - name: Promote published stable release to GitHub Latest
         run: |
+          set -euo pipefail
           if [ "$RELEASE_CHANNEL" != "stable" ]; then
             echo "::error::Only a stable release can be promoted to GitHub Latest."
             exit 1
@@ -1109,6 +1119,18 @@ jobs:
           fi
           if [ "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" != "false" ]; then
             echo "::error::Release ${RELEASE_TAG} must not be prerelease."
+            exit 1
+          fi
+          if LATEST_RESPONSE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name --include 2>&1); then
+            CURRENT_LATEST_TAG=$(printf '%s\n' "$LATEST_RESPONSE" | tail -n 1)
+          elif grep -qE '^HTTP/[^ ]+ 404 ' <<<"$LATEST_RESPONSE"; then
+            CURRENT_LATEST_TAG=""
+          else
+            printf '%s\n' "$LATEST_RESPONSE" >&2
+            exit 1
+          fi
+          if [ -n "$CURRENT_LATEST_TAG" ] && [ "$(printf '%s\n%s\n' "$CURRENT_LATEST_TAG" "$RELEASE_TAG" | sort -V | tail -1)" != "$RELEASE_TAG" ]; then
+            echo "::error::Refusing to promote ${RELEASE_TAG}: current GitHub Latest ${CURRENT_LATEST_TAG} is newer; promotion must never move Latest backward."
             exit 1
           fi
           RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")

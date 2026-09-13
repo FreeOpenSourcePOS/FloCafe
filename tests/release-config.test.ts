@@ -478,8 +478,15 @@ printf 'node %s\\n' "$*" >> "$RELEASE_TEST_LOG"
   assert.notEqual(promoteStablePromoteRejectsDraft.status, 0, 'promotion must refuse an unpublished draft');
   assert.match(promoteStablePromoteRejectsDraft.stdout, /must already be published/);
 
-  function fakeGhForPromotion(currentLatestTag: string | null): string {
-    const latestBranch = currentLatestTag === null ? 'exit 1' : `printf '%s\\n' '${currentLatestTag}'`;
+  function fakeGhForPromotion(currentLatestTag: string | 'not-found' | 'server-error'): string {
+    let latestBranch: string;
+    if (currentLatestTag === 'not-found') {
+      latestBranch = "printf 'HTTP/2.0 404 Not Found\\n'; exit 1";
+    } else if (currentLatestTag === 'server-error') {
+      latestBranch = "printf 'HTTP/2.0 500 Error\\n'; exit 1";
+    } else {
+      latestBranch = `printf 'HTTP/2.0 200 OK\\n\\n%s\\n' '${currentLatestTag}'`;
+    }
     return `#!/bin/sh
 case "$*" in
   *"releases/tags/"*) printf '{"draft":false,"prerelease":false,"id":42}\\n' ;;
@@ -498,7 +505,7 @@ esac
   const promoteStableAllowsWhenNoCurrentLatest = executeWorkflowStep(promoteStablePromote, {
     env: { RELEASE_TAG: '3.4.0' },
     expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
-    fakeCommands: { gh: fakeGhForPromotion(null) },
+    fakeCommands: { gh: fakeGhForPromotion('not-found') },
   });
   assert.equal(promoteStableAllowsWhenNoCurrentLatest.status, 0, promoteStableAllowsWhenNoCurrentLatest.stderr);
   const promoteStableRefusesOlder = executeWorkflowStep(promoteStablePromote, {
@@ -508,6 +515,17 @@ esac
   });
   assert.notEqual(promoteStableRefusesOlder.status, 0, 'promotion must refuse to move GitHub Latest backward');
   assert.match(promoteStableRefusesOlder.stdout, /must never move Latest backward/);
+  const promoteStableFailsOnLatestLookupError = executeWorkflowStep(promoteStablePromote, {
+    env: { RELEASE_TAG: '3.4.0' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGhForPromotion('server-error') },
+  });
+  assert.notEqual(
+    promoteStableFailsOnLatestLookupError.status,
+    0,
+    'a non-404 Latest lookup failure (auth, rate limit, 5xx) must fail the job, not silently skip the ordering check',
+  );
+  assert.match(promoteStableFailsOnLatestLookupError.stderr, /HTTP\/2\.0 500 Error/);
 
   const candidateWorkflow = loadWorkflow('release-candidate-gate.yml');
   const candidateTriggers = candidateWorkflow.on || candidateWorkflow['true'];
@@ -784,6 +802,16 @@ exit 1
   assert.notEqual(publishBetaLatestFailure.status, 0, 'beta Latest preflight must reject non-404 failures');
   assert.match(publishBetaLatestFailure.stderr, /HTTP\/2\.0 500 Error/);
 
+  // Dedicated fake: fakeGh's generic --jq catchall returns the opaque "42"
+  // sentinel other tests rely on, which isn't a valid comparison target for
+  // this step's own current-Latest version check.
+  const promoteStepGh = `#!/bin/sh
+printf '%s\\n' "$*" >> "$RELEASE_TEST_LOG"
+case "$*" in
+  *"releases/latest"*) printf 'HTTP/2.0 404 Not Found\\n'; exit 1 ;;
+  *) printf '{"draft":false,"prerelease":false,"id":42}\\n' ;;
+esac
+`;
   const promoteStep = findStep(promoteJob, 'Promote published stable release to GitHub Latest');
   const promoteStable = executeWorkflowStep(promoteStep, {
     env: { RELEASE_TAG: '3.3.0', RELEASE_CHANNEL: 'stable' },
@@ -792,7 +820,7 @@ exit 1
       'needs.create-release.outputs.version': '3.3.0',
       'needs.create-release.outputs.channel': 'stable',
     },
-    fakeCommands: { gh: fakeGh, jq: fakeJq },
+    fakeCommands: { gh: promoteStepGh, jq: fakeJq },
   });
   assert.equal(promoteStable.status, 0, promoteStable.stderr);
   assert.match(promoteStable.log, /-f make_latest=true/);

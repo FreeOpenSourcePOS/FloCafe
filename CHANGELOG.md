@@ -2,6 +2,94 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.8.6] - 2026-09-13
+
+### Added
+
+- login-screen support menu with ticket submission + WhatsApp (#737)
+
+### Changed
+
+- Surface the actual refund failure reason instead of a generic toast (#738)
+- auto-promote stable releases to GitHub Latest (#736)
+
+## [3.8.5] - 2026-09-13
+
+### Changed
+
+- Allow refunds on completed orders, owner-only past the in-progress window (#733)
+
+### Fixed
+
+- support addon selection in tableside ordering (#734)
+
+## [3.8.1] - 2026-09-12
+
+### Changed
+
+- cover every runnable test script by default (#707)
+
+### Fixed
+
+- declare local-network usage, stop blocking Send on print (#731)
+
+## [3.8.0] - 2026-09-12
+
+### Changed
+
+- make harness output portable and accurate (#706)
+- remove confirmed dead UI modules (#709)
+- quiet routine migration logs (#708)
+
+### Fixed
+
+- improve dark-mode contrast across dashboard and POS (#691)
+- skip stable Latest assertion for ordinary publication (#701)
+- respect server app regional settings (#705)
+- batch of 5 low-hanging bug fixes (#723)
+- 5 more low-hanging bug fixes (#724)
+- orders are never ownership-gated (product decision) (#725)
+- friendlier offline error message and AI hand-off (#722)
+- drop icons from Dine In and Online order-type buttons (#727)
+- tableside KOT/bill printing, browser-print fallback, addon price on bill (#728)
+
+## [3.7.6] - 2026-09-10
+
+### Added
+
+- add configurable business day cutoff times (#695)
+
+### Changed
+
+- release 3.7.6 (#699)
+
+### Fixed
+
+- recover WhatsApp sessions and secure share handling (#688)
+- patch js-yaml advisory and link CLAUDE.md (#690)
+- keep LAN cashier payment keys unique (#698)
+
+## [3.7.5] - 2026-09-09
+
+### Added
+
+- day close with counted-vs-expected cash and numbered Z report (ref #649) (#666)
+- thermal receipt layout and raster (#675)
+- rename and delete floors (#674)
+
+### Changed
+
+- clean up and simplify comments (#668)
+- release 3.7.5 (#678)
+
+### Fixed
+
+- preserve GitHub Latest during publication (#667)
+- rate-limit public info endpoint (#677)
+- multilingual layout and settings saves (#676)
+- prevent settings request storms on nav (#679)
+- improve native select readability in dark mode (#683)
+
 ## [3.7.2] - 2026-09-06
 
 ### Fixed

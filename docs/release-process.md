@@ -65,9 +65,15 @@ release as GitHub's `Latest` (`make_latest=false`), and then the `promote-stable
 job automatically promotes it in the same run: it re-verifies the immutable
 candidate manifest (asset ID and SHA-256, both derived from this run, not a
 manual input), the Snap publication markers, and the permanent sanitized
-summary via `verify-stable-promotion.cjs`, then flips `make_latest=true`. A
-stable release that fails any of those checks is published but never promoted,
-so `/releases/latest` keeps pointing at the last release that passed. Beta
+summary via `verify-stable-promotion.cjs`, then flips `make_latest=true` —
+but only if the candidate is not older than the current `/releases/latest`
+tag, so two releases finishing out of order can never move Latest backward.
+A stable release that fails any of those checks is published but never
+promoted, so `/releases/latest` keeps pointing at the last release that
+passed. That ordering check applies only to this automatic job: the manual
+`promote-release` job (below) has no such guard, since re-promoting an older,
+already-published release on purpose — a rollback — is exactly what it is
+for. Beta
 releases never reach this job (gated on `channel == stable`): they stay
 prerelease-flagged with `make_latest=false`, which is what keeps them invisible
 to stable installs (electron-updater's stable path follows GitHub's Latest

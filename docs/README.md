@@ -19,7 +19,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 
 | Document | Description | Scope |
 | --- | --- | --- |
-| [API.md](API.md) | Endpoint and WebSocket reference for the local Express and KDS servers (`:3001` and `:3002`). | CURRENT |
+| [API.md](API.md) | Endpoint and WebSocket reference for the local Express, KDS, and Server App servers (`:3001`, `:3002`, and `:3003`). | CURRENT |
 | [linux.md](linux.md) | Linux package formats (AppImage, deb, rpm, Snap), FUSE setup, CUPS printing, and system tray behavior. | CURRENT |
 | [printers.md](printers.md) | ESC/POS printer configuration, network/USB/OS-queue/WebUSB connection types, kitchen stations, and troubleshooting. | CURRENT |
 | [printer-hardware-testing-protocol.md](printer-hardware-testing-protocol.md) | Physical hardware validation matrix, testing protocols across platforms, and test report template. | CURRENT |

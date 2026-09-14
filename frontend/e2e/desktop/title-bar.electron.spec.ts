@@ -74,7 +74,7 @@ test('POS topbar fullscreen toggle stays synchronized with native window state',
   await harness.authenticateDashboard();
 
   const readNativeWindowState = async () => harness.app.evaluate(({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows().find((candidate) => {
+    const window = BrowserWindow.getAllWindows().find((candidate: { webContents: { getURL: () => string } }) => {
       try { return new URL(candidate.webContents.getURL()).pathname.replace(/\/+$/, '') === '/pos'; } catch { return false; }
     });
     if (!window) return null;
@@ -83,7 +83,7 @@ test('POS topbar fullscreen toggle stays synchronized with native window state',
   const topbarToggle = harness.page.getByRole('button', { name: /full-screen POS/i });
 
   await harness.app.evaluate(({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows().find((candidate) => {
+    const window = BrowserWindow.getAllWindows().find((candidate: { webContents: { getURL: () => string } }) => {
       try { return new URL(candidate.webContents.getURL()).pathname.replace(/\/+$/, '') === '/pos'; } catch { return false; }
     });
     if (!window) throw new Error('POS BrowserWindow not found');
@@ -109,7 +109,7 @@ test('POS topbar fullscreen toggle stays synchronized with native window state',
   }
 
   await harness.app.evaluate(({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows().find((candidate) => {
+    const window = BrowserWindow.getAllWindows().find((candidate: { webContents: { getURL: () => string } }) => {
       try { return new URL(candidate.webContents.getURL()).pathname.replace(/\/+$/, '') === '/pos'; } catch { return false; }
     });
     if (!window) throw new Error('POS BrowserWindow not found');
@@ -119,7 +119,7 @@ test('POS topbar fullscreen toggle stays synchronized with native window state',
   await expect(topbarToggle).toHaveAttribute('aria-label', 'Enter full-screen POS');
 
   await harness.app.evaluate(({ BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows().find((candidate) => {
+    const window = BrowserWindow.getAllWindows().find((candidate: { webContents: { getURL: () => string } }) => {
       try { return new URL(candidate.webContents.getURL()).pathname.replace(/\/+$/, '') === '/pos'; } catch { return false; }
     });
     if (!window) throw new Error('POS BrowserWindow not found');

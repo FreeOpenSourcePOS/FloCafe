@@ -9,7 +9,7 @@ let harness: NativeElectronHarness;
 
 async function countPosWindows(): Promise<number> {
   return harness.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()
-    .filter((window) => window.webContents.getURL().startsWith('http://localhost:')).length);
+    .filter((window: { webContents: { getURL: () => string } }) => window.webContents.getURL().startsWith('http://localhost:')).length);
 }
 
 test.beforeAll(async () => {
@@ -26,7 +26,7 @@ test('activation recreates a usable window after the renderer window is destroye
 
   await harness.app.evaluate(({ BrowserWindow }) => {
     new BrowserWindow({ show: false });
-    const pos = BrowserWindow.getAllWindows().find((win) => {
+    const pos = BrowserWindow.getAllWindows().find((win: { webContents: { getURL: () => string } }) => {
       try { return win.webContents.getURL().startsWith('http://localhost:'); } catch { return false; }
     });
     pos?.destroy();
@@ -44,8 +44,8 @@ test('activation recreates a usable window after the renderer window is destroye
   harness.setActivePage(recoveredPage);
   await harness.app.evaluate(({ BrowserWindow }) => {
     BrowserWindow.getAllWindows()
-      .filter((win) => !win.webContents.getURL().startsWith('http://localhost:'))
-      .forEach((win) => win.destroy());
+      .filter((win: { webContents: { getURL: () => string } }) => !win.webContents.getURL().startsWith('http://localhost:'))
+      .forEach((win: { destroy: () => void }) => win.destroy());
   });
   await expect.poll(countPosWindows).toBe(1);
   expect(harness.app.process().pid).toBe(originalPid);

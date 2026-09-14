@@ -22,12 +22,7 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
   await page.screenshot({ path: path.join(EVIDENCE_DIR, filename), fullPage: true });
 }
 
-import * as jwt from 'jsonwebtoken';
-
-function getE2eToken(userId = 'e2e-manager', email = 'manager@flo.local', role = 'manager'): string {
-  const secret = process.env.JWT_SECRET || 'e2e-test-secret';
-  return jwt.sign({ userId, email, role }, secret, { expiresIn: '1h' });
-}
+import { getE2eToken } from './helpers/test-auth';
 
 async function setLanguage(page: Page, token: string, value: string): Promise<void> {
   const res = await page.request.put(`${BASE_API}/api/settings/language`, {
@@ -47,7 +42,7 @@ async function setLanguage(page: Page, token: string, value: string): Promise<vo
 
 test('Batch 5D: KDS and Server App render and function correctly in English and Persian (RTL)', async ({ page }) => {
   // 1. Setup session & seed data
-  const token = getE2eToken();
+  const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
   const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
 
   // Create table if not present

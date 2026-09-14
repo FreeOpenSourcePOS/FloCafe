@@ -138,7 +138,7 @@ export default function AddonModal({
                   <h3 className="font-semibold text-sm text-foreground">{group.name}</h3>
                   <span className="flex items-center gap-2">
                     {Boolean(group.is_required) && (
-                      <span className="text-xs text-red-500 font-medium">{t('required')}</span>
+                      <span className="text-xs font-medium text-red-500 dark:text-red-400">{t('required')}</span>
                     )}
                     {group.max_selection ? (() => {
                       const remaining = Math.max(0, group.max_selection - count);
@@ -239,7 +239,7 @@ export default function AddonModal({
                               <button
                                 type="button"
                                 disabled
-                                className="touch-target rounded flex items-center justify-center text-gray-300 cursor-not-allowed opacity-50"
+                                className="touch-target rounded flex items-center justify-center text-muted-foreground cursor-not-allowed opacity-50"
                               >
                                 <Plus size={14} />
                               </button>
@@ -262,7 +262,7 @@ export default function AddonModal({
                   const requiredMin = Boolean(group.is_required) ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
                   if (requiredMin > 0 && count < requiredMin) {
                     return (
-                      <p className="text-xs text-red-500 mt-1">{t('selectAtLeast', { count: requiredMin })}</p>
+                      <p className="mt-1 text-xs text-red-500 dark:text-red-400">{t('selectAtLeast', { count: requiredMin })}</p>
                     );
                   }
                   return null;
@@ -279,7 +279,7 @@ export default function AddonModal({
               onChange={(e) => setInstructions(e.target.value.slice(0, 100))}
               placeholder={t('specialInstructionsPlaceholder')}
               maxLength={100}
-              className="w-full min-h-11 px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+              className="w-full min-h-11 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-brand"
             />
             <p className="text-xs text-muted-foreground text-end mt-0.5">{instructions.length}/100</p>
           </div>

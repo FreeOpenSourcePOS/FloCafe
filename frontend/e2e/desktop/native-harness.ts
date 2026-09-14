@@ -412,7 +412,7 @@ export async function createNativeElectronHarness(): Promise<NativeElectronHarne
       await nextPage.bringToFront().catch(() => {});
       await nextApp.evaluate(({ app: electronApp, BrowserWindow }, origin) => {
         electronApp.focus({ steal: true });
-        const target = BrowserWindow.getAllWindows().find((window) => {
+        const target = BrowserWindow.getAllWindows().find((window: { webContents: { getURL: () => string }; isDestroyed: () => boolean }) => {
           try { return new URL(window.webContents.getURL()).origin === origin; } catch { return false; }
         });
         if (!target || target.isDestroyed()) return;

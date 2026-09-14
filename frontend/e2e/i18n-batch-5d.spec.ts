@@ -22,12 +22,7 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
   await page.screenshot({ path: path.join(EVIDENCE_DIR, filename), fullPage: true });
 }
 
-import * as jwt from 'jsonwebtoken';
-
-function getE2eToken(userId = 'e2e-manager', email = 'manager@flo.local', role = 'manager'): string {
-  const secret = process.env.JWT_SECRET || 'e2e-test-secret';
-  return jwt.sign({ userId, email, role }, secret, { expiresIn: '1h' });
-}
+import { getE2eToken } from './helpers/test-auth';
 
 async function setLanguage(page: Page, token: string, value: string): Promise<void> {
   const res = await page.request.put(`${BASE_API}/api/settings/language`, {

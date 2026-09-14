@@ -1,5 +1,6 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import expressRateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import * as http from 'http';
 import * as path from 'path';
@@ -280,8 +281,19 @@ export function startServerApp(): Promise<void> {
     app.post('/api/orders/:id/items', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, `/orders/${encodeURIComponent(String(req.params.id))}/items`));
     app.get('/api/customers-search', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers-search'));
     app.get('/api/crm/lookup', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/crm/lookup'));
-    app.post('/api/customers', requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers'));
-    const printForwardRateLimit = rateLimit({ windowMs: 60 * 1000, max: 30 });
+    const customerWriteRateLimit = expressRateLimit({
+      windowMs: 60 * 1000,
+      limit: 150,
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
+    app.post('/api/customers', customerWriteRateLimit, requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/customers'));
+    const printForwardRateLimit = expressRateLimit({
+      windowMs: 60 * 1000,
+      limit: 30,
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
     app.post('/api/printers/print-kot', printForwardRateLimit, requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/printers/print-kot'));
     app.post('/api/printers/print-bill', printForwardRateLimit, requireServerAppAuth, (req, res) => forwardToMainApi(req, res, '/printers/print-bill'));
 

@@ -394,17 +394,17 @@ export default function ServerStandalonePage() {
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <form onSubmit={handleLogin} className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="flex min-h-screen items-center justify-center p-4 dark:bg-background">
+        <form onSubmit={handleLogin} className="w-full max-w-sm rounded-xl border border-gray-200 dark:border-border bg-white dark:bg-card p-6 shadow-sm">
           <div className="mb-6 text-center">
             <UserRound size={42} className="mx-auto mb-3 text-brand" />
-            <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
-            <p className="mt-1 text-sm text-gray-500">{t('loginSubtitle')}</p>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-foreground">{t('title')}</h1>
+            <p className="mt-1 text-sm text-gray-500 dark:text-muted-foreground">{t('loginSubtitle')}</p>
           </div>
           <div className="space-y-3">
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" placeholder={t('emailPlaceholder')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={tAuth('password')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
-            <label className="flex items-center gap-2 text-sm text-gray-600">
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" placeholder={t('emailPlaceholder')} required className="h-11 w-full rounded-lg border border-gray-300 dark:border-border bg-white dark:bg-background px-3 text-sm text-foreground placeholder:text-gray-400 dark:placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={tAuth('password')} required className="h-11 w-full rounded-lg border border-gray-300 dark:border-border bg-white dark:bg-background px-3 text-sm text-foreground placeholder:text-gray-400 dark:placeholder:text-muted-foreground focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-muted-foreground">
               <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="rounded border-gray-300 text-brand focus:ring-brand" />
               {tAuth('rememberMe')}
             </label>
@@ -412,7 +412,7 @@ export default function ServerStandalonePage() {
               {loginLoading ? tAuth('signingIn') : tAuth('signIn')}
             </button>
           </div>
-          <p className="mt-4 text-center text-xs text-gray-500">{t('loginHint')}</p>
+          <p className="mt-4 text-center text-xs text-gray-500 dark:text-muted-foreground">{t('loginHint')}</p>
         </form>
       </div>
     );

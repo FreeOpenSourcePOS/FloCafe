@@ -190,13 +190,13 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
 }
 
 const itemStatusColors: Record<string, { bg: string; text: string; dot: string }> = {
-  pending: { bg: 'bg-yellow-50', text: 'text-yellow-700', dot: 'bg-yellow-400' },
-  preparing: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500' },
-  ready: { bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500' },
-  served: { bg: 'bg-purple-50', text: 'text-purple-700', dot: 'bg-purple-500' },
-  cancelled: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
-  voided: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
-  void_adjustment: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
+  pending: { bg: 'bg-yellow-50 dark:bg-yellow-950', text: 'text-yellow-700 dark:text-yellow-300', dot: 'bg-yellow-400' },
+  preparing: { bg: 'bg-blue-50 dark:bg-blue-950', text: 'text-blue-700 dark:text-blue-300', dot: 'bg-blue-500 dark:bg-blue-400' },
+  ready: { bg: 'bg-green-50 dark:bg-green-950', text: 'text-green-700 dark:text-green-300', dot: 'bg-green-500 dark:bg-green-400' },
+  served: { bg: 'bg-purple-50 dark:bg-purple-950', text: 'text-purple-700 dark:text-purple-300', dot: 'bg-purple-500 dark:bg-purple-400' },
+  cancelled: { bg: 'bg-red-50 dark:bg-red-950', text: 'text-red-500 dark:text-red-400', dot: 'bg-red-400' },
+  voided: { bg: 'bg-red-50 dark:bg-red-950', text: 'text-red-500 dark:text-red-400', dot: 'bg-red-400' },
+  void_adjustment: { bg: 'bg-red-50 dark:bg-red-950', text: 'text-red-500 dark:text-red-400', dot: 'bg-red-400' },
 };
 
 export default function TablesPage() {
@@ -514,10 +514,10 @@ export default function TablesPage() {
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-sm font-semibold text-foreground">#<Ltr>{order.order_number}</Ltr></span>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
-                            order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-                            order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
-                            order.status === 'ready' ? 'bg-green-100 text-green-700' :
-                            order.status === 'served' ? 'bg-purple-100 text-purple-700' :
+                            order.status === 'pending' ? 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300' :
+                            order.status === 'preparing' ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300' :
+                            order.status === 'ready' ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300' :
+                            order.status === 'served' ? 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300' :
                             'bg-muted text-muted-foreground'
                           }`}>
                             {tOrders(ORDER_STATUS_LABEL_KEYS[order.status])}

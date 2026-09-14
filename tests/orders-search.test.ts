@@ -31,6 +31,10 @@ test('order without customer does not crash', () => {
   assert.equal(matchesOrderSearch(order({ customer: null }), 'a-102'), true);
 });
 
+test('mixed name+digit query does not fall back to phone matching', () => {
+  assert.equal(matchesOrderSearch(order(), 'Alice 2'), false);
+});
+
 test('empty query matches everything', () => {
   assert.equal(matchesOrderSearch(order(), ''), true);
   assert.equal(matchesOrderSearch(order(), '   '), true);

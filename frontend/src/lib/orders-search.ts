@@ -13,7 +13,9 @@ export function matchesOrderSearch(order: SearchableOrder, query: string): boole
   const name = order.customer?.name;
   if (name && name.toLowerCase().includes(q)) return true;
   const qDigits = digitsOnly(q);
-  if (qDigits) {
+  // Skip phone matching once the query contains letters (e.g. "Alice 2"),
+  // otherwise the leftover digits would match almost any phone number.
+  if (qDigits && !/\p{L}/u.test(q)) {
     const phones = [order.customer?.phone_digits, order.customer?.phone];
     if (phones.some((p) => p && digitsOnly(p).includes(qDigits))) return true;
   }

@@ -6,11 +6,14 @@ import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { formatCurrencyForTenant } from '@/lib/countries';
 import type { Product, Addon, AddonGroup } from '@/lib/types';
 
 interface Props {
   product: Product;
   currency: string;
+  /** Overrides the signed-in tenant's currency formatting (e.g. for standalone pages with no auth store). */
+  country?: string;
   onAdd: (product: Product, quantity: number, addons: Addon[], specialInstructions: string) => void;
   onClose: () => void;
   initialQuantity?: number;
@@ -30,11 +33,12 @@ function groupInitialAddons(addons: Addon[]): Record<string | number, Addon[]> {
 }
 
 export default function AddonModal({
-  product, onAdd, onClose,
+  product, currency, country, onAdd, onClose,
   initialQuantity = 1, initialAddons = [], initialInstructions = '', mode = 'add',
 }: Props) {
   const t = useTranslations('pos');
-  const fmt = useFormatCurrency();
+  const tenantFmt = useFormatCurrency();
+  const fmt = country ? (n: number) => formatCurrencyForTenant(n, country, currency) : tenantFmt;
   const [selected, setSelected] = useState<Record<string | number, Addon[]>>(() => groupInitialAddons(initialAddons));
   const [quantity, setQuantity] = useState(initialQuantity);
   const [instructions, setInstructions] = useState(initialInstructions);
@@ -134,7 +138,7 @@ export default function AddonModal({
                   <h3 className="font-semibold text-sm text-foreground">{group.name}</h3>
                   <span className="flex items-center gap-2">
                     {Boolean(group.is_required) && (
-                      <span className="text-xs text-red-500 font-medium">{t('required')}</span>
+                      <span className="text-xs font-medium text-red-500 dark:text-red-400">{t('required')}</span>
                     )}
                     {group.max_selection ? (() => {
                       const remaining = Math.max(0, group.max_selection - count);
@@ -168,7 +172,7 @@ export default function AddonModal({
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">{addon.name}</span>
+                            <span className="font-medium text-foreground">{addon.name}</span>
                             <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
                               {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                             </span>
@@ -216,7 +220,7 @@ export default function AddonModal({
                         }`}
                       >
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{addon.name}</span>
+                          <span className="font-medium text-foreground">{addon.name}</span>
                           <span className={`text-xs ${isSel ? 'text-brand dark:text-indigo-300 font-semibold' : 'text-muted-foreground'}`}>
                             {Number(addon.price) === 0 ? t('freeAddon') : `+${fmt(Number(addon.price))}`}
                           </span>
@@ -235,7 +239,7 @@ export default function AddonModal({
                               <button
                                 type="button"
                                 disabled
-                                className="touch-target rounded flex items-center justify-center text-gray-300 cursor-not-allowed opacity-50"
+                                className="touch-target rounded flex items-center justify-center text-muted-foreground cursor-not-allowed opacity-50"
                               >
                                 <Plus size={14} />
                               </button>
@@ -258,7 +262,7 @@ export default function AddonModal({
                   const requiredMin = Boolean(group.is_required) ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
                   if (requiredMin > 0 && count < requiredMin) {
                     return (
-                      <p className="text-xs text-red-500 mt-1">{t('selectAtLeast', { count: requiredMin })}</p>
+                      <p className="mt-1 text-xs text-red-500 dark:text-red-400">{t('selectAtLeast', { count: requiredMin })}</p>
                     );
                   }
                   return null;
@@ -275,7 +279,7 @@ export default function AddonModal({
               onChange={(e) => setInstructions(e.target.value.slice(0, 100))}
               placeholder={t('specialInstructionsPlaceholder')}
               maxLength={100}
-              className="w-full min-h-11 px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+              className="w-full min-h-11 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-brand"
             />
             <p className="text-xs text-muted-foreground text-end mt-0.5">{instructions.length}/100</p>
           </div>

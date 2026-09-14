@@ -1,13 +1,18 @@
 /** Bill-level cash-back and item-level refund processing for paid bills. */
-import { getDatabase, getSettingValue, now, parseDbTimestamp, verifyPin } from '../db';
+import {
+  getDatabase, getSettingValue, now, parseDbTimestamp, verifyPin,
+  dayBoundsInTimezone, localDateInTimezone, tenantBusinessDayStartTime, recordOrderAudit,
+} from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getCountryByCode, getCurrencyMinorUnitFactor } from '../countries';
 
 type Database = ReturnType<typeof getDatabase>;
 
-const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
-const REFUND_ITEM_ELIGIBLE_STATUSES = ['preparing', 'ready'];
+// Kept in sync with the 1:1 rate in main/routes/bills.ts — loyalty points equal currency units.
+const LOYALTY_REDEMPTION_RATE = 1;
+// Items already served/completed become refundable once an order is past the short window below.
+const REFUND_ITEM_ELIGIBLE_STATUSES = ['preparing', 'ready', 'served', 'completed'];
 const REFUND_WINDOW_MS = 60 * 60 * 1000;
 // Terminal item statuses excluded from active order calculations.
 export const TERMINAL_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
@@ -59,13 +64,16 @@ export function getRefundableBalance(db: Database, billId: string | number, curr
   return { paidCents, refundedCents, refundableCents: paidCents - refundedCents };
 }
 
-function resolveRefundApprover(db: Database, overridePin: string, managerId?: string | null): { id: string } | null {
+/** `ownerOnly` narrows the approving PIN to owner accounts — used once a refund falls outside the short in-progress window. */
+function resolveRefundApprover(db: Database, overridePin: string, managerId: string | null | undefined, ownerOnly: boolean): { id: string } | null {
+  const allowedRoles = ownerOnly ? ROLE_ACCESS.owner : ROLE_ACCESS.ownerManager;
+  const placeholders = allowedRoles.map(() => '?').join(', ');
   if (managerId) {
-    const candidate = db.prepare(`SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS}) AND is_active = 1`).get(managerId, ...ROLE_ACCESS.ownerManager) as any;
+    const candidate = db.prepare(`SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN (${placeholders}) AND is_active = 1`).get(managerId, ...allowedRoles) as any;
     if (candidate && verifyPin(candidate.pin_hash, overridePin)) return candidate;
   }
-  const managers = db.prepare(`SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS}) AND is_active = 1`).all(...ROLE_ACCESS.ownerManager) as any[];
-  for (const user of managers) {
+  const approvers = db.prepare(`SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN (${placeholders}) AND is_active = 1`).all(...allowedRoles) as any[];
+  for (const user of approvers) {
     if (verifyPin(user.pin_hash, overridePin)) return user;
   }
   return null;
@@ -96,8 +104,19 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   const order = db.prepare('SELECT created_at FROM orders WHERE id = ?').get(bill.order_id) as { created_at: string } | undefined;
   if (!order) throw httpError('Order not found', 404);
   const orderCreatedAt = parseDbTimestamp(order.created_at).getTime();
-  if (!Number.isFinite(orderCreatedAt) || Date.now() - orderCreatedAt > REFUND_WINDOW_MS) {
-    throw httpError('Refund window has expired. Refunds are allowed within 1 hour of order creation.', 409);
+  if (!Number.isFinite(orderCreatedAt)) throw httpError('Order creation time is invalid', 500);
+  const nowMs = Date.now();
+  // Past the short window, an owner-only PIN is required for the rest of the business day (docs/business-decisions.md).
+  let lateRefund = false;
+  if (nowMs - orderCreatedAt > REFUND_WINDOW_MS) {
+    const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
+    const startTime = tenantBusinessDayStartTime(db);
+    const orderBusinessDate = localDateInTimezone(new Date(orderCreatedAt), timezone, startTime);
+    const [, businessDayEnd] = dayBoundsInTimezone(orderBusinessDate, timezone, startTime);
+    if (nowMs >= parseDbTimestamp(businessDayEnd).getTime()) {
+      throw httpError('Refund window has expired. Completed orders can only be refunded within the same business day.', 409);
+    }
+    lateRefund = true;
   }
 
   const currency = getTenantCurrency(db);
@@ -138,20 +157,26 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   if (!req.method || typeof req.method !== 'string' || req.method.length > 60) {
     throw httpError('Refund method is required', 400);
   }
+  const isStoreCreditRefund = req.method === 'wallet';
+  if (isStoreCreditRefund) {
+    const loyaltyEnabled = ['true', '1'].includes(getSettingValue('loyalty_enabled') || '');
+    if (!loyaltyEnabled) throw httpError('Store credit is not enabled', 400);
+    if (!bill.customer_id) throw httpError('Customer association is required for a store-credit refund', 400);
+  }
 
   const { paidCents, refundedCents, refundableCents } = getRefundableBalance(db, req.billId, currency);
   if (refundableCents <= 0) throw httpError('Bill has nothing left to refund', 400);
   if (amountCents > refundableCents) throw httpError('Refund amount exceeds the refundable balance', 400);
 
   if (!req.overridePin) {
-    throw httpError('Manager PIN required to process a refund', 400);
+    throw httpError(lateRefund ? 'Owner PIN required to process a refund on a completed order' : 'Manager PIN required to process a refund', 400);
   }
   const rateLimitKey = `pin:${req.clientIp}:refund`;
   if (!req.checkPinRateLimit(rateLimitKey)) {
     throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429);
   }
-  const approver = resolveRefundApprover(db, req.overridePin, req.managerId);
-  if (!approver) throw httpError('Invalid manager PIN', 403);
+  const approver = resolveRefundApprover(db, req.overridePin, req.managerId, lateRefund);
+  if (!approver) throw httpError(lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN', 403);
 
   const timestamp = now();
 
@@ -186,6 +211,31 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   const newRefundedCents = refundedCents + amountCents;
   const paymentStatus = newRefundedCents >= paidCents ? 'refunded' : 'partially_refunded';
   db.prepare('UPDATE bills SET payment_status = ?, updated_at = ? WHERE id = ?').run(paymentStatus, timestamp, req.billId);
+
+  if (isStoreCreditRefund) {
+    // A plain 'credit' row — wallet-funded spend is already excluded from the cashback base.
+    const creditAmount = (amountCents / minorFactor) * LOYALTY_REDEMPTION_RATE;
+    db.prepare(`
+      INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
+      VALUES (?, ?, 'credit', ?, ?, ?, ?)
+    `).run(bill.customer_id, req.billId, creditAmount, `Refund credit for bill ${bill.bill_number}`, timestamp, timestamp);
+  }
+
+  recordOrderAudit(db, {
+    orderId: bill.order_id,
+    orderItemId: req.orderItemId ?? null,
+    actorUserId: req.createdByUserId,
+    action: 'refund_issued',
+    details: {
+      refundId: insertResult.lastInsertRowid,
+      billId: req.billId,
+      amountCents,
+      method: req.method,
+      lateRefund,
+      approvedBy: approver.id,
+      reason: req.reason ?? null,
+    },
+  });
 
   const refund = db.prepare('SELECT * FROM refunds WHERE id = ?').get(insertResult.lastInsertRowid);
   const freshBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.billId);

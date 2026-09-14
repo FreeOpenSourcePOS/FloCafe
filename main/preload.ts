@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openKdsWindow: () => ipcRenderer.invoke('open-kds-window'),
 
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
+  getLogTail: () => ipcRenderer.invoke('get-log-tail'),
 
   // Fire-and-forget: reports a caught renderer render exception (see the
   // dashboard error boundary) to anonymous telemetry via main.

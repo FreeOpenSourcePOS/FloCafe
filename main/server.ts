@@ -38,6 +38,11 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (req.path.startsWith('/api/auth')) { next(); return; }
   // Allow unauthenticated GET requests for product images (so <img> tags work)
   if (req.path.startsWith('/api/products/') && req.path.endsWith('/image') && req.method === 'GET') { next(); return; }
+  // Login-screen support-ticket paths, rate-limited in support-ticket.ts.
+  // Matched exactly (not by prefix) so a lookalike path can't skip auth.
+  if (req.method === 'POST' && req.path === '/api/support-ticket/pre-login') { next(); return; }
+  if (req.method === 'GET' && req.path === '/api/support-ticket/pre-login/profile') { next(); return; }
+  if (req.method === 'GET' && /^\/api\/support-ticket\/pre-login\/[0-9a-f-]{36}\/status$/i.test(req.path)) { next(); return; }
 
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
@@ -142,11 +147,16 @@ export function startServer(): Promise<void> {
     app = express();
 
     app.use(cors(corsOptions));
+    // Scope the anonymous pre-login route to a body limit far below the
+    // general API import limit, so it can't force a large allocation.
+    app.use('/api/support-ticket/pre-login', express.json({ limit: '300kb' }));
     app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
-    app.use((error: any, _req: Request, res: Response, next: NextFunction) => {
+    app.use((error: any, req: Request, res: Response, next: NextFunction) => {
       if (error?.type === 'entity.too.large') {
         res.status(413).json({
-          error: `Request body is too large. JSON imports are limited to ${API_JSON_BODY_LIMIT}; use Backup/Restore for full database migration.`,
+          error: req.path === '/api/support-ticket/pre-login'
+            ? 'Request body is too large.'
+            : `Request body is too large. JSON imports are limited to ${API_JSON_BODY_LIMIT}; use Backup/Restore for full database migration.`,
         });
         return;
       }

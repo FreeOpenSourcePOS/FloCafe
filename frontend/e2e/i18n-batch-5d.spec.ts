@@ -42,7 +42,7 @@ async function setLanguage(page: Page, token: string, value: string): Promise<vo
 
 test('Batch 5D: KDS and Server App render and function correctly in English and Persian (RTL)', async ({ page }) => {
   // 1. Setup session & seed data
-  const token = getE2eToken();
+  const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
   const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
 
   // Create table if not present
@@ -146,10 +146,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await expect(page.getByPlaceholder('Customer name')).toBeVisible();
   await expect(page.getByPlaceholder('Phone')).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  // Click a table and an item
+  // Click a table and an item — opens the addon/instructions modal
   await page.getByRole('button', { name: /Table 1/i }).first().click();
   await page.getByText('E2E Coffee').first().click();
-  await expect(page.getByPlaceholder('Item note')).toBeVisible();
+  await expect(page.getByPlaceholder('e.g., no onions, extra spicy...')).toBeVisible();
+  await page.getByRole('button', { name: /Add to Cart/ }).click();
   await expect(page.getByRole('button', { name: 'Send to kitchen' })).toBeVisible();
   await captureScreenshot(page, 'server-standalone-en.png');
 
@@ -242,10 +243,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.getByPlaceholder('نام مشتری')).toBeVisible();
     await expect(page.getByPlaceholder('تلفن')).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-    // Select table and item
+    // Select table and item — opens the addon/instructions modal
     await page.getByRole('button', { name: /Table 1/i }).first().click();
     await page.getByText('E2E Coffee').first().click();
-    await expect(page.getByPlaceholder('یادداشت کالا')).toBeVisible();
+    await expect(page.getByPlaceholder('برای نمونه: بدون پیاز، تندتر')).toBeVisible();
+    await page.getByRole('button', { name: /افزودن به سبد/ }).click();
     await expect(page.getByRole('button', { name: 'ارسال به آشپزخانه' })).toBeVisible();
     await captureScreenshot(page, 'server-standalone-fa.png');
 

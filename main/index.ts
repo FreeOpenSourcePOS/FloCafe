@@ -90,6 +90,7 @@ const UNPACKED_DEV_MARKER = 'flo-unpacked-dev.marker';
 log.initialize();
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
+// electron-log's default rotation (~1MB, one archived copy) already bounds disk usage.
 const logPath = log.transports.file.getFile().path.replace(/[^\/\\]+$/, '');
 console.log('[Log] Log files location:', logPath);
 

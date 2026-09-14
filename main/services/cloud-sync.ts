@@ -108,6 +108,8 @@ export type SupportTicketInput = {
   contact_phone?: string;
   message: string;
   diagnostics?: Record<string, unknown> | null;
+  /** Tail of the app's log file at submission time, when the user opted to attach it. */
+  log_tail?: string;
 };
 
 /** Tier 2 store-attributed diagnostic event payload without customer PII or order data. */
@@ -821,6 +823,7 @@ export class CloudSyncService {
       app_version: require('../../package.json').version,
       platform: process.platform,
       diagnostics: input.diagnostics,
+      log_tail: input.log_tail,
     };
     return this.withDatabaseRequest(async () => {
       throwIfRequestAborted(signal);

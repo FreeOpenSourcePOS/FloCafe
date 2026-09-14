@@ -13,7 +13,7 @@ const MAX_POLLS = 20;
 
 /** Polls local status route until ticket delivery is confirmed
  * or max retry threshold is reached. */
-export function useSupportTicketStatus(clientTicketId: string | null): SupportTicketDelivery {
+export function useSupportTicketStatus(clientTicketId: string | null, statusBasePath = '/support-ticket'): SupportTicketDelivery {
   const [state, setState] = useState<SupportTicketDelivery>({ status: null, supportCode: null });
   const pollsRef = useRef(0);
 
@@ -33,7 +33,7 @@ export function useSupportTicketStatus(clientTicketId: string | null): SupportTi
 
     const poll = async () => {
       try {
-        const { data } = await api.get(`/support-ticket/${clientTicketId}/status`);
+        const { data } = await api.get(`${statusBasePath}/${clientTicketId}/status`);
         if (cancelled) return;
         setState({ status: data.status ?? null, supportCode: data.support_code ?? null });
         if (data.status === 'delivered') return;
@@ -51,7 +51,7 @@ export function useSupportTicketStatus(clientTicketId: string | null): SupportTi
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [clientTicketId]);
+  }, [clientTicketId, statusBasePath]);
 
   return state;
 }

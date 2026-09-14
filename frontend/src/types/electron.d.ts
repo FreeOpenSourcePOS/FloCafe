@@ -30,6 +30,8 @@ export interface ElectronAPI {
 
   // App info
   getAppInfo: () => Promise<ElectronAppInfo | ElectronIpcError>;
+  // Tail of the current session's log file, for attaching to support tickets.
+  getLogTail: () => Promise<{ text: string; truncated: boolean } | ElectronIpcError>;
 
   // Reports caught renderer errors to anonymous telemetry via main process.
   reportRendererError?: (report: { message?: string; stack?: string; digest?: string; route?: string }) => Promise<ElectronActionResult>;

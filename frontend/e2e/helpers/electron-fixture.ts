@@ -118,6 +118,7 @@ export async function injectElectronFixture(
       openKdsWindow: async () => undefined,
       openWhatsAppShare: async () => result,
       getAppInfo: async () => appInfo,
+      getLogTail: async () => ({ text: '', truncated: false }),
       getPrinters: async () => [],
       savePrinter: async () => result,
       rasterizePrintDocument: async () => ({ ok: false, error: 'fixture' }),

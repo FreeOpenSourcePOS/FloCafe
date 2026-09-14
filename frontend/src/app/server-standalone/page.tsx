@@ -11,6 +11,7 @@ import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
 import { formatCurrencyForTenant } from '@/lib/countries';
+import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { printerService } from '@/lib/printer/PrinterService';
 import { generateCartItemId } from '@/lib/cart-identity';
 import AddonModal from '@/components/pos/AddonModal';
@@ -407,13 +408,15 @@ export default function ServerStandalonePage() {
 
   async function sendDraft() {
     if (!api || !selectedTableId || draft.length === 0 || sendInFlightRef.current) return;
-    sendInFlightRef.current = true;
-    setSending(true);
+    // Nonce first via the LAN-safe helper: anything thrown after the
+    // sending flag is set sticks the UI on Sending... forever.
     const signature = sendAttemptSignature(selectedTableId, draft, customerName, customerPhone);
     if (sendAttemptRef.current?.signature !== signature) {
-      sendAttemptRef.current = { signature, nonce: crypto.randomUUID() };
+      sendAttemptRef.current = { signature, nonce: createPaymentIdempotencyKey() };
     }
     const idempotencyKey = `server-app-${selectedTableId}-${sendAttemptRef.current.nonce}`;
+    sendInFlightRef.current = true;
+    setSending(true);
     try {
       const customerId = await ensureCustomer();
       const items = draft.map((line) => ({

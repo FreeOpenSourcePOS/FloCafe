@@ -37,6 +37,9 @@
  *      (same `language` field as `/api/kds/info`). This is exercised
  *      end-to-end through `fetchServerInfo`.
  *
+ *   7. Server App send uses the LAN-safe `createPaymentIdempotencyKey`
+ *      helper so plain-HTTP LAN tablets never stick on "Sending...".
+ *
  * Run: npm run test:rtl-kds-server-whatsapp
  */
 
@@ -377,6 +380,37 @@ async function run(): Promise<void> {
     (global as any).window = realWindow;
   }
   console.log('  ✓ Server App inherits tenant language via /api/server-app/info (useSyncServerLanguage path)');
+
+  // 7. LAN-safe send nonce, scoped to sendDraft so an unrelated later call cannot mask a regression.
+  const serverAppPage = fs.readFileSync(
+    path.join(ROOT, 'frontend/src/app/server-standalone/page.tsx'),
+    'utf8',
+  );
+  assert(
+    !serverAppPage.includes('crypto.randomUUID'),
+    'server-standalone/page.tsx must not call crypto.randomUUID directly (throws on plain-HTTP LAN); use the LAN-safe helper',
+  );
+  const sendDraftBody = serverAppPage.slice(
+    serverAppPage.indexOf('async function sendDraft()'),
+    serverAppPage.indexOf('const activeTable ='),
+  );
+  assert(
+    sendDraftBody.includes('createPaymentIdempotencyKey()'),
+    'sendDraft must generate its nonce via the LAN-safe createPaymentIdempotencyKey helper',
+  );
+  assert(
+    sendDraftBody.indexOf('createPaymentIdempotencyKey()') < sendDraftBody.indexOf('setSending(true)'),
+    'sendDraft must compute its nonce before setSending(true) so a sync throw cannot stick the UI on Sending...',
+  );
+  const { createPaymentIdempotencyKey } = frontendRequire('./src/lib/payment-idempotency');
+  assert(
+    typeof createPaymentIdempotencyKey() === 'string' && createPaymentIdempotencyKey().length > 0,
+    'createPaymentIdempotencyKey must produce a key with no crypto argument (legacy fallback)',
+  );
+  const lanKeyA = createPaymentIdempotencyKey({ getRandomValues: (v: Uint32Array) => v.fill(7) });
+  const lanKeyB = createPaymentIdempotencyKey({ getRandomValues: (v: Uint32Array) => v.fill(8) });
+  assert(lanKeyA !== lanKeyB, 'LAN fallback keys must be unique per send attempt');
+  console.log('  ✓ Server App send uses a LAN-safe nonce computed before Sending...');
 
   console.log('\n✅ All RTL/LTR KDS, Server App, and WhatsApp checks passed.');
 }

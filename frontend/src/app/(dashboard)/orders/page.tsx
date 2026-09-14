@@ -47,6 +47,7 @@ import {
   type AppendAttemptStorage,
 } from '@/lib/append-attempt';
 import { preferChildScopedBill } from '@/lib/printer/tax-components';
+import { matchesOrderSearch } from '@/lib/orders-search';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
@@ -498,8 +499,8 @@ export default function OrdersPage() {
     // Filter unpaid orders using resolved payment status since bills are generated at checkout.
     if (tabFilter === 'unpaid' && !['unpaid', 'partial'].includes(paymentStatusOf(order) || '')) return false;
 
-    // Search by order number
-    if (filters.search && !order.order_number.toLowerCase().includes(filters.search.toLowerCase())) {
+    // Search by order number, customer name, or phone
+    if (filters.search && !matchesOrderSearch(order, filters.search)) {
       return false;
     }
     // Filter by table
@@ -953,7 +954,7 @@ export default function OrdersPage() {
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        {/* Search by order number */}
+        {/* Search by order number, customer name, or phone */}
         <div className="relative flex-1 min-w-[200px]">
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input

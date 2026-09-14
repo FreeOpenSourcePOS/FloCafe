@@ -4,6 +4,13 @@
 
 **Local:** `http://flo.local:3001` or `http://<local-ip>:3001`
 
+The standalone Server App listens on `http://<local-ip>:3003` and forwards
+these protected routes to the local API. Its customer-creation forwarder is
+limited to 150 requests per minute per client IP, including LAN/private IPs.
+The `POST /api/printers/print-kot` and `POST /api/printers/print-bill`
+forwarders share a limit of 30 requests per minute per client IP. These limits
+run before Server App authentication and return HTTP `429` when exceeded.
+
 ---
 
 ## Authentication

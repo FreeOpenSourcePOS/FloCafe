@@ -83,11 +83,6 @@ jobs:
         run: |
           if [ "${{ runner.os }}" = "Linux" ]; then
             xvfb-run -a --server-args='-screen 0 1280x800x24' npm test
-          elif [ "${{ runner.os }}" = "Windows" ]; then
-            npm run test:script-coverage
-            bash tests/run-test.sh npm run test:payment-methods-split
-            bash tests/run-test.sh npm run test:release-regressions
-            SHARD_TOTAL=1 SHARD_INDEX=0 node scripts/ci/run-test-shard.cjs
           else
             npm test
           fi

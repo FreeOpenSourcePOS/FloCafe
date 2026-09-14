@@ -502,7 +502,7 @@
     "restoreItemFailed": "Impossible de restaurer l’article",
     "resumeFailed": "Impossible de reprendre la commande",
     "resumeInPos": "Reprendre dans la caisse",
-    "search": "Rechercher par numéro de commande…",
+    "search": "Rechercher par numéro de commande, nom ou téléphone…",
     "searchCustomer": "Rechercher par téléphone ou nom…",
     "searchMenu": "Rechercher des articles du menu…",
     "selectedItems": "Articles sélectionnés",

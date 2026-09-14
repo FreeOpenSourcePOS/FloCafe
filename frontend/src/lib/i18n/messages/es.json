@@ -502,7 +502,7 @@
     "restoreItemFailed": "No se pudo restaurar el ítem",
     "resumeFailed": "No se pudo reanudar el pedido",
     "resumeInPos": "Reanudar en Punto de Venta",
-    "search": "Buscar por número de pedido…",
+    "search": "Buscar por número de pedido, nombre o teléfono…",
     "searchCustomer": "Buscar por teléfono o nombre…",
     "searchMenu": "Buscar en el menú…",
     "selectedItems": "Ítems seleccionados",

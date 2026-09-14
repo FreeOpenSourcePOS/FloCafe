@@ -502,7 +502,7 @@
     "restoreItemFailed": "Falha ao restaurar o item",
     "resumeFailed": "Não foi possível retomar o pedido",
     "resumeInPos": "Retomar no PDV",
-    "search": "Buscar por número do pedido…",
+    "search": "Buscar por número do pedido, nome ou telefone…",
     "searchCustomer": "Buscar por telefone ou nome…",
     "searchMenu": "Buscar itens do menu…",
     "selectedItems": "Itens Selecionados",

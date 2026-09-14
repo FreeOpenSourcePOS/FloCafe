@@ -92,7 +92,7 @@ test('Batch 5C Pages (Dashboard, Orders, Tables, Customers, OrderHistoryGrid) re
     await page.goto(`${BASE}/orders`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('سفارش‌ها');
-    await expect(page.getByPlaceholder('بر پایه شماره سفارش جستجو کنید…')).toBeVisible();
+    await expect(page.getByPlaceholder('بر پایه شماره سفارش، نام یا تلفن جستجو کنید…')).toBeVisible();
     await captureScreenshot(page, 'orders-fa.png');
 
     // 2c. Tables (FA)

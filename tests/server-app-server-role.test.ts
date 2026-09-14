@@ -143,17 +143,16 @@ async function main() {
     }
 
     // Protected forwarded routes must rate-limit LAN clients before auth or downstream work.
-    for (let attempt = 0; attempt < 150; attempt++) {
-      const response = await postJson(baseUrl, '/api/customers', {});
-      assert.equal(response.status, 401, `customer request ${attempt + 1} reaches authentication before the limit`);
-    }
-    const customerLimit = await postJson(baseUrl, '/api/customers', {});
-    assert.equal(customerLimit.status, 429, 'customer requests over the limit are throttled on localhost');
+    const customerResponses = await Promise.all(
+      Array.from({ length: 151 }, () => postJson(baseUrl, '/api/customers', {})),
+    );
+    assert.equal(customerResponses.filter(({ status }) => status === 401).length, 150, 'customer requests below the limit reach authentication');
+    assert.equal(customerResponses.filter(({ status }) => status === 429).length, 1, 'customer requests over the limit are throttled on localhost');
 
-    for (let attempt = 0; attempt < 29; attempt++) {
-      const response = await postJson(baseUrl, '/api/printers/print-kot', {});
-      assert.equal(response.status, 401, `print request ${attempt + 1} reaches authentication before the limit`);
-    }
+    const printKotResponses = await Promise.all(
+      Array.from({ length: 29 }, () => postJson(baseUrl, '/api/printers/print-kot', {})),
+    );
+    assert(printKotResponses.every(({ status }) => status === 401), 'KOT requests below the shared print limit reach authentication');
     const printBillBeforeLimit = await postJson(baseUrl, '/api/printers/print-bill', {});
     assert.equal(printBillBeforeLimit.status, 401, 'KOT and bill requests share the print limit before it is exceeded');
     const printLimit = await postJson(baseUrl, '/api/printers/print-kot', {});

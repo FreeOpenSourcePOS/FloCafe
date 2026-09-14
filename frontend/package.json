@@ -35,11 +35,13 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.3.4",
+    "jsonwebtoken": "^9.0.2",
     "playwright": "1.62.1",
     "postcss": "8.5.28",
     "shadcn": "^4.20.1",

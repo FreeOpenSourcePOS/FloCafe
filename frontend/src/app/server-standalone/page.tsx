@@ -384,10 +384,10 @@ export default function ServerStandalonePage() {
 
   if (disabled) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
-        <Smartphone size={44} className="text-gray-400" />
-        <h1 className="text-lg font-semibold text-gray-900">{t('disabledTitle')}</h1>
-        <p className="max-w-sm text-sm text-gray-500">{t('disabledHint')}</p>
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center dark:bg-background">
+        <Smartphone size={44} className="text-gray-400 dark:text-muted-foreground" />
+        <h1 className="text-lg font-semibold text-gray-900 dark:text-foreground">{t('disabledTitle')}</h1>
+        <p className="max-w-sm text-sm text-gray-500 dark:text-muted-foreground">{t('disabledHint')}</p>
       </div>
     );
   }

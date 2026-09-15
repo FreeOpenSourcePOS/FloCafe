@@ -552,6 +552,9 @@ Update item status (KDS workflow).
 
 ## Order Discounts
 
+Both discount endpoints recalculate order totals from non-terminal order items;
+cancelled, voided, `void_adjustment`, and refunded items are excluded.
+
 ### PATCH `/api/orders/:id/discount`
 Apply order-level discount.
 

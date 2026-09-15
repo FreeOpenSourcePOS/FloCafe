@@ -776,7 +776,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         }
       }
 
-      // BUG #3 FIX: Filter out cancelled items from total recalculation
+      // BUG #3 FIX: Filter out terminal items from total recalculation.
       const {
         subtotal,
         totalTax,
@@ -1466,7 +1466,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
         newTaxSnapshotJson, taxResult.tax_type, newTotal, now(), req.params.itemId,
       );
 
-      // Update order totals excluding cancelled, voided, or refunded items.
+      // Update order totals excluding terminal items.
       const {
         subtotal: orderSubtotal,
         totalTax: orderTax,

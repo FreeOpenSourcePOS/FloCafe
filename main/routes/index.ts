@@ -408,7 +408,7 @@ export function registerRoutes(app: Express): void {
           }
         }
 
-        // Recalculate order totals excluding cancelled, voided, and void_adjustment items
+        // Recalculate order totals excluding terminal items.
         const { activeItems, subtotal, totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots } = calculateOrderTotals(db, orderId);
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
         const currency = getTenantCurrency();

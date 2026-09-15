@@ -166,7 +166,6 @@ async function main() {
       headers: authHeader,
     });
     assertEqual(mixedOrderRes.status, 201, 'mixed order created');
-    const mixedOrderId = mixedOrderRes.data.order.id;
     const [uncategorizedItem, categorizedItem] = mixedOrderRes.data.order.items;
     assert(!uncategorizedItem.tax_snapshot, 'uncategorized item has no tax_snapshot');
     assertEqual(uncategorizedItem.tax_amount, 0, 'uncategorized item has zero tax');
@@ -177,27 +176,50 @@ async function main() {
     const orderSnapshot = typeof orderSnapshotRaw === 'string' ? JSON.parse(orderSnapshotRaw) : orderSnapshotRaw;
     assertEqual(orderSnapshot.length, 1, 'order tax_snapshot has exactly one entry (only the categorized item)');
 
-    // ── Step 6: cancelled items must not re-enter later item-discount recompute ──
-    console.log('\n6. Cancel one item, then discount the other — cancelled item must stay excluded');
-    const cancelRes = await api(baseUrl, `/api/orders/${mixedOrderId}/items/${uncategorizedItem.id}/cancel`, {
+    // ── Step 6: cancelled taxable items must stay excluded from item-discount recompute ──
+    console.log('\n6. Cancel one taxable item, then discount the other - cancelled tax data must stay excluded');
+    const itemDiscountOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-tax-1', quantity: 1 },
+          { product_id: 'prod-tax-2', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(itemDiscountOrderRes.status, 201, 'item discount regression order created');
+    const itemDiscountOrderId = itemDiscountOrderRes.data.order.id;
+    const itemDiscountVoidedItem = itemDiscountOrderRes.data.order.items.find((item: any) => item.product_id === 'prod-tax-1');
+    const itemDiscountActiveItem = itemDiscountOrderRes.data.order.items.find((item: any) => item.product_id === 'prod-tax-2');
+
+    const cancelRes = await api(baseUrl, `/api/orders/${itemDiscountOrderId}/items/${itemDiscountVoidedItem.id}/cancel`, {
       method: 'PATCH',
       body: {},
       headers: authHeader,
     });
-    assertEqual(cancelRes.status, 200, 'uncategorized item cancelled');
+    assertEqual(cancelRes.status, 200, 'taxable item cancelled');
 
-    const itemDiscountRes = await api(baseUrl, `/api/orders/${mixedOrderId}/items/${categorizedItem.id}/discount`, {
+    const itemDiscountRes = await api(baseUrl, `/api/orders/${itemDiscountOrderId}/items/${itemDiscountActiveItem.id}/discount`, {
       method: 'PATCH',
       body: { discount_type: 'percentage', discount_value: 10 }, // 10% of ₹500 = ₹50
       headers: authHeader,
     });
     assertEqual(itemDiscountRes.status, 200, 'item discount applied after sibling cancel');
-    // Regression check: before the fix, this recompute summed ALL items
-    // (including the cancelled one), so subtotal would include the
-    // cancelled ₹1000 item on top of the discounted ₹500 one.
     assertEqual(itemDiscountRes.data.item.subtotal, 450, 'discounted item subtotal (₹500 - ₹50)');
-    const afterOrder = (await api(baseUrl, `/api/orders/${mixedOrderId}`, { headers: authHeader })).data.order;
+    const afterOrder = (await api(baseUrl, `/api/orders/${itemDiscountOrderId}`, { headers: authHeader })).data.order;
     assertEqual(afterOrder.subtotal, 450, "order subtotal excludes the cancelled item — didn't silently un-cancel it");
+    assertEqual(afterOrder.tax_amount, 22.5, 'item discount tax uses only the active taxable item');
+    const itemDiscountBreakdown = afterOrder.tax_breakdown;
+    const itemDiscountBreakdownGroups = Array.isArray(itemDiscountBreakdown?.[0])
+      ? itemDiscountBreakdown
+      : [itemDiscountBreakdown];
+    assertEqual(itemDiscountBreakdownGroups.length, 1, 'item discount tax breakdown contains only the active item');
+    const itemDiscountSnapshot = typeof afterOrder.tax_snapshot === 'string'
+      ? JSON.parse(afterOrder.tax_snapshot)
+      : afterOrder.tax_snapshot;
+    assertEqual(itemDiscountSnapshot.length, 1, 'item discount tax snapshot contains only the active item');
 
     // -- Step 7: voided items must stay excluded from order-discount tax recompute --
     console.log('\n7. Void one taxable item, then discount the order - void data must stay excluded');
@@ -259,7 +281,7 @@ async function main() {
     console.log('\n8. Edit a bill discount — tax must not compound on the prior edit');
     const mixedBillRes = await api(baseUrl, '/api/bills/generate', {
       method: 'POST',
-      body: { order_id: mixedOrderId },
+      body: { order_id: itemDiscountOrderId },
       headers: authHeader,
     });
     assertEqual(mixedBillRes.status, 201, 'bill generated for discounted categorized order');

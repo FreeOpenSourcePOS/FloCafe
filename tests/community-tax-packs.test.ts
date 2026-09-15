@@ -56,7 +56,7 @@ function main() {
   }
 
   const packs = loadCommunityPacks();
-  assert.ok(packs.length >= 13, `expected at least 13 community packs, found ${packs.length}`);
+  assert.ok(packs.length >= 14, `expected at least 14 community packs, found ${packs.length}`);
 
   try {
     for (const { file, pack } of packs) {
@@ -128,6 +128,22 @@ function main() {
           `${file}/${category.id}: payable total must be finite and non-negative`);
       }
       console.log(`  ✓ every category produces a sane, non-negative calculation`);
+
+      if (pack.country === 'SG' && pack.registrationNumberFormat?.pattern) {
+        const regex = new RegExp(pack.registrationNumberFormat.pattern, 'i');
+        assert.ok(regex.test('12345678A'), `${file}: must accept 8-digit business UEN`);
+        assert.ok(regex.test('52812345X'), `${file}: must accept 8-digit business UEN`);
+        assert.ok(regex.test('200812345A'), `${file}: must accept 9-digit company UEN`);
+        assert.ok(regex.test('199912345Z'), `${file}: must accept 9-digit company UEN`);
+        assert.ok(regex.test('T08LL1234A'), `${file}: must accept LLP UEN`);
+        assert.ok(regex.test('S85FC1234B'), `${file}: must accept foreign company UEN`);
+        assert.ok(regex.test('T20SS0001D'), `${file}: must accept society UEN`);
+        assert.equal(regex.test('1234567A'), false, `${file}: must reject 7-digit UEN`);
+        assert.equal(regex.test('1234567890A'), false, `${file}: must reject 10-digit numeric UEN`);
+        assert.equal(regex.test('R08LL1234A'), false, `${file}: must reject R prefix`);
+        assert.equal(regex.test('T08123456A'), false, `${file}: must reject missing entity type letters`);
+        console.log(`  ✓ registrationNumberFormat validates Singapore UEN test vectors`);
+      }
     }
   } finally {
     closeDatabase();

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "community-singapore",
+  "publisher": "FloCafe Community",
+  "sourceType": "community",
+  "version": "0.0.1",
+  "country": "SG",
+  "jurisdiction": "*",
+  "currency": "SGD",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-08-24",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": false,
+  "registrationNumberLabel": "UEN",
+  "registrationNumberFormat": {
+    "pattern": "^(?:\\d{8,9}[A-Z]|[ST]\\d{2}[A-Z]{2}\\d{4}[A-Z])$",
+    "description": "Singapore UEN (e.g. 12345678A, 200812345A, or T08LL1234A)"
+  },
+  "categories": [
+    { "id": "standard", "label": "Standard (GST 9%)", "ruleIds": ["gst"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["gst"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["gst"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["gst"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["gst"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["gst"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "gst",
+      "label": "GST",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "9"
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

@@ -22,7 +22,7 @@ export interface OrderTotals {
 
 export function calculateOrderTotals(db: Database, orderId: string | number): OrderTotals {
   const statusPlaceholders = TERMINAL_ITEM_STATUSES.map(() => '?').join(', ');
-  const activeItems = db.prepare(`SELECT * FROM order_items WHERE order_id = ? AND status NOT IN (${statusPlaceholders})`)
+  const activeItems = db.prepare(`SELECT * FROM order_items WHERE order_id = ? AND (status IS NULL OR status NOT IN (${statusPlaceholders}))`)
     .all(orderId, ...TERMINAL_ITEM_STATUSES) as OrderItemRow[];
   let subtotal = 0;
   let totalTax = 0;

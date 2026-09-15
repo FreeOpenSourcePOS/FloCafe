@@ -22,7 +22,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser, seedCategory, seedProduct,
+  seedOwnerUser, seedManagerUser, seedCategory, seedProduct,
   installAndActivateTestTaxPack,
   api, assert, assertEqual,
   getResults, closeDatabase, getDatabase, now,
@@ -55,6 +55,7 @@ async function main() {
 
   // Seed data
   const { authHeader } = seedOwnerUser(db);
+  const { authHeader: managerAuth } = seedManagerUser(db);
   seedCategory(db, 'cat-tax', 'Tax Test Menu');
   seedProduct(db, 'prod-tax-1', 'cat-tax', 'Premium Coffee', 1000, {
     tax_category_id: 'standard',
@@ -198,8 +199,64 @@ async function main() {
     const afterOrder = (await api(baseUrl, `/api/orders/${mixedOrderId}`, { headers: authHeader })).data.order;
     assertEqual(afterOrder.subtotal, 450, "order subtotal excludes the cancelled item — didn't silently un-cancel it");
 
-    // ── Step 7: bill discount edits must use item tax, not prior bill tax ──
-    console.log('\n7. Edit a bill discount — tax must not compound on the prior edit');
+    // -- Step 7: voided items must stay excluded from order-discount tax recompute --
+    console.log('\n7. Void one taxable item, then discount the order - void data must stay excluded');
+    const voidOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-tax-1', quantity: 1 },
+          { product_id: 'prod-tax-2', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(voidOrderRes.status, 201, 'void regression order created');
+    const voidOrderId = voidOrderRes.data.order.id;
+    const voidedItem = voidOrderRes.data.order.items.find((item: any) => item.product_id === 'prod-tax-1');
+
+    const prepareVoidItemRes = await api(baseUrl, `/api/order-items/${voidedItem.id}/status`, {
+      method: 'PATCH',
+      body: { status: 'preparing' },
+      headers: authHeader,
+    });
+    assertEqual(prepareVoidItemRes.status, 200, 'taxable item moved to preparing before void');
+
+    const voidItemRes = await api(baseUrl, `/api/orders/${voidOrderId}/items/${voidedItem.id}/cancel`, {
+      method: 'PATCH',
+      body: { override_pin: '1234' },
+      headers: managerAuth,
+    });
+    assertEqual(voidItemRes.status, 200, 'taxable item voided with manager PIN');
+
+    const discountAfterVoidRes = await api(baseUrl, `/api/orders/${voidOrderId}/discount`, {
+      method: 'PATCH',
+      body: { discount_type: 'percentage', discount_value: 10 },
+      headers: authHeader,
+    });
+    assertEqual(discountAfterVoidRes.status, 200, 'order discount applied after item void');
+    assertEqual(discountAfterVoidRes.data.order.subtotal, 500, 'subtotal excludes the voided taxable item');
+    assertEqual(discountAfterVoidRes.data.order.discount_amount, 50, 'discount uses only the active taxable item');
+    assertEqual(discountAfterVoidRes.data.order.tax_amount, 22.5, 'tax is 5% of the discounted active subtotal');
+    assertEqual(discountAfterVoidRes.data.order.total, 472.5, 'total includes only the discounted active item and its tax');
+
+    const postVoidBreakdown = discountAfterVoidRes.data.order.tax_breakdown;
+    const postVoidBreakdownGroups = Array.isArray(postVoidBreakdown?.[0]) ? postVoidBreakdown : [postVoidBreakdown];
+    assertEqual(postVoidBreakdownGroups.length, 1, 'tax breakdown contains only the active item');
+    const postVoidBreakdownEntries = postVoidBreakdownGroups.flat();
+    assertEqual(
+      Math.round(postVoidBreakdownEntries.reduce((sum: number, part: any) => sum + part.amount, 0) * 100) / 100,
+      22.5,
+      'tax breakdown reconciles to the active item tax',
+    );
+    const postVoidSnapshot = typeof discountAfterVoidRes.data.order.tax_snapshot === 'string'
+      ? JSON.parse(discountAfterVoidRes.data.order.tax_snapshot)
+      : discountAfterVoidRes.data.order.tax_snapshot;
+    assertEqual(postVoidSnapshot.length, 1, 'tax snapshot contains only the active item');
+
+    // ── Step 8: bill discount edits must use item tax, not prior bill tax ──
+    console.log('\n8. Edit a bill discount — tax must not compound on the prior edit');
     const mixedBillRes = await api(baseUrl, '/api/bills/generate', {
       method: 'POST',
       body: { order_id: mixedOrderId },
@@ -234,8 +291,8 @@ async function main() {
       'bill discount refreshes component amounts to the final tax',
     );
 
-    // ── Step 8: engine-resolved inclusive behavior survives persistence ──
-    console.log('\n8. Inclusive categorized product — tax stays inside the displayed price');
+    // ── Step 9: engine-resolved inclusive behavior survives persistence ──
+    console.log('\n9. Inclusive categorized product — tax stays inside the displayed price');
     seedProduct(db, 'prod-tax-inclusive', 'cat-tax', 'Inclusive Meal', 105);
     db.prepare(
       `UPDATE products SET tax_category_id = 'standard', tax_behavior = 'inclusive'
@@ -270,8 +327,8 @@ async function main() {
     // (0.01 for the bundled IN pack) rather than being force-rounded to a whole rupee.
     assertEqual(inclusiveDiscountRes.data.bill.total, 94.5, 'inclusive tax is not added again after discount, and total is not force-rounded to a whole unit');
 
-    // ── Step 9: category writes validate and allow explicit no-tax fallback ──
-    console.log('\n9. Product/add-on tax category writes are validated and reversible');
+    // ── Step 10: category writes validate and allow explicit no-tax fallback ──
+    console.log('\n10. Product/add-on tax category writes are validated and reversible');
     const invalidCategoryRes = await api(baseUrl, '/api/products/prod-tax-2', {
       method: 'PUT',
       body: { tax_category_id: 'does-not-exist' },
@@ -390,8 +447,8 @@ async function main() {
     assertEqual(noTaxCheckoutRes.data.order.tax_breakdown.length, 0, 'product without a tax category has no order tax breakdown');
     assert(!noTaxCheckoutRes.data.order.tax_snapshot, 'product without a tax category has no order tax snapshot');
 
-    // ── Step 10: payable preview, bill settlement, and payment stay reconciled ──
-    console.log('\n10. Tax preview and bill settlement use the same active-pack payable rounding');
+    // ── Step 11: payable preview, bill settlement, and payment stay reconciled ──
+    console.log('\n11. Tax preview and bill settlement use the same active-pack payable rounding');
     db.prepare("UPDATE settings SET value = 'TH' WHERE key = 'country'").run();
     seedProduct(db, 'prod-tax-th-preview', 'cat-tax', 'Thai Preview Coffee', 60, {
       tax_category_id: 'standard',

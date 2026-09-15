@@ -269,7 +269,6 @@
     "@googleapis/drive": "^25.0.0",
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.13.13",
-    "pino": "^10.3.1",
     "qrcode": "^1.5.3",
     "ws": "^8.21.2"
   },

@@ -1,5 +1,6 @@
 import { getDatabase } from '../db';
 import type { TaxBreakdown } from './tax';
+import { TERMINAL_ITEM_STATUSES } from './refund';
 
 type Database = ReturnType<typeof getDatabase>;
 type OrderItemRow = {
@@ -20,8 +21,9 @@ export interface OrderTotals {
 }
 
 export function calculateOrderTotals(db: Database, orderId: string | number): OrderTotals {
-  const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')")
-    .all(orderId) as OrderItemRow[];
+  const statusPlaceholders = TERMINAL_ITEM_STATUSES.map(() => '?').join(', ');
+  const activeItems = db.prepare(`SELECT * FROM order_items WHERE order_id = ? AND status NOT IN (${statusPlaceholders})`)
+    .all(orderId, ...TERMINAL_ITEM_STATUSES) as OrderItemRow[];
   let subtotal = 0;
   let totalTax = 0;
   let exclusiveTax = 0;

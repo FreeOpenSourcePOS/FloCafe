@@ -1252,24 +1252,12 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       }
 
       // Recalculate tax from item-level data to avoid compounding on repeated discount edits.
-      const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'").all(req.params.id) as any[];
-      let freshTax = 0;
-      let exclusiveTax = 0;
-      const allTaxBreakdowns: any[] = [];
-      const allTaxSnapshots: (string | null)[] = [];
-      for (const item of activeItems) {
-        freshTax += item.tax_amount || 0;
-        if (item.tax_type !== 'inclusive') {
-          exclusiveTax += item.tax_amount || 0;
-        }
-        if (item.tax_breakdown) {
-          try {
-            const breakdown = JSON.parse(item.tax_breakdown);
-            if (Array.isArray(breakdown)) allTaxBreakdowns.push(breakdown);
-          } catch { }
-        }
-        allTaxSnapshots.push(item.tax_snapshot || null);
-      }
+      const {
+        totalTax: freshTax,
+        exclusiveTax,
+        allTaxBreakdowns,
+        allTaxSnapshots,
+      } = calculateOrderTotals(db, req.params.id as string);
       let newTaxAmount = freshTax;
       let newExclusiveTax = exclusiveTax;
       let taxRatio = 1;

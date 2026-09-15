@@ -45,6 +45,7 @@ import {
   invertTaxBreakdown,
   invertTaxSnapshot,
 } from '../services/tax';
+import { calculateOrderTotals } from '../services/orders';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import QRCode from 'qrcode';
@@ -408,27 +409,7 @@ export function registerRoutes(app: Express): void {
         }
 
         // Recalculate order totals excluding cancelled, voided, and void_adjustment items
-        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')")
-          .all(orderId) as any[];
-        let subtotal = 0;
-        let totalTax = 0;
-        let exclusiveTax = 0;
-        const allTaxBreakdowns: any[] = [];
-        const allTaxSnapshots: (string | null)[] = [];
-        for (const i of activeItems) {
-          subtotal += i.subtotal || 0;
-          totalTax += i.tax_amount || 0;
-          if (i.tax_type !== 'inclusive') {
-            exclusiveTax += i.tax_amount || 0;
-          }
-          if (i.tax_breakdown) {
-            try {
-              const breakdown = JSON.parse(i.tax_breakdown);
-              if (Array.isArray(breakdown)) allTaxBreakdowns.push(breakdown);
-            } catch { }
-          }
-          allTaxSnapshots.push(i.tax_snapshot || null);
-        }
+        const { activeItems, subtotal, totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots } = calculateOrderTotals(db, orderId);
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);
@@ -602,27 +583,7 @@ export function registerRoutes(app: Express): void {
           .run(now(), itemId);
 
         // Recalculate order totals
-        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')")
-          .all(orderId) as any[];
-        let subtotal = 0;
-        let totalTax = 0;
-        let exclusiveTax = 0;
-        const allTaxBreakdowns: any[] = [];
-        const allTaxSnapshots: (string | null)[] = [];
-        for (const i of activeItems) {
-          subtotal += i.subtotal || 0;
-          totalTax += i.tax_amount || 0;
-          if (i.tax_type !== 'inclusive') {
-            exclusiveTax += i.tax_amount || 0;
-          }
-          if (i.tax_breakdown) {
-            try {
-              const breakdown = JSON.parse(i.tax_breakdown);
-              if (Array.isArray(breakdown)) allTaxBreakdowns.push(breakdown);
-            } catch { }
-          }
-          allTaxSnapshots.push(i.tax_snapshot || null);
-        }
+        const { subtotal, totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots } = calculateOrderTotals(db, orderId);
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
         const currency = getTenantCurrency();
         const decimals = getCurrencyFractionDigits(currency);

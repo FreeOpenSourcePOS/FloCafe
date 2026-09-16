@@ -159,6 +159,15 @@ async function main() {
     const orderAfterAdd = addItemsRes.data.order;
     assert(orderAfterAdd.total > orderBTotal, `order total increased (₹${orderBTotal} → ₹${orderAfterAdd.total})`);
 
+    // The existing unpaid bill must stay in sync before it is re-generated.
+    const billAfterAddBeforeRegeneration = await api(baseUrl, `/api/bills/${billIdB}`, { headers: authHeader });
+    assertEqual(billAfterAddBeforeRegeneration.status, 200, 'existing bill remains readable after adding items');
+    assertEqual(
+      billAfterAddBeforeRegeneration.data.bill.subtotal,
+      orderAfterAdd.subtotal,
+      `bill subtotal (₹${billAfterAddBeforeRegeneration.data.bill.subtotal}) matches order subtotal (₹${orderAfterAdd.subtotal}) after adding items`,
+    );
+
     // Re-generate bill — it should sync with the updated order total
     const billAfterAdd = await api(baseUrl, '/api/bills/generate', {
       method: 'POST',

@@ -25,6 +25,7 @@ import {
   scaleTaxSnapshots,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
+import { calculateOrderTotals } from '../services/orders';
 import { sendEvent } from '../services/telemetry';
 import {
   getCurrencyFractionDigits,
@@ -2171,25 +2172,12 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
     discountAmount = Number(discountAmount.toFixed(decimals));
 
     // Derive undiscounted tax basis directly from active items to prevent compounding discounts.
-    const activeItems = db.prepare(
-      "SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment', 'refunded')"
-    ).all(bill.order_id) as any[];
-    let itemTaxAmount = 0;
-    let itemExclusiveTax = 0;
-    const itemBreakdowns: any[][] = [];
-    const itemSnapshots: (string | null)[] = [];
-    for (const item of activeItems) {
-      const taxAmount = item.tax_amount || 0;
-      itemTaxAmount += taxAmount;
-      if (item.tax_type !== 'inclusive') itemExclusiveTax += taxAmount;
-      if (item.tax_breakdown) {
-        try {
-          const breakdown = JSON.parse(item.tax_breakdown);
-          if (Array.isArray(breakdown)) itemBreakdowns.push(breakdown);
-        } catch { }
-      }
-      itemSnapshots.push(item.tax_snapshot || null);
-    }
+    const {
+      totalTax: itemTaxAmount,
+      exclusiveTax: itemExclusiveTax,
+      allTaxBreakdowns: itemBreakdowns,
+      allTaxSnapshots: itemSnapshots,
+    } = calculateOrderTotals(db, bill.order_id);
 
     const discountedSubtotal = Math.max(0, bill.subtotal - discountAmount);
     const taxRatio = bill.subtotal > 0 ? discountedSubtotal / bill.subtotal : 1;

@@ -306,6 +306,21 @@ async function main() {
       : nullStatusDiscountRes.data.order.tax_snapshot;
     assertEqual(nullStatusSnapshot.length, 1, 'tax snapshot retains the NULL-status item');
 
+    const nullStatusBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: nullStatusOrderId },
+      headers: authHeader,
+    });
+    assertEqual(nullStatusBillRes.status, 201, 'bill created for legacy NULL-status order');
+    const nullStatusBillDiscountRes = await api(baseUrl, `/api/bills/${nullStatusBillRes.data.bill.id}/applyDiscount`, {
+      method: 'POST',
+      body: { type: 'percentage', value: 10 },
+      headers: authHeader,
+    });
+    assertEqual(nullStatusBillDiscountRes.status, 200, 'bill discount applied with legacy NULL item status');
+    assertEqual(nullStatusBillDiscountRes.data.bill.tax_amount, 22.5, 'bill discount retains tax from the NULL-status item');
+    assertEqual(nullStatusBillDiscountRes.data.bill.total, 472.5, 'bill total includes discounted NULL-status item tax');
+
     // ── Step 8: bill discount edits must use item tax, not prior bill tax ──
     console.log('\n8. Edit a bill discount — tax must not compound on the prior edit');
     const mixedBillRes = await api(baseUrl, '/api/bills/generate', {

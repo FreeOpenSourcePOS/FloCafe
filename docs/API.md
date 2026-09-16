@@ -609,6 +609,10 @@ Apply item-level discount.
 
 **Validations:** Same as order-level discount.
 
+When an unpaid bill already exists for the order, applying an item-level
+discount also synchronizes its `subtotal` and recalculates its total, balance,
+tax, discount, service-charge, and round-off fields.
+
 ---
 
 ## Bills

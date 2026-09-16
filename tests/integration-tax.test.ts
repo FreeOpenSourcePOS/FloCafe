@@ -277,6 +277,35 @@ async function main() {
       : discountAfterVoidRes.data.order.tax_snapshot;
     assertEqual(postVoidSnapshot.length, 1, 'tax snapshot contains only the active item');
 
+    // -- Step 7b: legacy NULL item statuses must stay included in recalculation --
+    console.log('\n7b. Discount an order with a legacy NULL item status - item tax must stay included');
+    const nullStatusOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-tax-2', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(nullStatusOrderRes.status, 201, 'legacy NULL status regression order created');
+    const nullStatusOrderId = nullStatusOrderRes.data.order.id;
+    const nullStatusItem = nullStatusOrderRes.data.order.items[0];
+    db.prepare('UPDATE order_items SET status = NULL WHERE id = ?').run(nullStatusItem.id);
+
+    const nullStatusDiscountRes = await api(baseUrl, `/api/orders/${nullStatusOrderId}/discount`, {
+      method: 'PATCH',
+      body: { discount_type: 'percentage', discount_value: 10 },
+      headers: authHeader,
+    });
+    assertEqual(nullStatusDiscountRes.status, 200, 'order discount applied with legacy NULL item status');
+    assertEqual(nullStatusDiscountRes.data.order.subtotal, 500, 'NULL-status item remains in subtotal');
+    assertEqual(nullStatusDiscountRes.data.order.tax_amount, 22.5, 'NULL-status item tax remains included');
+    assertEqual(nullStatusDiscountRes.data.order.total, 472.5, 'total includes discounted NULL-status item and tax');
+    const nullStatusSnapshot = typeof nullStatusDiscountRes.data.order.tax_snapshot === 'string'
+      ? JSON.parse(nullStatusDiscountRes.data.order.tax_snapshot)
+      : nullStatusDiscountRes.data.order.tax_snapshot;
+    assertEqual(nullStatusSnapshot.length, 1, 'tax snapshot retains the NULL-status item');
+
     // ── Step 8: bill discount edits must use item tax, not prior bill tax ──
     console.log('\n8. Edit a bill discount — tax must not compound on the prior edit');
     const mixedBillRes = await api(baseUrl, '/api/bills/generate', {

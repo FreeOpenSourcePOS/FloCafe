@@ -532,6 +532,10 @@ For a retry-safe append, send an `Idempotency-Key` header containing 1–128 pri
 }
 ```
 
+When an unpaid bill already exists for the order, appending items also
+synchronizes its `subtotal` and recalculates its total, balance, tax, discount,
+service-charge, and round-off fields.
+
 ---
 
 ### PATCH `/api/order-items/:id/status`
@@ -552,8 +556,9 @@ Update item status (KDS workflow).
 
 ## Order Discounts
 
-Both discount endpoints recalculate order totals from non-terminal order items;
-cancelled, voided, `void_adjustment`, and refunded items are excluded.
+Both discount endpoints recalculate order totals from active order items,
+including legacy items whose status is `NULL`; cancelled, voided,
+`void_adjustment`, and refunded items are excluded.
 
 ### PATCH `/api/orders/:id/discount`
 Apply order-level discount.

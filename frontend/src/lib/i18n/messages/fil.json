@@ -392,6 +392,7 @@
     "billNotFound": "Hindi nahanap ang bill",
     "cancel": "Kanselahin ang Order",
     "cancelOrderFailed": "Nabigong kanselahin ang order",
+    "cancelOrderStatusHint": "Ang pagkansela ay nakadepende sa progreso sa kusina. Maaaring kanselahin ang mga pending na order nang walang PIN. Kung may item na minarkahang Inihahanda o mas bago, kailangan ang approval PIN ng may-ari o manager. Hindi binabago ng pag-print lang ng kitchen ticket ang status na ito.",
     "cancelReason": "Ilagay ang dahilan ng pagkansela",
     "cancelled": "Kinansela",
     "cancelling": "Kinakansela...",

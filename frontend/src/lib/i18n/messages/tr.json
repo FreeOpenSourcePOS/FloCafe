@@ -392,6 +392,7 @@
     "billNotFound": "Fiş bulunamadı",
     "cancel": "Siparişi İptal Et",
     "cancelOrderFailed": "Sipariş iptal edilemedi",
+    "cancelOrderStatusHint": "İptal işlemi mutfak ilerlemesine bağlıdır. Bekleyen siparişler PIN olmadan iptal edilebilir. Herhangi bir ürün Hazırlanıyor veya sonraki bir aşama olarak işaretlendiyse, sahip veya yönetici onay PIN'i gerekir. Yalnızca mutfak fişi yazdırmak bu durumu değiştirmez.",
     "cancelReason": "İptal Nedeni",
     "cancelled": "İptal Edildi",
     "cancelling": "İptal ediliyor...",

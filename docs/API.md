@@ -402,6 +402,12 @@ Update order status.
 | `completed` | none (terminal) |
 | `cancelled` | none (terminal) |
 
+Cancelling a pending whole order does not require an override PIN unless one of
+its items has already advanced to `preparing`, `ready`, `served`, or `completed`.
+Once kitchen progress has started, an active owner or manager approval PIN is
+required. Printing a kitchen ticket alone does not change an order or item
+status.
+
 Repeating a request for the order's current status is an idempotent no-op.
 Cancelling an order requires a manager PIN when the order has progressed beyond
 `pending` or any item is already in progress. Cancellation restores inventory

@@ -1537,6 +1537,9 @@ export default function OrdersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
             <h2 className="text-lg font-bold text-foreground mb-4">{tOrders('cancel')} #<Ltr>{cancelModal.order.order_number}</Ltr></h2>
+            <p className="text-sm text-muted-foreground -mt-2 mb-4">
+              {tOrders('cancelOrderStatusHint')}
+            </p>
 
             <div className="space-y-4">
               <div>

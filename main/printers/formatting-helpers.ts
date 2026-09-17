@@ -77,7 +77,7 @@ export function itemAmountWidth(
   return Math.min(width, Math.max(1, cols - 5));
 }
 
-export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
+export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, _language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
   const qtyW = 4;
   const productName = normalizeThermalText(item.product_name, capabilities);
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
@@ -101,7 +101,7 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
   return result;
 }
 
-export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
+export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, _language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
   const addonName = normalizeThermalText(addon.name, capabilities);
   const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
   const fullName = '  + ' + addonName + quantity;

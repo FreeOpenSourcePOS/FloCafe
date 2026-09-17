@@ -22,7 +22,7 @@ import { correlationId, type FloErrorCode } from '../errors';
 import { sendEvent } from '../services/telemetry';
 import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
-import { printLabel, isGeneratedPrintLanguage } from '../print/print-labels.generated';
+import { printLabel } from '../print/print-labels.generated';
 import type { PrintConceptId } from '../../shared/print/concepts';
 import {
   declaredTemplateChargeRows,
@@ -35,19 +35,15 @@ import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } fro
 import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from './document-compact';
 import { renderKotDocumentToLines, renderKotViaDocument } from './document-kot';
 import {
-  GENERIC_THERMAL_CAPABILITIES,
-  normalizeThermalText as normalizeThermalTextByCapabilities,
   isThermalTextRepresentable,
-  selectThermalCodePage,
-  mergeThermalCapabilities,
   type ThermalCodePage,
   type ThermalPrinterCapabilities,
 } from '../../shared/print/thermal-capabilities';
 import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippPrintRaw } from './ipp-client';
-import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled, type RasterSemanticUnit } from '../../shared/print/raster';
+import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled } from '../../shared/print/raster';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
-import { columnsForPaperWidth as columnsForConfiguredPaperWidth, wrapToDisplayCells } from '../../shared/print/width';
+import { columnsForPaperWidth as columnsForConfiguredPaperWidth } from '../../shared/print/width';
 import {
   bilingualLabelLines,
   buildZReportDocument,
@@ -227,9 +223,6 @@ const isMasBuild =
   (process as NodeJS.Process & { mas?: boolean }).mas === true;
 const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
-const RECEIPT_BRANDING = 'Powered by FloPOS (flopos.com)';
-const RECEIPT_BRANDING_NAME = RECEIPT_BRANDING;
-const RECEIPT_BRANDING_URL = 'flopos.com';
 export type PrinterColumnWidth = 36 | 42 | 48;
 
 export interface PrinterInfo {

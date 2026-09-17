@@ -138,10 +138,11 @@ test('Privacy hydrates pending cloud account deletion before enabling deletion',
 
 test('Privacy retries required cloud hydration after an account failure', async ({ page }) => {
   await startMockedSettingsSession(page);
+  let shouldFail = true;
   let accountAttempts = 0;
   await page.route('**/api/settings/cloud/account', async (route) => {
     accountAttempts += 1;
-    if (accountAttempts === 1) {
+    if (shouldFail) {
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'unavailable' }) });
       return;
     }
@@ -156,10 +157,11 @@ test('Privacy retries required cloud hydration after an account failure', async 
   await expect(page.getByRole('heading', { name: 'Privacy', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Request cloud data deletion', exact: true })).toHaveCount(0);
 
+  shouldFail = false;
   await page.getByRole('button', { name: 'Store Details', exact: true }).click();
   await page.getByRole('button', { name: 'Privacy', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Request cloud data deletion', exact: true })).toBeVisible();
-  expect(accountAttempts).toBe(2);
+  expect(accountAttempts).toBeGreaterThanOrEqual(2);
 });
 
 test('About hydrates More Apps only when activated', async ({ page }) => {

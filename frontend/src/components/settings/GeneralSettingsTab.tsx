@@ -19,7 +19,7 @@ import {
 import { dialCodeFor } from '@/lib/phone';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
-import { LANGUAGES, type Language } from '@/lib/i18n';
+import { LANGUAGES, TENANT_STATUS_LABEL_KEYS, type Language } from '@/lib/i18n';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 
@@ -100,9 +100,8 @@ function invoicePreviewSegment(period: InvoiceResetPeriod, month: number, day: n
 }
 
 function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' | 'inactive') => string): string {
-  if (status === 'active') return tCommon('active');
-  if (status === 'inactive') return tCommon('inactive');
-  return status || '-';
+  const key = (TENANT_STATUS_LABEL_KEYS as Record<string, 'active' | 'inactive' | undefined>)[status ?? ''];
+  return key ? tCommon(key) : (status ?? '');
 }
 
 export interface GeneralSettingsTabProps {

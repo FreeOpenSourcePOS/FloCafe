@@ -3598,7 +3598,7 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="receipts-printers" forceMount>
+        <TabsContent value="receipts-printers" forceMount hidden={activeTab !== 'receipts-printers'}>
           <PrintersSettingsTab
             isActive={activeTab === 'receipts-printers'}
             hwPrinters={hwPrinters}

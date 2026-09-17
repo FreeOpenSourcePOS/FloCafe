@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { Building2, Hash, CreditCard, Lock } from 'lucide-react';
 import { useTranslations, useLocale } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -132,6 +132,7 @@ export function GeneralSettingsTab({
   const { currentTenant } = useAuthStore();
   const language = usePosSettingsStore((state) => state.language);
   const setLanguage = usePosSettingsStore((state) => state.setLanguage);
+  const languageRequestId = useRef(0);
 
   const sortedCountries = useMemo(() => sortCountriesByLocalizedName(COUNTRIES, locale), [locale]);
 
@@ -719,11 +720,14 @@ export function GeneralSettingsTab({
               value={language}
               onChange={(e) => {
                 const lang = e.target.value as Language;
-                const prev = language;
+                const prev = usePosSettingsStore.getState().language;
+                const requestId = ++languageRequestId.current;
                 setLanguage(lang);
                 api.put('/settings/business', { language: lang }).catch(() => {
-                  setLanguage(prev);
-                  toast.error(t('saveFailed'));
+                  if (requestId === languageRequestId.current && usePosSettingsStore.getState().language === lang) {
+                    setLanguage(prev);
+                    toast.error(t('saveFailed'));
+                  }
                 });
               }}
               className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"

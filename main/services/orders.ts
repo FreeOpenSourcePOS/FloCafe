@@ -93,11 +93,11 @@ export function recalculateOrderTotals(
     const existingDiscountAmount = order.discount_amount || 0;
     discountAmount = existingDiscountAmount;
     if (existingDiscountAmount > 0 && order.subtotal > 0) {
-      if (order.discount_type === 'percentage') {
+      if (options?.scaleProportionally) {
+        discountAmount = Number((existingDiscountAmount * (subtotal / order.subtotal)).toFixed(decimals));
+      } else if (order.discount_type === 'percentage') {
         const pct = order.discount_value || 0;
         discountAmount = Number((subtotal * pct / 100).toFixed(decimals));
-      } else if (options?.scaleProportionally) {
-        discountAmount = Number((existingDiscountAmount * (subtotal / order.subtotal)).toFixed(decimals));
       }
     }
   }

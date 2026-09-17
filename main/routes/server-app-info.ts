@@ -1,7 +1,7 @@
 /** Returns Server App local network access URLs for settings QR code rendering. */
 import { Router, Request, Response } from 'express';
 import QRCode from 'qrcode';
-import { getLocalIP, getAllLocalIPs } from '../server';
+import { getLocalIP, getAllLocalIPs } from '../server-state';
 import { getServerAppPort } from '../server-app-state';
 import { isServerAppEnabled } from '../db';
 import { asyncHandler } from '../middleware/async-handler';

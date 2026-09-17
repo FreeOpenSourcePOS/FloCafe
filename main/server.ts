@@ -3,7 +3,6 @@ import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import * as http from 'http';
 import { closeServerResources, createShutdownCancellationError, installHttpShutdownTracking } from './shutdown';
-import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import jwt from 'jsonwebtoken';
@@ -17,6 +16,13 @@ import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
+import {
+  getServerPort,
+  setServerPort,
+  getLocalIP,
+  getAllLocalIPs,
+} from './server-state';
+export { getServerPort, getLocalIP, getAllLocalIPs } from './server-state';
 
 let server: http.Server | null = null;
 let app: Express;
@@ -24,9 +30,6 @@ let wss: WebSocketServer | null = null;
 let stopPromise: Promise<void> | null = null;
 let startReject: ((error: Error) => void) | null = null;
 let stopping = false;
-
-const PORT = parseInt(process.env.PORT || '3001', 10);
-let activePort = PORT;
 
 /** JWT verification middleware protecting API routes from unauthenticated LAN access. */
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
@@ -83,10 +86,6 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
 
 export function isServerRunning(): boolean {
   return server !== null;
-}
-
-export function getServerPort(): number {
-  return activePort;
 }
 
 /** Locate Next.js static export directory for dev or packaged builds. */
@@ -276,8 +275,9 @@ export function startServer(): Promise<void> {
         startReject = null;
         listeningServer.off('error', onError);
         const address = listeningServer.address();
-        activePort = address && typeof address !== 'string' ? address.port : attemptedPort;
-        console.log(`[Server] HTTP server running on http://localhost:${activePort}`);
+        const boundPort = address && typeof address !== 'string' ? address.port : attemptedPort;
+        setServerPort(boundPort);
+        console.log(`[Server] HTTP server running on http://localhost:${boundPort}`);
 
         if (listeningServer) {
           // Manual upgrade handler allows checking runtime KDS enablement dynamically per connection.
@@ -316,7 +316,7 @@ export function startServer(): Promise<void> {
             }
           });
 
-          console.log(`[Server] KDS WebSocket running on ws://localhost:${activePort}/kds`);
+          console.log(`[Server] KDS WebSocket running on ws://localhost:${boundPort}/kds`);
         }
 
         // This is the single startup owner for WhatsApp in every server mode.
@@ -376,46 +376,4 @@ export function stopServer(): Promise<void> {
       console.log('[Server] HTTP/WebSocket server stopped');
     });
   return stopPromise;
-}
-
-/** Helper to check if an IPv4 address is active and valid (excludes loopback & 169.254.x.x link-local APIPA). */
-function isValidLocalIPv4(alias: os.NetworkInterfaceInfo): boolean {
-  const isIPv4 = alias.family === 'IPv4' || (alias.family as string | number) === 4;
-  if (!isIPv4 || alias.internal) return false;
-  const ip = alias.address;
-  if (ip.startsWith('169.254.') || ip.startsWith('127.') || ip === '0.0.0.0') {
-    return false;
-  }
-  return true;
-}
-
-/** Returns the first valid non-loopback IPv4 address on the machine. */
-export function getLocalIP(): string {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    const iface = interfaces[name];
-    if (!iface) continue;
-    for (const alias of iface) {
-      if (isValidLocalIPv4(alias)) {
-        return alias.address;
-      }
-    }
-  }
-  return '127.0.0.1';
-}
-
-/** Returns all valid non-loopback IPv4 addresses on the machine. */
-export function getAllLocalIPs(): string[] {
-  const ips: string[] = [];
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    const iface = interfaces[name];
-    if (!iface) continue;
-    for (const alias of iface) {
-      if (isValidLocalIPv4(alias)) {
-        ips.push(alias.address);
-      }
-    }
-  }
-  return ips.length > 0 ? ips : ['127.0.0.1'];
 }

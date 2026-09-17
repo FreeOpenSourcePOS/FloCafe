@@ -1,7 +1,7 @@
 /** Returns POS local network access URLs (mDNS and local IP) for QR code generation. */
 import { Router, Request, Response } from 'express';
 import QRCode from 'qrcode';
-import { getLocalIP, getAllLocalIPs, getServerPort } from '../server';
+import { getLocalIP, getAllLocalIPs, getServerPort } from '../server-state';
 import { asyncHandler } from '../middleware/async-handler';
 
 const router = Router();

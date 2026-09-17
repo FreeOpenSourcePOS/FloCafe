@@ -162,6 +162,11 @@ async function main() {
     });
     assertEqual(mismatch.status, 409, 'reusing an Idempotency-Key with a different body is rejected');
 
+    const approverMismatch = await api(baseUrl, '/api/refunds', {
+      method: 'POST', body: { ...idemBody, approver_id: ownerId }, headers: idemHeaders,
+    });
+    assertEqual(approverMismatch.status, 409, 'reusing an Idempotency-Key with a different approver is rejected');
+
     // ── Over-collection guard (full refund succeeds = budget point 3) ─────
     const overBill = await newPaidBill('prod-refund');
     const overshoot = await api(baseUrl, '/api/refunds', {

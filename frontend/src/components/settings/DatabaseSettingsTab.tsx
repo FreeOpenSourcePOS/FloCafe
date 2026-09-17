@@ -17,6 +17,7 @@ import {
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { Button } from '@/components/ui/button';
+import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import {
   Dialog,
   DialogContent,
@@ -138,10 +139,7 @@ export function DatabaseSettingsTab({
   const [tableInfo, setTableInfo] = useState<Array<{ name: string; rows: number }>>([]);
 
   return (
-    <div className="pb-6 max-w-3xl space-y-6">
-      <div className="space-y-6">
-        <h2 className="text-lg font-semibold text-foreground">{t('tabBackupData')}</h2>
-
+    <SettingsTabShell title={t('tabBackupData')}>
         {/* Database Export */}
         <div className="bg-card rounded-xl border border-border p-6">
           <div className="flex items-center gap-2 mb-4">
@@ -544,7 +542,6 @@ export function DatabaseSettingsTab({
             {t('initializeDatabaseButton')}
           </button>
         </div>
-      </div>
 
       {/* Table Info Dialog */}
       <Dialog open={tableInfoOpen} onOpenChange={setTableInfoOpen}>
@@ -566,6 +563,6 @@ export function DatabaseSettingsTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </SettingsTabShell>
   );
 }

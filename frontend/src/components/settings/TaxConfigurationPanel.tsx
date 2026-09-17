@@ -21,6 +21,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { apiErrorText } from '@/lib/api-error';
@@ -885,7 +886,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   }
 
   return (
-    <div className="pb-6 max-w-5xl space-y-6">
+    <SettingsTabShell maxWidth="wide">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold text-foreground">{t('title')}</h2>
@@ -1467,7 +1468,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       </section>
         </>
       )}
-    </div>
+    </SettingsTabShell>
   );
 }
 

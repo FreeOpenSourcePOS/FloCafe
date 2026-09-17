@@ -5,6 +5,7 @@ import { CreditCard, Plus, Save, Trash2, Merge } from 'lucide-react';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
+import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import type { CustomPaymentMethod } from '@/lib/payment-methods';
@@ -99,7 +100,7 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
   };
 
   return (
-    <div className="pb-6 max-w-3xl space-y-6">
+    <SettingsTabShell>
       <div className="bg-card rounded-xl border border-border p-6">
         <div className="flex items-center gap-2 mb-2"><CreditCard size={20} className="text-muted-foreground" /><h2 className="font-semibold text-foreground">{t('paymentMethods')}</h2></div>
         <p className="text-sm text-muted-foreground mb-5">{t('paymentMethodsHint')}</p>
@@ -134,6 +135,6 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       {merges.length > 0 && <div className="bg-card rounded-xl border border-border p-6"><h2 className="font-semibold text-foreground mb-3">{t('mergeHistory')}</h2><div className="space-y-2 text-sm text-muted-foreground">{merges.map((entry) => <p key={entry.id}>{entry.source_name} → {entry.target_name} · {entry.affected_payments} · {formatDate(entry.merged_at)}</p>)}</div></div>}
-    </div>
+    </SettingsTabShell>
   );
 }

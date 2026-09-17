@@ -45,6 +45,7 @@ import {
   type PinGate,
 } from '@/components/settings/DatabaseSettingsTab';
 import { Toggle } from '@/components/settings/Toggle';
+import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import type { HealthCheckReport } from '@/types/electron';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -2647,7 +2648,7 @@ export default function SettingsPage() {
           </nav>
         </div>
 
-        <div className="flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-32">
+        <div className="flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-8 md:pb-12">
 
         <TabsContent value="store">
           <GeneralSettingsTab
@@ -2668,7 +2669,7 @@ export default function SettingsPage() {
 
         {isAdmin && (
         <TabsContent value="appearance">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center gap-2 mb-4">
                 <SunMoon size={20} className="text-muted-foreground" />
@@ -2712,7 +2713,7 @@ export default function SettingsPage() {
                 })}
               </div>
             </div>
-          </div>
+          </SettingsTabShell>
         </TabsContent>
         )}
 
@@ -2723,7 +2724,7 @@ export default function SettingsPage() {
         )}
 
         <TabsContent value="pos">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             {/* POS Display */}
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center gap-2 mb-4">
@@ -2876,12 +2877,12 @@ export default function SettingsPage() {
                 </>
               )}
             </div>
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         {/* Kitchen Display — own tab under Operations */}
         <TabsContent value="kds">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell maxWidth="wide">
             {/* Kitchen Display System enable toggle */}
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center justify-between gap-4">
@@ -3145,11 +3146,11 @@ export default function SettingsPage() {
             <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/40 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300">
               <strong>{t('howItWorks')}</strong> {t('howItWorksBody')}
             </div>
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         <TabsContent value="server-app">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -3280,11 +3281,11 @@ export default function SettingsPage() {
                 )}
               </div>
             )}
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         <TabsContent value="loyalty">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             {/* Loyalty */}
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center gap-2 mb-4">
@@ -3360,11 +3361,11 @@ export default function SettingsPage() {
                 )}
               </div>
             </div>
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         <TabsContent value="discounts">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             {/* Discount Limits */}
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center gap-2 mb-4">
@@ -3445,11 +3446,11 @@ export default function SettingsPage() {
 
               </div>
             </div>
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         <TabsContent value="account">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             {/* Account */}
             <div className="bg-card rounded-xl border border-border p-6">
               <h2 className="font-semibold text-foreground mb-4">{t('account')}</h2>
@@ -3502,12 +3503,12 @@ export default function SettingsPage() {
                 )}
               </div>
             )}
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         {/* Privacy — anonymous telemetry (from the old Integrations tab) + cloud privacy controls (from Account) */}
         <TabsContent value="privacy">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             <div className="bg-card rounded-xl border border-border p-6 space-y-4">
               <div className="flex items-center gap-2">
                 <Lock size={20} className="text-muted-foreground" />
@@ -3595,7 +3596,7 @@ export default function SettingsPage() {
                 <p className="mt-3 text-xs text-muted-foreground">{t('cloudTelemetryNote')}</p>
               </div>
             )}
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         <TabsContent value="receipts-printers" forceMount hidden={activeTab !== 'receipts-printers'}>
@@ -3651,7 +3652,7 @@ export default function SettingsPage() {
 
         {/* Integrations tab — cloud + OrderFlow + More Apps */}
         <TabsContent value="whatsapp">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             {!whatsappEnabled ? (
               <WhatsAppEnableCard />
             ) : (
@@ -3665,13 +3666,11 @@ export default function SettingsPage() {
                 </Button>
               </div>
             )}
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         <TabsContent value="mobile-access">
-          <div className="pb-6 max-w-3xl space-y-6">
-            <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-foreground">{t('tabMobileAccess')}</h2>
+          <SettingsTabShell title={t('tabMobileAccess')}>
 
             {/* FloAdmin — reporting sync */}
             <div className="bg-card rounded-xl border border-border p-6 space-y-5">
@@ -3900,14 +3899,11 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
-          </div>
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         <TabsContent value="orderflow">
-          <div className="pb-6 max-w-3xl space-y-6">
-            <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-foreground">{t('tabOrderflow')}</h2>
+          <SettingsTabShell title={t('tabOrderflow')}>
 
             {/* OrderFlow — online orders */}
             <div className="bg-card rounded-xl border border-border p-6 space-y-4">
@@ -3933,13 +3929,12 @@ export default function SettingsPage() {
               </label>
 
             </div>
-            </div>
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         {/* About tab */}
         <TabsContent value="about">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             <div className="bg-card rounded-xl border border-border p-6">
               <h2 className="font-semibold text-foreground mb-4">{t('aboutFloCafe')}</h2>
               <p className="text-sm text-muted-foreground mb-6">
@@ -4016,12 +4011,12 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
         {/* Software Updates tab */}
         <TabsContent value="updates">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <SettingsTabShell>
             <div className="bg-card rounded-xl border border-border p-6">
             <div className="flex items-center gap-2 mb-4">
               <RefreshCw size={20} className="text-muted-foreground" />
@@ -4137,7 +4132,7 @@ export default function SettingsPage() {
           {isElectron && (
             <BetaChannelToggle />
           )}
-          </div>
+          </SettingsTabShell>
         </TabsContent>
 
 </div>

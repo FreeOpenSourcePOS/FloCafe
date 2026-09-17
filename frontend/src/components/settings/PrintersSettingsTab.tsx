@@ -21,6 +21,7 @@ import {
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { Toggle } from '@/components/settings/Toggle';
+import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { LANGUAGES, type Language } from '@/lib/i18n';
 import { isTemplateCardSelected, type BillTemplateSelectionSource } from '@/lib/bill-template-picker';
 import { type PaperSize, type BillTemplate } from '@/store/pos-settings';
@@ -338,7 +339,7 @@ export function PrintersSettingsTab({
   };
 
   return (
-    <div className="pb-6 max-w-6xl space-y-6">
+    <SettingsTabShell maxWidth="wide">
       <div className="space-y-6">
         <div className="bg-card rounded-xl border border-border p-6">
           <div className="flex items-center justify-between mb-4">
@@ -1130,6 +1131,6 @@ export function PrintersSettingsTab({
           </div>
         </div>
       </div>
-    </div>
+    </SettingsTabShell>
   );
 }

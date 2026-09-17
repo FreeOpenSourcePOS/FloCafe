@@ -5,6 +5,7 @@ import { Building2, Hash, CreditCard, Lock } from 'lucide-react';
 import { useTranslations, useLocale } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { Toggle } from '@/components/settings/Toggle';
+import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import {
@@ -147,7 +148,7 @@ export function GeneralSettingsTab({
   })();
 
   return (
-    <div className="pb-6 max-w-3xl space-y-6">
+    <SettingsTabShell>
       {/* Store Details - editable for admin, readonly otherwise */}
       <div className="lg:col-span-2 bg-card rounded-xl border border-border p-6">
         <div className="flex items-center gap-2 mb-4">
@@ -729,6 +730,6 @@ export function GeneralSettingsTab({
           </div>
         </div>
       </div>
-    </div>
+    </SettingsTabShell>
   );
 }

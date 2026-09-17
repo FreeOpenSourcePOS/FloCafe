@@ -11,7 +11,6 @@ import type { PrintConceptId } from '../../shared/print/concepts';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
-import type { PrintWarning } from './thermal';
 import {
   addonRows,
   appendPoweredByFooter,
@@ -28,7 +27,8 @@ import {
   resolveCurrencyPrefix,
   truncate,
   truncateShapedLine,
-} from './thermal';
+  type PrintWarning,
+} from './formatting-helpers';
 import {
   buildBillDocument,
   containsRtlScript,

@@ -11,7 +11,7 @@ import {
   buildBillPrintData,
   renderBillDocumentToClassicLines,
 } from './document-classic';
-import { buildEscPos, type PrintWarning } from './thermal';
+import { buildEscPos, type PrintWarning } from './formatting-helpers';
 import type { PrinterCutMode } from './profiles';
 import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';

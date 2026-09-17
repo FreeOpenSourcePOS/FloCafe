@@ -5,7 +5,6 @@ import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
-import type { PrintWarning } from './thermal';
 import {
   addonRows,
   appendPoweredByFooter,
@@ -22,7 +21,8 @@ import {
   resolveCurrencyPrefix,
   truncate,
   truncateShapedLine,
-} from './thermal';
+  type PrintWarning,
+} from './formatting-helpers';
 import { buildBillPrintContext, buildBillPrintData } from './document-classic';
 import {
   buildBillDocument,

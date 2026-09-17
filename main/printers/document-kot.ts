@@ -6,12 +6,12 @@ import type { PrintConceptId } from '../../shared/print/concepts';
 import type { PrinterCutMode } from './profiles';
 import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
-import type { PrintWarning } from './thermal';
 import {
   buildEscPos,
   truncate,
   truncateShapedLine,
-} from './thermal';
+  type PrintWarning,
+} from './formatting-helpers';
 import {
   GENERIC_THERMAL_CAPABILITIES,
   isThermalTextRepresentable,

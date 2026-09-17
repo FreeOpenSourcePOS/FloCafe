@@ -216,7 +216,7 @@ export function PrintersSettingsTab({
   useEffect(() => {
     if (!isActive) return;
     const controller = new AbortController();
-    void fetchDetectedPrinters(controller.signal);
+    void Promise.resolve().then(() => fetchDetectedPrinters(controller.signal));
     return () => controller.abort();
   }, [fetchDetectedPrinters, isActive]);
 

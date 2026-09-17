@@ -26,15 +26,6 @@ import type { PrinterCutMode } from './profiles';
 
 export type { PrintWarning };
 
-export function hasFinancialPrintWarning(warnings: readonly PrintWarning[]): boolean {
-  return warnings.some((warning) => warning.kind === 'financial');
-}
-
-export function makeFinancialPrintRefusalMessage(warnings: readonly PrintWarning[]): string {
-  const row = warnings.find((warning) => warning.kind === 'financial');
-  return `Receipt not printed: a financial row contains unsupported printer text${row?.text ? `: ${row.text}` : '.'} Use a supported printer profile or system/browser printing.`;
-}
-
 const RECEIPT_BRANDING = 'Powered by FloPOS (flopos.com)';
 
 const CURRENCY_TOKEN_RE = new RegExp(

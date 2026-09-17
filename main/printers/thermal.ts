@@ -63,8 +63,6 @@ import {
 import {
   type PrintWarning,
   type RasterLineUnit,
-  hasFinancialPrintWarning,
-  makeFinancialPrintRefusalMessage,
   itemNameWidth,
   itemAmountWidth,
   itemRows,
@@ -90,8 +88,6 @@ import {
 export {
   type PrintWarning,
   type RasterLineUnit,
-  hasFinancialPrintWarning,
-  makeFinancialPrintRefusalMessage,
   itemNameWidth,
   itemAmountWidth,
   itemRows,
@@ -112,6 +108,15 @@ export {
   appendCashDrawerPulse,
   buildEscPos,
 };
+
+export function hasFinancialPrintWarning(warnings: readonly PrintWarning[]): boolean {
+  return warnings.some((warning) => warning.kind === 'financial');
+}
+
+export function makeFinancialPrintRefusalMessage(warnings: readonly PrintWarning[]): string {
+  const row = warnings.find((warning) => warning.kind === 'financial');
+  return `Receipt not printed: a financial row contains unsupported printer text${row?.text ? `: ${row.text}` : '.'} Use a supported printer profile or system/browser printing.`;
+}
 
 export type PrintResult = {
   ok: boolean;

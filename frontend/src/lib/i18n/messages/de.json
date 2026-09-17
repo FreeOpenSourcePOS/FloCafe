@@ -392,7 +392,7 @@
     "billNotFound": "Rechnung nicht gefunden",
     "cancel": "Abbrechen",
     "cancelOrderFailed": "Bestellung konnte nicht storniert werden",
-    "cancelOrderStatusHint": "Die Stornierung hängt vom Küchenfortschritt ab. Ausstehende Bestellungen können ohne PIN storniert werden. Wenn ein Artikel als In Zubereitung oder später markiert wurde, ist die Genehmigungs-PIN des Inhabers oder Managers erforderlich. Das alleinige Drucken eines Küchenbons ändert diesen Status nicht.",
+    "cancelOrderStatusHint": "Die Stornierung hängt vom Küchenfortschritt ab. Ausstehende Bestellungen können ohne PIN storniert werden. Wenn die Bestellung oder ein Artikel als In Zubereitung oder später markiert wurde, ist die Genehmigungs-PIN des Inhabers oder Managers erforderlich. Das alleinige Drucken eines Küchenbons ändert diesen Status nicht.",
     "cancelReason": "Grund für die Stornierung angeben",
     "cancelled": "Storniert",
     "cancelling": "Wird storniert…",

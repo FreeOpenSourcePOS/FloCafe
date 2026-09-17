@@ -392,7 +392,7 @@
     "billNotFound": "Conta não encontrada",
     "cancel": "Cancelar Pedido",
     "cancelOrderFailed": "Falha ao cancelar o pedido",
-    "cancelOrderStatusHint": "O cancelamento depende do andamento na cozinha. Pedidos pendentes podem ser cancelados sem PIN. Se algum item tiver sido marcado como Em preparo ou em uma etapa posterior, será necessário o PIN de aprovação do proprietário ou gerente. Imprimir apenas um ticket de cozinha não altera esse status.",
+    "cancelOrderStatusHint": "O cancelamento depende do andamento na cozinha. Pedidos pendentes podem ser cancelados sem PIN. Se o pedido ou algum item tiver sido marcado como Em preparo ou em uma etapa posterior, será necessário o PIN de aprovação do proprietário ou gerente. Imprimir apenas um ticket de cozinha não altera esse status.",
     "cancelReason": "Digite o motivo do cancelamento",
     "cancelled": "Cancelado",
     "cancelling": "Cancelando...",

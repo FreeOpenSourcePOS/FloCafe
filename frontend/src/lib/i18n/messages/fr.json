@@ -392,7 +392,7 @@
     "billNotFound": "Facture introuvable",
     "cancel": "Annuler la commande",
     "cancelOrderFailed": "Impossible d’annuler la commande",
-    "cancelOrderStatusHint": "L’annulation dépend de l’avancement en cuisine. Les commandes en attente peuvent être annulées sans code PIN. Si un article est marqué En préparation ou à une étape ultérieure, le code PIN d’approbation du propriétaire ou du responsable est requis. L’impression d’un bon de cuisine seule ne change pas cet état.",
+    "cancelOrderStatusHint": "L’annulation dépend de l’avancement en cuisine. Les commandes en attente peuvent être annulées sans code PIN. Si la commande ou un article est marqué En préparation ou à une étape ultérieure, le code PIN d’approbation du propriétaire ou du responsable est requis. L’impression d’un bon de cuisine seule ne change pas cet état.",
     "cancelReason": "Saisissez le motif de l’annulation",
     "cancelled": "Annulée",
     "cancelling": "Annulation...",

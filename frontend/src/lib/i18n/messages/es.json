@@ -392,7 +392,7 @@
     "billNotFound": "No se encontró el comprobante",
     "cancel": "Cancelar pedido",
     "cancelOrderFailed": "No se pudo cancelar el pedido",
-    "cancelOrderStatusHint": "La cancelación depende del progreso en cocina. Los pedidos pendientes se pueden cancelar sin PIN. Si algún artículo se ha marcado como En preparación o posterior, se requiere el PIN de aprobación del propietario o encargado. Imprimir un ticket de cocina por sí solo no cambia este estado.",
+    "cancelOrderStatusHint": "La cancelación depende del progreso en cocina. Los pedidos pendientes se pueden cancelar sin PIN. Si el pedido o algún artículo se ha marcado como En preparación o posterior, se requiere el PIN de aprobación del propietario o encargado. Imprimir un ticket de cocina por sí solo no cambia este estado.",
     "cancelReason": "Motivo de cancelación",
     "cancelled": "Cancelados",
     "cancelling": "Cancelando...",

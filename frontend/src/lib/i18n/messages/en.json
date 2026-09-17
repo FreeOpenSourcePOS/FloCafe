@@ -392,7 +392,7 @@
     "billNotFound": "Bill not found",
     "cancel": "Cancel Order",
     "cancelOrderFailed": "Failed to cancel order",
-    "cancelOrderStatusHint": "Cancellation depends on kitchen progress. Pending orders can be cancelled without a PIN. If any item has been marked Preparing or later, an owner or manager approval PIN is required. Printing a kitchen ticket alone does not change this status.",
+    "cancelOrderStatusHint": "Cancellation depends on kitchen progress. Pending orders can be cancelled without a PIN. If the order or any item has been marked Preparing or later, an owner or manager approval PIN is required. Printing a kitchen ticket alone does not change this status.",
     "cancelReason": "Enter reason for cancellation",
     "cancelled": "Cancelled",
     "cancelling": "Cancelling...",

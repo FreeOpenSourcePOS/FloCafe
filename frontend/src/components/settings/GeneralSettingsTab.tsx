@@ -101,7 +101,7 @@ function invoicePreviewSegment(period: InvoiceResetPeriod, month: number, day: n
 
 function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' | 'inactive') => string): string {
   const key = (TENANT_STATUS_LABEL_KEYS as Record<string, 'active' | 'inactive' | undefined>)[status ?? ''];
-  return key ? tCommon(key) : (status ?? '');
+  return key ? tCommon(key) : (status || '-');
 }
 
 export interface GeneralSettingsTabProps {

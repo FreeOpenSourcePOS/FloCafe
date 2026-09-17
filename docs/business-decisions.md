@@ -33,29 +33,30 @@ Each decision states: the rule, why it exists, where it's enforced in code, how 
 
 ---
 
-## Refunds on already-completed orders
+## Refunds and Staff Approval PINs
 
-**Rule:** Owners (and, within the first hour of an order, managers too) can refund a bill that has already been paid — in full, partially, or for a single item — without restocking inventory. The refund can be paid back in a different method than the customer originally used, or issued as store credit. Specifically:
+**Rule:** The initial owner must create and confirm a separate 4-6 digit Staff Approval PIN during first-run setup. It is stored as a bcrypt hash in the owner user record and is independent from the device Master PIN. Owners (and, within the first hour of an order, managers too) can refund a bill that has already been paid — in full, partially, or for a single item — without restocking inventory. The refund can be paid back in a different method than the customer originally used, or issued as store credit. Specifically:
 
-1. **Ceiling:** a refund can never exceed `paid_amount − sum(prior refunds)` for that bill (not the order's gross total), so a bill already partially refunded can't be refunded again past what's actually left outstanding. Enforced by `getRefundableBalance()` in `main/services/refund.ts`.
-2. **Approval tiers, keyed off the order's `created_at`:**
-   - Within 1 hour of order creation: owner **or** manager PIN, as before this feature (in-progress orders, unchanged).
-   - After 1 hour but still the same business day (per the tenant's configured timezone and `business_day_start_time`, via `dayBoundsInTimezone()`): **owner PIN only** — a manager PIN is rejected outright. There is no kitchen/service context left to sanity-check a request once the order is effectively closed, so the bar is raised rather than reused.
+1. **Selected approver:** every refund request must identify one approver with `approver_id`. `manager_id` remains a compatibility alias, but missing IDs and conflicting `approver_id`/`manager_id` values are rejected. Only the selected active owner or manager is checked, and the submitted PIN must be that user's Staff Approval PIN. The device Master PIN never authorizes a refund.
+2. **Ceiling:** a refund can never exceed `paid_amount − sum(prior refunds)` for that bill (not the order's gross total), so a bill already partially refunded can't be refunded again past what's actually left outstanding. Enforced by `getRefundableBalance()` in `main/services/refund.ts`.
+3. **Approval tiers, keyed off the order's `created_at`:**
+   - Within 1 hour of order creation: the selected active owner's or manager's Staff Approval PIN (in-progress orders, unchanged).
+   - After 1 hour but still the same business day (per the tenant's configured timezone and `business_day_start_time`, via `dayBoundsInTimezone()`): the selected active owner's Staff Approval PIN only - a manager PIN is rejected outright. There is no kitchen/service context left to sanity-check a request once the order is effectively closed, so the bar is raised rather than reused.
    - Once the order's business day has ended: refused entirely (409), regardless of who approves. A merchant needing to reverse an older transaction does so outside the system (e.g. a manual adjustment), not through this endpoint.
-3. **Item eligibility** for a single-item refund now includes `served` and `completed`, not just `preparing`/`ready` — a served/completed item is exactly what "already-completed order" refunds are for.
-4. **Refund payment method is independent of the original payment method(s)** — a card payment can be refunded in cash, or vice versa. This is deliberate (per the product decision behind this feature), not a validation gap.
-5. **Store credit** (`method: 'wallet'`) requires loyalty to be enabled and the bill to have a customer attached. It's recorded as a plain `credit` row in `loyalty_ledger` (the same mechanism cashback uses), so it's immediately spendable — no separate "refund credit" ledger type exists. This does **not** double-count as cashback on respend: `calculateCashback()` in `main/routes/bills.ts` already excludes wallet-funded spend from the cashback base.
-6. **Accepted limitation:** refunding an item/order does **not** claw back cashback that was already credited on that sale at payment time. Given FloCafe's current install-base scale (see `AGENTS.md` "Lessons from past mistakes"), building proportional cashback clawback was judged not worth the complexity for a v1. Revisit if this is observed to be abused.
-7. **No per-role permission grant exists yet.** Refund initiation is gated the same way it already was (`ROLE_ACCESS.ownerManager` at the route), not by a configurable owner-editable grant — `docs/roles-and-permissions.md` already documents that role configuration/IAM isn't available. Letting an owner grant refund access to other roles (e.g. cashier) is deferred to that future IAM work, not built here.
-8. Inventory is never restored by a refund (item-level or whole-bill) — consistent with how item voids/cancellations already behave.
+4. **Item eligibility** for a single-item refund now includes `served` and `completed`, not just `preparing`/`ready` — a served/completed item is exactly what "already-completed order" refunds are for.
+5. **Refund payment method is independent of the original payment method(s)** — a card payment can be refunded in cash, or vice versa. This is deliberate (per the product decision behind this feature), not a validation gap.
+6. **Store credit** (`method: 'wallet'`) requires loyalty to be enabled and the bill to have a customer attached. It's recorded as a plain `credit` row in `loyalty_ledger` (the same mechanism cashback uses), so it's immediately spendable — no separate "refund credit" ledger type exists. This does **not** double-count as cashback on respend: `calculateCashback()` in `main/routes/bills.ts` already excludes wallet-funded spend from the cashback base.
+7. **Accepted limitation:** refunding an item/order does **not** claw back cashback that was already credited on that sale at payment time. Given FloCafe's current install-base scale (see `AGENTS.md` "Lessons from past mistakes"), building proportional cashback clawback was judged not worth the complexity for a v1. Revisit if this is observed to be abused.
+8. **No per-role permission grant exists yet.** Refund initiation is gated the same way it already was (`ROLE_ACCESS.ownerManager` at the route), not by a configurable owner-editable grant — `docs/roles-and-permissions.md` already documents that role configuration/IAM isn't available. Letting an owner grant refund access to other roles (e.g. cashier) is deferred to that future IAM work, not built here.
+9. Inventory is never restored by a refund (item-level or whole-bill) — consistent with how item voids/cancellations already behave.
 
 **Why:** Requested as a controlled way to reverse completed sales without reopening the order-editing surface, while keeping the two things most exposed to misuse — how far back a refund can reach, and who can approve one — deliberately tight (same-business-day cutoff, owner-only once the in-progress window has passed).
 
-**Enforced by:** `main/services/refund.ts` (`createRefund`, `resolveRefundApprover`, `REFUND_ITEM_ELIGIBLE_STATUSES`), `main/routes/refunds.ts`. Audit trail: every refund now also writes a `refund_issued` row to `order_audit_log` (previously refunds were only recorded in the `refunds` table).
+**Enforced by:** `main/routes/auth.ts` (`/setup/initialize`), `main/services/refund.ts` (`createRefund`, `resolveRefundApprover`, `REFUND_ITEM_ELIGIBLE_STATUSES`), `main/routes/refunds.ts`, and `frontend/src/components/orders/RefundModal.tsx`. Audit trail: every refund now also writes a `refund_issued` row to `order_audit_log` (previously refunds were only recorded in the `refunds` table).
 
 **How to verify:** `npm run test:refunds` (original in-progress-refund behavior, budget-sensitive — see that file's header) and `npm run test:refund-completed-orders` (business-day tiers, expanded item eligibility, store credit, and the audit-log entry).
 
-**Decided:** 2026-09-13.
+**Decided:** 2026-09-17.
 
 ---
 

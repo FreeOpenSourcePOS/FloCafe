@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import {
   Printer,
@@ -122,6 +122,7 @@ const emptyPrinterForm: PrinterForm = {
 };
 
 export interface PrintersSettingsTabProps {
+  isActive: boolean;
   hwPrinters: HwPrinter[];
   setHwPrinters: React.Dispatch<React.SetStateAction<HwPrinter[]>>;
   printingForm: PrintingForm;
@@ -139,6 +140,7 @@ export interface PrintersSettingsTabProps {
 }
 
 export function PrintersSettingsTab({
+  isActive,
   hwPrinters,
   setHwPrinters,
   printingForm,
@@ -199,7 +201,7 @@ export function PrintersSettingsTab({
     }
   };
 
-  const fetchDetectedPrinters = async (signal?: AbortSignal) => {
+  const fetchDetectedPrinters = useCallback(async (signal?: AbortSignal) => {
     setDetectingPrinters(true);
     try {
       const res = await api.get('/printers/detect', signal ? { signal } : undefined);
@@ -209,7 +211,14 @@ export function PrintersSettingsTab({
     } finally {
       if (!signal?.aborted) setDetectingPrinters(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!isActive) return;
+    const controller = new AbortController();
+    void fetchDetectedPrinters(controller.signal);
+    return () => controller.abort();
+  }, [fetchDetectedPrinters, isActive]);
 
   const quickAddDetected = async (p: DetectedPrinter) => {
     setAddingDetectedName(p.name);

@@ -41,6 +41,17 @@ const BUSINESS_DAY_START_OPTIONS = [
   { value: '05:00', label: '05:00 (5:00 AM)' },
   { value: '05:30', label: '05:30 (5:30 AM)' },
   { value: '06:00', label: '06:00 (6:00 AM)' },
+  { value: '06:30', label: '06:30 (6:30 AM)' },
+  { value: '07:00', label: '07:00 (7:00 AM)' },
+  { value: '07:30', label: '07:30 (7:30 AM)' },
+  { value: '08:00', label: '08:00 (8:00 AM)' },
+  { value: '08:30', label: '08:30 (8:30 AM)' },
+  { value: '09:00', label: '09:00 (9:00 AM)' },
+  { value: '09:30', label: '09:30 (9:30 AM)' },
+  { value: '10:00', label: '10:00 (10:00 AM)' },
+  { value: '10:30', label: '10:30 (10:30 AM)' },
+  { value: '11:00', label: '11:00 (11:00 AM)' },
+  { value: '11:30', label: '11:30 (11:30 AM)' },
 ];
 
 export type InvoiceResetPeriod = 'daily' | 'monthly' | 'financial_year' | 'never';

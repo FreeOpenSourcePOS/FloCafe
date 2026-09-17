@@ -3695,6 +3695,7 @@ export default function SettingsPage() {
 
         <TabsContent value="receipts-printers">
           <PrintersSettingsTab
+            isActive={activeTab === 'receipts-printers'}
             hwPrinters={hwPrinters}
             setHwPrinters={setHwPrinters}
             printingForm={printingForm}

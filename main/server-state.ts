@@ -3,20 +3,12 @@ import os from 'os';
 const DEFAULT_PORT = parseInt(process.env.PORT || '3001', 10);
 let activePort = DEFAULT_PORT;
 
-export function getDefaultPort(): number {
-  return DEFAULT_PORT;
-}
-
 export function getServerPort(): number {
   return activePort;
 }
 
 export function setServerPort(port: number): void {
   activePort = port;
-}
-
-export function resetServerPort(): void {
-  activePort = DEFAULT_PORT;
 }
 
 /** Helper to check if an IPv4 address is active and valid (excludes loopback & 169.254.x.x link-local APIPA). */

@@ -54,21 +54,35 @@ function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-async function renderScreenshotWithPlaywright(html: string, outputPath: string, width = 700, height = 400): Promise<void> {
+interface ScreenshotTask {
+  html: string;
+  outputPath: string;
+}
+
+async function renderScreenshotsWithPlaywright(tasks: ScreenshotTask[], width = 700, height = 400): Promise<void> {
+  let browser: any;
   try {
     const { chromium } = frontendRequire('playwright');
-    const browser = await chromium.launch({ headless: true });
-    try {
-      const page = await browser.newPage({ viewport: { width, height } });
-      await page.setContent(html, { waitUntil: 'load' });
-      await page.screenshot({ path: outputPath, fullPage: true });
-    } finally {
-      await browser.close();
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    });
+    const page = await browser.newPage({ viewport: { width, height } });
+    for (const task of tasks) {
+      await page.setContent(task.html, { waitUntil: 'load' });
+      const container = await page.$('.container');
+      if (container) {
+        await container.screenshot({ path: task.outputPath });
+      } else {
+        await page.screenshot({ path: task.outputPath });
+      }
     }
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     // Non-fatal if headless browser cannot be spawned in restricted CI/sandbox
     console.log(`  ℹ Screenshot generation skipped (${err?.message?.split('\n')[0] || 'browser unavailable'})`);
+  } finally {
+    if (browser) await browser.close().catch(() => undefined);
   }
 }
 
@@ -145,7 +159,7 @@ function buildHtmlDocument(title: string, bodyContent: string, lang: string, dir
 </head>
 <body>
   <div class="container">
-    <div class="badge">SSR TimeZone & i18n — ${lang.toUpperCase()} (${dir.toUpperCase()})</div>
+    <div class="badge">SSR TimeZone & i18n - ${lang.toUpperCase()} (${dir.toUpperCase()})</div>
     ${bodyContent}
     <div class="status-ok">
       <span>✓</span>
@@ -256,6 +270,7 @@ async function run(): Promise<void> {
   }
 
   const generatedArtifacts: Array<{ kind: string; label: string; path: string }> = [];
+  const screenshotTasks: ScreenshotTask[] = [];
 
   for (const lang of localeKeys) {
     const dir = LANGUAGES[lang]?.dir || 'ltr';
@@ -292,7 +307,7 @@ async function run(): Promise<void> {
     const pngPath = path.join(EVIDENCE_DIR, `i18n-ssr-timezone-${lang}.png`);
 
     fs.writeFileSync(htmlPath, docHtml, 'utf8');
-    await renderScreenshotWithPlaywright(docHtml, pngPath);
+    screenshotTasks.push({ html: docHtml, outputPath: pngPath });
 
     generatedArtifacts.push({
       kind: 'screenshot',
@@ -300,6 +315,8 @@ async function run(): Promise<void> {
       path: pngPath,
     });
   }
+
+  await renderScreenshotsWithPlaywright(screenshotTasks);
 
   console.log(`\n✅ All ${generatedArtifacts.length} evidence artifacts generated in ${EVIDENCE_DIR}`);
 }

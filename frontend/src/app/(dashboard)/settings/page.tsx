@@ -2736,7 +2736,7 @@ export default function SettingsPage() {
                   <p className="font-medium text-foreground">{t('showProductImages')}</p>
                   <p className="text-sm text-muted-foreground">{t('showProductImagesHint')}</p>
                 </div>
-                <Toggle value={posSettings.showProductImages} onChange={(v) => {
+                <Toggle value={posSettings.showProductImages} label={t('showProductImages')} onChange={(v) => {
                   posSettings.setShowProductImages(v);
                   toast.success(v ? t('productImagesEnabled') : t('productImagesDisabled'), { id: 'pos-local' });
                 }} />
@@ -2755,7 +2755,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">{t('customerMandatory')}</p>
                     <p className="text-sm text-muted-foreground">{t('customerMandatoryHint')}</p>
                   </div>
-                  <Toggle value={posSettings.customerMandatory} onChange={(v) => {
+                  <Toggle value={posSettings.customerMandatory} label={t('customerMandatory')} onChange={(v) => {
                     posSettings.setCustomerMandatory(v);
                     toast.success(v ? t('customerMandatoryEnabled') : t('customerMandatoryDisabled'), { id: 'pos-local' });
                   }} />
@@ -2766,7 +2766,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">{t('enforcePhoneLength')}</p>
                     <p className="text-sm text-muted-foreground">{t('enforcePhoneLengthHint')}</p>
                   </div>
-                  <Toggle value={posSettings.enforcePhoneLength} onChange={(v) => {
+                  <Toggle value={posSettings.enforcePhoneLength} label={t('enforcePhoneLength')} onChange={(v) => {
                     posSettings.setEnforcePhoneLength(v);
                     toast.success(v ? t('enforcePhoneLengthEnabled') : t('enforcePhoneLengthDisabled'), { id: 'pos-local' });
                   }} />
@@ -2890,7 +2890,7 @@ export default function SettingsPage() {
                   <p className="font-medium text-foreground">{t('kdsEnabledToggle')}</p>
                   <p className="text-sm text-muted-foreground">{t('kdsEnabledToggleHint')}</p>
                 </div>
-                <Toggle value={kdsEnabledSetting} onChange={(v) => { if (!savingKdsEnabled) saveKdsEnabled(v); }} />
+                <Toggle value={kdsEnabledSetting} label={t('kdsEnabledToggle')} onChange={(v) => { if (!savingKdsEnabled) saveKdsEnabled(v); }} />
               </div>
               {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
                 <div className="mt-4 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/40 rounded-lg">
@@ -3159,7 +3159,7 @@ export default function SettingsPage() {
                     {t('serverAppEnabledHint')}
                   </p>
                 </div>
-                <Toggle value={serverAppEnabledSetting} onChange={(v) => { if (!savingServerAppEnabled) saveServerAppEnabled(v); }} />
+                <Toggle value={serverAppEnabledSetting} label={t('serverApp')} onChange={(v) => { if (!savingServerAppEnabled) saveServerAppEnabled(v); }} />
               </div>
             </div>
 
@@ -3178,7 +3178,7 @@ export default function SettingsPage() {
                       {t('serverAppBillPrintingHint')}
                     </p>
                   </div>
-                  <Toggle value={serverAppBillPrintingEnabledSetting} onChange={(v) => { if (!savingServerAppBillPrintingEnabled) saveServerAppBillPrintingEnabled(v); }} />
+                  <Toggle value={serverAppBillPrintingEnabledSetting} label={t('serverAppBillPrinting')} onChange={(v) => { if (!savingServerAppBillPrintingEnabled) saveServerAppBillPrintingEnabled(v); }} />
                 </div>
               </div>
             )}
@@ -3496,8 +3496,8 @@ export default function SettingsPage() {
                 )}
                 {cloudAccountAvailable && (
                   <div className="mt-5 space-y-3 border-t border-border pt-4">
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('cloudPrefProductUpdates')}</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error(t('couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('cloudPrefMarketing')}</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error(t('couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('cloudPrefProductUpdates')}</span><Toggle value={Boolean(cloudAccount?.product_updates)} label={t('cloudPrefProductUpdates')} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error(t('couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('cloudPrefMarketing')}</span><Toggle value={Boolean(cloudAccount?.marketing)} label={t('cloudPrefMarketing')} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error(t('couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
                     <p className="text-xs text-muted-foreground">{t('cloudPrefNote')}</p>
                   </div>
                 )}

@@ -227,7 +227,7 @@ export function GeneralSettingsTab({
                       };
                     });
                   }}
-                  aria-label={tCommon('search')}
+                  aria-label={t('country')}
                   className="px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                 >
                   <option value="">{t('selectCountry')}</option>
@@ -523,6 +523,7 @@ export function GeneralSettingsTab({
             </div>
             <Toggle
               value={orderNumberForm.includeDate}
+              label={t('orderNumberIncludeDate')}
               onChange={
                 isAdmin
                   ? (v) => {
@@ -540,6 +541,7 @@ export function GeneralSettingsTab({
             </div>
             <Toggle
               value={orderNumberForm.resetDaily}
+              label={t('orderNumberResetDaily')}
               onChange={
                 isAdmin
                   ? (v) => {
@@ -673,6 +675,7 @@ export function GeneralSettingsTab({
               </div>
               <Toggle
                 value={orderNumberForm.invoiceIncludePeriod}
+                label={t('invoiceNumberIncludePeriod')}
                 onChange={
                   isAdmin
                     ? (v) => {
@@ -716,8 +719,12 @@ export function GeneralSettingsTab({
               value={language}
               onChange={(e) => {
                 const lang = e.target.value as Language;
+                const prev = language;
                 setLanguage(lang);
-                api.put('/settings/business', { language: lang }).catch(() => toast.error(t('saveFailed')));
+                api.put('/settings/business', { language: lang }).catch(() => {
+                  setLanguage(prev);
+                  toast.error(t('saveFailed'));
+                });
               }}
               className="block w-full rounded-md border-border shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
             >

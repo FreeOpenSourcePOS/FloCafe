@@ -702,6 +702,7 @@ export function PrintersSettingsTab({
               </div>
               <Toggle
                 value={printingForm.printerEnabled}
+                label={t('enablePrinter')}
                 onChange={(v) => {
                   markHydrationTouched('printerEnabled');
                   setPrintingForm((p) => ({ ...p, printerEnabled: v }));
@@ -716,6 +717,7 @@ export function PrintersSettingsTab({
                 </div>
                 <Toggle
                   value={!!printingForm.cashDrawerPulseEnabled}
+                  label={t('sendPulseToCashDrawer')}
                   onChange={(v) => {
                     markHydrationTouched('cashDrawerPulseEnabled');
                     setPrintingForm((p) => ({ ...p, cashDrawerPulseEnabled: v }));
@@ -796,6 +798,7 @@ export function PrintersSettingsTab({
               </div>
               <Toggle
                 value={kotPrintingEnabledSetting}
+                label={t('kotPrintingEnabledToggle')}
                 onChange={(v) => {
                   if (!savingKotPrintingEnabled) saveKotPrintingEnabled(v);
                 }}
@@ -814,6 +817,7 @@ export function PrintersSettingsTab({
               </div>
               <Toggle
                 value={printingForm.autoPrintKot && kotPrintingEnabledSetting}
+                label={t('autoPrintKot')}
                 onChange={(v) => {
                   if (kotPrintingEnabledSetting) {
                     markHydrationTouched('autoPrintKot');
@@ -837,6 +841,7 @@ export function PrintersSettingsTab({
               </div>
               <Toggle
                 value={printingForm.autoPrintBill}
+                label={t('autoPrintBill')}
                 onChange={(v) => {
                   markHydrationTouched('autoPrintBill');
                   setPrintingForm((p) => ({ ...p, autoPrintBill: v }));
@@ -850,6 +855,7 @@ export function PrintersSettingsTab({
               </div>
               <Toggle
                 value={printingForm.printerUseUnicode}
+                label={t('printerUnicode')}
                 onChange={(v) => {
                   markHydrationTouched('printerUseUnicode');
                   setPrintingForm((p) => ({ ...p, printerUseUnicode: v }));
@@ -863,6 +869,7 @@ export function PrintersSettingsTab({
               </div>
               <Toggle
                 value={printingForm.printerArabicShaping}
+                label={t('printerArabicShaping')}
                 onChange={(v) => {
                   markHydrationTouched('printerArabicShaping');
                   setPrintingForm((p) => ({ ...p, printerArabicShaping: v }));
@@ -876,6 +883,7 @@ export function PrintersSettingsTab({
               </div>
               <Toggle
                 value={printingForm.printerTrimDecimals}
+                label={t('trimDecimals')}
                 onChange={(v) => {
                   markHydrationTouched('printerTrimDecimals');
                   setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }));
@@ -1027,6 +1035,7 @@ export function PrintersSettingsTab({
                     <span className="text-sm text-foreground">{item.label}</span>
                     <Toggle
                       value={printingForm[item.key]}
+                      label={item.label}
                       onChange={(value) => {
                         markHydrationTouched(item.key);
                         setPrintingForm((previous) => ({ ...previous, [item.key]: value }));
@@ -1071,6 +1080,7 @@ export function PrintersSettingsTab({
             </div>
             <Toggle
               value={printingForm.whatsappShareEnabled}
+              label={t('enableWhatsappShare')}
               onChange={(v) => {
                 markHydrationTouched('whatsappShareEnabled');
                 setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }));

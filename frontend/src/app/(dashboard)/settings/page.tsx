@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
-import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
+import { usePosSettingsStore, type BillTemplate } from '@/store/pos-settings';
 import { useThemeMode, type ThemeMode } from '@/store/theme';
 import type { KotLanguagePolicy, PrimaryLanguageSelection, ReceiptLanguagePolicy } from '@print/types';
 import {
@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
 import { normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
@@ -29,15 +28,28 @@ import { InitializeDatabaseDialog } from '@/components/settings/InitializeDataba
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
-import { GeneralSettingsTab } from '@/components/settings/GeneralSettingsTab';
-import { PrintersSettingsTab } from '@/components/settings/PrintersSettingsTab';
-import { DatabaseSettingsTab } from '@/components/settings/DatabaseSettingsTab';
+import { GeneralSettingsTab, type BusinessForm, type InvoiceResetPeriod, type OrderNumberForm } from '@/components/settings/GeneralSettingsTab';
+import {
+  PrintersSettingsTab,
+  type BillTemplateForm,
+  type HwPrinter,
+  type PrintingForm,
+  type TemplateCard,
+} from '@/components/settings/PrintersSettingsTab';
+import {
+  DatabaseSettingsTab,
+  type BackupInfo,
+  type GoogleDriveStatus,
+  type ImportPayload,
+  type MasterPinStatus,
+  type PinGate,
+} from '@/components/settings/DatabaseSettingsTab';
+import { Toggle } from '@/components/settings/Toggle';
 import type { HealthCheckReport } from '@/types/electron';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
-import { type BillTemplateSelectionSource } from '@/lib/bill-template-picker';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 
@@ -87,40 +99,10 @@ Cash             99
   Thank you!`;
 
 
-type SettingsKey = keyof AppConfig['Messages']['settings'];
-
-interface TemplateCard {
-  id: BillTemplate;
-  nameKey?: SettingsKey;
-  displayName?: string;
-  preview: string;
-  source: 'core' | 'plugin' | 'merchant';
-  /** Selection-identity source persisted in bill_template (#447). */
-  selectionSource: BillTemplateSelectionSource;
-  description?: string;
-  /** Provenance badge text for merchant cards (#447). */
-  originBadgeKey?: 'billTemplateMerchantCreated' | 'billTemplateMerchantImported' | 'billTemplateMerchantCloned';
-}
-
 const TEMPLATE_CARDS: TemplateCard[] = [
   { id: 'classic', nameKey: 'billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core', selectionSource: 'core' },
   { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core', selectionSource: 'core' },
 ];
-
-function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!value)}
-      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${value ? 'bg-brand' : 'bg-gray-300 dark:bg-input'}`}
-    >
-      {/* start-0.5 + rtl:-translate-x-5 keeps the knob at the inline-start and slides it toward the inline-end in both directions. */}
-      <span className={`absolute top-0.5 start-0.5 w-5 h-5 bg-card rounded-full shadow transition-transform ${value ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0'}`} />
-    </button>
-  );
-}
-
-type InvoiceResetPeriod = 'never' | 'daily' | 'monthly' | 'financial_year';
 
 // Sanitize prefix on load to alphanumeric characters so legacy values pass save validation.
 function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
@@ -312,7 +294,7 @@ export default function SettingsPage() {
   const cloudHydrationSucceeded = useRef(false);
   const cloudRegistrationStatus = useRef('unregistered');
   const healthCheckLoaded = useRef<string | null>(null);
-  const [masterPinStatus, setMasterPinStatus] = useState<{ available: boolean; isSet: boolean; schemaVersion: number | null }>({ available: false, isSet: false, schemaVersion: null });
+  const [masterPinStatus, setMasterPinStatus] = useState<MasterPinStatus>({ available: false, isSet: false, schemaVersion: null });
   const [healthCheckOpen, setHealthCheckOpen] = useState(() => searchParams?.get('action') === 'health-check');
   const [healthReport, setHealthReport] = useState<HealthCheckReport | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
@@ -394,18 +376,6 @@ export default function SettingsPage() {
 
   // Unified PIN gate: 'set' opens the set/change-PIN dialog; 'backup'/'backup-custom'/
   // 'import'/'restore' open a verify prompt and, on success, run the pending action.
-  type ImportPayload = { app: string; schema_version?: string; data: Record<string, unknown[]> };
-  type BackupInfo = { fileName: string; path: string; sizeBytes: number; createdAt: string; kind: 'manual' | 'auto'; schemaVersion: number | null };
-  type PinGate =
-    | { mode: 'set' }
-    | { mode: 'backup' }
-    | { mode: 'backup-custom' }
-    | { mode: 'import'; payload: { data: ImportPayload; overwrite: boolean } }
-    | { mode: 'restore'; payload: { backupPath: string } }
-    | { mode: 'delete-backup'; payload: { fileName: string } }
-    | { mode: 'delete-cloud' }
-    | { mode: 'cancel-cloud-deletion' }
-    | null;
   const [pinGate, setPinGate] = useState<PinGate>(() => searchParams?.get('action') === 'master-pin' ? { mode: 'set' } : null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   // Starts true until the Data tab performs its first load.
@@ -798,13 +768,6 @@ export default function SettingsPage() {
   const { updateStatus, appVersion, isElectron, checkForUpdates: handleCheckUpdates } = useUpdateStatus();
 
   // ── Printers ─────────────────────────────────────────────────────────────
-  type HwPrinter = {
-    id: string; name: string; connection_type: 'network' | 'usb' | 'webusb';
-    ip_address?: string; port?: number;
-    cash_drawer_pulse_enabled: number;
-    paper_width: string; is_default: number; profile_id?: string; profile_name?: string;
-  };
-
   const [hwPrinters, setHwPrinters] = useState<HwPrinter[]>([]);
 
   const fetchPrinters = async (signal?: AbortSignal) => {
@@ -982,27 +945,6 @@ export default function SettingsPage() {
   const [devicesLoading, setDevicesLoading] = useState(false);
 
   // Printing local state (buffered — saved only on explicit Save)
-  type PrintingForm = {
-    printerEnabled: boolean; printerPaperSize: PaperSize;
-    // Undefined until loaded or explicitly toggled to avoid overwriting
-    // existing setting on save.
-    cashDrawerPulseEnabled: boolean | undefined;
-    cashDrawerPulseMethods: string[];
-    printMethod: 'escpos' | 'browser';
-    autoPrintKot: boolean; autoPrintBill: boolean;
-    whatsappShareEnabled: boolean;
-    printerUseUnicode: boolean;
-    printerArabicShaping: boolean;
-    printerTrimDecimals: boolean;
-    // Print language policies (#441): 'inherit'/'none' sentinels or registry codes.
-    receiptPrimaryLanguage: string; // 'inherit' | selectable code
-    receiptSecondLanguage: string; // 'none' | selectable code
-    zReportPrimaryLanguage: string; // 'inherit' | selectable code
-    zReportSecondLanguage: string; // 'none' | selectable code
-    kotLanguage: string; // 'inherit' | selectable code
-    billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
-    billShowTaxBreakdown: boolean; billShowCustomerName: boolean; billShowCustomerPhone: boolean; billShowTableNumber: boolean;
-  };
   const initPrinting = (): PrintingForm => ({
     printerEnabled: posSettings.printerEnabled,
     printerPaperSize: posSettings.printerPaperSize,
@@ -1130,11 +1072,6 @@ export default function SettingsPage() {
 
   // Bill template local state; billTemplateSource preserves pack
   // qualifier if ID collides with core template names.
-  type BillTemplateForm = {
-    billTemplate: BillTemplate;
-    billTemplateSource: BillTemplateSelectionSource;
-    billFooterMessage: string;
-  };
   const initBillTemplate = (): BillTemplateForm => ({
     billTemplate: posSettings.billTemplate,
     billTemplateSource: 'core',
@@ -1163,16 +1100,6 @@ export default function SettingsPage() {
   const resetBillTemplate = () => setBillForm(savedBillForm);
 
   // Store / business fields — local form state (saved only on explicit Save)
-  type BusinessForm = {
-    businessName: string; countryCode: string; timezone: string; businessDayStartTime: string; currency: string;
-    billingType: 'postpaid' | 'prepaid';
-    tablesRequired: boolean;
-    taxRegistered: boolean;
-    taxRegistrationNumber: string; businessAddress: string; businessPhone: string; instagramHandle: string;
-    currencyDisplay: CurrencyDisplay;
-    numberDigits: DigitMode;
-    calendar: CalendarMode;
-  };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', businessDayStartTime: '00:00', currency: '', billingType: 'postpaid',
     tablesRequired: true,
@@ -1267,18 +1194,6 @@ export default function SettingsPage() {
   const [diagnosticsConsent, setDiagnosticsConsent] = useState(false);
   const [savingDiagnosticsConsent, setSavingDiagnosticsConsent] = useState(false);
 
-  type GoogleDriveStatus = {
-    configured: boolean;
-    secure_storage_available: boolean;
-    connected: boolean;
-    account_email: string | null;
-    frequency: 'daily' | 'weekly';
-    retention_count: number;
-    last_backup_at: string | null;
-    last_backup_status: 'success' | 'error' | null;
-    last_backup_filename: string | null;
-    last_error: string | null;
-  };
   const [googleDriveStatus, setGoogleDriveStatus] = useState<GoogleDriveStatus>({
     configured: false,
     secure_storage_available: true,
@@ -1306,16 +1221,6 @@ export default function SettingsPage() {
   const [kotPrintingEnabledSetting, setKotPrintingEnabledSetting] = useState(true);
   const [savingKotPrintingEnabled, setSavingKotPrintingEnabled] = useState(false);
 
-  type OrderNumberForm = {
-    prefix: string;
-    includeDate: boolean;
-    resetDaily: boolean;
-    invoicePrefix: string;
-    invoiceIncludePeriod: boolean;
-    invoiceResetPeriod: InvoiceResetPeriod;
-    invoiceFinancialYearStartMonth: number;
-    invoiceFinancialYearStartDay: number;
-  };
   const [savedOrderNumberForm, setSavedOrderNumberForm] = useState<OrderNumberForm>({
     prefix: 'ORD',
     includeDate: true,
@@ -3693,7 +3598,7 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="receipts-printers">
+        <TabsContent value="receipts-printers" forceMount>
           <PrintersSettingsTab
             isActive={activeTab === 'receipts-printers'}
             hwPrinters={hwPrinters}

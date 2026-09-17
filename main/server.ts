@@ -16,9 +16,7 @@ import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
-import {
-  setServerPort,
-} from './server-state';
+import { setServerPort } from './server-state';
 export { getServerPort, getLocalIP, getAllLocalIPs } from './server-state';
 
 let server: http.Server | null = null;

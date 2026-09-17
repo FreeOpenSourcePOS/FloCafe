@@ -123,8 +123,8 @@ selectable" via `LanguageRegistryFacts`:
 
 - frontend validates stored policies against `selectable` in
   [`frontend/src/lib/print-language-policies.ts`](../frontend/src/lib/print-language-policies.ts),
-  while the settings page builds the selectable print-language controls from
-  the same registry ([`frontend/src/app/(dashboard)/settings/page.tsx`](<../frontend/src/app/(dashboard)/settings/page.tsx>));
+  while the printers settings tab builds the selectable print-language controls from
+  the same registry ([`frontend/src/components/settings/PrintersSettingsTab.tsx`](../frontend/src/components/settings/PrintersSettingsTab.tsx));
 - backend uses the generated print-label language table
   ([`main/print/print-labels.generated.ts`](../main/print/print-labels.generated.ts), wired in [`main/lib/print-language-settings.ts`](../main/lib/print-language-settings.ts)).
 
@@ -285,7 +285,7 @@ fails because of a malformed policy ([`main/lib/print-language-settings.ts`](../
 
 Settings are registry-driven: the frontend renders print-language options from
 [`LANGUAGES`](../frontend/src/lib/i18n/languages.ts),
-with controls filtered in [`settings/page.tsx`](<../frontend/src/app/(dashboard)/settings/page.tsx>)
+with controls filtered in [`PrintersSettingsTab.tsx`](../frontend/src/components/settings/PrintersSettingsTab.tsx)
 and stored-policy checks in [`print-language-policies.ts`](../frontend/src/lib/print-language-policies.ts);
 backend policy validation accepts only languages present in
 [`PRINT_LABEL_LANGUAGES`](../main/print/print-labels.generated.ts), wired through

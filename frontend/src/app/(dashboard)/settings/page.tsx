@@ -2882,7 +2882,7 @@ export default function SettingsPage() {
 
         {/* Kitchen Display — own tab under Operations */}
         <TabsContent value="kds">
-          <SettingsTabShell maxWidth="wide">
+          <SettingsTabShell>
             {/* Kitchen Display System enable toggle */}
             <div className="bg-card rounded-xl border border-border p-6">
               <div className="flex items-center justify-between gap-4">

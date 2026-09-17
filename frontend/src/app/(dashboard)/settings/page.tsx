@@ -2648,7 +2648,7 @@ export default function SettingsPage() {
           </nav>
         </div>
 
-        <div className="flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-8 md:pb-12">
+        <div className={`flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-8 md:pb-12 ${isDirty ? 'pb-32 md:pb-32' : ''}`}>
 
         <TabsContent value="store">
           <GeneralSettingsTab

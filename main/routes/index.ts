@@ -35,15 +35,17 @@ import { whatsappRoutes } from './whatsapp';
 import { supportTicketRoutes } from './support-ticket';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin, recordOrderAudit } from '../db';
 import { checkPinRateLimit } from './orders';
-import { getCurrencyFractionDigits } from '../countries';
+import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 import {
+  calculateConfiguredChargeTaxes,
+  combineItemAndChargeTaxes,
   getActiveCountryPack,
   invertTaxBreakdown,
   invertTaxSnapshot,
 } from '../services/tax';
-import { recalculateOrderTotals } from '../services/orders';
+import { calculateOrderTotals } from '../services/orders';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import QRCode from 'qrcode';
@@ -407,15 +409,56 @@ export function registerRoutes(app: Express): void {
         }
 
         // Recalculate order totals excluding terminal items.
-        const {
-          activeItems,
-          subtotal,
-          discountAmount: newDiscountAmount,
-          taxRollup,
-          total,
-          roundOff,
-          country,
-        } = recalculateOrderTotals(db, currentOrder);
+        const { activeItems, subtotal, totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots } = calculateOrderTotals(db, orderId);
+        // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
+        const currency = getTenantCurrency();
+        const decimals = getCurrencyFractionDigits(currency);
+        const minorFactor = getCurrencyMinorUnitFactor(currency);
+        const existingDiscountAmount = currentOrder.discount_amount || 0;
+        let newDiscountAmount = existingDiscountAmount;
+        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
+          if (currentOrder.discount_type === 'percentage') {
+            const pct = currentOrder.discount_value || 0;
+            newDiscountAmount = Number((subtotal * pct / 100).toFixed(decimals));
+          }
+          // amount type: keep same value
+        }
+
+        const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
+        let newTaxAmount = totalTax;
+        let newExclusiveTax = exclusiveTax;
+        let taxRatio = 1;
+        if (newDiscountAmount > 0 && subtotal > 0) {
+          taxRatio = discountedSubtotal / subtotal;
+          newTaxAmount = Number((totalTax * taxRatio).toFixed(decimals));
+          newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
+        }
+        const tenantInfo = {
+          country: getSettingValue('country') || 'IN',
+          business_type: getSettingValue('business_type') || 'restaurant',
+          state_code: getSettingValue('state_code') || '',
+          currency: getTenantCurrency(),
+          taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+        };
+        const customer = currentOrder.customer_id
+          ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
+          : null;
+        const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, currentOrder, customer);
+        const taxRollup = combineItemAndChargeTaxes({
+          itemTaxAmount: newTaxAmount,
+          itemExclusiveTaxAmount: newExclusiveTax,
+          itemBreakdowns: allTaxBreakdowns,
+          itemSnapshots: allTaxSnapshots,
+          itemTaxRatio: taxRatio,
+          chargeTaxes,
+          minorFactor,
+        });
+
+        // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
+        const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
+          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
+        const roundOff = 0;
+        const total = Number(preRoundTotal.toFixed(decimals));
 
         // Cancelling the last active item marks the entire order cancelled and frees table.
         const orderCancelled = activeItems.length === 0 && currentOrder.status !== 'cancelled';
@@ -445,7 +488,7 @@ export function registerRoutes(app: Express): void {
           packagingCharge: order.packaging_charge || 0,
           serviceCharge: order.service_charge || 0,
           total,
-        }, country);
+        }, tenantInfo.country);
 
         recordOrderAudit(db, {
           orderId,
@@ -540,14 +583,56 @@ export function registerRoutes(app: Express): void {
           .run(now(), itemId);
 
         // Recalculate order totals
-        const {
-          subtotal,
-          discountAmount: newDiscountAmount,
-          taxRollup,
-          total,
-          roundOff,
-          country,
-        } = recalculateOrderTotals(db, currentOrder);
+        const { subtotal, totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots } = calculateOrderTotals(db, orderId);
+        // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
+        const currency = getTenantCurrency();
+        const decimals = getCurrencyFractionDigits(currency);
+        const minorFactor = getCurrencyMinorUnitFactor(currency);
+        const existingDiscountAmount = currentOrder.discount_amount || 0;
+        let newDiscountAmount = existingDiscountAmount;
+        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
+          if (currentOrder.discount_type === 'percentage') {
+            const pct = currentOrder.discount_value || 0;
+            newDiscountAmount = Number((subtotal * pct / 100).toFixed(decimals));
+          }
+          // amount type: keep same value
+        }
+
+        const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
+        let newTaxAmount = totalTax;
+        let newExclusiveTax = exclusiveTax;
+        let taxRatio = 1;
+        if (newDiscountAmount > 0 && subtotal > 0) {
+          taxRatio = discountedSubtotal / subtotal;
+          newTaxAmount = Number((totalTax * taxRatio).toFixed(decimals));
+          newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
+        }
+        const tenantInfo = {
+          country: getSettingValue('country') || 'IN',
+          business_type: getSettingValue('business_type') || 'restaurant',
+          state_code: getSettingValue('state_code') || '',
+          currency: getTenantCurrency(),
+          taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+        };
+        const customer = currentOrder.customer_id
+          ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
+          : null;
+        const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, currentOrder, customer);
+        const taxRollup = combineItemAndChargeTaxes({
+          itemTaxAmount: newTaxAmount,
+          itemExclusiveTaxAmount: newExclusiveTax,
+          itemBreakdowns: allTaxBreakdowns,
+          itemSnapshots: allTaxSnapshots,
+          itemTaxRatio: taxRatio,
+          chargeTaxes,
+          minorFactor,
+        });
+
+        // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
+        const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
+          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
+        const roundOff = 0;
+        const total = Number(preRoundTotal.toFixed(decimals));
 
         db.prepare(`
           UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
@@ -563,7 +648,7 @@ export function registerRoutes(app: Express): void {
           packagingCharge: order.packaging_charge || 0,
           serviceCharge: order.service_charge || 0,
           total,
-        }, country);
+        }, tenantInfo.country);
 
         recordOrderAudit(db, { orderId, orderItemId: itemId, actorUserId: actorId, action: 'item_restored' });
 

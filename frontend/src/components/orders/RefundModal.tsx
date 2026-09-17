@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import type { Bill, Order, OrderItem } from '@/lib/types';
+import type { Bill, Order, OrderItem, Staff } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
@@ -14,6 +15,7 @@ import { getCountryByCode, getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { useAuthStore } from '@/store/auth';
 import { createPaymentIdempotencyKey } from '@/lib/payment-idempotency';
 import { parseDbTimestamp } from '@/lib/utils';
+import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 // Kept in sync with REFUND_ITEM_ELIGIBLE_STATUSES in main/services/refund.ts.
 const REFUND_ELIGIBLE_ITEM_STATUSES = ['preparing', 'ready', 'served', 'completed'];
@@ -45,7 +47,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   const t = useTranslations('orders');
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
-  const { currentTenant } = useAuthStore();
+  const { user, currentTenant } = useAuthStore();
   const currencyCode =
     currentTenant?.currency ||
     (currentTenant?.country ? getCountryByCode(currentTenant.country)?.currency : undefined) ||
@@ -78,8 +80,49 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [reason, setReason] = useState('');
   const [overridePin, setOverridePin] = useState('');
+  const [approvers, setApprovers] = useState<Staff[]>([]);
+  const [approverId, setApproverId] = useState('');
+  const [approversLoading, setApproversLoading] = useState(true);
+  const [approversLoadFailed, setApproversLoadFailed] = useState(false);
   const [refundedSoFarCents, setRefundedSoFarCents] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/staff', { params: { active: true } })
+      .then((res) => {
+        if (cancelled) return;
+        const staff: Staff[] = res.data?.staff || [];
+        const eligibleStaff = staff.filter((member) => (
+          member.is_active !== 0
+          && Boolean(member.has_pin)
+          && hasRole(member.role, ROLE_ACCESS.ownerManager)
+        ));
+        const currentUserApprover = eligibleStaff.find((member) => String(member.id) === String(user?.id));
+        const preferredId = currentUserApprover?.id || (eligibleStaff.length === 1 ? eligibleStaff[0].id : '');
+        setApprovers(eligibleStaff);
+        setApproverId(preferredId ? String(preferredId) : '');
+        setApproversLoadFailed(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setApprovers([]);
+        setApproversLoadFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setApproversLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  const eligibleApprovers = approvers.filter((member) => hasRole(
+    member.role,
+    isLikelyLate ? ROLE_ACCESS.owner : ROLE_ACCESS.ownerManager,
+  ));
+  const approverIdForRefund = eligibleApprovers.some((member) => String(member.id) === approverId)
+    ? approverId
+    : eligibleApprovers.length === 1 ? String(eligibleApprovers[0].id) : '';
+  const selectedApprover = eligibleApprovers.find((member) => String(member.id) === approverIdForRefund);
 
   // Bill-scoped view: order.items is order-wide and includes other split bills' items,
   // which the backend would reject for this bill.
@@ -154,6 +197,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
   const canSubmit =
     !submitting &&
     !!effectiveBill &&
+    approverIdForRefund.trim().length > 0 &&
     overridePin.trim().length > 0 &&
     method &&
     amountValue > 0 &&
@@ -168,6 +212,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
         bill_id: effectiveBill.id,
         method,
         reason: reason.trim() || undefined,
+        approver_id: approverIdForRefund,
         override_pin: overridePin,
       };
       if (scope === 'item' && selectedItem) {
@@ -307,18 +352,75 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
             />
           </div>
 
+          {approversLoading && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 size={14} className="animate-spin" />
+              {t('refundApproverLabel')}
+            </div>
+          )}
+
+          {approversLoadFailed && (
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {t('refundApproverLoadFailed')}
+            </p>
+          )}
+
+          {!approversLoading && !approversLoadFailed && eligibleApprovers.length === 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <p>
+                {hasRole(currentTenant?.role, ROLE_ACCESS.owner)
+                  ? t('refundApprovalSetupOwner')
+                  : t('refundApprovalSetupStaff')}
+              </p>
+              {hasRole(currentTenant?.role, ROLE_ACCESS.owner) && (
+                <Link href="/staff" className="mt-1 inline-block font-medium underline">
+                  {t('refundOpenStaff')}
+                </Link>
+              )}
+            </div>
+          )}
+
+          {!approversLoading && eligibleApprovers.length > 1 && (
+            <div>
+              <label htmlFor="refundApprover" className="block text-sm font-medium text-foreground mb-1">
+                {t('refundApproverLabel')}
+              </label>
+              <select
+                id="refundApprover"
+                value={approverIdForRefund}
+                onChange={(e) => setApproverId(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              >
+                <option value="">{t('refundApproverPlaceholder')}</option>
+                {eligibleApprovers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name} ({member.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {!approversLoading && eligibleApprovers.length === 1 && selectedApprover && (
+            <p className="text-sm text-muted-foreground">
+              {t('refundApproverLabel')}: <span className="font-medium text-foreground">{selectedApprover.name}</span>
+            </p>
+          )}
+
           <div>
             <label htmlFor="refundPin" className="block text-sm font-medium text-foreground mb-1">
-              {t('refundPinLabel')}
+              {t('refundApprovalPinLabel')}
             </label>
             <input
               id="refundPin"
               type="password"
               inputMode="numeric"
               value={overridePin}
-              onChange={(e) => setOverridePin(e.target.value)}
+              maxLength={6}
+              onChange={(e) => setOverridePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
             />
+            <p className="text-xs text-muted-foreground mt-1">{t('refundApprovalPinHint')}</p>
             {isLikelyLate && <p className="text-xs text-muted-foreground mt-1">{t('refundOwnerPinNotice')}</p>}
           </div>
         </div>

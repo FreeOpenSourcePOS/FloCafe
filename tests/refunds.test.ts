@@ -26,6 +26,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const {
   initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct,
   api, assert, assertEqual, getResults, closeDatabase, getDatabase, now,
@@ -43,8 +44,9 @@ async function main() {
   if ((db.prepare("SELECT COUNT(*) as c FROM settings WHERE key = 'timezone'").get() as any).c === 0) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('timezone', 'UTC')").run();
   }
-  const { authHeader: ownerAuth } = seedOwnerUser(db);
+  const { userId: ownerId, authHeader: ownerAuth } = seedOwnerUser(db);
   const { userId: managerId, authHeader: managerAuth } = seedManagerUser(db);
+  db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(bcrypt.hashSync('9999', 10), ownerId);
   seedCategory(db, 'cat-refund', 'Refund menu');
   seedProduct(db, 'prod-refund', 'cat-refund', 'Refund item', 100);
   seedProduct(db, 'prod-refund-inv', 'cat-refund', 'Refund inventory item', 50, { track_inventory: true, stock_quantity: 20 });
@@ -116,22 +118,34 @@ async function main() {
 
     // ── PIN approval: missing (no budget cost) ─────────────────────────────
     const noPinBill = await newPaidBill('prod-refund');
+    const missingApprover = await api(baseUrl, '/api/refunds', {
+      method: 'POST', body: { bill_id: noPinBill.bill.id, amount: 100, method: 'cash', override_pin: '1234' }, headers: ownerAuth,
+    });
+    assertEqual(missingApprover.status, 400, 'a refund without an approver id is rejected');
+    assertEqual(missingApprover.data.code, 'APPROVER_REQUIRED', 'missing approver returns a stable error code');
+
     const noPin = await api(baseUrl, '/api/refunds', {
       method: 'POST', body: { bill_id: noPinBill.bill.id, amount: 100, method: 'cash' }, headers: ownerAuth,
     });
     assertEqual(noPin.status, 400, 'a refund without override_pin is rejected');
+    assertEqual(noPin.data.code, 'APPROVER_REQUIRED', 'missing approver is reported before PIN validation');
 
-    // ── PIN approval: wrong (budget point 1) ────────────────────────────────
-    const wrongPinBill = await newPaidBill('prod-refund');
-    const wrongPin = await api(baseUrl, '/api/refunds', {
-      method: 'POST', body: { bill_id: wrongPinBill.bill.id, amount: 100, method: 'cash', override_pin: '0000', manager_id: managerId }, headers: ownerAuth,
+    const conflictingApproverIds = await api(baseUrl, '/api/refunds', {
+      method: 'POST', body: { bill_id: noPinBill.bill.id, amount: 100, method: 'cash', override_pin: '1234', approver_id: managerId, manager_id: ownerId }, headers: ownerAuth,
     });
-    assertEqual(wrongPin.status, 403, 'a refund with the wrong manager PIN is rejected');
+    assertEqual(conflictingApproverIds.status, 400, 'conflicting approver ids are rejected');
+
+    // This is budget point 1: the manager PIN must not be accepted for a
+    // different selected owner, even though the manager has a valid PIN.
+    const selectedOwnerFallback = await api(baseUrl, '/api/refunds', {
+      method: 'POST', body: { bill_id: noPinBill.bill.id, amount: 100, method: 'cash', override_pin: '1234', approver_id: ownerId }, headers: ownerAuth,
+    });
+    assertEqual(selectedOwnerFallback.status, 403, 'a PIN is never attributed to a different selected approver');
 
     // ── PIN approval: correct, + idempotency replay/mismatch (budget point 2) ──
     const idemBill = await newPaidBill('prod-refund');
     const idemHeaders = { ...ownerAuth, 'Idempotency-Key': 'refund-278-idem-1' };
-    const idemBody = { bill_id: idemBill.bill.id, amount: 100, method: 'cash', reason: 'Customer complaint', override_pin: '1234', manager_id: managerId };
+    const idemBody = { bill_id: idemBill.bill.id, amount: 100, method: 'cash', reason: 'Customer complaint', override_pin: '1234', approver_id: managerId };
     const created = await api(baseUrl, '/api/refunds', { method: 'POST', body: idemBody, headers: idemHeaders });
     assertEqual(created.status, 201, 'a refund with a valid manager PIN is accepted');
     assertEqual(created.data.refund.approved_by, managerId, 'the approving manager id is persisted');
@@ -305,7 +319,7 @@ async function main() {
     // ── Rate limiting: the shared PIN budget above is now exhausted ────────
     const sixthAttempt = await api(baseUrl, '/api/refunds', {
       method: 'POST',
-      body: { bill_id: wrongPinBill.bill.id, amount: 100, method: 'cash', override_pin: '1234', manager_id: managerId },
+      body: { bill_id: noPinBill.bill.id, amount: 100, method: 'cash', override_pin: '1234', manager_id: managerId },
       headers: ownerAuth,
     });
     assertEqual(sixthAttempt.status, 429, 'the 6th refund call reaching PIN approval is throttled regardless of a correct PIN');

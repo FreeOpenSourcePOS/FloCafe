@@ -29,6 +29,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS } = require('../main/db');
 const { cloudSync } = require('../main/services/cloud-sync');
 const { authRoutes } = require('../main/routes/auth');
@@ -149,6 +150,29 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(count('users'), 0, 'no user is created when terms are not accepted');
     console.log('   ✓ setup endpoint requires terms_accepted before creating the owner account');
 
+    const missingApprovalPin = await request(baseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'First Owner', email: 'owner@example.com', password: 'TestPass123',
+        business_type: 'restaurant', business_name: 'First Cafe', setup_profile: 'express', service_model: 'qsr',
+        terms_accepted: true, country: 'CA', currency: 'CAD', timezone: 'America/Vancouver',
+      }),
+    });
+    assert.equal(missingApprovalPin.status, 400, 'setup requires an owner Staff Approval PIN');
+    assert.equal(count('users'), 0, 'missing Approval PIN does not create an owner');
+
+    const mismatchedApprovalPin = await request(baseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'First Owner', email: 'owner@example.com', password: 'TestPass123',
+        business_type: 'restaurant', business_name: 'First Cafe', setup_profile: 'express', service_model: 'qsr',
+        terms_accepted: true, country: 'CA', currency: 'CAD', timezone: 'America/Vancouver',
+        owner_approval_pin: '5678', owner_approval_pin_confirmation: '5679',
+      }),
+    });
+    assert.equal(mismatchedApprovalPin.status, 400, 'setup rejects mismatched owner Staff Approval PIN confirmation');
+    assert.equal(count('users'), 0, 'mismatched Approval PIN does not create an owner');
+
     const invalidTimezone = await request(baseUrl, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({
@@ -202,6 +226,8 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         setup_profile: 'express',
         service_model: 'qsr',
         terms_accepted: true,
+        owner_approval_pin: '5678',
+        owner_approval_pin_confirmation: '5678',
         // A Canadian store on the west coast selects its true timezone rather
         // than the country profile's America/Toronto default (#389).
         country: 'CA',
@@ -218,8 +244,10 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(first.data.user.email, 'owner@example.com');
     assert.equal(first.data.user.role, 'owner');
     assert.equal(count('users'), 1, 'setup creates the first owner');
-    const ownerRow = getDatabase().prepare('SELECT terms_accepted_at FROM users WHERE email = ?').get('owner@example.com') as { terms_accepted_at: string | null };
+    const ownerRow = getDatabase().prepare('SELECT terms_accepted_at, pin_hash FROM users WHERE email = ?').get('owner@example.com') as { terms_accepted_at: string | null; pin_hash: string | null };
     assert.ok(ownerRow.terms_accepted_at, 'terms acceptance is stamped with a timestamp on the owner record');
+    assert.ok(ownerRow.pin_hash, 'setup stores an owner Staff Approval PIN hash');
+    assert.equal(bcrypt.compareSync('5678', ownerRow.pin_hash), true, 'owner Staff Approval PIN verifies against users.pin_hash');
     assert.equal(setting('business_name'), 'First Cafe');
     assert.equal(setting('business_type'), 'restaurant');
     assert.equal(setting('setup_profile'), 'express');
@@ -320,6 +348,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
         business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
         terms_accepted: true,
+        owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
         cloud_sync_enabled: true, cloud_server_url: 'not-a-valid-url',
       }),
     });
@@ -333,6 +362,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
         business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
         terms_accepted: true,
+        owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
         cloud_sync_enabled: true, cloud_server_url: 'https://cloud.example.test/relay',
       }),
     });

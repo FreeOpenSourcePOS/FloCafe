@@ -77,6 +77,19 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     const idempotencyKey = refundIdempotencyKey(req);
     const requestHash = idempotencyKey ? refundRequestHash(String(billId), body) : undefined;
 
+    const approverId = body.approver_id !== undefined && body.approver_id !== null
+      ? String(body.approver_id).trim()
+      : '';
+    const managerId = body.manager_id !== undefined && body.manager_id !== null
+      ? String(body.manager_id).trim()
+      : '';
+    if (!approverId && !managerId) {
+      return res.status(400).json({ error: 'approver_id is required', code: 'APPROVER_REQUIRED' });
+    }
+    if (approverId && managerId && approverId !== managerId) {
+      return res.status(400).json({ error: 'approver_id and manager_id must identify the same approver', code: 'APPROVER_CONFLICT' });
+    }
+
     const userId = String((req as any).user.userId);
     const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
 
@@ -88,7 +101,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
       reason: body.reason ?? null,
       shiftId: body.shift_id ?? null,
       overridePin: body.override_pin,
-      managerId: body.manager_id || body.user_id,
+      approverId: approverId || managerId,
       createdByUserId: userId,
       clientIp,
       checkPinRateLimit,

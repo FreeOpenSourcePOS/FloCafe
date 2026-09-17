@@ -125,6 +125,8 @@ async function runArgentinaOnboarding(baseUrl, db) {
       timezone: 'America/Argentina/Buenos_Aires',
       language: 'es',
       terms_accepted: true,
+      owner_approval_pin: '5678',
+      owner_approval_pin_confirmation: '5678',
     },
   });
 

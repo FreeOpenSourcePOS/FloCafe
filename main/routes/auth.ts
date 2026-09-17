@@ -896,6 +896,8 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       billing_type,
       terms_accepted,
       master_pin,
+      owner_approval_pin,
+      owner_approval_pin_confirmation,
       cloud_server_url,
       email_product_updates,
       email_marketing,
@@ -944,6 +946,14 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'A 4-digit Master PIN is required to complete setup' });
     }
 
+    const ownerApprovalPin = String(owner_approval_pin || '');
+    if (!/^\d{4,6}$/.test(ownerApprovalPin)) {
+      return res.status(400).json({ error: 'A 4-6 digit owner Approval PIN is required to complete setup' });
+    }
+    if (ownerApprovalPin !== String(owner_approval_pin_confirmation || '')) {
+      return res.status(400).json({ error: 'Owner Approval PINs do not match' });
+    }
+
     if (!VALID_BUSINESS_TYPES.has(normalizedBusinessType)) {
       return res.status(400).json({ error: 'FloCafe setup only supports restaurant businesses' });
     }
@@ -969,6 +979,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 
     let userId = '';
     const hashedPassword = bcrypt.hashSync(password, 10);
+    const hashedApprovalPin = bcrypt.hashSync(ownerApprovalPin, 10);
 
     // Save Master PIN before committing user transaction so keyring errors leave setup retryable.
     if (masterPinRequired) {
@@ -988,9 +999,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 
       userId = randomUUID();
       db.prepare(`
-        INSERT INTO users (id, name, email, password, role, is_active, terms_accepted_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(userId, displayName, email, hashedPassword, INITIAL_ADMIN_ROLE, 1, now(), now(), now());
+        INSERT INTO users (id, name, email, password, role, pin_hash, is_active, terms_accepted_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(userId, displayName, email, hashedPassword, INITIAL_ADMIN_ROLE, hashedApprovalPin, 1, now(), now(), now());
 
       upsertSettings(db, {
         business_name: resolvedStoreName,

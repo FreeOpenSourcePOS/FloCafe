@@ -90,7 +90,7 @@ async function main() {
     // ── Same bill, owner PIN: accepted, and recorded in the order audit log ──
     const ownerApproval = await api(baseUrl, '/api/refunds', {
       method: 'POST',
-      body: { bill_id: lateBill.bill.id, amount: lateBill.bill.paid_amount, method: 'cash', override_pin: '9999', manager_id: ownerId },
+      body: { bill_id: lateBill.bill.id, amount: lateBill.bill.paid_amount, method: 'cash', override_pin: '9999', approver_id: ownerId },
       headers: managerAuth,
     });
     assertEqual(ownerApproval.status, 201, 'an owner PIN can approve a refund after the 1-hour window, same business day');

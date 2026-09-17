@@ -136,6 +136,7 @@ test('setupAndSeed sends the required first-run data through the public API', as
     email: 'matrix@example.invalid',
     password: 'matrix-password',
     masterPin: '4681',
+    ownerApprovalPin: '5791',
   });
 
   assert.deepEqual(seeds, {
@@ -152,6 +153,8 @@ test('setupAndSeed sends the required first-run data through the public API', as
     store_name: 'Matrix Test Store',
     terms_accepted: true,
     master_pin: '4681',
+    owner_approval_pin: '5791',
+    owner_approval_pin_confirmation: '5791',
     country: 'IN',
     currency: 'INR',
     timezone: 'Asia/Kolkata',

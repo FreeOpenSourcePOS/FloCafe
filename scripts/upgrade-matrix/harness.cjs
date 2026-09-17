@@ -182,7 +182,7 @@ async function waitForApi(timeoutMs = 120000) {
  * one order, one settings change, one printer config record. Idempotent per
  * fresh install (setup only works while zero users exist).
  */
-async function setupAndSeed({ email, password, masterPin }) {
+async function setupAndSeed({ email, password, masterPin, ownerApprovalPin = '5791' }) {
   const setupStatus = await apiRequest('GET', '/api/auth/setup/status');
   if (!setupStatus?.needsSetup) {
     throw new HarnessError('App reports setup already complete on a fresh install; refusing to run against unknown state');
@@ -196,6 +196,8 @@ async function setupAndSeed({ email, password, masterPin }) {
       store_name: 'Matrix Test Store',
       terms_accepted: true,
       master_pin: masterPin,
+      owner_approval_pin: ownerApprovalPin,
+      owner_approval_pin_confirmation: ownerApprovalPin,
       country: 'IN',
       currency: 'INR',
       timezone: 'Asia/Kolkata',

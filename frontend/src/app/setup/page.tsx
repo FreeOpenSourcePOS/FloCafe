@@ -74,6 +74,8 @@ export default function SetupPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showMasterPin, setShowMasterPin] = useState(false);
   const [showConfirmMasterPin, setShowConfirmMasterPin] = useState(false);
+  const [showApprovalPin, setShowApprovalPin] = useState(false);
+  const [showConfirmApprovalPin, setShowConfirmApprovalPin] = useState(false);
   const [profile, setProfile] = useState<SetupProfile>('express');
   const [serviceModel, setServiceModel] = useState<ServiceModel>('qsr');
   // Wizard language follows shared store to update translations immediately.
@@ -106,6 +108,9 @@ export default function SetupPage() {
   const [masterPin, setMasterPin] = useState('');
   const [masterPinConfirm, setMasterPinConfirm] = useState('');
   const masterPinValid = /^\d{4}$/.test(masterPin) && masterPin === masterPinConfirm;
+  const [ownerApprovalPin, setOwnerApprovalPin] = useState('');
+  const [ownerApprovalPinConfirm, setOwnerApprovalPinConfirm] = useState('');
+  const ownerApprovalPinValid = /^\d{4,6}$/.test(ownerApprovalPin) && ownerApprovalPin === ownerApprovalPinConfirm;
 
   const cloudEnabled = true;
   const [cloudServerUrl, setCloudServerUrl] = useState(DEFAULT_CLOUD_SERVER_URL);
@@ -201,6 +206,11 @@ export default function SetupPage() {
       setStep(2);
       return;
     }
+    if (!ownerApprovalPinValid) {
+      toast.error(t('ownerApprovalPinRequired'));
+      setStep(2);
+      return;
+    }
 
     if (cloudEnabled && cloudServerUrl.trim()) {
       try {
@@ -240,6 +250,8 @@ export default function SetupPage() {
         service_model: serviceModel,
         terms_accepted: termsAccepted,
         master_pin: masterPinAvailable ? masterPin : undefined,
+        owner_approval_pin: ownerApprovalPin,
+        owner_approval_pin_confirmation: ownerApprovalPinConfirm,
         cloud_sync_enabled: true,
         cloud_server_url: cloudServerUrl.trim() || DEFAULT_CLOUD_SERVER_URL,
         email_product_updates: productUpdates,
@@ -455,9 +467,73 @@ export default function SetupPage() {
                   </div>
                 )}
 
+                <div className="space-y-3 rounded-lg border border-border px-3 py-3">
+                  <div>
+                    <h3 className="text-sm font-medium">{t('ownerApprovalPinLabel')}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">{t('ownerApprovalPinDescription')}</p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="owner-approval-pin">{t('ownerApprovalPinLabel')}</Label>
+                      <div className="relative">
+                        <Input
+                          id="owner-approval-pin"
+                          type={showApprovalPin ? "text" : "password"}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          minLength={4}
+                          maxLength={6}
+                          value={ownerApprovalPin}
+                          onChange={(e) => setOwnerApprovalPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="••••"
+                          className="text-center text-lg tracking-[0.5em] pe-10"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowApprovalPin(!showApprovalPin)}
+                          className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                          tabIndex={-1}
+                        >
+                          {showApprovalPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="owner-approval-pin-confirm">{t('confirmPinLabel')}</Label>
+                      <div className="relative">
+                        <Input
+                          id="owner-approval-pin-confirm"
+                          type={showConfirmApprovalPin ? "text" : "password"}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          minLength={4}
+                          maxLength={6}
+                          value={ownerApprovalPinConfirm}
+                          onChange={(e) => setOwnerApprovalPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="••••"
+                          className="text-center text-lg tracking-[0.5em] pe-10"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmApprovalPin(!showConfirmApprovalPin)}
+                          className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                          tabIndex={-1}
+                        >
+                          {showConfirmApprovalPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {ownerApprovalPinConfirm && ownerApprovalPin !== ownerApprovalPinConfirm && (
+                    <p className="text-xs font-medium text-red-600">{t('ownerApprovalPinMismatch')}</p>
+                  )}
+                </div>
+
                 <Button
                   onClick={() => setStep(3)}
-                  disabled={masterPinAvailable === true && !masterPinValid}
+                  disabled={(masterPinAvailable === true && !masterPinValid) || !ownerApprovalPinValid}
                   className="w-full"
                   size="lg"
                 >

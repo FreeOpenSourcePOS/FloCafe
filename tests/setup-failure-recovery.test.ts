@@ -49,6 +49,8 @@ async function run() {
     service_model: 'qsr',
     terms_accepted: true,
     master_pin: '1234',
+    owner_approval_pin: '5678',
+    owner_approval_pin_confirmation: '5678',
   };
 
   const originalReload = cloudSync.reload.bind(cloudSync);

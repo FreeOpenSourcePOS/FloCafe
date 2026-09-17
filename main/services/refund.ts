@@ -32,7 +32,7 @@ export interface RefundRequest {
   reason?: string | null;
   shiftId?: string | null;
   overridePin: string;
-  managerId?: string | null;
+  approverId?: string | null;
   createdByUserId: string;
   clientIp: string;
   checkPinRateLimit: (key: string) => boolean;
@@ -65,18 +65,12 @@ export function getRefundableBalance(db: Database, billId: string | number, curr
 }
 
 /** `ownerOnly` narrows the approving PIN to owner accounts — used once a refund falls outside the short in-progress window. */
-function resolveRefundApprover(db: Database, overridePin: string, managerId: string | null | undefined, ownerOnly: boolean): { id: string } | null {
+function resolveRefundApprover(db: Database, overridePin: string, approverId: string | null | undefined, ownerOnly: boolean): { id: string } | null {
   const allowedRoles = ownerOnly ? ROLE_ACCESS.owner : ROLE_ACCESS.ownerManager;
   const placeholders = allowedRoles.map(() => '?').join(', ');
-  if (managerId) {
-    const candidate = db.prepare(`SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN (${placeholders}) AND is_active = 1`).get(managerId, ...allowedRoles) as any;
-    if (candidate && verifyPin(candidate.pin_hash, overridePin)) return candidate;
-  }
-  const approvers = db.prepare(`SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN (${placeholders}) AND is_active = 1`).all(...allowedRoles) as any[];
-  for (const user of approvers) {
-    if (verifyPin(user.pin_hash, overridePin)) return user;
-  }
-  return null;
+  if (!approverId) return null;
+  const candidate = db.prepare(`SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN (${placeholders}) AND is_active = 1`).get(approverId, ...allowedRoles) as any;
+  return candidate && verifyPin(candidate.pin_hash, overridePin) ? candidate : null;
 }
 
 /** Validates, authorizes, and persists a refund inside an active transaction. */
@@ -175,7 +169,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   if (!req.checkPinRateLimit(rateLimitKey)) {
     throw httpError('Too many PIN attempts. Try again in 15 minutes.', 429);
   }
-  const approver = resolveRefundApprover(db, req.overridePin, req.managerId, lateRefund);
+  const approver = resolveRefundApprover(db, req.overridePin, req.approverId, lateRefund);
   if (!approver) throw httpError(lateRefund ? 'Invalid owner PIN' : 'Invalid manager PIN', 403);
 
   const timestamp = now();

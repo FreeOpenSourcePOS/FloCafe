@@ -643,7 +643,7 @@ test('Save All preserves printing edits during business hydration', async ({ pag
 
   await page.goto(`${BASE}/settings?tab=receipts-printers`);
   await expect(page.getByRole('heading', { name: 'Printers', exact: true })).toBeVisible();
-  await page.locator('p').filter({ hasText: 'Trim decimals' }).locator('xpath=../..').getByRole('button').click();
+  await page.getByRole('switch', { name: 'Trim decimals', exact: true }).click();
   await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
   await expect.poll(() => savedPrintingRequests.length, { timeout: 10000 }).toBe(1);

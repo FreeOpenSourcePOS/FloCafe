@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Building2, Hash, CreditCard, Lock } from 'lucide-react';
 import { useTranslations, useLocale } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -133,6 +133,10 @@ export function GeneralSettingsTab({
   const language = usePosSettingsStore((state) => state.language);
   const setLanguage = usePosSettingsStore((state) => state.setLanguage);
   const languageRequestId = useRef(0);
+
+  useEffect(() => () => {
+    languageRequestId.current += 1;
+  }, []);
 
   const sortedCountries = useMemo(() => sortCountriesByLocalizedName(COUNTRIES, locale), [locale]);
 

@@ -2229,6 +2229,16 @@ function dataOnlyRestore(
   }
 
   const currentDb = getDatabase();
+  if (backupTables.includes('inventory_movements') && !backupTables.includes('products')) {
+    return {
+      success: false,
+      mode: 'data_only',
+      backupSchemaVersion: backupVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: 'Data-only restore source cannot contain inventory movement history without products',
+    };
+  }
   if (backupTables.includes('products')) {
     const inventoryReplacementError = validateInventoryLedgerReplacement(
       currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],

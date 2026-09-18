@@ -2,6 +2,9 @@ import { getDatabase, now } from '../db';
 
 export type InventoryMovementType = 'sale' | 'cancel_restore' | 'adjustment';
 
+const INVENTORY_QUANTITY_PRECISION = 8;
+const INVENTORY_QUANTITY_TOLERANCE = 1e-8;
+
 export class InventoryServiceError extends Error {
   readonly statusCode: number;
 
@@ -80,10 +83,22 @@ export function adjustProductStock(
   const updatedAt = options.createdAt || now();
   const update = db.prepare(`
     UPDATE products
-    SET stock_quantity = COALESCE(stock_quantity, 0) + ?, updated_at = ?
-    WHERE id = ? AND COALESCE(stock_quantity, 0) + ? >= 0
+    SET stock_quantity = CASE
+      WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+      ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ?)
+    END, updated_at = ?
+    WHERE id = ? AND COALESCE(stock_quantity, 0) + ? >= -?
   `);
-  const result = update.run(options.quantityDelta, updatedAt, options.productId, options.quantityDelta);
+  const result = update.run(
+    options.quantityDelta,
+    INVENTORY_QUANTITY_TOLERANCE,
+    options.quantityDelta,
+    INVENTORY_QUANTITY_PRECISION,
+    updatedAt,
+    options.productId,
+    options.quantityDelta,
+    INVENTORY_QUANTITY_TOLERANCE,
+  );
   if (result.changes !== 1) {
     const current = db.prepare('SELECT id FROM products WHERE id = ?').get(options.productId);
     throw new InventoryServiceError(current ? 400 : 404, current ? 'Insufficient stock' : 'Product not found');

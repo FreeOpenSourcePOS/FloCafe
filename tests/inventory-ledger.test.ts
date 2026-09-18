@@ -171,6 +171,37 @@ async function main() {
     assertEqual(movements[0].actor_user_id, owner.userId, 'opening balance stores the authenticated actor');
     assertEqual(movements[0].stock_after, 10, 'opening balance stores resulting stock');
 
+    const fractionalCreated = await api(baseUrl, '/api/products', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: {
+        category_id: 'cat-ledger',
+        name: 'Fractional Ledger Item',
+        price: 10,
+        sale_unit: 'kg',
+        allow_fractional_quantity: true,
+        weight_precision: 3,
+        track_inventory: true,
+        stock_quantity: 0.3,
+        reason: 'Fractional opening count',
+      },
+    });
+    assertEqual(fractionalCreated.status, 201, 'fractional product opening balance succeeds');
+    const fractionalProductId = fractionalCreated.data.product.id;
+    for (let saleIndex = 0; saleIndex < 3; saleIndex += 1) {
+      const fractionalSale = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { ...owner.authHeader, 'Idempotency-Key': `fractional-ledger-sale-${saleIndex}` },
+        body: { type: 'takeaway', items: [{ product_id: fractionalProductId, quantity: 0.1 }] },
+      });
+      assertEqual(fractionalSale.status, 201, `fractional sale ${saleIndex + 1} succeeds`);
+    }
+    assertEqual(
+      db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(fractionalProductId).stock_quantity,
+      0,
+      'fractional sales reach zero without floating-point stock residue',
+    );
+
     const manualIncrease = await api(baseUrl, `/api/products/${productId}/stock`, {
       method: 'POST',
       headers: owner.authHeader,

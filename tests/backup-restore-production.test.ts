@@ -226,6 +226,35 @@ async function run() {
       1,
       'rejected stock-reset restore leaves movement history unchanged',
     );
+
+    getDatabase().prepare('UPDATE products SET stock_quantity = 0 WHERE id = ?').run('restore-product');
+    getDatabase().prepare(`
+      INSERT INTO inventory_movements (
+        product_id, quantity_delta, movement_type, reference_type, reference_id,
+        reason, actor_user_id, stock_after, created_at
+      ) VALUES (?, ?, 'sale', 'order_item', ?, ?, ?, ?, datetime('now'))
+    `).run('restore-product', -5, 'partial-restore', 'Partial restore fixture', 'restore-station-chef', 0);
+    const partialRestoreBackup = path.join(testDir, 'partial-ledger-restore.db');
+    copyAndStamp(sameSchemaBackup, partialRestoreBackup, currentVersion - 1);
+    const partialRestoreDb = new Database(partialRestoreBackup);
+    partialRestoreDb.pragma('foreign_keys = OFF');
+    partialRestoreDb.exec('DROP TABLE products');
+    partialRestoreDb.close();
+    const partialRestore = restoreBackup(partialRestoreBackup, false);
+    assert.equal(partialRestore.success, false, 'data-only restore rejects movement history without products');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      0,
+      'rejected partial restore leaves the zero stock cache unchanged',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('restore-product') as { count: number }).count,
+      2,
+      'rejected partial restore preserves zero-ending movement history',
+    );
+    getDatabase().prepare('DELETE FROM inventory_movements WHERE product_id = ? AND reference_id = ?').run('restore-product', 'partial-restore');
+    getDatabase().prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
+
     const staleLedgerBackup = path.join(testDir, 'stale-ledger.db');
     copyAndStamp(sameSchemaBackup, staleLedgerBackup, currentVersion - 1);
     const staleLedgerDb = new Database(staleLedgerBackup);

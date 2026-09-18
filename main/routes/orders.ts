@@ -515,10 +515,6 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
           throw new Error(`Product ${item.product_id} not found`);
         }
 
-        if (product.track_inventory && product.stock_quantity < item.quantity) {
-          throw new Error(`Insufficient stock for ${product.name}`);
-        }
-
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.
@@ -732,10 +728,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         if (!product) {
           throw new Error(`Product ${item.product_id} not found`);
         }
-        if (product.track_inventory && product.stock_quantity < item.quantity) {
-          throw new Error(`Insufficient stock for ${product.name}`);
-        }
-
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.

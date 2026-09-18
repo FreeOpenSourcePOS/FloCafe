@@ -581,9 +581,6 @@ export function registerRoutes(app: Express): void {
         // Re-deduct the inventory quantity originally consumed by the item
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
         if (product && currentItem.inventory_deducted_quantity > 0) {
-          if (product.stock_quantity < currentItem.inventory_deducted_quantity) {
-            throw Object.assign(new Error(`Insufficient stock to restore item (Available: ${product.stock_quantity}, Required: ${currentItem.inventory_deducted_quantity})`), { statusCode: 400 });
-          }
           adjustProductStock(db, {
             productId: product.id,
             quantityDelta: -currentItem.inventory_deducted_quantity,

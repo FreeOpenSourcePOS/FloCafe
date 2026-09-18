@@ -111,6 +111,14 @@ async function main() {
     const splitMissingResponse = await api(baseUrl, `/api/orders/${splitMissingOrderId}`, { headers: authHeader });
     assertEqual(splitMissingResponse.data.order.whatsapp_receipt_status, 'partial', 'a paid split bill without a row prevents a sent summary');
 
+    const mixedSplitOrderId = await createOrder('mixed-split-bill');
+    const mixedPaidBillId = insertBill(db, mixedSplitOrderId, 'ISSUE-718-MIXED-PAID', 'paid', 'issue-718-mixed-split');
+    const mixedUnpaidBillId = insertBill(db, mixedSplitOrderId, 'ISSUE-718-MIXED-UNPAID', 'unpaid', 'issue-718-mixed-split');
+    insertWhatsAppRow(db, mixedPaidBillId, 'sent');
+    const mixedSplitResponse = await api(baseUrl, `/api/orders/${mixedSplitOrderId}`, { headers: authHeader });
+    assertEqual(mixedSplitResponse.data.order.bill.id, mixedUnpaidBillId, 'mixed split order keeps the unpaid bill selected');
+    assertEqual(mixedSplitResponse.data.order.whatsapp_receipt_status, 'sent', 'mixed split order retains the paid bill summary');
+
     const missingOrderId = await createOrder('missing-row');
     const missingBillId = insertBill(db, missingOrderId, 'ISSUE-718-MISSING', 'paid');
     insertWhatsAppRow(db, missingBillId, 'sent', 'manual_reply');

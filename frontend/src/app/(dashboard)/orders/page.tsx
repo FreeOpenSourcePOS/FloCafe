@@ -1103,7 +1103,8 @@ export default function OrdersPage() {
             const payStatus = paymentStatusOf(order);
             const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
             const bill = order.bill;
-            const receiptStatusBadge = paid && bill
+            const hasPaidBill = order.bills?.some((candidate) => candidate.payment_status === 'paid') ?? paid;
+            const receiptStatusBadge = hasPaidBill
               ? whatsappReceiptStatusBadge[order.whatsapp_receipt_status || 'notSent'] || whatsappReceiptStatusBadge.notSent
               : null;
             const discount = bill ? Number(bill.discount_amount) : Number(order.discount_amount);

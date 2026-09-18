@@ -260,7 +260,7 @@ router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Req
   }
 });
 
-/** Batches order relations (items, table, customer, bill) into IN queries. */
+/** Batches order relations and WhatsApp receipt status into IN queries. */
 type WhatsAppReceiptStatus = 'sent' | 'partial' | 'pending' | 'failed' | null;
 
 function summarizeWhatsAppReceiptStatuses(statuses: (string | null)[]): WhatsAppReceiptStatus {

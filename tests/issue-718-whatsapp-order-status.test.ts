@@ -73,18 +73,18 @@ async function main() {
     };
 
     const statusCases = [
-      ['sent', 'sent'],
-      ['delivered', 'sent'],
-      ['read', 'sent'],
-      ['queued', 'pending'],
-      ['typing', 'pending'],
+      ['sent', 'sent', 'sent'],
+      ['delivered', 'delivered', 'sent'],
+      ['read', 'read', 'sent'],
+      ['queued', 'queued', 'pending'],
+      ['typing', 'typing', 'pending'],
     ] as const;
-    for (const [suffix, status] of statusCases) {
+    for (const [suffix, status, expectedStatus] of statusCases) {
       const orderId = await createOrder(suffix);
       const billId = insertBill(db, orderId, `ISSUE-718-${suffix}`, 'paid');
       insertWhatsAppRow(db, billId, status);
       const response = await api(baseUrl, `/api/orders/${orderId}`, { headers: authHeader });
-      assertEqual(response.data.order.whatsapp_receipt_status, status, `${suffix}: receipt status is projected`);
+      assertEqual(response.data.order.whatsapp_receipt_status, expectedStatus, `${suffix}: receipt status is projected`);
     }
 
     const failedRetryOrderId = await createOrder('failed-retry');

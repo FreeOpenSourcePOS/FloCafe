@@ -103,7 +103,9 @@ export function useCashDrawerMovements() {
   };
 
   const amountCents = () => {
-    const amount = Number(amountInput);
+    const amountText = amountInput.trim();
+    if (amountText === '') return null;
+    const amount = Number(amountText);
     if (!Number.isFinite(amount) || amount < 0) return null;
     return Math.round(unitAdapter.toStored(amount) * minorFactor);
   };

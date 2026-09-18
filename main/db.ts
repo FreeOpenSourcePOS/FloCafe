@@ -1375,7 +1375,7 @@ export function getInventoryMovementRows(dbInstance: Database.Database): Record<
   const columns = new Set(getColumns(dbInstance, 'inventory_movements'));
   const selectableColumns = [
     'id', 'product_id', 'quantity_delta', 'movement_type', 'reference_type', 'reference_id',
-    'reason', 'actor_user_id', 'stock_after', 'created_at',
+    'reason', 'actor_user_id', 'stock_after', 'created_at', 'imported_by_user_id', 'import_batch_id',
     'source_actor_user_id', 'source_reference_type', 'source_reference_id',
     'source_reason', 'source_created_at',
   ].filter((column) => columns.has(column));
@@ -1397,6 +1397,9 @@ function inventoryMovementHistoryKey(row: Record<string, unknown>): string {
     nullableString(row.reference_type),
     nullableString(row.reference_id),
     nullableString(row.reason),
+    nullableString(row.actor_user_id),
+    nullableString(row.imported_by_user_id),
+    nullableString(row.import_batch_id),
     numericValue(row.stock_after),
     nullableString(row.source_actor_user_id ?? row.actor_user_id),
     nullableString(row.source_reference_type ?? row.reference_type),

@@ -4,6 +4,7 @@ import { requireRole, isBlockedSsrfTarget } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getHttpRequestSignal } from '../shutdown';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
+import { adjustProductStock } from '../services/inventory';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as https from 'https';
@@ -257,6 +258,12 @@ const router = Router();
 
 function hasOwn(body: Record<string, unknown>, field: string): boolean {
   return Object.prototype.hasOwnProperty.call(body, field);
+}
+
+function stockReason(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const reason = value.trim();
+  return reason.length > 0 && reason.length <= 500 ? reason : fallback;
 }
 
 function toBoolean(value: unknown): boolean {
@@ -707,7 +714,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
       category_id, name, sku, barcode, description, price, cost_price,
       sale_unit, allow_fractional_quantity, weight_precision,
       tax_category_id, tax_behavior, track_inventory, stock_quantity,
-      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
+      low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids, reason
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
     const productName = normalizeRequiredName(name);
@@ -758,6 +765,8 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     }
 
     const id = generateShortId('products');
+    const initialStock = stock_quantity ?? 0;
+    const actorUserId = String((req as any).user?.userId || '');
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
       return res.status(400).json({ error: addonGroupValidation.error });
@@ -777,7 +786,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
         id, normalizeNullableString(category_id), productName, normalizeNullableString(sku), normalizedBarcode, normalizeNullableString(description), price, cost_price || 0,
         normalizeSaleUnit(sale_unit), allow_fractional_quantity ? 1 : 0, weight_precision ?? 3,
         'none', 0, normalizeNullableString(tax_category_id), tax_behavior || 'country_default',
-        track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
+        track_inventory ? 1 : 0, 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, normalizeNullableString(image_url),
         sort_order || 0, cb_percent !== undefined ? cb_percent : null, JSON.stringify(tags || []),
         now(), now()
@@ -789,6 +798,18 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
           insertAgp.run(agId, id);
         }
       }
+
+      if (initialStock !== 0) {
+        adjustProductStock(db, {
+          productId: id,
+          quantityDelta: initialStock,
+          movementType: 'adjustment',
+          referenceType: 'opening_balance',
+          referenceId: id,
+          reason: stockReason(reason, 'opening'),
+          actorUserId,
+        });
+      }
     });
     insertProduct();
 
@@ -796,7 +817,8 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     res.status(201).json({ product: serializeProduct(product) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+    res.status(statusCode).json({ error: statusCode >= 500 ? "Internal server error" : error.message });
   }
 });
 
@@ -806,6 +828,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as {
       sale_unit?: string;
       allow_fractional_quantity?: number;
+      stock_quantity?: number;
     } | undefined;
     if (!product) {
       return res.status(404).json({ error: 'Product not found' });
@@ -880,6 +903,9 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const hasSaleUnit = hasOwn(req.body, 'sale_unit');
     const hasAllowFractionalQuantity = hasOwn(req.body, 'allow_fractional_quantity');
     const hasWeightPrecision = hasOwn(req.body, 'weight_precision');
+    const hasStockQuantity = hasOwn(req.body, 'stock_quantity') && stock_quantity !== null && stock_quantity !== undefined;
+    const stockAdjustmentReason = stockReason(req.body.reason, 'Manual product stock update');
+    const actorUserId = String((req as any).user?.userId || '');
 
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
@@ -906,7 +932,6 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
           tax_category_id = CASE WHEN @has_tax_category_id = 1 THEN @tax_category_id ELSE tax_category_id END,
           tax_behavior = COALESCE(@tax_behavior, tax_behavior),
           track_inventory = COALESCE(@track_inventory, track_inventory),
-          stock_quantity = COALESCE(@stock_quantity, stock_quantity),
           low_stock_threshold = COALESCE(@low_stock_threshold, low_stock_threshold),
           is_active = COALESCE(@is_active, is_active),
           image_url = CASE WHEN @has_image_url = 1 THEN @image_url ELSE image_url END,
@@ -939,7 +964,6 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
         tax_behavior: tax_behavior ?? null,
         has_tax_category_id: hasTaxCategoryId ? 1 : 0,
         track_inventory: track_inventory ? 1 : track_inventory === 0 || track_inventory === false ? 0 : null,
-        stock_quantity: stock_quantity ?? null,
         low_stock_threshold: low_stock_threshold ?? null,
         is_active: is_active !== undefined ? (is_active ? 1 : 0) : null,
         has_image_url: hasImageUrl ? 1 : 0,
@@ -960,6 +984,23 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
           for (const agId of normalizedAddonGroupIds) {
             insertAgp.run(agId, req.params.id);
           }
+        }
+      }
+
+      if (hasStockQuantity) {
+        const currentProduct = db.prepare('SELECT stock_quantity FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as { stock_quantity?: number } | undefined;
+        if (!currentProduct) throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+        const stockDelta = Number(stock_quantity) - Number(currentProduct.stock_quantity ?? 0);
+        if (stockDelta !== 0) {
+          adjustProductStock(db, {
+            productId: String(req.params.id),
+            quantityDelta: stockDelta,
+            movementType: 'adjustment',
+            referenceType: 'manual_adjustment',
+            referenceId: String(req.params.id),
+            reason: stockAdjustmentReason,
+            actorUserId,
+          });
         }
       }
     });
@@ -1003,6 +1044,7 @@ router.post('/:id/stock', requireRole(...ROLE_ACCESS.ownerManager), (req: Reques
     if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity < 0) {
       return res.status(400).json({ error: 'quantity must be a non-negative number' });
     }
+    const adjustmentReason = stockReason(req.body.reason, 'Manual stock adjustment');
 
     const db = getDatabase();
     const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
@@ -1010,25 +1052,32 @@ router.post('/:id/stock', requireRole(...ROLE_ACCESS.ownerManager), (req: Reques
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    let result;
-    if (action === 'set') {
-      result = db.prepare('UPDATE products SET stock_quantity = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
-        .run(quantity, now(), req.params.id);
-    } else if (action === 'increase') {
-      result = db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
-        .run(quantity, now(), req.params.id);
-    } else {
-      result = db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL AND stock_quantity >= ?')
-        .run(quantity, now(), req.params.id, quantity);
-    }
-    if (result.changes === 0) {
-      return res.status(400).json({ error: action === 'decrease' ? 'Insufficient stock' : 'Product not found' });
-    }
-    const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+    const actorUserId = String((req as any).user?.userId || '');
+    const updated = db.transaction(() => {
+      const current = db.prepare('SELECT stock_quantity FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as { stock_quantity?: number } | undefined;
+      if (!current) throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+      const currentStock = Number(current.stock_quantity ?? 0);
+      const quantityDelta = action === 'set'
+        ? quantity - currentStock
+        : action === 'increase' ? quantity : -quantity;
+      if (quantityDelta !== 0) {
+        adjustProductStock(db, {
+          productId: String(req.params.id),
+          quantityDelta,
+          movementType: 'adjustment',
+          referenceType: 'manual_adjustment',
+          referenceId: `${req.params.id}:${now()}`,
+          reason: adjustmentReason,
+          actorUserId,
+        });
+      }
+      return db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+    })();
     res.json({ product: serializeProduct(updated) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+    res.status(statusCode).json({ error: statusCode >= 500 ? "Internal server error" : error.message });
   }
 });
 

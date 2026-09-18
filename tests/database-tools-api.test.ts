@@ -306,6 +306,37 @@ async function runTests() {
     2,
     'rejected zero-stock replacement preserves all movement history',
   );
+  const partialHistoryDeletionImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'zero-stock-history-product', name: 'Zero Stock History Product', price: 10, stock_quantity: 1 }],
+        inventory_movements: [{
+          id: 1,
+          product_id: 'zero-stock-history-product',
+          quantity_delta: 1,
+          movement_type: 'adjustment',
+          reference_type: 'opening_balance',
+          reference_id: 'zero-stock-history-product',
+          reason: 'Opening count',
+          actor_user_id: 'owner-1',
+          stock_after: 1,
+          created_at: now(),
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(partialHistoryDeletionImport.status === 400, `overwrite imports reject partial ledger history replacement (got ${partialHistoryDeletionImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('zero-stock-history-product') as { stock_quantity: number }).stock_quantity,
+    0,
+    'rejected partial replacement preserves the stock cache',
+  );
   const emptyHistoryDeletionImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,

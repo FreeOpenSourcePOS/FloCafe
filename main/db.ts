@@ -1367,8 +1367,43 @@ export function validateInventoryLedgerDatabase(dbInstance: Database.Database): 
       : null;
   }
 
-  const movements = dbInstance.prepare('SELECT id, product_id, movement_type, quantity_delta, stock_after, created_at FROM inventory_movements').all() as Record<string, unknown>[];
+  const movements = getInventoryMovementRows(dbInstance);
   return validateInventoryLedgerRows(products, movements);
+}
+
+export function getInventoryMovementRows(dbInstance: Database.Database): Record<string, unknown>[] {
+  const columns = new Set(getColumns(dbInstance, 'inventory_movements'));
+  const selectableColumns = [
+    'id', 'product_id', 'quantity_delta', 'movement_type', 'reference_type', 'reference_id',
+    'reason', 'actor_user_id', 'stock_after', 'created_at',
+    'source_actor_user_id', 'source_reference_type', 'source_reference_id',
+    'source_reason', 'source_created_at',
+  ].filter((column) => columns.has(column));
+  if (selectableColumns.length === 0) return [];
+  return dbInstance.prepare(`SELECT ${selectableColumns.join(', ')} FROM inventory_movements`).all() as Record<string, unknown>[];
+}
+
+function inventoryMovementHistoryKey(row: Record<string, unknown>): string {
+  const nullableString = (value: unknown): string | null => value == null ? null : String(value);
+  const numericValue = (value: unknown): number | string | null => {
+    if (value == null) return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : String(value);
+  };
+  return JSON.stringify([
+    nullableString(row.product_id),
+    numericValue(row.quantity_delta),
+    nullableString(row.movement_type),
+    nullableString(row.reference_type),
+    nullableString(row.reference_id),
+    nullableString(row.reason),
+    numericValue(row.stock_after),
+    nullableString(row.source_actor_user_id ?? row.actor_user_id),
+    nullableString(row.source_reference_type ?? row.reference_type),
+    nullableString(row.source_reference_id ?? row.reference_id),
+    nullableString(row.source_reason ?? row.reason),
+    nullableString(row.source_created_at ?? row.created_at),
+  ]);
 }
 
 export function validateInventoryLedgerReplacement(
@@ -1382,21 +1417,21 @@ export function validateInventoryLedgerReplacement(
     const productId = row?.id == null ? '' : String(row.id);
     if (productId) replacementByProduct.set(productId, row);
   }
-  const movementProductIds = new Set(
+  const replacementMovementProductIds = new Set(
     replacementMovementRows
       .map((row) => row?.product_id == null ? '' : String(row.product_id))
       .filter(Boolean),
   );
-  const currentMovementProductIds = new Set(
-    currentMovementRows
-      .map((row) => row?.product_id == null ? '' : String(row.product_id))
-      .filter(Boolean),
-  );
-
-  for (const productId of currentMovementProductIds) {
-    if (!movementProductIds.has(productId)) {
-      return 'Inventory movement history cannot be erased by a replacement';
-    }
+  const replacementHistoryCounts = new Map<string, number>();
+  for (const row of replacementMovementRows) {
+    const key = inventoryMovementHistoryKey(row);
+    replacementHistoryCounts.set(key, (replacementHistoryCounts.get(key) ?? 0) + 1);
+  }
+  for (const row of currentMovementRows) {
+    const key = inventoryMovementHistoryKey(row);
+    const count = replacementHistoryCounts.get(key) ?? 0;
+    if (count === 0) return 'Inventory movement history cannot be erased by a replacement';
+    replacementHistoryCounts.set(key, count - 1);
   }
 
   for (const row of currentProductRows) {
@@ -1408,7 +1443,7 @@ export function validateInventoryLedgerReplacement(
     const replacementStock = Number(replacement.stock_quantity ?? 0);
     if (!Number.isFinite(currentStock) || !Number.isFinite(replacementStock)) continue;
     const tolerance = Number.EPSILON * Math.max(1, Math.abs(currentStock), Math.abs(replacementStock)) * 10;
-    if (Math.abs(currentStock - replacementStock) > tolerance && !movementProductIds.has(productId)) {
+    if (Math.abs(currentStock - replacementStock) > tolerance && !replacementMovementProductIds.has(productId)) {
       return 'Product stock replacement is missing matching inventory movement history';
     }
   }
@@ -1469,9 +1504,9 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
 
     const inventoryReplacementError = validateInventoryLedgerReplacement(
       currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
-      currentDb.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[],
+      getInventoryMovementRows(currentDb),
       backupDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
-      backupDb.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[],
+      getInventoryMovementRows(backupDb),
     );
     if (inventoryReplacementError) return inventoryReplacementError;
 
@@ -2187,7 +2222,7 @@ function dataOnlyRestore(
       backupProductRows = backupDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[];
     }
     if (backupTables.includes('inventory_movements')) {
-      backupMovementRows = backupDb.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[];
+      backupMovementRows = getInventoryMovementRows(backupDb);
     }
   } finally {
     backupDb?.close();
@@ -2197,7 +2232,7 @@ function dataOnlyRestore(
   if (backupTables.includes('products')) {
     const inventoryReplacementError = validateInventoryLedgerReplacement(
       currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
-      currentDb.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[],
+      getInventoryMovementRows(currentDb),
       backupProductRows,
       backupMovementRows,
     );

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, now, throwIfDatabaseMaintenanceAborted, validateInventoryLedgerDatabase, validateInventoryLedgerReplacement, validateInventoryLedgerRows, withTxn, withDatabaseMaintenanceLock } from '../db';
+import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, getInventoryMovementRows, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, now, throwIfDatabaseMaintenanceAborted, validateInventoryLedgerDatabase, validateInventoryLedgerReplacement, validateInventoryLedgerRows, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { clearJWTSecretCache } from './auth';
@@ -177,7 +177,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
     if ((overwrite || hasVersionMismatch) && Array.isArray(importData.products)) {
       const inventoryReplacementError = validateInventoryLedgerReplacement(
         db.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
-        db.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[],
+        getInventoryMovementRows(db),
         importData.products,
         Array.isArray(importData.inventory_movements) ? importData.inventory_movements : [],
       );

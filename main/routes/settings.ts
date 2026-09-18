@@ -8,7 +8,11 @@ import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
-import { getCountryByCode, getCurrencySymbol, isValidTimeZone, type CountryLocaleOptions } from '../countries';
+import {
+  getCountryByCode, getCurrencySymbol, isValidTimeZone,
+  isLocalePreferenceKey, isLocalePreferenceSupported, resolveStoredLocalePreference,
+  type LocalePreferenceKey,
+} from '../countries';
 import { countryConfirmationPatch } from '../services/country-provenance';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
@@ -111,36 +115,6 @@ function boolFlag(value: unknown): string | undefined {
     return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase()) ? 'true' : 'false';
   }
   return value ? 'true' : 'false';
-}
-
-// Neutral fallback preferences for locales without specific options.
-const NEUTRAL_LOCALE_PREFERENCES = {
-  currency_display: 'rial',
-  number_digits: 'locale',
-  calendar: 'locale',
-} as const;
-
-type LocalePreferenceKey = keyof typeof NEUTRAL_LOCALE_PREFERENCES;
-
-const LOCALE_OPTION_FIELDS: Record<LocalePreferenceKey, keyof CountryLocaleOptions> = {
-  currency_display: 'currencyDisplay',
-  number_digits: 'digits',
-  calendar: 'calendar',
-};
-
-function isLocalePreferenceKey(key: string): key is LocalePreferenceKey {
-  return key === 'currency_display' || key === 'number_digits' || key === 'calendar';
-}
-
-function isLocalePreferenceSupported(key: LocalePreferenceKey, value: string, countryCode: string): boolean {
-  if (value === NEUTRAL_LOCALE_PREFERENCES[key]) return true;
-  const options = getCountryByCode(countryCode)?.localeOptions?.[LOCALE_OPTION_FIELDS[key]];
-  return Array.isArray(options) && (options as readonly string[]).includes(value);
-}
-
-function resolveStoredLocalePreference(key: LocalePreferenceKey, stored: string | undefined, countryCode: string): string {
-  if (stored && isLocalePreferenceSupported(key, stored, countryCode)) return stored;
-  return NEUTRAL_LOCALE_PREFERENCES[key];
 }
 
 // Flags stored as strict '1'/'0' to match cloud database conventions.

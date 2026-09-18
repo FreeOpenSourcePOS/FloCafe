@@ -214,6 +214,18 @@ async function run() {
         reason, actor_user_id, stock_after, created_at
       ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, datetime('now'))
     `).run('restore-product', 5, 'restore-product', 'Current opening balance', 'restore-station-chef', 5);
+    const zeroResetRestore = restoreBackup(olderBackup, false);
+    assert.equal(zeroResetRestore.success, false, 'data-only restore rejects an unaudited stock reset');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      5,
+      'rejected stock-reset restore leaves the live stock cache unchanged',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('restore-product') as { count: number }).count,
+      1,
+      'rejected stock-reset restore leaves movement history unchanged',
+    );
     const staleLedgerBackup = path.join(testDir, 'stale-ledger.db');
     copyAndStamp(sameSchemaBackup, staleLedgerBackup, currentVersion - 1);
     const staleLedgerDb = new Database(staleLedgerBackup);

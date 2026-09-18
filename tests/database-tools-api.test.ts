@@ -238,6 +238,40 @@ async function runTests() {
     'redacted jwt_secret is preserved during import',
   );
 
+  db.prepare('INSERT INTO products (id, name, price, stock_quantity) VALUES (?, ?, ?, ?)')
+    .run('existing-stock-product', 'Existing Stock Product', 10, 5);
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, ?)
+  `).run('existing-stock-product', 5, 'existing-stock-product', 'Opening count', 'owner-1', 5, now());
+  const zeroResetImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'existing-stock-product', name: 'Existing Stock Product', price: 10, stock_quantity: 0 }],
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(zeroResetImport.status === 400, `overwrite imports reject unaudited stock resets (got ${zeroResetImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('existing-stock-product') as { stock_quantity: number }).stock_quantity,
+    5,
+    'rejected stock reset preserves the existing cache',
+  );
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('existing-stock-product') as { count: number }).count,
+    1,
+    'rejected stock reset preserves movement history',
+  );
+
   const incompleteInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,

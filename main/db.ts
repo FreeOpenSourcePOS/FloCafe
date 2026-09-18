@@ -1371,6 +1371,39 @@ export function validateInventoryLedgerDatabase(dbInstance: Database.Database): 
   return validateInventoryLedgerRows(products, movements);
 }
 
+export function validateInventoryLedgerReplacement(
+  currentProductRows: readonly Record<string, unknown>[],
+  replacementProductRows: readonly Record<string, unknown>[],
+  replacementMovementRows: readonly Record<string, unknown>[],
+): string | null {
+  const replacementByProduct = new Map<string, Record<string, unknown>>();
+  for (const row of replacementProductRows) {
+    const productId = row?.id == null ? '' : String(row.id);
+    if (productId) replacementByProduct.set(productId, row);
+  }
+  const movementProductIds = new Set(
+    replacementMovementRows
+      .map((row) => row?.product_id == null ? '' : String(row.product_id))
+      .filter(Boolean),
+  );
+
+  for (const row of currentProductRows) {
+    const productId = row?.id == null ? '' : String(row.id);
+    const replacement = replacementByProduct.get(productId);
+    if (!productId || !replacement) continue;
+
+    const currentStock = Number(row?.stock_quantity ?? 0);
+    const replacementStock = Number(replacement.stock_quantity ?? 0);
+    if (!Number.isFinite(currentStock) || !Number.isFinite(replacementStock)) continue;
+    const tolerance = Number.EPSILON * Math.max(1, Math.abs(currentStock), Math.abs(replacementStock)) * 10;
+    if (Math.abs(currentStock - replacementStock) > tolerance && !movementProductIds.has(productId)) {
+      return 'Product stock replacement is missing matching inventory movement history';
+    }
+  }
+
+  return null;
+}
+
 export interface RestoreResult {
   success: boolean;
   mode: 'direct' | 'data_only' | 'full';
@@ -1421,6 +1454,13 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
 
     const inventoryValidationError = validateInventoryLedgerDatabase(backupDb);
     if (inventoryValidationError) return inventoryValidationError;
+
+    const inventoryReplacementError = validateInventoryLedgerReplacement(
+      currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
+      backupDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
+      backupDb.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[],
+    );
+    if (inventoryReplacementError) return inventoryReplacementError;
 
     const currentSchema = getSchemaDefinitions(currentDb);
     const backupSchema = getSchemaDefinitions(backupDb);
@@ -2110,6 +2150,8 @@ function dataOnlyRestore(
   }
   let backupDb: Database.Database | undefined;
   let backupTables: string[] = [];
+  let backupProductRows: Record<string, unknown>[] = [];
+  let backupMovementRows: Record<string, unknown>[] = [];
   const backupColumns = new Map<string, string[]>();
   try {
     backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
@@ -2128,11 +2170,34 @@ function dataOnlyRestore(
         error: inventoryValidationError,
       };
     }
+    if (backupTables.includes('products')) {
+      backupProductRows = backupDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[];
+    }
+    if (backupTables.includes('inventory_movements')) {
+      backupMovementRows = backupDb.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[];
+    }
   } finally {
     backupDb?.close();
   }
 
   const currentDb = getDatabase();
+  if (backupTables.includes('products')) {
+    const inventoryReplacementError = validateInventoryLedgerReplacement(
+      currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
+      backupProductRows,
+      backupMovementRows,
+    );
+    if (inventoryReplacementError) {
+      return {
+        success: false,
+        mode: 'data_only',
+        backupSchemaVersion: backupVersion,
+        currentSchemaVersion: currentVersion,
+        tablesRestored: 0,
+        error: inventoryReplacementError,
+      };
+    }
+  }
   const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
   const currentTables = getTables(currentDb);
   const commonTables = backupTables.filter((tableName) => currentTables.includes(tableName));

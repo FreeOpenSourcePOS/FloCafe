@@ -478,7 +478,7 @@ export function computeDayAggregates(db: ReturnType<typeof getDatabase>, busines
 
 router.get('/movements', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
-    const businessDate = validateBusinessDate(req.query.business_date ?? req.query.date);
+    const businessDate = validateBusinessDate(req.query.business_date);
     res.json({ businessDate, movements: listCashDrawerMovements(getDatabase(), businessDate) });
   } catch (error: any) {
     const status = error.statusCode || 500;

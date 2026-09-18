@@ -1121,7 +1121,7 @@ List the append-only cash-drawer movement history for a tenant business date. Th
 
 **Headers:** `Authorization: Bearer <owner-manager-or-cashier-token>`
 
-**Query params:** `?business_date=YYYY-MM-DD` — tenant business date. The legacy alias `date` is also accepted.
+**Query params:** `?business_date=YYYY-MM-DD` — tenant business date.
 
 **Response (200):**
 ```json

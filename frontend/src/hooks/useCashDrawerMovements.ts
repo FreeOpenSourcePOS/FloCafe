@@ -9,6 +9,7 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getCurrencyMinorUnitFactor } from '@/lib/countries';
+import { businessDateInTimezone } from '@/lib/business-date';
 
 export type CashDrawerMovementType = 'opening_float' | 'pay_in' | 'pay_out' | 'safe_drop';
 
@@ -27,27 +28,6 @@ export interface CashDrawerMovement {
   void_reason: string | null;
 }
 
-function localDateInTimezone(timeZone: string, startTime = '00:00'): string {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(new Date());
-  const localPart = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
-  const localDate = `${localPart('year')}-${localPart('month')}-${localPart('day')}`;
-  const startMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(startTime.trim());
-  const localMinutes = Number(localPart('hour')) * 60 + Number(localPart('minute'));
-  const startMinutes = startMatch ? Number(startMatch[1]) * 60 + Number(startMatch[2]) : 0;
-  if (startMatch && localMinutes < startMinutes) {
-    return new Date(Date.UTC(Number(localPart('year')), Number(localPart('month')) - 1, Number(localPart('day')) - 1)).toISOString().slice(0, 10);
-  }
-  return localDate;
-}
-
 export function useCashDrawerMovements() {
   const { currentTenant } = useAuthStore();
   const t = useTranslations('dashboard');
@@ -55,7 +35,7 @@ export function useCashDrawerMovements() {
   const fmt = useFormatCurrency();
   const unitAdapter = useCurrencyUnitAdapter();
   const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || 'INR');
-  const todayLocal = localDateInTimezone(
+  const todayLocal = businessDateInTimezone(
     currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
     currentTenant?.business_day_start_time || '00:00',
   );

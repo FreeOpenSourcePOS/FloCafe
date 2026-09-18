@@ -327,6 +327,74 @@ async function runTests() {
     'rejected merged-state import leaves movement history unchanged',
   );
 
+  const partialBaselineImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'partial-baseline-product', name: 'Partial Baseline Product', price: 10, stock_quantity: 7 }],
+        inventory_movements: [{
+          id: 1,
+          product_id: 'partial-baseline-product',
+          quantity_delta: 2,
+          movement_type: 'adjustment',
+          reference_type: 'manual_adjustment',
+          reference_id: 'partial-baseline-product',
+          reason: 'Partial import',
+          actor_user_id: 'owner-1',
+          stock_after: 7,
+          created_at: now(),
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(partialBaselineImport.status === 400, `imports without an opening baseline are rejected (got ${partialBaselineImport.status})`);
+
+  const saleSignImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'sale-sign-product', name: 'Sale Sign Product', price: 10, stock_quantity: 6 }],
+        inventory_movements: [
+          {
+            id: 1,
+            product_id: 'sale-sign-product',
+            quantity_delta: 5,
+            movement_type: 'adjustment',
+            reference_type: 'opening_balance',
+            reference_id: 'sale-sign-product',
+            reason: 'Opening count',
+            actor_user_id: 'owner-1',
+            stock_after: 5,
+            created_at: now(),
+          },
+          {
+            id: 2,
+            product_id: 'sale-sign-product',
+            quantity_delta: 1,
+            movement_type: 'sale',
+            reference_type: 'order_item',
+            reference_id: 'sale-sign-order-item',
+            reason: null,
+            actor_user_id: 'owner-1',
+            stock_after: 6,
+            created_at: now(),
+          },
+        ],
+        users: [],
+      },
+    },
+  });
+  assert(saleSignImport.status === 400, `sale movements with positive deltas are rejected (got ${saleSignImport.status})`);
+
   const brokenInventoryChainImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,

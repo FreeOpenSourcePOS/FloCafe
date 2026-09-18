@@ -233,6 +233,21 @@ async function run() {
       'rejected merged-state restore leaves the live movement history unchanged',
     );
 
+    const legacyPreLedgerBackup = path.join(testDir, 'legacy-pre-ledger.db');
+    copyAndStamp(sameSchemaBackup, legacyPreLedgerBackup, currentVersion - 1);
+    const legacyPreLedgerDb = new Database(legacyPreLedgerBackup);
+    legacyPreLedgerDb.pragma('foreign_keys = OFF');
+    legacyPreLedgerDb.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
+    legacyPreLedgerDb.exec('DROP TABLE inventory_movements');
+    legacyPreLedgerDb.close();
+    const legacyPreLedgerRestore = restoreBackup(legacyPreLedgerBackup, false);
+    assert.equal(legacyPreLedgerRestore.success, true, 'pre-ledger backups restore against the migrated ledger state');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      5,
+      'pre-ledger restore preserves the migrated stock cache',
+    );
+
     clearLinkedData();
     const restored = restoreBackup(olderBackup, false);
     assert.equal(restored.success, true, 'foreign-key-linked data-only restore succeeds');

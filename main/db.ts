@@ -1288,26 +1288,35 @@ export function validateInventoryLedgerRows(
   productRows: readonly Record<string, unknown>[],
   movementRows: readonly Record<string, unknown>[],
 ): string | null {
-  const movementsByProduct = new Map<string, { createdAt: string; id: number; quantityDelta: number; stockAfter: number }[]>();
+  const movementsByProduct = new Map<string, { createdAt: string; id: number; movementType: string; quantityDelta: number; stockAfter: number }[]>();
 
   for (const [index, row] of movementRows.entries()) {
     const productId = row?.product_id == null ? '' : String(row.product_id);
+    const movementType = String(row?.movement_type ?? '');
     const quantityDelta = Number(row?.quantity_delta);
     const stockAfter = Number(row?.stock_after);
     if (!productId || !Number.isFinite(quantityDelta) || quantityDelta === 0 || !Number.isFinite(stockAfter) || stockAfter < 0) {
       return 'Inventory movement history contains an invalid stock state';
     }
+    if (movementType === 'sale' && quantityDelta >= 0) {
+      return 'Sale movements must reduce product stock';
+    }
     const createdAt = String(row?.created_at ?? '');
     const rawId = Number(row?.id);
     const id = Number.isFinite(rawId) ? rawId : index;
     const movements = movementsByProduct.get(productId) ?? [];
-    movements.push({ createdAt, id, quantityDelta, stockAfter });
+    movements.push({ createdAt, id, movementType, quantityDelta, stockAfter });
     movementsByProduct.set(productId, movements);
   }
 
   const latestMovementByProduct = new Map<string, { createdAt: string; id: number; stockAfter: number }>();
   for (const [productId, movements] of movementsByProduct) {
     movements.sort((left, right) => left.createdAt < right.createdAt ? -1 : left.createdAt > right.createdAt ? 1 : left.id - right.id);
+    const firstMovement = movements[0];
+    const firstTolerance = Number.EPSILON * Math.max(1, Math.abs(firstMovement.quantityDelta), Math.abs(firstMovement.stockAfter)) * 10;
+    if (Math.abs(firstMovement.quantityDelta - firstMovement.stockAfter) > firstTolerance) {
+      return 'Inventory movement history is missing an opening balance';
+    }
     for (let index = 1; index < movements.length; index += 1) {
       const previous = movements[index - 1];
       const current = movements[index];
@@ -1343,7 +1352,7 @@ export function validateInventoryLedgerRows(
   return null;
 }
 
-export function validateInventoryLedgerDatabase(dbInstance: Database.Database): string | null {
+export function validateInventoryLedgerDatabase(dbInstance: Database.Database, allowMissingMovementTable = false): string | null {
   const tables = new Set(getTables(dbInstance));
   if (!tables.has('products')) return null;
   if (!getColumns(dbInstance, 'products').includes('stock_quantity')) {
@@ -1352,12 +1361,12 @@ export function validateInventoryLedgerDatabase(dbInstance: Database.Database): 
 
   const products = dbInstance.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[];
   if (!tables.has('inventory_movements')) {
-    return products.some((product) => Number(product.stock_quantity ?? 0) !== 0)
+    return !allowMissingMovementTable && products.some((product) => Number(product.stock_quantity ?? 0) !== 0)
       ? 'Backup is missing inventory movement history for product stock'
       : null;
   }
 
-  const movements = dbInstance.prepare('SELECT id, product_id, quantity_delta, stock_after, created_at FROM inventory_movements').all() as Record<string, unknown>[];
+  const movements = dbInstance.prepare('SELECT id, product_id, movement_type, quantity_delta, stock_after, created_at FROM inventory_movements').all() as Record<string, unknown>[];
   return validateInventoryLedgerRows(products, movements);
 }
 
@@ -2107,7 +2116,7 @@ function dataOnlyRestore(
     for (const tableName of backupTables) {
       if (isSafeIdentifier(tableName)) backupColumns.set(tableName, getColumns(backupDb, tableName));
     }
-    const inventoryValidationError = validateInventoryLedgerDatabase(backupDb);
+    const inventoryValidationError = validateInventoryLedgerDatabase(backupDb, backupVersion < 85);
     if (inventoryValidationError) {
       return {
         success: false,

@@ -169,11 +169,19 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
 
     if (Array.isArray(importData.products) && importData.products.length > 0) {
       if (!Array.isArray(importData.inventory_movements)) {
-        return res.status(400).json({
-          error: 'Product imports must include inventory movement history so stock changes remain auditable',
-        });
+        const legacyZeroStockImport = !importedTables.includes('inventory_movements')
+          && importData.products.every((row) => {
+            if (!row || typeof row !== 'object') return false;
+            const stockQuantity = row.stock_quantity == null ? 0 : Number(row.stock_quantity);
+            return Number.isFinite(stockQuantity) && stockQuantity === 0;
+          });
+        if (!legacyZeroStockImport) {
+          return res.status(400).json({
+            error: 'Product imports must include inventory movement history so stock changes remain auditable',
+          });
+        }
       }
-      if (validateInventoryLedgerRows(importData.products, importData.inventory_movements)) {
+      if (Array.isArray(importData.inventory_movements) && validateInventoryLedgerRows(importData.products, importData.inventory_movements)) {
         return res.status(400).json({
           error: 'Product stock must match the latest inventory movement history',
         });

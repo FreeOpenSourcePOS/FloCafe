@@ -380,6 +380,26 @@ async function runTests() {
   db.prepare('DELETE FROM inventory_movements WHERE product_id IN (?, ?)').run('existing-stock-product', 'zero-stock-history-product');
   db.prepare('DELETE FROM products WHERE id IN (?, ?)').run('existing-stock-product', 'zero-stock-history-product');
 
+  const legacyZeroStockImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion() - 1),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'legacy-zero-stock-product', name: 'Legacy Zero Stock Product', price: 10, stock_quantity: 0 }],
+        users: [],
+      },
+    },
+  });
+  assert(legacyZeroStockImport.status === 200, `legacy zero-stock imports without movement history are accepted (got ${legacyZeroStockImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('legacy-zero-stock-product') as { stock_quantity: number }).stock_quantity,
+    0,
+    'legacy zero-stock import preserves the zero cache',
+  );
+
   const remappedProvenanceImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,

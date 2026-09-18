@@ -62,6 +62,17 @@ function assert(condition: boolean, message: string) {
   }
 }
 
+function assertEqual(actual: any, expected: any, message: string) {
+  total++;
+  if (actual === expected) {
+    passed++;
+    console.log(`  ✓ ${message}`);
+  } else {
+    failed++;
+    console.error(`  ✗ ${message} - expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  }
+}
+
 function isNativeAbiMismatch(error: any): boolean {
   return error?.code === 'ERR_DLOPEN_FAILED'
     && String(error?.message || '').includes('NODE_MODULE_VERSION');
@@ -149,6 +160,7 @@ async function runTests() {
 
   const ownerToken = tokenFor('owner-1', 'owner');
   const db = getDatabase();
+  db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('owner-1', 'Imported Owner', 'hash', 'owner', 1)`);
   db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('cashier-1', 'Cashier', 'hash', 'cashier', 1)`);
   const cashierToken = tokenFor('cashier-1', 'cashier');
 
@@ -449,6 +461,7 @@ async function runTests() {
         settings: [{ key: 'json_large_import_probe', value: 'x'.repeat(2 * 1024 * 1024), updated_at: now() }],
         categories: [],
         products: [],
+        inventory_movements: [],
         users: [],
       },
     },

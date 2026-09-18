@@ -51,10 +51,11 @@ router.get('/movements', requireRole(...ROLE_ACCESS.ownerManager), (req: Request
       movements: page.movements,
       ...(page.nextCursor !== null && { nextCursor: page.nextCursor }),
     });
-  } catch (error: any) {
-    const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+  } catch (error: unknown) {
+    const details = error as { statusCode?: unknown; message?: unknown };
+    const statusCode = Number.isInteger(details.statusCode) ? details.statusCode as number : 500;
     if (statusCode >= 500) console.error('[API] Internal error:', error);
-    res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : error.message });
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : details.message });
   }
 });
 

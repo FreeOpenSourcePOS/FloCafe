@@ -207,8 +207,8 @@ async function run() {
       'rejected inconsistent restore leaves the live stock cache unchanged',
     );
 
-    db.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
-    db.prepare(`
+    getDatabase().prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
+    getDatabase().prepare(`
       INSERT INTO inventory_movements (
         product_id, quantity_delta, movement_type, reference_type, reference_id,
         reason, actor_user_id, stock_after, created_at

@@ -36,6 +36,18 @@ function extractRefundErrorMessage(error: unknown): string | null {
   return typeof data?.error === 'string' && data.error.trim() ? data.error.trim() : null;
 }
 
+function getCurrentTime(): number {
+  return Date.now();
+}
+
+function getConfiguredApprovers(staff: Staff[]): Staff[] {
+  return staff.filter((member) => (
+    member.is_active !== 0
+    && Boolean(member.has_pin)
+    && hasRole(member.role, ROLE_ACCESS.ownerManager)
+  ));
+}
+
 interface Props {
   order: Order;
   bills: Bill[];
@@ -93,11 +105,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
       .then((res) => {
         if (cancelled) return;
         const staff: Staff[] = res.data?.staff || [];
-        const eligibleStaff = staff.filter((member) => (
-          member.is_active !== 0
-          && Boolean(member.has_pin)
-          && hasRole(member.role, ROLE_ACCESS.ownerManager)
-        ));
+        const eligibleStaff = getConfiguredApprovers(staff);
         const currentUserApprover = eligibleStaff.find((member) => String(member.id) === String(user?.id));
         const preferredId = currentUserApprover?.id || (eligibleStaff.length === 1 ? eligibleStaff[0].id : '');
         setApprovers(eligibleStaff);
@@ -208,11 +216,29 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     if (!canSubmit || !effectiveBill) return;
     setSubmitting(true);
     try {
+      const submissionNow = getCurrentTime();
+      const submissionIsLate = submissionNow - parseDbTimestamp(order.created_at).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
+      const staffResponse = await api.get('/staff', { params: { active: true } });
+      const configuredApprovers = getConfiguredApprovers(staffResponse.data?.staff || []);
+      const eligibleApproversAtSubmission = configuredApprovers.filter((member) => hasRole(
+        member.role,
+        submissionIsLate ? ROLE_ACCESS.owner : ROLE_ACCESS.ownerManager,
+      ));
+      const approverIdAtSubmission = eligibleApproversAtSubmission.some((member) => String(member.id) === approverId)
+        ? approverId
+        : eligibleApproversAtSubmission.length === 1 ? String(eligibleApproversAtSubmission[0].id) : '';
+      setNow(submissionNow);
+      setApprovers(configuredApprovers);
+      setApproverId(approverIdAtSubmission);
+      if (approverIdAtSubmission !== approverIdForRefund) {
+        setOverridePin('');
+        return;
+      }
       const body: Record<string, unknown> = {
         bill_id: effectiveBill.id,
         method,
         reason: reason.trim() || undefined,
-        approver_id: approverIdForRefund,
+        approver_id: approverIdAtSubmission,
         override_pin: overridePin,
       };
       if (scope === 'item' && selectedItem) {

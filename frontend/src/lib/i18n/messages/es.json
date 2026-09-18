@@ -283,7 +283,7 @@
     "zReport": "Reporte Z",
     "openingFloat": "Fondo inicial",
     "expectedCash": "Efectivo esperado",
-    "expectedCashSalesOnly": "Efectivo esperado (solo ventas)",
+    "expectedCashWithMovements": "Efectivo esperado (ventas y movimientos)",
     "closureNotes": "Notas",
     "countedCash": "Efectivo contado",
     "variance": "Diferencia",

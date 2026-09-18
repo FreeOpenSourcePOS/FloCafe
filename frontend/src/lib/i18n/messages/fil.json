@@ -283,7 +283,7 @@
     "zReport": "Ulat Z",
     "openingFloat": "Paunang pondo",
     "expectedCash": "Inaasahang cash",
-    "expectedCashSalesOnly": "Inaasahang cash (mga benta lang)",
+    "expectedCashWithMovements": "Inaasahang cash (mga benta at galaw)",
     "closureNotes": "Mga Tala",
     "countedCash": "Bilang na cash",
     "variance": "Pagkakaiba",

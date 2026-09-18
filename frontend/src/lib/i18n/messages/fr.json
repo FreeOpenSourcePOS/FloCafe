@@ -283,7 +283,7 @@
     "zReport": "Rapport Z",
     "openingFloat": "Fond de caisse initial",
     "expectedCash": "Espèces attendues",
-    "expectedCashSalesOnly": "Espèces attendues (ventes uniquement)",
+    "expectedCashWithMovements": "Espèces attendues (ventes et mouvements)",
     "closureNotes": "Remarques",
     "countedCash": "Espèces comptées",
     "variance": "Écart",

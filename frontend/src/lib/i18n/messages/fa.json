@@ -283,7 +283,7 @@
     "zReport": "گزارش Z",
     "openingFloat": "موجودی اولیه",
     "expectedCash": "وجه نقد مورد انتظار",
-    "expectedCashSalesOnly": "وجه نقد مورد انتظار (فقط فروش)",
+    "expectedCashWithMovements": "وجه نقد مورد انتظار (فروش و گردش‌ها)",
     "closureNotes": "یادداشت‌ها",
     "countedCash": "وجه نقد شمارش‌شده",
     "variance": "اختلاف",

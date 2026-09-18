@@ -283,7 +283,7 @@
     "zReport": "Z raporu",
     "openingFloat": "Açılış kasası",
     "expectedCash": "Beklenen nakit",
-    "expectedCashSalesOnly": "Beklenen nakit (yalnızca satışlar)",
+    "expectedCashWithMovements": "Beklenen nakit (satışlar ve hareketler)",
     "closureNotes": "Notlar",
     "countedCash": "Sayılan nakit",
     "variance": "Fark",

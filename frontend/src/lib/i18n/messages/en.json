@@ -283,7 +283,7 @@
     "zReport": "Z report",
     "openingFloat": "Opening float",
     "expectedCash": "Expected cash",
-    "expectedCashSalesOnly": "Expected cash (sales only)",
+    "expectedCashWithMovements": "Expected cash (sales and movements)",
     "closureNotes": "Notes",
     "countedCash": "Counted cash",
     "variance": "Difference",

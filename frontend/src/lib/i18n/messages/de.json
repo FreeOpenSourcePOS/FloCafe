@@ -283,7 +283,7 @@
     "zReport": "Z-Bericht",
     "openingFloat": "Anfangsbestand",
     "expectedCash": "Erwartetes Bargeld",
-    "expectedCashSalesOnly": "Erwartetes Bargeld (nur Verkäufe)",
+    "expectedCashWithMovements": "Erwartetes Bargeld (Verkäufe und Bewegungen)",
     "closureNotes": "Notizen",
     "countedCash": "Gezähltes Bargeld",
     "variance": "Differenz",

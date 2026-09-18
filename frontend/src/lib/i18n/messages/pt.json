@@ -283,7 +283,7 @@
     "zReport": "Relatório Z",
     "openingFloat": "Fundo inicial",
     "expectedCash": "Dinheiro esperado",
-    "expectedCashSalesOnly": "Dinheiro esperado (apenas vendas)",
+    "expectedCashWithMovements": "Dinheiro esperado (vendas e movimentos)",
     "closureNotes": "Observações",
     "countedCash": "Dinheiro contado",
     "variance": "Diferença",

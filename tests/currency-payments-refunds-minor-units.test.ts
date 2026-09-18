@@ -75,7 +75,7 @@ async function main() {
   console.log('\n2. Full Payment & Refund Flow Verification:');
   const db = initTestDb();
   const { authHeader: ownerAuth } = seedOwnerUser(db);
-  const { authHeader: managerAuth } = seedManagerUser(db);
+  const { userId: managerId, authHeader: managerAuth } = seedManagerUser(db);
 
   seedCategory(db, 'cat-main', 'Main Category');
   seedProduct(db, 'prod-jpy', 'cat-main', 'JPY Item', 1500);
@@ -145,6 +145,7 @@ async function main() {
         amount: 500.25,
         method: 'cash',
         override_pin: '1234',
+        approver_id: managerId,
       },
       headers: managerAuth,
     });
@@ -163,6 +164,7 @@ async function main() {
         amount: 1500,
         method: 'cash',
         override_pin: '1234',
+        approver_id: managerId,
       },
       headers: managerAuth,
     });
@@ -232,6 +234,7 @@ async function main() {
         amount: 1.255,
         method: 'cash',
         override_pin: '1234',
+        approver_id: managerId,
       },
       headers: managerAuth,
     });

@@ -169,6 +169,8 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   // Fill master pin to advance to Step 3 (Admin Account)
   await page.locator('#master-pin').fill('1234');
   await page.locator('#master-pin-confirm').fill('1234');
+  await page.locator('#owner-approval-pin').fill('5678');
+  await page.locator('#owner-approval-pin-confirm').fill('5678');
   await page.locator('button', { hasText: /ادامه|Continue/ }).first().click();
 
   // Step 3 (Owner Account)

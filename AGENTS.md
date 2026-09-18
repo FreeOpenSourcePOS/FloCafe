@@ -5,7 +5,7 @@ FloCafe is an open-source, offline-first Electron desktop POS.
 ## Orientation & layout
 
 - **Main process (`main/`):** Electron lifecycle and IPC (`main/index.ts`), Express API on `:3001` (`main/server.ts`), standalone KDS server on `:3002` (`main/kds.ts`), Server App on `:3003` (`main/server-app.ts`), SQLite database access via `better-sqlite3`, ESC/POS printing, and background services.
-- **Frontend (`frontend/src/`):** Statically exported Next.js 16 and React 19 application (`output: 'export'`), Zustand state, UI components, and translations.
+- **Frontend (`frontend/src/`):** Next.js 16 and React 19 application (statically exported via `output: 'export'` when `NEXT_BUILD_MODE=desktop`, or standard server runtime when unset), Zustand state, UI components, and translations.
 - **Tests (`tests/`):** Backend unit, integration, and release test suites.
 - **Documentation (`docs/`):** Design specs and audits (see [docs/README.md](docs/README.md)).
 - **Workflows (`.github/`):** Issue/PR templates, CODEOWNERS, and CI/CD workflows.
@@ -35,7 +35,7 @@ Before starting non-trivial work:
 
 ## Sharp edges & operational rules
 
-- **Next.js static export boundary:** `frontend/` is exported as static HTML/CSS/JS (`output: 'export'`). There is no runtime Next.js server-side execution, Next.js API routes, or server cookies. All dynamic backend logic belongs in Express (`:3001`) or Electron IPC.
+- **Desktop static export boundary:** When building for desktop (`NEXT_BUILD_MODE=desktop`), `frontend/` is exported as static HTML/CSS/JS (`output: 'export'`). In desktop mode, there is no runtime Next.js server-side execution, Next.js API routes, or server cookies; all dynamic backend logic belongs in Express (`:3001`) or Electron IPC. Standard Next.js server runtime (`next start`) applies only when `NEXT_BUILD_MODE` is unset (cloud mode).
 - **Port contention on dev/test:** Daemons hold ports `:3001` (API), `:3002` (KDS), and `:3003` (Server App). If commands fail with `EADDRINUSE`, run `npm run clean` (`node kill-ports.js 3001 3002 3003`) to clear them before proceeding.
 - **Playwright configuration context:** End-to-end tests live inside `frontend/`. Running `npx playwright test` directly from root fails because `playwright.config.ts` is in `frontend/`. Use `npm run test:e2e:browser` from root or run Playwright from within `frontend/`.
 - **Match compatibility effort to demonstrated migration risk:** Do not add multi-layer compatibility state solely to preserve minor legacy behavior without evidence that users depend on it. Prefer simple, reconfigurable defaults when the migration impact is small. If compatibility requires substantial state or branching, stop and confirm the tradeoff first.

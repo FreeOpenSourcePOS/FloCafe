@@ -1882,9 +1882,10 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
 /**
  * Build the ESC/POS bytes for a Z-report (cierre de caja) from a stored
  * `cash_closures` row. Day-close, no bill — sections in spec print order:
- * header → Z number + business date + period → opening float → sales by
- * payment method → refunds → tax breakdown → staff sales → expected /
- * counted / variance (variance emphasized) → operator + signature → footer.
+ * header → Z number + business date + period → opening float → cash
+ * movements → sales by payment method → refunds → tax breakdown → staff
+ * sales → expected / counted / variance (variance emphasized) → operator +
+ * signature → footer.
  * The byte builder never touches the drawer pulse; that is appended by
  * `printZReport` (the route layer) so the byte form is reusable for the
  * WebUSB `bytes: number[]` branch where the renderer dispatches.

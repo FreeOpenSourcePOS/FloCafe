@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
@@ -50,7 +50,9 @@ export function useCashDrawerMovements() {
   const [error, setError] = useState<string | null>(null);
   const movementRequestRef = useRef(0);
   const businessDateRef = useRef(businessDate);
-  businessDateRef.current = businessDate;
+  useEffect(() => {
+    businessDateRef.current = businessDate;
+  }, [businessDate]);
 
   const loadMovements = async (date?: string) => {
     const requestedDate = date ?? businessDateRef.current;

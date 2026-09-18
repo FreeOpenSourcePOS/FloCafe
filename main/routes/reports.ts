@@ -609,8 +609,10 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 // Reuses the snapshot pipeline from `cash-closures.ts` so the X read and
 // the stored Z snapshot never drift apart. Same role gate as the other
 // owner/manager reports. Refund attribution matches financial-summary
-// (paid_at) for display totals; the cash-only expected figure uses refunds
-// by `refunds.created_at` for drawer reality.
+// (paid_at) for display totals; the cash-only expected figure includes active
+// movements and uses refunds by `refunds.created_at` for drawer reality. The
+// opening float is reported separately and intentionally excluded from X's
+// expected figure.
 //
 // UNIT CONVENTIONS for the X envelope (do not rename fields):
 //   * grossCollected, refunded, netCollected, paymentMethods[].total,
@@ -620,11 +622,11 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 //     client must convert the counted input to cents before subtracting).
 //
 // X vs Z expected (deliberate gap, not a bug):
-//   X's expectedCashCents excludes the opening float — the float is only
-//   captured at close. Same-day X and Z expected values therefore differ
-//   by exactly opening_float_cents. Consumers must not compare them
-//   directly; X is the live drawer expectation, Z is the point-in-time
-//   snapshot that bakes in the float.
+//   X's expectedCashCents excludes the opening float, which is reported
+//   separately. Same-day X and Z expected values therefore differ by exactly
+//   opening_float_cents. Consumers must not compare them directly; X is the
+//   live drawer expectation, Z is the point-in-time snapshot that bakes in the
+//   float.
 router.get('/x-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const today = reportToday();

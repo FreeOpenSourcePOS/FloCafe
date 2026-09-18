@@ -31,8 +31,9 @@ interface XReport {
   payOutCents: number;
   safeDropCents: number;
   cashMovements: { id: number; movement_type: string; amount_cents: number; reason: string | null }[];
-  /** Drawer expected figure in INTEGER cents (no opening float — the float
-   *  is captured at close). Cash-only raw filter, refunds by created_at. */
+  /** Drawer expected figure in INTEGER cents (no opening float — the float is
+   *  reported separately). Includes active movements, cash-only raw filter,
+   *  and refunds by created_at. */
   expectedCashCents: number;
   /** F3: server-resolved prior close (most recent scope='day' row with
    *  business_date < this.businessDate). Both fields are null when no

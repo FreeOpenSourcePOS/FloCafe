@@ -6,10 +6,12 @@
  *  - Validates: YYYY-MM-DD format, not in the future, integer cents >= 0.
  *  - Recomputes the day's aggregates server-side (never trusts client totals)
  *    using the verbatim financial-summary template (main/routes/reports.ts)
- *    for display totals, plus two spec-mandated drawer-reality deviations:
- *      * `expected_cash_cents`: raw pre-join `method = 'cash'` filter; refunds
- *        by `refunds.created_at` (the day the cash left the drawer, not the
- *        day the original bill was paid).
+ *    for display totals, plus the drawer-reality rules:
+ *      * `expected_cash_cents`: opening float plus active Pay In, Pay Out, and
+ *        Safe Drop movements, cash sales from the raw pre-join
+ *        `method = 'cash'` filter, and cash refunds by `refunds.created_at`
+ *        (the day the cash left the drawer, not the day the original bill was
+ *        paid).
  *      * `tax_components_json`: aggregated via `aggregateTaxComponents`
  *        against the spec's DisplayTaxComponent[] shape, so Z rows carry the
  *        same tax components the live report endpoint returns.
@@ -318,8 +320,8 @@ export function paymentMethodBreakdown(
  * cash already left the drawer and remains there until counted, regardless
  * of the order's later status. `financial-summary` does not apply a
  * cancelled-order filter either — this snapshot matches its display
- * totals by construction. The two spec-mandated drawer-reality deviations
- * (`expected_cash_cents` cash-only raw filter and refunds-by-created_at)
+ * totals by construction. The drawer-reality inputs (active movement totals,
+ * the `expected_cash_cents` cash-only raw filter, and refunds-by-created_at)
  * are applied separately so the rest of the snapshot reconciles with
  * financial-summary.
  *

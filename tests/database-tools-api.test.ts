@@ -357,8 +357,63 @@ async function runTests() {
     2,
     'empty rejected replacement preserves all movement history',
   );
+  const malformedProductsImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: {},
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(malformedProductsImport.status === 400, `malformed products tables are rejected (got ${malformedProductsImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('zero-stock-history-product') as { count: number }).count,
+    2,
+    'malformed products import preserves movement history',
+  );
   db.prepare('DELETE FROM inventory_movements WHERE product_id IN (?, ?)').run('existing-stock-product', 'zero-stock-history-product');
   db.prepare('DELETE FROM products WHERE id IN (?, ?)').run('existing-stock-product', 'zero-stock-history-product');
+
+  const remappedProvenanceImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'provenance-product', name: 'Provenance Product', price: 10, stock_quantity: 5 }],
+        inventory_movements: [{
+          id: 1,
+          product_id: 'provenance-product',
+          quantity_delta: 5,
+          movement_type: 'adjustment',
+          reference_type: 'opening_balance',
+          reference_id: 'provenance-product',
+          reason: 'Opening count',
+          actor_user_id: 'source-actor',
+          imported_by_user_id: 'source-importer',
+          stock_after: 5,
+          created_at: now(),
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(remappedProvenanceImport.status === 200, `movement provenance is remapped during import (got ${remappedProvenanceImport.status})`);
+  const remappedMovement = db.prepare(`
+    SELECT actor_user_id, imported_by_user_id, source_actor_user_id
+    FROM inventory_movements WHERE product_id = ?
+  `).get('provenance-product') as { actor_user_id: string; imported_by_user_id: string; source_actor_user_id: string };
+  assertEqual(remappedMovement.actor_user_id, 'owner-1', 'imported movement actor is authenticated locally');
+  assertEqual(remappedMovement.imported_by_user_id, 'owner-1', 'imported_by_user_id is authenticated locally');
+  assertEqual(remappedMovement.source_actor_user_id, 'source-actor', 'source actor provenance is preserved');
 
   const incompleteInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',

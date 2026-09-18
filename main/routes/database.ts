@@ -160,6 +160,12 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
         error: `Missing required tables: ${missingTables.join(', ')}` 
       });
     }
+    const malformedTables = requiredTables.filter((tableName) => !Array.isArray(importData[tableName]));
+    if (malformedTables.length > 0) {
+      return res.status(400).json({
+        error: `Import tables must be arrays: ${malformedTables.join(', ')}`,
+      });
+    }
 
     if (Array.isArray(importData.products) && importData.products.length > 0) {
       if (!Array.isArray(importData.inventory_movements)) {
@@ -212,7 +218,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
       for (const row of rows) {
         if (!row || typeof row !== 'object') continue;
         for (const column of userReferenceColumns) {
-          if (tableName === 'inventory_movements' && column === 'actor_user_id') continue;
+          if (tableName === 'inventory_movements' && (column === 'actor_user_id' || column === 'imported_by_user_id')) continue;
           const value = row[column];
           if (value != null && String(value) !== '') {
             const userId = String(value);

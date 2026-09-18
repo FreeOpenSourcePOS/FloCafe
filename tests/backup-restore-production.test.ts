@@ -55,7 +55,7 @@ function seedLinkedData(): void {
 
 function clearLinkedData(): void {
   const db = getDatabase();
-  db.exec('DELETE FROM order_items; DELETE FROM bills; DELETE FROM orders; DELETE FROM products; DELETE FROM categories;');
+  db.exec('DELETE FROM order_items; DELETE FROM bills; DELETE FROM orders; DELETE FROM inventory_movements; DELETE FROM products; DELETE FROM categories;');
 }
 
 function copyAndStamp(sourcePath: string, destinationPath: string, schemaVersion: number): void {
@@ -205,6 +205,32 @@ async function run() {
       (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
       0,
       'rejected inconsistent restore leaves the live stock cache unchanged',
+    );
+
+    db.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
+    db.prepare(`
+      INSERT INTO inventory_movements (
+        product_id, quantity_delta, movement_type, reference_type, reference_id,
+        reason, actor_user_id, stock_after, created_at
+      ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, datetime('now'))
+    `).run('restore-product', 5, 'restore-product', 'Current opening balance', 'restore-station-chef', 5);
+    const staleLedgerBackup = path.join(testDir, 'stale-ledger.db');
+    copyAndStamp(sameSchemaBackup, staleLedgerBackup, currentVersion - 1);
+    const staleLedgerDb = new Database(staleLedgerBackup);
+    staleLedgerDb.pragma('foreign_keys = OFF');
+    staleLedgerDb.exec('DROP TABLE inventory_movements');
+    staleLedgerDb.close();
+    const staleLedgerRestore = restoreBackup(staleLedgerBackup, false);
+    assert.equal(staleLedgerRestore.success, false, 'data-only restore rejects a merged stock and ledger mismatch');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      5,
+      'rejected merged-state restore leaves the live stock cache unchanged',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_after FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1').get('restore-product') as { stock_after: number }).stock_after,
+      5,
+      'rejected merged-state restore leaves the live movement history unchanged',
     );
 
     clearLinkedData();

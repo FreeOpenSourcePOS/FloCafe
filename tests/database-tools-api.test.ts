@@ -265,6 +265,113 @@ async function runTests() {
     'rejected inconsistent product import leaves product data unchanged',
   );
 
+  const validInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'merged-state-product', name: 'Merged State Product', price: 10, stock_quantity: 5 }],
+        inventory_movements: [{
+          id: 1,
+          product_id: 'merged-state-product',
+          quantity_delta: 5,
+          movement_type: 'adjustment',
+          reference_type: 'opening_balance',
+          reference_id: 'merged-state-product',
+          reason: 'Opening count',
+          actor_user_id: 'owner-1',
+          stock_after: 5,
+          created_at: now(),
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(validInventoryImport.status === 200, `a consistent product import succeeds (got ${validInventoryImport.status})`);
+
+  const mergedStateImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [],
+        inventory_movements: [{
+          id: 2,
+          product_id: 'merged-state-product',
+          quantity_delta: 2,
+          movement_type: 'adjustment',
+          reference_type: 'manual_adjustment',
+          reference_id: 'merged-state-product-2',
+          reason: 'Correction',
+          actor_user_id: 'owner-1',
+          stock_after: 7,
+          created_at: now(),
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(mergedStateImport.status === 500, `imports that leave the merged stock cache stale are rejected (got ${mergedStateImport.status})`);
+  assertEqual(
+    db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('merged-state-product').stock_quantity,
+    5,
+    'rejected merged-state import leaves the stock cache unchanged',
+  );
+  assertEqual(
+    db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('merged-state-product').count,
+    1,
+    'rejected merged-state import leaves movement history unchanged',
+  );
+
+  const brokenInventoryChainImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'broken-chain-product', name: 'Broken Chain Product', price: 10, stock_quantity: 3 }],
+        inventory_movements: [
+          {
+            id: 1,
+            product_id: 'broken-chain-product',
+            quantity_delta: 3,
+            movement_type: 'adjustment',
+            reference_type: 'opening_balance',
+            reference_id: 'broken-chain-product',
+            reason: 'Opening count',
+            actor_user_id: 'owner-1',
+            stock_after: 3,
+            created_at: now(),
+          },
+          {
+            id: 2,
+            product_id: 'broken-chain-product',
+            quantity_delta: 2,
+            movement_type: 'adjustment',
+            reference_type: 'manual_adjustment',
+            reference_id: 'broken-chain-product-2',
+            reason: 'Correction',
+            actor_user_id: 'owner-1',
+            stock_after: 3,
+            created_at: now(),
+          },
+        ],
+        users: [],
+      },
+    },
+  });
+  assert(brokenInventoryChainImport.status === 400, `imports with broken movement chains are rejected (got ${brokenInventoryChainImport.status})`);
+  assert(
+    (db.prepare("SELECT COUNT(*) AS count FROM products WHERE id = 'broken-chain-product'").get() as { count: number }).count === 0,
+    'rejected broken-chain import leaves product data unchanged',
+  );
+
   const largeJsonImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,

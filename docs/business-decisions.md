@@ -60,4 +60,20 @@ Each decision states: the rule, why it exists, where it's enforced in code, how 
 
 ---
 
+## Regional settings come from signup, never from a fallback
+
+**Rule:** The country the owner selects during first-run setup — and the ISO 4217 currency that follows from that country's profile (changeable later to another valid code in Business Settings) — are the only source of a store's regional identity. Currency symbol, symbol position, fraction digits, number separators, and the default timezone are **derived** from those two values using international conventions (CLDR via `Intl`, ISO 4217, IANA time zones). There is no default country, no hard-coded currency symbol, and no per-store override of a derived value anywhere in the codebase. If regional settings are missing, code fails loudly (`RegionalNotConfiguredError`, HTTP 409) rather than rendering India.
+
+**Why:** Before this decision the codebase carried `'IN'` / `'INR'` / `'₹'` / `'Asia/Kolkata'` as silent fallbacks in more than a dozen places, the install seed wrote them before the owner had chosen anything, and surfaces disagreed on which symbol to print. A non-Indian store could see rupees on one receipt and its own currency on another. The owner's instruction: the user picks country and currency at signup, it stays consistent throughout the application, and the app follows the conventions people already use rather than inventing overrides.
+
+**What this rules out:** merchant-editable currency symbols and merchant-selectable prefix/suffix placement (both asked for in issue #693). If a locale's rendering is wrong, the fix is the country profile in `main/countries.ts`, which corrects every store in that country.
+
+**Enforced by:** `docs/regional-snapshot.md` (ACTIVE DESIGN) — `resolveRegionalSnapshot()` in `main/countries.ts` once implemented, the first-run wizard requiring a country, `POST /setup/initialize` rejecting a missing country, and `seedInstallDefaults()` in `main/db.ts` no longer writing regional keys.
+
+**How to verify:** `grep -rn "|| 'IN'\|?? 'IN'\||| 'INR'\|?? 'INR'\||| '₹'\|?? '₹'\||| 'Asia/Kolkata'\|?? 'Asia/Kolkata'\|getCountryByCode('IN')" main frontend/src shared --include='*.ts' --include='*.tsx'` should return nothing outside test files. A match is a reintroduced fallback and should be treated as a bug.
+
+**Decided:** 2026-09-18.
+
+---
+
 *(Add new decisions above this line, most recent first is not required — organize by topic. Keep each entry self-contained: a future reader should not need this conversation's context to understand the rule, why it exists, or how to check it.)*

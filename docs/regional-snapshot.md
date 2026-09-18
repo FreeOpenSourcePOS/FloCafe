@@ -81,14 +81,16 @@ If `settings.country` is missing or unknown the resolver throws `RegionalNotConf
 
 For the desktop app this state is already unreachable: `AuthGuard` (`frontend/src/components/layout/AuthGuard.tsx`) redirects to the signup wizard while `GET /auth/setup-status` reports `needsSetup`, and the wizard cannot complete without a country. The rule exists so that the *code* stops carrying India as an implicit answer, not because the state is expected in practice.
 
-### Removing the India defaults at their source (required, same change as surface 1)
+### Removing the India defaults at their source
 
 - `seedInstallDefaults()` in `main/db.ts` stops writing `country`, `currency`, `currency_symbol`, and `timezone`. The wizard writes them. Existing installs already have real values, so no migration and no data change.
 - The signup wizard starts with **no** country selected and requires one; its timezone default becomes the selected country's profile timezone instead of `'Asia/Kolkata'`.
 - `POST /setup/initialize` returns `400` when `country` is absent instead of defaulting to `'IN'`.
-- Every `?? 'IN'` / `|| 'INR'` / `?? '₹'` / `|| 'Asia/Kolkata'` fallback is deleted, not replaced. The inventory table above lists only the primary resolution points; the compliance grep at the end of this note finds **136 sites across 54 files** as of 2026-09-18 (phone normalization, customers, tax packs, WhatsApp share text, reports, and the print encoders account for most of the rest). That sweep is its own PR, sequenced after the resolver lands so every caller has a snapshot value to pass. Where a helper currently accepts an optional country (`formatCurrencyForTenant`, `formatNumberForTenant`, `formatDateForTenant`, the print `options.currencySymbol`, `normalizeOptionalPhone`), the parameter becomes required and TypeScript drives the caller fixes. Surfaces that have not adopted the resolver keep their own resolution logic — they just lose the silent default.
+- Every `?? 'IN'` / `|| 'INR'` / `?? '₹'` / `|| 'Asia/Kolkata'` fallback is deleted, not replaced. The inventory table above lists only the primary resolution points; the compliance grep at the end of this note finds **136 sites across 54 files** as of 2026-09-18 (phone normalization, customers, tax packs, WhatsApp share text, reports, and the print encoders account for most of the rest). Where a helper currently accepts an optional country (`formatCurrencyForTenant`, `formatNumberForTenant`, `formatDateForTenant`, the print `options.currencySymbol`, `normalizeOptionalPhone`), the parameter becomes required and TypeScript drives the caller fixes. Surfaces that have not adopted the resolver keep their own resolution logic — they just lose the silent default.
 
-Implementation order, one PR each: (1) resolver + contract tests + seed/wizard/initialize changes; (2) the fallback sweep, reviewed by the compliance grep reaching zero; (3) surface 1, the server app; (4) surface 2 and the fresh #693 work.
+**This removal is its own PR, not the same change as the resolver.** `seedInstallDefaults()` is also what every test that calls `initTestDb()` relies on for a working `settings.country` before its own test body runs — as of 2026-09-18, 107 of 120 test files that touch the database never go through `/setup/initialize` at all. Deleting the seed writes before those tests can supply a country themselves fails the shared harness, not just app code. The removal PR must land together with a central fix (e.g. `initTestDb()`/`seedOwnerUser()` in `tests/helpers/test-setup.ts` seeding a deterministic test country, or an equivalent single choke point) rather than editing each of those 107 files — this is a test-infrastructure decision, not a re-opening of "no default country in production."
+
+Implementation order, one PR each: (1) resolver + contract tests, purely additive, no existing behavior touched; (2) seed/wizard/initialize removal + the central test-harness fix; (3) the fallback sweep, reviewed by the compliance grep reaching zero; (4) surface 1, the server app; (5) surface 2 and the fresh #693 work.
 
 ### Transport (no new state)
 
@@ -122,7 +124,7 @@ A PR implementing this design is rejected if it does any of the following:
 
 ### What #693 asked for that is decided against
 
-- **Editable currency symbol** and **selectable prefix/suffix position.** Both are per-store overrides of a CLDR convention. Colombia renders `$ 11.000` because that is what `es-CO` renders everywhere else Colombians use software; the grouping already distinguishes it from `$11,000.00`. If a real discrepancy with a locale's convention is found, the fix is to correct the country profile in `main/countries.ts` for every store in that country, not to add a per-store knob.
+- **Editable currency symbol** and **selectable prefix/suffix position.** Both are per-store overrides of a CLDR convention. Colombia renders `$ 11.000` (CLDR's narrow symbol, then a non-breaking space, then the amount) because that is what `es-CO` renders everywhere else Colombians use software; the grouping already distinguishes it from `$11,000.00`. If a real discrepancy with a locale's convention is found, the fix is to correct the country profile in `main/countries.ts` for every store in that country, not to add a per-store knob.
 
 ## Expansion rule
 
@@ -132,12 +134,12 @@ Adopting a surface means: replace its local resolution with the snapshot and add
 
 ## Contract tests
 
-One new suite, `tests/regional-snapshot.test.ts`, wired into `npm run test:currency` (already required to be reachable from `npm test` by the coverage validator). For each archetype the test builds the settings map the wizard would write, calls the resolver, and asserts every field plus one formatted amount and one parsed input. Values below were checked against Node's `Intl` and `dayBoundsInTimezone()` on 2026-09-18:
+One new suite, `tests/regional-snapshot.test.ts`, wired into `npm run test:currency` (already required to be reachable from `npm test` by the coverage validator). For each archetype the test builds the settings map the wizard would write, calls the resolver, and asserts every field plus one formatted amount and one parsed input. Values below were checked against actual Node `Intl` output on 2026-09-18 — note the CO row uses a non-breaking space (` `), not an ordinary one, between symbol and amount:
 
 | Archetype | Settings | Asserts |
 | --- | --- | --- |
 | USD / 2 | `US`, `USD` | `$`, prefix, 2, `.` / `,`, `$1,234.50`, `"1,234.50"` → `1234.5` |
-| COP / 0 | `CO`, `COP` | `$`, prefix, 0, `,` / `.`, `$ 11.000`, `"11.000"` → `11000`, decimal keys blocked |
+| COP / 0 | `CO`, `COP` | `$`, prefix, 0, `,` / `.`, `` $ 11.000 ``, `"11.000"` → `11000`, decimal keys blocked |
 | EUR with comma input | `DE`, `EUR` | `€`, suffix, 2, `,` / `.`, `1.234,50 €`, `"1.234,50"` → `1234.5` |
 | KWD / 3 | `KW`, `KWD` | 3 fraction digits, `"1.250"` round-trips without loss |
 | Persian RTL / Toman | `IR`, `IRR`, `currency_display=toman` | locale `fa-IR`, 2 fraction digits, preferences passed through, formatted amount ends in `تومان` with Persian digits |

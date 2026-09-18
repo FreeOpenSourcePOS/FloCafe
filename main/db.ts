@@ -1344,7 +1344,8 @@ export function validateInventoryLedgerRows(
       if (stockQuantity !== 0) return 'Product stock has no matching inventory movement history';
       continue;
     }
-    if (latestMovement.stockAfter !== stockQuantity) {
+    const cacheTolerance = Number.EPSILON * Math.max(1, Math.abs(latestMovement.stockAfter), Math.abs(stockQuantity)) * 10;
+    if (Math.abs(latestMovement.stockAfter - stockQuantity) > cacheTolerance) {
       return 'Product stock does not match the latest inventory movement';
     }
   }
@@ -1352,7 +1353,7 @@ export function validateInventoryLedgerRows(
   return null;
 }
 
-export function validateInventoryLedgerDatabase(dbInstance: Database.Database, allowMissingMovementTable = false): string | null {
+export function validateInventoryLedgerDatabase(dbInstance: Database.Database): string | null {
   const tables = new Set(getTables(dbInstance));
   if (!tables.has('products')) return null;
   if (!getColumns(dbInstance, 'products').includes('stock_quantity')) {
@@ -1361,7 +1362,7 @@ export function validateInventoryLedgerDatabase(dbInstance: Database.Database, a
 
   const products = dbInstance.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[];
   if (!tables.has('inventory_movements')) {
-    return !allowMissingMovementTable && products.some((product) => Number(product.stock_quantity ?? 0) !== 0)
+    return products.some((product) => Number(product.stock_quantity ?? 0) !== 0)
       ? 'Backup is missing inventory movement history for product stock'
       : null;
   }
@@ -2116,7 +2117,7 @@ function dataOnlyRestore(
     for (const tableName of backupTables) {
       if (isSafeIdentifier(tableName)) backupColumns.set(tableName, getColumns(backupDb, tableName));
     }
-    const inventoryValidationError = validateInventoryLedgerDatabase(backupDb, backupVersion < 85);
+    const inventoryValidationError = validateInventoryLedgerDatabase(backupDb);
     if (inventoryValidationError) {
       return {
         success: false,
@@ -4271,6 +4272,28 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           createdAt,
         );
       }
+    },
+  },
+  {
+    version: 86,
+    name: 'add_inventory_import_provenance',
+    up: () => {
+      const columns = new Set(
+        (db.prepare('PRAGMA table_info(inventory_movements)').all() as { name: string }[]).map((column) => column.name),
+      );
+      const addColumn = (name: string, definition: string) => {
+        if (!columns.has(name)) {
+          db.exec(`ALTER TABLE inventory_movements ADD COLUMN ${definition}`);
+          columns.add(name);
+        }
+      };
+      addColumn('imported_by_user_id', 'imported_by_user_id TEXT REFERENCES users(id)');
+      addColumn('import_batch_id', 'import_batch_id TEXT');
+      addColumn('source_actor_user_id', 'source_actor_user_id TEXT');
+      addColumn('source_reference_type', 'source_reference_type TEXT');
+      addColumn('source_reference_id', 'source_reference_id TEXT');
+      addColumn('source_reason', 'source_reason TEXT');
+      addColumn('source_created_at', 'source_created_at TEXT');
     },
   },
 ];

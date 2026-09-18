@@ -241,7 +241,7 @@ async function run() {
     legacyPreLedgerDb.exec('DROP TABLE inventory_movements');
     legacyPreLedgerDb.close();
     const legacyPreLedgerRestore = restoreBackup(legacyPreLedgerBackup, false);
-    assert.equal(legacyPreLedgerRestore.success, true, 'pre-ledger backups restore against the migrated ledger state');
+    assert.equal(legacyPreLedgerRestore.success, false, 'pre-ledger backups with stock are rejected without movement history');
     assert.equal(
       (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
       5,

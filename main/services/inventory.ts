@@ -45,6 +45,13 @@ export interface InventoryMovement {
   actor_name: string | null;
   stock_after: number;
   created_at: string;
+  imported_by_user_id: string | null;
+  import_batch_id: string | null;
+  source_actor_user_id: string | null;
+  source_reference_type: string | null;
+  source_reference_id: string | null;
+  source_reason: string | null;
+  source_created_at: string | null;
 }
 
 export interface InventoryMovementPage {
@@ -154,7 +161,14 @@ export function listInventoryMovements(
       m.actor_user_id,
       u.name AS actor_name,
       m.stock_after,
-      m.created_at
+      m.created_at,
+      m.imported_by_user_id,
+      m.import_batch_id,
+      m.source_actor_user_id,
+      m.source_reference_type,
+      m.source_reference_id,
+      m.source_reason,
+      m.source_created_at
     FROM inventory_movements m
     LEFT JOIN products p ON p.id = m.product_id
     LEFT JOIN users u ON u.id = m.actor_user_id

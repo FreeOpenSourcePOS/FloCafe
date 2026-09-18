@@ -63,7 +63,7 @@ async function main() {
   assertEqual(getCurrentSchemaVersion(), latestVersion, 'fresh install reaches the latest schema');
   const columns = tableColumns(db, 'inventory_movements');
   assert(
-    ['product_id', 'quantity_delta', 'movement_type', 'reference_type', 'reference_id', 'reason', 'actor_user_id', 'stock_after', 'created_at']
+    ['product_id', 'quantity_delta', 'movement_type', 'reference_type', 'reference_id', 'reason', 'actor_user_id', 'stock_after', 'created_at', 'imported_by_user_id', 'import_batch_id', 'source_actor_user_id', 'source_reference_type', 'source_reference_id', 'source_reason', 'source_created_at']
       .every((column) => columns.includes(column)),
     'fresh install creates the append-only inventory movement columns',
   );
@@ -109,6 +109,11 @@ async function main() {
   runPendingMigrations();
   assertEqual(getCurrentSchemaVersion(), latestVersion, 'upgraded store reaches the latest schema');
   assert(!!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'").get(), 'upgraded store receives the ledger table');
+  assert(
+    ['imported_by_user_id', 'import_batch_id', 'source_actor_user_id', 'source_reference_type', 'source_reference_id', 'source_reason', 'source_created_at']
+      .every((column) => tableColumns(db, 'inventory_movements').includes(column)),
+    'upgraded store receives inventory import provenance columns',
+  );
   const migratedOpening = db.prepare(`
     SELECT quantity_delta, movement_type, reference_type, actor_user_id, stock_after
     FROM inventory_movements
@@ -214,6 +219,14 @@ async function main() {
     assertEqual(absoluteAdjustment.quantity_delta, -3, 'absolute stock update appends the signed adjustment');
     assertEqual(absoluteAdjustment.movement_type, 'adjustment', 'absolute stock update uses the adjustment movement type');
     assertEqual(absoluteAdjustment.reason, 'Physical count', 'absolute stock update stores its reason');
+
+    const failedProductUpdate = await api(baseUrl, `/api/products/${productId}`, {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { stock_quantity: -1, reason: 'Invalid count' },
+    });
+    assertEqual(failedProductUpdate.status, 400, 'PUT stock updates preserve typed inventory errors');
+    assertEqual(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity, 8, 'failed PUT stock updates leave the cache unchanged');
 
     const firstOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',

@@ -277,6 +277,7 @@ async function runTests() {
     'rejected inconsistent product import leaves product data unchanged',
   );
 
+  const sourceCreatedAt = '2020-01-01 00:00:00';
   const validInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,
@@ -294,15 +295,34 @@ async function runTests() {
           reference_type: 'opening_balance',
           reference_id: 'merged-state-product',
           reason: 'Opening count',
-          actor_user_id: 'owner-1',
+          actor_user_id: 'source-user-not-authenticated',
           stock_after: 5,
-          created_at: now(),
+          created_at: sourceCreatedAt,
         }],
         users: [],
       },
     },
   });
   assert(validInventoryImport.status === 200, `a consistent product import succeeds (got ${validInventoryImport.status})`);
+  const importedMovement = db.prepare(`
+    SELECT actor_user_id, imported_by_user_id, import_batch_id,
+           reference_type, reference_id, reason, created_at,
+           source_actor_user_id, source_reference_type, source_reference_id,
+           source_reason, source_created_at
+    FROM inventory_movements WHERE product_id = ?
+  `).get('merged-state-product') as any;
+  assertEqual(importedMovement.actor_user_id, 'owner-1', 'imported movement is attributed to the authenticated importer');
+  assertEqual(importedMovement.imported_by_user_id, 'owner-1', 'imported movement records the immutable importer identity');
+  assert(typeof importedMovement.import_batch_id === 'string' && importedMovement.import_batch_id.length > 0, 'imported movement records a batch provenance id');
+  assertEqual(importedMovement.reference_type, 'import', 'imported movement uses an import reference type');
+  assert(typeof importedMovement.reference_id === 'string' && importedMovement.reference_id.length > 0, 'imported movement references its import batch');
+  assertEqual(importedMovement.reason, 'Imported inventory movement', 'imported movement uses a local audit reason');
+  assert(importedMovement.created_at !== sourceCreatedAt, 'imported movement uses local ingestion time');
+  assertEqual(importedMovement.source_actor_user_id, 'source-user-not-authenticated', 'imported actor is retained as source metadata');
+  assertEqual(importedMovement.source_reference_type, 'opening_balance', 'imported reference type is retained as source metadata');
+  assertEqual(importedMovement.source_reference_id, 'merged-state-product', 'imported reference id is retained as source metadata');
+  assertEqual(importedMovement.source_reason, 'Opening count', 'imported reason is retained as source metadata');
+  assertEqual(importedMovement.source_created_at, sourceCreatedAt, 'imported timestamp is retained as source metadata');
 
   const mergedStateImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     data: {

@@ -292,7 +292,14 @@ List product inventory movements (owner or manager only), newest first.
       "actor_user_id": "user-1",
       "actor_name": "Owner",
       "stock_after": 8,
-      "created_at": "2025-03-31T12:00:00Z"
+      "created_at": "2025-03-31T12:00:00Z",
+      "imported_by_user_id": null,
+      "import_batch_id": null,
+      "source_actor_user_id": null,
+      "source_reference_type": null,
+      "source_reference_id": null,
+      "source_reason": null,
+      "source_created_at": null
     }
   ],
   "nextCursor": 17
@@ -303,6 +310,9 @@ List product inventory movements (owner or manager only), newest first.
 `sale`, `cancel_restore`, and `adjustment`; the latter includes opening
 balances and manual adjustments. Sales reduce stock, while cancellation and
 restoration flows record their stock delta and actor in the same transaction.
+Imported movements use the authenticated importer as `actor_user_id` and keep
+the supplied actor, reference, reason, and timestamp in the `source_*` fields
+with an `import_batch_id`; source metadata is not authenticated attribution.
 
 ---
 

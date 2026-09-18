@@ -191,7 +191,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
     if ((overwrite || hasVersionMismatch) && Array.isArray(importData.products)) {
       const inventoryReplacementError = validateInventoryLedgerReplacement(
         db.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
-        getInventoryMovementRows(db),
+        importedTables.includes('inventory_movements') ? getInventoryMovementRows(db) : [],
         importData.products,
         Array.isArray(importData.inventory_movements) ? importData.inventory_movements : [],
       );

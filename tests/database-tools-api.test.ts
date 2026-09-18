@@ -399,6 +399,37 @@ async function runTests() {
     0,
     'legacy zero-stock import preserves the zero cache',
   );
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, ?)
+  `).run('legacy-zero-stock-product', 1, 'legacy-zero-stock-product', 'Legacy opening', 'owner-1', 1, now());
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'sale', 'order_item', ?, ?, ?, ?, ?)
+  `).run('legacy-zero-stock-product', -1, 'legacy-zero-stock-order-item', 'Legacy sale', 'owner-1', 0, now());
+  const legacyZeroHistoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion() - 1),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'legacy-zero-stock-product', name: 'Legacy Zero Stock Product', price: 10, stock_quantity: 0 }],
+        users: [],
+      },
+    },
+  });
+  assert(legacyZeroHistoryImport.status === 200, `legacy zero-stock import preserves omitted-table history (got ${legacyZeroHistoryImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('legacy-zero-stock-product') as { count: number }).count,
+    2,
+    'legacy zero-stock import preserves existing movement history',
+  );
 
   const remappedProvenanceImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',

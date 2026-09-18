@@ -106,10 +106,15 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
         if (cancelled) return;
         const staff: Staff[] = res.data?.staff || [];
         const eligibleStaff = getConfiguredApprovers(staff);
-        const currentUserApprover = eligibleStaff.find((member) => String(member.id) === String(user?.id));
-        const preferredId = currentUserApprover?.id || (eligibleStaff.length === 1 ? eligibleStaff[0].id : '');
+        const eligibleStaffAtCurrentTime = eligibleStaff.filter((member) => hasRole(
+          member.role,
+          isLikelyLate ? ROLE_ACCESS.owner : ROLE_ACCESS.ownerManager,
+        ));
+        const currentUserApprover = eligibleStaffAtCurrentTime.find((member) => String(member.id) === String(user?.id));
+        const preferredId = currentUserApprover?.id || (eligibleStaffAtCurrentTime.length === 1 ? eligibleStaffAtCurrentTime[0].id : '');
         setApprovers(eligibleStaff);
         setApproverId(preferredId ? String(preferredId) : '');
+        setOverridePin('');
         setApproversLoadFailed(false);
       })
       .catch(() => {
@@ -121,7 +126,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
         if (!cancelled) setApproversLoading(false);
       });
     return () => { cancelled = true; };
-  }, [user?.id]);
+  }, [isLikelyLate, user?.id]);
 
   const eligibleApprovers = approvers.filter((member) => hasRole(
     member.role,

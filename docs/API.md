@@ -688,6 +688,35 @@ Apply discount to a bill (owner/manager only).
 { "error": "Discount exceeds maximum allowed" }
 ```
 
+## Refunds
+
+### POST `/api/refunds`
+Issue a full, partial, or item refund for a paid bill. Requires an
+authenticated owner or manager.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request:**
+```json
+{
+  "bill_id": 123,
+  "amount": 25.00,
+  "method": "cash",
+  "reason": "Customer request",
+  "approver_id": "owner-1",
+  "override_pin": "1234"
+}
+```
+
+Use `order_item_id` instead of `amount` for a whole-item refund. The request
+must identify one selected approver with `approver_id`; `manager_id` is accepted
+as a compatibility alias when `approver_id` is omitted. Missing or conflicting
+approver IDs are rejected. The selected active owner's or manager's Staff
+Approval PIN is verified; the device Master PIN is not used for refunds.
+
+Refund timing and item eligibility rules are defined in
+[`docs/business-decisions.md`](business-decisions.md).
+
 ---
 
 ## Kitchen Display (KDS)

@@ -2242,7 +2242,7 @@ function dataOnlyRestore(
   if (backupTables.includes('products')) {
     const inventoryReplacementError = validateInventoryLedgerReplacement(
       currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
-      getInventoryMovementRows(currentDb),
+      backupTables.includes('inventory_movements') ? getInventoryMovementRows(currentDb) : [],
       backupProductRows,
       backupMovementRows,
     );

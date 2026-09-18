@@ -87,7 +87,9 @@ export function adjustProductStock(
       WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
       ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ?)
     END, updated_at = ?
-    WHERE id = ? AND COALESCE(stock_quantity, 0) + ? >= -?
+    WHERE id = ?
+      AND COALESCE(stock_quantity, 0) + ? >= -?
+      AND ROUND(COALESCE(stock_quantity, 0) + ?, ?) != COALESCE(stock_quantity, 0)
   `);
   const result = update.run(
     options.quantityDelta,
@@ -98,6 +100,8 @@ export function adjustProductStock(
     options.productId,
     options.quantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
+    options.quantityDelta,
+    INVENTORY_QUANTITY_PRECISION,
   );
   if (result.changes !== 1) {
     const current = db.prepare('SELECT id FROM products WHERE id = ?').get(options.productId);

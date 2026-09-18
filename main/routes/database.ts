@@ -316,8 +316,8 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
           const orderedRows = rows
             .map((row, index) => ({ row, index }))
             .sort((left, right) => {
-              const leftCreatedAt = String(left.row?.source_created_at ?? left.row?.created_at ?? '');
-              const rightCreatedAt = String(right.row?.source_created_at ?? right.row?.created_at ?? '');
+              const leftCreatedAt = String(left.row?.created_at ?? '');
+              const rightCreatedAt = String(right.row?.created_at ?? '');
               if (leftCreatedAt !== rightCreatedAt) return leftCreatedAt < rightCreatedAt ? -1 : 1;
               const leftId = Number(left.row?.id);
               const rightId = Number(right.row?.id);

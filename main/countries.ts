@@ -229,12 +229,18 @@ export const getCountryByCode = (code: string): Country | undefined => {
   return COUNTRIES.find((c) => c.code === code.toUpperCase());
 };
 
-export function resolveTenantCurrency(currency: unknown, countryCode: unknown): string {
+// countryCode is required: regional settings come from signup, never from a
+// fallback (docs/business-decisions.md). Every caller resolves this from an
+// already-configured store's settings/tenant, so RegionalNotConfiguredError
+// here indicates a real bug upstream, not a state to silently paper over.
+export function resolveTenantCurrency(currency: unknown, countryCode: string): string {
   if (typeof currency === 'string') {
     const normalized = currency.trim().toUpperCase();
     if (isSyntacticallyValidCurrencyCode(normalized)) return normalized;
   }
-  return getCountryByCode(String(countryCode || ''))?.currency || 'INR';
+  const country = getCountryByCode(countryCode);
+  if (!country) throw new RegionalNotConfiguredError(countryCode);
+  return country.currency;
 }
 
 // Neutral fallback preferences for locales without country-specific options.
@@ -425,10 +431,10 @@ export const getCurrencyUnitAdapter = (
 
 export const formatCurrencyForTenant = (
   amount: number,
-  countryCode: string | undefined,
+  countryCode: string,
   currency: string,
   prefs?: LocalePreferences,
-): string => formatMoney(amount, currency, getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US', prefs);
+): string => formatMoney(amount, currency, getCountryByCode(countryCode)?.locale ?? 'en-US', prefs);
 
 // Formats a plain number using the given locale's digits and grouping.
 export const formatNumber = (value: number, locale = 'en-US', numberingSystem?: string): string => {
@@ -442,13 +448,13 @@ export const formatNumber = (value: number, locale = 'en-US', numberingSystem?: 
 // Formats a plain number using tenant locale and digit preferences.
 export const formatNumberForTenant = (
   value: number,
-  countryCode: string | undefined,
+  countryCode: string,
   prefs?: LocalePreferences,
 ): string => {
   const { digits } = normalizePreferences(prefs);
   return formatNumber(
     value,
-    getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US',
+    getCountryByCode(countryCode)?.locale ?? 'en-US',
     digits === 'latin' ? 'latn' : undefined,
   );
 };
@@ -462,14 +468,14 @@ function calendarOption(calendar: CalendarMode): 'gregory' | 'persian' | undefin
 // Formats a date with tenant timezone, preferences, and optional UI locale override.
 export const formatDateForTenant = (
   date: Date,
-  countryCode: string | undefined,
+  countryCode: string,
   timezone: string,
   prefs?: LocalePreferences,
   options: Intl.DateTimeFormatOptions = {},
   localeOverride?: string,
 ): string => {
   const { digits, calendar } = normalizePreferences(prefs);
-  const tenantLocale = getCountryByCode(countryCode ?? 'IN')?.locale || 'en-US';
+  const tenantLocale = getCountryByCode(countryCode)?.locale || 'en-US';
   const locale = localeOverride || tenantLocale;
   try {
     // Tenant preferences belong to the tenant profile; resolve defaults before UI override.

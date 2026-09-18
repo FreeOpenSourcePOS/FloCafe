@@ -111,9 +111,9 @@ async function run(): Promise<void> {
   assert.equal(selectedCountryCustomer.country_code, '+90', 'country selection supplies customer country code independently of Spanish UI language');
 
   resetDatabase();
-  seedSetupProfile(getDatabase(), 'demo', 'qsr', 'es');
-  const defaultCountryCustomer = rows('customers', 'country_code', "id = 'cust-demo-1'")[0];
-  assert.equal(defaultCountryCustomer.country_code, '+91', 'omitted country uses the country default, not the Spanish UI language');
+  seedSetupProfile(getDatabase(), 'demo', 'qsr', 'es', 'IN');
+  const explicitCountryCustomer = rows('customers', 'country_code', "id = 'cust-demo-1'")[0];
+  assert.equal(explicitCountryCustomer.country_code, '+91', 'explicit country selection is used, not derived from the Spanish UI language');
 
   const filipinoArabicWarning = translate('fil', 'printWarnings.arabicShapingHint');
   assert.equal(filipinoArabicWarning.includes('Your printer'), false, 'Filipino Arabic warning is not mixed English/Filipino');

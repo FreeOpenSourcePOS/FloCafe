@@ -14,7 +14,7 @@ import {
   dotsForPaperWidth,
   capabilitiesForPrinter,
 } from './profiles';
-import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency, RegionalNotConfiguredError } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
 import { renderMerchantReceiptViaDocument } from './document-merchant';
@@ -861,7 +861,8 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const db = getDatabase();
     const biz = db.prepare('SELECT * FROM settings LIMIT 1').get() as any;
     const locale = biz?.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
-    const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
+    const timezone = getSettingValue('timezone');
+    if (!timezone) throw new RegionalNotConfiguredError(getSettingValue('country'));
     const tzOptions = { timeZone: timezone };
 
     const warnings: PrintWarning[] = [];
@@ -1137,7 +1138,8 @@ function receiptDocumentLines(
   cutMode: PrinterCutMode,
   capabilities: ThermalPrinterCapabilities,
 ): RasterDocumentLines | null {
-  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
+  // See formatReceipt's identical placeholder below for why currency: 'USD'.
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', currency: 'USD' };
   const rasterBiz = {
     ...biz,
     ...(biz.customer_phone ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) } : {}),
@@ -1374,7 +1376,10 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
 
   const lang = normalizePrintLanguage(language);
-  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
+  // No business info supplied at all (e.g. a synthetic preview) — a neutral
+  // explicit currency short-circuits resolveTenantCurrency's country lookup
+  // (docs/business-decisions.md: no default country, and specifically not INR).
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', currency: 'USD' };
   // Merchant templates resolve through document pipeline; pack templates use compliance renderer.
   const selection = parseBillTemplateSelection(template);
   const templateCapabilities = selection?.source === 'pack' || selection?.source === 'merchant'
@@ -1896,7 +1901,7 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   const additionalLanguage = z?.__additionalLanguage
     ? normalizePrintLanguage(z.__additionalLanguage)
     : undefined;
-  const tz = getSettingValue('timezone') || 'Asia/Kolkata';
+  const tz = getSettingValue('timezone');
   const settingsRows = getDatabase()
     .prepare('SELECT key, value FROM settings')
     .all() as { key: string; value: string }[];

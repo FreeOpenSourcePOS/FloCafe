@@ -2735,8 +2735,12 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
 
       const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
+      // Deliberate exception to "no India default" (docs/business-decisions.md):
+      // this is a one-time best-effort cleanup of pre-existing customer phone
+      // records on an upgrading install, most of which predate multi-country
+      // support and were Indian. Not a live store's regional identity.
       const tenantCountry = tenantCountryRow?.value || 'IN';
-      
+
       const { parsePhoneE164 } = require('./lib/phone');
 
       const customers = db.prepare(
@@ -2828,6 +2832,8 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     name: 'normalize_customer_phones_retry',
     up: () => {
       const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
+      // Same deliberate exception as migration v23 above — historical
+      // customer-data cleanup, not a live store's regional identity.
       const tenantCountry = tenantCountryRow?.value || 'IN';
 
       const { parsePhoneE164 } = require('./lib/phone');
@@ -5348,7 +5354,7 @@ export function generateOrderNumber(): string {
   const prefix = sanitizedNumberPrefix(getSettingValue('order_number_prefix'), 'ORD');
   const includeDate = getSettingValue('order_number_include_date') !== 'false';
   const resetDaily = getSettingValue('order_number_reset_daily') !== 'false';
-  const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
+  const timezone = getSettingValue('timezone') || '';
 
   // Per-day bucket when reset daily, otherwise a single bucket.
   const bucket = resetDaily ? dateStampInTimezone(timezone) : 'ALL';
@@ -5365,7 +5371,7 @@ export function generateBillNumber(): string {
   const resetPeriod: InvoiceResetPeriod = ['never', 'daily', 'monthly', 'financial_year'].includes(configuredPeriod)
     ? configuredPeriod as InvoiceResetPeriod
     : 'daily';
-  const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
+  const timezone = getSettingValue('timezone') || '';
   const fyStart = clampFinancialYearStart(
     getSettingValue('invoice_financial_year_start_month'),
     getSettingValue('invoice_financial_year_start_day'),
@@ -5632,7 +5638,7 @@ export function parseRowJson(row: any): any {
   if (Array.isArray(taxBreakdown) && taxBreakdown.length > 0 && Array.isArray(taxBreakdown[0])) {
     let fractionDigits = 2;
     try {
-      fractionDigits = getCurrencyFractionDigits(getSettingValue('currency') || 'INR');
+      fractionDigits = getCurrencyFractionDigits(getSettingValue('currency') || '');
     } catch { }
     const merged: Record<string, { title: string; rate: number; amount: number }> = {};
     for (const itemBreakdown of taxBreakdown) {

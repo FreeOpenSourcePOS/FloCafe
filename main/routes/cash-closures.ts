@@ -77,7 +77,7 @@ function httpError(message: string, statusCode: number): Error {
 }
 
 function tenantTimezone(): string {
-  return getSettingValue('timezone') || 'Asia/Kolkata';
+  return getSettingValue('timezone') || '';
 }
 
 function tenantStartTime(db?: ReturnType<typeof getDatabase>): string {

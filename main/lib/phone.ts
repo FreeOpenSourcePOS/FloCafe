@@ -4,7 +4,8 @@ export function parsePhoneE164(input: string, defaultCountry: string): { e164: s
   try {
     const raw = String(input || '').trim();
     if (!raw) return null;
-    const country = (defaultCountry || 'IN').toUpperCase() as CountryCode;
+    if (!defaultCountry) return null;
+    const country = defaultCountry.toUpperCase() as CountryCode;
     const parsed = parsePhoneNumber(raw, { defaultCountry: country, extract: false });
     if (!parsed?.isValid()) return null;
     return { e164: parsed.number, countryCode: `+${parsed.countryCallingCode}` };
@@ -24,7 +25,7 @@ export type NormalizedPhoneResult = {
   error?: string;
 };
 
-export function normalizeOptionalPhone(input: unknown, defaultCountry = 'IN'): NormalizedPhoneResult {
+export function normalizeOptionalPhone(input: unknown, defaultCountry: string): NormalizedPhoneResult {
   if (input === undefined || input === null) {
     return { valid: true, e164: null, countryCode: null };
   }

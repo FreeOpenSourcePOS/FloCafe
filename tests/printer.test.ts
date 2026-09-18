@@ -273,6 +273,8 @@ const fixtureBusiness = {
   address: '42 MG Road, Bengaluru 560001',
   phone: '+91 98765 43210',
   taxRegistrationNumber: 'TAXID-0001',
+  country: 'IN',
+  currency: 'INR',
 };
 
 console.log('🧪 FloDesktop Printer Tests');
@@ -931,6 +933,7 @@ console.log('\n✅ Test 5d: Bill content toggles are optional and never block pr
 
     const missing = formatReceipt(fixtureOrder, fixtureBill, {
       name: '', address: '', phone: '', taxRegistrationNumber: '',
+      country: 'IN', currency: 'INR',
       show_name: true, show_address: true, show_phone: true, show_tax_id: true,
       show_tax_breakdown: true, show_customer_name: true,
       show_customer_phone: true, show_table_number: true,

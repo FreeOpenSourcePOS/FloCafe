@@ -779,7 +779,7 @@ export async function reinstallPackVersion(
 router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const storeCountry = getSettingValue('country') || 'IN';
+    const storeCountry = getSettingValue('country') || '';
     const rows = db.prepare(`
       SELECT pack.*,
         (SELECT COUNT(*) FROM tax_overrides override
@@ -1229,8 +1229,8 @@ router.post('/test-calculation', requireRole(...ROLE_ACCESS.ownerManager), (req:
     if (tax_behavior && !TAX_BEHAVIORS.includes(tax_behavior)) {
       return res.status(400).json({ error: `tax_behavior must be one of: ${TAX_BEHAVIORS.join(', ')}` });
     }
-    const country = getSettingValue('country') || 'IN';
-    const currency = getSettingValue('currency') || 'INR';
+    const country = getSettingValue('country') || '';
+    const currency = getSettingValue('currency') || '';
     const active = activePackForCountry(country);
     if (!active.definition.categories.some((category) => category.id === category_id)) {
       return res.status(400).json({ error: 'Unknown category for the active pack' });
@@ -1278,7 +1278,7 @@ router.post('/test-calculation', requireRole(...ROLE_ACCESS.ownerManager), (req:
 
 router.post('/overrides', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
-    const country = getSettingValue('country') || 'IN';
+    const country = getSettingValue('country') || '';
     const active = activePackForCountry(country);
     const target = validateOverrideTarget(
       active.version.id,

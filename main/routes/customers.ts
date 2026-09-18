@@ -69,7 +69,7 @@ router.delete('/admin/cleanup', customerWriteRateLimit, requireRole(...ROLE_ACCE
 router.post('/admin/repair-phones', customerWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const tenantCountry = getSettingValue('country') || 'IN';
+    const tenantCountry = getSettingValue('country') || '';
     const customers = db.prepare(`
       SELECT id, phone, country_code
       FROM customers
@@ -311,7 +311,7 @@ router.post('/', customerWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req
     let finalCountryCode = country_code ? String(country_code).trim() : null;
 
     if (finalPhone) {
-      const tenantCountry = getSettingValue('country') || 'IN';
+      const tenantCountry = getSettingValue('country') || '';
       const parsed = parsePhoneE164(finalPhone, tenantCountry);
       if (!parsed) {
         return res.status(400).json({ message: 'Phone number is not valid. Use international format (e.g. +919876543210).' });
@@ -396,7 +396,7 @@ router.put('/:id', customerWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManag
         finalPhone = null;
         finalCountryCode = null;
       } else {
-        const tenantCountry = getSettingValue('country') || 'IN';
+        const tenantCountry = getSettingValue('country') || '';
         const parsed = parsePhoneE164(String(phone).trim(), tenantCountry);
         if (!parsed) {
           return res.status(400).json({ error: 'Phone number is not valid. Use international format (e.g. +919876543210).' });

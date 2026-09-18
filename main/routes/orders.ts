@@ -466,7 +466,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
       });
 
       const tenantInfo = {
-        country: settings.country || 'IN',
+        country: settings.country || '',
         business_type: settings.business_type || 'restaurant',
         state_code: settings.state_code || '',
         currency: getTenantCurrency(),
@@ -674,7 +674,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
     });
 
     const tenantInfo = {
-      country: settings.country || 'IN',
+      country: settings.country || '',
       business_type: settings.business_type || 'restaurant',
       state_code: settings.state_code || '',
       currency: getTenantCurrency(),
@@ -1230,7 +1230,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       }
     }
     const tenantInfo = {
-      country: getSettingValue('country') || 'IN',
+      country: getSettingValue('country') || '',
       business_type: getSettingValue('business_type') || 'restaurant',
       state_code: getSettingValue('state_code') || '',
       currency: getTenantCurrency(),
@@ -1456,7 +1456,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
     const settings = db.prepare("SELECT * FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')").all() as any[];
     const settingsMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
     const tenantInfo = {
-      country: settingsMap.country || 'IN',
+      country: settingsMap.country || '',
       business_type: settingsMap.business_type || 'restaurant',
       state_code: settingsMap.state_code || '',
       currency: getTenantCurrency(),

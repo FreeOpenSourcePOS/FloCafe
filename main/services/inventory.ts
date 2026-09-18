@@ -85,6 +85,10 @@ export function adjustProductStock(
   }
 
   const updatedAt = options.createdAt || now();
+  const current = db.prepare('SELECT id, stock_quantity FROM products WHERE id = ?').get(options.productId) as
+    | { id: string | number; stock_quantity: number | null }
+    | undefined;
+  const stockBefore = Number(current?.stock_quantity ?? 0);
   const update = db.prepare(`
     UPDATE products
     SET stock_quantity = CASE
@@ -113,13 +117,12 @@ export function adjustProductStock(
     INVENTORY_QUANTITY_PRECISION,
   );
   if (result.changes !== 1) {
-    const current = db.prepare('SELECT id FROM products WHERE id = ?').get(options.productId);
     throw new InventoryServiceError(current ? 400 : 404, current ? 'Insufficient stock' : 'Product not found');
   }
 
   const updated = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(options.productId) as { stock_quantity: number };
   const stockAfter = Number(updated.stock_quantity);
-  const stockBefore = stockAfter - normalizedQuantityDelta;
+  const effectiveQuantityDelta = stockAfter - stockBefore;
 
   db.prepare(`
     INSERT INTO inventory_movements (
@@ -128,7 +131,7 @@ export function adjustProductStock(
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     options.productId,
-    normalizedQuantityDelta,
+    effectiveQuantityDelta,
     options.movementType,
     options.referenceType ?? null,
     options.referenceId === null || options.referenceId === undefined ? null : String(options.referenceId),

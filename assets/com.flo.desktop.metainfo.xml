@@ -29,12 +29,14 @@
 
   <launchable type="desktop-id">flocafe.desktop</launchable>
 
-  <url type="homepage">https://github.com/FreeOpenSourcePOS/FloCafe</url>
+  <url type="homepage">https://flopos.com</url>
+  <url type="vcs-browser">https://github.com/FreeOpenSourcePOS/FloCafe</url>
   <url type="bugtracker">https://github.com/FreeOpenSourcePOS/FloCafe/issues</url>
+  <url type="help">https://github.com/FreeOpenSourcePOS/FloCafe/discussions</url>
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/FreeOpenSourcePOS/FloCafe/main/screenshot.png</image>
+      <image>https://raw.githubusercontent.com/FreeOpenSourcePOS/FloCafe/main/docs/images/flo-cafe-pos.webp</image>
       <caption>Point of Sale interface</caption>
     </screenshot>
   </screenshots>

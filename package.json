@@ -221,6 +221,13 @@
     "email": "support@flo.local"
   },
   "homepage": "https://flopos.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FreeOpenSourcePOS/FloCafe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/FreeOpenSourcePOS/FloCafe/issues"
+  },
   "license": "MIT",
   "overrides": {
     "node-abi": "^4.33.0",

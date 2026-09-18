@@ -70,6 +70,10 @@ export function adjustProductStock(
   if (!Number.isFinite(options.quantityDelta) || options.quantityDelta === 0) {
     throw new InventoryServiceError(400, 'quantity_delta must be a non-zero finite number');
   }
+  const normalizedQuantityDelta = Number(options.quantityDelta.toFixed(INVENTORY_QUANTITY_PRECISION));
+  if (normalizedQuantityDelta === 0) {
+    throw new InventoryServiceError(400, 'quantity_delta is too small to change stock');
+  }
   if (!options.actorUserId) {
     throw new InventoryServiceError(400, 'actor_user_id is required');
   }
@@ -89,18 +93,23 @@ export function adjustProductStock(
     END, updated_at = ?
     WHERE id = ?
       AND COALESCE(stock_quantity, 0) + ? >= -?
-      AND ROUND(COALESCE(stock_quantity, 0) + ?, ?) != COALESCE(stock_quantity, 0)
+      AND CASE
+        WHEN ABS(COALESCE(stock_quantity, 0) + ?) <= ? THEN 0
+        ELSE ROUND(COALESCE(stock_quantity, 0) + ?, ?)
+      END != COALESCE(stock_quantity, 0)
   `);
   const result = update.run(
-    options.quantityDelta,
+    normalizedQuantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
-    options.quantityDelta,
+    normalizedQuantityDelta,
     INVENTORY_QUANTITY_PRECISION,
     updatedAt,
     options.productId,
-    options.quantityDelta,
+    normalizedQuantityDelta,
     INVENTORY_QUANTITY_TOLERANCE,
-    options.quantityDelta,
+    normalizedQuantityDelta,
+    INVENTORY_QUANTITY_TOLERANCE,
+    normalizedQuantityDelta,
     INVENTORY_QUANTITY_PRECISION,
   );
   if (result.changes !== 1) {
@@ -110,7 +119,7 @@ export function adjustProductStock(
 
   const updated = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(options.productId) as { stock_quantity: number };
   const stockAfter = Number(updated.stock_quantity);
-  const stockBefore = stockAfter - options.quantityDelta;
+  const stockBefore = stockAfter - normalizedQuantityDelta;
 
   db.prepare(`
     INSERT INTO inventory_movements (
@@ -119,7 +128,7 @@ export function adjustProductStock(
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     options.productId,
-    options.quantityDelta,
+    normalizedQuantityDelta,
     options.movementType,
     options.referenceType ?? null,
     options.referenceId === null || options.referenceId === undefined ? null : String(options.referenceId),

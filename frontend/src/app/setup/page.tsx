@@ -82,11 +82,14 @@ export default function SetupPage() {
   const language = usePosSettingsStore((s) => s.language);
   const setStoreLanguage = usePosSettingsStore((s) => s.setLanguage);
   const [browserLanguage] = useState<Language>(() => getBrowserLanguage());
-  const [country, setCountry] = useState<string>('IN');
+  // No default country: regional settings come only from what the owner
+  // selects here (docs/business-decisions.md, "Regional settings come from
+  // signup, never from a fallback").
+  const [country, setCountry] = useState<string>('');
   const [countryQuery, setCountryQuery] = useState<string>('');
-  // The country profile timezone is only a suggested default; the owner can
-  // override it here for multi-timezone countries before completing setup.
-  const [timezone, setTimezone] = useState<string>(() => getCountryByCode('IN')?.timezone || 'Asia/Kolkata');
+  // The country profile timezone is only a suggested default, set once a
+  // country is chosen below; the owner can override it for multi-timezone countries.
+  const [timezone, setTimezone] = useState<string>('');
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -197,6 +200,11 @@ export default function SetupPage() {
 
   const handleCompleteSetup = async () => {
     if (loading) return;
+    if (!country) {
+      toast.error(t('chooseCountryRequired'));
+      setStep(1);
+      return;
+    }
     if (!validateOwner()) {
       setStep(3);
       return;
@@ -382,7 +390,17 @@ export default function SetupPage() {
                   <p className="text-xs text-muted-foreground">{t('timezoneHint')}</p>
                 </div>
 
-                <Button onClick={() => setStep(2)} className="w-full" size="lg">
+                <Button
+                  onClick={() => {
+                    if (!country) {
+                      toast.error(t('chooseCountryRequired'));
+                      return;
+                    }
+                    setStep(2);
+                  }}
+                  className="w-full"
+                  size="lg"
+                >
                   {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                 </Button>
               </div>

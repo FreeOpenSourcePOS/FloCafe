@@ -5161,10 +5161,11 @@ function seedInstallDefaults(): void {
 
   insert('business_name', '');
   insert('business_type', 'restaurant');
-  insert('country', 'IN');
-  insert('currency', 'INR');
-  insert('currency_symbol', '₹');
-  insert('timezone', 'Asia/Kolkata');
+  // country/currency/currency_symbol/timezone are deliberately not seeded here:
+  // they come only from the signup wizard (docs/business-decisions.md,
+  // "Regional settings come from signup, never from a fallback"). Until setup
+  // completes, resolveRegionalSnapshot() throws RegionalNotConfiguredError
+  // rather than a caller substituting a default country.
   insert('business_day_start_time', '00:00');
   insert('address', '');
   insert('phone', '');

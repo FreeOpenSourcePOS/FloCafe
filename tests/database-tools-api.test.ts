@@ -433,7 +433,7 @@ async function runTests() {
 
   const remappedProvenanceImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
-    overwrite: true,
+    overwrite: false,
     data: {
       schema_version: String(getCurrentSchemaVersion()),
       data: {

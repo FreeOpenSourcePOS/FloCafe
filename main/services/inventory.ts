@@ -159,11 +159,13 @@ export function listInventoryMovements(
     conditions.push('m.movement_type = ?');
     params.push(filters.movementType);
   }
-  if (filters.referenceType) {
+  if (filters.referenceType && filters.referenceId) {
+    conditions.push('((m.reference_type = ? AND m.reference_id = ?) OR (m.source_reference_type = ? AND m.source_reference_id = ?))');
+    params.push(filters.referenceType, filters.referenceId, filters.referenceType, filters.referenceId);
+  } else if (filters.referenceType) {
     conditions.push('(m.reference_type = ? OR m.source_reference_type = ?)');
     params.push(filters.referenceType, filters.referenceType);
-  }
-  if (filters.referenceId) {
+  } else if (filters.referenceId) {
     conditions.push('(m.reference_id = ? OR m.source_reference_id = ?)');
     params.push(filters.referenceId, filters.referenceId);
   }

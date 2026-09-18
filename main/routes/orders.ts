@@ -314,6 +314,27 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
       loyaltyByBillId.set(r.bill_id, current);
     }
   }
+  const whatsappReceiptStatusByBillId = new Map<number, string>();
+  const receiptBillIds = Array.from(billsByOrderId.values())
+    .map((bills) => bills.find((row) => row.payment_status !== 'paid') || bills[0])
+    .filter(Boolean)
+    .map((bill) => bill.id);
+  if (receiptBillIds.length > 0) {
+    const ph = receiptBillIds.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT bill_id, status
+      FROM whatsapp_messages
+      WHERE direction = 'outbound'
+        AND kind = 'bill_receipt'
+        AND bill_id IN (${ph})
+      ORDER BY id DESC
+    `).all(...receiptBillIds) as { bill_id: number; status: string }[];
+    for (const row of rows) {
+      if (!whatsappReceiptStatusByBillId.has(row.bill_id)) {
+        whatsappReceiptStatusByBillId.set(row.bill_id, row.status);
+      }
+    }
+  }
   const loyaltyEnabled = ['true', '1'].includes(getSettingValue('loyalty_enabled') || '');
   const loyaltyByCustomerId = new Map<string, { credits: number; debits: number }>();
   const billCustomerIds = Array.from(new Set(Array.from(billsById.values()).map((bill) => bill.customer_id).filter(Boolean)));
@@ -353,6 +374,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
       }
     }
     const bill = bills.find((row) => row.payment_status !== 'paid') || bills[0] || null;
+    if (bill) bill.whatsapp_receipt_status = whatsappReceiptStatusByBillId.get(bill.id) ?? null;
     return { ...order, items: itemList, table, customer, bill, bills };
   });
 }

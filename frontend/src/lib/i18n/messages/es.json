@@ -2545,6 +2545,7 @@
     "status": {
       "delivered": "Entregado",
       "failed": "Falló",
+      "notSent": "Ningún envío registrado",
       "queued": "En cola",
       "read": "Leído",
       "sent": "Enviado",

@@ -51,6 +51,7 @@ import { matchesOrderSearch } from '@/lib/orders-search';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
+type WhatsAppStatusKey = keyof AppConfig['Messages']['whatsapp']['status'];
 
 const itemStatusConfig: Record<OrderItem['status'], { dot: string; color: string; labelKey: OrdersKey }> = {
   pending: { dot: 'bg-yellow-400', color: 'text-yellow-700 dark:text-yellow-300', labelKey: 'itemStatusWaiting' },
@@ -75,6 +76,16 @@ const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; te
   paid: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'paid' },
   partial: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'partiallyPaid' },
   unpaid: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'unpaidBadge' },
+};
+
+const whatsappReceiptStatusBadge: Record<string, { bg: string; text: string; labelKey: WhatsAppStatusKey }> = {
+  sent: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'sent' },
+  delivered: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'delivered' },
+  read: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'read' },
+  queued: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'queued' },
+  typing: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'typing' },
+  failed: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'failed' },
+  notSent: { bg: 'bg-muted', text: 'text-muted-foreground', labelKey: 'notSent' },
 };
 
 // Typed leaf-key order-type map.
@@ -135,6 +146,7 @@ export default function OrdersPage() {
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
   const tWhatsappSend = useTranslations('whatsapp.send');
+  const tWhatsappStatus = useTranslations('whatsapp.status');
 
   // sendBillViaFlo (shared with PaymentModal) takes a translator callback;
   // bridge the typed `whatsapp.send` namespace to that contract.
@@ -736,6 +748,7 @@ export default function OrdersPage() {
         { pointsEarned: order.bill.points_earned ?? 0 },
         locale,
       );
+      await fetchOrders();
     } finally {
       setSendingWaOrderId(null);
     }
@@ -1092,6 +1105,9 @@ export default function OrdersPage() {
             const payStatus = paymentStatusOf(order);
             const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
             const bill = order.bill;
+            const receiptStatusBadge = paid && bill
+              ? whatsappReceiptStatusBadge[bill.whatsapp_receipt_status || 'notSent'] || whatsappReceiptStatusBadge.notSent
+              : null;
             const discount = bill ? Number(bill.discount_amount) : Number(order.discount_amount);
             const tax = bill ? Number(bill.tax_amount) : Number(order.tax_amount);
             const subtotal = bill ? Number(bill.subtotal) : Number(order.subtotal);
@@ -1124,6 +1140,15 @@ export default function OrdersPage() {
                     {payBadge && (
                       <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${payBadge.bg} ${payBadge.text}`}>
                         {tOrders(payBadge.labelKey)}
+                      </span>
+                    )}
+                    {receiptStatusBadge && (
+                      <span
+                        aria-label={tWhatsappStatus(receiptStatusBadge.labelKey)}
+                        className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${receiptStatusBadge.bg} ${receiptStatusBadge.text}`}
+                        title={tWhatsappStatus(receiptStatusBadge.labelKey)}
+                      >
+                        {tWhatsappStatus(receiptStatusBadge.labelKey)}
                       </span>
                     )}
                     {paid && order.customer?.phone && (

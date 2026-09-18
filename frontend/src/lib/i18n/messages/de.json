@@ -2545,6 +2545,7 @@
     "status": {
       "delivered": "Zugestellt",
       "failed": "Fehlgeschlagen",
+      "notSent": "Kein Versand aufgezeichnet",
       "queued": "In Warteschlange",
       "read": "Gelesen",
       "sent": "Gesendet",

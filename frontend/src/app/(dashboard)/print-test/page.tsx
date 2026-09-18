@@ -33,9 +33,15 @@ export default function PrintTestPage() {
 
   const testBill = useMemo(() => createTestBill(), []);
   const testOrder = useMemo(() => createTestOrder(), []);
+  // Country/currency reflect the signed-in store, not the synthetic
+  // defaults, so a non-Indian merchant's test print isn't shown in rupees.
   const testTenant = useMemo(
-    () => createTestTenant({ timezone: currentTenant?.timezone || 'Asia/Kolkata' }),
-    [currentTenant?.timezone],
+    () => createTestTenant({
+      timezone: currentTenant?.timezone || '',
+      country: currentTenant?.country || '',
+      currency: currentTenant?.currency || '',
+    }),
+    [currentTenant?.timezone, currentTenant?.country, currentTenant?.currency],
   );
   const testCustomer = useMemo(() => createTestCustomer(), []);
 

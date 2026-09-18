@@ -235,7 +235,7 @@ export default function OrdersPage() {
   const [createCustomerSearch, setCreateCustomerSearch] = useState('');
   const linkSearchRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
+  const currency = getCurrencySymbol(currentTenant?.currency || '', getCountryByCode(currentTenant?.country ?? '')?.locale);
   const unitAdapter = useCurrencyUnitAdapter();
   const normalizedDiscountValue = discountModal?.type === 'amount'
     ? normalizeFixedDiscountValue(discountModal.value, unitAdapter.maxDecimals)
@@ -550,8 +550,8 @@ export default function OrdersPage() {
           latestBill,
           {
             business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
-            currency: currentTenant?.currency || 'INR',
-            country: currentTenant?.country || 'IN',
+            currency: currentTenant?.currency || '',
+            country: currentTenant?.country || '',
             timezone: currentTenant?.timezone || 'UTC',
             currency_display: currentTenant?.currency_display,
             number_digits: currentTenant?.number_digits,
@@ -587,8 +587,8 @@ export default function OrdersPage() {
         latestBill,
         {
           business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
-          currency: currentTenant?.currency || 'INR',
-          country: currentTenant?.country || 'IN',
+          currency: currentTenant?.currency || '',
+          country: currentTenant?.country || '',
           timezone: currentTenant?.timezone || 'UTC',
           currency_display: currentTenant?.currency_display,
           number_digits: currentTenant?.number_digits,
@@ -702,7 +702,7 @@ export default function OrdersPage() {
         {
           business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
           currency,
-          country: currentTenant?.country || 'IN',
+          country: currentTenant?.country || '',
         },
         { pointsEarned: order.bill.points_earned ?? 0 },
         locale,
@@ -729,8 +729,8 @@ export default function OrdersPage() {
         order.customer.phone,
         {
           business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
-          currency: currentTenant?.currency || 'INR',
-          country: currentTenant?.country || 'IN',
+          currency: currentTenant?.currency || '',
+          country: currentTenant?.country || '',
         },
         whatsappSendT,
         { pointsEarned: order.bill.points_earned ?? 0 },

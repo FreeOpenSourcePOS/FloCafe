@@ -61,7 +61,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const enforcePhoneLength = usePosSettingsStore((s) => s.enforcePhoneLength);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
-  const country = currentTenant?.country ?? 'IN';
+  const country = currentTenant?.country ?? '';
   const dialCode = dialCodeFor(country);
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');

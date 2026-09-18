@@ -91,7 +91,7 @@ export interface WebPrintOptions {
 /** Resolve tax-id label printed on receipt (special case for Iranian Economic Code). */
 function resolveTaxIdLabel(country: string | undefined, lang: Language): string {
   if (country?.toUpperCase() === 'IR') return printLabelResolver('receipt.economicCode', lang);
-  return getCountryByCode(country ?? 'IN')?.taxIdLabel || 'Tax ID';
+  return getCountryByCode(country ?? '')?.taxIdLabel || 'Tax ID';
 }
 
 /** Ensure the requested receipt language messages are loaded in memory. */
@@ -509,7 +509,7 @@ function getPaperStyles(size: PaperSize): string {
 function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false): string {
   const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
   const prefs = { currencyDisplay: tenant.currency_display, digits: tenant.number_digits };
-  const fractionDigits = getCurrencyFractionDigits(tenant.currency ?? 'INR');
+  const fractionDigits = getCurrencyFractionDigits(tenant.currency);
   const factor = 10 ** fractionDigits;
   const hasDecimals = fractionDigits > 0 && Math.round(numeric * factor) % factor !== 0;
   const isToman =
@@ -518,9 +518,9 @@ function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false
 
   // trimDecimals hides trailing .00 only when there is no fractional part.
   if (trimDecimals && !hasDecimals && !isToman) {
-    const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+    const locale = getCountryByCode(tenant.country)?.locale ?? 'en-US';
     const numberingSystem = tenant.number_digits === 'latin' ? 'latn' : undefined;
-    const currency = tenant.currency || 'INR';
+    const currency = tenant.currency;
     try {
       return new Intl.NumberFormat(locale, {
         style: 'currency',

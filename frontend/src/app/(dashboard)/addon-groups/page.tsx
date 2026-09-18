@@ -20,7 +20,7 @@ export default function AddonGroupsPage() {
   const tProducts = useTranslations('products');
   const tTables = useTranslations('tables');
   const { currentTenant } = useAuthStore();
-  const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency ?? 'INR', currentTenant?.country);
+  const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency ?? '', currentTenant?.country);
   const [groups, setGroups] = useState<AddonGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const { confirm, ConfirmDialog } = useConfirm();

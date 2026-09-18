@@ -3,7 +3,7 @@ import { getCurrencyUnitAdapter, type CurrencyUnitAdapter } from '@/lib/countrie
 
 export function useCurrencyUnitAdapter(): CurrencyUnitAdapter {
   const tenant = useAuthStore((s) => s.currentTenant);
-  const currency = tenant?.currency ?? 'INR';
+  const currency = tenant?.currency ?? '';
   const country = tenant?.country;
   const prefs = {
     currencyDisplay: tenant?.currency_display,

@@ -411,8 +411,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
   const tenantForShare = {
     business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
-    currency: currentTenant?.currency || 'INR',
-    country: currentTenant?.country || 'IN',
+    currency: currentTenant?.currency || '',
+    country: currentTenant?.country || '',
   };
 
   const handleSendWhatsApp = async () => {

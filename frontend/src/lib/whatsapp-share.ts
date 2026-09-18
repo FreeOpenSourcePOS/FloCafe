@@ -24,8 +24,8 @@ export function getWhatsAppShareUrl(
   localeOverride?: string,
 ): string {
   const { pointsEarned = 0, walletBalance, businessPhone } = opts;
-  const currency = tenant.currency ?? 'INR';
-  const locale = localeOverride || getCountryByCode(tenant.country ?? 'IN')?.locale || 'en-US';
+  const currency = tenant.currency;
+  const locale = localeOverride || getCountryByCode(tenant.country)?.locale || 'en-US';
 
   // Build the message
   const lines: string[] = [];
@@ -97,8 +97,8 @@ export function getWhatsAppMessage(
   localeOverride?: string,
 ): string {
   const { pointsEarned = 0, walletBalance } = opts;
-  const currency = tenant.currency ?? 'INR';
-  const locale = localeOverride || getCountryByCode(tenant.country ?? 'IN')?.locale || 'en-US';
+  const currency = tenant.currency;
+  const locale = localeOverride || getCountryByCode(tenant.country)?.locale || 'en-US';
 
   const lines: string[] = [];
 

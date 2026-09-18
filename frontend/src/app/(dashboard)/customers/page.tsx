@@ -34,8 +34,8 @@ export default function CustomersPage() {
   const fmt = useFormatCurrency();
   const { formatDate } = useFormatDate();
   const fmtNum = useFormatNumber();
-  const defaultCountry = currentTenant?.country || 'IN';
-  const dialCode = dialCodeFor(defaultCountry) || '+91';
+  const defaultCountry = currentTenant?.country || '';
+  const dialCode = dialCodeFor(defaultCountry);
   const searchParams = useSearchParams();
   const router = useRouter();
   const filter = searchParams.get('filter');

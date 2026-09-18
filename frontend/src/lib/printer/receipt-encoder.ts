@@ -252,7 +252,7 @@ function buildReceiptEnvironment(
     footerNote: opts.footerNote,
     taxRegistrationNumber: opts.taxRegistrationNumber,
     includeTaxId: !!opts.taxRegistrationNumber,
-    taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID',
+    taxIdLabel: getCountryByCode(tenant.country)?.taxIdLabel || 'Tax ID',
     showTaxBreakdown: opts.showTaxBreakdown === true,
     showBusinessName: opts.showBusinessName,
     showCustomerName: opts.showCustomerName,
@@ -385,10 +385,10 @@ export function buildClassicReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const currencyCode = resolveTenantCurrency(tenant.currency, tenant.country);
-  const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country)?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, currencyCode, useUnicode, opts.capabilities);
   const fractionDigits = getCurrencyFractionDigits(currencyCode);
-  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const locale = getCountryByCode(tenant.country)?.locale ?? 'en-US';
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
   const { header, meta, customer, items, breakdown, totals, payments, messages, languages } = env;
   const primaryLang = languages[0];
@@ -622,10 +622,10 @@ export function buildCompactReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const currencyCode = resolveTenantCurrency(tenant.currency, tenant.country);
-  const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country)?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, currencyCode, useUnicode, opts.capabilities);
   const fractionDigits = getCurrencyFractionDigits(currencyCode);
-  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const locale = getCountryByCode(tenant.country)?.locale ?? 'en-US';
   // Business/show flags flow into the document via `opts`; the renderer only
   // sees resolved blocks.
   const env = buildReceiptEnvironment(bill, tenant, opts, cols);
@@ -817,11 +817,11 @@ export function buildDetailedReceiptBytes(
   };
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, primaryLang, opts.capabilities);
   const currencyCode = resolveTenantCurrency(tenant.currency, tenant.country);
-  const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country)?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, currencyCode, useUnicode, opts.capabilities);
   const fractionDigits = getCurrencyFractionDigits(currencyCode);
-  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
-  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
+  const locale = getCountryByCode(tenant.country)?.locale ?? 'en-US';
+  const taxIdLabel = getCountryByCode(tenant.country)?.taxIdLabel || 'Tax ID';
   const order = bill.order;
   const taxComponents = resolveTaxComponents(bill);
   const col4Layout = resolveCol4Widths(cols, (order?.items ?? []).map((item) => ({ unitPrice: Number(item?.unit_price) || 0, amount: Number(item?.total) || 0 })), currency, locale, trimDecimals, fractionDigits);

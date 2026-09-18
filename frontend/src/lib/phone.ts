@@ -15,14 +15,14 @@ export interface NormalizedPhoneResult {
 /** Parse + return e164, digits, and country code (e.g. `'+91'`). null when invalid or unparseable. */
 export function parsePhone(
   input: string | null | undefined,
-  defaultCountry: string = 'IN'
+  defaultCountry: string
 ): { e164: string; countryCode: string; digits: string } | null {
-  if (!input) return null;
+  if (!input || !defaultCountry) return null;
   const raw = String(input).trim();
   if (!raw) return null;
   try {
     const parsed = parsePhoneNumber(raw, {
-      defaultCountry: (defaultCountry || 'IN').toUpperCase() as CountryCode,
+      defaultCountry: defaultCountry.toUpperCase() as CountryCode,
       extract: false,
     });
     if (!parsed?.isValid()) return null;
@@ -40,7 +40,7 @@ export function parsePhone(
  * when empty, or validates against defaultCountry. */
 export function normalizeOptionalPhone(
   input: unknown,
-  defaultCountry: string = 'IN'
+  defaultCountry: string
 ): NormalizedPhoneResult {
   if (input === null || input === undefined) {
     return { valid: true, e164: null, digits: null, countryCode: null };
@@ -78,7 +78,7 @@ export function dialCodeFor(code: string): string {
 }
 
 /** Format phone for display or return original string */
-export function formatPhoneDisplay(phone: string | null | undefined, defaultCountry: string = 'IN'): string {
+export function formatPhoneDisplay(phone: string | null | undefined, defaultCountry: string): string {
   if (!phone) return '';
   const parsed = parsePhone(phone, defaultCountry);
   return parsed?.e164 || phone;

@@ -5,5 +5,5 @@ import { formatNumberForTenant } from '@/lib/countries';
  * and configured digit preferences. */
 export function useFormatNumber() {
   const tenant = useAuthStore((s) => s.currentTenant);
-  return (n: number) => formatNumberForTenant(n, tenant?.country, { digits: tenant?.number_digits });
+  return (n: number) => formatNumberForTenant(n, tenant?.country || '', { digits: tenant?.number_digits });
 }

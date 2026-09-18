@@ -494,7 +494,13 @@ export const formatDateForTenant = (
   }
 };
 
-export const countryName = (code: string): string => dn.of(code.toUpperCase()) ?? code;
+export const countryName = (code: string): string => {
+  try {
+    return dn.of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
+};
 
 // Sourced via native Intl API (offline-first, no bundled tz database).
 export const listTimeZones = (): string[] => {

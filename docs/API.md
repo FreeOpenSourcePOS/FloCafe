@@ -276,7 +276,7 @@ List product inventory movements (owner or manager only), newest first.
 **Query params:**
 - `?product_id=prod-1` - Filter by product
 - `?movement_type=sale|cancel_restore|adjustment` - Filter by movement type
-- `?reference_type=order_item&reference_id=123` - Filter by source reference
+- `?reference_type=order_item&reference_id=123` - Filter by a local or imported source-reference pair
 - `?before_id=42` - Continue before a movement ID returned by the previous page
 - `?per_page=50` - Page size, capped at 500 (default 50)
 
@@ -314,9 +314,10 @@ List product inventory movements (owner or manager only), newest first.
 `sale`, `cancel_restore`, and `adjustment`; the latter includes opening
 balances and manual adjustments. Sales reduce stock, while cancellation and
 restoration flows record their stock delta and actor in the same transaction.
-Imported movements use the authenticated importer as `actor_user_id` and keep
-the supplied actor, reference, reason, and timestamp in the `source_*` fields
-with an `import_batch_id`; source metadata is not authenticated attribution.
+Imported movements use the authenticated importer as `actor_user_id`, set the
+local reference to `import` plus the `import_batch_id`, and keep the supplied
+actor, reference, reason, and timestamp in the `source_*` fields; source
+metadata is not authenticated attribution.
 
 ---
 

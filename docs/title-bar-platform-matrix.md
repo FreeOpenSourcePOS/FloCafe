@@ -5,7 +5,7 @@
 **Date:** 2026-08-24
 **Related changes:** #505 (sidebar offset), #508 (overlay color tokens), #509 (Linux fallback controls and `windowAction` IPC)
 
-This record uses assertion and log evidence first. The Linux XWD capture is supplementary evidence; no screenshot is required for a cell to pass.
+This record uses assertion and log evidence. No screenshot is required for a cell to pass.
 
 ## Evidence index
 
@@ -18,18 +18,17 @@ This record uses assertion and log evidence first. The Linux XWD capture is supp
 | [`frontend/e2e/title-bar-platform.spec.ts`](../frontend/e2e/title-bar-platform.spec.ts) | Browser/LAN multi-viewport and #504 sidebar regression checks. |
 | [`frontend/e2e/desktop/title-bar.electron.spec.ts`](../frontend/e2e/desktop/title-bar.electron.spec.ts) | Dedicated native Electron readiness, authenticated dashboard, and window-boundary checks. |
 | [`frontend/e2e/layout-integrity.spec.ts`](../frontend/e2e/layout-integrity.spec.ts) | Existing browser/LAN geometry and zero-title-bar checks. |
-| [`docs/images/title-bar-platform-matrix/linux-runtime-probe.log`](images/title-bar-platform-matrix/linux-runtime-probe.log) | Debian 13 GNOME, Electron 43.4.1, Xvfb: 9/9 probe checks passed; WM-dependent action round-trip explicitly skipped because Xvfb had no WM. |
-| [`docs/images/title-bar-platform-matrix/appimage-run-summary.log`](images/title-bar-platform-matrix/appimage-run-summary.log) | Current-branch packaged AppImage startup under dedicated Xvfb display. |
-| [`docs/images/title-bar-platform-matrix/health-response.json`](images/title-bar-platform-matrix/health-response.json) | Fresh packaged-AppImage `/api/health` assertion: `status=ok`, `db=ok`. |
-| [`docs/images/title-bar-platform-matrix/gnome-button-layout.txt`](images/title-bar-platform-matrix/gnome-button-layout.txt) | Real Debian GNOME `button-layout='appmenu:close'` observation. |
-| [`docs/images/title-bar-platform-matrix/linux-appimage-root.xwd`](images/title-bar-platform-matrix/linux-appimage-root.xwd) | Supplementary Xvfb root-window capture from the packaged-AppImage run. |
+| Linux runtime probe (Debian 13 GNOME) | Debian 13 GNOME, Electron 43.4.1, Xvfb: 9/9 probe checks passed; WM-dependent action round-trip explicitly skipped because Xvfb had no WM. |
+| Packaged AppImage run | Current-branch packaged AppImage startup under dedicated Xvfb display: packaged server, KDS, IPC registration, window creation, and `Flo Ready` startup path. |
+| Health assertion | Packaged-AppImage `/api/health` assertion: `status=ok`, `db=ok`. |
+| GNOME button layout | Real Debian GNOME `button-layout='appmenu:close'` observation. |
 | [title-bar phase 1/2 note](title-bar-phase1.md) | Existing GNOME hardware verification, native overlay safe-area behavior, and close-only default context. |
 
 ## Matrix
 
 ### 1. Windows (`windows-latest`)
 
-The workflow is [`.github/workflows/title-bar-platform-matrix.yml`](../.github/workflows/title-bar-platform-matrix.yml). The runtime probe is designed to run in the hosted Windows desktop session; the pull-request check is the authoritative runner evidence.
+The runtime probe is designed to run in a hosted Windows desktop session (`npx electron tests/platform-titlebar-runtime-probe.cjs`); the pull-request check is the authoritative runner evidence.
 
 | Cell | Result | Evidence / reason |
 | --- | --- | --- |
@@ -45,14 +44,14 @@ The AppImage was built from this branch with `electron-builder --linux AppImage 
 
 | Cell | Result | Evidence / reason |
 | --- | --- | --- |
-| Native-overlay vs HTML-fallback decision | **PASS-verified** | [`linux-runtime-probe.log`](images/title-bar-platform-matrix/linux-runtime-probe.log) reports `platform=linux`, `overlayApiPresent=true`, `resolved=native-overlay`, and separately verifies missing API, pre-33, and unknown-platform inputs fail closed to `html-fallback`. |
+| Native-overlay vs HTML-fallback decision | **PASS-verified** | Runtime probe reports `platform=linux`, `overlayApiPresent=true`, `resolved=native-overlay`, and separately verifies missing API, pre-33, and unknown-platform inputs fail closed to `html-fallback`. |
 | Native overlay option is 40px high | **PASS-verified** | Probe asserts the actual constructor option: `titleBarOverlay={color:#ffffff,symbolColor:#0a0a0a,height:40}`. Electron's Linux getter is unsupported and is logged as such; constructor options are the authoritative assertion. |
-| Packaged AppImage starts and serves | **PASS-verified** | [`appimage-run-summary.log`](images/title-bar-platform-matrix/appimage-run-summary.log) records the packaged server, KDS, IPC registration, window creation, and `Flo Ready` startup path. A fresh health assertion is preserved in [`health-response.json`](images/title-bar-platform-matrix/health-response.json): `status=ok`, `db=ok`. |
+| Packaged AppImage starts and serves | **PASS-verified** | AppImage run records the packaged server, KDS, IPC registration, window creation, and `Flo Ready` startup path. Health assertion verified: `status=ok`, `db=ok`. |
 | Fallback min/max/close through `windowAction` IPC | **NOT-RUN (end-to-end)** | The narrow action contract is **PASS-verified** by the helper and preload tests, but this run did not invoke the registered main IPC handler from a live fallback renderer; Linux Xvfb also has no window manager for a real state round-trip. The probe records that environment skip rather than overstating direct-helper coverage as IPC proof. |
 | GNOME close-only default | **PASS-verified** | `gsettings` on the real Debian GNOME machine reports `button-layout='appmenu:close'`; the existing GNOME hardware observation is also recorded in [`title-bar-phase1.md`](title-bar-phase1.md). |
 | X11 | **PASS-verified** | The packaged run and runtime probe ran on X11/Xvfb (`DISPLAY=:77`). |
 | Wayland | **NOT-RUN** | The safety boundary forbids touching the existing GNOME desktop session; a separate Wayland compositor/session was not started. Existing hardware notes describe GNOME behavior but do not claim a Wayland-specific run. |
-| Visual screenshot | **NOT-RUN (supplementary capture only)** | [`linux-appimage-root.xwd`](images/title-bar-platform-matrix/linux-appimage-root.xwd) is retained as a supplementary Xvfb root capture; it is not used as the authoritative visual assertion. Logs/assertions are authoritative. |
+| Visual screenshot | **NOT-RUN (supplementary capture only)** | Visual capture not used as the authoritative visual assertion; logs and assertions are authoritative. |
 
 ### 3. macOS local
 

@@ -430,6 +430,8 @@ async function runTests() {
     2,
     'legacy zero-stock import preserves existing movement history',
   );
+  db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('legacy-zero-stock-product');
+  db.prepare('DELETE FROM products WHERE id = ?').run('legacy-zero-stock-product');
 
   const remappedProvenanceImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
@@ -465,6 +467,8 @@ async function runTests() {
   assertEqual(remappedMovement.actor_user_id, 'owner-1', 'imported movement actor is authenticated locally');
   assertEqual(remappedMovement.imported_by_user_id, 'owner-1', 'imported_by_user_id is authenticated locally');
   assertEqual(remappedMovement.source_actor_user_id, 'source-actor', 'source actor provenance is preserved');
+  db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('provenance-product');
+  db.prepare('DELETE FROM products WHERE id = ?').run('provenance-product');
 
   const incompleteInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',

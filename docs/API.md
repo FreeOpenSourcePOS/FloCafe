@@ -946,7 +946,7 @@ The response includes gross and net collections, refund totals and count, bill c
 
 ### GET `/api/reports/x-report`
 
-Live day report (cierre de caja, issue #649). Recomputes the day's aggregates on every read using the same snapshot pipeline that backs the stored Z, so the live X and the stored Z never drift apart. The opening float is **not** captured here — float is only recorded at close — so `expectedCashCents` is the cash-sales-only expectation (cash sales by `bills.paid_at` minus cash refunds by `refunds.created_at`), not the drawer expectation you'll see on the stored Z.
+Live day report (cierre de caja, issue #649). Recomputes the day's aggregates on every read using the same snapshot pipeline that backs the stored Z. `openingFloatCents` is reported for context but is **not** included in `expectedCashCents`; the X expected figure includes cash sales, Pay In, Pay Out, Safe Drop, and cash refunds by `refunds.created_at`. The stored Z adds the opening float at close, so X and Z expected values differ by exactly `opening_float_cents` for the same day.
 
 **Role:** owner, manager
 
@@ -976,6 +976,26 @@ Live day report (cierre de caja, issue #649). Recomputes the day's aggregates on
     "taxComponents": [
       { "title": "CGST", "amount": 187.5, "rate": 0.025 }
     ],
+    "openingFloatCents": 50000,
+    "payInCents": 12500,
+    "payOutCents": 5000,
+    "safeDropCents": 10000,
+    "cashMovements": [
+      {
+        "id": 101,
+        "business_date": "2025-03-31",
+        "movement_type": "pay_in",
+        "amount_cents": 12500,
+        "reason": "Petty cash returned",
+        "created_by": "owner-1",
+        "created_by_name": "Owner One",
+        "created_at": "2025-03-31 20:15:00",
+        "voided_at": null,
+        "voided_by": null,
+        "voided_by_name": null,
+        "void_reason": null
+      }
+    ],
     "expectedCashCents": 875000,
     "alreadyClosed": false
   }
@@ -985,7 +1005,10 @@ Live day report (cierre de caja, issue #649). Recomputes the day's aggregates on
 | Field | Type | Description |
 |-------|------|-------------|
 | `grossCollected`, `refunded`, `netCollected`, `paymentMethods[].total`, `staffSales[].revenue`, `taxComponents[].amount` | number | **Display major units** (minor-factor-divided; matches `financial-summary` / tax-components). |
-| `expectedCashCents` | integer | **INTEGER cents.** Cash sales by `bills.paid_at` minus cash refunds by `refunds.created_at`. Excludes the opening float. The consuming client must convert any counted-cash input to cents before comparing. |
+| `openingFloatCents` | integer \| null | Active opening-float movement for the day, or `null` when none is recorded. This is reported for context and is excluded from the X expected figure. |
+| `payInCents`, `payOutCents`, `safeDropCents` | integer | **INTEGER cents.** Totals of active movements for the day. |
+| `cashMovements` | array | Active movement records for the day. Voided movements are omitted from this X-report list; use the movement-history endpoint to see append-only records and soft-void metadata. |
+| `expectedCashCents` | integer | **INTEGER cents.** `cash_sales + pay_ins − pay_outs − safe_drops − cash_refunds(created_at)`. Excludes the opening float. The consuming client must convert any counted-cash input to cents before comparing. |
 | `businessDate` / `periodStart` / `periodEnd` | string | `businessDate` is a tenant business date (`YYYY-MM-DD`). `periodStart` and `periodEnd` are UTC bounds of that business date's configured 24-hour period, formatted `YYYY-MM-DD HH:MM:SS` (space-separated, no `T`, no `Z`, no millis — produced by `dayBoundsInTimezone()` and matching the SQLite `CURRENT_TIMESTAMP` family). |
 | `alreadyClosed` | boolean | `true` when a `cash_closures` row exists for the day. |
 | `priorClosedCashCents` | integer \| null | INTEGER cents counted-cash from the most recent prior `scope='day'` `cash_closures` row (used to default the next day's opening float). `null` when no prior day close exists. |
@@ -1040,6 +1063,25 @@ Stored day-close snapshot. Reads the immutable `cash_closures` row for the reque
     "tax_components": [
       { "title": "CGST", "amount": 187.5, "rate": 0.025 }
     ],
+    "pay_in_cents": 12500,
+    "pay_out_cents": 5000,
+    "safe_drop_cents": 10000,
+    "cash_movements": [
+      {
+        "id": 101,
+        "business_date": "2025-03-31",
+        "movement_type": "pay_in",
+        "amount_cents": 12500,
+        "reason": "Petty cash returned",
+        "created_by": "owner-1",
+        "created_by_name": "Owner One",
+        "created_at": "2025-03-31 20:15:00",
+        "voided_at": null,
+        "voided_by": null,
+        "voided_by_name": null,
+        "void_reason": null
+      }
+    ],
     "z_number": 17,
     "closed_by": "owner-1",
     "notes": null,
@@ -1050,7 +1092,8 @@ Stored day-close snapshot. Reads the immutable `cash_closures` row for the reque
 
 | Field | Type | Description |
 |-------|------|-------------|
-| All `*_cents` fields | integer | **INTEGER cents.** `expected_cash_cents` includes the opening float: `expected = opening_float + cash_sales − cash_refunds(created_at)`. The same-day X and Z expected values therefore differ by exactly `opening_float_cents` — consumers must not compare them directly. |
+| All `*_cents` fields | integer | **INTEGER cents.** `expected_cash_cents` includes the opening float and active movements: `expected = opening_float + cash_sales + pay_ins − pay_outs − safe_drops − cash_refunds(created_at)`. The same-day X and Z expected values therefore differ by exactly `opening_float_cents` — consumers must not compare them directly. |
+| `cash_movements` | array | Active movement records captured in the immutable close snapshot, including opening float, Pay In, Pay Out, and Safe Drop entries. |
 | `payment_methods[].total_cents`, `staff_sales[].revenue_cents` | integer | INTEGER cents (storage shape; converted to display major units at the X read edge). |
 | `tax_components[].amount` | number | **Display major units** — identical to the X response's `taxComponents`, not cents. The Z stores the same `aggregateTaxComponents` output verbatim and serves it without conversion. |
 | `variance_cents` | integer | `counted_cash_cents − expected_cash_cents`. May be negative. |
@@ -1069,6 +1112,89 @@ Stored day-close snapshot. Reads the immutable `cash_closures` row for the reque
 ---
 
 ## Cash Closures
+
+### GET `/api/cash-closures/movements`
+
+List the active cash-drawer movements for a tenant business date. The response is ordered newest first. This endpoint includes opening float, Pay In, Pay Out, and Safe Drop records that have not been voided.
+
+**Role:** owner, manager, cashier
+
+**Headers:** `Authorization: Bearer <owner-manager-or-cashier-token>`
+
+**Query params:** `?business_date=YYYY-MM-DD` — tenant business date. The legacy alias `date` is also accepted.
+
+**Response (200):**
+```json
+{
+  "businessDate": "2025-03-31",
+  "movements": [
+    {
+      "id": 101,
+      "business_date": "2025-03-31",
+      "movement_type": "pay_in",
+      "amount_cents": 12500,
+      "reason": "Petty cash returned",
+      "created_by": "owner-1",
+      "created_by_name": "Owner One",
+      "created_at": "2025-03-31 20:15:00",
+      "voided_at": null,
+      "voided_by": null,
+      "voided_by_name": null,
+      "void_reason": null
+    }
+  ]
+}
+```
+
+`movement_type` is one of `opening_float`, `pay_in`, `pay_out`, or `safe_drop`. All `amount_cents` values are non-negative integer cents.
+
+### POST `/api/cash-closures/movements`
+
+Append a cash-drawer movement to an open tenant business date. Movement rows are never updated or deleted by this endpoint. Only one active `opening_float` may exist for a business date.
+
+**Role:** owner, manager, cashier
+
+**Headers:** `Authorization: Bearer <owner-manager-or-cashier-token>`
+
+**Request:**
+```json
+{
+  "business_date": "2025-03-31",
+  "movement_type": "pay_in",
+  "amount_cents": 12500,
+  "reason": "Petty cash returned"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `business_date` | string | Tenant business date (`YYYY-MM-DD`). Must be a real, non-future calendar date. |
+| `movement_type` | string | `opening_float`, `pay_in`, `pay_out`, or `safe_drop`. |
+| `amount_cents` | integer | Non-negative integer cents for `opening_float`; positive integer cents for other movement types. |
+| `reason` | string \| optional | Optional for `opening_float`; required for other movement types. Maximum 500 characters. |
+
+**Response (201):** `{ "movement": { ...movement fields... } }`
+
+**Errors:** 400 for invalid input, 409 when the day is already closed or an active opening float already exists for the date.
+
+### POST `/api/cash-closures/movements/:id/void`
+
+Soft-void an existing cash movement. The original row remains in history with `voided_at`, `voided_by`, and `void_reason` populated, and no new movement row is created.
+
+**Role:** owner, manager
+
+**Headers:** `Authorization: Bearer <owner-or-manager-token>`
+
+**Path params:** `:id` — positive integer movement ID.
+
+**Request:**
+```json
+{ "reason": "Entered on the wrong business date" }
+```
+
+**Response (200):** `{ "movement": { ...movement fields with void metadata... } }`
+
+**Errors:** 400 for an invalid ID or missing/overlong reason, 404 when the movement does not exist, or 409 when the movement is already voided or its business date is already closed.
 
 ### POST `/api/cash-closures`
 
@@ -1099,6 +1225,9 @@ Snapshot math (verbatim from spec):
 ```
 expected_cash_cents = opening_float_cents
                     + cash_sales_cents
+                    + pay_in_cents
+                    − pay_out_cents
+                    − safe_drop_cents
                     − cash_refunds_by_created_at_cents
 variance_cents      = counted_cash_cents − expected_cash_cents
 ```
@@ -1132,6 +1261,25 @@ The canonical "cash" identity is the literal `method === 'cash'` filter — cust
     ],
     "tax_components": [
       { "title": "CGST", "amount": 187.5, "rate": 0.025 }
+    ],
+    "pay_in_cents": 12500,
+    "pay_out_cents": 5000,
+    "safe_drop_cents": 10000,
+    "cash_movements": [
+      {
+        "id": 101,
+        "business_date": "2025-03-31",
+        "movement_type": "pay_in",
+        "amount_cents": 12500,
+        "reason": "Petty cash returned",
+        "created_by": "owner-1",
+        "created_by_name": "Owner One",
+        "created_at": "2025-03-31 20:15:00",
+        "voided_at": null,
+        "voided_by": null,
+        "voided_by_name": null,
+        "void_reason": null
+      }
     ],
     "z_number": 17,
     "closed_by": "owner-1",

@@ -211,6 +211,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     !submitting &&
     !!effectiveBill &&
     approverIdForRefund.trim().length > 0 &&
+    approverIdForRefund === approverId &&
     overridePin.trim().length > 0 &&
     method &&
     amountValue > 0 &&

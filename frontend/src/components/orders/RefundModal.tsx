@@ -216,9 +216,9 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
     if (!canSubmit || !effectiveBill) return;
     setSubmitting(true);
     try {
+      const staffResponse = await api.get('/staff', { params: { active: true } });
       const submissionNow = getCurrentTime();
       const submissionIsLate = submissionNow - parseDbTimestamp(order.created_at).getTime() > REFUND_IN_PROGRESS_WINDOW_MS;
-      const staffResponse = await api.get('/staff', { params: { active: true } });
       const configuredApprovers = getConfiguredApprovers(staffResponse.data?.staff || []);
       const eligibleApproversAtSubmission = configuredApprovers.filter((member) => hasRole(
         member.role,

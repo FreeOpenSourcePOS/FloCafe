@@ -141,7 +141,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
     const preservedKdsEnabled = captureKdsEnabledSetting(db);
     const preservedProtectedSettings = captureRestoreProtectedSettings(db);
     const importData = data.data as Record<string, any[]>;
-    const importerUserId = String((req as any).user?.userId || '');
+    const importerUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     const importBatchId = randomUUID();
     const importTimestamp = now();
     const importSchemaVersion = parseImportSchemaVersion(data.schema_version);

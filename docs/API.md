@@ -241,13 +241,17 @@ records an `adjustment` movement with `reference_type: "opening_balance"`.
 The optional `reason` field supplies the opening-balance reason.
 
 ### PUT `/api/products/:id`
-Update product. Supplying `stock_quantity` sets the target stock through an
-audited `adjustment` movement instead of writing the cache directly. The
-optional `reason` field is stored with that movement; omitting
-`stock_quantity` leaves stock unchanged.
+Update product (owner or manager only). Supplying `stock_quantity` sets the
+target stock through an audited `adjustment` movement instead of writing the
+cache directly. The optional `reason` field is stored with that movement;
+omitting `stock_quantity` leaves stock unchanged.
+
+**Headers:** `Authorization: Bearer <token>`
 
 ### POST `/api/products/:id/stock`
 Apply a manual stock adjustment (owner or manager only).
+
+**Headers:** `Authorization: Bearer <token>`
 
 **Request:**
 ```json
@@ -292,7 +296,7 @@ List product inventory movements (owner or manager only), newest first.
       "actor_user_id": "user-1",
       "actor_name": "Owner",
       "stock_after": 8,
-      "created_at": "2025-03-31T12:00:00Z",
+      "created_at": "2025-03-31 12:00:00",
       "imported_by_user_id": null,
       "import_batch_id": null,
       "source_actor_user_id": null,

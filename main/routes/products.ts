@@ -766,7 +766,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
 
     const id = generateShortId('products');
     const initialStock = stock_quantity ?? 0;
-    const actorUserId = String((req as any).user?.userId || '');
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
       return res.status(400).json({ error: addonGroupValidation.error });
@@ -905,7 +905,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const hasWeightPrecision = hasOwn(req.body, 'weight_precision');
     const hasStockQuantity = hasOwn(req.body, 'stock_quantity') && stock_quantity !== null && stock_quantity !== undefined;
     const stockAdjustmentReason = stockReason(req.body.reason, 'Manual product stock update');
-    const actorUserId = String((req as any).user?.userId || '');
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
 
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
@@ -1053,7 +1053,7 @@ router.post('/:id/stock', requireRole(...ROLE_ACCESS.ownerManager), (req: Reques
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const actorUserId = String((req as any).user?.userId || '');
+    const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     const updated = db.transaction(() => {
       const current = db.prepare('SELECT stock_quantity FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as { stock_quantity?: number } | undefined;
       if (!current) throw Object.assign(new Error('Product not found'), { statusCode: 404 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import axios from 'axios';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
@@ -27,13 +27,25 @@ export interface CashDrawerMovement {
   void_reason: string | null;
 }
 
-function localDateInTimezone(timeZone: string): string {
-  return new Intl.DateTimeFormat('en-CA', {
+function localDateInTimezone(timeZone: string, startTime = '00:00'): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date());
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date());
+  const localPart = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  const localDate = `${localPart('year')}-${localPart('month')}-${localPart('day')}`;
+  const startMatch = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(startTime.trim());
+  const localMinutes = Number(localPart('hour')) * 60 + Number(localPart('minute'));
+  const startMinutes = startMatch ? Number(startMatch[1]) * 60 + Number(startMatch[2]) : 0;
+  if (startMatch && localMinutes < startMinutes) {
+    return new Date(Date.UTC(Number(localPart('year')), Number(localPart('month')) - 1, Number(localPart('day')) - 1)).toISOString().slice(0, 10);
+  }
+  return localDate;
 }
 
 export function useCashDrawerMovements() {
@@ -43,7 +55,10 @@ export function useCashDrawerMovements() {
   const fmt = useFormatCurrency();
   const unitAdapter = useCurrencyUnitAdapter();
   const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || 'INR');
-  const todayLocal = localDateInTimezone(currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const todayLocal = localDateInTimezone(
+    currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+    currentTenant?.business_day_start_time || '00:00',
+  );
   const [open, setOpen] = useState(false);
   const [businessDate, setBusinessDate] = useState(todayLocal);
   const [movementType, setMovementType] = useState<CashDrawerMovementType>('pay_in');
@@ -53,20 +68,28 @@ export function useCashDrawerMovements() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const movementRequestRef = useRef(0);
+  const businessDateRef = useRef(businessDate);
+  businessDateRef.current = businessDate;
 
-  const loadMovements = async (date = businessDate) => {
+  const loadMovements = async (date?: string) => {
+    const requestedDate = date ?? businessDateRef.current;
+    if (date !== undefined) businessDateRef.current = date;
+    const requestId = ++movementRequestRef.current;
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get('/cash-closures/movements', { params: { business_date: date } });
+      const response = await api.get('/cash-closures/movements', { params: { business_date: requestedDate } });
+      if (requestId !== movementRequestRef.current || requestedDate !== businessDateRef.current) return;
       setMovements(response.data?.movements || []);
     } catch (err: unknown) {
+      if (requestId !== movementRequestRef.current || requestedDate !== businessDateRef.current) return;
       const message = axios.isAxiosError(err)
         ? err.response?.data?.error || err.message
         : err instanceof Error ? err.message : tCommon('somethingWrong');
       setError(message);
     } finally {
-      setLoading(false);
+      if (requestId === movementRequestRef.current) setLoading(false);
     }
   };
 

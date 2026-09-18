@@ -272,6 +272,63 @@ async function runTests() {
     'rejected stock reset preserves movement history',
   );
 
+  db.prepare('INSERT INTO products (id, name, price, stock_quantity) VALUES (?, ?, ?, ?)')
+    .run('zero-stock-history-product', 'Zero Stock History Product', 10, 0);
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, ?)
+  `).run('zero-stock-history-product', 1, 'zero-stock-history-product', 'Opening count', 'owner-1', 1, now());
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'sale', 'order_item', ?, ?, ?, ?, ?)
+  `).run('zero-stock-history-product', -1, 'zero-stock-history-order-item', null, 'owner-1', 0, now());
+  const historyDeletionImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'zero-stock-history-product', name: 'Zero Stock History Product', price: 10, stock_quantity: 0 }],
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(historyDeletionImport.status === 400, `overwrite imports reject ledger history deletion (got ${historyDeletionImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('zero-stock-history-product') as { count: number }).count,
+    2,
+    'rejected zero-stock replacement preserves all movement history',
+  );
+  const emptyHistoryDeletionImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [],
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(emptyHistoryDeletionImport.status === 400, `empty overwrite imports reject ledger history deletion (got ${emptyHistoryDeletionImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('zero-stock-history-product') as { count: number }).count,
+    2,
+    'empty rejected replacement preserves all movement history',
+  );
+  db.prepare('DELETE FROM inventory_movements WHERE product_id IN (?, ?)').run('existing-stock-product', 'zero-stock-history-product');
+  db.prepare('DELETE FROM products WHERE id IN (?, ?)').run('existing-stock-product', 'zero-stock-history-product');
+
   const incompleteInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,
@@ -392,6 +449,9 @@ async function runTests() {
     1,
     'rejected merged-state import leaves movement history unchanged',
   );
+
+  db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('merged-state-product');
+  db.prepare('DELETE FROM products WHERE id = ?').run('merged-state-product');
 
   const partialBaselineImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',

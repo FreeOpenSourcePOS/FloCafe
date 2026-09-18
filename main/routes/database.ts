@@ -172,10 +172,14 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
           error: 'Product stock must match the latest inventory movement history',
         });
       }
+    }
+
+    if ((overwrite || hasVersionMismatch) && Array.isArray(importData.products)) {
       const inventoryReplacementError = validateInventoryLedgerReplacement(
         db.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
+        db.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[],
         importData.products,
-        importData.inventory_movements,
+        Array.isArray(importData.inventory_movements) ? importData.inventory_movements : [],
       );
       if (inventoryReplacementError) {
         return res.status(400).json({ error: inventoryReplacementError });

@@ -1373,6 +1373,7 @@ export function validateInventoryLedgerDatabase(dbInstance: Database.Database): 
 
 export function validateInventoryLedgerReplacement(
   currentProductRows: readonly Record<string, unknown>[],
+  currentMovementRows: readonly Record<string, unknown>[],
   replacementProductRows: readonly Record<string, unknown>[],
   replacementMovementRows: readonly Record<string, unknown>[],
 ): string | null {
@@ -1386,6 +1387,17 @@ export function validateInventoryLedgerReplacement(
       .map((row) => row?.product_id == null ? '' : String(row.product_id))
       .filter(Boolean),
   );
+  const currentMovementProductIds = new Set(
+    currentMovementRows
+      .map((row) => row?.product_id == null ? '' : String(row.product_id))
+      .filter(Boolean),
+  );
+
+  for (const productId of currentMovementProductIds) {
+    if (!movementProductIds.has(productId)) {
+      return 'Inventory movement history cannot be erased by a replacement';
+    }
+  }
 
   for (const row of currentProductRows) {
     const productId = row?.id == null ? '' : String(row.id);
@@ -1457,6 +1469,7 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
 
     const inventoryReplacementError = validateInventoryLedgerReplacement(
       currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
+      currentDb.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[],
       backupDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
       backupDb.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[],
     );
@@ -2184,6 +2197,7 @@ function dataOnlyRestore(
   if (backupTables.includes('products')) {
     const inventoryReplacementError = validateInventoryLedgerReplacement(
       currentDb.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
+      currentDb.prepare('SELECT product_id FROM inventory_movements').all() as Record<string, unknown>[],
       backupProductRows,
       backupMovementRows,
     );

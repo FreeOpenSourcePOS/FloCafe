@@ -237,6 +237,36 @@ export function resolveTenantCurrency(currency: unknown, countryCode: unknown): 
   return getCountryByCode(String(countryCode || ''))?.currency || 'INR';
 }
 
+// Neutral fallback preferences for locales without country-specific options.
+const NEUTRAL_LOCALE_PREFERENCES = {
+  currency_display: 'rial',
+  number_digits: 'locale',
+  calendar: 'locale',
+} as const;
+
+export type LocalePreferenceKey = keyof typeof NEUTRAL_LOCALE_PREFERENCES;
+
+const LOCALE_OPTION_FIELDS: Record<LocalePreferenceKey, keyof CountryLocaleOptions> = {
+  currency_display: 'currencyDisplay',
+  number_digits: 'digits',
+  calendar: 'calendar',
+};
+
+export function isLocalePreferenceKey(key: string): key is LocalePreferenceKey {
+  return key === 'currency_display' || key === 'number_digits' || key === 'calendar';
+}
+
+export function isLocalePreferenceSupported(key: LocalePreferenceKey, value: string, countryCode: string): boolean {
+  if (value === NEUTRAL_LOCALE_PREFERENCES[key]) return true;
+  const options = getCountryByCode(countryCode)?.localeOptions?.[LOCALE_OPTION_FIELDS[key]];
+  return Array.isArray(options) && (options as readonly string[]).includes(value);
+}
+
+export function resolveStoredLocalePreference(key: LocalePreferenceKey, stored: string | undefined, countryCode: string): string {
+  if (stored && isLocalePreferenceSupported(key, stored, countryCode)) return stored;
+  return NEUTRAL_LOCALE_PREFERENCES[key];
+}
+
 export const getCurrencySymbol = (currency: string, locale = 'en-US'): string => {
   if (!currency) return currency;
   try {
@@ -488,3 +518,92 @@ export const DEFAULT_COUNTRY_PROFILE = {
   taxIdLabel: 'Tax ID',
   taxName: 'Tax',
 } as const;
+
+// ── Regional snapshot (docs/regional-snapshot.md) ───────────────────────────
+//
+// The country chosen at signup, and the ISO 4217 currency that follows from
+// it, are the only source of a store's regional identity. Everything else
+// here is derived from that pair via Intl/ISO/IANA conventions — there is no
+// default country and no per-store override of a derived value. See
+// docs/business-decisions.md, "Regional settings come from signup, never
+// from a fallback".
+
+/** Thrown when a store has no resolvable country. Callers should surface this
+ * as a 409, not substitute a default country. */
+export class RegionalNotConfiguredError extends Error {
+  constructor(countryCode: unknown) {
+    super(`Regional settings are not configured (country: ${JSON.stringify(countryCode)})`);
+    this.name = 'RegionalNotConfiguredError';
+  }
+}
+
+export interface RegionalSnapshot {
+  country: string;
+  locale: string;
+  currency: string;
+  currencySymbol: string;
+  currencyPosition: 'prefix' | 'suffix';
+  currencyFractionDigits: number;
+  decimalSeparator: string;
+  groupSeparator: string;
+  timezone: string;
+  preferences: { currencyDisplay: CurrencyDisplay; digits: DigitMode; calendar: CalendarMode };
+}
+
+// Whether the currency symbol renders before or after the amount for this locale/currency pair.
+function regionalCurrencyPosition(locale: string, currency: string): 'prefix' | 'suffix' {
+  try {
+    const parts = new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+      .formatToParts(1);
+    return parts.findIndex((part) => part.type === 'currency') < parts.findIndex((part) => part.type === 'integer')
+      ? 'prefix'
+      : 'suffix';
+  } catch {
+    return 'prefix';
+  }
+}
+
+// Decimal and thousands-group separators for this locale, per CLDR via Intl.
+function regionalNumberSeparators(locale: string): { decimalSeparator: string; groupSeparator: string } {
+  try {
+    const parts = new Intl.NumberFormat(locale).formatToParts(12345.6);
+    return {
+      decimalSeparator: parts.find((part) => part.type === 'decimal')?.value ?? '.',
+      groupSeparator: parts.find((part) => part.type === 'group')?.value ?? '',
+    };
+  } catch {
+    return { decimalSeparator: '.', groupSeparator: ',' };
+  }
+}
+
+/**
+ * Resolves a store's regional identity from its settings. Pure: same
+ * settings in, same snapshot out, no I/O. Throws RegionalNotConfiguredError
+ * when the store has no resolvable country — callers must not substitute a
+ * default rather than handling that.
+ */
+export function resolveRegionalSnapshot(settings: Record<string, string | undefined>): RegionalSnapshot {
+  const country = getCountryByCode(settings.country ?? '');
+  if (!country) throw new RegionalNotConfiguredError(settings.country);
+
+  const currency = resolveTenantCurrency(settings.currency, country.code);
+  const timezone = isValidTimeZone(settings.timezone) ? (settings.timezone as string) : country.timezone;
+  const { decimalSeparator, groupSeparator } = regionalNumberSeparators(country.locale);
+
+  return {
+    country: country.code,
+    locale: country.locale,
+    currency,
+    currencySymbol: getCurrencySymbol(currency, country.locale),
+    currencyPosition: regionalCurrencyPosition(country.locale, currency),
+    currencyFractionDigits: getCurrencyFractionDigits(currency),
+    decimalSeparator,
+    groupSeparator,
+    timezone,
+    preferences: {
+      currencyDisplay: resolveStoredLocalePreference('currency_display', settings.currency_display, country.code) as CurrencyDisplay,
+      digits: resolveStoredLocalePreference('number_digits', settings.number_digits, country.code) as DigitMode,
+      calendar: resolveStoredLocalePreference('calendar', settings.calendar, country.code) as CalendarMode,
+    },
+  };
+}

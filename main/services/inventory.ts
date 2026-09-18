@@ -160,12 +160,12 @@ export function listInventoryMovements(
     params.push(filters.movementType);
   }
   if (filters.referenceType) {
-    conditions.push('m.reference_type = ?');
-    params.push(filters.referenceType);
+    conditions.push('(m.reference_type = ? OR m.source_reference_type = ?)');
+    params.push(filters.referenceType, filters.referenceType);
   }
   if (filters.referenceId) {
-    conditions.push('m.reference_id = ?');
-    params.push(filters.referenceId);
+    conditions.push('(m.reference_id = ? OR m.source_reference_id = ?)');
+    params.push(filters.referenceId, filters.referenceId);
   }
   if (filters.beforeId !== undefined) {
     const cursor = db.prepare('SELECT created_at FROM inventory_movements WHERE id = ?').get(filters.beforeId) as

@@ -1391,6 +1391,7 @@ function inventoryMovementHistoryKey(row: Record<string, unknown>): string {
     return Number.isFinite(numeric) ? numeric : String(value);
   };
   return JSON.stringify([
+    numericValue(row.id),
     nullableString(row.product_id),
     numericValue(row.quantity_delta),
     nullableString(row.movement_type),
@@ -4345,6 +4346,19 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 85,
     name: 'add_inventory_movements',
     up: () => {
+      const negativeStockedProduct = db.prepare(`
+        SELECT id, stock_quantity
+        FROM products
+        WHERE stock_quantity < 0
+        ORDER BY id
+        LIMIT 1
+      `).get() as { id: string; stock_quantity: number } | undefined;
+      if (negativeStockedProduct) {
+        throw new Error(
+          `Cannot migrate inventory movements while product ${negativeStockedProduct.id} has negative stock_quantity (${negativeStockedProduct.stock_quantity}). Correct the stock quantity and retry the migration.`,
+        );
+      }
+
       db.exec(`
         CREATE TABLE IF NOT EXISTS inventory_movements (
           id INTEGER PRIMARY KEY AUTOINCREMENT,

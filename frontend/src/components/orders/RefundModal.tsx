@@ -414,7 +414,11 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
               <select
                 id="refundApprover"
                 value={approverIdForRefund}
-                onChange={(e) => setApproverId(e.target.value)}
+                onChange={(e) => {
+                  setApproverId(e.target.value);
+                  setOverridePin('');
+                }}
+                disabled={submitting}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
               >
                 <option value="">{t('refundApproverPlaceholder')}</option>
@@ -444,6 +448,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
               value={overridePin}
               maxLength={6}
               onChange={(e) => setOverridePin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              disabled={submitting}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
             />
             <p className="text-xs text-muted-foreground mt-1">{t('refundApprovalPinHint')}</p>

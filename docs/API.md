@@ -1115,7 +1115,7 @@ Stored day-close snapshot. Reads the immutable `cash_closures` row for the reque
 
 ### GET `/api/cash-closures/movements`
 
-List the active cash-drawer movements for a tenant business date. The response is ordered newest first. This endpoint includes opening float, Pay In, Pay Out, and Safe Drop records that have not been voided.
+List the append-only cash-drawer movement history for a tenant business date. The response is ordered newest first and includes opening float, Pay In, Pay Out, and Safe Drop records, including soft-voided records with their audit metadata.
 
 **Role:** owner, manager, cashier
 
@@ -1356,7 +1356,7 @@ Unsupported text in a financial Z-report unit fails closed before dispatch and
 returns a financial warning in the 502 response. Non-financial skipped text is
 reported in `warnings` without claiming that it printed.
 
-Printed Z layout, in spec order: header (business name, address, tax id — **branch omitted: no branch data source exists in the schema**) → Z number + business date + period start/end → opening float → sales by payment method → refunds → tax breakdown → staff sales → expected / counted / variance (variance emphasized) → operator + signature line → footer. The forced drawer pulse is appended after the footer.
+Printed Z layout, in spec order: header (business name, address, tax id — **branch omitted: no branch data source exists in the schema**) → Z number + business date + period start/end → opening float → cash movements (Pay In, Pay Out, Safe Drop) → sales by payment method → refunds → tax breakdown → staff sales → expected / counted / variance (variance emphasized) → operator + signature line → footer. The forced drawer pulse is appended after the footer.
 
 ---
 

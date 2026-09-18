@@ -183,36 +183,32 @@ function activeOpeningFloatCents(db: ReturnType<typeof getDatabase>, businessDat
  *  - `closed_by_name` resolves the operator's `users.name`, falling back
  *    to the raw id when the row was orphaned (staff deletion, etc.).
  *  - JSON columns (`payment_methods_json`, `staff_sales_json`,
- *    `tax_components_json`, `cash_movements_json`) are parsed into typed arrays; empty / invalid
- *    JSON becomes `[]` so the body builder renders "(none)" rather
- *    than blowing up.
+ *    `tax_components_json`, `cash_movements_json`) are parsed into typed arrays;
+ *    malformed snapshot data fails the print rather than omitting sections.
  *  - `__isReprint` is the synthetic flag the body builder uses to add
  *    the localized reprint marker; caller passes `true` for reprints.
  */
 function shapeZReportSnapshot(db: ReturnType<typeof getDatabase>, row: any, isReprint: boolean): any {
   const userRow = db.prepare(`SELECT name FROM users WHERE id = ?`).get(row.closed_by) as { name: string } | undefined;
-  const safeJson = (raw: string | null | undefined, fallback: any[] = []): any[] => {
-    if (!raw) return fallback;
+  const safeJson = (raw: string | null | undefined, field: string): any[] => {
+    if (typeof raw !== 'string') throw new Error(`Stored cash closure ${field} is missing`);
     try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : fallback;
+      if (!Array.isArray(parsed)) throw new Error('expected an array');
+      return parsed;
     } catch (err) {
-      // F5: a corrupt JSON column on an immutable financial document must
-      // surface, not silently mask as an empty section. The handler that
-      // built the row already validated input; if we reach here the stored
-      // data is the problem and the operator deserves to know which section
-      // is empty so they can verify against the live report before reissuing.
-      console.warn('[CashClosures] safeJson: corrupt stored JSON, falling back:', err instanceof Error ? err.message : err);
-      return fallback;
+      const detail = err instanceof Error ? err.message : 'invalid JSON';
+      console.error(`[CashClosures] Invalid stored ${field}:`, detail);
+      throw new Error(`Stored cash closure ${field} is invalid`);
     }
   };
   return {
     ...row,
     closed_by_name: userRow?.name ?? row.closed_by,
-    payment_methods: safeJson(row.payment_methods_json, []),
-    staff_sales: safeJson(row.staff_sales_json, []),
-    tax_components: safeJson(row.tax_components_json, []),
-    cash_movements: safeJson(row.cash_movements_json, []),
+    payment_methods: safeJson(row.payment_methods_json, 'payment_methods_json'),
+    staff_sales: safeJson(row.staff_sales_json, 'staff_sales_json'),
+    tax_components: safeJson(row.tax_components_json, 'tax_components_json'),
+    cash_movements: safeJson(row.cash_movements_json, 'cash_movements_json'),
     __isReprint: isReprint,
   };
 }

@@ -128,7 +128,7 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
                 </div>
                 <div className="rounded-lg border border-border p-3 bg-muted/40">
                   <p className="text-xs text-muted-foreground">{t('expectedCashWithMovements')}</p>
-                  <p className="text-lg font-semibold text-foreground ltr-island"><Ltr>{fmt(xReport.expectedCashCents / minorFactor)}</Ltr></p>
+                  <p className="text-lg font-semibold text-foreground ltr-island"><Ltr>{fmt((xReport.expectedCashCents + (xReport.openingFloatCents ?? 0)) / minorFactor)}</Ltr></p>
                   <p className="text-[11px] text-muted-foreground mt-1">
                     {t('refundsCount', { count: xReport.refundCount })}
                     {/* refunded is display MAJOR units like grossCollected above. */}

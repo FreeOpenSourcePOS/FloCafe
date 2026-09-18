@@ -144,6 +144,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         business_name: 'First Cafe',
         setup_profile: 'express',
         service_model: 'qsr',
+        country: 'CA',
       }),
     });
     assert.equal(withoutTerms.status, 400, 'setup rejects account creation without terms acceptance');
@@ -347,7 +348,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       body: JSON.stringify({
         name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
         business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-        terms_accepted: true,
+        terms_accepted: true, country: 'US',
         owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
         cloud_sync_enabled: true, cloud_server_url: 'not-a-valid-url',
       }),
@@ -361,7 +362,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       body: JSON.stringify({
         name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
         business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-        terms_accepted: true,
+        terms_accepted: true, country: 'US',
         owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
         cloud_sync_enabled: true, cloud_server_url: 'https://cloud.example.test/relay',
       }),

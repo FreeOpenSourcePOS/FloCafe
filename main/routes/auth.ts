@@ -882,10 +882,10 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       language,
       business_name,
       store_name,
-      country = 'IN',
-      currency = 'INR',
+      country,
+      currency,
       currency_symbol,
-      timezone = 'Asia/Kolkata',
+      timezone,
       business_address,
       address,
       business_phone,
@@ -903,15 +903,27 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       email_marketing,
     } = req.body;
     const email = normalizeEmail(req.body.email);
+    // Regional settings come from signup, never from a fallback — see
+    // docs/business-decisions.md. There is no default country.
+    const resolvedCountry = getCountryByCode(country);
+    if (!resolvedCountry) {
+      return res.status(400).json({ error: 'A valid country is required' });
+    }
     const displayName = String(name || '').trim();
     const normalizedBusinessType = String(business_type || 'restaurant').trim();
     const normalizedSetupProfile = String(setup_profile || 'express').trim().toLowerCase();
     const normalizedServiceModel = String(service_model || 'qsr').trim().toLowerCase();
-    const normalizedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
+    // Omitted currency derives from the country profile; an explicitly-invalid
+    // one is rejected rather than silently replaced (resolveTenantCurrency's
+    // read-time leniency is the wrong tool for validating a write).
+    const normalizedCurrency = currency === undefined
+      ? resolvedCountry.currency
+      : typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
     if (!isSyntacticallyValidCurrencyCode(normalizedCurrency)) {
       return res.status(400).json({ error: 'Invalid currency' });
     }
-    if (!isValidTimeZone(timezone)) {
+    const resolvedTimezone = timezone === undefined ? resolvedCountry.timezone : timezone;
+    if (!isValidTimeZone(resolvedTimezone)) {
       return res.status(400).json({ error: 'Invalid timezone' });
     }
     const storeName = String(store_name || business_name || '').trim();
@@ -1008,8 +1020,8 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         business_type: normalizedBusinessType,
         country,
         currency: normalizedCurrency,
-        currency_symbol: currency_symbol || getCurrencySymbol(normalizedCurrency, getCountryByCode(country)?.locale),
-        timezone,
+        currency_symbol: currency_symbol || getCurrencySymbol(normalizedCurrency, resolvedCountry.locale),
+        timezone: resolvedTimezone,
         language,
         business_address: outletAddress,
         business_phone: outletPhone,

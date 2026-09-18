@@ -48,6 +48,7 @@ async function run() {
     setup_profile: 'empty',
     service_model: 'qsr',
     terms_accepted: true,
+    country: 'US',
     master_pin: '1234',
     owner_approval_pin: '5678',
     owner_approval_pin_confirmation: '5678',

@@ -1843,6 +1843,7 @@
     "businessNamePlaceholder": "Name des Restaurants",
     "chooseCountry": "Ihr Land auswählen",
     "chooseCountryHint": "FloCafe verwendet Ihr Land, um die richtige Währung, das Steuerformat und die Demodaten auszuwählen.",
+    "chooseCountryRequired": "Wählen Sie Ihr Land, um fortzufahren",
     "chooseLanguage": "Sprache wählen",
     "chooseLanguageHint": "Wählen Sie die Sprache für den Einrichtungsassistenten vor der Länderauswahl.",
     "cloudEnableHint": "Cloud-Dienste sind optional und standardmäßig deaktiviert. Aktivieren Sie sie, um FloCafe für Funktionen wie RevFlo-Berichte, Gerätekopplung und unterstützte Kontodienste mit FloAdministrator zu verbinden.",

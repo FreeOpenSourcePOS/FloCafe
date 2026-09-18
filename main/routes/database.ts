@@ -188,6 +188,12 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
       }
     }
 
+    if ((overwrite || hasVersionMismatch) && Array.isArray(importData.inventory_movements) && getInventoryMovementRows(db).length > 0) {
+      return res.status(400).json({
+        error: 'Overwrite imports cannot replace existing inventory movement history',
+      });
+    }
+
     if ((overwrite || hasVersionMismatch) && Array.isArray(importData.products)) {
       const inventoryReplacementError = validateInventoryLedgerReplacement(
         db.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],

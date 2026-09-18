@@ -1932,6 +1932,9 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
     periodStart: localTime(z?.period_start),
     periodEnd: localTime(z?.period_end),
     openingFloatCents: Number(z?.opening_float_cents) || 0,
+    payInCents: Number(z?.pay_in_cents) || 0,
+    payOutCents: Number(z?.pay_out_cents) || 0,
+    safeDropCents: Number(z?.safe_drop_cents) || 0,
     paymentMethods: (Array.isArray(z?.payment_methods) ? z.payment_methods : []).map((row: any) => ({
       method: String(row?.method || ''),
       count: Number(row?.count) || 0,
@@ -1990,6 +1993,12 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
 
   pushZReportHeading(sections, zDocument.openingFloat.label, zContext, true);
   sections.push('{FINANCIAL}' + rightAlign(formatAmount(zDocument.openingFloat.cents), cols));
+  sections.push('');
+
+  pushZReportSectionHeading(sections, zDocument.cashMovements.heading, zContext);
+  pushZReportLabelValue(sections, zDocument.cashMovements.payIn.label, formatAmount(zDocument.cashMovements.payIn.cents), zContext);
+  pushZReportLabelValue(sections, zDocument.cashMovements.payOut.label, formatAmount(zDocument.cashMovements.payOut.cents), zContext);
+  pushZReportLabelValue(sections, zDocument.cashMovements.safeDrop.label, formatAmount(zDocument.cashMovements.safeDrop.cents), zContext);
   sections.push('');
 
   pushZReportSectionHeading(sections, zDocument.payments.heading, zContext);

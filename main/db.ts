@@ -4070,6 +4070,44 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSettingIfMissing('server_app_bill_printing_enabled', 'false');
     },
   },
+  {
+    version: 84,
+    name: 'add_cash_drawer_movements',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS cash_drawer_movements (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          business_date TEXT NOT NULL CHECK (business_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+          movement_type TEXT NOT NULL CHECK (movement_type IN ('opening_float', 'pay_in', 'pay_out', 'safe_drop')),
+          amount_cents INTEGER NOT NULL CHECK (amount_cents >= 0),
+          reason TEXT,
+          created_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          voided_at TEXT,
+          voided_by TEXT REFERENCES users(id),
+          void_reason TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_cash_drawer_movements_date
+          ON cash_drawer_movements(business_date, created_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS cash_drawer_one_opening_float
+          ON cash_drawer_movements(business_date)
+          WHERE movement_type = 'opening_float' AND voided_at IS NULL;
+      `);
+      const columns = new Set(
+        (db.prepare(`PRAGMA table_info(cash_closures)`).all() as { name: string }[]).map((column) => column.name),
+      );
+      const addColumn = (name: string, definition: string) => {
+        if (!columns.has(name)) {
+          db.exec(`ALTER TABLE cash_closures ADD COLUMN ${definition}`);
+          columns.add(name);
+        }
+      };
+      addColumn('pay_in_cents', 'pay_in_cents INTEGER NOT NULL DEFAULT 0');
+      addColumn('pay_out_cents', 'pay_out_cents INTEGER NOT NULL DEFAULT 0');
+      addColumn('safe_drop_cents', 'safe_drop_cents INTEGER NOT NULL DEFAULT 0');
+      addColumn('cash_movements_json', "cash_movements_json TEXT NOT NULL DEFAULT '[]'");
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

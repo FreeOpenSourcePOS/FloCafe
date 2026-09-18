@@ -22,6 +22,10 @@ export interface CashCloseTicketPreviewLabels {
   operator: string;
   notes: string;
   openingFloat: string;
+  cashMovements: string;
+  payIn: string;
+  payOut: string;
+  safeDrop: string;
   expectedCash: string;
   countedCash: string;
   variance: string;
@@ -58,6 +62,9 @@ export interface CashCloseTicketPreviewProps {
     z_number: number;
     business_date: string;
     opening_float_cents: number;
+    pay_in_cents?: number;
+    pay_out_cents?: number;
+    safe_drop_cents?: number;
     expected_cash_cents: number;
     counted_cash_cents: number;
     variance_cents: number;
@@ -127,6 +134,13 @@ export function CashCloseTicketPreview({ z, minorFactor, formatter, labels }: Ca
 
           {/* Opening float */}
           <Row label={labels.openingFloat} value={formatter(z.opening_float_cents / minorFactor)} first />
+
+          <div className="mt-3 text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+            {labels.cashMovements}
+          </div>
+          <Row label={labels.payIn} value={formatter((z.pay_in_cents ?? 0) / minorFactor)} />
+          <Row label={labels.payOut} value={formatter((z.pay_out_cents ?? 0) / minorFactor)} />
+          <Row label={labels.safeDrop} value={formatter((z.safe_drop_cents ?? 0) / minorFactor)} />
 
           {/* Payment methods */}
           {hasPayments && (

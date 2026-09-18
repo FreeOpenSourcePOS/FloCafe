@@ -291,6 +291,9 @@ const zDocument = buildZReportDocument({
   periodStart: '07/09/2026 09:00',
   periodEnd: '07/09/2026 23:00',
   openingFloatCents: 1000,
+  payInCents: 200,
+  payOutCents: 100,
+  safeDropCents: 50,
   paymentMethods: [{ method: 'cash', count: 2, totalCents: 5000 }],
   refundCount: 1,
   refundedCents: 500,
@@ -314,6 +317,7 @@ assert.equal(zDocument.header.reprintMarker?.conceptId, 'receipt.reprint');
 assert.equal(zDocument.payments.rows[0].label.conceptId, 'pos.methodCash');
 assert.equal(zDocument.payments.rows[0].countLabel.conceptId, 'print.zReport.paymentCount');
 assert.equal(zDocument.cash.variance.cents, -100, 'Z financial truth passes through the semantic document');
+assert.equal(zDocument.cashMovements.safeDrop.cents, 50, 'Z cash movement totals pass through the semantic document');
 for (const [row, property, replacement] of [
   [zDocument.period[0], 'value', null],
   [zDocument.payments.rows[0], 'totalCents', 999],

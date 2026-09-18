@@ -861,17 +861,17 @@ async function main() {
       // F1: full field-for-field equality with the POST response for the
       // same day. Spec ("Testing approach"): "Z round-trip (GET after POST)
       // equals the close response field for field." Compare all 21 keys
-      // and the three parsed snapshot arrays/objects.
+      // and the four parsed snapshot arrays/objects.
       assert(!!sectionThreePost, 'section-3 POST response was captured');
       const expectedKeys = [
         'id', 'scope', 'business_date', 'period_start', 'period_end',
         'opening_float_cents', 'expected_cash_cents', 'counted_cash_cents', 'variance_cents',
         'gross_collected_cents', 'refunded_cents', 'net_collected_cents',
         'bill_count', 'refund_count',
-        'payment_methods', 'staff_sales', 'tax_components',
+        'payment_methods', 'staff_sales', 'tax_components', 'pay_in_cents', 'pay_out_cents', 'safe_drop_cents', 'cash_movements',
         'z_number', 'closed_by', 'closed_by_name', 'notes', 'created_at',
       ];
-      assertEqual(JSON.stringify(Object.keys(report).sort()), JSON.stringify([...expectedKeys].sort()), 'GET zReport has exactly the 22 spec keys (incl. closed_by_name)');
+      assertEqual(JSON.stringify(Object.keys(report).sort()), JSON.stringify([...expectedKeys].sort()), 'GET zReport has the expected closure and movement keys');
       for (const key of expectedKeys) {
         // The three snapshot fields are parsed inside GET (JSON.parse on
         // `row.<x>_json`) so the reference differs from POST's; compare by
@@ -880,7 +880,7 @@ async function main() {
         // stores the raw id); skip it from the POST-equality loop and
         // assert it separately above.
         if (key === 'closed_by_name') continue;
-        if (key === 'payment_methods' || key === 'staff_sales' || key === 'tax_components') {
+        if (key === 'payment_methods' || key === 'staff_sales' || key === 'tax_components' || key === 'cash_movements') {
           assertEqual(JSON.stringify(report[key]), JSON.stringify(sectionThreePost[key]), `zReport.${key} === POST.${key}`);
         } else {
           assertEqual(report[key], sectionThreePost[key], `zReport.${key} === POST.${key}`);
@@ -889,6 +889,7 @@ async function main() {
       assertEqual(JSON.stringify(report.payment_methods), JSON.stringify(sectionThreePost.payment_methods), 'payment_methods deep-equal (order-preserving)');
       assertEqual(JSON.stringify(report.staff_sales), JSON.stringify(sectionThreePost.staff_sales), 'staff_sales deep-equal');
       assertEqual(JSON.stringify(report.tax_components), JSON.stringify(sectionThreePost.tax_components), 'tax_components deep-equal');
+      assertEqual(JSON.stringify(report.cash_movements), JSON.stringify(sectionThreePost.cash_movements), 'cash_movements deep-equal');
     }
 
     console.log('\n13. GET /api/reports/z-report — 404 with alreadyClosed=false for an unclosed date');
@@ -1608,6 +1609,101 @@ async function main() {
       } finally {
         db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_day_start_time', '00:00', CURRENT_TIMESTAMP)").run();
       }
+    }
+
+    console.log('\n20. Cash drawer movements: pay-in/pay-out/safe-drop, audit voids, and close integration');
+    {
+      const movementDate = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const movementBody = (movement_type: string, amount_cents: number, reason?: string) => ({
+        business_date: movementDate, movement_type, amount_cents, ...(reason ? { reason } : {}),
+      });
+      const forbiddenMovement = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send(movementBody('pay_in', 100, 'manager attempt'));
+      assertEqual(forbiddenMovement.status, 201, `manager can record a cash movement (got ${forbiddenMovement.status})`);
+      const managerMovementVoid = await request(app)
+        .post(`/api/cash-closures/movements/${forbiddenMovement.body?.movement?.id}/void`)
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ reason: 'Role-gate fixture cleanup' });
+      assertEqual(managerMovementVoid.status, 200, `manager can void the fixture movement (got ${managerMovementVoid.status})`);
+
+      const nullAmount = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send({ ...movementBody('pay_in', 0, 'invalid'), amount_cents: null });
+      assertEqual(nullAmount.status, 400, `null movement amount is rejected (got ${nullAmount.status})`);
+
+      const opening = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(movementBody('opening_float', 10000));
+      assertEqual(opening.status, 201, `cashier can record an opening float without a reason (got ${opening.status})`);
+      const duplicateOpening = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(movementBody('opening_float', 20000));
+      assertEqual(duplicateOpening.status, 409, `duplicate active opening float is rejected (got ${duplicateOpening.status})`);
+
+      const payIn = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(movementBody('pay_in', 5000, 'cash added'));
+      const payOut = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(movementBody('pay_out', 2000, 'petty cash'));
+      const safeDrop = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(movementBody('safe_drop', 1000, 'safe drop'));
+      assertEqual(payIn.status, 201, `pay-in records successfully (got ${payIn.status})`);
+      assertEqual(payOut.status, 201, `pay-out records successfully (got ${payOut.status})`);
+      assertEqual(safeDrop.status, 201, `safe drop records successfully (got ${safeDrop.status})`);
+
+      const voidCandidate = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(movementBody('pay_in', 3000, 'mistaken cash add'));
+      const voided = await request(app)
+        .post(`/api/cash-closures/movements/${voidCandidate.body?.movement?.id}/void`)
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ reason: 'Entered twice' });
+      assertEqual(voided.status, 200, `manager can soft-void an active movement (got ${voided.status})`);
+
+      const x = await request(app)
+        .get(`/api/reports/x-report?date=${movementDate}`)
+        .set('Authorization', `Bearer ${managerToken}`);
+      assertEqual(x.status, 200, `X report includes movement totals (got ${x.status})`);
+      assertEqual(x.body?.xReport?.openingFloatCents, 10000, 'X report exposes the recorded opening float');
+      assertEqual(x.body?.xReport?.payInCents, 5000, 'X report excludes the voided pay-in');
+      assertEqual(x.body?.xReport?.payOutCents, 2000, 'X report includes pay-out total');
+      assertEqual(x.body?.xReport?.safeDropCents, 1000, 'X report includes safe-drop total');
+      assertEqual(x.body?.xReport?.expectedCashCents, 2000, 'X report expected cash excludes opening float and includes active movements');
+
+      const movements = await request(app)
+        .get(`/api/cash-closures/movements?business_date=${movementDate}`)
+        .set('Authorization', `Bearer ${cashierToken}`);
+      assertEqual(movements.status, 200, `movement history includes cashier-visible rows (got ${movements.status})`);
+      assertEqual(movements.body?.movements?.length, 6, 'movement history keeps voided rows visible');
+      assert(movements.body?.movements?.some((row: any) => row.voided_at && row.void_reason === 'Entered twice'), 'voided movement keeps actor correction metadata');
+
+      const close = await request(app)
+        .post('/api/cash-closures')
+        .set('Authorization', `Bearer ${ownerToken}`)
+        .send({ business_date: movementDate, opening_float_cents: 10000, counted_cash_cents: 22000 });
+      assertEqual(close.status, 201, `close with movement totals succeeds (got ${close.status})`);
+      assertEqual(close.body?.zReport?.expected_cash_cents, 12000, 'Z expected cash = opening + sales + pay-in − pay-out − safe-drop');
+      assertEqual(close.body?.zReport?.pay_in_cents, 5000, 'Z snapshots active pay-in total');
+      assertEqual(close.body?.zReport?.pay_out_cents, 2000, 'Z snapshots pay-out total');
+      assertEqual(close.body?.zReport?.safe_drop_cents, 1000, 'Z snapshots safe-drop total');
+      assertEqual(close.body?.zReport?.cash_movements?.length, 4, 'Z snapshots only active movement rows');
+
+      const afterClose = await request(app)
+        .post('/api/cash-closures/movements')
+        .set('Authorization', `Bearer ${cashierToken}`)
+        .send(movementBody('pay_in', 100, 'too late'));
+      assertEqual(afterClose.status, 409, `movement writes are blocked after close (got ${afterClose.status})`);
     }
 
   } finally {

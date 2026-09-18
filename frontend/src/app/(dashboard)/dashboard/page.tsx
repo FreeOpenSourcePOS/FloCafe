@@ -9,7 +9,9 @@ import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowR
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { CashCloseModal } from '@/components/dashboard/CashCloseModal';
+import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashClose } from '@/hooks/useCashClose';
+import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
 import toast from 'react-hot-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
@@ -267,6 +269,7 @@ export default function DashboardPage() {
   // Day-close wizard lives in useCashClose + CashCloseModal; the page
   // only opens it and mounts it.
   const cashClose = useCashClose();
+  const cashDrawer = useCashDrawerMovements();
 
   if (!isOwner) return null;
 
@@ -469,11 +472,21 @@ export default function DashboardPage() {
             <Lock size={14} />
             {t('closeShift')}
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={cashDrawer.openModal}
+            className="h-9"
+          >
+            <Banknote size={14} />
+            {t('cashMovement')}
+          </Button>
         </div>
       </div>
 
 
       <CashCloseModal model={cashClose} />
+      <CashDrawerMovementModal model={cashDrawer} />
 
       {loading ? (
         <div className="flex items-center justify-center py-20">

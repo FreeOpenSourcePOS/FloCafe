@@ -136,6 +136,14 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
                   </p>
                 </div>
               </div>
+              <div className="rounded-lg border border-border bg-muted/40 p-3">
+                <p className="text-xs font-medium text-muted-foreground mb-2">{t('ticketSectionCashMovements')}</p>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div><p className="text-muted-foreground">{t('payIn')}</p><p className="font-medium text-foreground ltr-island"><Ltr>{fmt(xReport.payInCents / minorFactor)}</Ltr></p></div>
+                  <div><p className="text-muted-foreground">{t('payOut')}</p><p className="font-medium text-foreground ltr-island"><Ltr>{fmt(xReport.payOutCents / minorFactor)}</Ltr></p></div>
+                  <div><p className="text-muted-foreground">{t('safeDrop')}</p><p className="font-medium text-foreground ltr-island"><Ltr>{fmt(xReport.safeDropCents / minorFactor)}</Ltr></p></div>
+                </div>
+              </div>
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-2">{t('ticketSectionPayments')}</p>
                 {xReport.paymentMethods.length === 0 ? (
@@ -295,6 +303,10 @@ export function CashCloseModal({ model }: { model: CashCloseModel }) {
               operator: t('ticketSectionOperator'),
               notes: t('ticketSectionNotes'),
               openingFloat: t('openingFloat'),
+              cashMovements: t('ticketSectionCashMovements'),
+              payIn: t('payIn'),
+              payOut: t('payOut'),
+              safeDrop: t('safeDrop'),
               expectedCash: t('expectedCash'),
               countedCash: t('countedCash'),
               variance: t('variance'),

@@ -25,6 +25,11 @@ interface XReport {
   paymentMethods: { method: string | null; count: number; total: number }[];
   staffSales: { user_id: string; name: string; role: string; revenue: number; orderCount: number }[];
   taxComponents: unknown[];
+  openingFloatCents: number | null;
+  payInCents: number;
+  payOutCents: number;
+  safeDropCents: number;
+  cashMovements: { id: number; movement_type: string; amount_cents: number; reason: string | null }[];
   /** Drawer expected figure in INTEGER cents (no opening float — the float
    *  is captured at close). Cash-only raw filter, refunds by created_at. */
   expectedCashCents: number;
@@ -59,6 +64,10 @@ interface ZReport {
   payment_methods: { method: string; count: number; total_cents: number }[];
   staff_sales: { user_id: string; name: string; role: string; revenue_cents: number; orderCount: number }[];
   tax_components: unknown[];
+  pay_in_cents: number;
+  pay_out_cents: number;
+  safe_drop_cents: number;
+  cash_movements: { id: number; movement_type: string; amount_cents: number; reason: string | null }[];
   z_number: number;
   closed_by: string;
   closed_by_name: string;
@@ -189,7 +198,10 @@ export function useCashClose() {
         // signal — transport errors set xError, leaving priorBusinessDate
         // null WITHOUT triggering the noPriorCloseHint (F7 discipline).
         if (!xError && xr) {
-          if (xr.priorClosedCashCents !== null && xr.priorBusinessDate) {
+          if (xr.openingFloatCents !== null) {
+            setOpeningFloatInput(unitAdapter.toDisplay(xr.openingFloatCents / minorFactor).toString());
+            setAlreadyClosedOverride(false);
+          } else if (xr.priorClosedCashCents !== null && xr.priorBusinessDate) {
             // F2: convert to display units via the adapter (Toman/Rial etc.)
             setOpeningFloatInput(unitAdapter.toDisplay(xr.priorClosedCashCents / minorFactor).toString());
             setAlreadyClosedOverride(false);

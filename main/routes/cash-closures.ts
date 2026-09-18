@@ -50,7 +50,25 @@ import { resolveReceiptLanguages, type ReceiptLanguagePolicy } from '../../share
 
 const router = Router();
 const MAX_NOTES_LENGTH = 500;
+const MAX_MOVEMENT_REASON_LENGTH = 500;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+type CashDrawerMovementType = 'opening_float' | 'pay_in' | 'pay_out' | 'safe_drop';
+
+interface CashDrawerMovementRow {
+  id: number;
+  business_date: string;
+  movement_type: CashDrawerMovementType;
+  amount_cents: number;
+  reason: string | null;
+  created_by: string;
+  created_by_name: string;
+  created_at: string;
+  voided_at: string | null;
+  voided_by: string | null;
+  voided_by_name: string | null;
+  void_reason: string | null;
+}
 
 function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
@@ -106,6 +124,56 @@ function validateCents(raw: unknown, field: string, allowZero = true): number {
   return raw;
 }
 
+function validateMovementType(raw: unknown): CashDrawerMovementType {
+  if (raw !== 'opening_float' && raw !== 'pay_in' && raw !== 'pay_out' && raw !== 'safe_drop') {
+    throw httpError('movement_type is invalid', 400);
+  }
+  return raw;
+}
+
+function validateMovementReason(raw: unknown, required: boolean): string | null {
+  if (raw === undefined || raw === null) {
+    if (required) throw httpError('reason is required', 400);
+    return null;
+  }
+  if (typeof raw !== 'string') throw httpError('reason must be a string', 400);
+  const reason = raw.trim();
+  if (required && reason.length === 0) throw httpError('reason is required', 400);
+  if (reason.length > MAX_MOVEMENT_REASON_LENGTH) throw httpError('reason is too long', 400);
+  return reason || null;
+}
+
+function closedDayExists(db: ReturnType<typeof getDatabase>, businessDate: string): boolean {
+  return !!db.prepare(
+    `SELECT id FROM cash_closures WHERE business_date = ? AND scope = 'day' LIMIT 1`,
+  ).get(businessDate);
+}
+
+function listCashDrawerMovements(
+  db: ReturnType<typeof getDatabase>,
+  businessDate: string,
+  includeVoided = true,
+): CashDrawerMovementRow[] {
+  return db.prepare(`
+    SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
+    FROM cash_drawer_movements m
+    LEFT JOIN users created_user ON created_user.id = m.created_by
+    LEFT JOIN users voided_user ON voided_user.id = m.voided_by
+    WHERE m.business_date = ? ${includeVoided ? '' : 'AND m.voided_at IS NULL'}
+    ORDER BY m.created_at DESC, m.id DESC
+  `).all(businessDate) as CashDrawerMovementRow[];
+}
+
+function activeOpeningFloatCents(db: ReturnType<typeof getDatabase>, businessDate: string): number | null {
+  const row = db.prepare(`
+    SELECT amount_cents
+    FROM cash_drawer_movements
+    WHERE business_date = ? AND movement_type = 'opening_float' AND voided_at IS NULL
+    LIMIT 1
+  `).get(businessDate) as { amount_cents: number } | undefined;
+  return row ? Number(row.amount_cents) : null;
+}
+
 /**
  * Shape a stored `cash_closures` row into the snapshot the print primitive
  * consume. Single source of truth so the print body and the on-screen
@@ -115,7 +183,7 @@ function validateCents(raw: unknown, field: string, allowZero = true): number {
  *  - `closed_by_name` resolves the operator's `users.name`, falling back
  *    to the raw id when the row was orphaned (staff deletion, etc.).
  *  - JSON columns (`payment_methods_json`, `staff_sales_json`,
- *    `tax_components_json`) are parsed into typed arrays; empty / invalid
+ *    `tax_components_json`, `cash_movements_json`) are parsed into typed arrays; empty / invalid
  *    JSON becomes `[]` so the body builder renders "(none)" rather
  *    than blowing up.
  *  - `__isReprint` is the synthetic flag the body builder uses to add
@@ -144,6 +212,7 @@ function shapeZReportSnapshot(db: ReturnType<typeof getDatabase>, row: any, isRe
     payment_methods: safeJson(row.payment_methods_json, []),
     staff_sales: safeJson(row.staff_sales_json, []),
     tax_components: safeJson(row.tax_components_json, []),
+    cash_movements: safeJson(row.cash_movements_json, []),
     __isReprint: isReprint,
   };
 }
@@ -170,6 +239,11 @@ export interface DayAggregates {
   netCollectedCents: number;
   cashSalesCents: number;
   cashRefundsByCreatedAtCents: number;
+  openingFloatCents: number;
+  payInCents: number;
+  payOutCents: number;
+  safeDropCents: number;
+  cashMovements: CashDrawerMovementRow[];
   paymentMethods: { method: string; count: number; total_cents: number }[];
   staffSales: { user_id: string; name: string; role: string; revenue_cents: number; orderCount: number }[];
   taxComponents: DisplayTaxComponent[];
@@ -321,6 +395,15 @@ export function computeDayAggregates(db: ReturnType<typeof getDatabase>, busines
       (SELECT refunds_cents FROM cash_refunds) AS refunds_cents
   `).get(minorFactor, start, end, start, end) as { sales_cents: number; refunds_cents: number };
 
+  const cashMovements = listCashDrawerMovements(db, businessDate, false);
+  const movementTotals = cashMovements.reduce((totals, movement) => {
+    if (movement.movement_type === 'opening_float') totals.openingFloatCents += movement.amount_cents;
+    if (movement.movement_type === 'pay_in') totals.payInCents += movement.amount_cents;
+    if (movement.movement_type === 'pay_out') totals.payOutCents += movement.amount_cents;
+    if (movement.movement_type === 'safe_drop') totals.safeDropCents += movement.amount_cents;
+    return totals;
+  }, { openingFloatCents: 0, payInCents: 0, payOutCents: 0, safeDropCents: 0 });
+
   // Display payment-method totals — reuse paymentMethodBreakdown so display
   // numbers reconcile with the live financial-summary endpoint for the same day.
   // Keyed by paid_at (not per-line timestamps) so installment payments
@@ -376,6 +459,11 @@ export function computeDayAggregates(db: ReturnType<typeof getDatabase>, busines
     netCollectedCents: grossCollectedCents - refundedCents,
     cashSalesCents: Math.round(Number(cashDrawerRow.sales_cents || 0)),
     cashRefundsByCreatedAtCents: Number(cashDrawerRow.refunds_cents || 0),
+    openingFloatCents: movementTotals.openingFloatCents,
+    payInCents: movementTotals.payInCents,
+    payOutCents: movementTotals.payOutCents,
+    safeDropCents: movementTotals.safeDropCents,
+    cashMovements,
     paymentMethods: paymentMethodsRows.map((row) => ({
       method: row.method,
       count: Number(row.count || 0),
@@ -392,11 +480,98 @@ export function computeDayAggregates(db: ReturnType<typeof getDatabase>, busines
   };
 }
 
+router.get('/movements', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+  try {
+    const businessDate = validateBusinessDate(req.query.business_date ?? req.query.date);
+    res.json({ businessDate, movements: listCashDrawerMovements(getDatabase(), businessDate) });
+  } catch (error: any) {
+    const status = error.statusCode || 500;
+    if (status === 500) console.error('[CashClosures] Movement list error:', error);
+    res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message || 'Internal server error' });
+  }
+});
+
+router.post('/movements', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const businessDate = validateBusinessDate(body.business_date);
+    const movementType = validateMovementType(body.movement_type);
+    const amountCents = validateCents(body.amount_cents, 'amount_cents', movementType === 'opening_float');
+    const reason = validateMovementReason(body.reason, movementType !== 'opening_float');
+    const createdBy = String((req as any).user?.userId || '');
+    if (!createdBy) throw httpError('Authentication required', 401);
+    const db = getDatabase();
+    const id = withTxn(() => {
+      if (closedDayExists(db, businessDate)) throw httpError('This day is already closed', 409);
+      try {
+        const result = db.prepare(`
+          INSERT INTO cash_drawer_movements (
+            business_date, movement_type, amount_cents, reason, created_by, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `).run(businessDate, movementType, amountCents, reason, createdBy, now());
+        return Number(result.lastInsertRowid);
+      } catch (error: any) {
+        if (String(error?.message || '').includes('cash_drawer_one_opening_float')
+          || (movementType === 'opening_float' && String(error?.message || '').includes('cash_drawer_movements.business_date'))) {
+          throw httpError('An opening float is already recorded for this day', 409);
+        }
+        throw error;
+      }
+    });
+    const movement = db.prepare(`
+      SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
+      FROM cash_drawer_movements m
+      LEFT JOIN users created_user ON created_user.id = m.created_by
+      LEFT JOIN users voided_user ON voided_user.id = m.voided_by
+      WHERE m.id = ?
+    `).get(id);
+    res.status(201).json({ movement });
+  } catch (error: any) {
+    const status = error.statusCode || 500;
+    if (status === 500) console.error('[CashClosures] Movement create error:', error);
+    res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message || 'Internal server error' });
+  }
+});
+
+router.post('/movements/:id/void', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) throw httpError('id must be a positive integer', 400);
+    const reason = validateMovementReason(req.body?.reason, true);
+    const voidedBy = String((req as any).user?.userId || '');
+    if (!voidedBy) throw httpError('Authentication required', 401);
+    const db = getDatabase();
+    withTxn(() => {
+      const movement = db.prepare(`SELECT * FROM cash_drawer_movements WHERE id = ?`).get(id) as { business_date: string; voided_at: string | null } | undefined;
+      if (!movement) throw httpError('Cash movement not found', 404);
+      if (movement.voided_at) throw httpError('Cash movement is already voided', 409);
+      if (closedDayExists(db, movement.business_date)) throw httpError('This day is already closed', 409);
+      db.prepare(`
+        UPDATE cash_drawer_movements
+        SET voided_at = ?, voided_by = ?, void_reason = ?
+        WHERE id = ? AND voided_at IS NULL
+      `).run(now(), voidedBy, reason, id);
+    });
+    const movement = db.prepare(`
+      SELECT m.*, created_user.name AS created_by_name, voided_user.name AS voided_by_name
+      FROM cash_drawer_movements m
+      LEFT JOIN users created_user ON created_user.id = m.created_by
+      LEFT JOIN users voided_user ON voided_user.id = m.voided_by
+      WHERE m.id = ?
+    `).get(id);
+    res.json({ movement });
+  } catch (error: any) {
+    const status = error.statusCode || 500;
+    if (status === 500) console.error('[CashClosures] Movement void error:', error);
+    res.status(status).json({ error: status === 500 ? 'Internal server error' : error.message || 'Internal server error' });
+  }
+});
+
 router.post('/', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const businessDate = validateBusinessDate(body.business_date);
-    const openingFloatCents = validateCents(body.opening_float_cents, 'opening_float_cents');
+    const requestedOpeningFloatCents = validateCents(body.opening_float_cents, 'opening_float_cents');
     const countedCashCents = validateCents(body.counted_cash_cents, 'counted_cash_cents');
     if (typeof body.notes === 'string' && body.notes.length > MAX_NOTES_LENGTH) {
       throw httpError('notes is too long', 400);
@@ -420,13 +595,29 @@ router.post('/', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response
         throw httpError('This day is already closed', 409);
       }
 
+      const recordedOpeningFloatCents = activeOpeningFloatCents(db, businessDate);
+      if (recordedOpeningFloatCents !== null && recordedOpeningFloatCents !== requestedOpeningFloatCents) {
+        throw httpError('The opening float already recorded for this day does not match', 409);
+      }
+      if (recordedOpeningFloatCents === null) {
+        db.prepare(`
+          INSERT INTO cash_drawer_movements (
+            business_date, movement_type, amount_cents, reason, created_by, created_at
+          ) VALUES (?, 'opening_float', ?, 'Opening float', ?, ?)
+        `).run(businessDate, requestedOpeningFloatCents, closedBy, now());
+      }
+
       const aggregates = computeDayAggregates(db, businessDate);
 
-      // Snapshot math (verbatim from spec):
-      // expected = opening_float + cashSales − cashRefunds(created_at)
+      // Snapshot math keeps every cash movement explicit:
+      // expected = opening_float + cashSales + payIns − payOuts − safeDrops
+      //            − cashRefunds(created_at)
       // variance = counted − expected
-      const expectedCashCents = openingFloatCents
+      const expectedCashCents = aggregates.openingFloatCents
         + aggregates.cashSalesCents
+        + aggregates.payInCents
+        - aggregates.payOutCents
+        - aggregates.safeDropCents
         - aggregates.cashRefundsByCreatedAtCents;
       const varianceCents = countedCashCents - expectedCashCents;
 
@@ -446,6 +637,7 @@ router.post('/', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response
             gross_collected_cents, refunded_cents, net_collected_cents,
             bill_count, refund_count,
             payment_methods_json, staff_sales_json, tax_components_json,
+            pay_in_cents, pay_out_cents, safe_drop_cents, cash_movements_json,
             z_number, closed_by, notes, created_at
           ) VALUES (
             'day', ?, ?, ?,
@@ -453,16 +645,19 @@ router.post('/', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response
             ?, ?, ?,
             ?, ?,
             ?, ?, ?,
+            ?, ?, ?, ?,
             ?, ?, ?, ?
           )
         `).run(
           businessDate, periodStart, periodEnd,
-          openingFloatCents, expectedCashCents, countedCashCents, varianceCents,
+          aggregates.openingFloatCents, expectedCashCents, countedCashCents, varianceCents,
           aggregates.grossCollectedCents, aggregates.refundedCents, aggregates.netCollectedCents,
           aggregates.billCount, aggregates.refundCount,
           JSON.stringify(aggregates.paymentMethods),
           JSON.stringify(aggregates.staffSales),
           JSON.stringify(aggregates.taxComponents),
+          aggregates.payInCents, aggregates.payOutCents, aggregates.safeDropCents,
+          JSON.stringify(aggregates.cashMovements),
           zNumber, closedBy, notes, createdAt,
         );
       } catch (err: any) {
@@ -485,7 +680,7 @@ router.post('/', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response
         business_date: businessDate,
         period_start: periodStart,
         period_end: periodEnd,
-        opening_float_cents: openingFloatCents,
+        opening_float_cents: aggregates.openingFloatCents,
         expected_cash_cents: expectedCashCents,
         counted_cash_cents: countedCashCents,
         variance_cents: varianceCents,
@@ -497,6 +692,10 @@ router.post('/', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response
         payment_methods: aggregates.paymentMethods,
         staff_sales: aggregates.staffSales,
         tax_components: aggregates.taxComponents,
+        pay_in_cents: aggregates.payInCents,
+        pay_out_cents: aggregates.payOutCents,
+        safe_drop_cents: aggregates.safeDropCents,
+        cash_movements: aggregates.cashMovements,
         z_number: zNumber,
         closed_by: closedBy,
         notes,

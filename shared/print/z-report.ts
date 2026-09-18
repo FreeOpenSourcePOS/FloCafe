@@ -33,6 +33,9 @@ export interface ZReportPrintData {
   readonly periodStart: string;
   readonly periodEnd: string;
   readonly openingFloatCents: number;
+  readonly payInCents: number;
+  readonly payOutCents: number;
+  readonly safeDropCents: number;
   readonly paymentMethods: readonly ZReportPaymentSnapshot[];
   readonly refundCount: number;
   readonly refundedCents: number;
@@ -100,6 +103,12 @@ export interface ZReportDocument {
   };
   readonly period: readonly ZReportPeriodRow[];
   readonly openingFloat: { readonly label: SemanticLabel; readonly cents: number };
+  readonly cashMovements: {
+    readonly heading: SemanticLabel;
+    readonly payIn: { readonly label: SemanticLabel; readonly cents: number };
+    readonly payOut: { readonly label: SemanticLabel; readonly cents: number };
+    readonly safeDrop: { readonly label: SemanticLabel; readonly cents: number };
+  };
   readonly payments: ZReportSection<ZReportPaymentRow>;
   readonly refunds: ZReportCountAmountBlock;
   readonly tax: ZReportSection<ZReportAmountRow>;
@@ -195,6 +204,12 @@ export function buildZReportDocument(data: ZReportPrintData, context: ZReportCon
       periodLabel('print.zReport.periodEnd', data.periodEnd),
     ]),
     openingFloat: Object.freeze({ label: label(context, 'print.zReport.openingFloat'), cents: numberOrZero(data.openingFloatCents) }),
+    cashMovements: Object.freeze({
+      heading: label(context, 'print.zReport.cashMovements'),
+      payIn: Object.freeze({ label: label(context, 'print.zReport.payIn'), cents: numberOrZero(data.payInCents) }),
+      payOut: Object.freeze({ label: label(context, 'print.zReport.payOut'), cents: numberOrZero(data.payOutCents) }),
+      safeDrop: Object.freeze({ label: label(context, 'print.zReport.safeDrop'), cents: numberOrZero(data.safeDropCents) }),
+    }),
     payments: Object.freeze({
       heading: label(context, 'print.zReport.payments'),
       none: label(context, 'print.zReport.none'),

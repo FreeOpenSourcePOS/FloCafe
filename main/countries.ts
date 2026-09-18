@@ -619,3 +619,39 @@ export function resolveRegionalSnapshot(settings: Record<string, string | undefi
     },
   };
 }
+
+type AmountFormat = Pick<RegionalSnapshot, 'decimalSeparator' | 'groupSeparator' | 'currencySymbol'>;
+
+/**
+ * Reduces a locale-formatted amount (as typed, or as pasted from a
+ * spreadsheet cell) to plain ASCII decimal-point notation, per the
+ * snapshot's own separators — never a hardcoded '.'/','. Strips group
+ * separators and one occurrence of the snapshot's own currency symbol;
+ * swaps the decimal separator to '.'. Returns null for anything that
+ * doesn't reduce to a plain number (unknown text, wrong symbol, ...) —
+ * this narrows what "strips the symbol" means to exactly this store's
+ * symbol, not any stray character.
+ */
+export function canonicalizeLocalizedAmount(raw: string, format: AmountFormat): string | null {
+  let cleaned = String(raw ?? '').trim();
+  if (!cleaned) return null;
+  if (format.currencySymbol) cleaned = cleaned.split(format.currencySymbol).join('').trim();
+  const sign = /^[+-]/.test(cleaned) ? cleaned[0] : '';
+  if (sign) cleaned = cleaned.slice(1);
+  if (format.groupSeparator) cleaned = cleaned.split(format.groupSeparator).join('');
+  if (format.decimalSeparator && format.decimalSeparator !== '.') {
+    cleaned = cleaned.replace(format.decimalSeparator, '.');
+  }
+  if (!cleaned || !/^\d*\.?\d*$/.test(cleaned)) return null;
+  return sign + cleaned;
+}
+
+/**
+ * Formats an amount for a CSV cell using the snapshot's decimal separator,
+ * with ASCII digits and no grouping — CSV numeric fields are not grouped,
+ * so canonicalizeLocalizedAmount can read the value straight back.
+ */
+export function formatAmountForCsv(value: number, snapshot: Pick<RegionalSnapshot, 'decimalSeparator' | 'currencyFractionDigits'>): string {
+  const fixed = value.toFixed(snapshot.currencyFractionDigits);
+  return snapshot.decimalSeparator === '.' ? fixed : fixed.replace('.', snapshot.decimalSeparator);
+}

@@ -6,7 +6,7 @@ import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
-import { getCurrencySymbol, getCountryByCode, isValidTimeZone, RegionalNotConfiguredError } from '../countries';
+import { getCurrencySymbol, getCountryByCode, isValidTimeZone, RegionalNotConfiguredError, resolveRegionalSnapshot, type RegionalSnapshot } from '../countries';
 import { countryConfirmationPatch } from '../services/country-provenance';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
@@ -79,28 +79,40 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
   const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
   const s: Record<string, string> = Object.fromEntries(rows.map(r => [r.key, r.value]));
 
+  // Login must never fail on a missing/unresolvable regional snapshot
+  // (unreachable for an authenticated, post-setup store per
+  // docs/business-decisions.md) — degrade to a neutral en-US-shaped format
+  // rather than throw, and never silently claim India.
+  let snapshot: RegionalSnapshot | null = null;
+  try {
+    snapshot = resolveRegionalSnapshot(s);
+  } catch {
+    snapshot = null;
+  }
+
   return {
     id: 1,
     business_name: s.business_name || 'Store',
     slug: 'local',
     database_name: 'local',
     business_type: s.business_type || 'restaurant',
-    // Login must never fail on a missing regional field (unreachable for an
-    // authenticated, post-setup store per docs/business-decisions.md) — degrade
-    // to empty rather than throw, and never silently claim India.
-    country: s.country || '',
-    currency: s.currency || '',
-    currency_symbol: getCurrencySymbol(s.currency || '', getCountryByCode(s.country)?.locale) || '',
-    timezone: s.timezone || '',
+    country: snapshot?.country || '',
+    currency: snapshot?.currency || '',
+    currency_symbol: snapshot?.currencySymbol || '',
+    currency_position: snapshot?.currencyPosition || 'prefix',
+    currency_fraction_digits: snapshot?.currencyFractionDigits ?? 2,
+    decimal_separator: snapshot?.decimalSeparator || '.',
+    group_separator: snapshot?.groupSeparator ?? ',',
+    timezone: snapshot?.timezone || s.timezone || '',
     business_day_start_time: s.business_day_start_time || '00:00',
     language: s.language || 'en',
     // Include print policies in tenant snapshot so renderer bootstraps them before first print.
     bill_language_policy: s.bill_language_policy || null,
     kot_language_policy: s.kot_language_policy || null,
     service_model: s.service_model || 'finedine',
-    currency_display: s.currency_display || 'rial',
-    number_digits: s.number_digits || 'locale',
-    calendar: s.calendar || 'locale',
+    currency_display: snapshot?.preferences.currencyDisplay || s.currency_display || 'rial',
+    number_digits: snapshot?.preferences.digits || s.number_digits || 'locale',
+    calendar: snapshot?.preferences.calendar || s.calendar || 'locale',
     plan: 'desktop',
     status: 'active',
     role: userRole,  // user's role — AuthGuard uses this for routing

@@ -261,6 +261,17 @@ router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Req
 });
 
 /** Batches order relations (items, table, customer, bill) into IN queries. */
+type WhatsAppReceiptStatus = 'sent' | 'partial' | 'pending' | 'failed' | null;
+
+function summarizeWhatsAppReceiptStatuses(statuses: (string | null)[]): WhatsAppReceiptStatus {
+  const positiveStatuses = statuses.filter((status) => status === 'sent' || status === 'delivered' || status === 'read');
+  if (positiveStatuses.length === statuses.length && statuses.length > 0) return 'sent';
+  if (positiveStatuses.length > 0) return 'partial';
+  if (statuses.some((status) => status === 'queued' || status === 'typing')) return 'pending';
+  if (statuses.some((status) => status === 'failed')) return 'failed';
+  return null;
+}
+
 function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   if (orders.length === 0) return [];
   // Normalize JSON text columns on orders and items.
@@ -315,10 +326,12 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     }
   }
   const whatsappReceiptStatusByBillId = new Map<number, string>();
-  const receiptBillIds = Array.from(billsByOrderId.values())
-    .map((bills) => bills.find((row) => row.payment_status !== 'paid') || bills[0])
-    .filter(Boolean)
-    .map((bill) => bill.id);
+  const paidBillIdsByOrderId = new Map<number, number[]>();
+  const receiptBillIds = Array.from(billsByOrderId.entries()).flatMap(([orderId, bills]) => {
+    const paidBillIds = bills.filter((bill) => bill.payment_status === 'paid').map((bill) => bill.id);
+    paidBillIdsByOrderId.set(orderId, paidBillIds);
+    return paidBillIds;
+  });
   if (receiptBillIds.length > 0) {
     const ph = receiptBillIds.map(() => '?').join(',');
     const rows = db.prepare(`
@@ -334,6 +347,15 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
         whatsappReceiptStatusByBillId.set(row.bill_id, row.status);
       }
     }
+  }
+  const whatsappReceiptStatusByOrderId = new Map<number, WhatsAppReceiptStatus>();
+  for (const [orderId, billIds] of paidBillIdsByOrderId) {
+    whatsappReceiptStatusByOrderId.set(
+      orderId,
+      summarizeWhatsAppReceiptStatuses(
+        billIds.map((billId) => whatsappReceiptStatusByBillId.get(billId) ?? null),
+      ),
+    );
   }
   const loyaltyEnabled = ['true', '1'].includes(getSettingValue('loyalty_enabled') || '');
   const loyaltyByCustomerId = new Map<string, { credits: number; debits: number }>();
@@ -374,8 +396,15 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
       }
     }
     const bill = bills.find((row) => row.payment_status !== 'paid') || bills[0] || null;
-    if (bill) bill.whatsapp_receipt_status = whatsappReceiptStatusByBillId.get(bill.id) ?? null;
-    return { ...order, items: itemList, table, customer, bill, bills };
+    return {
+      ...order,
+      items: itemList,
+      table,
+      customer,
+      bill,
+      bills,
+      whatsapp_receipt_status: whatsappReceiptStatusByOrderId.get(order.id) ?? null,
+    };
   });
 }
 

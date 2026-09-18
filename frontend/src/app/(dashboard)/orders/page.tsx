@@ -78,12 +78,10 @@ const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; te
   unpaid: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'unpaidBadge' },
 };
 
-const whatsappReceiptStatusBadge: Record<string, { bg: string; text: string; labelKey: WhatsAppStatusKey }> = {
+const whatsappReceiptStatusBadge: Record<'sent' | 'partial' | 'pending' | 'failed' | 'notSent', { bg: string; text: string; labelKey: WhatsAppStatusKey }> = {
   sent: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'sent' },
-  delivered: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'delivered' },
-  read: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'read' },
-  queued: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'queued' },
-  typing: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'typing' },
+  partial: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'partial' },
+  pending: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'pending' },
   failed: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'failed' },
   notSent: { bg: 'bg-muted', text: 'text-muted-foreground', labelKey: 'notSent' },
 };
@@ -1106,7 +1104,7 @@ export default function OrdersPage() {
             const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
             const bill = order.bill;
             const receiptStatusBadge = paid && bill
-              ? whatsappReceiptStatusBadge[bill.whatsapp_receipt_status || 'notSent'] || whatsappReceiptStatusBadge.notSent
+              ? whatsappReceiptStatusBadge[order.whatsapp_receipt_status || 'notSent'] || whatsappReceiptStatusBadge.notSent
               : null;
             const discount = bill ? Number(bill.discount_amount) : Number(order.discount_amount);
             const tax = bill ? Number(bill.tax_amount) : Number(order.tax_amount);

@@ -2546,6 +2546,8 @@
       "delivered": "Entregado",
       "failed": "Falló",
       "notSent": "Ningún envío registrado",
+      "partial": "Envío parcial",
+      "pending": "Pendiente",
       "queued": "En cola",
       "read": "Leído",
       "sent": "Enviado",

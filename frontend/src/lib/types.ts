@@ -181,6 +181,7 @@ export interface Order {
   customer?: Customer;
   bill?: Bill;
   bills?: Bill[];
+  whatsapp_receipt_status?: 'sent' | 'partial' | 'pending' | 'failed' | null;
 }
 
 export interface OrderItem {
@@ -232,8 +233,6 @@ export interface Bill {
   points_redeemed?: number;
   /** Running loyalty balance when supplied by a print/order API. */
   points_balance?: number | null;
-  /** Latest native WhatsApp bill-receipt ledger status, when supplied by an order API. */
-  whatsapp_receipt_status?: 'queued' | 'typing' | 'sent' | 'delivered' | 'read' | 'failed' | null;
 }
 
 export interface TaxSnapshot {

@@ -2546,6 +2546,8 @@
       "delivered": "Zugestellt",
       "failed": "Fehlgeschlagen",
       "notSent": "Kein Versand aufgezeichnet",
+      "partial": "Teilweise gesendet",
+      "pending": "Ausstehend",
       "queued": "In Warteschlange",
       "read": "Gelesen",
       "sent": "Gesendet",

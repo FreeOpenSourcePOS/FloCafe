@@ -226,6 +226,25 @@ async function runTests() {
     'redacted jwt_secret is preserved during import',
   );
 
+  const incompleteInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion() - 1),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'incomplete-inventory-product', name: 'Incomplete Inventory Product', price: 10, stock_quantity: 7 }],
+        users: [],
+      },
+    },
+  });
+  assert(incompleteInventoryImport.status === 400, `product imports without movement history are rejected (got ${incompleteInventoryImport.status})`);
+  assert(
+    (db.prepare("SELECT COUNT(*) AS count FROM products WHERE id = 'incomplete-inventory-product'").get() as { count: number }).count === 0,
+    'rejected product import leaves product data unchanged',
+  );
+
   const largeJsonImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,

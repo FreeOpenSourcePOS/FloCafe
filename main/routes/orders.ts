@@ -1016,7 +1016,6 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
                 referenceId: `${item.id}:${item.updated_at}`,
                 reason: reason || 'Order cancelled',
                 actorUserId: authUser.userId,
-                createdAt: nowStr,
               });
             }
           }

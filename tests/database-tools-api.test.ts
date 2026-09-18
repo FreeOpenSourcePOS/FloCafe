@@ -245,6 +245,26 @@ async function runTests() {
     'rejected product import leaves product data unchanged',
   );
 
+  const emptyInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'empty-inventory-product', name: 'Empty Inventory Product', price: 10, stock_quantity: 7 }],
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(emptyInventoryImport.status === 400, `product imports with missing movement history are rejected (got ${emptyInventoryImport.status})`);
+  assert(
+    (db.prepare("SELECT COUNT(*) AS count FROM products WHERE id = 'empty-inventory-product'").get() as { count: number }).count === 0,
+    'rejected inconsistent product import leaves product data unchanged',
+  );
+
   const largeJsonImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,

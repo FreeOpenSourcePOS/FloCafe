@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, throwIfDatabaseMaintenanceAborted, withTxn, withDatabaseMaintenanceLock } from '../db';
+import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, throwIfDatabaseMaintenanceAborted, validateInventoryLedgerRows, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { clearJWTSecretCache } from './auth';
@@ -157,10 +157,17 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
       });
     }
 
-    if (Array.isArray(importData.products) && importData.products.length > 0 && !Array.isArray(importData.inventory_movements)) {
-      return res.status(400).json({
-        error: 'Product imports must include inventory movement history so stock changes remain auditable',
-      });
+    if (Array.isArray(importData.products) && importData.products.length > 0) {
+      if (!Array.isArray(importData.inventory_movements)) {
+        return res.status(400).json({
+          error: 'Product imports must include inventory movement history so stock changes remain auditable',
+        });
+      }
+      if (validateInventoryLedgerRows(importData.products, importData.inventory_movements)) {
+        return res.status(400).json({
+          error: 'Product stock must match the latest inventory movement history',
+        });
+      }
     }
 
     // Preserve existing accounts and create inactive placeholders for redacted users without hashes.

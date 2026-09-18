@@ -193,6 +193,20 @@ async function run() {
     const olderBackup = path.join(testDir, 'older-schema.db');
     copyAndStamp(sameSchemaBackup, olderBackup, currentVersion - 1);
 
+    const inconsistentLedgerBackup = path.join(testDir, 'inconsistent-ledger.db');
+    copyAndStamp(sameSchemaBackup, inconsistentLedgerBackup, currentVersion - 1);
+    const inconsistentLedgerDb = new Database(inconsistentLedgerBackup);
+    inconsistentLedgerDb.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(7, 'restore-product');
+    inconsistentLedgerDb.exec('DROP TABLE inventory_movements');
+    inconsistentLedgerDb.close();
+    const inconsistentRestore = restoreBackup(inconsistentLedgerBackup, false);
+    assert.equal(inconsistentRestore.success, false, 'data-only restore rejects stock without matching movement history');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      0,
+      'rejected inconsistent restore leaves the live stock cache unchanged',
+    );
+
     clearLinkedData();
     const restored = restoreBackup(olderBackup, false);
     assert.equal(restored.success, true, 'foreign-key-linked data-only restore succeeds');

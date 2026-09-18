@@ -1284,6 +1284,67 @@ export function getTables(dbInstance: Database.Database): string[] {
   }
 }
 
+export function validateInventoryLedgerRows(
+  productRows: readonly Record<string, unknown>[],
+  movementRows: readonly Record<string, unknown>[],
+): string | null {
+  const latestMovementByProduct = new Map<string, { createdAt: string; id: number; stockAfter: number }>();
+
+  for (const [index, row] of movementRows.entries()) {
+    const productId = row?.product_id == null ? '' : String(row.product_id);
+    const stockAfter = Number(row?.stock_after);
+    if (!productId || !Number.isFinite(stockAfter) || stockAfter < 0) {
+      return 'Inventory movement history contains an invalid stock state';
+    }
+    const createdAt = String(row?.created_at ?? '');
+    const rawId = Number(row?.id);
+    const id = Number.isFinite(rawId) ? rawId : index;
+    const previous = latestMovementByProduct.get(productId);
+    if (!previous || createdAt > previous.createdAt || (createdAt === previous.createdAt && id > previous.id)) {
+      latestMovementByProduct.set(productId, { createdAt, id, stockAfter });
+    }
+  }
+
+  for (const row of productRows) {
+    const productId = row?.id == null ? '' : String(row.id);
+    if (!row || typeof row !== 'object' || !productId || !Object.prototype.hasOwnProperty.call(row, 'stock_quantity')) {
+      return 'Product stock quantity is missing from the inventory snapshot';
+    }
+    const stockQuantity = row.stock_quantity == null ? 0 : Number(row.stock_quantity);
+    if (!Number.isFinite(stockQuantity) || stockQuantity < 0) {
+      return 'Product stock quantity is invalid in the inventory snapshot';
+    }
+    const latestMovement = latestMovementByProduct.get(productId);
+    if (!latestMovement) {
+      if (stockQuantity !== 0) return 'Product stock has no matching inventory movement history';
+      continue;
+    }
+    if (latestMovement.stockAfter !== stockQuantity) {
+      return 'Product stock does not match the latest inventory movement';
+    }
+  }
+
+  return null;
+}
+
+function validateInventoryLedgerDatabase(dbInstance: Database.Database): string | null {
+  const tables = new Set(getTables(dbInstance));
+  if (!tables.has('products')) return null;
+  if (!getColumns(dbInstance, 'products').includes('stock_quantity')) {
+    return 'Backup products table is missing stock_quantity';
+  }
+
+  const products = dbInstance.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[];
+  if (!tables.has('inventory_movements')) {
+    return products.some((product) => Number(product.stock_quantity ?? 0) !== 0)
+      ? 'Backup is missing inventory movement history for product stock'
+      : null;
+  }
+
+  const movements = dbInstance.prepare('SELECT id, product_id, stock_after, created_at FROM inventory_movements').all() as Record<string, unknown>[];
+  return validateInventoryLedgerRows(products, movements);
+}
+
 export interface RestoreResult {
   success: boolean;
   mode: 'direct' | 'data_only' | 'full';
@@ -1331,6 +1392,9 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
         return `Backup table ${tableName} is missing required column(s): ${missingColumns.join(', ')}`;
       }
     }
+
+    const inventoryValidationError = validateInventoryLedgerDatabase(backupDb);
+    if (inventoryValidationError) return inventoryValidationError;
 
     const currentSchema = getSchemaDefinitions(currentDb);
     const backupSchema = getSchemaDefinitions(backupDb);
@@ -2026,6 +2090,17 @@ function dataOnlyRestore(
     backupTables = getTables(backupDb);
     for (const tableName of backupTables) {
       if (isSafeIdentifier(tableName)) backupColumns.set(tableName, getColumns(backupDb, tableName));
+    }
+    const inventoryValidationError = validateInventoryLedgerDatabase(backupDb);
+    if (inventoryValidationError) {
+      return {
+        success: false,
+        mode: 'data_only',
+        backupSchemaVersion: backupVersion,
+        currentSchemaVersion: currentVersion,
+        tablesRestored: 0,
+        error: inventoryValidationError,
+      };
     }
   } finally {
     backupDb?.close();

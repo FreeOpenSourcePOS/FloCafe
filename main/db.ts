@@ -4108,6 +4108,32 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       addColumn('cash_movements_json', "cash_movements_json TEXT NOT NULL DEFAULT '[]'");
     },
   },
+  {
+    version: 85,
+    name: 'add_inventory_movements',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS inventory_movements (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          product_id TEXT NOT NULL REFERENCES products(id),
+          quantity_delta REAL NOT NULL CHECK (quantity_delta <> 0),
+          movement_type TEXT NOT NULL CHECK (movement_type IN ('sale', 'cancel_restore', 'adjustment')),
+          reference_type TEXT,
+          reference_id TEXT,
+          reason TEXT,
+          actor_user_id TEXT NOT NULL REFERENCES users(id),
+          stock_after REAL NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_inventory_movements_product_created
+          ON inventory_movements(product_id, created_at, id);
+        CREATE INDEX IF NOT EXISTS idx_inventory_movements_reference
+          ON inventory_movements(reference_type, reference_id);
+        CREATE INDEX IF NOT EXISTS idx_inventory_movements_created
+          ON inventory_movements(created_at, id);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

@@ -214,7 +214,8 @@
     "test:whatsapp-middleware": "node tests/run-electron-node-test.cjs tests/whatsapp-middleware.test.ts",
     "test:printer-width-refresh": "node tests/run-electron-node-test.cjs tests/printer-width-refresh.test.ts",
     "test:printer-migrations": "node tests/run-electron-node-test.cjs tests/printer-usb-device-path-migration.test.ts",
-    "test:issue-252": "node tests/run-electron-node-test.cjs tests/issue-252-order-lifecycle-inventory.test.ts"
+    "test:issue-252": "node tests/run-electron-node-test.cjs tests/issue-252-order-lifecycle-inventory.test.ts && npm run test:inventory-ledger",
+    "test:inventory-ledger": "node tests/run-electron-node-test.cjs tests/inventory-ledger.test.ts"
   },
   "author": {
     "name": "Flo",

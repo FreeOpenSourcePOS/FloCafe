@@ -10,6 +10,7 @@ import { orderItemRoutes } from './order-items';
 import { billRoutes, syncUnpaidBillsForOrder, getTenantCurrency } from './bills';
 import { refundRoutes } from './refunds';
 import { cashClosureRoutes } from './cash-closures';
+import { inventoryRoutes } from './inventory';
 import { tableRoutes } from './tables';
 import { kitchenStationRoutes } from './kitchen-stations';
 import { kitchenRoutes } from './kitchen';
@@ -46,6 +47,7 @@ import {
   invertTaxSnapshot,
 } from '../services/tax';
 import { calculateOrderTotals } from '../services/orders';
+import { adjustProductStock } from '../services/inventory';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import QRCode from 'qrcode';
@@ -85,6 +87,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/bills', billRoutes);
   app.use('/api/refunds', refundRoutes);
   app.use('/api/cash-closures', cashClosureRoutes);
+  app.use('/api/inventory', inventoryRoutes);
   app.use('/api/tables', tableRoutes);
   app.use('/api/kitchen-stations', kitchenStationRoutes);
   app.use('/api/customers', customerRoutes);
@@ -271,7 +274,7 @@ export function registerRoutes(app: Express): void {
     try {
       const orderId = String(req.params.orderId);
       const itemId = String(req.params.itemId);
-      const { override_pin } = req.body;
+      const { override_pin, reason } = req.body;
 
       // requireAuth (main/server.ts) already verified the token and attached
       // the user's current DB role to req.user — use that, not the JWT claim.
@@ -403,8 +406,15 @@ export function registerRoutes(app: Express): void {
 
           const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
           if (product && currentItem.inventory_deducted_quantity > 0) {
-            db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-              .run(currentItem.inventory_deducted_quantity, now(), product.id);
+            adjustProductStock(db, {
+              productId: product.id,
+              quantityDelta: currentItem.inventory_deducted_quantity,
+              movementType: 'cancel_restore',
+              referenceType: 'order_item',
+              referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+              reason: reason || 'Item cancelled',
+              actorUserId: actorId,
+            });
           }
         }
 
@@ -574,8 +584,15 @@ export function registerRoutes(app: Express): void {
           if (product.stock_quantity < currentItem.inventory_deducted_quantity) {
             throw Object.assign(new Error(`Insufficient stock to restore item (Available: ${product.stock_quantity}, Required: ${currentItem.inventory_deducted_quantity})`), { statusCode: 400 });
           }
-          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
-            .run(currentItem.inventory_deducted_quantity, now(), product.id);
+          adjustProductStock(db, {
+            productId: product.id,
+            quantityDelta: -currentItem.inventory_deducted_quantity,
+            movementType: 'cancel_restore',
+            referenceType: 'order_item',
+            referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+            reason: 'Cancelled item restored',
+            actorUserId: actorId,
+          });
         }
 
         // Restore - mark as pending

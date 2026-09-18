@@ -83,6 +83,14 @@ async function main() {
   db = getDatabase();
   assertEqual(getCurrentSchemaVersion(), 84, 'upgrade fixture starts at schema v84');
   assert(!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'").get(), 'upgrade fixture starts without the ledger table');
+  db.prepare(`
+    INSERT INTO users (id, name, password, role, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 1, ?, ?)
+  `).run('legacy-owner', 'Legacy Owner', 'hash', 'owner', now(), now());
+  db.prepare(`
+    INSERT INTO products (id, name, price, track_inventory, stock_quantity, created_at, updated_at)
+    VALUES (?, ?, ?, 1, ?, ?, ?)
+  `).run('legacy-stock-product', 'Legacy Stock Product', 10, 10, now(), now());
 
   let rolledBack = false;
   try {
@@ -101,6 +109,16 @@ async function main() {
   runPendingMigrations();
   assertEqual(getCurrentSchemaVersion(), latestVersion, 'upgraded store reaches the latest schema');
   assert(!!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'inventory_movements'").get(), 'upgraded store receives the ledger table');
+  const migratedOpening = db.prepare(`
+    SELECT quantity_delta, movement_type, reference_type, actor_user_id, stock_after
+    FROM inventory_movements
+    WHERE product_id = ?
+  `).get('legacy-stock-product') as any;
+  assertEqual(migratedOpening.quantity_delta, 10, 'upgrade backfill records the legacy stock quantity');
+  assertEqual(migratedOpening.movement_type, 'adjustment', 'upgrade backfill uses an adjustment movement');
+  assertEqual(migratedOpening.reference_type, 'opening_balance', 'upgrade backfill records an opening balance');
+  assertEqual(migratedOpening.actor_user_id, 'legacy-owner', 'upgrade backfill attributes the opening balance');
+  assertEqual(migratedOpening.stock_after, 10, 'upgrade backfill records the legacy cache as resulting stock');
   closeDatabase();
   fs.rmSync(activeTestDir, { recursive: true, force: true });
 

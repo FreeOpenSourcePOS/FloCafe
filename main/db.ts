@@ -1288,21 +1288,37 @@ export function validateInventoryLedgerRows(
   productRows: readonly Record<string, unknown>[],
   movementRows: readonly Record<string, unknown>[],
 ): string | null {
-  const latestMovementByProduct = new Map<string, { createdAt: string; id: number; stockAfter: number }>();
+  const movementsByProduct = new Map<string, { createdAt: string; id: number; quantityDelta: number; stockAfter: number }[]>();
 
   for (const [index, row] of movementRows.entries()) {
     const productId = row?.product_id == null ? '' : String(row.product_id);
+    const quantityDelta = Number(row?.quantity_delta);
     const stockAfter = Number(row?.stock_after);
-    if (!productId || !Number.isFinite(stockAfter) || stockAfter < 0) {
+    if (!productId || !Number.isFinite(quantityDelta) || quantityDelta === 0 || !Number.isFinite(stockAfter) || stockAfter < 0) {
       return 'Inventory movement history contains an invalid stock state';
     }
     const createdAt = String(row?.created_at ?? '');
     const rawId = Number(row?.id);
     const id = Number.isFinite(rawId) ? rawId : index;
-    const previous = latestMovementByProduct.get(productId);
-    if (!previous || createdAt > previous.createdAt || (createdAt === previous.createdAt && id > previous.id)) {
-      latestMovementByProduct.set(productId, { createdAt, id, stockAfter });
+    const movements = movementsByProduct.get(productId) ?? [];
+    movements.push({ createdAt, id, quantityDelta, stockAfter });
+    movementsByProduct.set(productId, movements);
+  }
+
+  const latestMovementByProduct = new Map<string, { createdAt: string; id: number; stockAfter: number }>();
+  for (const [productId, movements] of movementsByProduct) {
+    movements.sort((left, right) => left.createdAt < right.createdAt ? -1 : left.createdAt > right.createdAt ? 1 : left.id - right.id);
+    for (let index = 1; index < movements.length; index += 1) {
+      const previous = movements[index - 1];
+      const current = movements[index];
+      const expectedStockAfter = previous.stockAfter + current.quantityDelta;
+      const tolerance = Number.EPSILON * Math.max(1, Math.abs(expectedStockAfter), Math.abs(current.stockAfter)) * 10;
+      if (Math.abs(expectedStockAfter - current.stockAfter) > tolerance) {
+        return 'Inventory movement history contains a broken stock chain';
+      }
     }
+    const latestMovement = movements[movements.length - 1];
+    latestMovementByProduct.set(productId, latestMovement);
   }
 
   for (const row of productRows) {
@@ -1327,7 +1343,7 @@ export function validateInventoryLedgerRows(
   return null;
 }
 
-function validateInventoryLedgerDatabase(dbInstance: Database.Database): string | null {
+export function validateInventoryLedgerDatabase(dbInstance: Database.Database): string | null {
   const tables = new Set(getTables(dbInstance));
   if (!tables.has('products')) return null;
   if (!getColumns(dbInstance, 'products').includes('stock_quantity')) {
@@ -1341,7 +1357,7 @@ function validateInventoryLedgerDatabase(dbInstance: Database.Database): string 
       : null;
   }
 
-  const movements = dbInstance.prepare('SELECT id, product_id, stock_after, created_at FROM inventory_movements').all() as Record<string, unknown>[];
+  const movements = dbInstance.prepare('SELECT id, product_id, quantity_delta, stock_after, created_at FROM inventory_movements').all() as Record<string, unknown>[];
   return validateInventoryLedgerRows(products, movements);
 }
 
@@ -2177,6 +2193,10 @@ function dataOnlyRestore(
     currentDb.prepare('DELETE FROM kds_pairing_tokens').run();
     mergeRestoreOutboxState(currentDb, preservedOutboxes);
     mergeRevocations(currentDb, preservedRevocations);
+    const inventoryValidationError = validateInventoryLedgerDatabase(currentDb);
+    if (inventoryValidationError) {
+      throw new Error(`Restore would violate the inventory ledger: ${inventoryValidationError}`);
+    }
     const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
       .filter((key) => !baselineForeignKeyViolations.has(key));
     if (newForeignKeyViolations.length > 0) {
@@ -4207,6 +4227,41 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         CREATE INDEX IF NOT EXISTS idx_inventory_movements_created
           ON inventory_movements(created_at, id);
       `);
+
+      const stockedProducts = db.prepare(`
+        SELECT id, stock_quantity
+        FROM products
+        WHERE COALESCE(stock_quantity, 0) <> 0
+        ORDER BY id
+      `).all() as { id: string; stock_quantity: number }[];
+      if (stockedProducts.length === 0) return;
+
+      const actor = db.prepare(`
+        SELECT id
+        FROM users
+        ORDER BY CASE WHEN role = 'owner' THEN 0 ELSE 1 END, created_at, id
+        LIMIT 1
+      `).get() as { id: string } | undefined;
+      if (!actor) throw new Error('Cannot backfill inventory movements without an existing staff actor');
+
+      const createdAt = now();
+      const insertOpeningMovement = db.prepare(`
+        INSERT INTO inventory_movements (
+          product_id, quantity_delta, movement_type, reference_type, reference_id,
+          reason, actor_user_id, stock_after, created_at
+        ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, ?)
+      `);
+      for (const product of stockedProducts) {
+        insertOpeningMovement.run(
+          product.id,
+          product.stock_quantity,
+          product.id,
+          'Opening balance migrated to inventory ledger',
+          actor.id,
+          product.stock_quantity,
+          createdAt,
+        );
+      }
     },
   },
 ];

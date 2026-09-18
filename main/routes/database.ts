@@ -157,6 +157,12 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
       });
     }
 
+    if (Array.isArray(importData.products) && importData.products.length > 0 && !Array.isArray(importData.inventory_movements)) {
+      return res.status(400).json({
+        error: 'Product imports must include inventory movement history so stock changes remain auditable',
+      });
+    }
+
     // Preserve existing accounts and create inactive placeholders for redacted users without hashes.
     const importedUserRows = Array.isArray(importData.users) ? importData.users : [];
     const credentialedUserIds = new Set(

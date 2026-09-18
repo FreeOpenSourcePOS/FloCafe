@@ -230,7 +230,7 @@ export default function RefundModal({ order, bills, onClose, onRefunded }: Props
       setNow(submissionNow);
       setApprovers(configuredApprovers);
       setApproverId(approverIdAtSubmission);
-      if (approverIdAtSubmission !== approverIdForRefund) {
+      if (approverIdAtSubmission !== approverId) {
         setOverridePin('');
         return;
       }

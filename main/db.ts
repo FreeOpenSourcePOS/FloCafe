@@ -1401,6 +1401,7 @@ function inventoryMovementHistoryKey(row: Record<string, unknown>): string {
     nullableString(row.imported_by_user_id),
     nullableString(row.import_batch_id),
     numericValue(row.stock_after),
+    nullableString(row.created_at),
     nullableString(row.source_actor_user_id ?? row.actor_user_id),
     nullableString(row.source_reference_type ?? row.reference_type),
     nullableString(row.source_reference_id ?? row.reference_id),

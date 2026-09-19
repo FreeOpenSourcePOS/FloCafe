@@ -483,7 +483,7 @@
     "orderCancelledBanner": "Cancelado a las {time} · {reason}",
     "orderCancelledBannerNoReason": "Cancelado a las {time}",
     "orderConvertedTakeaway": "Pedido convertido a para llevar",
-    "orderNoteTap": "{count, plural, one {1 nota de pedido · Toca para ver} other {# notas de pedido · Toca para ver}}",
+    "orderNoteTap": "{count, plural, one {1 nota de pedido · Tocá para ver} other {# notas de pedido · Tocá para ver}}",
     "overridePinLabel": "PIN de autorización",
     "paid": "Pagado",
     "partiallyPaid": "Parcialmente pagado",
@@ -558,9 +558,9 @@
     "voidItemConfirm": "{name} ya está en preparación en la cocina. Anularlo agrega una línea de reembolso a la cuenta y no se puede deshacer — se requiere el PIN de un encargado.",
     "voidItemFailed": "No se pudo anular el ítem",
     "voided": "Anulado",
-    "voidedItemsCount": "{count} artículos anulados · Toca para ver",
+    "voidedItemsCount": "{count, plural, one {1 artículo anulado · Tocá para ver} other {# artículos anulados · Tocá para ver}}",
     "voidingItem": "Anulando...",
-    "walkInCustomer": "Cliente sin cita",
+    "walkInCustomer": "Cliente de paso",
     "whatsappFailed": "No se pudo abrir WhatsApp"
   },
   "pos": {

@@ -558,7 +558,7 @@
     "voidItemConfirm": "{name} já está em preparo na cozinha. Anulá-lo adiciona uma linha de reembolso à conta e não pode ser desfeito — o PIN do gerente é obrigatório.",
     "voidItemFailed": "Falha ao anular o item",
     "voided": "Anulado",
-    "voidedItemsCount": "{count} itens cancelados · Toque para ver",
+    "voidedItemsCount": "{count, plural, one {1 item cancelado · Toque para ver} other {# itens cancelados · Toque para ver}}",
     "voidingItem": "Anulando...",
     "walkInCustomer": "Cliente sem reserva",
     "whatsappFailed": "Falha ao abrir o WhatsApp"

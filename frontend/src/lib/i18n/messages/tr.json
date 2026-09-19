@@ -558,7 +558,7 @@
     "voidItemConfirm": "{name} mutfakta hazırlanma aşamasında. İptal etmek hesaba iade satırı ekler ve geri alınamaz — müdür PIN kodu gereklidir.",
     "voidItemFailed": "Ürün iptal edilemedi",
     "voided": "İptal Edildi",
-    "voidedItemsCount": "{count} iptal edilen ürün · Görüntülemek için dokunun",
+    "voidedItemsCount": "{count, plural, one {1 iptal edilen ürün · Görüntülemek için dokunun} other {# iptal edilen ürün · Görüntülemek için dokunun}}",
     "voidingItem": "İptal ediliyor...",
     "walkInCustomer": "Giriş Müşterisi",
     "whatsappFailed": "WhatsApp gönderimi başarısız"

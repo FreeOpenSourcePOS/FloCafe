@@ -558,7 +558,7 @@
     "voidItemConfirm": "{name} ist bereits in der Küche in Zubereitung. Das Stornieren fügt eine Erstattungszeile hinzu und kann nicht rückgängig gemacht werden — Manager-PIN erforderlich.",
     "voidItemFailed": "Artikel konnte nicht storniert werden",
     "voided": "Storniert",
-    "voidedItemsCount": "{count} stornierte Artikel · Zum Anzeigen tippen",
+    "voidedItemsCount": "{count, plural, one {1 stornierter Artikel · Zum Anzeigen tippen} other {# stornierte Artikel · Zum Anzeigen tippen}}",
     "voidingItem": "Wird storniert…",
     "walkInCustomer": "Laufkunde",
     "whatsappFailed": "WhatsApp konnte nicht geöffnet werden"

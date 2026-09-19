@@ -454,26 +454,7 @@ export function OrderCard({
         </div>
       ) : (
         <div className="px-4 py-2 bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-100/50 dark:border-blue-900/20 flex items-center justify-between min-h-[44px]">
-          <div
-            role={!['completed', 'cancelled'].includes(order.status) ? 'button' : undefined}
-            tabIndex={!['completed', 'cancelled'].includes(order.status) ? 0 : undefined}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                if (!['completed', 'cancelled'].includes(order.status)) {
-                  onLinkCustomer(order.id);
-                }
-              }
-            }}
-            onClick={() => {
-              if (!['completed', 'cancelled'].includes(order.status)) {
-                onLinkCustomer(order.id);
-              }
-            }}
-            className={`flex items-center gap-2 min-w-0 flex-1 py-1 ${
-              !['completed', 'cancelled'].includes(order.status) ? 'cursor-pointer hover:opacity-80' : ''
-            }`}
-            title={order.customer ? tOrders('changeCustomer') : tOrders('linkCustomer')}
-          >
+          <div className="flex items-center gap-2 min-w-0 flex-1 py-1">
             <User size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
             {order.customer ? (
               <>
@@ -534,6 +515,8 @@ export function OrderCard({
           <button
             type="button"
             onClick={() => setShowOrderNotes((prev) => !prev)}
+            aria-expanded={showOrderNotes}
+            aria-controls={`order-notes-${order.id}`}
             className="w-full px-4 py-1.5 bg-amber-50 dark:bg-amber-950/30 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200 hover:bg-amber-100/60 dark:hover:bg-amber-950/50 transition-colors text-start touch-manipulation active:scale-95"
           >
             <span className="inline-flex items-center gap-1.5 font-medium">
@@ -548,7 +531,7 @@ export function OrderCard({
             />
           </button>
           {showOrderNotes && (
-            <div className="px-4 py-2 bg-amber-50/50 dark:bg-amber-950/20 text-xs text-amber-900 dark:text-amber-200 border-t border-amber-100/60 dark:border-amber-900/30 break-words">
+            <div id={`order-notes-${order.id}`} className="px-4 py-2 bg-amber-50/50 dark:bg-amber-950/20 text-xs text-amber-900 dark:text-amber-200 border-t border-amber-100/60 dark:border-amber-900/30 break-words">
               {order.special_instructions}
             </div>
           )}
@@ -558,7 +541,7 @@ export function OrderCard({
       {/* ── MIDDLE SECTION: ITEMS & TOTALS (FULL-WIDTH STACK) ────────────────── */}
       <div className="px-4 py-3 flex-1 flex flex-col justify-between">
         {/* Item list */}
-        <div className="space-y-2">
+        <div id={`order-items-${order.id}`} className="space-y-2">
           {displayedItems.map((item: OrderItem) => {
             const dotConfig = itemStatusDot[item.status] || itemStatusDot.pending;
             return (
@@ -633,6 +616,8 @@ export function OrderCard({
               <button
                 type="button"
                 onClick={() => setShowAllItems((prev) => !prev)}
+                aria-expanded={showAllItems}
+                aria-controls={`order-items-${order.id}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-full text-xs font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors touch-manipulation active:scale-95"
               >
                 <ChevronDown size={13} className={`transition-transform ${showAllItems ? 'rotate-180' : ''}`} />
@@ -644,6 +629,8 @@ export function OrderCard({
               <button
                 type="button"
                 onClick={() => setShowVoidedItems((prev) => !prev)}
+                aria-expanded={showVoidedItems}
+                aria-controls={`order-voided-${order.id}`}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 min-h-[32px] rounded-full text-xs font-medium bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 hover:bg-red-100 transition-colors touch-manipulation active:scale-95"
               >
                 <Ban size={13} />
@@ -655,7 +642,7 @@ export function OrderCard({
 
           {/* Expanded voided items list */}
           {showVoidedItems && inactiveItems.length > 0 && isOwnerOrManager && (
-            <div className="mt-2 ps-2.5 border-s-2 border-red-200 dark:border-red-900/40 space-y-1.5 py-1">
+            <div id={`order-voided-${order.id}`} className="mt-2 ps-2.5 border-s-2 border-red-200 dark:border-red-900/40 space-y-1.5 py-1">
               {inactiveItems.map((cItem: OrderItem) => (
                 <div key={cItem.id} className="flex items-center justify-between text-xs opacity-70">
                   <span className="line-through text-muted-foreground truncate">
@@ -749,6 +736,8 @@ export function OrderCard({
             <button
               type="button"
               onClick={() => setShowPrintActivity((prev) => !prev)}
+              aria-expanded={showPrintActivity}
+              aria-controls={`order-print-${order.id}`}
               className="py-1 hover:underline text-brand font-medium inline-flex items-center gap-0.5 active:scale-95 touch-manipulation min-h-[32px]"
             >
               {tOrders('viewActivity')}
@@ -759,7 +748,7 @@ export function OrderCard({
 
         {/* Expanded Print Activity Log */}
         {showPrintActivity && orderPrints.length > 0 && (
-          <div className="mt-1.5 ps-3 border-s border-border text-[10px] text-muted-foreground space-y-0.5">
+          <div id={`order-print-${order.id}`} className="mt-1.5 ps-3 border-s border-border text-[10px] text-muted-foreground space-y-0.5">
             {orderPrints.map((p, idx) => (
               <div key={p.id || idx}>
                 {idx + 1}. {tOrders('printHistoryEntry', {

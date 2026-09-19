@@ -558,7 +558,7 @@
     "voidItemConfirm": "{name} is already in progress in the kitchen. Voiding it adds a refund line to the bill and cannot be undone — a manager PIN is required.",
     "voidItemFailed": "Failed to void item",
     "voided": "Voided",
-    "voidedItemsCount": "{count} voided items · Tap to view",
+    "voidedItemsCount": "{count, plural, one {1 voided item · Tap to view} other {# voided items · Tap to view}}",
     "voidingItem": "Voiding...",
     "walkInCustomer": "Walk-in Customer",
     "whatsappFailed": "Failed to open WhatsApp"

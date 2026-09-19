@@ -12,7 +12,7 @@ import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 import { ROLE_KEYS } from '../shared/role-permissions';
-import { getCurrencyFractionDigits } from './countries';
+import { getCurrencyFractionDigits, RegionalNotConfiguredError } from './countries';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
 
@@ -5350,11 +5350,21 @@ function sanitizedNumberPrefix(value: string | null | undefined, fallback: strin
   return (value ?? fallback).replace(/[^A-Za-z0-9]/g, '');
 }
 
+// Order/bill numbering buckets and displayed date/period segments on a
+// tenant-local day. A missing timezone must not silently fall through to the
+// date helpers' own UTC fallback — at a local day/month/year boundary that
+// produces the wrong period segment and sequence bucket for the identifier.
+function requireTenantTimezone(): string {
+  const timezone = getSettingValue('timezone');
+  if (!timezone) throw new RegionalNotConfiguredError(timezone, 'timezone');
+  return timezone;
+}
+
 export function generateOrderNumber(): string {
   const prefix = sanitizedNumberPrefix(getSettingValue('order_number_prefix'), 'ORD');
   const includeDate = getSettingValue('order_number_include_date') !== 'false';
   const resetDaily = getSettingValue('order_number_reset_daily') !== 'false';
-  const timezone = getSettingValue('timezone') || '';
+  const timezone = requireTenantTimezone();
 
   // Per-day bucket when reset daily, otherwise a single bucket.
   const bucket = resetDaily ? dateStampInTimezone(timezone) : 'ALL';
@@ -5371,7 +5381,7 @@ export function generateBillNumber(): string {
   const resetPeriod: InvoiceResetPeriod = ['never', 'daily', 'monthly', 'financial_year'].includes(configuredPeriod)
     ? configuredPeriod as InvoiceResetPeriod
     : 'daily';
-  const timezone = getSettingValue('timezone') || '';
+  const timezone = requireTenantTimezone();
   const fyStart = clampFinancialYearStart(
     getSettingValue('invoice_financial_year_start_month'),
     getSettingValue('invoice_financial_year_start_day'),

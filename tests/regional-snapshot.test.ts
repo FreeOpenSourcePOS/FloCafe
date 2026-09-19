@@ -75,6 +75,14 @@ test('unknown country: throws RegionalNotConfiguredError', () => {
   assert.throws(() => resolveRegionalSnapshot({ country: 'ZZ' }), RegionalNotConfiguredError);
 });
 
+test('unknown country with an explicit syntactically-valid currency still throws (Ito QA bug-fail-1)', () => {
+  // A syntactically-valid-but-bogus currency (three letters) must not mask an
+  // unresolvable country — otherwise the currency check short-circuits before
+  // the country is ever validated, and a bill can be created under garbage
+  // regional settings.
+  assert.throws(() => resolveRegionalSnapshot({ country: 'ZZ', currency: 'ZZZ' }), RegionalNotConfiguredError);
+});
+
 test('valid stored timezone is kept as-is', () => {
   const snap = resolveRegionalSnapshot({ country: 'US', currency: 'USD', timezone: 'America/Los_Angeles' });
   assert.equal(snap.timezone, 'America/Los_Angeles');

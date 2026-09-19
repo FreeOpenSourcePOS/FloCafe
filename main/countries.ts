@@ -234,12 +234,16 @@ export const getCountryByCode = (code: string): Country | undefined => {
 // already-configured store's settings/tenant, so RegionalNotConfiguredError
 // here indicates a real bug upstream, not a state to silently paper over.
 export function resolveTenantCurrency(currency: unknown, countryCode: string): string {
+  // The country must be real before an explicit currency is ever trusted —
+  // otherwise a syntactically-valid-but-bogus currency (e.g. 'ZZZ') masks an
+  // unresolvable country and this never throws, silently processing money
+  // under invalid regional settings.
+  const country = getCountryByCode(countryCode);
+  if (!country) throw new RegionalNotConfiguredError(countryCode);
   if (typeof currency === 'string') {
     const normalized = currency.trim().toUpperCase();
     if (isSyntacticallyValidCurrencyCode(normalized)) return normalized;
   }
-  const country = getCountryByCode(countryCode);
-  if (!country) throw new RegionalNotConfiguredError(countryCode);
   return country.currency;
 }
 
@@ -534,11 +538,15 @@ export const DEFAULT_COUNTRY_PROFILE = {
 // docs/business-decisions.md, "Regional settings come from signup, never
 // from a fallback".
 
-/** Thrown when a store has no resolvable country. Callers should surface this
- * as a 409, not substitute a default country. */
+/** Thrown when a store has no resolvable country or, via the optional `field`,
+ * another required regional setting (e.g. timezone). Callers should surface
+ * this as a 409, not substitute a default. statusCode lets the many existing
+ * `error.statusCode || 500` route catch blocks map it correctly without each
+ * needing an explicit instanceof check. */
 export class RegionalNotConfiguredError extends Error {
-  constructor(countryCode: unknown) {
-    super(`Regional settings are not configured (country: ${JSON.stringify(countryCode)})`);
+  readonly statusCode = 409;
+  constructor(value: unknown, field: string = 'country') {
+    super(`Regional settings are not configured (${field}: ${JSON.stringify(value)})`);
     this.name = 'RegionalNotConfiguredError';
   }
 }

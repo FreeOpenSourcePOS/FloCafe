@@ -404,6 +404,7 @@ List orders.
       "order_number": "ORD-001",
       "type": "dine_in",
       "status": "pending",
+      "whatsapp_receipt_status": "sent",
       "table": { "id": "table-1", "name": "T1" },
       "items": [
         {
@@ -420,6 +421,15 @@ List orders.
   ]
 }
 ```
+
+`whatsapp_receipt_status` summarizes the latest outbound `bill_receipt`
+ledger row for each paid bill in the order; a paid bill with no row contributes
+no positive status. It is `sent` when every paid bill's latest status is
+`sent`, `delivered`, or `read`; `partial` when positive and non-positive
+statuses are mixed; `pending` when no positive status exists but at least one
+row is `queued` or `typing`; `failed` when no positive or pending status exists
+but a row is `failed`; and `null` when no matching row exists. The `wa.me`
+share fallback does not create a native ledger row and is not counted as sent.
 
 ---
 
@@ -460,6 +470,9 @@ Order item `addons` reference catalog add-ons by `id`. Each add-on must be activ
 
 ### GET `/api/orders/:id`
 Get order details.
+
+The response uses the same hydrated order shape as the list endpoint,
+including `whatsapp_receipt_status`.
 
 ---
 

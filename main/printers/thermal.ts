@@ -1138,8 +1138,8 @@ function receiptDocumentLines(
   cutMode: PrinterCutMode,
   capabilities: ThermalPrinterCapabilities,
 ): RasterDocumentLines | null {
-  // See formatReceipt's identical placeholder below for why currency: 'USD'.
-  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', currency: 'USD' };
+  // See formatReceipt's identical placeholder below for why country + currency are both required.
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', country: 'US', currency: 'USD' };
   const rasterBiz = {
     ...biz,
     ...(biz.customer_phone ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) } : {}),
@@ -1377,9 +1377,10 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
 
   const lang = normalizePrintLanguage(language);
   // No business info supplied at all (e.g. a synthetic preview) — a neutral
-  // explicit currency short-circuits resolveTenantCurrency's country lookup
-  // (docs/business-decisions.md: no default country, and specifically not INR).
-  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', currency: 'USD' };
+  // explicit country + currency, never a default country or INR
+  // (docs/business-decisions.md). resolveTenantCurrency validates the
+  // country before it ever looks at currency, so both must be present.
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', country: 'US', currency: 'USD' };
   // Merchant templates resolve through document pipeline; pack templates use compliance renderer.
   const selection = parseBillTemplateSelection(template);
   const templateCapabilities = selection?.source === 'pack' || selection?.source === 'merchant'

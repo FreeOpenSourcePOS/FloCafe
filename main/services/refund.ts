@@ -102,7 +102,12 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   // Past the short window, an owner-only PIN is required for the rest of the business day (docs/business-decisions.md).
   let lateRefund = false;
   if (nowMs - orderCreatedAt > REFUND_WINDOW_MS) {
-    const timezone = getSettingValue('timezone') || '';
+    // A missing timezone must reject rather than let localDateInTimezone()/
+    // dayBoundsInTimezone() fall back to UTC — at a tenant offset from UTC,
+    // that can wrongly accept or reject a late refund relative to the
+    // tenant's actual business-day end.
+    const timezone = getSettingValue('timezone');
+    if (!timezone) throw httpError('Regional settings are not configured', 409);
     const startTime = tenantBusinessDayStartTime(db);
     const orderBusinessDate = localDateInTimezone(new Date(orderCreatedAt), timezone, startTime);
     const [, businessDayEnd] = dayBoundsInTimezone(orderBusinessDate, timezone, startTime);

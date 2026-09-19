@@ -299,13 +299,19 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
+    // buildTestPage silently omits the timeZone option (server-local time)
+    // rather than throwing when timezone is missing — reject explicitly so
+    // the printed test page never shows the wrong instant.
+    const timezone = tenantSettingValue(db, 'timezone');
+    if (!timezone) return res.status(409).json({ error: 'regional_not_configured' });
+
     const profile = resolvePrinterProfile(printer);
     const capabilities = capabilitiesForPrinter(profile, printer.paper_width || profile.defaultPaperWidth);
     const testData = buildTestPage(
       printer.paper_width || profile.defaultPaperWidth,
       profile.cutMode,
       tenantLanguage(db),
-      tenantSettingValue(db, 'timezone'),
+      timezone,
       req.body?.rasterProbe === true ? capabilities : undefined,
     );
     let result: { ok: boolean; detail?: string } = { ok: false };

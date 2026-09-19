@@ -40,7 +40,7 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
-import { getCurrencyMinorUnitFactor } from '../countries';
+import { getCurrencyMinorUnitFactor, RegionalNotConfiguredError } from '../countries';
 import { getOrdersWithItemsForBills } from './bills';
 import { getHttpRequestSignal } from '../shutdown';
 import {
@@ -76,8 +76,13 @@ function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
 }
 
+// A missing timezone must reject rather than let dayBoundsInTimezone() fall
+// back to UTC — at a tenant-local day boundary that includes/excludes
+// transactions at the wrong instant, producing an incorrect closure total.
 function tenantTimezone(): string {
-  return getSettingValue('timezone') || '';
+  const timezone = getSettingValue('timezone');
+  if (!timezone) throw new RegionalNotConfiguredError(timezone, 'timezone');
+  return timezone;
 }
 
 function tenantStartTime(db?: ReturnType<typeof getDatabase>): string {

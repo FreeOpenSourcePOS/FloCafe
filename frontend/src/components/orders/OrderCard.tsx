@@ -35,7 +35,7 @@ import {
   Download,
   Loader2,
 } from 'lucide-react';
-import type { Order, OrderItem, Bill } from '@/lib/types';
+import type { Order, OrderItem, Bill, Customer } from '@/lib/types';
 import { Ltr } from '@/components/layout/Ltr';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -96,6 +96,10 @@ interface OrderCardProps {
   sendingWaOrderId: number | null;
   cancellingOrderId: number | null;
   convertingOrderId: number | null;
+  isLinkingCustomer?: boolean;
+  linkCustomerSearch?: string;
+  linkCustomerResults?: Customer[];
+  linkingCustomer?: boolean;
   onCheckout: (orderId: number) => void;
   onAddItems: (order: Order) => void;
   onRefund: (order: Order, bills: Bill[]) => void;
@@ -104,6 +108,10 @@ interface OrderCardProps {
   onPrint: (billId: number) => void;
   onSendWhatsApp: (order: Order) => void;
   onLinkCustomer: (orderId: number) => void;
+  onCancelLinkCustomer?: () => void;
+  onSearchCustomer?: (query: string) => void;
+  onSelectCustomer?: (orderId: number, customerId: string) => void;
+  onCreateCustomer?: (orderId: number, search: string) => void;
   onCreateNewOrderForCustomer: (order: Order) => void;
   onDownloadPrintPreview?: (billId: number) => void;
   onDeleteItem?: (orderId: number, itemId: number) => void;
@@ -122,6 +130,10 @@ export function OrderCard({
   sendingWaOrderId,
   cancellingOrderId,
   convertingOrderId,
+  isLinkingCustomer,
+  linkCustomerSearch,
+  linkCustomerResults,
+  linkingCustomer,
   onCheckout,
   onAddItems,
   onRefund,
@@ -130,6 +142,10 @@ export function OrderCard({
   onPrint,
   onSendWhatsApp,
   onLinkCustomer,
+  onCancelLinkCustomer,
+  onSearchCustomer,
+  onSelectCustomer,
+  onCreateCustomer,
   onCreateNewOrderForCustomer,
   onDownloadPrintPreview,
   onDeleteItem,
@@ -382,79 +398,135 @@ export function OrderCard({
       )}
 
       {/* ── CUSTOMER STRIP ───────────────────────────────────────────────────── */}
-      <div className="px-4 py-2 bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-100/50 dark:border-blue-900/20 flex items-center justify-between min-h-[44px]">
-        <div
-          role={!['completed', 'cancelled'].includes(order.status) ? 'button' : undefined}
-          tabIndex={!['completed', 'cancelled'].includes(order.status) ? 0 : undefined}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
+      {isLinkingCustomer ? (
+        <div className="px-4 py-2.5 bg-blue-50/80 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-900/40 space-y-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={linkCustomerSearch || ''}
+              onChange={(e) => onSearchCustomer?.(e.target.value)}
+              placeholder={tOrders('searchCustomer')}
+              className="flex-1 px-3 py-1.5 text-xs sm:text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={onCancelLinkCustomer}
+              className="text-muted-foreground hover:text-foreground p-1 rounded transition-colors"
+            >
+              <XCircle size={18} />
+            </button>
+          </div>
+
+          {linkCustomerResults && linkCustomerResults.length > 0 && (
+            <div className="max-h-40 overflow-y-auto space-y-1">
+              {linkCustomerResults.map((customer) => (
+                <button
+                  key={customer.id}
+                  type="button"
+                  onClick={() => onSelectCustomer?.(order.id, String(customer.id))}
+                  disabled={linkingCustomer}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 bg-card hover:bg-muted rounded-md border border-border text-xs text-start disabled:opacity-50 transition-colors"
+                >
+                  <div>
+                    <span className="font-medium text-foreground">{customer.name}</span>
+                    {customer.phone && (
+                      <span className="text-muted-foreground ms-2"><Ltr>{customer.phone}</Ltr></span>
+                    )}
+                  </div>
+                  {linkingCustomer && <span className="text-muted-foreground text-[10px]">{tOrders('linking')}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => onCreateCustomer?.(order.id, linkCustomerSearch || '')}
+            disabled={linkingCustomer}
+            className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-blue-600 dark:text-blue-400 bg-card hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-md border border-dashed border-blue-300 dark:border-blue-700 font-medium text-start disabled:opacity-50 transition-colors"
+          >
+            <Plus size={14} />
+            {linkCustomerSearch?.trim()
+              ? `${tPos('addCustomer')} "${linkCustomerSearch.trim()}"`
+              : tPos('addCustomer')}
+          </button>
+        </div>
+      ) : (
+        <div className="px-4 py-2 bg-blue-50/50 dark:bg-blue-950/20 border-b border-blue-100/50 dark:border-blue-900/20 flex items-center justify-between min-h-[44px]">
+          <div
+            role={!['completed', 'cancelled'].includes(order.status) ? 'button' : undefined}
+            tabIndex={!['completed', 'cancelled'].includes(order.status) ? 0 : undefined}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                if (!['completed', 'cancelled'].includes(order.status)) {
+                  onLinkCustomer(order.id);
+                }
+              }
+            }}
+            onClick={() => {
               if (!['completed', 'cancelled'].includes(order.status)) {
                 onLinkCustomer(order.id);
               }
-            }
-          }}
-          onClick={() => {
-            if (!['completed', 'cancelled'].includes(order.status)) {
-              onLinkCustomer(order.id);
-            }
-          }}
-          className={`flex items-center gap-2 min-w-0 flex-1 py-1 ${
-            !['completed', 'cancelled'].includes(order.status) ? 'cursor-pointer hover:opacity-80' : ''
-          }`}
-          title={order.customer ? tOrders('changeCustomer') : tOrders('linkCustomer')}
-        >
-          <User size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
-          {order.customer ? (
-            <>
-              <span className="text-xs font-semibold text-blue-900 dark:text-blue-200 truncate">
-                {order.customer.name}
+            }}
+            className={`flex items-center gap-2 min-w-0 flex-1 py-1 ${
+              !['completed', 'cancelled'].includes(order.status) ? 'cursor-pointer hover:opacity-80' : ''
+            }`}
+            title={order.customer ? tOrders('changeCustomer') : tOrders('linkCustomer')}
+          >
+            <User size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+            {order.customer ? (
+              <>
+                <span className="text-xs font-semibold text-blue-900 dark:text-blue-200 truncate">
+                  {order.customer.name}
+                </span>
+                {order.customer.phone && (
+                  <span className="text-xs text-blue-600 dark:text-blue-400 shrink-0">
+                    <Ltr>{order.customer.phone}</Ltr>
+                  </span>
+                )}
+                {order.type === 'delivery' && order.customer.address && (
+                  <span className="inline-flex items-center gap-1 text-xs text-blue-700 dark:text-blue-300 truncate ms-1">
+                    <MapPin size={11} className="shrink-0" />
+                    <span className="truncate">{order.customer.address}</span>
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-xs font-medium text-muted-foreground">
+                {tOrders('walkInCustomer')}
               </span>
-              {order.customer.phone && (
-                <span className="text-xs text-blue-600 dark:text-blue-400 shrink-0">
-                  <Ltr>{order.customer.phone}</Ltr>
-                </span>
-              )}
-              {order.type === 'delivery' && order.customer.address && (
-                <span className="inline-flex items-center gap-1 text-xs text-blue-700 dark:text-blue-300 truncate ms-1">
-                  <MapPin size={11} className="shrink-0" />
-                  <span className="truncate">{order.customer.address}</span>
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-xs font-medium text-muted-foreground">
-              {tOrders('walkInCustomer')}
-            </span>
+            )}
+          </div>
+
+          {order.customer && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCreateNewOrderForCustomer(order);
+              }}
+              className="flex items-center gap-1 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 hover:bg-blue-200 dark:hover:bg-blue-900/60 active:scale-95 px-3 py-1.5 min-h-[36px] rounded-lg transition-colors shrink-0 ms-2 touch-manipulation"
+              title={tOrders('startNewOrderForCustomer')}
+            >
+              <Plus size={13} />
+              <span>{tOrders('newOrder')}</span>
+            </button>
+          )}
+
+          {!order.customer && !['completed', 'cancelled'].includes(order.status) && (
+            <button
+              type="button"
+              onClick={() => onLinkCustomer(order.id)}
+              className="flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 active:scale-95 px-3 py-1.5 min-h-[36px] rounded-lg transition-colors shrink-0 ms-2 touch-manipulation"
+              title={tOrders('linkCustomer')}
+            >
+              <Plus size={13} />
+              <span>{tOrders('linkCustomer')}</span>
+            </button>
           )}
         </div>
-
-        {order.customer && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onCreateNewOrderForCustomer(order);
-            }}
-            className="flex items-center gap-1 text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 hover:bg-blue-200 dark:hover:bg-blue-900/60 active:scale-95 px-3 py-1.5 min-h-[36px] rounded-lg transition-colors shrink-0 ms-2 touch-manipulation"
-            title={tOrders('startNewOrderForCustomer')}
-          >
-            <Plus size={13} />
-            <span>{tOrders('newOrder')}</span>
-          </button>
-        )}
-
-        {!order.customer && !['completed', 'cancelled'].includes(order.status) && (
-          <button
-            type="button"
-            onClick={() => onLinkCustomer(order.id)}
-            className="flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 active:scale-95 px-3 py-1.5 min-h-[36px] rounded-lg transition-colors shrink-0 ms-2 touch-manipulation"
-            title={tOrders('linkCustomer')}
-          >
-            <Plus size={13} />
-            <span>{tOrders('linkCustomer')}</span>
-          </button>
-        )}
-      </div>
+      )}
 
       {/* ── COLLAPSIBLE ORDER NOTES BANNER ───────────────────────────────────── */}
       {order.special_instructions && (

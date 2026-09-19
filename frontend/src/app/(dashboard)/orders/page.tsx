@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { Trash2, Printer, XCircle, Percent, Banknote, Search, Plus, Loader2, Download } from 'lucide-react';
+import { Trash2, Printer, Percent, Banknote, Search, Plus, Loader2, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import CreateCustomerModal from '@/components/pos/CreateCustomerModal';
@@ -99,7 +99,6 @@ export default function OrdersPage() {
   const cartStore = useCartStore();
   const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
-  const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
   const tWhatsappSend = useTranslations('whatsapp.send');
@@ -1025,6 +1024,10 @@ export default function OrdersPage() {
               sendingWaOrderId={sendingWaOrderId}
               cancellingOrderId={cancellingOrderId}
               convertingOrderId={convertingOrderId}
+              isLinkingCustomer={linkCustomerOrderId === order.id}
+              linkCustomerSearch={linkCustomerSearch}
+              linkCustomerResults={linkCustomerResults}
+              linkingCustomer={linkingCustomer}
               onCheckout={handleCheckout}
               onAddItems={openAddItemsModal}
               onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
@@ -1036,6 +1039,20 @@ export default function OrdersPage() {
                 setLinkCustomerOrderId(orderId);
                 setLinkCustomerSearch('');
                 setLinkCustomerResults([]);
+              }}
+              onCancelLinkCustomer={() => {
+                setLinkCustomerOrderId(null);
+                setLinkCustomerSearch('');
+                setLinkCustomerResults([]);
+              }}
+              onSearchCustomer={(query) => {
+                setLinkCustomerSearch(query);
+                searchCustomersForLink(query);
+              }}
+              onSelectCustomer={handleLinkCustomer}
+              onCreateCustomer={(orderId, search) => {
+                setCreateCustomerSearch(search);
+                setCreateCustomerOrderId(orderId);
               }}
               onCreateNewOrderForCustomer={handleCreateNewOrderForCustomer}
               onDownloadPrintPreview={handleDownloadPrintPreview}
@@ -1518,97 +1535,6 @@ placeholder={tOrders('managerPin')}
             await handleLinkCustomer(orderId, String(newCustomer.id));
           }}
         />
-      )}
-      {/* Link Customer Modal */}
-      {linkCustomerOrderId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-card rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-foreground">{tOrders('linkCustomer')}</h2>
-              <button
-                onClick={() => {
-                  setLinkCustomerOrderId(null);
-                  setLinkCustomerSearch('');
-                  setLinkCustomerResults([]);
-                }}
-                className="text-gray-400 hover:text-muted-foreground"
-              >
-                <XCircle size={18} />
-              </button>
-            </div>
-
-            <div className="relative mb-3">
-              <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={linkCustomerSearch}
-                onChange={(e) => {
-                  setLinkCustomerSearch(e.target.value);
-                  searchCustomersForLink(e.target.value);
-                }}
-                placeholder={tOrders('searchCustomer')}
-                className="w-full ps-9 pe-3 py-2 text-sm border border-border bg-card rounded-lg focus:ring-2 focus:ring-brand/30 focus:border-brand outline-none"
-                autoFocus
-              />
-            </div>
-
-            <div className="max-h-56 overflow-y-auto space-y-1.5 mb-3">
-              {linkCustomerResults.map((customer) => (
-                <button
-                  key={customer.id}
-                  onClick={() => handleLinkCustomer(linkCustomerOrderId, String(customer.id))}
-                  disabled={linkingCustomer}
-                  className="w-full flex items-center justify-between px-3 py-2 bg-muted/40 hover:bg-muted rounded-lg border border-border transition-colors text-start disabled:opacity-50"
-                >
-                  <div>
-                    <span className="text-sm font-medium text-foreground">{customer.name}</span>
-                    {customer.phone && (
-                      <span className="text-xs text-muted-foreground ms-2"><Ltr>{customer.phone}</Ltr></span>
-                    )}
-                  </div>
-                  {linkingCustomer ? (
-                    <span className="text-xs text-gray-400">{tOrders('linking')}</span>
-                  ) : (
-                    <Plus size={14} className="text-brand" />
-                  )}
-                </button>
-              ))}
-              {linkCustomerSearch.length >= 2 && linkCustomerResults.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-2">{tOrders('noItemsFound')}</p>
-              )}
-            </div>
-
-            <div className="pt-3 border-t border-border flex justify-between gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setLinkCustomerOrderId(null);
-                  setLinkCustomerSearch('');
-                  setLinkCustomerResults([]);
-                }}
-              >
-                {tCommon('cancel')}
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => {
-                  const orderId = linkCustomerOrderId;
-                  const search = linkCustomerSearch;
-                  setLinkCustomerOrderId(null);
-                  setCreateCustomerSearch(search);
-                  setCreateCustomerOrderId(orderId);
-                }}
-                className="bg-brand text-white"
-              >
-                <Plus size={14} className="me-1.5" />
-                {linkCustomerSearch.trim()
-                  ? `${tPos('addCustomer')} "${linkCustomerSearch.trim()}"`
-                  : tPos('addCustomer')}
-              </Button>
-            </div>
-          </div>
-        </div>
       )}
       {ConfirmDialog}
     </div>

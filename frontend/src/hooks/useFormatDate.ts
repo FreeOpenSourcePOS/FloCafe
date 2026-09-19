@@ -14,7 +14,7 @@ export function useFormatDate() {
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const locale = useLocale();
 
-  const country = currentTenant?.country;
+  const country = currentTenant?.country || '';
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const format = useCallback((

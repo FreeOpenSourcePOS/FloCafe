@@ -142,7 +142,7 @@ export function useCashClose() {
   // Storage minor-unit factor (`Math.pow(10, fractionDigits)`) is the cents
   // denominator; the adapter's `maxDecimals` would be wrong for IRR/Toman
   // (where display has 3 decimals but storage is still Rial-cents, factor 100).
-  const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || 'INR');
+  const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
 
   // Prior business date = day before the modal's date. ISO date arithmetic on
   // the YYYY-MM-DD string is timezone-safe — no need for `localDateInTimezone`

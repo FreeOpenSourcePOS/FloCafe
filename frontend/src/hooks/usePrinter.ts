@@ -286,7 +286,7 @@ export const usePrinterStore = create<PrinterState>()(
                   columns: columnsForReceiptPaperSize(builderOpts.paperWidth ?? configuredPaperWidth),
                   businessName: tenant.business_name,
                   includeTaxId: billShowTaxId,
-                  taxIdLabel: getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel ?? 'Tax ID',
+                  taxIdLabel: getCountryByCode(tenant.country)?.taxIdLabel ?? 'Tax ID',
                   maskCustomerPhone: true,
                   useBillCustomer: true,
                 }),
@@ -295,9 +295,9 @@ export const usePrinterStore = create<PrinterState>()(
                 options: {
                   columns: columnsForReceiptPaperSize(builderOpts.paperWidth ?? configuredPaperWidth),
                   language: languages[0],
-                  locale: getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US',
+                  locale: getCountryByCode(tenant.country)?.locale ?? 'en-US',
                   currency,
-                  currencySymbol: getCurrencySymbol(currency, getCountryByCode(tenant.country ?? 'IN')?.locale),
+                  currencySymbol: getCurrencySymbol(currency, getCountryByCode(tenant.country)?.locale),
                   trimDecimals: printerTrimDecimals,
                   useUnicode: printerUseUnicode,
                   arabicShaping: printerArabicShaping,
@@ -431,7 +431,7 @@ export const usePrinterStore = create<PrinterState>()(
         const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
         const tenant = useAuthStore.getState().currentTenant;
         const tenantTimezone = tenant?.timezone;
-        const tenantLocale = getCountryByCode(tenant?.country ?? 'IN')?.locale ?? 'en-US';
+        const tenantLocale = getCountryByCode(tenant?.country ?? '')?.locale ?? 'en-US';
         if (!kotPrintingEnabled) {
           const err = new Error('KOT printing is disabled for this business');
           set({ lastError: err.message });

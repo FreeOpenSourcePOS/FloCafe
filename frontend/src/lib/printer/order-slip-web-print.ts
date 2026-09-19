@@ -28,7 +28,7 @@ export function generateOrderSlipHtml(order: Order, labels: OrderSlipLabels, opt
   const fontSize = paperWidth === 58 ? '10px' : '12px';
   const padding = paperWidth === 58 ? '4px' : '6px';
   const paperWidthCss = paperWidth === 58 ? '58mm' : '80mm';
-  const money = (value: unknown) => formatCurrencyForTenant(Number(value || 0), opts.country, opts.currency || 'INR');
+  const money = (value: unknown) => formatCurrencyForTenant(Number(value || 0), opts.country || '', opts.currency || '');
 
   const items = order.items ?? [];
   const itemRows = items.map((item) => `

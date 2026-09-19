@@ -394,7 +394,7 @@ export default function WhatsAppPage() {
   };
 
   const addBlock = async () => {
-    const tenantCountry = currentTenant?.country ?? 'IN';
+    const tenantCountry = currentTenant?.country ?? '';
     const parsed = parsePhone(blockPhone.trim(), tenantCountry);
     if (!parsed) {
       toast.error(tBlocklist('phoneRequired'));

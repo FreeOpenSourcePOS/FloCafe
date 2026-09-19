@@ -119,8 +119,8 @@ export default function ProductsPage() {
   const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
 
-  const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
-  const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency || 'INR', currentTenant?.country);
+  const currency = getCurrencySymbol(currentTenant?.currency || '', getCountryByCode(currentTenant?.country ?? '')?.locale);
+  const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency || '', currentTenant?.country);
   const fmt = useFormatCurrency();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);

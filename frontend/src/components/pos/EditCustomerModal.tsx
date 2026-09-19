@@ -20,7 +20,7 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
   const { currentTenant } = useAuthStore();
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
-  const country = currentTenant?.country ?? 'IN';
+  const country = currentTenant?.country ?? '';
   const dialCode = dialCodeFor(country);
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(customer.phone || '');

@@ -248,7 +248,7 @@ export default function POSPage() {
     ? globalThis.crypto.randomUUID()
     : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
+  const currency = getCurrencySymbol(currentTenant?.currency || '', getCountryByCode(currentTenant?.country ?? '')?.locale);
   const { printBill, printKot } = usePrinterStore();
   const billingIsPrepaid = billingType === 'prepaid';
   const shouldTakePaymentNow = billingIsPrepaid;

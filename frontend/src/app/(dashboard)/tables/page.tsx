@@ -42,7 +42,7 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
   const tNav = useTranslations('nav');
   const tSettings = useTranslations('settings');
   const tProducts = useTranslations('products');
-  const dialCode = dialCodeFor(currentTenant?.country ?? 'IN') || '+91';
+  const dialCode = dialCodeFor(currentTenant?.country ?? '');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Customer[]>([]);
   const [selected, setSelected] = useState<Customer | null>(null);
@@ -67,7 +67,7 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
 
   const handleCreateCustomer = async () => {
     if (!newName.trim() || !newPhone.trim()) return;
-    const country = currentTenant?.country ?? 'IN';
+    const country = currentTenant?.country ?? '';
     const parsed = parsePhone(newPhone, country);
     if (!parsed) {
       toast.error(tPos('invalidPhone', { country: countryName(country) }));

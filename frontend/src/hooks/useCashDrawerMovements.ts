@@ -34,7 +34,7 @@ export function useCashDrawerMovements() {
   const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
   const unitAdapter = useCurrencyUnitAdapter();
-  const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || 'INR');
+  const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
   const todayLocal = businessDateInTimezone(
     currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
     currentTenant?.business_day_start_time || '00:00',

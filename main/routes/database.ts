@@ -361,7 +361,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
         );
         
         const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
-        const tenantCountry = tenantCountryRow?.value || 'IN';
+        const tenantCountry = tenantCountryRow?.value || '';
 
         for (const row of rows) {
           throwIfDatabaseMaintenanceAborted(signal);

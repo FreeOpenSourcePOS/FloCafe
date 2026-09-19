@@ -305,7 +305,7 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
       printer.paper_width || profile.defaultPaperWidth,
       profile.cutMode,
       tenantLanguage(db),
-      tenantSettingValue(db, 'timezone') || 'Asia/Kolkata',
+      tenantSettingValue(db, 'timezone'),
       req.body?.rasterProbe === true ? capabilities : undefined,
     );
     let result: { ok: boolean; detail?: string } = { ok: false };
@@ -468,7 +468,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async
       }
     }
 
-    const country = settings.country || 'IN';
+    const country = settings.country || '';
     const currency = resolveTenantCurrency(settings.currency, country);
     const business = {
       name: settings.business_name || '',
@@ -490,7 +490,7 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async
       points_redeemed: pointsRedeemed,
       points_balance: pointsBalance,
       trim_decimals: settings.printer_trim_decimals === 'true',
-      timezone: settings.timezone || 'Asia/Kolkata',
+      timezone: settings.timezone || '',
       show_name: settings.bill_show_name !== 'false',
       show_address: settings.bill_show_address !== 'false',
       show_phone: settings.bill_show_phone !== 'false',

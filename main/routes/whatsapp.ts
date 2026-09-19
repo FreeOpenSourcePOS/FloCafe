@@ -79,7 +79,7 @@ router.post('/connect', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(a
       res.status(400).json({ error: 'phone required for pairing code', reason: 'phone_required_pairing' });
       return;
     }
-    const tenantCountry = getSettingValue('country') || 'IN';
+    const tenantCountry = getSettingValue('country') || '';
     const parsedPhone = parsePhoneE164(String(phone), tenantCountry);
     if (!parsedPhone) {
       res.status(400).json({ error: 'Valid phone number required for pairing code', reason: 'invalid_phone' });
@@ -102,7 +102,7 @@ router.post('/send', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandl
     res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
     return;
   }
-  const tenantCountry = getSettingValue('country') || 'IN';
+  const tenantCountry = getSettingValue('country') || '';
   const parsedPhone = parsePhoneE164(String(phone_e164), tenantCountry);
   if (!parsedPhone) {
     res.status(400).json({ error: 'Valid phone_e164 required', reason: 'invalid_phone' });
@@ -200,7 +200,7 @@ router.get('/blocklist', requireRole(...ROLE_ACCESS.ownerManager), (_req: Reques
 
 router.post('/blocklist', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   const { phone_e164, reason } = req.body ?? {};
-  const tenantCountry = getSettingValue('country') || 'IN';
+  const tenantCountry = getSettingValue('country') || '';
   const parsed = parsePhoneE164(String(phone_e164 || ''), tenantCountry);
   if (!parsed) {
     res.status(400).json({ error: 'Valid phone_e164 required', reason: 'invalid_phone' });

@@ -21,7 +21,7 @@ const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', '
 const ACTIVE_ORDER_STATUS_SQL = "o.status NOT IN ('completed', 'cancelled')";
 
 function tenantTimezone(): string {
-  return getSettingValue('timezone') || 'Asia/Kolkata';
+  return getSettingValue('timezone') || '';
 }
 
 function tenantStartTime(): string {

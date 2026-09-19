@@ -6,7 +6,7 @@ import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
-import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
+import { getCurrencySymbol, getCountryByCode, isValidTimeZone, RegionalNotConfiguredError } from '../countries';
 import { countryConfirmationPatch } from '../services/country-provenance';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
@@ -85,10 +85,13 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
     slug: 'local',
     database_name: 'local',
     business_type: s.business_type || 'restaurant',
-    country: s.country || 'IN',
-    currency: s.currency || 'INR',
-    currency_symbol: getCurrencySymbol(s.currency || 'INR', getCountryByCode(s.country)?.locale) || '₹',
-    timezone: s.timezone || 'Asia/Kolkata',
+    // Login must never fail on a missing regional field (unreachable for an
+    // authenticated, post-setup store per docs/business-decisions.md) — degrade
+    // to empty rather than throw, and never silently claim India.
+    country: s.country || '',
+    currency: s.currency || '',
+    currency_symbol: getCurrencySymbol(s.currency || '', getCountryByCode(s.country)?.locale) || '',
+    timezone: s.timezone || '',
     business_day_start_time: s.business_day_start_time || '00:00',
     language: s.language || 'en',
     // Include print policies in tenant snapshot so renderer bootstraps them before first print.
@@ -361,8 +364,11 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     insertTable(db, 'tbl-demo-4', `${tableLabel}4`, 2);
   }
 
-  // Default to setup country (IN) if unspecified; country is independent of UI language.
-  const demoCountry = country || 'IN';
+  // country is independent of UI language, but the demo profile needs a real
+  // one to seed demo customers with a plausible phone number — the caller
+  // (POST /setup/initialize) always supplies the owner's selected country.
+  if (!country) throw new RegionalNotConfiguredError(country);
+  const demoCountry = country;
   const dialCode = dialCodeFor(demoCountry);
   if (lang === 'es') {
     insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode, demoCountry);

@@ -395,7 +395,7 @@ router.post('/import/products', requireRole(...ROLE_ACCESS.ownerManager), (req: 
     const catMap: Record<string, string> = {};
     for (const c of catRows) catMap[c.name.toLowerCase()] = c.id;
 
-    const country = getSettingValue('country') || 'IN';
+    const country = getSettingValue('country') || '';
     const businessType = getSettingValue('business_type') || 'restaurant';
     const activePack = getActiveCountryPack(country);
     const taxCategoriesConfigured = hasConfiguredTaxCategories(activePack, businessType);

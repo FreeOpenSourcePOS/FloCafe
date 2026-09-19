@@ -363,7 +363,7 @@ function validateTaxCategoryId(categoryId: unknown): string | null {
   if (categoryId === null || categoryId === undefined || categoryId === '') return null;
   if (typeof categoryId !== 'string') return 'tax_category_id must be a string or null';
 
-  const country = getSettingValue('country') || 'IN';
+  const country = getSettingValue('country') || '';
   const businessType = getSettingValue('business_type') || 'restaurant';
   const pack = getActiveCountryPack(country);
   if (!hasConfiguredTaxCategories(pack, businessType)) {

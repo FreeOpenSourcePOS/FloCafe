@@ -37,7 +37,10 @@ const router = Router();
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 
 export function getTenantCurrency(): string {
-  return resolveTenantCurrency(getSettingValue('currency'), getSettingValue('country'));
+  // '' rather than a default country code: resolveTenantCurrency throws
+  // RegionalNotConfiguredError on an unresolvable country instead of
+  // silently defaulting, which is what we want if this is ever actually null.
+  return resolveTenantCurrency(getSettingValue('currency'), getSettingValue('country') || '');
 }
 
 type BillLoyaltyRow = {
@@ -519,7 +522,7 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
         const orderTotal         = order.total           || 0;
 
         const currency = getTenantCurrency();
-        const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
+        const pack = getActiveCountryPack(getSettingValue('country') || '');
         const { total: roundedOrderTotal, adjustment: orderRoundOff } = applyPayableRounding(orderTotal, pack, currency);
 
         const totalsChanged =
@@ -574,7 +577,7 @@ router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
       const packagingCharge = order.packaging_charge || 0;
       const serviceCharge = order.service_charge || 0;
       const currency = getTenantCurrency();
-      const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
+      const pack = getActiveCountryPack(getSettingValue('country') || '');
       const { total, adjustment: roundOff } = applyPayableRounding(order.total || 0, pack, currency);
 
       const runResult = db.prepare(`
@@ -2184,7 +2187,7 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
     const newTaxAmount = Number((itemTaxAmount * taxRatio).toFixed(decimals));
     const newExclusiveTax = Number((itemExclusiveTax * taxRatio).toFixed(decimals));
     const tenantInfo = {
-      country: getSettingValue('country') || 'IN',
+      country: getSettingValue('country') || '',
       business_type: getSettingValue('business_type') || 'restaurant',
       state_code: getSettingValue('state_code') || '',
       currency: getTenantCurrency(),

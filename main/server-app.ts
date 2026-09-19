@@ -203,7 +203,8 @@ export function startServerApp(): Promise<void> {
       const rows = getDatabase().prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
       const settings: Record<string, string> = {};
       for (const row of rows) settings[row.key] = row.value;
-      const country = getCountryByCode(settings.country) || getCountryByCode('IN')!;
+      const country = getCountryByCode(settings.country);
+      if (!country) return res.status(409).json({ error: 'regional_not_configured' });
       const currency = resolveTenantCurrency(settings.currency, country.code);
       const currencySymbol = settings.currency_symbol?.trim()
         || getCurrencySymbol(currency, country.locale)

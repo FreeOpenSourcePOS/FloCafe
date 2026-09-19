@@ -121,7 +121,7 @@ export function registerRoutes(app: Express): void {
   app.get('/api/tax/categories', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req, res) => {
     try {
       const { getActiveCountryPack, hasConfiguredTaxCategories, previewCategoryRate } = await import('../services/tax');
-      const country = getSettingValue('country') || 'IN';
+      const country = getSettingValue('country') || '';
       const businessType = getSettingValue('business_type') || 'restaurant';
       const pack = getActiveCountryPack(country);
       const configurationReady = hasConfiguredTaxCategories(pack, businessType);
@@ -251,7 +251,7 @@ export function registerRoutes(app: Express): void {
       }
 
       const db = getDatabase();
-      const tenantCountry = getSettingValue('country') || 'IN';
+      const tenantCountry = getSettingValue('country') || '';
       const parsed = parsePhoneE164(String(phone).trim(), tenantCountry);
       const lookupPhone = parsed ? parsed.e164 : String(phone).trim();
       const phoneDigits = stripPhoneDigits(lookupPhone);
@@ -444,7 +444,7 @@ export function registerRoutes(app: Express): void {
           newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
         }
         const tenantInfo = {
-          country: getSettingValue('country') || 'IN',
+          country: getSettingValue('country') || '',
           business_type: getSettingValue('business_type') || 'restaurant',
           state_code: getSettingValue('state_code') || '',
           currency: getTenantCurrency(),
@@ -622,7 +622,7 @@ export function registerRoutes(app: Express): void {
           newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
         }
         const tenantInfo = {
-          country: getSettingValue('country') || 'IN',
+          country: getSettingValue('country') || '',
           business_type: getSettingValue('business_type') || 'restaurant',
           state_code: getSettingValue('state_code') || '',
           currency: getTenantCurrency(),

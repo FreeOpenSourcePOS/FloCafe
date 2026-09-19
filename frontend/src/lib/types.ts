@@ -176,11 +176,14 @@ export interface Order {
   external_order_id?: string | null;
   created_by: number;
   created_at: string;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
   items?: OrderItem[];
   table?: Table;
   customer?: Customer;
   bill?: Bill;
   bills?: Bill[];
+  whatsapp_receipt_status?: 'sent' | 'partial' | 'pending' | 'failed' | null;
 }
 
 export interface OrderItem {

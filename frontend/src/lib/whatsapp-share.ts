@@ -161,6 +161,7 @@ export async function sendBillViaFlo(
   try {
     const { data } = await api.post('/whatsapp/send', {
       bill_id: bill.id,
+      kind: 'bill_receipt',
       phone_e164: customerPhone,
       body: message,
     });

@@ -476,8 +476,9 @@ router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async
       phone: settings.business_phone || '',
       taxRegistrationNumber: settings.tax_registration_number || '',
       currency,
-      // Derive from resolved currency before stored symbol to avoid stale currency symbols.
-      currency_symbol: getCurrencySymbol(currency, getCountryByCode(country)?.locale) || settings.currency_symbol || currency,
+      // CLDR-derived only — a stored currency_symbol setting is not an input
+      // (docs/business-decisions.md: no per-store override of a snapshot value).
+      currency_symbol: getCurrencySymbol(currency, getCountryByCode(country)?.locale) || currency,
       country,
       instagram_handle: settings.instagram_handle || '',
       customer_name: customer?.name || '',

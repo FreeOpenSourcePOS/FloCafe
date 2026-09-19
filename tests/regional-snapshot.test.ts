@@ -26,10 +26,18 @@ test('COP/0: es-CO prefix, dot group, comma decimal, zero fraction digits', () =
   assert.equal(snap.currencyFractionDigits, 0);
   assert.equal(snap.decimalSeparator, ',');
   assert.equal(snap.groupSeparator, '.');
-  const formatted = new Intl.NumberFormat(snap.locale, {
+  // Assert the required formatted parts rather than the exact joined string —
+  // the literal separator character between symbol and amount is CLDR/ICU
+  // data, not a contract this resolver makes (the project floats on Node 22).
+  const parts = new Intl.NumberFormat(snap.locale, {
     style: 'currency', currency: snap.currency, currencyDisplay: 'narrowSymbol',
-  }).format(11000);
-  assert.equal(formatted, `$ 11.000`); // es-CO uses a non-breaking space between symbol and amount
+  }).formatToParts(11000);
+  const currencyIndex = parts.findIndex((p) => p.type === 'currency');
+  const integerIndex = parts.findIndex((p) => p.type === 'integer');
+  assert.ok(currencyIndex >= 0 && currencyIndex < integerIndex, 'symbol renders before the amount, matching currencyPosition');
+  assert.equal(parts[currencyIndex].value, '$');
+  assert.equal(parts.filter((p) => p.type === 'integer' || p.type === 'group').map((p) => p.value).join(''), '11.000');
+  assert.equal(parts.find((p) => p.type === 'fraction'), undefined, '0 fraction digits means no fraction part');
 });
 
 test('EUR with comma input: de-DE suffix, dot group, comma decimal', () => {

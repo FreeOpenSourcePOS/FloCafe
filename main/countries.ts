@@ -524,9 +524,11 @@ export const DEFAULT_COUNTRY_PROFILE = {
 // The country chosen at signup, and the ISO 4217 currency that follows from
 // it, are the only source of a store's regional identity. Everything else
 // here is derived from that pair via Intl/ISO/IANA conventions — there is no
-// default country and no per-store override of a derived value. See
-// docs/business-decisions.md, "Regional settings come from signup, never
-// from a fallback".
+// default country, and no per-store override of symbol, position, or
+// separators. Timezone is the one exception: country.timezone is only the
+// fallback, and a valid stored settings.timezone overrides it, for stores in
+// multi-zone countries. See docs/business-decisions.md, "Regional settings
+// come from signup, never from a fallback".
 
 /** Thrown when a store has no resolvable country. Callers should surface this
  * as a 409, not substitute a default country. */

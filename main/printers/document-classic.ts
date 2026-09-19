@@ -175,7 +175,9 @@ export function buildBillPrintContext(opts: {
     baseDirection: detectPrintLanguageDirection(lang),
     locale,
     currency,
-    currencySymbol: String(opts.business?.currency_symbol || getCurrencySymbol(currency, locale) || currency),
+    // CLDR-derived only — a stored currency_symbol setting is not an input
+    // (docs/business-decisions.md: no per-store override of a snapshot value).
+    currencySymbol: String(getCurrencySymbol(currency, locale) || currency),
     trimDecimals: opts.business?.trim_decimals === true,
     ...(opts.business?.timezone ? { timezone: String(opts.business.timezone) } : {}),
     resolveLabel: (conceptId, language) => printLabel(language, conceptId as PrintConceptId),

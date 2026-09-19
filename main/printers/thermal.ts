@@ -1487,7 +1487,9 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const fractionDigits = getCurrencyFractionDigits(currency);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
+  // CLDR-derived only — a stored currency_symbol setting is not an input
+  // (docs/business-decisions.md: no per-store override of a snapshot value).
+  const prefix = resolveCurrencyPrefix(getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
   const normalize = (text: string): string => normalizeThermalText(text, capabilities);
   const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });

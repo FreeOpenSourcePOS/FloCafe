@@ -176,6 +176,8 @@ export interface Order {
   external_order_id?: string | null;
   created_by: number;
   created_at: string;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
   items?: OrderItem[];
   table?: Table;
   customer?: Customer;

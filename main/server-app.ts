@@ -16,12 +16,7 @@ import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
 import { ROLE_ACCESS } from '../shared/role-permissions';
-import {
-  getCountryByCode,
-  getCurrencyFractionDigits,
-  getCurrencySymbol,
-  resolveTenantCurrency,
-} from './countries';
+import { RegionalNotConfiguredError, resolveRegionalSnapshot } from './countries';
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
@@ -36,22 +31,6 @@ type ServerAppUser = {
   role: string;
   iat?: number;
 };
-
-function currencyPosition(locale: string, currency: string): 'prefix' | 'suffix' {
-  try {
-    const parts = new Intl.NumberFormat(locale, {
-      style: 'currency',
-      currency,
-      currencyDisplay: 'narrowSymbol',
-    }).formatToParts(1);
-    return parts.findIndex((part) => part.type === 'currency')
-      < parts.findIndex((part) => part.type === 'integer')
-      ? 'prefix'
-      : 'suffix';
-  } catch {
-    return 'prefix';
-  }
-}
 
 function normalizeEmail(email: unknown): string {
   return String(email || '').trim().toLowerCase();
@@ -203,19 +182,20 @@ export function startServerApp(): Promise<void> {
       const rows = getDatabase().prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
       const settings: Record<string, string> = {};
       for (const row of rows) settings[row.key] = row.value;
-      const country = getCountryByCode(settings.country);
-      if (!country) return res.status(409).json({ error: 'regional_not_configured' });
-      const currency = resolveTenantCurrency(settings.currency, country.code);
-      const currencySymbol = settings.currency_symbol?.trim()
-        || getCurrencySymbol(currency, country.locale)
-        || currency;
+      let snapshot;
+      try {
+        snapshot = resolveRegionalSnapshot(settings);
+      } catch (error) {
+        if (error instanceof RegionalNotConfiguredError) return res.status(409).json({ error: 'regional_not_configured' });
+        throw error;
+      }
       res.json({
         language: settings.language || null,
-        country: country.code,
-        currency,
-        currency_symbol: currencySymbol,
-        currency_position: currencyPosition(country.locale, currency),
-        currency_fraction_digits: getCurrencyFractionDigits(currency),
+        country: snapshot.country,
+        currency: snapshot.currency,
+        currency_symbol: snapshot.currencySymbol,
+        currency_position: snapshot.currencyPosition,
+        currency_fraction_digits: snapshot.currencyFractionDigits,
         kds_enabled: settings.kds_enabled !== 'false',
       });
     });

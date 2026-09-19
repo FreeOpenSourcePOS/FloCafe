@@ -216,6 +216,29 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(count('users'), 0, 'no owner is created when the currency is invalid');
     console.log('   ✓ setup rejects an invalid currency code');
 
+    // A non-string country must not reach getCountryByCode's .toUpperCase()
+    // call (which would throw and surface as a 500, not this 400).
+    const nonStringCountry = await request(baseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'First Owner',
+        email: 'owner@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        business_name: 'First Cafe',
+        setup_profile: 'express',
+        service_model: 'qsr',
+        terms_accepted: true,
+        country: { code: 'CA' },
+        currency: 'CAD',
+        timezone: 'America/Vancouver',
+      }),
+    });
+    assert.equal(nonStringCountry.status, 400, 'setup rejects a non-string country with 400, not a crash');
+    assert.equal(nonStringCountry.data.error, 'A valid country is required', 'setup reports the country-specific validation error');
+    assert.equal(count('users'), 0, 'no owner is created when country is not a string');
+    console.log('   ✓ setup rejects a non-string country without crashing');
+
     const first = await request(baseUrl, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({

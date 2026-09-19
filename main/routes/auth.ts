@@ -905,7 +905,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const email = normalizeEmail(req.body.email);
     // Regional settings come from signup, never from a fallback — see
     // docs/business-decisions.md. There is no default country.
-    const resolvedCountry = getCountryByCode(country);
+    const resolvedCountry = typeof country === 'string' ? getCountryByCode(country) : undefined;
     if (!resolvedCountry) {
       return res.status(400).json({ error: 'A valid country is required' });
     }
@@ -932,7 +932,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const rawOutletPhone = String(business_phone || phone || '').trim();
     let outletPhone = '';
     if (rawOutletPhone) {
-      const normPhone = normalizeOptionalPhone(rawOutletPhone, country);
+      const normPhone = normalizeOptionalPhone(rawOutletPhone, resolvedCountry.code);
       if (!normPhone.valid) {
         return res.status(400).json({ error: normPhone.error || 'Invalid business phone number' });
       }
@@ -1018,7 +1018,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       upsertSettings(db, {
         business_name: resolvedStoreName,
         business_type: normalizedBusinessType,
-        country,
+        country: resolvedCountry.code,
         currency: normalizedCurrency,
         currency_symbol: currency_symbol || getCurrencySymbol(normalizedCurrency, resolvedCountry.locale),
         timezone: resolvedTimezone,
@@ -1037,7 +1037,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         setup_profile: normalizedSetupProfile,
         onboarding_completed: 'true',
         // Confirm country if user explicitly selected it or differed from default.
-        ...countryConfirmationPatch(country, getSettingValue('country'), req.body.country_selected),
+        ...countryConfirmationPatch(resolvedCountry.code, getSettingValue('country'), req.body.country_selected),
         anonymous_data_consent: 'true',
         telemetry_enabled: 'true',
         telemetry_scope: 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
@@ -1051,7 +1051,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         cloud_services_disabled_by_user: 'false',
       });
 
-      seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);
+      seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, resolvedCountry.code);
     })();
 
     // Reload cloud sync and registration profile immediately after setup.

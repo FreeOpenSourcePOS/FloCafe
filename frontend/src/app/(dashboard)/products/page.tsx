@@ -13,6 +13,8 @@ import ImageUploader from '@/components/products/ImageUploader';
 import { getCurrencySymbol, getCountryByCode, getCurrencyUnitAdapter } from '@/lib/countries';
 import { roundCurrencyValue } from '@/lib/currency-input';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { useAmountFormat } from '@/hooks/useAmountFormat';
+import CurrencyAmountInput from '@/components/ui/CurrencyAmountInput';
 import { useConfirm } from '@/hooks/use-confirm';
 import { nameToColor } from '@/lib/image-utils';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -122,6 +124,7 @@ export default function ProductsPage() {
   const currency = getCurrencySymbol(currentTenant?.currency || '', getCountryByCode(currentTenant?.country ?? '')?.locale);
   const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency || '', currentTenant?.country);
   const fmt = useFormatCurrency();
+  const amountFormat = useAmountFormat();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
 
@@ -769,14 +772,14 @@ export default function ProductsPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">{t('priceLabel', { currency })}<span className="text-red-500 ms-1">*</span></label>
-                  <input type="number" step={unitAdapter.step} value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
-                    onWheel={(e) => e.currentTarget.blur()}
+                  <CurrencyAmountInput value={form.price === '' ? '' : Number(form.price)} format={amountFormat}
+                    onValueChange={(v) => setForm({ ...form, price: v === '' ? '' : String(v) })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1">{t('fieldCostPrice')}</label>
-                  <input type="number" step={unitAdapter.step} value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
-                    onWheel={(e) => e.currentTarget.blur()}
+                  <CurrencyAmountInput value={form.cost_price === '' ? '' : Number(form.cost_price)} format={amountFormat}
+                    onValueChange={(v) => setForm({ ...form, cost_price: v === '' ? '' : String(v) })}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
               </div>
@@ -1146,7 +1149,7 @@ export default function ProductsPage() {
                       {addonList.map((addon, idx) => (
                         <div key={idx} className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center">
                           <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder={tCommon('namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                          <input type="number" step={unitAdapter.step} value={addon.price} onChange={(e) => updateAddonItem(idx, 'price', Number(e.target.value))} onWheel={(e) => e.currentTarget.blur()} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                          <CurrencyAmountInput value={addon.price} format={amountFormat} onValueChange={(v) => updateAddonItem(idx, 'price', v === '' ? 0 : v)} placeholder={tCommon('pricePlaceholder')} aria-label={t('columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                           <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
                         </div>
                       ))}

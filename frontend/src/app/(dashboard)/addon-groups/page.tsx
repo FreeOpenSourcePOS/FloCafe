@@ -10,8 +10,10 @@ import type { AddonGroup, Addon } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { getCurrencyUnitAdapter } from '@/lib/countries';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { useAmountFormat } from '@/hooks/useAmountFormat';
 import { useConfirm } from '@/hooks/use-confirm';
 import { roundCurrencyValue } from '@/lib/currency-input';
+import CurrencyAmountInput from '@/components/ui/CurrencyAmountInput';
 
 export default function AddonGroupsPage() {
   const t = useTranslations('addonGroups');
@@ -21,6 +23,7 @@ export default function AddonGroupsPage() {
   const tTables = useTranslations('tables');
   const { currentTenant } = useAuthStore();
   const unitAdapter = getCurrencyUnitAdapter(currentTenant?.currency ?? '', currentTenant?.country);
+  const amountFormat = useAmountFormat();
   const [groups, setGroups] = useState<AddonGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const { confirm, ConfirmDialog } = useConfirm();
@@ -262,7 +265,8 @@ export default function AddonGroupsPage() {
                             </label>
                             <label className="w-24">
                               <span className="block text-[11px] font-medium text-muted-foreground mb-0.5">{tProducts('columnPrice')}</span>
-                              <input type="number" step={unitAdapter.step} value={addonForm.price} onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })} onWheel={(e) => e.currentTarget.blur()}
+                              <CurrencyAmountInput value={addonForm.price === '' ? '' : Number(addonForm.price)} format={amountFormat}
+                                onValueChange={(v) => setAddonForm({ ...addonForm, price: v === '' ? '' : String(v) })}
                                 className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-border rounded outline-none focus:ring-1 focus:ring-brand" />
                             </label>
                             <button onClick={handleUpdateAddon} disabled={mutating} className="text-xs text-brand font-medium hover:underline disabled:opacity-50">{tCommon('save')}</button>
@@ -297,9 +301,8 @@ export default function AddonGroupsPage() {
                       </label>
                       <label className="w-24">
                         <span className="block text-[11px] font-medium text-muted-foreground mb-0.5">{tProducts('columnPrice')}</span>
-                        <input type="number" step={unitAdapter.step} placeholder={tProducts('addonPricePlaceholder')} value={addonForm.price}
-                          onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })}
-                          onWheel={(e) => e.currentTarget.blur()}
+                        <CurrencyAmountInput placeholder={tProducts('addonPricePlaceholder')} value={addonForm.price === '' ? '' : Number(addonForm.price)} format={amountFormat}
+                          onValueChange={(v) => setAddonForm({ ...addonForm, price: v === '' ? '' : String(v) })}
                           className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-border rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       </label>
                       <button onClick={() => handleAddAddon(group.id)} disabled={mutating}

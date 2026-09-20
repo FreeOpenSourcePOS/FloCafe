@@ -949,7 +949,7 @@ class GoogleDriveService {
       frequency: settings.google_drive_frequency === 'weekly' ? 'weekly' : 'daily',
       retention_count: retention,
       destination_folder_id: settings.google_drive_destination_folder_id || settings.google_drive_folder_id || null,
-      destination_folder_name: settings.google_drive_destination_folder_name || null,
+      destination_folder_name: settings.google_drive_destination_folder_name || (connected ? this.resolveBackupFolderName() : null),
       last_backup_at: lastBackupAt,
       last_backup_status: lastBackupStatus,
       last_error: (settings.google_drive_last_error_code as DriveErrorCode) || null,
@@ -1282,7 +1282,12 @@ class GoogleDriveService {
   async createDestination(): Promise<GoogleDriveStatus> {
     return this.queueOperation(async (signal) => {
       const client = await this.getAuthorizedClient(signal);
-      const destination = await this.createAppFolder(drive({ version: 'v3', auth: client }), this.ensureInstallationMarker(), signal);
+      const marker = this.ensureInstallationMarker();
+      const driveClient = drive({ version: 'v3', auth: client });
+      let destination = await this.findExistingAppFolder(driveClient, marker, signal);
+      if (!destination) {
+        destination = await this.createAppFolder(driveClient, marker, signal);
+      }
       this.rememberDestination(destination.id);
       upsertSettings({ google_drive_destination_folder_id: destination.id, google_drive_destination_folder_name: destination.name, google_drive_folder_id: destination.id, google_drive_last_error_code: '' });
       return this.getStatus();
@@ -1735,9 +1740,28 @@ class GoogleDriveService {
   private async resolveDestinationForUpload(driveClient: DriveClient, signal: AbortSignal): Promise<string> {
     const settings = this.readSettings();
     const folderId = settings.google_drive_destination_folder_id || settings.google_drive_folder_id;
-    if (!folderId || !safeId(folderId)) throw createDriveError('destination_required');
-    const destination = await this.validateDestination(driveClient, folderId, this.ensureInstallationMarker(), signal);
-    if (destination.id !== folderId) throw createDriveError('destination_invalid');
+    const marker = this.ensureInstallationMarker();
+    if (folderId && safeId(folderId)) {
+      try {
+        const destination = await this.validateDestination(driveClient, folderId, marker, signal);
+        if (destination.id === folderId) return destination.id;
+      } catch (error) {
+        if (!isMissingDestinationError(error) && classifyDriveError(error).code !== 'destination_invalid') {
+          throw error;
+        }
+      }
+    }
+    let destination = await this.findExistingAppFolder(driveClient, marker, signal);
+    if (!destination) {
+      destination = await this.createAppFolder(driveClient, marker, signal);
+    }
+    this.rememberDestination(destination.id);
+    upsertSettings({
+      google_drive_destination_folder_id: destination.id,
+      google_drive_destination_folder_name: destination.name,
+      google_drive_folder_id: destination.id,
+      google_drive_last_error_code: '',
+    });
     return destination.id;
   }
 
@@ -1780,6 +1804,19 @@ class GoogleDriveService {
       for (const file of files) {
         if (file.id && safeId(file.id) && file.capabilities?.canAddChildren !== false) {
           return { id: file.id, name: file.name || this.resolveBackupFolderName(), owned: true };
+        }
+      }
+      const folderName = this.resolveBackupFolderName();
+      const escapedName = folderName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const nameResponse = await driveClient.files.list({
+        q: `mimeType = 'application/vnd.google-apps.folder' and trashed = false and name = '${escapedName}'`,
+        fields: 'files(id,name,mimeType,trashed,capabilities,appProperties)',
+        pageSize: 10,
+      }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+      const nameFiles = nameResponse.data.files || [];
+      for (const file of nameFiles) {
+        if (file.id && safeId(file.id) && file.capabilities?.canAddChildren !== false) {
+          return { id: file.id, name: file.name || folderName, owned: true };
         }
       }
       return null;

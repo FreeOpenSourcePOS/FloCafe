@@ -2006,7 +2006,7 @@ export default function SettingsPage() {
           // Drive status stays optional: awaiting it would gate tab caching on a slow
           // integration call and re-request it on every revisit.
           void fetchGoogleDriveStatus(signal)
-            .then((driveReady) => (driveReady && active() ? Promise.all([fetchGoogleDriveDestinations(), fetchRemoteGoogleDriveBackups()]) : undefined))
+            .then((driveReady) => (driveReady && active() ? fetchRemoteGoogleDriveBackups() : undefined))
             .catch(() => {});
         }
         return;
@@ -2257,19 +2257,19 @@ export default function SettingsPage() {
   };
 
   const connectGoogleDrive = async () => {
-    const acknowledged = await confirm(t('googleDrivePrivacyAcknowledgement'), {
+    const confirmationMessage = `${t('googleDrivePrivacyAcknowledgement')}\n\n⚠️ ${t('googleDrivePermissionNotice')}`;
+    const acknowledged = await confirm(confirmationMessage, {
       title: t('googleDrivePrivacyWarningTitle'),
       confirmLabel: t('googleDriveAcknowledge'),
     });
     if (!acknowledged) return;
-    toast(t('googleDrivePermissionNotice'), { icon: 'ℹ️', duration: 8000 });
     setRemoteBackups([]);
     setGoogleDriveDestinations([]);
     setConnectingGoogleDrive(true);
     try {
       const res = await api.post('/settings/google-drive/connect', { warning_acknowledged: true, allow_switch: true });
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
-      await Promise.all([fetchGoogleDriveDestinations(), fetchRemoteGoogleDriveBackups()]);
+      await fetchRemoteGoogleDriveBackups();
       toast.success(t('googleDriveConnectedSuccess'));
       fetchBackups();
     } catch (err: unknown) {

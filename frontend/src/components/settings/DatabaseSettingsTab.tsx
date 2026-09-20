@@ -13,6 +13,8 @@ import {
   Wrench,
   KeyRound,
   Trash2,
+  Folder,
+  Info,
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -107,15 +109,15 @@ export interface DatabaseSettingsTabProps {
   backups: BackupInfo[];
   backupsLoading: boolean;
   googleDriveStatus: GoogleDriveStatus;
-  googleDriveDestinations: GoogleDriveDestination[];
-  googleDriveDestinationsLoading: boolean;
+  googleDriveDestinations?: GoogleDriveDestination[];
+  googleDriveDestinationsLoading?: boolean;
   remoteBackups: GoogleDriveRemoteBackup[];
   remoteBackupsLoading: boolean;
   setGoogleDriveStatus: React.Dispatch<React.SetStateAction<GoogleDriveStatus>>;
   connectingGoogleDrive: boolean;
   disconnectingGoogleDrive: boolean;
   savingGoogleDrivePrefs: boolean;
-  managingGoogleDriveDestination: boolean;
+  managingGoogleDriveDestination?: boolean;
   backingUpGoogleDrive: boolean;
   onFetchBackups: () => void;
   onCreateBackup: () => void;
@@ -124,8 +126,8 @@ export interface DatabaseSettingsTabProps {
   onDeleteBackup: (backup: BackupInfo) => void;
   onConnectGoogleDrive: () => void;
   onDisconnectGoogleDrive: () => void;
-  onCreateGoogleDriveDestination: () => void;
-  onSelectGoogleDriveDestination: (folderId: string) => void;
+  onCreateGoogleDriveDestination?: () => void;
+  onSelectGoogleDriveDestination?: (folderId: string) => void;
   onUpdateGoogleDrivePrefs: (prefs: { frequency?: 'daily' | 'weekly'; retention_count?: number }) => void;
   onBackupToGoogleDriveNow: () => void;
   onFetchRemoteBackups: () => void;
@@ -150,15 +152,12 @@ export function DatabaseSettingsTab({
   backups,
   backupsLoading,
   googleDriveStatus,
-  googleDriveDestinations,
-  googleDriveDestinationsLoading,
   remoteBackups,
   remoteBackupsLoading,
   setGoogleDriveStatus,
   connectingGoogleDrive,
   disconnectingGoogleDrive,
   savingGoogleDrivePrefs,
-  managingGoogleDriveDestination,
   backingUpGoogleDrive,
   onFetchBackups,
   onCreateBackup,
@@ -167,8 +166,6 @@ export function DatabaseSettingsTab({
   onDeleteBackup,
   onConnectGoogleDrive,
   onDisconnectGoogleDrive,
-  onCreateGoogleDriveDestination,
-  onSelectGoogleDriveDestination,
   onUpdateGoogleDrivePrefs,
   onBackupToGoogleDriveNow,
   onFetchRemoteBackups,
@@ -187,6 +184,7 @@ export function DatabaseSettingsTab({
 
   const [tableInfoOpen, setTableInfoOpen] = useState(false);
   const [tableInfo, setTableInfo] = useState<Array<{ name: string; rows: number }>>([]);
+  const [retentionInput, setRetentionInput] = useState<string | null>(null);
 
   return (
     <SettingsTabShell title={t('tabBackupData')}>
@@ -339,6 +337,14 @@ export function DatabaseSettingsTab({
                 <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <p className="text-sm text-amber-900 dark:text-amber-200">{t('googleDriveUnencryptedWarning')}</p>
               </div>
+              {!googleDriveStatus.connected && (
+                <div className="flex items-start gap-2.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/50 rounded-lg px-4 py-3">
+                  <Info size={16} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-blue-950 dark:text-blue-200 font-medium">
+                    {t('googleDrivePermissionNotice')}
+                  </p>
+                </div>
+              )}
               <div className="rounded-lg border border-border px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   {googleDriveStatus.connected ? (
@@ -401,12 +407,22 @@ export function DatabaseSettingsTab({
                         type="number"
                         min={1}
                         max={100}
-                        value={googleDriveStatus.retention_count}
+                        value={retentionInput !== null ? retentionInput : (googleDriveStatus.retention_count ?? 7)}
                         disabled={savingGoogleDrivePrefs}
-                        onChange={(e) => setGoogleDriveStatus((prev) => ({ ...prev, retention_count: Number(e.target.value) || prev.retention_count }))}
-                        onBlur={(e) => {
-                          const n = Number(e.target.value);
-                          if (Number.isInteger(n) && n >= 1 && n <= 100) onUpdateGoogleDrivePrefs({ retention_count: n });
+                        onChange={(e) => setRetentionInput(e.target.value)}
+                        onBlur={() => {
+                          if (retentionInput === null) return;
+                          const n = parseInt(retentionInput, 10);
+                          if (Number.isInteger(n) && n >= 1 && n <= 100) {
+                            setGoogleDriveStatus((prev) => ({ ...prev, retention_count: n }));
+                            onUpdateGoogleDrivePrefs({ retention_count: n });
+                          }
+                          setRetentionInput(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            (e.target as HTMLInputElement).blur();
+                          }
                         }}
                         className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
                       />
@@ -415,26 +431,9 @@ export function DatabaseSettingsTab({
                   <p className="text-xs text-muted-foreground">{t('googleDriveRetentionHint')}</p>
                   <div className="sm:col-span-2">
                     <label className="block text-sm font-medium text-foreground mb-1">{t('googleDriveDestination')}</label>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={googleDriveStatus.destination_folder_id || ''}
-                        disabled={googleDriveDestinationsLoading || managingGoogleDriveDestination || googleDriveDestinations.length === 0}
-                        onChange={(e) => onSelectGoogleDriveDestination(e.target.value)}
-                        className="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-border rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
-                      >
-                        {!googleDriveStatus.destination_folder_id && <option value="" disabled>{t('googleDriveDestination')}</option>}
-                        {googleDriveStatus.destination_folder_id && !googleDriveDestinations.some((destination) => destination.id === googleDriveStatus.destination_folder_id) && (
-                          <option value={googleDriveStatus.destination_folder_id}>{googleDriveStatus.destination_folder_name || googleDriveStatus.destination_folder_id}</option>
-                        )}
-                        {googleDriveDestinations.map((destination) => <option key={destination.id} value={destination.id}>{destination.name}</option>)}
-                      </select>
-                      <button
-                        onClick={onCreateGoogleDriveDestination}
-                        disabled={googleDriveDestinationsLoading || managingGoogleDriveDestination}
-                        className="px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 whitespace-nowrap"
-                      >
-                        {t('googleDriveCreateDestination')}
-                      </button>
+                    <div className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-border rounded-lg bg-muted/40 text-foreground text-sm font-mono">
+                      <Folder size={16} className="text-muted-foreground shrink-0" />
+                      <span>{googleDriveStatus.destination_folder_name || t('googleDriveDestination')}</span>
                     </div>
                   </div>
                   {googleDriveStatus.last_error && (

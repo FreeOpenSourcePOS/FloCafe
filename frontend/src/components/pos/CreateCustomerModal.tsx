@@ -22,7 +22,7 @@ export default function CreateCustomerModal({ initialSearch = '', onClose, onCre
   const { currentTenant } = useAuthStore();
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
-  const country = currentTenant?.country ?? 'IN';
+  const country = currentTenant?.country ?? '';
   const dialCode = dialCodeFor(country);
 
   // If initialSearch contains digits and no letters, treat as phone; otherwise treat as name

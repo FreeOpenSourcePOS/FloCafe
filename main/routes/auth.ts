@@ -6,7 +6,7 @@ import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
-import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
+import { getCurrencySymbol, getCountryByCode, isValidTimeZone, RegionalNotConfiguredError, resolveRegionalSnapshot, type RegionalSnapshot } from '../countries';
 import { countryConfirmationPatch } from '../services/country-provenance';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
@@ -79,25 +79,40 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
   const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
   const s: Record<string, string> = Object.fromEntries(rows.map(r => [r.key, r.value]));
 
+  // Login must never fail on a missing/unresolvable regional snapshot
+  // (unreachable for an authenticated, post-setup store per
+  // docs/business-decisions.md) — degrade to a neutral en-US-shaped format
+  // rather than throw, and never silently claim India.
+  let snapshot: RegionalSnapshot | null = null;
+  try {
+    snapshot = resolveRegionalSnapshot(s);
+  } catch {
+    snapshot = null;
+  }
+
   return {
     id: 1,
     business_name: s.business_name || 'Store',
     slug: 'local',
     database_name: 'local',
     business_type: s.business_type || 'restaurant',
-    country: s.country || 'IN',
-    currency: s.currency || 'INR',
-    currency_symbol: getCurrencySymbol(s.currency || 'INR', getCountryByCode(s.country)?.locale) || '₹',
-    timezone: s.timezone || 'Asia/Kolkata',
+    country: snapshot?.country || '',
+    currency: snapshot?.currency || '',
+    currency_symbol: snapshot?.currencySymbol || '',
+    currency_position: snapshot?.currencyPosition || 'prefix',
+    currency_fraction_digits: snapshot?.currencyFractionDigits ?? 2,
+    decimal_separator: snapshot?.decimalSeparator || '.',
+    group_separator: snapshot?.groupSeparator ?? ',',
+    timezone: snapshot?.timezone || s.timezone || '',
     business_day_start_time: s.business_day_start_time || '00:00',
     language: s.language || 'en',
     // Include print policies in tenant snapshot so renderer bootstraps them before first print.
     bill_language_policy: s.bill_language_policy || null,
     kot_language_policy: s.kot_language_policy || null,
     service_model: s.service_model || 'finedine',
-    currency_display: s.currency_display || 'rial',
-    number_digits: s.number_digits || 'locale',
-    calendar: s.calendar || 'locale',
+    currency_display: snapshot?.preferences.currencyDisplay || s.currency_display || 'rial',
+    number_digits: snapshot?.preferences.digits || s.number_digits || 'locale',
+    calendar: snapshot?.preferences.calendar || s.calendar || 'locale',
     plan: 'desktop',
     status: 'active',
     role: userRole,  // user's role — AuthGuard uses this for routing
@@ -361,8 +376,11 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     insertTable(db, 'tbl-demo-4', `${tableLabel}4`, 2);
   }
 
-  // Default to setup country (IN) if unspecified; country is independent of UI language.
-  const demoCountry = country || 'IN';
+  // country is independent of UI language, but the demo profile needs a real
+  // one to seed demo customers with a plausible phone number — the caller
+  // (POST /setup/initialize) always supplies the owner's selected country.
+  if (!country) throw new RegionalNotConfiguredError(country);
+  const demoCountry = country;
   const dialCode = dialCodeFor(demoCountry);
   if (lang === 'es') {
     insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode, demoCountry);
@@ -882,10 +900,10 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       language,
       business_name,
       store_name,
-      country = 'IN',
-      currency = 'INR',
+      country,
+      currency,
       currency_symbol,
-      timezone = 'Asia/Kolkata',
+      timezone,
       business_address,
       address,
       business_phone,
@@ -903,15 +921,27 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       email_marketing,
     } = req.body;
     const email = normalizeEmail(req.body.email);
+    // Regional settings come from signup, never from a fallback — see
+    // docs/business-decisions.md. There is no default country.
+    const resolvedCountry = typeof country === 'string' ? getCountryByCode(country) : undefined;
+    if (!resolvedCountry) {
+      return res.status(400).json({ error: 'A valid country is required' });
+    }
     const displayName = String(name || '').trim();
     const normalizedBusinessType = String(business_type || 'restaurant').trim();
     const normalizedSetupProfile = String(setup_profile || 'express').trim().toLowerCase();
     const normalizedServiceModel = String(service_model || 'qsr').trim().toLowerCase();
-    const normalizedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
+    // Omitted currency derives from the country profile; an explicitly-invalid
+    // one is rejected rather than silently replaced (resolveTenantCurrency's
+    // read-time leniency is the wrong tool for validating a write).
+    const normalizedCurrency = currency === undefined
+      ? resolvedCountry.currency
+      : typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
     if (!isSyntacticallyValidCurrencyCode(normalizedCurrency)) {
       return res.status(400).json({ error: 'Invalid currency' });
     }
-    if (!isValidTimeZone(timezone)) {
+    const resolvedTimezone = timezone === undefined ? resolvedCountry.timezone : timezone;
+    if (!isValidTimeZone(resolvedTimezone)) {
       return res.status(400).json({ error: 'Invalid timezone' });
     }
     const storeName = String(store_name || business_name || '').trim();
@@ -920,7 +950,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const rawOutletPhone = String(business_phone || phone || '').trim();
     let outletPhone = '';
     if (rawOutletPhone) {
-      const normPhone = normalizeOptionalPhone(rawOutletPhone, country);
+      const normPhone = normalizeOptionalPhone(rawOutletPhone, resolvedCountry.code);
       if (!normPhone.valid) {
         return res.status(400).json({ error: normPhone.error || 'Invalid business phone number' });
       }
@@ -1006,10 +1036,10 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       upsertSettings(db, {
         business_name: resolvedStoreName,
         business_type: normalizedBusinessType,
-        country,
+        country: resolvedCountry.code,
         currency: normalizedCurrency,
-        currency_symbol: currency_symbol || getCurrencySymbol(normalizedCurrency, getCountryByCode(country)?.locale),
-        timezone,
+        currency_symbol: currency_symbol || getCurrencySymbol(normalizedCurrency, resolvedCountry.locale),
+        timezone: resolvedTimezone,
         language,
         business_address: outletAddress,
         business_phone: outletPhone,
@@ -1025,7 +1055,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         setup_profile: normalizedSetupProfile,
         onboarding_completed: 'true',
         // Confirm country if user explicitly selected it or differed from default.
-        ...countryConfirmationPatch(country, getSettingValue('country'), req.body.country_selected),
+        ...countryConfirmationPatch(resolvedCountry.code, getSettingValue('country'), req.body.country_selected),
         anonymous_data_consent: 'true',
         telemetry_enabled: 'true',
         telemetry_scope: 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
@@ -1039,7 +1069,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         cloud_services_disabled_by_user: 'false',
       });
 
-      seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);
+      seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, resolvedCountry.code);
     })();
 
     // Reload cloud sync and registration profile immediately after setup.

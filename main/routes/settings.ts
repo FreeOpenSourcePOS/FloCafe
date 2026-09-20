@@ -8,7 +8,11 @@ import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
-import { getCountryByCode, getCurrencySymbol, isValidTimeZone, type CountryLocaleOptions } from '../countries';
+import {
+  getCountryByCode, getCurrencySymbol, isValidTimeZone,
+  isLocalePreferenceKey, isLocalePreferenceSupported, resolveStoredLocalePreference,
+  type LocalePreferenceKey,
+} from '../countries';
 import { countryConfirmationPatch } from '../services/country-provenance';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
@@ -113,36 +117,6 @@ function boolFlag(value: unknown): string | undefined {
   return value ? 'true' : 'false';
 }
 
-// Neutral fallback preferences for locales without specific options.
-const NEUTRAL_LOCALE_PREFERENCES = {
-  currency_display: 'rial',
-  number_digits: 'locale',
-  calendar: 'locale',
-} as const;
-
-type LocalePreferenceKey = keyof typeof NEUTRAL_LOCALE_PREFERENCES;
-
-const LOCALE_OPTION_FIELDS: Record<LocalePreferenceKey, keyof CountryLocaleOptions> = {
-  currency_display: 'currencyDisplay',
-  number_digits: 'digits',
-  calendar: 'calendar',
-};
-
-function isLocalePreferenceKey(key: string): key is LocalePreferenceKey {
-  return key === 'currency_display' || key === 'number_digits' || key === 'calendar';
-}
-
-function isLocalePreferenceSupported(key: LocalePreferenceKey, value: string, countryCode: string): boolean {
-  if (value === NEUTRAL_LOCALE_PREFERENCES[key]) return true;
-  const options = getCountryByCode(countryCode)?.localeOptions?.[LOCALE_OPTION_FIELDS[key]];
-  return Array.isArray(options) && (options as readonly string[]).includes(value);
-}
-
-function resolveStoredLocalePreference(key: LocalePreferenceKey, stored: string | undefined, countryCode: string): string {
-  if (stored && isLocalePreferenceSupported(key, stored, countryCode)) return stored;
-  return NEUTRAL_LOCALE_PREFERENCES[key];
-}
-
 // Flags stored as strict '1'/'0' to match cloud database conventions.
 function bool01Flag(value: unknown): string | undefined {
   const flag = boolFlag(value);
@@ -150,7 +124,7 @@ function bool01Flag(value: unknown): string | undefined {
 }
 
 function deriveCurrencySymbol(currency: string, country: string): string {
-  return getCurrencySymbol(currency || 'INR', getCountryByCode(country || 'IN')?.locale) || currency || 'INR';
+  return getCurrencySymbol(currency || '', getCountryByCode(country)?.locale) || currency || '';
 }
 
 function isMaskedSecret(value: unknown): boolean {
@@ -160,10 +134,13 @@ function isMaskedSecret(value: unknown): boolean {
 function businessShape(s: Record<string, string>) {
   return {
     business_name: s.business_name || '',
-    timezone: s.timezone || 'Asia/Kolkata',
+    // Regional fields degrade to empty rather than throw — Settings must
+    // never fail to load for an authenticated user (should be unreachable
+    // post-setup; see docs/business-decisions.md).
+    timezone: s.timezone || '',
     business_day_start_time: s.business_day_start_time || '00:00',
-    currency: s.currency || 'INR',
-    country: s.country || 'IN',
+    currency: s.currency || '',
+    country: s.country || '',
     language: s.language || 'en',
     tax_registration_number: s.tax_registration_number || '',
     state_code: s.state_code || '',
@@ -181,11 +158,11 @@ function businessShape(s: Record<string, string>) {
     bill_show_customer_name: s.bill_show_customer_name !== 'false',
     bill_show_customer_phone: s.bill_show_customer_phone !== 'false',
     bill_show_table_number: s.bill_show_table_number !== 'false',
-    currency_display: resolveStoredLocalePreference('currency_display', s.currency_display, s.country || 'IN'),
-    number_digits: resolveStoredLocalePreference('number_digits', s.number_digits, s.country || 'IN'),
-    calendar: resolveStoredLocalePreference('calendar', s.calendar, s.country || 'IN'),
+    currency_display: resolveStoredLocalePreference('currency_display', s.currency_display, s.country || ''),
+    number_digits: resolveStoredLocalePreference('number_digits', s.number_digits, s.country || ''),
+    calendar: resolveStoredLocalePreference('calendar', s.calendar, s.country || ''),
     // Non-blocking informational tax format description for the UI.
-    tax_id_format: resolveTaxIdFormat(s.country || 'IN'),
+    tax_id_format: resolveTaxIdFormat(s.country || ''),
   };
 }
 
@@ -195,8 +172,8 @@ function taxShape(s: Record<string, string>) {
     tax_registration_number: s.tax_registration_number || '',
     state_code: s.state_code || '',
     tax_scheme: s.tax_scheme || 'regular',
-    country: s.country || 'IN',
-    tax_id_format: resolveTaxIdFormat(s.country || 'IN'),
+    country: s.country || '',
+    tax_id_format: resolveTaxIdFormat(s.country || ''),
   };
 }
 
@@ -234,8 +211,8 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
-    const effectiveCountry = country || currentSettings.country || 'IN';
-    const effectiveCurrency = normalizedCurrency || currentSettings.currency || 'INR';
+    const effectiveCountry = country || currentSettings.country || '';
+    const effectiveCurrency = normalizedCurrency || currentSettings.currency || '';
 
     // Validate locale preferences against country options, normalizing unsupported legacy values.
     const localeUpdates: Record<string, string> = {};
@@ -319,7 +296,7 @@ router.put('/tax', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
-    const effectiveCountry = country || currentSettings.country || 'IN';
+    const effectiveCountry = country || currentSettings.country || '';
     if (tax_registration_number) {
       const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
       if (!valid && format) {
@@ -336,7 +313,7 @@ router.put('/tax', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       tax_scheme,
       country,
       currency_symbol: country !== undefined
-        ? deriveCurrencySymbol(currentSettings.currency || 'INR', country || currentSettings.country || 'IN')
+        ? deriveCurrencySymbol(currentSettings.currency || '', country || currentSettings.country || '')
         : undefined,
     });
     cloudSync.refreshRegistrationProfile();
@@ -1084,14 +1061,14 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
     const db = getDatabase();
     const wildcardKey = String(req.params.key);
     if (isLocalePreferenceKey(wildcardKey)) {
-      const countryCode = getAllSettings(db).country || 'IN';
+      const countryCode = getAllSettings(db).country || '';
       if (typeof value !== 'string' || !isLocalePreferenceSupported(wildcardKey, value, countryCode)) {
         return res.status(400).json({ error: `Invalid ${wildcardKey} for country ${countryCode}` });
       }
     }
 
     if (req.params.key === 'business_phone') {
-      const effectiveCountry = getAllSettings(db).country || 'IN';
+      const effectiveCountry = getAllSettings(db).country || '';
       const phoneRes = normalizeOptionalPhone(value, effectiveCountry);
       if (!phoneRes.valid) {
         return res.status(400).json({ error: phoneRes.error || 'Invalid business phone number' });

@@ -2339,7 +2339,7 @@ export default function SettingsPage() {
   };
 
   const saveBusinessInfo = async (silent = false) => {
-    const norm = normalizeOptionalPhone(form.businessPhone, form.countryCode || 'IN');
+    const norm = normalizeOptionalPhone(form.businessPhone, form.countryCode || '');
     if (!norm.valid) {
       toast.error(t('invalidPhoneFormat'));
       return;

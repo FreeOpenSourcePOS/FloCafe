@@ -62,8 +62,8 @@ function itemStatusIcon(status: string, t: (key: ServerAppKey) => string) {
 function money(value: number | string, regional: ServerAppInfo | null) {
   return formatCurrencyForTenant(
     Number(value || 0),
-    regional?.country,
-    regional?.currency || 'INR',
+    regional?.country || '',
+    regional?.currency || '',
   );
 }
 
@@ -718,7 +718,7 @@ export default function ServerStandalonePage() {
       {addonModalProduct && (
         <AddonModal
           product={addonModalProduct}
-          currency={regional?.currency || 'INR'}
+          currency={regional?.currency || ''}
           country={regional?.country}
           onAdd={(addedProduct, quantity, addons, instructions) => addDraftLine(addedProduct, quantity, addons, instructions)}
           onClose={() => setAddonModalProduct(null)}
@@ -728,7 +728,7 @@ export default function ServerStandalonePage() {
       {editingDraftLine && (
         <AddonModal
           product={editingDraftLine.product}
-          currency={regional?.currency || 'INR'}
+          currency={regional?.currency || ''}
           country={regional?.country}
           mode="edit"
           initialQuantity={editingDraftLine.quantity}

@@ -273,6 +273,8 @@ const fixtureBusiness = {
   address: '42 MG Road, Bengaluru 560001',
   phone: '+91 98765 43210',
   taxRegistrationNumber: 'TAXID-0001',
+  country: 'IN',
+  currency: 'INR',
 };
 
 console.log('🧪 FloDesktop Printer Tests');
@@ -777,11 +779,14 @@ console.log('\n✅ Test 3b: Compact receipt on narrow 36-col printer');
 
 console.log('\n✅ Test 3c: Narrow receipt reserves 3-char currency codes');
 {
-  const usdBusiness = { ...fixtureBusiness, currency_symbol: 'USD', country: 'US' };
-  const buf = formatReceipt(fixtureOrder, fixtureBill, usdBusiness, 'compact', 36, false);
+  // KES has no dedicated CLDR narrow symbol under en-US, so Intl renders the
+  // literal 3-letter code — a real (if unusual) resolvable combination, since
+  // the owner can set any valid ISO currency independent of country.
+  const kesBusiness = { ...fixtureBusiness, currency: 'KES', country: 'US' };
+  const buf = formatReceipt(fixtureOrder, fixtureBill, kesBusiness, 'compact', 36, false);
   const text = buf.toString('utf8');
 
-  assert('renders USD amount without splitting currency code', text.includes('USD950.00'));
+  assert('renders KES amount without splitting currency code', text.includes('KES950.00'));
 
   const textLines = visiblePreview(buf, 36).split('\n').slice(1, -1);
   const overLong = textLines.filter((l) => l.length > 36);
@@ -804,6 +809,24 @@ console.log('\n✅ Test 3d: Trim decimals hides only trailing .00');
   };
   const fractionalText = formatReceipt(fixtureOrder, fractionalBill, trimBusiness, 'compact', 36, true).toString('utf8');
   assert('trim decimals keeps non-zero decimals', fractionalText.includes('₹78.75') && fractionalText.includes('₹3.75'));
+}
+
+console.log('\n✅ Test 3e: Thermal receipt ignores a stale stored currency symbol (docs/regional-snapshot.md, third surface)');
+{
+  // country/currency say MAD, but a stale stored symbol from a prior INR
+  // configuration is still passed on the business object — the resolver's
+  // "no per-store override" rule means the CLDR-derived symbol must win,
+  // regardless of what a caller puts in currency_symbol.
+  const staleSymbolBusiness = { ...fixtureBusiness, country: 'MA', currency: 'MAD', currency_symbol: '₹' };
+  // fr-MA (Morocco's configured locale) has no dedicated MAD symbol, so CLDR
+  // falls back to the literal code, with fr-MA's own comma decimal separator.
+  const classicText = formatReceipt(fixtureOrder, fixtureBill, staleSymbolBusiness, 'classic', 42, false).toString('utf8');
+  assert('classic receipt uses the CLDR-derived MAD symbol', classicText.includes('MAD950,00'));
+  assert('classic receipt does not use the stale stored ₹ symbol', !classicText.includes('₹'));
+
+  const compactText = formatReceipt(fixtureOrder, fixtureBill, staleSymbolBusiness, 'compact', 42, false).toString('utf8');
+  assert('compact receipt uses the CLDR-derived MAD symbol', compactText.includes('MAD950,00'));
+  assert('compact receipt does not use the stale stored ₹ symbol', !compactText.includes('₹'));
 }
 
 console.log('\n✅ Test 4: Classic receipt template');
@@ -931,6 +954,7 @@ console.log('\n✅ Test 5d: Bill content toggles are optional and never block pr
 
     const missing = formatReceipt(fixtureOrder, fixtureBill, {
       name: '', address: '', phone: '', taxRegistrationNumber: '',
+      country: 'IN', currency: 'INR',
       show_name: true, show_address: true, show_phone: true, show_tax_id: true,
       show_tax_breakdown: true, show_customer_name: true,
       show_customer_phone: true, show_table_number: true,

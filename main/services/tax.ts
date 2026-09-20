@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
-import { getCountryByCode, getCurrencyFractionDigits, getCurrencyMinorUnitFactor, type TaxIdFormat } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencyMinorUnitFactor, resolveTenantCurrency, type TaxIdFormat } from '../countries';
 
 interface TenantInfo {
   country: string;
@@ -706,14 +706,12 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     });
 
     const tenantInfo: TenantInfo = {
-      country: settings.country || 'IN',
+      country: settings.country || '',
       business_type: settings.business_type || 'restaurant',
       state_code: settings.state_code || '',
       taxes_enabled: settings.taxes_enabled === 'true',
     };
-    const currency = settings.currency && /^[A-Z]{3}$/.test(settings.currency)
-      ? settings.currency
-      : getCountryByCode(tenantInfo.country)?.currency || 'INR';
+    const currency = resolveTenantCurrency(settings.currency, tenantInfo.country);
     tenantInfo.currency = currency;
     const decimals = getCurrencyFractionDigits(currency);
     const minorFactor = getCurrencyMinorUnitFactor(currency);

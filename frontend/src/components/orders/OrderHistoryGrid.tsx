@@ -215,9 +215,9 @@ export default function OrderHistoryGrid() {
   const tOrders = useTranslations('orders');
   const tDashboard = useTranslations('dashboard');
   const currentTenant = useAuthStore((s) => s.currentTenant);
-  const country = getCountryByCode(currentTenant?.country ?? 'IN');
-  const currency = getCurrencySymbol(currentTenant?.currency || 'INR', country?.locale);
-  const locale = country?.locale ?? 'en-IN';
+  const country = getCountryByCode(currentTenant?.country ?? '');
+  const currency = getCurrencySymbol(currentTenant?.currency || '', country?.locale);
+  const locale = country?.locale ?? 'en-US';
   const orders = MOCK_HISTORY;
 
   return (

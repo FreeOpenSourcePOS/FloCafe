@@ -62,6 +62,17 @@ function assert(condition: boolean, message: string) {
   }
 }
 
+function assertEqual(actual: any, expected: any, message: string) {
+  total++;
+  if (actual === expected) {
+    passed++;
+    console.log(`  ✓ ${message}`);
+  } else {
+    failed++;
+    console.error(`  ✗ ${message} - expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  }
+}
+
 function isNativeAbiMismatch(error: any): boolean {
   return error?.code === 'ERR_DLOPEN_FAILED'
     && String(error?.message || '').includes('NODE_MODULE_VERSION');
@@ -133,14 +144,14 @@ async function runTests() {
     const missingPin = await request(app).post('/api/auth/setup/initialize').send({
       name: 'Owner', email: 'owner@example.com', password: 'TestPass123',
       business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-      terms_accepted: true,
+      terms_accepted: true, country: 'US',
     });
     assert(missingPin.status === 400, `setup without master_pin returns 400 (got ${missingPin.status})`);
 
     const ok = await request(app).post('/api/auth/setup/initialize').send({
       name: 'Owner', email: 'owner@example.com', password: 'TestPass123',
       business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-      terms_accepted: true, master_pin: '1234', owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
+      terms_accepted: true, country: 'US', master_pin: '1234', owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
     });
     assert(ok.status === 200, `setup with valid master_pin succeeds (got ${ok.status}, ${JSON.stringify(ok.body)})`);
     assert(isMasterPinSet(), 'master PIN is set on disk after setup');
@@ -149,6 +160,7 @@ async function runTests() {
 
   const ownerToken = tokenFor('owner-1', 'owner');
   const db = getDatabase();
+  db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('owner-1', 'Imported Owner', 'hash', 'owner', 1)`);
   db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('cashier-1', 'Cashier', 'hash', 'cashier', 1)`);
   const cashierToken = tokenFor('cashier-1', 'cashier');
 
@@ -226,6 +238,475 @@ async function runTests() {
     'redacted jwt_secret is preserved during import',
   );
 
+  db.prepare('INSERT INTO products (id, name, price, stock_quantity) VALUES (?, ?, ?, ?)')
+    .run('existing-stock-product', 'Existing Stock Product', 10, 5);
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, ?)
+  `).run('existing-stock-product', 5, 'existing-stock-product', 'Opening count', 'owner-1', 5, now());
+  const zeroResetImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'existing-stock-product', name: 'Existing Stock Product', price: 10, stock_quantity: 0 }],
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(zeroResetImport.status === 400, `overwrite imports reject unaudited stock resets (got ${zeroResetImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('existing-stock-product') as { stock_quantity: number }).stock_quantity,
+    5,
+    'rejected stock reset preserves the existing cache',
+  );
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('existing-stock-product') as { count: number }).count,
+    1,
+    'rejected stock reset preserves movement history',
+  );
+
+  db.prepare('INSERT INTO products (id, name, price, stock_quantity) VALUES (?, ?, ?, ?)')
+    .run('zero-stock-history-product', 'Zero Stock History Product', 10, 0);
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, ?)
+  `).run('zero-stock-history-product', 1, 'zero-stock-history-product', 'Opening count', 'owner-1', 1, now());
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'sale', 'order_item', ?, ?, ?, ?, ?)
+  `).run('zero-stock-history-product', -1, 'zero-stock-history-order-item', null, 'owner-1', 0, now());
+  const historyDeletionImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'zero-stock-history-product', name: 'Zero Stock History Product', price: 10, stock_quantity: 0 }],
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(historyDeletionImport.status === 400, `overwrite imports reject ledger history deletion (got ${historyDeletionImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('zero-stock-history-product') as { count: number }).count,
+    2,
+    'rejected zero-stock replacement preserves all movement history',
+  );
+  const partialHistoryDeletionImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'zero-stock-history-product', name: 'Zero Stock History Product', price: 10, stock_quantity: 1 }],
+        inventory_movements: [{
+          id: 1,
+          product_id: 'zero-stock-history-product',
+          quantity_delta: 1,
+          movement_type: 'adjustment',
+          reference_type: 'opening_balance',
+          reference_id: 'zero-stock-history-product',
+          reason: 'Opening count',
+          actor_user_id: 'owner-1',
+          stock_after: 1,
+          created_at: now(),
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(partialHistoryDeletionImport.status === 400, `overwrite imports reject partial ledger history replacement (got ${partialHistoryDeletionImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('zero-stock-history-product') as { stock_quantity: number }).stock_quantity,
+    0,
+    'rejected partial replacement preserves the stock cache',
+  );
+  const emptyHistoryDeletionImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [],
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(emptyHistoryDeletionImport.status === 400, `empty overwrite imports reject ledger history deletion (got ${emptyHistoryDeletionImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('zero-stock-history-product') as { count: number }).count,
+    2,
+    'empty rejected replacement preserves all movement history',
+  );
+  const malformedProductsImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: {},
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(malformedProductsImport.status === 400, `malformed products tables are rejected (got ${malformedProductsImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('zero-stock-history-product') as { count: number }).count,
+    2,
+    'malformed products import preserves movement history',
+  );
+  db.prepare('DELETE FROM inventory_movements WHERE product_id IN (?, ?)').run('existing-stock-product', 'zero-stock-history-product');
+  db.prepare('DELETE FROM products WHERE id IN (?, ?)').run('existing-stock-product', 'zero-stock-history-product');
+
+  const legacyZeroStockImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion() - 1),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'legacy-zero-stock-product', name: 'Legacy Zero Stock Product', price: 10, stock_quantity: 0 }],
+        users: [],
+      },
+    },
+  });
+  assert(legacyZeroStockImport.status === 200, `legacy zero-stock imports without movement history are accepted (got ${legacyZeroStockImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('legacy-zero-stock-product') as { stock_quantity: number }).stock_quantity,
+    0,
+    'legacy zero-stock import preserves the zero cache',
+  );
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, ?)
+  `).run('legacy-zero-stock-product', 1, 'legacy-zero-stock-product', 'Legacy opening', 'owner-1', 1, now());
+  db.prepare(`
+    INSERT INTO inventory_movements (
+      product_id, quantity_delta, movement_type, reference_type, reference_id,
+      reason, actor_user_id, stock_after, created_at
+    ) VALUES (?, ?, 'sale', 'order_item', ?, ?, ?, ?, ?)
+  `).run('legacy-zero-stock-product', -1, 'legacy-zero-stock-order-item', 'Legacy sale', 'owner-1', 0, now());
+  const legacyZeroHistoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion() - 1),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'legacy-zero-stock-product', name: 'Legacy Zero Stock Product', price: 10, stock_quantity: 0 }],
+        users: [],
+      },
+    },
+  });
+  assert(legacyZeroHistoryImport.status === 200, `legacy zero-stock import preserves omitted-table history (got ${legacyZeroHistoryImport.status})`);
+  assertEqual(
+    (db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('legacy-zero-stock-product') as { count: number }).count,
+    2,
+    'legacy zero-stock import preserves existing movement history',
+  );
+  db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('legacy-zero-stock-product');
+  db.prepare('DELETE FROM products WHERE id = ?').run('legacy-zero-stock-product');
+
+  const remappedProvenanceImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: false,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'provenance-product', name: 'Provenance Product', price: 10, stock_quantity: 5 }],
+        inventory_movements: [{
+          id: 1,
+          product_id: 'provenance-product',
+          quantity_delta: 5,
+          movement_type: 'adjustment',
+          reference_type: 'opening_balance',
+          reference_id: 'provenance-product',
+          reason: 'Opening count',
+          actor_user_id: 'source-actor',
+          imported_by_user_id: 'source-importer',
+          stock_after: 5,
+          created_at: now(),
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(remappedProvenanceImport.status === 200, `movement provenance is remapped during import (got ${remappedProvenanceImport.status})`);
+  const remappedMovement = db.prepare(`
+    SELECT actor_user_id, imported_by_user_id, source_actor_user_id
+    FROM inventory_movements WHERE product_id = ?
+  `).get('provenance-product') as { actor_user_id: string; imported_by_user_id: string; source_actor_user_id: string };
+  assertEqual(remappedMovement.actor_user_id, 'owner-1', 'imported movement actor is authenticated locally');
+  assertEqual(remappedMovement.imported_by_user_id, 'owner-1', 'imported_by_user_id is authenticated locally');
+  assertEqual(remappedMovement.source_actor_user_id, 'source-actor', 'source actor provenance is preserved');
+  db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('provenance-product');
+  db.prepare('DELETE FROM products WHERE id = ?').run('provenance-product');
+
+  const incompleteInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion() - 1),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'incomplete-inventory-product', name: 'Incomplete Inventory Product', price: 10, stock_quantity: 7 }],
+        users: [],
+      },
+    },
+  });
+  assert(incompleteInventoryImport.status === 400, `product imports without movement history are rejected (got ${incompleteInventoryImport.status})`);
+  assert(
+    (db.prepare("SELECT COUNT(*) AS count FROM products WHERE id = 'incomplete-inventory-product'").get() as { count: number }).count === 0,
+    'rejected product import leaves product data unchanged',
+  );
+
+  const emptyInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'empty-inventory-product', name: 'Empty Inventory Product', price: 10, stock_quantity: 7 }],
+        inventory_movements: [],
+        users: [],
+      },
+    },
+  });
+  assert(emptyInventoryImport.status === 400, `product imports with missing movement history are rejected (got ${emptyInventoryImport.status})`);
+  assert(
+    (db.prepare("SELECT COUNT(*) AS count FROM products WHERE id = 'empty-inventory-product'").get() as { count: number }).count === 0,
+    'rejected inconsistent product import leaves product data unchanged',
+  );
+
+  const sourceCreatedAt = '2020-01-01 00:00:00';
+  const validInventoryImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'merged-state-product', name: 'Merged State Product', price: 10, stock_quantity: 5 }],
+        inventory_movements: [{
+          id: 1,
+          product_id: 'merged-state-product',
+          quantity_delta: 5,
+          movement_type: 'adjustment',
+          reference_type: 'opening_balance',
+          reference_id: 'merged-state-product',
+          reason: 'Opening count',
+          actor_user_id: 'source-user-not-authenticated',
+          stock_after: 5,
+          created_at: sourceCreatedAt,
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(validInventoryImport.status === 200, `a consistent product import succeeds (got ${validInventoryImport.status})`);
+  const importedMovement = db.prepare(`
+    SELECT actor_user_id, imported_by_user_id, import_batch_id,
+           reference_type, reference_id, reason, created_at,
+           source_actor_user_id, source_reference_type, source_reference_id,
+           source_reason, source_created_at
+    FROM inventory_movements WHERE product_id = ?
+  `).get('merged-state-product') as any;
+  assertEqual(importedMovement.actor_user_id, 'owner-1', 'imported movement is attributed to the authenticated importer');
+  assertEqual(importedMovement.imported_by_user_id, 'owner-1', 'imported movement records the immutable importer identity');
+  assert(typeof importedMovement.import_batch_id === 'string' && importedMovement.import_batch_id.length > 0, 'imported movement records a batch provenance id');
+  assertEqual(importedMovement.reference_type, 'import', 'imported movement uses an import reference type');
+  assert(typeof importedMovement.reference_id === 'string' && importedMovement.reference_id.length > 0, 'imported movement references its import batch');
+  assertEqual(importedMovement.reason, 'Imported inventory movement', 'imported movement uses a local audit reason');
+  assert(importedMovement.created_at !== sourceCreatedAt, 'imported movement uses local ingestion time');
+  assertEqual(importedMovement.source_actor_user_id, 'source-user-not-authenticated', 'imported actor is retained as source metadata');
+  assertEqual(importedMovement.source_reference_type, 'opening_balance', 'imported reference type is retained as source metadata');
+  assertEqual(importedMovement.source_reference_id, 'merged-state-product', 'imported reference id is retained as source metadata');
+  assertEqual(importedMovement.source_reason, 'Opening count', 'imported reason is retained as source metadata');
+  assertEqual(importedMovement.source_created_at, sourceCreatedAt, 'imported timestamp is retained as source metadata');
+
+  const mergedStateImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [],
+        inventory_movements: [{
+          id: 2,
+          product_id: 'merged-state-product',
+          quantity_delta: 2,
+          movement_type: 'adjustment',
+          reference_type: 'manual_adjustment',
+          reference_id: 'merged-state-product-2',
+          reason: 'Correction',
+          actor_user_id: 'owner-1',
+          stock_after: 7,
+          created_at: now(),
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(mergedStateImport.status === 500, `imports that leave the merged stock cache stale are rejected (got ${mergedStateImport.status})`);
+  assertEqual(
+    db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('merged-state-product').stock_quantity,
+    5,
+    'rejected merged-state import leaves the stock cache unchanged',
+  );
+  assertEqual(
+    db.prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('merged-state-product').count,
+    1,
+    'rejected merged-state import leaves movement history unchanged',
+  );
+
+  db.prepare('DELETE FROM inventory_movements WHERE product_id = ?').run('merged-state-product');
+  db.prepare('DELETE FROM products WHERE id = ?').run('merged-state-product');
+
+  const partialBaselineImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'partial-baseline-product', name: 'Partial Baseline Product', price: 10, stock_quantity: 7 }],
+        inventory_movements: [{
+          id: 1,
+          product_id: 'partial-baseline-product',
+          quantity_delta: 2,
+          movement_type: 'adjustment',
+          reference_type: 'manual_adjustment',
+          reference_id: 'partial-baseline-product',
+          reason: 'Partial import',
+          actor_user_id: 'owner-1',
+          stock_after: 7,
+          created_at: now(),
+        }],
+        users: [],
+      },
+    },
+  });
+  assert(partialBaselineImport.status === 400, `imports without an opening baseline are rejected (got ${partialBaselineImport.status})`);
+
+  const saleSignImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'sale-sign-product', name: 'Sale Sign Product', price: 10, stock_quantity: 6 }],
+        inventory_movements: [
+          {
+            id: 1,
+            product_id: 'sale-sign-product',
+            quantity_delta: 5,
+            movement_type: 'adjustment',
+            reference_type: 'opening_balance',
+            reference_id: 'sale-sign-product',
+            reason: 'Opening count',
+            actor_user_id: 'owner-1',
+            stock_after: 5,
+            created_at: now(),
+          },
+          {
+            id: 2,
+            product_id: 'sale-sign-product',
+            quantity_delta: 1,
+            movement_type: 'sale',
+            reference_type: 'order_item',
+            reference_id: 'sale-sign-order-item',
+            reason: null,
+            actor_user_id: 'owner-1',
+            stock_after: 6,
+            created_at: now(),
+          },
+        ],
+        users: [],
+      },
+    },
+  });
+  assert(saleSignImport.status === 400, `sale movements with positive deltas are rejected (got ${saleSignImport.status})`);
+
+  const brokenInventoryChainImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [{ id: 'broken-chain-product', name: 'Broken Chain Product', price: 10, stock_quantity: 3 }],
+        inventory_movements: [
+          {
+            id: 1,
+            product_id: 'broken-chain-product',
+            quantity_delta: 3,
+            movement_type: 'adjustment',
+            reference_type: 'opening_balance',
+            reference_id: 'broken-chain-product',
+            reason: 'Opening count',
+            actor_user_id: 'owner-1',
+            stock_after: 3,
+            created_at: now(),
+          },
+          {
+            id: 2,
+            product_id: 'broken-chain-product',
+            quantity_delta: 2,
+            movement_type: 'adjustment',
+            reference_type: 'manual_adjustment',
+            reference_id: 'broken-chain-product-2',
+            reason: 'Correction',
+            actor_user_id: 'owner-1',
+            stock_after: 3,
+            created_at: now(),
+          },
+        ],
+        users: [],
+      },
+    },
+  });
+  assert(brokenInventoryChainImport.status === 400, `imports with broken movement chains are rejected (got ${brokenInventoryChainImport.status})`);
+  assert(
+    (db.prepare("SELECT COUNT(*) AS count FROM products WHERE id = 'broken-chain-product'").get() as { count: number }).count === 0,
+    'rejected broken-chain import leaves product data unchanged',
+  );
+
   const largeJsonImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
     overwrite: true,
@@ -235,6 +716,7 @@ async function runTests() {
         settings: [{ key: 'json_large_import_probe', value: 'x'.repeat(2 * 1024 * 1024), updated_at: now() }],
         categories: [],
         products: [],
+        inventory_movements: [],
         users: [],
       },
     },

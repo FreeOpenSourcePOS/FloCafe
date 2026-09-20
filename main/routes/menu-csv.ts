@@ -4,10 +4,30 @@ import { randomUUID } from 'node:crypto';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
+import {
+  RegionalNotConfiguredError,
+  canonicalizeLocalizedAmount,
+  formatAmountForCsv,
+  resolveRegionalSnapshot,
+  type RegionalSnapshot,
+} from '../countries';
 
 const router = Router();
 
 const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
+
+// Throws RegionalNotConfiguredError (mapped to 409 by csvImportErrorResponse)
+// when the store has no resolvable country yet.
+function currentRegionalSnapshot(): RegionalSnapshot {
+  return resolveRegionalSnapshot({
+    country: getSettingValue('country') ?? undefined,
+    currency: getSettingValue('currency') ?? undefined,
+    timezone: getSettingValue('timezone') ?? undefined,
+    currency_display: getSettingValue('currency_display') ?? undefined,
+    number_digits: getSettingValue('number_digits') ?? undefined,
+    calendar: getSettingValue('calendar') ?? undefined,
+  });
+}
 
 // Keep CSV imports below Express' default 100 KiB JSON body limit while also
 // bounding the parser's work when it is mounted outside the production server.
@@ -149,15 +169,23 @@ type NumericParseResult = { ok: true; value: number } | { ok: false; error: stri
 function parseNumericField(
   raw: string | undefined | null,
   fieldName: string,
-  options: { optional?: boolean; defaultValue?: number; integer?: boolean; min?: number; max?: number } = {},
+  options: {
+    optional?: boolean;
+    defaultValue?: number;
+    integer?: boolean;
+    min?: number;
+    max?: number;
+    localized?: Pick<RegionalSnapshot, 'decimalSeparator' | 'groupSeparator' | 'currencySymbol' | 'locale'>;
+  } = {},
 ): NumericParseResult {
   const rawValue = raw ?? '';
-  const value = rawValue.trim();
-  if (value === '') {
+  const trimmed = rawValue.trim();
+  if (trimmed === '') {
     if (options.optional) return { ok: true, value: options.defaultValue ?? 0 };
     return { ok: false, error: `invalid ${fieldName} "${rawValue}"` };
   }
-  if (!NUMBER_TOKEN.test(value)) return { ok: false, error: `invalid ${fieldName} "${rawValue}"` };
+  const value = options.localized ? canonicalizeLocalizedAmount(trimmed, options.localized) ?? '' : trimmed;
+  if (!value || !NUMBER_TOKEN.test(value)) return { ok: false, error: `invalid ${fieldName} "${rawValue}"` };
 
   const parsed = Number(value);
   if (!Number.isFinite(parsed)
@@ -170,6 +198,9 @@ function parseNumericField(
 }
 
 function csvImportErrorResponse(res: Response, error: unknown): Response {
+  if (error instanceof RegionalNotConfiguredError) {
+    return res.status(409).json({ error: 'regional_not_configured' });
+  }
   if (error instanceof CsvImportError) {
     return res.status(error.statusCode).json({
       error: error.message,
@@ -275,6 +306,7 @@ router.get('/export/categories', requireRole(...ROLE_ACCESS.ownerManager), (_req
 
 router.get('/export/products', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
+    const regionalSnapshot = currentRegionalSnapshot();
     const db = getDatabase();
     const rows = db
       .prepare(
@@ -293,7 +325,8 @@ router.get('/export/products', requireRole(...ROLE_ACCESS.ownerManager), (_req: 
         catch { tags = p.tags; }
       }
       lines.push(
-        toCsvRow([p.id, p.sku, p.name, p.category_name, p.price, p.description, p.cost,
+        toCsvRow([p.id, p.sku, p.name, p.category_name, formatAmountForCsv(p.price, regionalSnapshot), p.description,
+          formatAmountForCsv(p.cost || 0, regionalSnapshot),
           p.tax_category_id ?? '', p.tax_behavior ?? '',
           p.cb_percent !== null ? p.cb_percent : '', tags, p.is_active ? 'yes' : 'no'])
       );
@@ -302,6 +335,7 @@ router.get('/export/products', requireRole(...ROLE_ACCESS.ownerManager), (_req: 
     res.setHeader('Content-Disposition', 'attachment; filename="products-export.csv"');
     res.send(lines.join('\n'));
   } catch (err: any) {
+    if (err instanceof RegionalNotConfiguredError) return res.status(409).json({ error: 'regional_not_configured' });
     console.error('[API] Menu CSV export failed:', err);
     res.status(500).json({ error: 'Menu CSV export failed' });
   }
@@ -309,6 +343,7 @@ router.get('/export/products', requireRole(...ROLE_ACCESS.ownerManager), (_req: 
 
 router.get('/export/addons', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
+    const regionalSnapshot = currentRegionalSnapshot();
     const db = getDatabase();
     const groups = db
       .prepare('SELECT * FROM addon_groups WHERE is_active = 1 ORDER BY sort_order, name')
@@ -319,12 +354,13 @@ router.get('/export/addons', requireRole(...ROLE_ACCESS.ownerManager), (_req: Re
         .prepare('SELECT * FROM addons WHERE addon_group_id = ? AND is_active = 1 ORDER BY sort_order, name')
         .all(g.id) as any[];
       for (const a of addons)
-        lines.push(toCsvRow([g.name, a.name, a.price, g.is_required ? 'yes' : 'no', g.min_selection, g.max_selection]));
+        lines.push(toCsvRow([g.name, a.name, formatAmountForCsv(a.price, regionalSnapshot), g.is_required ? 'yes' : 'no', g.min_selection, g.max_selection]));
     }
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="addons-export.csv"');
     res.send(lines.join('\n'));
   } catch (err: any) {
+    if (err instanceof RegionalNotConfiguredError) return res.status(409).json({ error: 'regional_not_configured' });
     console.error('[API] Menu CSV export failed:', err);
     res.status(500).json({ error: 'Menu CSV export failed' });
   }
@@ -395,11 +431,12 @@ router.post('/import/products', requireRole(...ROLE_ACCESS.ownerManager), (req: 
     const catMap: Record<string, string> = {};
     for (const c of catRows) catMap[c.name.toLowerCase()] = c.id;
 
-    const country = getSettingValue('country') || 'IN';
+    const country = getSettingValue('country') || '';
     const businessType = getSettingValue('business_type') || 'restaurant';
     const activePack = getActiveCountryPack(country);
     const taxCategoriesConfigured = hasConfiguredTaxCategories(activePack, businessType);
     const taxCategoryIds = new Set(activePack.categories.map((category) => category.id));
+    const regionalSnapshot = currentRegionalSnapshot();
 
     let created = 0, updated = 0, reactivated = 0, skipped = 0, failed = 0;
     const errors: string[] = [];
@@ -408,7 +445,7 @@ router.post('/import/products', requireRole(...ROLE_ACCESS.ownerManager), (req: 
       const r = rows[i];
       if (!r.name) { failed++; errors.push(`Row ${i + 2}: missing name`); continue; }
 
-      const priceResult = parseNumericField(r.price, 'price', { min: 0 });
+      const priceResult = parseNumericField(r.price, 'price', { min: 0, localized: regionalSnapshot });
       if (!priceResult.ok) {
         failed++;
         errors.push(`Row ${i + 2} (${r.name}): ${priceResult.error}`);
@@ -416,7 +453,7 @@ router.post('/import/products', requireRole(...ROLE_ACCESS.ownerManager), (req: 
       }
       const price = priceResult.value;
 
-      const costResult = parseNumericField(r.cost, 'cost', { optional: true, defaultValue: 0, min: 0 });
+      const costResult = parseNumericField(r.cost, 'cost', { optional: true, defaultValue: 0, min: 0, localized: regionalSnapshot });
       if (!costResult.ok) {
         failed++;
         errors.push(`Row ${i + 2} (${r.name}): ${costResult.error}`);
@@ -538,6 +575,7 @@ router.post('/import/addons', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
     if (!rows.length) return res.status(400).json({ error: 'CSV has no data rows' });
 
     const db = getDatabase();
+    const regionalSnapshot = currentRegionalSnapshot();
     let groupsCreated = 0, groupsUpdated = 0, addonsCreated = 0;
     let groupsReactivated = 0, addonsReactivated = 0;
     let skipped = 0, failed = 0;
@@ -557,7 +595,7 @@ router.post('/import/addons', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
     for (const row of rows) {
       if (!row.group_name || !row.addon_name) continue;
 
-      const priceResult = parseNumericField(row.price, 'price', { min: 0 });
+      const priceResult = parseNumericField(row.price, 'price', { min: 0, localized: regionalSnapshot });
       const minResult = parseNumericField(row.group_min_select, 'group_min_select', { optional: true, defaultValue: 0, integer: true, min: 0 });
       const maxResult = parseNumericField(row.group_max_select, 'group_max_select', { optional: true, defaultValue: 1, integer: true, min: 0 });
       if (!priceResult.ok || !minResult.ok || !maxResult.ok) continue;
@@ -610,7 +648,7 @@ router.post('/import/addons', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
         continue;
       }
 
-      const priceResult = parseNumericField(r.price, 'price', { min: 0 });
+      const priceResult = parseNumericField(r.price, 'price', { min: 0, localized: regionalSnapshot });
       if (!priceResult.ok) {
         failed++;
         errors.push(`Row ${i + 2} (${r.group_name}/${r.addon_name}): ${priceResult.error}`);

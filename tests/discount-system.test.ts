@@ -133,6 +133,10 @@ const EXPECTED_DISCOUNT_SETTINGS: Record<string, string> = {
 
 function seedTestData() {
   const db = getDatabase();
+  // Regional settings are no longer auto-seeded (docs/business-decisions.md,
+  // "Regional settings come from signup, never from a fallback") — seed a
+  // resolvable country explicitly so resolveRegionalSnapshot() doesn't throw.
+  db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?) ON CONFLICT(key) DO UPDATE SET value='IN', updated_at=excluded.updated_at`).run(now());
 
   // Create a category and product for order items
   db.prepare(

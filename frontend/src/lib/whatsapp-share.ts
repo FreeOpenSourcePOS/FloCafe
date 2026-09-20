@@ -24,8 +24,8 @@ export function getWhatsAppShareUrl(
   localeOverride?: string,
 ): string {
   const { pointsEarned = 0, walletBalance, businessPhone } = opts;
-  const currency = tenant.currency ?? 'INR';
-  const locale = localeOverride || getCountryByCode(tenant.country ?? 'IN')?.locale || 'en-US';
+  const currency = tenant.currency;
+  const locale = localeOverride || getCountryByCode(tenant.country)?.locale || 'en-US';
 
   // Build the message
   const lines: string[] = [];
@@ -97,8 +97,8 @@ export function getWhatsAppMessage(
   localeOverride?: string,
 ): string {
   const { pointsEarned = 0, walletBalance } = opts;
-  const currency = tenant.currency ?? 'INR';
-  const locale = localeOverride || getCountryByCode(tenant.country ?? 'IN')?.locale || 'en-US';
+  const currency = tenant.currency;
+  const locale = localeOverride || getCountryByCode(tenant.country)?.locale || 'en-US';
 
   const lines: string[] = [];
 
@@ -133,13 +133,21 @@ export function getWhatsAppMessage(
 
 function formatAmount(value: number | string, currencyCode: string, locale: string): string {
   const amount = Number(value);
-  const decimals = getCurrencyFractionDigits(currencyCode);
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: currencyCode,
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(Number.isFinite(amount) ? amount : 0);
+  const safeAmount = Number.isFinite(amount) ? amount : 0;
+  try {
+    const decimals = getCurrencyFractionDigits(currencyCode);
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: currencyCode,
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(safeAmount);
+  } catch {
+    // currencyCode empty/invalid (e.g. tenant regional snapshot not resolved
+    // yet) — Intl throws for an empty/invalid currency. Plain number, no
+    // symbol, rather than crashing or guessing a currency (never restore INR).
+    return new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(safeAmount);
+  }
 }
 
 /** One line per ordered item (skipping cancelled ones), e.g. "2x Chicken Biryani - ₹360.00". */
@@ -161,6 +169,7 @@ export async function sendBillViaFlo(
   try {
     const { data } = await api.post('/whatsapp/send', {
       bill_id: bill.id,
+      kind: 'bill_receipt',
       phone_e164: customerPhone,
       body: message,
     });

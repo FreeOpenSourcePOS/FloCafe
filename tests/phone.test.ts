@@ -38,13 +38,13 @@ test('parsePhone: too few digits returns null', () => {
 });
 
 test('normalizeOptionalPhone handles empty, valid, and invalid inputs', () => {
-  assert.deepEqual(normalizeOptionalPhone(''), {
+  assert.deepEqual(normalizeOptionalPhone('', 'IN'), {
     valid: true,
     e164: null,
     digits: null,
     countryCode: null,
   });
-  assert.deepEqual(normalizeOptionalPhone(null), {
+  assert.deepEqual(normalizeOptionalPhone(null, 'IN'), {
     valid: true,
     e164: null,
     digits: null,

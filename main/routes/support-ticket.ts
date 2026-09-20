@@ -131,13 +131,13 @@ async function submitTicketHandler(req: Request, res: Response) {
 
   let contactPhone: string | undefined = undefined;
   if (body.contact_phone !== undefined && body.contact_phone !== null && String(body.contact_phone).trim() !== '') {
-    const phoneRes = normalizeOptionalPhone(body.contact_phone, profile.country || 'IN');
+    const phoneRes = normalizeOptionalPhone(body.contact_phone, profile.country || '');
     if (!phoneRes.valid || !phoneRes.e164) {
       return res.status(400).json({ error: 'contact_phone must be a valid phone number' });
     }
     contactPhone = phoneRes.e164;
   } else if (profile.contact_phone) {
-    const phoneRes = normalizeOptionalPhone(profile.contact_phone, profile.country || 'IN');
+    const phoneRes = normalizeOptionalPhone(profile.contact_phone, profile.country || '');
     contactPhone = phoneRes.valid && phoneRes.e164 ? phoneRes.e164 : undefined;
   }
 

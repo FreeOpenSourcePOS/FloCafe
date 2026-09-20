@@ -175,7 +175,9 @@ export function buildBillPrintContext(opts: {
     baseDirection: detectPrintLanguageDirection(lang),
     locale,
     currency,
-    currencySymbol: String(opts.business?.currency_symbol || getCurrencySymbol(currency, locale) || currency),
+    // CLDR-derived only — a stored currency_symbol setting is not an input
+    // (docs/business-decisions.md: no per-store override of a snapshot value).
+    currencySymbol: String(getCurrencySymbol(currency, locale) || currency),
     trimDecimals: opts.business?.trim_decimals === true,
     ...(opts.business?.timezone ? { timezone: String(opts.business.timezone) } : {}),
     resolveLabel: (conceptId, language) => printLabel(language, conceptId as PrintConceptId),
@@ -258,8 +260,8 @@ export function renderBillDocumentToClassicLines(
   const breakdownIndex = blocks.findIndex((block) => block.kind === 'tax-breakdown');
   const totalsIndex = blocks.findIndex((block) => block.kind === 'totals');
 
-  const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode, options.capabilities, options.preserveCurrencySymbol === true, options.currency);
-  const fractionDigits = getCurrencyFractionDigits(options.currency || 'INR');
+  const prefix = resolveCurrencyPrefix(options.currencySymbol, options.useUnicode, options.capabilities, options.preserveCurrencySymbol === true, options.currency);
+  const fractionDigits = getCurrencyFractionDigits(options.currency);
   const trimDecimals = options.trimDecimals === true;
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const dash = '-'.repeat(cols);

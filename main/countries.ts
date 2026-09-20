@@ -229,12 +229,52 @@ export const getCountryByCode = (code: string): Country | undefined => {
   return COUNTRIES.find((c) => c.code === code.toUpperCase());
 };
 
-export function resolveTenantCurrency(currency: unknown, countryCode: unknown): string {
+// countryCode is required: regional settings come from signup, never from a
+// fallback (docs/business-decisions.md). Every caller resolves this from an
+// already-configured store's settings/tenant, so RegionalNotConfiguredError
+// here indicates a real bug upstream, not a state to silently paper over.
+export function resolveTenantCurrency(currency: unknown, countryCode: string): string {
+  // The country must be real before an explicit currency is ever trusted —
+  // otherwise a syntactically-valid-but-bogus currency (e.g. 'ZZZ') masks an
+  // unresolvable country and this never throws, silently processing money
+  // under invalid regional settings.
+  const country = getCountryByCode(countryCode);
+  if (!country) throw new RegionalNotConfiguredError(countryCode);
   if (typeof currency === 'string') {
     const normalized = currency.trim().toUpperCase();
     if (isSyntacticallyValidCurrencyCode(normalized)) return normalized;
   }
-  return getCountryByCode(String(countryCode || ''))?.currency || 'INR';
+  return country.currency;
+}
+
+// Neutral fallback preferences for locales without country-specific options.
+const NEUTRAL_LOCALE_PREFERENCES = {
+  currency_display: 'rial',
+  number_digits: 'locale',
+  calendar: 'locale',
+} as const;
+
+export type LocalePreferenceKey = keyof typeof NEUTRAL_LOCALE_PREFERENCES;
+
+const LOCALE_OPTION_FIELDS: Record<LocalePreferenceKey, keyof CountryLocaleOptions> = {
+  currency_display: 'currencyDisplay',
+  number_digits: 'digits',
+  calendar: 'calendar',
+};
+
+export function isLocalePreferenceKey(key: string): key is LocalePreferenceKey {
+  return key === 'currency_display' || key === 'number_digits' || key === 'calendar';
+}
+
+export function isLocalePreferenceSupported(key: LocalePreferenceKey, value: string, countryCode: string): boolean {
+  if (value === NEUTRAL_LOCALE_PREFERENCES[key]) return true;
+  const options = getCountryByCode(countryCode)?.localeOptions?.[LOCALE_OPTION_FIELDS[key]];
+  return Array.isArray(options) && (options as readonly string[]).includes(value);
+}
+
+export function resolveStoredLocalePreference(key: LocalePreferenceKey, stored: string | undefined, countryCode: string): string {
+  if (stored && isLocalePreferenceSupported(key, stored, countryCode)) return stored;
+  return NEUTRAL_LOCALE_PREFERENCES[key];
 }
 
 export const getCurrencySymbol = (currency: string, locale = 'en-US'): string => {
@@ -395,10 +435,10 @@ export const getCurrencyUnitAdapter = (
 
 export const formatCurrencyForTenant = (
   amount: number,
-  countryCode: string | undefined,
+  countryCode: string,
   currency: string,
   prefs?: LocalePreferences,
-): string => formatMoney(amount, currency, getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US', prefs);
+): string => formatMoney(amount, currency, getCountryByCode(countryCode)?.locale ?? 'en-US', prefs);
 
 // Formats a plain number using the given locale's digits and grouping.
 export const formatNumber = (value: number, locale = 'en-US', numberingSystem?: string): string => {
@@ -412,13 +452,13 @@ export const formatNumber = (value: number, locale = 'en-US', numberingSystem?: 
 // Formats a plain number using tenant locale and digit preferences.
 export const formatNumberForTenant = (
   value: number,
-  countryCode: string | undefined,
+  countryCode: string,
   prefs?: LocalePreferences,
 ): string => {
   const { digits } = normalizePreferences(prefs);
   return formatNumber(
     value,
-    getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US',
+    getCountryByCode(countryCode)?.locale ?? 'en-US',
     digits === 'latin' ? 'latn' : undefined,
   );
 };
@@ -432,14 +472,14 @@ function calendarOption(calendar: CalendarMode): 'gregory' | 'persian' | undefin
 // Formats a date with tenant timezone, preferences, and optional UI locale override.
 export const formatDateForTenant = (
   date: Date,
-  countryCode: string | undefined,
+  countryCode: string,
   timezone: string,
   prefs?: LocalePreferences,
   options: Intl.DateTimeFormatOptions = {},
   localeOverride?: string,
 ): string => {
   const { digits, calendar } = normalizePreferences(prefs);
-  const tenantLocale = getCountryByCode(countryCode ?? 'IN')?.locale || 'en-US';
+  const tenantLocale = getCountryByCode(countryCode)?.locale || 'en-US';
   const locale = localeOverride || tenantLocale;
   try {
     // Tenant preferences belong to the tenant profile; resolve defaults before UI override.
@@ -458,7 +498,13 @@ export const formatDateForTenant = (
   }
 };
 
-export const countryName = (code: string): string => dn.of(code.toUpperCase()) ?? code;
+export const countryName = (code: string): string => {
+  try {
+    return dn.of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
+};
 
 // Sourced via native Intl API (offline-first, no bundled tz database).
 export const listTimeZones = (): string[] => {
@@ -488,3 +534,169 @@ export const DEFAULT_COUNTRY_PROFILE = {
   taxIdLabel: 'Tax ID',
   taxName: 'Tax',
 } as const;
+
+// ── Regional snapshot (docs/regional-snapshot.md) ───────────────────────────
+//
+// The country chosen at signup, and the ISO 4217 currency that follows from
+// it, are the only source of a store's regional identity. Everything else
+// here is derived from that pair via Intl/ISO/IANA conventions — there is no
+// default country, and no per-store override of symbol, position, or
+// separators. Timezone is the one exception: country.timezone is only the
+// fallback, and a valid stored settings.timezone overrides it, for stores in
+// multi-zone countries. See docs/business-decisions.md, "Regional settings
+// come from signup, never from a fallback".
+
+/** Thrown when a store has no resolvable country or, via the optional `field`,
+ * another required regional setting (e.g. timezone). Callers should surface
+ * this as a 409, not substitute a default. statusCode lets the many existing
+ * `error.statusCode || 500` route catch blocks map it correctly without each
+ * needing an explicit instanceof check. */
+export class RegionalNotConfiguredError extends Error {
+  readonly statusCode = 409;
+  constructor(value: unknown, field: string = 'country') {
+    super(`Regional settings are not configured (${field}: ${JSON.stringify(value)})`);
+    this.name = 'RegionalNotConfiguredError';
+  }
+}
+
+export interface RegionalSnapshot {
+  country: string;
+  locale: string;
+  currency: string;
+  currencySymbol: string;
+  currencyPosition: 'prefix' | 'suffix';
+  currencyFractionDigits: number;
+  decimalSeparator: string;
+  groupSeparator: string;
+  timezone: string;
+  preferences: { currencyDisplay: CurrencyDisplay; digits: DigitMode; calendar: CalendarMode };
+}
+
+// Whether the currency symbol renders before or after the amount for this locale/currency pair.
+function regionalCurrencyPosition(locale: string, currency: string): 'prefix' | 'suffix' {
+  try {
+    const parts = new Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })
+      .formatToParts(1);
+    return parts.findIndex((part) => part.type === 'currency') < parts.findIndex((part) => part.type === 'integer')
+      ? 'prefix'
+      : 'suffix';
+  } catch {
+    return 'prefix';
+  }
+}
+
+// Decimal and thousands-group separators for this locale, per CLDR via Intl.
+function regionalNumberSeparators(locale: string): { decimalSeparator: string; groupSeparator: string } {
+  try {
+    const parts = new Intl.NumberFormat(locale).formatToParts(12345.6);
+    return {
+      decimalSeparator: parts.find((part) => part.type === 'decimal')?.value ?? '.',
+      groupSeparator: parts.find((part) => part.type === 'group')?.value ?? '',
+    };
+  } catch {
+    return { decimalSeparator: '.', groupSeparator: ',' };
+  }
+}
+
+/**
+ * Resolves a store's regional identity from its settings. Pure: same
+ * settings in, same snapshot out, no I/O. Throws RegionalNotConfiguredError
+ * when the store has no resolvable country — callers must not substitute a
+ * default rather than handling that.
+ */
+export function resolveRegionalSnapshot(settings: Record<string, string | undefined>): RegionalSnapshot {
+  const country = getCountryByCode(settings.country ?? '');
+  if (!country) throw new RegionalNotConfiguredError(settings.country);
+
+  const currency = resolveTenantCurrency(settings.currency, country.code);
+  const timezone = isValidTimeZone(settings.timezone) ? (settings.timezone as string) : country.timezone;
+  const { decimalSeparator, groupSeparator } = regionalNumberSeparators(country.locale);
+
+  return {
+    country: country.code,
+    locale: country.locale,
+    currency,
+    currencySymbol: getCurrencySymbol(currency, country.locale),
+    currencyPosition: regionalCurrencyPosition(country.locale, currency),
+    currencyFractionDigits: getCurrencyFractionDigits(currency),
+    decimalSeparator,
+    groupSeparator,
+    timezone,
+    preferences: {
+      currencyDisplay: resolveStoredLocalePreference('currency_display', settings.currency_display, country.code) as CurrencyDisplay,
+      digits: resolveStoredLocalePreference('number_digits', settings.number_digits, country.code) as DigitMode,
+      calendar: resolveStoredLocalePreference('calendar', settings.calendar, country.code) as CalendarMode,
+    },
+  };
+}
+
+type AmountFormat = Pick<RegionalSnapshot, 'decimalSeparator' | 'groupSeparator' | 'currencySymbol' | 'locale'>;
+
+// True if `digits` either has no grouping at all, or its grouping exactly
+// matches what Intl would produce for this locale — catching malformed
+// grouping (e.g. "1,00" for en-US, a 2-digit trailing group) instead of
+// silently stripping it into a wrong value. Locale-correct by construction
+// (en-IN's 2-3-3 groups, not just Western 3s), not a hardcoded pattern.
+function hasValidLocaleGrouping(digits: string, format: Pick<AmountFormat, 'groupSeparator' | 'locale'>): boolean {
+  if (!format.groupSeparator || !digits.includes(format.groupSeparator)) return true;
+  const rawDigits = digits.split(format.groupSeparator).join('');
+  if (!/^\d+$/.test(rawDigits)) return false;
+  try {
+    const regrouped = new Intl.NumberFormat(format.locale, { useGrouping: true, numberingSystem: 'latn' }).format(BigInt(rawDigits));
+    return regrouped === digits;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reduces a locale-formatted amount (as typed, or as pasted from a
+ * spreadsheet cell) to plain ASCII decimal-point notation, per the
+ * snapshot's own separators — never a hardcoded '.'/','. Strips group
+ * separators and one occurrence of the snapshot's own currency symbol;
+ * swaps the decimal separator to '.'. Returns null for anything that
+ * doesn't reduce to a plain number: unknown text, a repeated or
+ * misplaced currency symbol, more than one decimal separator, or
+ * grouping that doesn't match this locale's actual pattern.
+ */
+export function canonicalizeLocalizedAmount(raw: string, format: AmountFormat): string | null {
+  let cleaned = String(raw ?? '').trim();
+  if (!cleaned) return null;
+
+  if (format.currencySymbol) {
+    const symbolCount = cleaned.split(format.currencySymbol).length - 1;
+    if (symbolCount > 1) return null;
+    if (symbolCount === 1) {
+      if (!cleaned.startsWith(format.currencySymbol) && !cleaned.endsWith(format.currencySymbol)) return null;
+      cleaned = cleaned.split(format.currencySymbol).join('').trim();
+    }
+  }
+
+  const sign = /^[+-]/.test(cleaned) ? cleaned[0] : '';
+  if (sign) cleaned = cleaned.slice(1);
+
+  const decimalParts = format.decimalSeparator ? cleaned.split(format.decimalSeparator) : [cleaned];
+  if (decimalParts.length > 2) return null;
+  const [integerPart, fractionPart] = decimalParts;
+
+  if (!hasValidLocaleGrouping(integerPart, format)) return null;
+  const normalizedInteger = format.groupSeparator ? integerPart.split(format.groupSeparator).join('') : integerPart;
+  const normalized = fractionPart !== undefined ? `${normalizedInteger}.${fractionPart}` : normalizedInteger;
+
+  if (!normalized || !/^\d*\.?\d*$/.test(normalized)) return null;
+  return sign + normalized;
+}
+
+/**
+ * Formats an amount for a CSV cell using the snapshot's decimal separator,
+ * with ASCII digits and no grouping — CSV numeric fields are not grouped,
+ * so canonicalizeLocalizedAmount can read the value straight back. Preserves
+ * the value's own precision rather than rounding to currencyFractionDigits:
+ * a stored price can carry more precision than its currency's nominal
+ * fraction digits (nothing currently enforces that at write time), and
+ * rounding on export would silently change the stored value on re-import.
+ */
+export function formatAmountForCsv(value: number, snapshot: Pick<RegionalSnapshot, 'decimalSeparator'>): string {
+  const plain = String(value);
+  return snapshot.decimalSeparator === '.' ? plain : plain.replace('.', snapshot.decimalSeparator);
+}

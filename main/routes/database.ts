@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, throwIfDatabaseMaintenanceAborted, withTxn, withDatabaseMaintenanceLock } from '../db';
+import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, getInventoryMovementRows, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, now, throwIfDatabaseMaintenanceAborted, validateInventoryLedgerDatabase, validateInventoryLedgerReplacement, validateInventoryLedgerRows, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { clearJWTSecretCache } from './auth';
@@ -10,6 +10,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { parsePhoneE164 } from '../lib/phone';
 import { ROLE_ACCESS, isRole } from '../../shared/role-permissions';
+import { randomUUID } from 'node:crypto';
 
 const router = Router();
 
@@ -140,6 +141,9 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
     const preservedKdsEnabled = captureKdsEnabledSetting(db);
     const preservedProtectedSettings = captureRestoreProtectedSettings(db);
     const importData = data.data as Record<string, any[]>;
+    const importerUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    const importBatchId = randomUUID();
+    const importTimestamp = now();
     const importSchemaVersion = parseImportSchemaVersion(data.schema_version);
     const hasVersionMismatch = importSchemaVersion !== getCurrentSchemaVersion();
 
@@ -155,6 +159,51 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
       return res.status(400).json({ 
         error: `Missing required tables: ${missingTables.join(', ')}` 
       });
+    }
+    const malformedTables = requiredTables.filter((tableName) => !Array.isArray(importData[tableName]));
+    if (malformedTables.length > 0) {
+      return res.status(400).json({
+        error: `Import tables must be arrays: ${malformedTables.join(', ')}`,
+      });
+    }
+
+    if (Array.isArray(importData.products) && importData.products.length > 0) {
+      if (!Array.isArray(importData.inventory_movements)) {
+        const legacyZeroStockImport = !importedTables.includes('inventory_movements')
+          && importData.products.every((row) => {
+            if (!row || typeof row !== 'object') return false;
+            const stockQuantity = row.stock_quantity == null ? 0 : Number(row.stock_quantity);
+            return Number.isFinite(stockQuantity) && stockQuantity === 0;
+          });
+        if (!legacyZeroStockImport) {
+          return res.status(400).json({
+            error: 'Product imports must include inventory movement history so stock changes remain auditable',
+          });
+        }
+      }
+      if (Array.isArray(importData.inventory_movements) && validateInventoryLedgerRows(importData.products, importData.inventory_movements)) {
+        return res.status(400).json({
+          error: 'Product stock must match the latest inventory movement history',
+        });
+      }
+    }
+
+    if ((overwrite || hasVersionMismatch) && Array.isArray(importData.inventory_movements) && getInventoryMovementRows(db).length > 0) {
+      return res.status(400).json({
+        error: 'Overwrite imports cannot replace existing inventory movement history',
+      });
+    }
+
+    if ((overwrite || hasVersionMismatch) && Array.isArray(importData.products)) {
+      const inventoryReplacementError = validateInventoryLedgerReplacement(
+        db.prepare('SELECT id, stock_quantity FROM products').all() as Record<string, unknown>[],
+        importedTables.includes('inventory_movements') ? getInventoryMovementRows(db) : [],
+        importData.products,
+        Array.isArray(importData.inventory_movements) ? importData.inventory_movements : [],
+      );
+      if (inventoryReplacementError) {
+        return res.status(400).json({ error: inventoryReplacementError });
+      }
     }
 
     // Preserve existing accounts and create inactive placeholders for redacted users without hashes.
@@ -183,6 +232,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
       for (const row of rows) {
         if (!row || typeof row !== 'object') continue;
         for (const column of userReferenceColumns) {
+          if (tableName === 'inventory_movements' && (column === 'actor_user_id' || column === 'imported_by_user_id')) continue;
           const value = row[column];
           if (value != null && String(value) !== '') {
             const userId = String(value);
@@ -259,6 +309,51 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
           }
         }
 
+        if (tableName === 'inventory_movements') {
+          const insertImportedMovement = db.prepare(`
+            INSERT INTO inventory_movements (
+              product_id, quantity_delta, movement_type, reference_type, reference_id,
+              reason, actor_user_id, stock_after, created_at,
+              imported_by_user_id, import_batch_id,
+              source_actor_user_id, source_reference_type, source_reference_id,
+              source_reason, source_created_at
+            ) VALUES (?, ?, ?, 'import', ?, 'Imported inventory movement', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `);
+          const orderedRows = rows
+            .map((row, index) => ({ row, index }))
+            .sort((left, right) => {
+              const leftCreatedAt = String(left.row?.created_at ?? '');
+              const rightCreatedAt = String(right.row?.created_at ?? '');
+              if (leftCreatedAt !== rightCreatedAt) return leftCreatedAt < rightCreatedAt ? -1 : 1;
+              const leftId = Number(left.row?.id);
+              const rightId = Number(right.row?.id);
+              if (Number.isFinite(leftId) && Number.isFinite(rightId) && leftId !== rightId) return leftId - rightId;
+              return left.index - right.index;
+            });
+          for (const { row } of orderedRows) {
+            throwIfDatabaseMaintenanceAborted(signal);
+            const sourceValue = (value: unknown): string | null => value == null ? null : String(value);
+            insertImportedMovement.run(
+              row.product_id,
+              row.quantity_delta,
+              row.movement_type,
+              importBatchId,
+              importerUserId,
+              row.stock_after,
+              importTimestamp,
+              importerUserId,
+              importBatchId,
+              sourceValue(row.source_actor_user_id ?? row.actor_user_id),
+              sourceValue(row.source_reference_type ?? row.reference_type),
+              sourceValue(row.source_reference_id ?? row.reference_id),
+              sourceValue(row.source_reason ?? row.reason),
+              sourceValue(row.source_created_at ?? row.created_at),
+            );
+          }
+          console.log(`[DB Import] ${tableName}: ${rows.length} rows (${commonCols.length} columns)`);
+          continue;
+        }
+
         const colList = commonCols.join(', ');
         const placeholders = commonCols.map(() => '?').join(', ');
         const insertStmt = db.prepare(
@@ -266,7 +361,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
         );
         
         const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
-        const tenantCountry = tenantCountryRow?.value || 'IN';
+        const tenantCountry = tenantCountryRow?.value || '';
 
         for (const row of rows) {
           throwIfDatabaseMaintenanceAborted(signal);
@@ -313,6 +408,10 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
       `);
       for (const revocation of preservedRevocations) {
         mergeRevocation.run(revocation.token_hash, revocation.expires_at, revocation.revoked_at);
+      }
+      const inventoryValidationError = validateInventoryLedgerDatabase(db);
+      if (inventoryValidationError) {
+        throw new Error(`Import would violate the inventory ledger: ${inventoryValidationError}`);
       }
       const newForeignKeyViolations = [...getForeignKeyViolationKeys(db)]
         .filter((key) => !baselineForeignKeyViolations.has(key));

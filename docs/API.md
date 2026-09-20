@@ -234,8 +234,90 @@ Create product.
 
 ---
 
-### PATCH `/api/products/:id`
-Update product.
+Product `stock_quantity` is the current stock cache. Every non-zero stock
+change is committed atomically with an append-only row in the inventory
+movement ledger. Supplying a non-zero `stock_quantity` when creating a product
+records an `adjustment` movement with `reference_type: "opening_balance"`.
+The optional `reason` field supplies the opening-balance reason.
+
+### PUT `/api/products/:id`
+Update product (owner or manager only). Supplying `stock_quantity` sets the
+target stock through an audited `adjustment` movement instead of writing the
+cache directly. The optional `reason` field is stored with that movement;
+omitting `stock_quantity` leaves stock unchanged.
+
+**Headers:** `Authorization: Bearer <token>`
+
+### POST `/api/products/:id/stock`
+Apply a manual stock adjustment (owner or manager only).
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Request:**
+```json
+{
+  "action": "increase",
+  "quantity": 5,
+  "reason": "Counted unopened cases"
+}
+```
+
+`action` is one of `set`, `increase`, or `decrease`; `quantity` must be a
+non-negative number. The response is the updated `product`. A zero net change
+does not create a movement. Manual adjustments use movement type `adjustment`.
+
+---
+
+### GET `/api/inventory/movements`
+List product inventory movements (owner or manager only), newest first.
+
+**Headers:** `Authorization: Bearer <token>`
+
+**Query params:**
+- `?product_id=prod-1` - Filter by product
+- `?movement_type=sale|cancel_restore|adjustment` - Filter by movement type
+- `?reference_type=order_item&reference_id=123` - Filter by a local or imported source-reference pair
+- `?before_id=42` - Continue before a movement ID returned by the previous page
+- `?per_page=50` - Page size, capped at 500 (default 50)
+
+**Response (200):**
+```json
+{
+  "movements": [
+    {
+      "id": 42,
+      "product_id": "prod-1",
+      "product_name": "Cheeseburger",
+      "quantity_delta": -2,
+      "movement_type": "sale",
+      "reference_type": "order_item",
+      "reference_id": "123",
+      "reason": null,
+      "actor_user_id": "user-1",
+      "actor_name": "Owner",
+      "stock_after": 8,
+      "created_at": "2025-03-31 12:00:00",
+      "imported_by_user_id": null,
+      "import_batch_id": null,
+      "source_actor_user_id": null,
+      "source_reference_type": null,
+      "source_reference_id": null,
+      "source_reason": null,
+      "source_created_at": null
+    }
+  ],
+  "nextCursor": 17
+}
+```
+
+`nextCursor` is omitted when there are no more results. Movement types are
+`sale`, `cancel_restore`, and `adjustment`; the latter includes opening
+balances and manual adjustments. Sales reduce stock, while cancellation and
+restoration flows record their stock delta and actor in the same transaction.
+Imported movements use the authenticated importer as `actor_user_id`, set the
+local reference to `import` plus the `import_batch_id`, and keep the supplied
+actor, reference, reason, and timestamp in the `source_*` fields; source
+metadata is not authenticated attribution.
 
 ---
 
@@ -322,6 +404,7 @@ List orders.
       "order_number": "ORD-001",
       "type": "dine_in",
       "status": "pending",
+      "whatsapp_receipt_status": "sent",
       "table": { "id": "table-1", "name": "T1" },
       "items": [
         {
@@ -338,6 +421,15 @@ List orders.
   ]
 }
 ```
+
+`whatsapp_receipt_status` summarizes the latest outbound `bill_receipt`
+ledger row for each paid bill in the order; a paid bill with no row contributes
+no positive status. It is `sent` when every paid bill's latest status is
+`sent`, `delivered`, or `read`; `partial` when positive and non-positive
+statuses are mixed; `pending` when no positive status exists but at least one
+row is `queued` or `typing`; `failed` when no positive or pending status exists
+but a row is `failed`; and `null` when no matching row exists. The `wa.me`
+share fallback does not create a native ledger row and is not counted as sent.
 
 ---
 
@@ -379,6 +471,9 @@ Order item `addons` reference catalog add-ons by `id`. Each add-on must be activ
 ### GET `/api/orders/:id`
 Get order details.
 
+The response uses the same hydrated order shape as the list endpoint,
+including `whatsapp_receipt_status`.
+
 ---
 
 ### PATCH `/api/orders/:id/status`
@@ -387,9 +482,13 @@ Update order status.
 **Request:**
 ```json
 {
-  "status": "preparing"
+  "status": "cancelled",
+  "reason": "Customer requested cancellation"
 }
 ```
+
+`reason` is optional and is stored with inventory movements when `status` is
+`cancelled`.
 
 **Valid transitions:**
 
@@ -494,6 +593,9 @@ server.
 
 ### PATCH `/api/orders/:orderId/items/:itemId/cancel`
 Cancel an order item.
+
+The optional request field `reason` is stored with the inventory movement when
+the cancellation restores stock.
 
 - A cancellable item outside `preparing` or `ready` becomes `cancelled` and
   restores its recorded inventory deduction.

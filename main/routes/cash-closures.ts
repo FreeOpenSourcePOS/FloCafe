@@ -40,7 +40,7 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
-import { getCurrencyMinorUnitFactor } from '../countries';
+import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
 import { getOrdersWithItemsForBills } from './bills';
 import { getHttpRequestSignal } from '../shutdown';
 import {
@@ -76,8 +76,18 @@ function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
 }
 
+// Resolves through the country profile when the stored timezone is missing
+// or invalid, matching resolveRegionalSnapshot's own contract, instead of
+// letting dayBoundsInTimezone() silently fall back to UTC — at a
+// tenant-local day boundary that includes/excludes transactions at the
+// wrong instant, producing an incorrect closure total. Only throws
+// RegionalNotConfiguredError when the country itself is unresolvable.
 function tenantTimezone(): string {
-  return getSettingValue('timezone') || 'Asia/Kolkata';
+  return resolveRegionalSnapshot({
+    country: getSettingValue('country') ?? undefined,
+    currency: getSettingValue('currency') ?? undefined,
+    timezone: getSettingValue('timezone') ?? undefined,
+  }).timezone;
 }
 
 function tenantStartTime(db?: ReturnType<typeof getDatabase>): string {

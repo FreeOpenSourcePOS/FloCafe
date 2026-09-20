@@ -55,7 +55,7 @@ function seedLinkedData(): void {
 
 function clearLinkedData(): void {
   const db = getDatabase();
-  db.exec('DELETE FROM order_items; DELETE FROM bills; DELETE FROM orders; DELETE FROM products; DELETE FROM categories;');
+  db.exec('DELETE FROM order_items; DELETE FROM bills; DELETE FROM orders; DELETE FROM inventory_movements; DELETE FROM products; DELETE FROM categories;');
 }
 
 function copyAndStamp(sourcePath: string, destinationPath: string, schemaVersion: number): void {
@@ -192,6 +192,102 @@ async function run() {
     // Make the backup appear to be an older schema while retaining real linked data.
     const olderBackup = path.join(testDir, 'older-schema.db');
     copyAndStamp(sameSchemaBackup, olderBackup, currentVersion - 1);
+
+    const inconsistentLedgerBackup = path.join(testDir, 'inconsistent-ledger.db');
+    copyAndStamp(sameSchemaBackup, inconsistentLedgerBackup, currentVersion - 1);
+    const inconsistentLedgerDb = new Database(inconsistentLedgerBackup);
+    inconsistentLedgerDb.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(7, 'restore-product');
+    inconsistentLedgerDb.exec('DROP TABLE inventory_movements');
+    inconsistentLedgerDb.close();
+    const inconsistentRestore = restoreBackup(inconsistentLedgerBackup, false);
+    assert.equal(inconsistentRestore.success, false, 'data-only restore rejects stock without matching movement history');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      0,
+      'rejected inconsistent restore leaves the live stock cache unchanged',
+    );
+
+    getDatabase().prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
+    getDatabase().prepare(`
+      INSERT INTO inventory_movements (
+        product_id, quantity_delta, movement_type, reference_type, reference_id,
+        reason, actor_user_id, stock_after, created_at
+      ) VALUES (?, ?, 'adjustment', 'opening_balance', ?, ?, ?, ?, datetime('now'))
+    `).run('restore-product', 5, 'restore-product', 'Current opening balance', 'restore-station-chef', 5);
+    const zeroResetRestore = restoreBackup(olderBackup, false);
+    assert.equal(zeroResetRestore.success, false, 'data-only restore rejects an unaudited stock reset');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      5,
+      'rejected stock-reset restore leaves the live stock cache unchanged',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('restore-product') as { count: number }).count,
+      1,
+      'rejected stock-reset restore leaves movement history unchanged',
+    );
+
+    getDatabase().prepare('UPDATE products SET stock_quantity = 0 WHERE id = ?').run('restore-product');
+    getDatabase().prepare(`
+      INSERT INTO inventory_movements (
+        product_id, quantity_delta, movement_type, reference_type, reference_id,
+        reason, actor_user_id, stock_after, created_at
+      ) VALUES (?, ?, 'sale', 'order_item', ?, ?, ?, ?, datetime('now'))
+    `).run('restore-product', -5, 'partial-restore', 'Partial restore fixture', 'restore-station-chef', 0);
+    const partialRestoreBackup = path.join(testDir, 'partial-ledger-restore.db');
+    copyAndStamp(sameSchemaBackup, partialRestoreBackup, currentVersion - 1);
+    const partialRestoreDb = new Database(partialRestoreBackup);
+    partialRestoreDb.pragma('foreign_keys = OFF');
+    partialRestoreDb.exec('DROP TABLE products');
+    partialRestoreDb.close();
+    const partialRestore = restoreBackup(partialRestoreBackup, false);
+    assert.equal(partialRestore.success, false, 'data-only restore rejects movement history without products');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      0,
+      'rejected partial restore leaves the zero stock cache unchanged',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT COUNT(*) AS count FROM inventory_movements WHERE product_id = ?').get('restore-product') as { count: number }).count,
+      2,
+      'rejected partial restore preserves zero-ending movement history',
+    );
+    getDatabase().prepare('DELETE FROM inventory_movements WHERE product_id = ? AND reference_id = ?').run('restore-product', 'partial-restore');
+    getDatabase().prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
+
+    const staleLedgerBackup = path.join(testDir, 'stale-ledger.db');
+    copyAndStamp(sameSchemaBackup, staleLedgerBackup, currentVersion - 1);
+    const staleLedgerDb = new Database(staleLedgerBackup);
+    staleLedgerDb.pragma('foreign_keys = OFF');
+    staleLedgerDb.exec('DROP TABLE inventory_movements');
+    staleLedgerDb.close();
+    const staleLedgerRestore = restoreBackup(staleLedgerBackup, false);
+    assert.equal(staleLedgerRestore.success, false, 'data-only restore rejects a merged stock and ledger mismatch');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      5,
+      'rejected merged-state restore leaves the live stock cache unchanged',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_after FROM inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1').get('restore-product') as { stock_after: number }).stock_after,
+      5,
+      'rejected merged-state restore leaves the live movement history unchanged',
+    );
+
+    const legacyPreLedgerBackup = path.join(testDir, 'legacy-pre-ledger.db');
+    copyAndStamp(sameSchemaBackup, legacyPreLedgerBackup, currentVersion - 1);
+    const legacyPreLedgerDb = new Database(legacyPreLedgerBackup);
+    legacyPreLedgerDb.pragma('foreign_keys = OFF');
+    legacyPreLedgerDb.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?').run(5, 'restore-product');
+    legacyPreLedgerDb.exec('DROP TABLE inventory_movements');
+    legacyPreLedgerDb.close();
+    const legacyPreLedgerRestore = restoreBackup(legacyPreLedgerBackup, false);
+    assert.equal(legacyPreLedgerRestore.success, false, 'pre-ledger backups with stock are rejected without movement history');
+    assert.equal(
+      (getDatabase().prepare('SELECT stock_quantity FROM products WHERE id = ?').get('restore-product') as { stock_quantity: number }).stock_quantity,
+      5,
+      'pre-ledger restore preserves the migrated stock cache',
+    );
 
     clearLinkedData();
     const restored = restoreBackup(olderBackup, false);

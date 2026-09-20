@@ -87,6 +87,11 @@ async function main() {
   }
 
   const db = getDatabase();
+  // Regional settings are no longer auto-seeded (docs/business-decisions.md,
+  // "Regional settings come from signup, never from a fallback") — seed a
+  // resolvable country explicitly so resolveRegionalSnapshot() doesn't throw.
+  db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?) ON CONFLICT(key) DO UPDATE SET value='IN', updated_at=excluded.updated_at`).run(now());
+  db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('timezone', 'Asia/Kolkata', ?) ON CONFLICT(key) DO UPDATE SET value='Asia/Kolkata', updated_at=excluded.updated_at`).run(now());
 
   const ownerId = 'owner-daily-stats-turn';
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)

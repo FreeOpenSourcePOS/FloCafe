@@ -5,7 +5,7 @@ import {
 } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
-import { getCountryByCode, getCurrencyMinorUnitFactor } from '../countries';
+import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -19,9 +19,8 @@ export const TERMINAL_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment',
 
 export function getTenantCurrency(db?: Database): string {
   const explicit = db ? (db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as any)?.value : getSettingValue('currency');
-  if (explicit && typeof explicit === 'string' && /^[A-Z]{3}$/.test(explicit)) return explicit;
-  const country = (db ? (db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any)?.value : getSettingValue('country')) || 'IN';
-  return getCountryByCode(country)?.currency || 'INR';
+  const country = db ? (db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any)?.value : getSettingValue('country');
+  return resolveTenantCurrency(explicit, country || '');
 }
 
 export interface RefundRequest {
@@ -103,7 +102,18 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   // Past the short window, an owner-only PIN is required for the rest of the business day (docs/business-decisions.md).
   let lateRefund = false;
   if (nowMs - orderCreatedAt > REFUND_WINDOW_MS) {
-    const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
+    // Resolves through the country profile when the stored timezone is
+    // missing or invalid, matching resolveRegionalSnapshot's own contract,
+    // instead of letting localDateInTimezone()/dayBoundsInTimezone() silently
+    // fall back to UTC — at a tenant offset from UTC, that can wrongly accept
+    // or reject a late refund relative to the tenant's actual business-day
+    // end. Throws RegionalNotConfiguredError (409) only when the country
+    // itself is unresolvable.
+    const timezone = resolveRegionalSnapshot({
+      country: getSettingValue('country') ?? undefined,
+      currency: getSettingValue('currency') ?? undefined,
+      timezone: getSettingValue('timezone') ?? undefined,
+    }).timezone;
     const startTime = tenantBusinessDayStartTime(db);
     const orderBusinessDate = localDateInTimezone(new Date(orderCreatedAt), timezone, startTime);
     const [, businessDayEnd] = dayBoundsInTimezone(orderBusinessDate, timezone, startTime);

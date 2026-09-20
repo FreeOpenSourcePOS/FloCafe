@@ -217,7 +217,7 @@ export function buildBillPrintContext(opts: {
   trimDecimals?: boolean;
 }): PrintContext {
   const country = getCountryByCode(opts.tenant.country ?? '');
-  const currency = resolveTenantCurrency(opts.tenant.currency, opts.tenant.country);
+  const currency = resolveTenantCurrency(opts.tenant.currency, opts.tenant.country ?? '');
   return {
     columns: opts.columns ?? 42,
     languages: opts.languages,

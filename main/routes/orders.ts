@@ -11,6 +11,7 @@ import {
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals } from '../services/orders';
+import { adjustProductStock } from '../services/inventory';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes, validateProductQuantity } from './orders-validation';
@@ -259,7 +260,18 @@ router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Req
   }
 });
 
-/** Batches order relations (items, table, customer, bill) into IN queries. */
+/** Batches order relations and WhatsApp receipt status into IN queries. */
+type WhatsAppReceiptStatus = 'sent' | 'partial' | 'pending' | 'failed' | null;
+
+function summarizeWhatsAppReceiptStatuses(statuses: (string | null)[]): WhatsAppReceiptStatus {
+  const positiveStatuses = statuses.filter((status) => status === 'sent' || status === 'delivered' || status === 'read');
+  if (positiveStatuses.length === statuses.length && statuses.length > 0) return 'sent';
+  if (positiveStatuses.length > 0) return 'partial';
+  if (statuses.some((status) => status === 'queued' || status === 'typing')) return 'pending';
+  if (statuses.some((status) => status === 'failed')) return 'failed';
+  return null;
+}
+
 function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   if (orders.length === 0) return [];
   // Normalize JSON text columns on orders and items.
@@ -313,6 +325,38 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
       loyaltyByBillId.set(r.bill_id, current);
     }
   }
+  const whatsappReceiptStatusByBillId = new Map<number, string>();
+  const paidBillIdsByOrderId = new Map<number, number[]>();
+  const receiptBillIds = Array.from(billsByOrderId.entries()).flatMap(([orderId, bills]) => {
+    const paidBillIds = bills.filter((bill) => bill.payment_status === 'paid').map((bill) => bill.id);
+    paidBillIdsByOrderId.set(orderId, paidBillIds);
+    return paidBillIds;
+  });
+  if (receiptBillIds.length > 0) {
+    const ph = receiptBillIds.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT bill_id, status
+      FROM whatsapp_messages
+      WHERE direction = 'outbound'
+        AND kind = 'bill_receipt'
+        AND bill_id IN (${ph})
+      ORDER BY id DESC
+    `).all(...receiptBillIds) as { bill_id: number; status: string }[];
+    for (const row of rows) {
+      if (!whatsappReceiptStatusByBillId.has(row.bill_id)) {
+        whatsappReceiptStatusByBillId.set(row.bill_id, row.status);
+      }
+    }
+  }
+  const whatsappReceiptStatusByOrderId = new Map<number, WhatsAppReceiptStatus>();
+  for (const [orderId, billIds] of paidBillIdsByOrderId) {
+    whatsappReceiptStatusByOrderId.set(
+      orderId,
+      summarizeWhatsAppReceiptStatuses(
+        billIds.map((billId) => whatsappReceiptStatusByBillId.get(billId) ?? null),
+      ),
+    );
+  }
   const loyaltyEnabled = ['true', '1'].includes(getSettingValue('loyalty_enabled') || '');
   const loyaltyByCustomerId = new Map<string, { credits: number; debits: number }>();
   const billCustomerIds = Array.from(new Set(Array.from(billsById.values()).map((bill) => bill.customer_id).filter(Boolean)));
@@ -352,7 +396,15 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
       }
     }
     const bill = bills.find((row) => row.payment_status !== 'paid') || bills[0] || null;
-    return { ...order, items: itemList, table, customer, bill, bills };
+    return {
+      ...order,
+      items: itemList,
+      table,
+      customer,
+      bill,
+      bills,
+      whatsapp_receipt_status: whatsappReceiptStatusByOrderId.get(order.id) ?? null,
+    };
   });
 }
 
@@ -465,7 +517,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
       });
 
       const tenantInfo = {
-        country: settings.country || 'IN',
+        country: settings.country || '',
         business_type: settings.business_type || 'restaurant',
         state_code: settings.state_code || '',
         currency: getTenantCurrency(),
@@ -512,10 +564,6 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
         if (!product) {
           throw new Error(`Product ${item.product_id} not found`);
-        }
-
-        if (product.track_inventory && product.stock_quantity < item.quantity) {
-          throw new Error(`Insufficient stock for ${product.name}`);
         }
 
         const unitPrice = parseFloat(product.price);
@@ -571,8 +619,15 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
 
         if (product.track_inventory) {
-          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
-            .run(quantity, now(), product.id);
+          adjustProductStock(db, {
+            productId: product.id,
+            quantityDelta: -quantity,
+            movementType: 'sale',
+            referenceType: 'order_item',
+            referenceId: String(insertItemResult.lastInsertRowid),
+            actorUserId: authenticatedUserId,
+            createdAt: itemCreatedAt,
+          });
         }
       }
 
@@ -670,7 +725,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
     });
 
     const tenantInfo = {
-      country: settings.country || 'IN',
+      country: settings.country || '',
       business_type: settings.business_type || 'restaurant',
       state_code: settings.state_code || '',
       currency: getTenantCurrency(),
@@ -724,10 +779,6 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         if (!product) {
           throw new Error(`Product ${item.product_id} not found`);
         }
-        if (product.track_inventory && product.stock_quantity < item.quantity) {
-          throw new Error(`Insufficient stock for ${product.name}`);
-        }
-
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
         // Item discounts are applied via dedicated discount routes, not creation.
@@ -771,8 +822,15 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         insertedItemIds.push(insertItemResult.lastInsertRowid);
 
         if (product.track_inventory) {
-          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
-            .run(quantity, now(), product.id);
+          adjustProductStock(db, {
+            productId: product.id,
+            quantityDelta: -quantity,
+            movementType: 'sale',
+            referenceType: 'order_item',
+            referenceId: String(insertItemResult.lastInsertRowid),
+            actorUserId: idempotencyUserId,
+            createdAt: itemCreatedAt,
+          });
         }
       }
 
@@ -1001,8 +1059,15 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
           for (const item of eligibleItems) {
             const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
             if (product && item.inventory_deducted_quantity > 0) {
-              db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-                .run(item.inventory_deducted_quantity, nowStr, product.id);
+              adjustProductStock(db, {
+                productId: product.id,
+                quantityDelta: item.inventory_deducted_quantity,
+                movementType: 'cancel_restore',
+                referenceType: 'order_item',
+                referenceId: `${item.id}:${item.updated_at}`,
+                reason: reason || 'Order cancelled',
+                actorUserId: authUser.userId,
+              });
             }
           }
 
@@ -1216,7 +1281,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       }
     }
     const tenantInfo = {
-      country: getSettingValue('country') || 'IN',
+      country: getSettingValue('country') || '',
       business_type: getSettingValue('business_type') || 'restaurant',
       state_code: getSettingValue('state_code') || '',
       currency: getTenantCurrency(),
@@ -1442,7 +1507,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
     const settings = db.prepare("SELECT * FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')").all() as any[];
     const settingsMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
     const tenantInfo = {
-      country: settingsMap.country || 'IN',
+      country: settingsMap.country || '',
       business_type: settingsMap.business_type || 'restaurant',
       state_code: settingsMap.state_code || '',
       currency: getTenantCurrency(),

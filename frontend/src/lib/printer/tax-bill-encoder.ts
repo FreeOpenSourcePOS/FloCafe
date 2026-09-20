@@ -158,11 +158,11 @@ export function buildTaxBillBytes(
   };
   const truncate = (text: string, max: number): string => truncateForLanguage(text, max, language, opts.capabilities);
   const currencyCode = resolveTenantCurrency(tenant.currency, tenant.country);
-  const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const rawCurrency = getCurrencySymbol(currencyCode, getCountryByCode(tenant.country)?.locale);
   const currency = resolveEncoderCurrency(rawCurrency, currencyCode, useUnicode, rawEscPos, opts.capabilities);
-  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const locale = getCountryByCode(tenant.country)?.locale ?? 'en-US';
   const amountLocale = rawEscPos ? getSafeLatnLocale(locale) : locale;
-  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
+  const taxIdLabel = getCountryByCode(tenant.country)?.taxIdLabel || 'Tax ID';
   const order = bill.order;
   const taxComponents = resolveTaxComponents(bill);
   const hasTax = Number(bill.tax_amount) !== 0

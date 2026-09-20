@@ -33,6 +33,13 @@ export interface Tenant {
   currency_display?: CurrencyDisplay;
   number_digits?: DigitMode;
   calendar?: CalendarMode;
+  // Regional snapshot fields (docs/regional-snapshot.md) — derived from
+  // country + currency by resolveRegionalSnapshot(), not independent state.
+  currency_symbol?: string;
+  currency_position?: 'prefix' | 'suffix';
+  currency_fraction_digits?: number;
+  decimal_separator?: string;
+  group_separator?: string;
 }
 
 export interface Category {
@@ -176,11 +183,14 @@ export interface Order {
   external_order_id?: string | null;
   created_by: number;
   created_at: string;
+  cancelled_at?: string | null;
+  cancellation_reason?: string | null;
   items?: OrderItem[];
   table?: Table;
   customer?: Customer;
   bill?: Bill;
   bills?: Bill[];
+  whatsapp_receipt_status?: 'sent' | 'partial' | 'pending' | 'failed' | null;
 }
 
 export interface OrderItem {

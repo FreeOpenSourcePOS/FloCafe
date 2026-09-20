@@ -3,8 +3,8 @@ import { formatCurrencyForTenant } from '@/lib/countries';
 
 export function useFormatCurrency() {
   const tenant = useAuthStore((s) => s.currentTenant);
-  const country = tenant?.country;
-  const currency = tenant?.currency ?? 'INR';
+  const country = tenant?.country || '';
+  const currency = tenant?.currency ?? '';
   const prefs = {
     currencyDisplay: tenant?.currency_display,
     digits: tenant?.number_digits,

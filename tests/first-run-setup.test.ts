@@ -144,6 +144,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         business_name: 'First Cafe',
         setup_profile: 'express',
         service_model: 'qsr',
+        country: 'CA',
       }),
     });
     assert.equal(withoutTerms.status, 400, 'setup rejects account creation without terms acceptance');
@@ -214,6 +215,29 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(invalidCurrency.data.error, 'Invalid currency', 'setup reports a currency-specific validation error');
     assert.equal(count('users'), 0, 'no owner is created when the currency is invalid');
     console.log('   ✓ setup rejects an invalid currency code');
+
+    // A non-string country must not reach getCountryByCode's .toUpperCase()
+    // call (which would throw and surface as a 500, not this 400).
+    const nonStringCountry = await request(baseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'First Owner',
+        email: 'owner@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        business_name: 'First Cafe',
+        setup_profile: 'express',
+        service_model: 'qsr',
+        terms_accepted: true,
+        country: { code: 'CA' },
+        currency: 'CAD',
+        timezone: 'America/Vancouver',
+      }),
+    });
+    assert.equal(nonStringCountry.status, 400, 'setup rejects a non-string country with 400, not a crash');
+    assert.equal(nonStringCountry.data.error, 'A valid country is required', 'setup reports the country-specific validation error');
+    assert.equal(count('users'), 0, 'no owner is created when country is not a string');
+    console.log('   ✓ setup rejects a non-string country without crashing');
 
     const first = await request(baseUrl, '/setup/initialize', {
       method: 'POST',
@@ -347,7 +371,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       body: JSON.stringify({
         name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
         business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-        terms_accepted: true,
+        terms_accepted: true, country: 'US',
         owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
         cloud_sync_enabled: true, cloud_server_url: 'not-a-valid-url',
       }),
@@ -361,7 +385,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       body: JSON.stringify({
         name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
         business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-        terms_accepted: true,
+        terms_accepted: true, country: 'US',
         owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
         cloud_sync_enabled: true, cloud_server_url: 'https://cloud.example.test/relay',
       }),

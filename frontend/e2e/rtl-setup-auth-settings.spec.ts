@@ -161,6 +161,11 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await captureScreenshot(page, 'setup-step1-rtl-fa.png');
 
+  // A country must be selected before continuing — there is no default
+  // (docs/business-decisions.md, "Regional settings come from signup, never
+  // from a fallback"). Pick the first listed country.
+  await page.locator('.max-h-72 button').first().click();
+
   // Advance to Step 2 (Master PIN)
   await page.locator('button', { hasText: /ادامه|Continue/ }).first().click();
   await expect(page.locator('#master-pin')).toBeVisible();

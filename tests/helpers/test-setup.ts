@@ -106,6 +106,24 @@ function isNativeAbiMismatch(error: any): boolean {
 
 // ── Database Init ────────────────────────────────────────────────────────────
 
+// Production installs no longer seed a default country/currency/timezone
+// (docs/business-decisions.md, "Regional settings come from signup, never
+// from a fallback") — the signup wizard is the only source now. Most tests
+// call initTestDb() and seedOwnerUser() directly, bypassing that wizard, and
+// are not testing regional resolution at all; they just need a deterministic,
+// already-configured store. This is that one seeding choke point, not a
+// production default: tests that DO exercise /setup/initialize or the
+// regional resolver call it with their own explicit settings, which override
+// these via INSERT OR IGNORE (a no-op once a real value exists).
+function seedTestRegionalDefaults(db: any): void {
+  const insert = (key: string, value: string) =>
+    db.prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(key, value, now());
+  insert('country', 'IN');
+  insert('currency', 'INR');
+  insert('currency_symbol', '₹');
+  insert('timezone', 'Asia/Kolkata');
+}
+
 function initTestDb() {
   try {
     initDatabase();
@@ -116,7 +134,9 @@ function initTestDb() {
     }
     throw error;
   }
-  return getDatabase();
+  const db = getDatabase();
+  seedTestRegionalDefaults(db);
+  return db;
 }
 
 // ── Express App Factory ──────────────────────────────────────────────────────

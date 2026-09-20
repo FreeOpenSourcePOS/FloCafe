@@ -1881,6 +1881,7 @@
     "businessNamePlaceholder": "Restaurant name",
     "chooseCountry": "Choose Your Country",
     "chooseCountryHint": "FloCafe uses your country to pick the right currency, tax format, and demo data.",
+    "chooseCountryRequired": "Choose your country to continue",
     "chooseLanguage": "Choose Your Language",
     "chooseLanguageHint": "Pick the language for this setup flow before choosing the country.",
     "cloudEnableHint": "Cloud Services are optional and disabled by default. Enable them to connect FloCafe with FloAdmin for features such as RevFlo reporting, device pairing, and supported account services.",

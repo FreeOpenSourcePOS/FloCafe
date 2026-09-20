@@ -144,14 +144,14 @@ async function runTests() {
     const missingPin = await request(app).post('/api/auth/setup/initialize').send({
       name: 'Owner', email: 'owner@example.com', password: 'TestPass123',
       business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-      terms_accepted: true,
+      terms_accepted: true, country: 'US',
     });
     assert(missingPin.status === 400, `setup without master_pin returns 400 (got ${missingPin.status})`);
 
     const ok = await request(app).post('/api/auth/setup/initialize').send({
       name: 'Owner', email: 'owner@example.com', password: 'TestPass123',
       business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
-      terms_accepted: true, master_pin: '1234', owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
+      terms_accepted: true, country: 'US', master_pin: '1234', owner_approval_pin: '5678', owner_approval_pin_confirmation: '5678',
     });
     assert(ok.status === 200, `setup with valid master_pin succeeds (got ${ok.status}, ${JSON.stringify(ok.body)})`);
     assert(isMasterPinSet(), 'master PIN is set on disk after setup');

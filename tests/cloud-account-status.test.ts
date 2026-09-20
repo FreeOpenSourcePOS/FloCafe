@@ -14,7 +14,15 @@ const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-cloud-account-status-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
-    return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
+    return {
+      app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        getSelectedStorageBackend: () => 'keychain',
+        encryptString: (value: string) => Buffer.from(value, 'utf8'),
+        decryptString: (value: Buffer) => value.toString('utf8'),
+      },
+    };
   }
   return originalLoad.apply(this, arguments as any);
 };
@@ -61,6 +69,33 @@ async function run() {
       .get('/api/settings/cloud/account')
       .set(manager.authHeader);
     assertEqual(managerAccount.status, 403, 'non-owner cannot read cloud account status');
+
+    const managerDrive = await request(app)
+      .get('/api/settings/google-drive')
+      .set(manager.authHeader);
+    assertEqual(managerDrive.status, 403, 'non-owner cannot read Google Drive status');
+    const ownerDrive = await request(app)
+      .get('/api/settings/google-drive')
+      .set(owner.authHeader);
+    assertEqual(ownerDrive.status, 200, 'owner can read Google Drive status');
+    const drivePublicSettings = await request(app)
+      .get('/api/settings')
+      .set(owner.authHeader);
+    assert(!Object.keys(drivePublicSettings.body.settings || {}).some((key) => key.startsWith('google_drive_')), 'generic settings omit Google Drive state');
+    const directDriveSetting = await request(app)
+      .get('/api/settings/google_drive_account_email')
+      .set(owner.authHeader);
+    assertEqual(directDriveSetting.status, 403, 'Google Drive account settings cannot be read directly');
+    const managerDriveDisconnect = await request(app)
+      .post('/api/settings/google-drive/disconnect')
+      .set(manager.authHeader);
+    assertEqual(managerDriveDisconnect.status, 403, 'non-owner cannot retry Google Drive disconnect');
+    setSettings({ google_drive_revoke_status: 'unconfirmed' });
+    const ownerDriveDisconnect = await request(app)
+      .post('/api/settings/google-drive/disconnect')
+      .set(owner.authHeader);
+    assertEqual(ownerDriveDisconnect.status, 200, 'owner can retry Google Drive disconnect');
+    assertEqual(ownerDriveDisconnect.body.revoke_status, 'confirmed', 'successful disconnect retry reconciles revoke state');
 
     globalThis.fetch = (async () => {
       upstreamCalls++;

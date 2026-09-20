@@ -409,6 +409,11 @@ test('Failed KDS and Data hydration retries when revisiting the tab', async ({ p
 test('Data hydration caches before optional Google Drive status resolves', async ({ page }) => {
   await startMockedSettingsSession(page);
   let googleDriveAttempts = 0;
+  const hydrationOrder: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (['/api/settings/google-drive', '/api/db-tools/master-pin/status', '/api/db-tools/backups'].includes(path)) hydrationOrder.push(path);
+  });
   await page.route('**/api/settings/google-drive', async (route) => {
     googleDriveAttempts += 1;
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -417,14 +422,127 @@ test('Data hydration caches before optional Google Drive status resolves', async
     } catch {}
   });
 
+  const googleDriveRequest = page.waitForRequest('**/api/settings/google-drive');
   await page.goto(`${BASE}/settings?tab=data`);
   await expect(page.getByRole('heading', { name: 'Backup & Data', exact: true })).toBeVisible();
+  await expect.poll(() => hydrationOrder.filter((path) => path !== '/api/settings/google-drive').length).toBe(2);
+  await googleDriveRequest;
+  expect(hydrationOrder.indexOf('/api/db-tools/master-pin/status')).toBeLessThan(hydrationOrder.indexOf('/api/settings/google-drive'));
+  expect(hydrationOrder.indexOf('/api/db-tools/backups')).toBeLessThan(hydrationOrder.indexOf('/api/settings/google-drive'));
   await expect.poll(() => googleDriveAttempts).toBe(1);
   await page.getByRole('button', { name: 'Store Details', exact: true }).click();
   await page.getByRole('button', { name: 'Backup & Data', exact: true }).click();
   await page.waitForTimeout(200);
 
   expect(googleDriveAttempts).toBe(1);
+});
+
+test('Google Drive revoke retry survives status hydration', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let disconnectAttempts = 0;
+  await page.route('**/api/settings/google-drive', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        configured: true,
+        auth_state: 'disconnected',
+        secure_storage_available: true,
+        connected: false,
+        revoke_status: 'unconfirmed',
+      }),
+    });
+  });
+  await page.route('**/api/settings/google-drive/disconnect', async (route) => {
+    disconnectAttempts += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ configured: true, connected: false, auth_state: 'disconnected', revoke_status: 'unconfirmed' }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=data`);
+  await expect(page.getByRole('heading', { name: 'Backup & Data', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry disconnect', exact: true })).toBeVisible();
+  await expect(page.getByText('Google Drive access is still active. Retry disconnect to revoke it.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Retry disconnect', exact: true }).click();
+  await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await expect.poll(() => disconnectAttempts).toBe(1);
+  await expect(page.getByText('Google Drive disconnected', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Google Drive access is still active. Retry disconnect to revoke it.', { exact: true }).first()).toBeVisible();
+});
+
+test('Google Drive retention-pending backup shows a pending warning', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let jobPolls = 0;
+  await page.route('**/api/settings/google-drive', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ configured: true, auth_state: 'connected', secure_storage_available: true, connected: true, warning_acknowledged: true, warning_required: false }),
+    });
+  });
+  await page.route('**/api/settings/google-drive/destinations', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ destinations: [] }) });
+  });
+  await page.route('**/api/settings/google-drive/backups', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ backups: [] }) });
+  });
+  await page.route('**/api/settings/google-drive/backup-now', async (route) => {
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ job: { id: 'retention-job', state: 'queued' } }) });
+  });
+  await page.route('**/api/settings/google-drive/jobs/retention-job', async (route) => {
+    jobPolls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ job: { id: 'retention-job', state: 'retention_pending' } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=data`);
+  await page.getByRole('button', { name: 'Back up to Drive now', exact: true }).click();
+  await page.getByRole('button', { name: 'I understand', exact: true }).click();
+  await expect.poll(() => jobPolls).toBe(1);
+  await expect(page.getByText('Backup uploaded, but automatic retention cleanup is pending and will retry automatically.', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Backup uploaded to Google Drive', { exact: true })).toHaveCount(0);
+});
+
+test('Google Drive cancelled transfer shows automatic retry state', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let jobPolls = 0;
+  await page.route('**/api/settings/google-drive', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ configured: true, auth_state: 'connected', secure_storage_available: true, connected: true, warning_acknowledged: true, warning_required: false }),
+    });
+  });
+  await page.route('**/api/settings/google-drive/destinations', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ destinations: [] }) });
+  });
+  await page.route('**/api/settings/google-drive/backups', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ backups: [] }) });
+  });
+  await page.route('**/api/settings/google-drive/backup-now', async (route) => {
+    await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ job: { id: 'cancelled-job', state: 'queued' } }) });
+  });
+  await page.route('**/api/settings/google-drive/jobs/cancelled-job', async (route) => {
+    jobPolls += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ job: { id: 'cancelled-job', state: 'offline_pending', error_code: 'cancelled' } }),
+    });
+  });
+
+  await page.goto(`${BASE}/settings?tab=data`);
+  await page.getByRole('button', { name: 'Back up to Drive now', exact: true }).click();
+  await page.getByRole('button', { name: 'I understand', exact: true }).click();
+  await expect.poll(() => jobPolls).toBe(1);
+  await expect(page.getByText('Google Drive backup is pending and will retry automatically.', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Backup to Google Drive failed', { exact: true })).toHaveCount(0);
 });
 
 test('Save All does not cache partial Mobile Access hydration', async ({ page }) => {

@@ -349,6 +349,34 @@ export function upsertSettings(entries: Record<string, string | undefined | null
   }
 }
 
+export const GOOGLE_DRIVE_PRIVATE_SETTING_KEYS = [
+  'google_drive_account_subject',
+  'google_drive_account_email',
+  'google_drive_destination_folder_id',
+  'google_drive_destination_folder_name',
+  'google_drive_folder_id',
+  'google_drive_owned_destinations',
+  'google_drive_last_backup_at',
+  'google_drive_last_backup_status',
+  'google_drive_last_automatic_backup_at',
+  'google_drive_last_attempt_at',
+  'google_drive_last_success_at',
+  'google_drive_last_success_kind',
+  'google_drive_next_retry_at',
+  'google_drive_retention_status',
+  'google_drive_retention_retry_count',
+  'google_drive_last_error_code',
+  'google_drive_pending_upload',
+  'google_drive_job',
+  'google_drive_revoke_status',
+  'google_drive_revoke_cleanup_pending',
+];
+
+export function clearGoogleDriveRestoreBinding(dbInstance: Database.Database = db): void {
+  const placeholders = GOOGLE_DRIVE_PRIVATE_SETTING_KEYS.map(() => '?').join(', ');
+  dbInstance.prepare(`DELETE FROM settings WHERE key IN (${placeholders})`).run(...GOOGLE_DRIVE_PRIVATE_SETTING_KEYS);
+}
+
 function upsertSetting(key: string, value: string): void {
   db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -394,6 +422,14 @@ type ReplacementJournal = {
   recoveryPath: string;
   dbPath: string;
   baselineForeignKeyViolations?: string[];
+  driveInvalidationRequired?: boolean;
+};
+
+export type DatabaseReplacementJournalHandle = {
+  phase: 'prepared' | 'committed';
+  journalPath: string;
+  recoveryPath: string;
+  dbPath: string;
 };
 
 function syncFile(filePath: string): void {
@@ -443,11 +479,247 @@ function syncDirectory(directoryPath: string): boolean {
   }
 }
 
-function removeReplacementArtifacts(journalPath: string, recoveryPath: string): void {
-  for (const filePath of [journalPath, `${journalPath}.tmp`, recoveryPath, `${recoveryPath}-wal`, `${recoveryPath}-shm`]) {
-    try { if (pathEntryExists(filePath)) fs.unlinkSync(filePath); } catch { }
+function removeReplacementArtifactsDurably(journalPath: string, recoveryPath: string): void {
+  const directoryPath = path.dirname(journalPath);
+  const artifactPaths = [journalPath, `${journalPath}.tmp`, recoveryPath, `${recoveryPath}-wal`, `${recoveryPath}-shm`];
+  const cleanupId = crypto.randomBytes(8).toString('hex');
+  const backups: { originalPath: string; backupPath: string }[] = [];
+  let restorationFailed = false;
+  try {
+    for (const originalPath of artifactPaths) {
+      if (!pathEntryExists(originalPath)) continue;
+      const backupPath = `${originalPath}.cleanup-${cleanupId}`;
+      fs.copyFileSync(originalPath, backupPath);
+      syncFile(backupPath);
+      backups.push({ originalPath, backupPath });
+    }
+    if (!syncDirectory(directoryPath) && process.platform !== 'win32') throw new Error('Could not durably prepare database replacement cleanup');
+    for (const filePath of [recoveryPath, `${recoveryPath}-wal`, `${recoveryPath}-shm`]) {
+      if (pathEntryExists(filePath)) fs.unlinkSync(filePath);
+    }
+    if (!syncDirectory(directoryPath) && process.platform !== 'win32') throw new Error('Could not durably remove database replacement artifacts');
+    for (const filePath of [`${journalPath}.tmp`, journalPath]) {
+      if (pathEntryExists(filePath)) fs.unlinkSync(filePath);
+    }
+    if (!syncDirectory(directoryPath) && process.platform !== 'win32') throw new Error('Could not durably remove database replacement journal');
+    for (const { backupPath } of backups) {
+      if (pathEntryExists(backupPath)) fs.unlinkSync(backupPath);
+    }
+    if (!syncDirectory(directoryPath) && process.platform !== 'win32') throw new Error('Could not durably remove database replacement cleanup copies');
+  } catch (error) {
+    for (const { originalPath, backupPath } of backups) {
+      try {
+        if (!pathEntryExists(originalPath) && pathEntryExists(backupPath)) {
+          fs.copyFileSync(backupPath, originalPath);
+          syncFile(originalPath);
+        }
+      } catch { restorationFailed = true; }
+    }
+    if (!syncDirectory(directoryPath)) restorationFailed = true;
+    if (!restorationFailed) {
+      for (const { backupPath } of backups) {
+        try { if (pathEntryExists(backupPath)) fs.unlinkSync(backupPath); } catch { restorationFailed = true; }
+      }
+      if (!syncDirectory(directoryPath)) restorationFailed = true;
+    }
+    if (restorationFailed) {
+      throw new Error(
+        `Database replacement cleanup failed and recovery evidence was retained: ${error instanceof Error ? error.message : 'unknown error'}`,
+        { cause: error },
+      );
+    }
+    throw error;
   }
-  syncDirectory(path.dirname(journalPath));
+}
+
+function restoreReplacementCleanupEvidence(backupDir: string, dbPath: string): void {
+  let names: string[];
+  try {
+    names = fs.readdirSync(backupDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  const groups = new Map<string, Map<string, string>>();
+  for (const name of names) {
+    const markerIndex = name.lastIndexOf('.cleanup-');
+    if (markerIndex < 0) continue;
+    const originalName = name.slice(0, markerIndex);
+    const cleanupId = name.slice(markerIndex + '.cleanup-'.length);
+    if (!/^[a-f0-9]{16}$/.test(cleanupId)) continue;
+    if (!/^(?:flo-restore|flo-reset)-recovery-.+\.(?:json|json\.tmp|db(?:-(?:wal|shm))?)$/.test(originalName)) continue;
+    const canonicalName = originalName.endsWith('.json.tmp') ? originalName.slice(0, -'.tmp'.length) : originalName;
+    const canonicalBase = canonicalName.replace(/(?:\.json|\.db(?:-(?:wal|shm))?)$/, '');
+    const groupKey = `${canonicalBase}:${cleanupId}`;
+    const group = groups.get(groupKey) || new Map<string, string>();
+    group.set(canonicalName, name);
+    groups.set(groupKey, group);
+  }
+  for (const [groupKey, group] of groups) {
+    const separator = groupKey.lastIndexOf(':');
+    const canonicalBase = groupKey.slice(0, separator);
+    const journalName = `${canonicalBase}.json`;
+    const recoveryName = `${canonicalBase}.db`;
+    const journalPath = path.join(backupDir, journalName);
+    const recoveryPath = path.join(backupDir, recoveryName);
+    const journalEvidence = group.get(journalName) || group.get(`${journalName}.tmp`);
+    const recoveryEvidence = group.get(recoveryName);
+    if (!journalEvidence || !recoveryEvidence) {
+      if (!pathEntryExists(journalPath) || !pathEntryExists(recoveryPath)) throw new Error(`Incomplete database replacement cleanup evidence: ${canonicalBase}`);
+      for (const evidenceName of new Set(group.values())) {
+        const evidencePath = path.join(backupDir, evidenceName);
+        if (pathEntryExists(evidencePath)) fs.unlinkSync(evidencePath);
+      }
+      if (!syncDirectory(backupDir) && process.platform !== 'win32') throw new Error('Could not durably remove incomplete database replacement cleanup evidence');
+      continue;
+    }
+    for (const [canonicalPath, evidenceName] of [[journalPath, journalEvidence], [recoveryPath, recoveryEvidence]] as const) {
+      if (pathEntryExists(canonicalPath)) continue;
+      const evidencePath = path.join(backupDir, evidenceName);
+      const evidenceStat = fs.lstatSync(evidencePath);
+      if (evidenceStat.isSymbolicLink() || !evidenceStat.isFile()) throw new Error(`Invalid database replacement cleanup evidence: ${evidenceName}`);
+      if (canonicalPath === journalPath) {
+        const journal = JSON.parse(fs.readFileSync(evidencePath, 'utf8')) as Partial<ReplacementJournal>;
+        if (journal.dbPath !== dbPath || journal.recoveryPath !== recoveryPath) throw new Error(`Invalid database replacement cleanup journal: ${evidenceName}`);
+      }
+      fs.copyFileSync(evidencePath, canonicalPath);
+      syncFile(canonicalPath);
+    }
+    for (const evidenceName of new Set(group.values())) {
+      const evidencePath = path.join(backupDir, evidenceName);
+      if (pathEntryExists(evidencePath)) fs.unlinkSync(evidencePath);
+    }
+    if (!syncDirectory(backupDir) && process.platform !== 'win32') throw new Error('Could not durably restore database replacement cleanup evidence');
+  }
+}
+
+function replacementJournalPath(kind: 'restore' | 'reset'): string {
+  const recoveryPath = path.join(getBackupDir(), `flo-${kind}-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
+  return recoveryPath.replace(/\.db$/, '.json');
+}
+
+function readReplacementJournal(journalPath: string): ReplacementJournal | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Partial<ReplacementJournal>;
+    if ((parsed.phase !== 'prepared' && parsed.phase !== 'committed')
+      || typeof parsed.recoveryPath !== 'string'
+      || typeof parsed.dbPath !== 'string'
+      || !path.isAbsolute(parsed.recoveryPath)
+      || !path.isAbsolute(parsed.dbPath)
+      || parsed.driveInvalidationRequired !== true
+      || parsed.dbPath !== getDbPath()
+      || path.dirname(parsed.recoveryPath) !== path.resolve(getBackupDir())
+      || `${path.basename(journalPath, '.json')}.db` !== path.basename(parsed.recoveryPath)) return null;
+    return parsed as ReplacementJournal;
+  } catch {
+    return null;
+  }
+}
+
+export function getDatabaseReplacementJournal(): DatabaseReplacementJournalHandle | null {
+  restoreReplacementCleanupEvidence(getBackupDir(), getDbPath());
+  let journals: string[];
+  try {
+    journals = fs.readdirSync(getBackupDir())
+      .filter((name) => /^(?:flo-restore|flo-reset)-recovery-.+\.json$/.test(name))
+      .map((name) => path.join(getBackupDir(), name))
+      .sort((a, b) => fs.lstatSync(b).mtimeMs - fs.lstatSync(a).mtimeMs);
+  } catch {
+    return null;
+  }
+  const journalPath = journals[0];
+  if (!journalPath) return null;
+  const journal = readReplacementJournal(journalPath);
+  if (!journal) return null;
+  return {
+    phase: journal.phase,
+    journalPath,
+    recoveryPath: journal.recoveryPath,
+    dbPath: journal.dbPath,
+  };
+}
+
+export function beginDatabaseReplacementJournal(
+  recoverySourcePath: string,
+  kind: 'restore' | 'reset',
+): DatabaseReplacementJournalHandle {
+  const dbPath = getDbPath();
+  const journalPath = replacementJournalPath(kind);
+  const recoveryPath = journalPath.replace(/\.json$/, '.db');
+  try {
+    fs.copyFileSync(recoverySourcePath, recoveryPath);
+    syncFile(recoveryPath);
+    writeReplacementJournal(journalPath, {
+      phase: 'prepared', recoveryPath, dbPath, driveInvalidationRequired: true,
+    });
+    return { phase: 'prepared', journalPath, recoveryPath, dbPath };
+  } catch (error) {
+    removeReplacementArtifactsDurably(journalPath, recoveryPath);
+    throw error;
+  }
+}
+
+export function commitDatabaseReplacementJournal(handle: DatabaseReplacementJournalHandle): void {
+  getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+  syncFile(handle.dbPath);
+  if (!syncDirectory(path.dirname(handle.dbPath)) && process.platform !== 'win32') {
+    throw new Error('Could not durably commit database replacement');
+  }
+  try {
+    writeReplacementJournal(handle.journalPath, {
+      phase: 'committed',
+      recoveryPath: handle.recoveryPath,
+      dbPath: handle.dbPath,
+      driveInvalidationRequired: true,
+    });
+  } catch (error) {
+    if (readReplacementJournal(handle.journalPath)?.phase === 'committed') handle.phase = 'committed';
+    throw error;
+  }
+  handle.phase = 'committed';
+}
+
+export function abortDatabaseReplacementJournal(handle: DatabaseReplacementJournalHandle): void {
+  const journal = readReplacementJournal(handle.journalPath);
+  if (!journal || journal.phase === 'committed') return;
+  removeReplacementArtifactsDurably(handle.journalPath, handle.recoveryPath);
+}
+
+export function finalizeDatabaseReplacementJournal(handle: DatabaseReplacementJournalHandle): void {
+  const journal = readReplacementJournal(handle.journalPath);
+  if (journal?.phase !== 'committed') throw new Error('Database replacement is not committed');
+  removeReplacementArtifactsDurably(handle.journalPath, handle.recoveryPath);
+}
+
+export function recoverDatabaseReplacementJournal(handle: DatabaseReplacementJournalHandle): void {
+  const journal = readReplacementJournal(handle.journalPath);
+  if (journal?.phase === 'committed') return;
+  if (!journal || journal.recoveryPath !== handle.recoveryPath || journal.dbPath !== handle.dbPath) {
+    throw new Error('Database replacement journal could not be validated');
+  }
+  try {
+    const recoveryStat = fs.lstatSync(handle.recoveryPath);
+    if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile()
+      || pathEntryExists(`${handle.recoveryPath}-wal`)
+      || pathEntryExists(`${handle.recoveryPath}-shm`)
+      || !isHealthyDatabaseFile(handle.recoveryPath, undefined, false)) {
+      throw new Error('Database replacement recovery snapshot could not be validated');
+    }
+  } catch (error) {
+    throw error instanceof Error
+      ? error
+      : new Error('Database replacement recovery snapshot could not be validated', { cause: error });
+  }
+  closeDatabase();
+  const failures = removeDatabaseFiles(handle.dbPath);
+  if (failures.length > 0) throw new Error(`Could not clear failed database replacement: ${failures.join(', ')}`);
+  fs.copyFileSync(handle.recoveryPath, handle.dbPath);
+  syncFile(handle.dbPath);
+  if (!syncDirectory(path.dirname(handle.dbPath)) && process.platform !== 'win32') {
+    throw new Error('Could not durably recover failed database replacement');
+  }
+  initDatabase(false, true);
+  removeReplacementArtifactsDurably(handle.journalPath, handle.recoveryPath);
 }
 
 let recoverySchemaReference: Map<string, string[]> | null = null;
@@ -535,17 +807,18 @@ function removeOlderReplacementJournals(journals: string[], dbPath: string, back
         || `${path.basename(journalPath, '.json')}.db` !== path.basename(journal.recoveryPath)) {
         throw new Error('invalid stale replacement journal');
       }
-      removeReplacementArtifacts(journalPath, journal.recoveryPath);
+      removeReplacementArtifactsDurably(journalPath, journal.recoveryPath);
     } catch (error) {
       // Remove invalid stale journal and its snapshot without blocking startup.
       const fallbackRecovery = path.join(backupRoot, `${path.basename(journalPath, '.json')}.db`);
-      removeReplacementArtifacts(journalPath, fallbackRecovery);
+      removeReplacementArtifactsDurably(journalPath, fallbackRecovery);
       console.warn(`[DB] Removed stale invalid replacement journal: ${journalPath}`);
     }
   }
 }
 
 function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string): void {
+  restoreReplacementCleanupEvidence(backupDir, dbPath);
   let journals: string[] = [];
   try {
     journals = fs.readdirSync(backupDir)
@@ -559,11 +832,11 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     const fallbackRecovery = path.join(path.resolve(backupDir), `${path.basename(journalPath, '.json')}.db`);
     let journalStat: fs.Stats;
     try { journalStat = fs.lstatSync(journalPath); } catch {
-      removeReplacementArtifacts(journalPath, fallbackRecovery);
+      removeReplacementArtifactsDurably(journalPath, fallbackRecovery);
       continue;
     }
     if (journalStat.isSymbolicLink() || !journalStat.isFile()) {
-      removeReplacementArtifacts(journalPath, fallbackRecovery);
+      removeReplacementArtifactsDurably(journalPath, fallbackRecovery);
       continue;
     }
     let journal: ReplacementJournal;
@@ -599,7 +872,18 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     const requireMetadata = false;
     // Finalize committed replacement if database file is healthy.
     if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath, allowedForeignKeyViolations, requireMetadata)) {
-      removeReplacementArtifacts(journalPath, recoveryPath);
+      if (journal.driveInvalidationRequired !== false) {
+        if (journal.driveInvalidationRequired !== true) {
+          writeReplacementJournal(journalPath, {
+            ...journal,
+            driveInvalidationRequired: true,
+          });
+        }
+        removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
+        console.warn(`[DB] Preserved committed replacement journal for Drive invalidation: ${journalPath}`);
+        return;
+      }
+      removeReplacementArtifactsDurably(journalPath, recoveryPath);
       removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
       console.warn(`[DB] Finalized committed database replacement journal: ${journalPath}`);
       return;
@@ -618,7 +902,7 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
       throw new Error('Could not durably install recovered database');
     }
-    removeReplacementArtifacts(journalPath, recoveryPath);
+    removeReplacementArtifactsDurably(journalPath, recoveryPath);
     removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
     console.warn(`[DB] Recovered database from interrupted replacement snapshot: ${recoveryPath}`);
     return;
@@ -952,25 +1236,25 @@ export function closeDatabase(): void {
   }
 }
 
-export async function createBackupUnlocked(targetPath?: string, signal?: AbortSignal): Promise<{ path: string; schemaVersion: number }> {
+type BackupOptions = { stagingDirectory?: string };
+
+export async function createBackupUnlocked(targetPath?: string, signal?: AbortSignal, options?: BackupOptions): Promise<{ path: string; schemaVersion: number }> {
   // Internal callers must already hold withDatabaseMaintenanceLock().
   if (signal?.aborted) throw createMaintenanceAbortError();
   console.log('[DB] createBackup: Starting...');
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const uniqueSuffix = crypto.randomBytes(4).toString('hex');
   const backupDir = getBackupDir();
-
-  if (!fs.existsSync(backupDir)) {
-    fs.mkdirSync(backupDir, { recursive: true });
-  }
-
-  // Write to userData temp path first to support sandbox constraints, then copy to targetPath.
-  const tempPath = path.join(backupDir, `flo-backup-${timestamp}-${uniqueSuffix}.db`);
+  const stagingDir = options?.stagingDirectory ? path.resolve(options.stagingDirectory) : backupDir;
+  const tempPath = path.join(stagingDir, `flo-backup-${timestamp}-${uniqueSuffix}.db`);
   const finalPath = targetPath ? path.resolve(targetPath) : tempPath;
   const stagedTargetPath = finalPath !== tempPath
     ? path.join(path.dirname(finalPath), `.${path.basename(finalPath)}.tmp-${uniqueSuffix}`)
     : null;
   let completed = false;
+
+  if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+  if (stagingDir !== backupDir && !fs.existsSync(stagingDir)) fs.mkdirSync(stagingDir, { recursive: true });
 
   const liveDatabasePath = getDbPath();
   if ([liveDatabasePath, `${liveDatabasePath}-wal`, `${liveDatabasePath}-shm`].some((livePath) => isLiveDatabaseTarget(finalPath, livePath))) {
@@ -1065,8 +1349,8 @@ export async function createBackupUnlocked(targetPath?: string, signal?: AbortSi
   }
 }
 
-export function createBackup(targetPath?: string, signal?: AbortSignal): Promise<{ path: string; schemaVersion: number }> {
-  return withDatabaseMaintenanceLock((maintenanceSignal) => createBackupUnlocked(targetPath, maintenanceSignal), signal);
+export function createBackup(targetPath?: string, signal?: AbortSignal, options?: BackupOptions): Promise<{ path: string; schemaVersion: number }> {
+  return withDatabaseMaintenanceLock((maintenanceSignal) => createBackupUnlocked(targetPath, maintenanceSignal, options), signal);
 }
 
 function removeDatabaseFiles(dbPath: string): string[] {
@@ -1083,7 +1367,7 @@ function removeDatabaseFiles(dbPath: string): string[] {
 }
 
 /** Resets database while holding maintenance lock; recovers safety backup if reset fails. */
-export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ backupPath: string }> {
+export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ backupPath: string; committed?: boolean; cleanupPending?: boolean }> {
   return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
     const { path: backupPath } = await createBackupUnlocked(undefined, maintenanceSignal);
     throwIfDatabaseMaintenanceAborted(maintenanceSignal);
@@ -1091,9 +1375,9 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
     const baselineForeignKeyViolations = getForeignKeyViolationKeys(getDatabase());
     const recoveryPath = path.join(getBackupDir(), `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
     const journalPath = recoveryPath.replace(/\.db$/, '.json');
-    let replacementCompleted = false;
     let recoveryCompleted = false;
     let replacementStarted = false;
+    let replacementCommitted = false;
 
     try {
       fs.copyFileSync(backupPath, recoveryPath);
@@ -1101,6 +1385,7 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
       writeReplacementJournal(journalPath, {
         phase: 'prepared', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+        driveInvalidationRequired: true,
       });
       throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       replacementStarted = true;
@@ -1126,14 +1411,20 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
       writeReplacementJournal(journalPath, {
         phase: 'committed', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+        driveInvalidationRequired: true,
       });
-      replacementCompleted = true;
-      return { backupPath };
+      replacementCommitted = true;
+      return { backupPath, committed: true, cleanupPending: false };
     } catch (error: any) {
+      const committedJournal = readReplacementJournal(journalPath)?.phase === 'committed';
+      if (replacementCommitted || committedJournal) {
+        console.error('[DB] Reset committed; cleanup remains pending:', error);
+        return { backupPath, committed: true, cleanupPending: true };
+      }
       // Reopen the pre-wipe snapshot so a partial filesystem failure cannot
       // leave the process serving an empty or closed database.
       if (!replacementStarted) {
-        removeReplacementArtifacts(journalPath, recoveryPath);
+        removeReplacementArtifactsDurably(journalPath, recoveryPath);
         throw error;
       }
       try {
@@ -1154,7 +1445,7 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
       }
       throw error;
     } finally {
-      if (replacementCompleted || recoveryCompleted) removeReplacementArtifacts(journalPath, recoveryPath);
+      if (recoveryCompleted) removeReplacementArtifactsDurably(journalPath, recoveryPath);
     }
   }, signal);
 }
@@ -1174,6 +1465,37 @@ function readBackupSchemaVersion(fullPath: string): number | null {
     return row ? parseCanonicalSchemaVersion(row.value) : null;
   } catch {
     return null;
+  } finally {
+    backupDb?.close();
+  }
+}
+
+export type BackupMetadata = {
+  schemaVersion: number | null;
+  appVersion: string | null;
+  backupCreatedAt: string | null;
+};
+
+/** Reads the canonical metadata stamp without changing local backup behavior. */
+export function getBackupMetadata(backupPath: string): BackupMetadata {
+  let backupDb: Database.Database | undefined;
+  try {
+    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+    const rows = backupDb.prepare(
+      `SELECT key, value FROM _flo_meta WHERE key IN ('schema_version', 'app_version', 'backup_created_at')`,
+    ).all() as { key: string; value: string }[];
+    const values = new Map(rows.map((row) => [row.key, row.value]));
+    const schemaValue = values.get('schema_version');
+    const schemaVersion = schemaValue && /^(?:0|[1-9]\d*)$/.test(schemaValue)
+      ? Number(schemaValue)
+      : null;
+    return {
+      schemaVersion: schemaVersion !== null && Number.isSafeInteger(schemaVersion) ? schemaVersion : null,
+      appVersion: values.get('app_version') || null,
+      backupCreatedAt: values.get('backup_created_at') || null,
+    };
+  } catch {
+    return { schemaVersion: null, appVersion: null, backupCreatedAt: null };
   } finally {
     backupDb?.close();
   }
@@ -1462,6 +1784,9 @@ export interface RestoreResult {
   backupSchemaVersion: number;
   currentSchemaVersion: number;
   tablesRestored: number;
+  committed?: boolean;
+  cleanupPending?: boolean;
+  ambiguous?: boolean;
   error?: string;
 }
 
@@ -1994,21 +2319,23 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
 
     console.log('[DB] restoreBackup: Direct restore (same schema version)');
     const dbPath = getDbPath();
-    const recoveryPath = path.join(getBackupDir(), `flo-restore-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
-    const journalPath = recoveryPath.replace(/\.db$/, '.json');
+    let recoveryPath = '';
+    let journalPath = '';
 
     let recoveryCopyReady = false;
     let recoveryCompleted = false;
     try {
       // Checkpoint the live WAL before making a synchronous recovery copy.
       currentDb.pragma('wal_checkpoint(TRUNCATE)');
-      fs.copyFileSync(dbPath, recoveryPath);
-      syncFile(recoveryPath);
+      const replacementJournal = beginDatabaseReplacementJournal(dbPath, 'restore');
+      recoveryPath = replacementJournal.recoveryPath;
+      journalPath = replacementJournal.journalPath;
+      recoveryCopyReady = true;
       writeReplacementJournal(journalPath, {
         phase: 'prepared', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+        driveInvalidationRequired: true,
       });
-      recoveryCopyReady = true;
       throwIfDatabaseMaintenanceAborted(signal);
       closeDatabase();
       throwIfDatabaseMaintenanceAborted(signal);
@@ -2044,9 +2371,11 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
         throw new Error('Could not durably commit restored database');
       }
       throwIfDatabaseMaintenanceAborted(signal);
+      clearGoogleDriveRestoreBinding(freshDb);
       writeReplacementJournal(journalPath, {
         phase: 'committed', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+        driveInvalidationRequired: true,
       });
       return {
         success: true,
@@ -2054,8 +2383,25 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
         backupSchemaVersion,
         currentSchemaVersion: currentVersion,
         tablesRestored: getTables(freshDb).length,
+        committed: true,
+        cleanupPending: false,
       };
     } catch (error: any) {
+      const committedJournal = readReplacementJournal(journalPath);
+      if (committedJournal?.phase === 'committed') {
+        // The replacement is authoritative once the committed journal is durable.
+        // Do not roll it back after a post-commit error; Drive invalidation and
+        // artifact cleanup must finish from the durable boundary.
+        return {
+          success: true,
+          mode: 'direct',
+          backupSchemaVersion,
+          currentSchemaVersion: currentVersion,
+          tablesRestored: getTables(getDatabase()).length,
+          committed: true,
+          cleanupPending: true,
+        };
+      }
       // A corrupt/incompatible same-version file must not strand the live
       // database. Restore the checkpointed safety copy before rethrowing.
       if (!recoveryCopyReady) throw error;
@@ -2082,14 +2428,14 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
       throw error;
     } finally {
       if (recoveryCompleted) {
-        removeReplacementArtifacts(journalPath, recoveryPath);
-      } else if (isHealthyDatabaseFile(dbPath, baselineForeignKeyViolations, false)
+        removeReplacementArtifactsDurably(journalPath, recoveryPath);
+      } else if (recoveryCopyReady && isHealthyDatabaseFile(dbPath, baselineForeignKeyViolations, false)
         && isHealthyDatabaseFile(recoveryPath, baselineForeignKeyViolations, false)) {
         // A committed journal is finalized here; an uncommitted journal is
         // intentionally retained if recovery itself failed.
         try {
           const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as ReplacementJournal;
-          if (journal.phase === 'committed') removeReplacementArtifacts(journalPath, recoveryPath);
+          if (journal.phase === 'committed' && journal.driveInvalidationRequired !== true) removeReplacementArtifactsDurably(journalPath, recoveryPath);
         } catch { }
       }
     }
@@ -2269,6 +2615,9 @@ function dataOnlyRestore(
   let attached = false;
   let inTransaction = false;
   let tablesRestored = 0;
+  let replacementJournal: DatabaseReplacementJournalHandle | null = null;
+  let replacementCommitted = false;
+  let replacementRecoveryFailed = false;
 
   // Existing failed versions of this function could strand this alias on the
   // long-lived connection. Remove it before attempting a fresh restore.
@@ -2285,6 +2634,21 @@ function dataOnlyRestore(
       currentSchemaVersion: currentVersion,
       tablesRestored: 0,
       error: `Could not clear a previous restore attachment: ${error?.message || 'unknown error'}`,
+    };
+  }
+
+  try {
+    currentDb.pragma('wal_checkpoint(TRUNCATE)');
+    syncFile(livePath);
+    replacementJournal = beginDatabaseReplacementJournal(livePath, 'restore');
+  } catch (error: any) {
+    return {
+      success: false,
+      mode: 'data_only',
+      backupSchemaVersion: backupVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: error?.message || 'Could not prepare restore recovery journal',
     };
   }
 
@@ -2329,6 +2693,7 @@ function dataOnlyRestore(
     mergeUserStationSecurityState(currentDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
     mergeKdsEnabledSetting(currentDb, preservedKdsEnabled);
     mergeRestoreProtectedSettings(currentDb, preservedProtectedSettings);
+    clearGoogleDriveRestoreBinding(currentDb);
     currentDb.prepare('DELETE FROM kds_pairing_tokens').run();
     mergeRestoreOutboxState(currentDb, preservedOutboxes);
     mergeRevocations(currentDb, preservedRevocations);
@@ -2346,6 +2711,21 @@ function dataOnlyRestore(
     throwIfDatabaseMaintenanceAborted(signal);
     currentDb.exec('COMMIT');
     inTransaction = false;
+    if (!replacementJournal) throw new Error('Restore recovery journal is unavailable');
+    try {
+      commitDatabaseReplacementJournal(replacementJournal);
+    } catch (journalError) {
+      try { recoverDatabaseReplacementJournal(replacementJournal); } catch (recoveryError: any) {
+        replacementRecoveryFailed = true;
+        throw new Error(
+          `Restore journal commit failed: ${journalError instanceof Error ? journalError.message : 'unknown error'}; ` +
+          `database recovery also failed: ${recoveryError?.message || 'unknown error'}`,
+          { cause: recoveryError },
+        );
+      }
+      throw journalError;
+    }
+    replacementCommitted = true;
     try {
       currentDb.exec('DETACH DATABASE _restore_src');
       attached = false;
@@ -2369,6 +2749,8 @@ function dataOnlyRestore(
       backupSchemaVersion: backupVersion,
       currentSchemaVersion: currentVersion,
       tablesRestored,
+      committed: true,
+      cleanupPending: false,
     };
   } catch (error: any) {
     let cleanupFailure: unknown = null;
@@ -2395,6 +2777,22 @@ function dataOnlyRestore(
           `database reopen failed: ${recoveryError?.message || 'unknown error'}`,
         );
       }
+    }
+    const committedJournal = replacementJournal && readReplacementJournal(replacementJournal.journalPath)?.phase === 'committed';
+    if (replacementCommitted || committedJournal) {
+      console.error('[DB] Data-only restore committed; cleanup remains pending:', error);
+      return {
+        success: true,
+        mode: 'data_only',
+        backupSchemaVersion: backupVersion,
+        currentSchemaVersion: currentVersion,
+        tablesRestored,
+        committed: true,
+        cleanupPending: true,
+      };
+    }
+    if (!cleanupFailure && replacementJournal && !replacementRecoveryFailed) {
+      try { abortDatabaseReplacementJournal(replacementJournal); } catch { }
     }
     throwIfDatabaseMaintenanceAborted(signal);
     console.error('[DB] dataOnlyRestore failed:', error);

@@ -8,6 +8,7 @@ import { isMasterPinAvailable, isMasterPinSet, resetMasterPin } from '../service
 import { clearJWTSecretCache } from './auth';
 import { getHttpRequestSignal } from '../shutdown';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { googleDrive } from '../services/google-drive';
 
 const router = Router();
 
@@ -95,14 +96,18 @@ router.post('/initialize', requireRole(...ROLE_ACCESS.owner), requireMasterPin, 
     return res.status(400).json({ error: `Type "${INITIALIZE_CONFIRM_PHRASE}" to confirm` });
   }
   try {
+    await googleDrive.prepareForDatabaseRestore();
     const { backupPath } = await resetDatabaseWithBackup(getHttpRequestSignal(req));
+    const cleanup = googleDrive.completeDatabaseRestore();
     clearUserAuthCache();
     clearInMemoryRevokedTokens();
     clearJWTSecretCache();
-    res.json({ success: true, backupPath });
+    res.json({ success: true, backupPath, cleanupPending: cleanup.cleanupPending });
   } catch (error: any) {
     console.error('[DB Tools] initialize error:', error);
     res.status(500).json({ error: 'Initialize failed' });
+  } finally {
+    googleDrive.releaseDatabaseRestore();
   }
 }));
 

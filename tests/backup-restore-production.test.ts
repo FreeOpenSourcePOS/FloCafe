@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+const nativeFs = require('node:fs') as typeof import('node:fs');
+
 const Module = require('module');
 const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-production-restore-'));
@@ -24,6 +26,8 @@ import Database from 'better-sqlite3';
 import {
   closeDatabase,
   createBackup,
+  beginDatabaseReplacementJournal,
+  abortDatabaseReplacementJournal,
   getCurrentSchemaVersion,
   getDatabase,
   getDbPath,
@@ -359,6 +363,82 @@ async function run() {
     const direct = restoreBackup(sameSchemaBackup, true);
     assert.equal(direct.success, true, 'same-schema direct restore still succeeds');
     assertNoRestoreAttachment();
+
+    const recoveryArtifactsBeforeJournalTest = new Set(fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name)));
+    const mutableFs = nativeFs as unknown as { copyFileSync: typeof fs.copyFileSync; unlinkSync: typeof fs.unlinkSync };
+    const originalCopyFileSync = nativeFs.copyFileSync;
+    mutableFs.copyFileSync = ((source, target, mode) => {
+      originalCopyFileSync(source, target, mode);
+      if (String(source) === sameSchemaBackup) throw new Error('injected recovery copy failure');
+    }) as typeof fs.copyFileSync;
+    assert.throws(
+      () => beginDatabaseReplacementJournal(sameSchemaBackup, 'restore'),
+      /injected recovery copy failure/,
+      'failed recovery journal preparation propagates the copy failure',
+    );
+    mutableFs.copyFileSync = originalCopyFileSync;
+    const orphanedRecoveryArtifacts = fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name) && !recoveryArtifactsBeforeJournalTest.has(name));
+    assert.deepEqual(orphanedRecoveryArtifacts, [], 'failed journal preparation removes partial recovery artifacts');
+
+    const recoveryArtifactsBeforeDirectRestoreTest = new Set(fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name)));
+    mutableFs.copyFileSync = ((source, target, mode) => {
+      originalCopyFileSync(source, target, mode);
+      if (String(source) === getDbPath() && String(target).includes('flo-restore-recovery-')) throw new Error('injected direct recovery copy failure');
+    }) as typeof fs.copyFileSync;
+    assert.throws(
+      () => restoreBackup(sameSchemaBackup, true),
+      /injected direct recovery copy failure/,
+      'same-schema restore propagates a pre-journal recovery copy failure',
+    );
+    mutableFs.copyFileSync = originalCopyFileSync;
+    const orphanedDirectRecoveryArtifacts = fs.readdirSync(path.join(testDir, 'backups')).filter((name) => /recovery-/.test(name) && !recoveryArtifactsBeforeDirectRestoreTest.has(name));
+    assert.deepEqual(orphanedDirectRecoveryArtifacts, [], 'same-schema restore removes a partial pre-journal recovery copy');
+
+    const abortHandle = beginDatabaseReplacementJournal(sameSchemaBackup, 'restore');
+    const originalUnlinkSync = nativeFs.unlinkSync;
+    mutableFs.unlinkSync = ((target) => {
+      if (String(target) === abortHandle.recoveryPath) throw new Error('injected recovery cleanup failure');
+      return originalUnlinkSync(target);
+    }) as typeof fs.unlinkSync;
+    assert.throws(
+      () => abortDatabaseReplacementJournal(abortHandle),
+      /injected recovery cleanup failure/,
+      'prepared journal cleanup propagates artifact deletion failure',
+    );
+    mutableFs.unlinkSync = originalUnlinkSync;
+    assert.equal(fs.existsSync(abortHandle.journalPath), true, 'failed cleanup preserves the prepared journal');
+    assert.equal(fs.existsSync(abortHandle.recoveryPath), true, 'failed cleanup preserves the recovery database');
+    abortDatabaseReplacementJournal(abortHandle);
+
+    const cleanupCopyHandle = beginDatabaseReplacementJournal(sameSchemaBackup, 'restore');
+    const cleanupUnlinkSync = nativeFs.unlinkSync;
+    mutableFs.unlinkSync = ((target) => {
+      if (String(target).includes('.cleanup-')) throw new Error('injected cleanup-copy deletion failure');
+      return cleanupUnlinkSync(target);
+    }) as typeof fs.unlinkSync;
+    assert.throws(
+      () => abortDatabaseReplacementJournal(cleanupCopyHandle),
+      /injected cleanup-copy deletion failure/,
+      'cleanup-copy deletion failures remain visible to the replacement boundary',
+    );
+    mutableFs.unlinkSync = cleanupUnlinkSync;
+    assert.equal(fs.existsSync(cleanupCopyHandle.journalPath), true, 'cleanup-copy failure preserves the journal');
+    assert.equal(fs.existsSync(cleanupCopyHandle.recoveryPath), true, 'cleanup-copy failure preserves the recovery database');
+    assert.ok(
+      fs.readdirSync(path.dirname(cleanupCopyHandle.journalPath)).some((name) => name.startsWith(`${path.basename(cleanupCopyHandle.recoveryPath)}.cleanup-`)),
+      'cleanup-copy failure retains durable recovery evidence',
+    );
+    fs.unlinkSync(cleanupCopyHandle.journalPath);
+    fs.unlinkSync(cleanupCopyHandle.recoveryPath);
+    closeDatabase();
+    initDatabase();
+    assert.equal(fs.existsSync(cleanupCopyHandle.journalPath), false, 'startup consumes restored cleanup journal evidence');
+    assert.equal(fs.existsSync(cleanupCopyHandle.recoveryPath), false, 'startup consumes restored cleanup database evidence');
+    assert.equal(
+      fs.readdirSync(path.dirname(cleanupCopyHandle.journalPath)).some((name) => name.includes('.cleanup-')),
+      false,
+      'startup removes consumed cleanup evidence copies',
+    );
 
     const interruptedRecoverySource = (await createBackup()).path;
     const recoveryMarker = path.join(testDir, 'backups', 'flo-restore-recovery-test.db');

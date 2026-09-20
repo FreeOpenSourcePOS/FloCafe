@@ -41,15 +41,44 @@ export type BackupInfo = {
 
 export type GoogleDriveStatus = {
   configured: boolean;
+  auth_state: 'configuration_unavailable' | 'storage_unavailable' | 'disconnected' | 'connected' | 'reauth_required';
   connected: boolean;
   account_email: string | null;
   frequency: 'daily' | 'weekly';
   retention_count: number;
+  destination_folder_id: string | null;
+  destination_folder_name: string | null;
   last_backup_at: string | null;
-  last_backup_filename: string | null;
   last_backup_status: 'success' | 'error' | null;
   last_error: string | null;
+  last_attempt_at: string | null;
+  last_success_at: string | null;
+  last_success_kind: 'automatic' | 'manual' | null;
+  next_retry_at: string | null;
+  retention_status: 'ok' | 'pending' | 'error' | null;
+  revoke_status: 'confirmed' | 'unconfirmed' | null;
+  warning_acknowledged: boolean;
+  warning_required: boolean;
+  job: { id: string; operation: 'backup' | 'restore'; state: string; error_code?: string; bytes_sent?: number; total_bytes?: number } | null;
   secure_storage_available: boolean;
+};
+
+export type GoogleDriveRemoteBackup = {
+  id: string;
+  name: string;
+  kind: 'automatic' | 'manual';
+  created_at: string;
+  bytes: number;
+  sha256: string;
+  schema_version: number;
+  app_version: string;
+  compatible: boolean;
+};
+
+export type GoogleDriveDestination = {
+  id: string;
+  name: string;
+  current: boolean;
 };
 
 export type MasterPinStatus = {
@@ -66,6 +95,7 @@ export type PinGate =
   | { mode: 'backup-custom' }
   | { mode: 'import'; payload: { data: ImportPayload; overwrite: boolean } }
   | { mode: 'restore'; payload: { backupPath: string } }
+  | { mode: 'restore-google-drive'; payload: { fileId: string; sha256: string } }
   | { mode: 'delete-backup'; payload: { fileName: string } }
   | { mode: 'delete-cloud' }
   | { mode: 'cancel-cloud-deletion' }
@@ -77,10 +107,15 @@ export interface DatabaseSettingsTabProps {
   backups: BackupInfo[];
   backupsLoading: boolean;
   googleDriveStatus: GoogleDriveStatus;
+  googleDriveDestinations: GoogleDriveDestination[];
+  googleDriveDestinationsLoading: boolean;
+  remoteBackups: GoogleDriveRemoteBackup[];
+  remoteBackupsLoading: boolean;
   setGoogleDriveStatus: React.Dispatch<React.SetStateAction<GoogleDriveStatus>>;
   connectingGoogleDrive: boolean;
   disconnectingGoogleDrive: boolean;
   savingGoogleDrivePrefs: boolean;
+  managingGoogleDriveDestination: boolean;
   backingUpGoogleDrive: boolean;
   onFetchBackups: () => void;
   onCreateBackup: () => void;
@@ -89,8 +124,12 @@ export interface DatabaseSettingsTabProps {
   onDeleteBackup: (backup: BackupInfo) => void;
   onConnectGoogleDrive: () => void;
   onDisconnectGoogleDrive: () => void;
+  onCreateGoogleDriveDestination: () => void;
+  onSelectGoogleDriveDestination: (folderId: string) => void;
   onUpdateGoogleDrivePrefs: (prefs: { frequency?: 'daily' | 'weekly'; retention_count?: number }) => void;
   onBackupToGoogleDriveNow: () => void;
+  onFetchRemoteBackups: () => void;
+  onRestoreRemoteBackup: (backup: GoogleDriveRemoteBackup) => void;
   onRunImport: (data: ImportPayload, overwrite: boolean) => Promise<{ success: boolean; error?: string }>;
   onRequestPinGate: (gate: PinGate) => void;
   onRunHealthCheck: () => void;
@@ -111,10 +150,15 @@ export function DatabaseSettingsTab({
   backups,
   backupsLoading,
   googleDriveStatus,
+  googleDriveDestinations,
+  googleDriveDestinationsLoading,
+  remoteBackups,
+  remoteBackupsLoading,
   setGoogleDriveStatus,
   connectingGoogleDrive,
   disconnectingGoogleDrive,
   savingGoogleDrivePrefs,
+  managingGoogleDriveDestination,
   backingUpGoogleDrive,
   onFetchBackups,
   onCreateBackup,
@@ -123,8 +167,12 @@ export function DatabaseSettingsTab({
   onDeleteBackup,
   onConnectGoogleDrive,
   onDisconnectGoogleDrive,
+  onCreateGoogleDriveDestination,
+  onSelectGoogleDriveDestination,
   onUpdateGoogleDrivePrefs,
   onBackupToGoogleDriveNow,
+  onFetchRemoteBackups,
+  onRestoreRemoteBackup,
   onRunImport,
   onRequestPinGate,
   onRunHealthCheck,
@@ -134,6 +182,8 @@ export function DatabaseSettingsTab({
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
   const { formatDateTime } = useFormatDate();
+  const googleDriveJobActive = ['queued', 'snapshot_created', 'uploading', 'restoring'].includes(googleDriveStatus.job?.state || '');
+  const googleDriveRevokePending = googleDriveStatus.revoke_status === 'unconfirmed';
 
   const [tableInfoOpen, setTableInfoOpen] = useState(false);
   const [tableInfo, setTableInfo] = useState<Array<{ name: string; rows: number }>>([]);
@@ -233,12 +283,6 @@ export function DatabaseSettingsTab({
                           {t('backupKindAuto')}
                         </span>
                       )}
-                      {googleDriveStatus.last_backup_filename === backup.fileName && (
-                        <span className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
-                          <HardDrive size={11} />
-                          {t('googleDriveUploadedBadge')}
-                        </span>
-                      )}
                     </div>
                     <p className="text-xs text-muted-foreground truncate">
                       {formatBackupSize(backup.sizeBytes)}
@@ -267,7 +311,7 @@ export function DatabaseSettingsTab({
         </div>
 
         {/* Google Drive - automated off-device backups */}
-        <div className="bg-card rounded-xl border border-border p-6 space-y-4">
+        {isOwner && <div className="bg-card rounded-xl border border-border p-6 space-y-4">
           <div className="flex items-center gap-2">
             <HardDrive size={20} className="text-muted-foreground" />
             <div>
@@ -291,6 +335,10 @@ export function DatabaseSettingsTab({
             </div>
           ) : (
             <>
+              <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 rounded-lg px-4 py-3">
+                <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-amber-900 dark:text-amber-200">{t('googleDriveUnencryptedWarning')}</p>
+              </div>
               <div className="rounded-lg border border-border px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   {googleDriveStatus.connected ? (
@@ -308,13 +356,13 @@ export function DatabaseSettingsTab({
                   </div>
                 </div>
                 {isOwner && (
-                  googleDriveStatus.connected ? (
+                  googleDriveStatus.connected || googleDriveRevokePending ? (
                     <button
                       onClick={onDisconnectGoogleDrive}
                       disabled={disconnectingGoogleDrive}
                       className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 font-medium shrink-0"
                     >
-                      {disconnectingGoogleDrive ? t('googleDriveDisconnecting') : t('googleDriveDisconnect')}
+                      {disconnectingGoogleDrive ? t('googleDriveDisconnecting') : googleDriveRevokePending ? t('googleDriveRetryDisconnect') : t('googleDriveDisconnect')}
                     </button>
                   ) : (
                     <button
@@ -322,11 +370,15 @@ export function DatabaseSettingsTab({
                       disabled={connectingGoogleDrive}
                       className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
                     >
-                      {connectingGoogleDrive ? t('googleDriveConnecting') : t('googleDriveConnect')}
+                      {connectingGoogleDrive ? t('googleDriveConnecting') : googleDriveStatus.auth_state === 'reauth_required' ? t('googleDriveReauthenticate') : t('googleDriveConnect')}
                     </button>
                   )
                 )}
               </div>
+
+              {googleDriveRevokePending && (
+                <p className="text-xs text-red-600">{t('googleDriveRevokePending')}</p>
+              )}
 
               {googleDriveStatus.connected && (
                 <>
@@ -361,6 +413,42 @@ export function DatabaseSettingsTab({
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">{t('googleDriveRetentionHint')}</p>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('googleDriveDestination')}</label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={googleDriveStatus.destination_folder_id || ''}
+                        disabled={googleDriveDestinationsLoading || managingGoogleDriveDestination || googleDriveDestinations.length === 0}
+                        onChange={(e) => onSelectGoogleDriveDestination(e.target.value)}
+                        className="min-w-0 flex-1 px-3 py-2 border border-gray-300 dark:border-border rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
+                      >
+                        {!googleDriveStatus.destination_folder_id && <option value="" disabled>{t('googleDriveDestination')}</option>}
+                        {googleDriveStatus.destination_folder_id && !googleDriveDestinations.some((destination) => destination.id === googleDriveStatus.destination_folder_id) && (
+                          <option value={googleDriveStatus.destination_folder_id}>{googleDriveStatus.destination_folder_name || googleDriveStatus.destination_folder_id}</option>
+                        )}
+                        {googleDriveDestinations.map((destination) => <option key={destination.id} value={destination.id}>{destination.name}</option>)}
+                      </select>
+                      <button
+                        onClick={onCreateGoogleDriveDestination}
+                        disabled={googleDriveDestinationsLoading || managingGoogleDriveDestination}
+                        className="px-3 py-2 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {t('googleDriveCreateDestination')}
+                      </button>
+                    </div>
+                  </div>
+                  {googleDriveStatus.last_error && (
+                    <p className="text-xs text-red-600">{t('googleDriveLastError', { code: googleDriveStatus.last_error })}</p>
+                  )}
+                  {googleDriveStatus.job && (
+                    <p className="text-xs text-muted-foreground">
+                      {googleDriveStatus.job.state === 'offline_pending'
+                        ? t('googleDriveBackupRetryPending')
+                        : googleDriveStatus.job.state === 'retention_pending'
+                          ? t('googleDriveRetentionPending')
+                          : t('googleDriveJobStatus', { state: googleDriveStatus.job.state })}
+                    </p>
+                  )}
 
                   <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
                     <div className="text-xs text-muted-foreground">
@@ -391,11 +479,32 @@ export function DatabaseSettingsTab({
                       </button>
                     )}
                   </div>
+                  <div className="border-t border-border pt-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-foreground">{t('googleDriveRemoteHistory')}</p>
+                      <button onClick={onFetchRemoteBackups} disabled={remoteBackupsLoading} className="text-xs px-3 py-1.5 border border-border rounded-lg hover:bg-muted disabled:opacity-50">
+                        {remoteBackupsLoading ? t('googleDriveLoadingRemoteHistory') : t('googleDriveRefreshRemoteHistory')}
+                      </button>
+                    </div>
+                    {remoteBackups.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">{t('googleDriveNoRemoteBackups')}</p>
+                    ) : remoteBackups.map((backup) => (
+                      <div key={backup.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium truncate">{backup.name}</p>
+                          <p className="text-xs text-muted-foreground">{backup.kind === 'automatic' ? t('googleDriveAutomaticBadge') : t('googleDriveManualBadge')} · {backup.app_version} · {formatBackupSize(backup.bytes)}</p>
+                        </div>
+                        <button onClick={() => onRestoreRemoteBackup(backup)} disabled={!backup.compatible || googleDriveJobActive} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-muted disabled:opacity-50 shrink-0">
+                          {t('googleDriveRestore')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </>
               )}
             </>
           )}
-        </div>
+        </div>}
 
         {/* Database Import */}
         <div className="bg-card rounded-xl border border-border p-6">

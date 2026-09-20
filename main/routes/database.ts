@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, getInventoryMovementRows, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, now, throwIfDatabaseMaintenanceAborted, validateInventoryLedgerDatabase, validateInventoryLedgerReplacement, validateInventoryLedgerRows, withTxn, withDatabaseMaintenanceLock } from '../db';
+import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, clearGoogleDriveRestoreBinding, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, getInventoryMovementRows, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, now, throwIfDatabaseMaintenanceAborted, validateInventoryLedgerDatabase, validateInventoryLedgerReplacement, validateInventoryLedgerRows, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { clearJWTSecretCache } from './auth';
@@ -11,6 +11,7 @@ import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { parsePhoneE164 } from '../lib/phone';
 import { ROLE_ACCESS, isRole } from '../../shared/role-permissions';
 import { randomUUID } from 'node:crypto';
+import { googleDrive } from '../services/google-drive';
 
 const router = Router();
 
@@ -123,14 +124,16 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
     return (overwrite || schemaVersionMismatch) ? requireMasterPin(req, res, next) : next();
   },
   asyncHandler(async (req: Request, res: Response) => {
-  return withDatabaseMaintenanceLock(async (signal) => {
+  const { data } = req.body;
+  if (!data || !data.data || typeof data.data !== 'object') {
+    return res.status(400).json({ error: 'Invalid import file format' });
+  }
+  await googleDrive.prepareForDatabaseRestore();
+  try {
+  return await withDatabaseMaintenanceLock(async (signal) => {
     try {
     throwIfDatabaseMaintenanceAborted(signal);
     const { data, overwrite } = req.body;
-
-    if (!data || !data.data || typeof data.data !== 'object') {
-      return res.status(400).json({ error: 'Invalid import file format' });
-    }
 
     const db = getDatabase();
     const preservedRevocations = db.prepare('SELECT token_hash, expires_at, revoked_at FROM revoked_tokens').all() as { token_hash: string; expires_at: number; revoked_at: string }[];
@@ -419,7 +422,9 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
         throw new Error(`Import would introduce ${newForeignKeyViolations.length} new foreign-key violation(s)`);
       }
       throwIfDatabaseMaintenanceAborted(signal);
+      clearGoogleDriveRestoreBinding(db);
       db.exec('COMMIT');
+      const cleanup = googleDrive.completeDatabaseRestore();
       try {
         clearUserAuthCache();
         clearInMemoryRevokedTokens();
@@ -438,6 +443,7 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
         importedSchemaVersion: importSchemaVersion,
         currentSchemaVersion: getCurrentSchemaVersion(),
         placeholderUsersCreated,
+        cleanupPending: cleanup.cleanupPending,
       });
       } catch (err: any) {
         try { db.exec('ROLLBACK'); } catch { }
@@ -451,6 +457,9 @@ router.post('/import', requireRole(...ROLE_ACCESS.owner),
       res.status(500).json({ error: 'Import failed' });
     }
   }, getHttpRequestSignal(req));
+  } finally {
+    googleDrive.releaseDatabaseRestore();
+  }
 }));
 
 function restoreRedactedUserPlaceholders(

@@ -5,12 +5,22 @@ Drive on a schedule (see #129). This is **off by default** and requires two
 things before it works in a given build:
 
 1. A Google Cloud OAuth client (this doc — one-time, done by a maintainer).
-2. The store owner explicitly clicking **Connect** in
-   `Settings > Integrations > Google Drive` (per-install, done by the owner).
+2. The store owner explicitly acknowledging the warning and clicking
+   **Connect** in `Settings > Backup & Data > Google Drive` (per-install, done
+   by the owner).
 
-If the OAuth client isn't configured, the Settings UI shows *"Google Drive
+If the OAuth client isn't configured, the Backup & Data UI shows *"Google Drive
 integration is not configured for this build"* and the Connect button is
-disabled — the app never attempts to reach Google's APIs.
+disabled - the app never attempts to reach Google's APIs.
+
+Drive backups are full SQLite database copies and are not encrypted by FloCafe
+yet. They can contain customer, staff-authentication, and store-settings data.
+Anyone with access to the selected Google Drive account or folder may access the
+copy; the FloCafe Master PIN is not a portable encryption key. Automatic
+backups run only while the Electron app is running, with one startup catch-up
+attempt when due. Drive retention moves only FloCafe-owned automatic files to
+Trash; manual files are kept indefinitely, and Drive retention never deletes
+local backup history.
 
 This doc covers step 1: creating the OAuth client credentials in Google
 Cloud Console and wiring them into a FloCafe build.
@@ -21,8 +31,10 @@ Google OAuth clients are tied to a Google Cloud project owned by a human
 Google account, and creating one requires clicking through the Cloud
 Console UI (and, for a public app, an OAuth consent screen review) — there's
 no way to script this or ship a working client ID/secret in the open-source
-repo itself. Each organization distributing a FloCafe build needs to create
-its own client and supply it via environment variables at build/run time.
+repo itself. Supported packaged releases must ship a public Desktop client
+configuration for their distribution channel; self-hosted builds may supply
+their own client through environment variables. An installed-app client secret
+is not confidential and is never stored in SQLite.
 
 ## 1. Create (or select) a Google Cloud project
 
@@ -85,17 +97,19 @@ build runs in (CI secrets, `.env` picked up by your build pipeline, etc.) —
 FloCafe reads them from `process.env` at runtime, the same pattern already
 used for `JWT_SECRET`.
 
-Once both variables are set and the app is restarted, `Settings >
-Integrations > Google Drive` shows a **Connect** button instead of the
-"not configured" message. Clicking it is the *only* thing that starts any
-network activity with Google — see the main README/issue #129 for the
-opt-in and security details (scope, token storage, revoke-on-disconnect,
-retention).
+Once both variables are set and the app is restarted, `Settings > Backup &
+Data > Google Drive` shows a **Connect** button instead of the
+"not configured" message. Clicking it starts the OAuth flow and initial
+setup. After connection, FloCafe may contact Google for startup or scheduled
+backups and for owner-requested remote history or restore operations - see the
+main README/issue #129 for the opt-in and security details (scope, token
+storage, revoke-on-disconnect, retention).
 
 ## Notes for reviewers / auditors
 
-- Scope is `drive.file` only — FloCafe can only see/manage files it created
-  through the API, not the user's whole Drive.
+- Scope is `drive.file` plus the OpenID identity scopes needed to bind one
+  stable Google account subject per installation. FloCafe can only see/manage
+  files it created through the API, not the user's whole Drive.
 - OAuth tokens are encrypted at rest via Electron's `safeStorage`
   (`main/services/google-drive.ts`), the same mechanism used for the Master
   PIN, and are stored in their own file — never in the SQLite database.
@@ -104,3 +118,6 @@ retention).
 - Uploaded backups are the exact same artifact `createBackup()` already
   produces for local backups and the Backup History list (#120) — there is
   no separate export path for Drive uploads.
+- Pre-existing Drive files without FloCafe app properties are preserved. They
+  are excluded from automatic retention and in-app restore, and FloCafe does
+  not infer whether an unmarked file was automatic or manual.

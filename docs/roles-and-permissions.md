@@ -51,7 +51,8 @@ A check means the role is allowed to use the capability. A dash means it is not 
 | Settings | Manage printers | ✓ | ✓ | — | — | — |
 | Integrations | Use WhatsApp messaging | ✓ | ✓ | ✓ | — | — |
 | Integrations | Configure WhatsApp | ✓ | ✓ | — | — | — |
-| Integrations | Manage cloud and Google Drive settings | ✓ | ✓ | — | — | — |
+| Integrations | Manage cloud settings | ✓ | ✓ | — | — | — |
+| Integrations | Manage Google Drive backups | ✓ | — | — | — | — |
 | Integrations | Manage cloud account and data controls | ✓ | — | — | — | — |
 | System | Use database tools and backups | ✓ | — | — | — | — |
 | Orders | Use the standalone Server App | ✓ | ✓ | — | ✓ | — |

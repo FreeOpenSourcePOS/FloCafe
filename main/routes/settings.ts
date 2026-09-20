@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now } from '../db';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
-import { googleDrive } from '../services/google-drive';
+import { DRIVE_RESTORE_CONFIRMATION, getGoogleDriveErrorCode, googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { requireMasterPin } from '../middleware/master-pin';
@@ -78,6 +78,10 @@ const SENSITIVE_SETTING_KEYS = new Set([
   'cloud_last_error',
 ]);
 
+function isGoogleDriveSettingKey(key: string): boolean {
+  return key.startsWith('google_drive_');
+}
+
 const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   bill_template: 'classic',
   bill_footer_message: '',
@@ -104,6 +108,7 @@ function maskSetting(key: string, value: string): string {
 function publicSettingsShape(settings: Record<string, string>): Record<string, string> {
   const publicSettings: Record<string, string> = {};
   for (const [key, value] of Object.entries(settings)) {
+    if (isGoogleDriveSettingKey(key)) continue;
     publicSettings[key] = maskSetting(key, value);
   }
   return publicSettings;
@@ -766,64 +771,87 @@ router.post('/cloud/delete-data/cancel', requireRole(...ROLE_ACCESS.owner), requ
   }
 }));
 
-// Google Drive backups — owner only, off by default.
-router.get('/google-drive', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
-  try {
-    res.json(googleDrive.getStatus());
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
+// Google Drive backups - every Drive route is owner-only and returns only the
+// service's redacted status or an allowlisted error code.
+function googleDriveErrorResponse(res: Response, error: unknown): Response {
+  const code = getGoogleDriveErrorCode(error);
+  const status = code === 'permission_denied' ? 403
+    : code === 'conflict' ? 409
+      : ['warning_acknowledgement_required', 'restore_validation_failed', 'preferences_invalid'].includes(code) ? 400
+        : ['offline', 'rate_limited'].includes(code) ? 503
+          : ['configuration_unavailable', 'secure_storage_unavailable', 'not_connected', 'reauth_required', 'destination_required', 'destination_invalid'].includes(code) ? 409
+            : 502;
+  return res.status(status).json({ error: code });
+}
+
+router.get('/google-drive', requireRole(...ROLE_ACCESS.owner), (_req: Request, res: Response) => {
+  try { return res.json(googleDrive.getStatus()); } catch (error) { return googleDriveErrorResponse(res, error); }
 });
 
-router.put('/google-drive', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.put('/google-drive', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { frequency, retention_count } = req.body;
-    res.json(googleDrive.updatePreferences({ frequency, retention_count }));
-  } catch (error: any) {
-    console.error('[API] Google Drive preferences update failed:', error);
-    res.status(400).json({ error: 'Invalid Google Drive preferences' });
-  }
-});
+    const { frequency, retention_count, destination_folder_id, warning_acknowledged } = req.body || {};
+    if (warning_acknowledged === true) googleDrive.acknowledgeWarning();
+    let status = googleDrive.updatePreferences({ frequency, retention_count });
+    if (destination_folder_id !== undefined) status = await googleDrive.setDestination(destination_folder_id);
+    return res.json(status);
+  } catch (error) { return googleDriveErrorResponse(res, error); }
+}));
+
+router.get('/google-drive/destinations', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (_req: Request, res: Response) => {
+  try { return res.json({ destinations: await googleDrive.listDestinations() }); } catch (error) { return googleDriveErrorResponse(res, error); }
+}));
+
+router.post('/google-drive/destinations', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (_req: Request, res: Response) => {
+  try { return res.json(await googleDrive.createDestination()); } catch (error) { return googleDriveErrorResponse(res, error); }
+}));
 
 router.post('/google-drive/connect', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const status = await trackHttpRequestWork(req, googleDrive.connect(getHttpRequestSignal(req)));
-    res.json(status);
-  } catch (error: any) {
-    console.error('[API] Google Drive connection failed:', error);
+    const body = req.body || {};
+    const status = await trackHttpRequestWork(req, googleDrive.connect(getHttpRequestSignal(req), body.allow_switch === true, body.warning_acknowledged === true));
+    return res.json(status);
+  } catch (error) {
     if (getHttpRequestSignal(req)?.aborted) {
       if (!res.headersSent) res.status(503).end();
       else if (!res.writableEnded) res.destroy();
-      return;
+      return res;
     }
-    res.status(502).json({ error: 'Google Drive connection failed' });
+    return googleDriveErrorResponse(res, error);
   }
 }));
 
 router.post('/google-drive/disconnect', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (_req: Request, res: Response) => {
-  try {
-    const status = await googleDrive.disconnect();
-    res.json(status);
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  try { return res.json(await googleDrive.disconnect()); } catch (error) { return googleDriveErrorResponse(res, error); }
 }));
 
 router.post('/google-drive/backup-now', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const status = await trackHttpRequestWork(req, googleDrive.backupNow(getHttpRequestSignal(req)));
-    res.json(status);
-  } catch (error: any) {
-    console.error('[API] Google Drive backup failed:', error);
-    if (getHttpRequestSignal(req)?.aborted) {
-      if (!res.headersSent) res.status(503).end();
-      else if (!res.writableEnded) res.destroy();
-      return;
-    }
-    res.status(502).json({ error: 'Google Drive backup failed' });
-  }
+    if (req.body?.warning_acknowledged === true) googleDrive.acknowledgeWarning();
+    return res.status(202).json(googleDrive.startBackupJob('manual', req.body?.warning_acknowledged === true));
+  } catch (error) { return googleDriveErrorResponse(res, error); }
+}));
+
+router.get('/google-drive/jobs/:jobId', requireRole(...ROLE_ACCESS.owner), (_req: Request, res: Response) => {
+  const job = googleDrive.getJob(_req.params.jobId as string);
+  if (!job) return res.status(404).json({ error: 'not_found' });
+  return res.json({ job });
+});
+
+router.post('/google-drive/jobs/:jobId/cancel', requireRole(...ROLE_ACCESS.owner), (_req: Request, res: Response) => {
+  try { return res.json(googleDrive.cancelJob(_req.params.jobId as string)); } catch (error) { return googleDriveErrorResponse(res, error); }
+});
+
+router.get('/google-drive/backups', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (_req: Request, res: Response) => {
+  try { return res.json({ backups: await googleDrive.listRemoteBackups() }); } catch (error) { return googleDriveErrorResponse(res, error); }
+}));
+
+router.post('/google-drive/restore', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    if (body.confirmation !== DRIVE_RESTORE_CONFIRMATION) return res.status(400).json({ error: 'confirmation_required' });
+    return res.status(202).json(googleDrive.startRestoreJob({ fileId: body.file_id, expectedSha256: body.expected_sha256, confirmation: body.confirmation }));
+  } catch (error) { return googleDriveErrorResponse(res, error); }
 }));
 
 // ── Generic key-value routes (wildcard — must be last) ─────────────────────
@@ -1005,7 +1033,7 @@ router.put('/printing', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.owner
 
 router.get('/:key', settingsReadRateLimit, requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
-    if (SENSITIVE_SETTING_KEYS.has(req.params.key as string)) {
+    if (SENSITIVE_SETTING_KEYS.has(req.params.key as string) || isGoogleDriveSettingKey(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting is sensitive and cannot be read directly' });
     }
     const key = String(req.params.key);

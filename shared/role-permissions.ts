@@ -114,6 +114,7 @@ export const PERMISSION_CAPABILITIES = [
   { id: 'whatsappUse', area: 'integrations', labelKey: 'whatsappUse', allowedRoles: ROLE_ACCESS.ownerManagerCashier },
   { id: 'whatsappManage', area: 'integrations', labelKey: 'whatsappManage', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'cloudDrive', area: 'integrations', labelKey: 'cloudDrive', allowedRoles: ROLE_ACCESS.ownerManager },
+  { id: 'googleDrive', area: 'integrations', labelKey: 'googleDrive', allowedRoles: ROLE_ACCESS.owner },
   { id: 'cloudAccountData', area: 'integrations', labelKey: 'cloudAccountData', allowedRoles: ROLE_ACCESS.owner },
   { id: 'databaseTools', area: 'system', labelKey: 'databaseTools', allowedRoles: ROLE_ACCESS.owner },
   { id: 'serverApp', area: 'orders', labelKey: 'serverApp', allowedRoles: ROLE_ACCESS.serverApp },

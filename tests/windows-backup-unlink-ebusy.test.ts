@@ -96,7 +96,7 @@ async function runTests() {
 
       fs.unlinkSync = function (targetFile: fs.PathLike) {
         const filePath = String(targetFile);
-        if (filePath.includes('flo-backup-') && !filePath.includes('custom-backup-ebusy.db') && !filePath.endsWith('.tmp')) {
+        if (filePath.includes('flo-backup-')) {
           unlinkAttempted = true;
           const err: any = new Error('resource busy or locked');
           err.code = 'EBUSY';
@@ -136,7 +136,7 @@ async function runTests() {
 
       fs.unlinkSync = function (targetFile: fs.PathLike) {
         const filePath = String(targetFile);
-        if (filePath.includes('flo-backup-') && !filePath.includes('custom-backup-eperm.db') && !filePath.endsWith('.tmp')) {
+        if (filePath.includes('flo-backup-')) {
           unlinkAttempted = true;
           const err: any = new Error('operation not permitted');
           err.code = 'EPERM';
@@ -165,7 +165,7 @@ async function runTests() {
 
       fs.unlinkSync = function (targetFile: fs.PathLike) {
         const filePath = String(targetFile);
-        if (filePath.includes('flo-backup-') && !filePath.includes('custom-backup-darwin-ebusy.db') && !filePath.endsWith('.tmp')) {
+        if (filePath.includes('flo-backup-')) {
           const err: any = new Error('resource busy or locked');
           err.code = 'EBUSY';
           throw err;
@@ -191,7 +191,7 @@ async function runTests() {
 
       fs.unlinkSync = function (targetFile: fs.PathLike) {
         const filePath = String(targetFile);
-        if (filePath.includes('flo-backup-') && !filePath.includes('custom-backup-win-eio.db') && !filePath.endsWith('.tmp')) {
+        if (filePath.includes('flo-backup-')) {
           const err: any = new Error('I/O error');
           err.code = 'EIO';
           throw err;

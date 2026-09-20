@@ -2262,6 +2262,7 @@ export default function SettingsPage() {
       confirmLabel: t('googleDriveAcknowledge'),
     });
     if (!acknowledged) return;
+    toast(t('googleDrivePermissionNotice'), { icon: 'ℹ️', duration: 8000 });
     setRemoteBackups([]);
     setGoogleDriveDestinations([]);
     setConnectingGoogleDrive(true);
@@ -2271,8 +2272,13 @@ export default function SettingsPage() {
       await Promise.all([fetchGoogleDriveDestinations(), fetchRemoteGoogleDriveBackups()]);
       toast.success(t('googleDriveConnectedSuccess'));
       fetchBackups();
-    } catch {
-      toast.error(t('googleDriveConnectFailed'));
+    } catch (err: unknown) {
+      const errorCode = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (errorCode === 'permission_denied') {
+        toast.error(t('googleDrivePermissionDenied'), { duration: 6000 });
+      } else {
+        toast.error(t('googleDriveConnectFailed'));
+      }
     } finally {
       setConnectingGoogleDrive(false);
     }
@@ -2348,7 +2354,8 @@ export default function SettingsPage() {
       toast.error(tCommon('notAvailable'));
       return;
     }
-    const ok = await confirm(t('restoreConfirm', { fileName: backup.name }), {
+    const message = `${t('restoreConfirm', { fileName: backup.name })}\n\n${t('googleDriveRestoreNotice')}`;
+    const ok = await confirm(message, {
       title: t('googleDriveRestoreTitle'),
       confirmLabel: t('googleDriveRestore'),
       destructive: true,

@@ -491,8 +491,17 @@ export function DatabaseSettingsTab({
                     ) : remoteBackups.map((backup) => (
                       <div key={backup.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
                         <div className="min-w-0">
-                          <p className="text-xs font-medium truncate">{backup.name}</p>
-                          <p className="text-xs text-muted-foreground">{backup.kind === 'automatic' ? t('googleDriveAutomaticBadge') : t('googleDriveManualBadge')} · {backup.app_version} · {formatBackupSize(backup.bytes)}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-foreground">
+                              {backup.created_at ? formatDateTime(backup.created_at) : backup.name}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                              {backup.kind === 'automatic' ? t('googleDriveAutomaticBadge') : t('googleDriveManualBadge')}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">
+                            <span className="font-mono text-[11px]">{backup.name}</span> · {backup.app_version} · {formatBackupSize(backup.bytes)}
+                          </p>
                         </div>
                         <button onClick={() => onRestoreRemoteBackup(backup)} disabled={!backup.compatible || googleDriveJobActive} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-muted disabled:opacity-50 shrink-0">
                           {t('googleDriveRestore')}

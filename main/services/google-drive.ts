@@ -1064,6 +1064,9 @@ class GoogleDriveService {
       }
     }
     if (!destination) {
+      destination = await this.findExistingAppFolder(candidateDrive, marker, signal);
+    }
+    if (!destination) {
       destination = await this.createAppFolder(candidateDrive, marker, signal);
     }
     if (allowRestoreRecovery) {
@@ -1536,7 +1539,8 @@ class GoogleDriveService {
       this.throwIfStopping(signal);
       try {
         const stream = fs.createReadStream(snapshot.path, { flags: 'r' });
-        const response = await driveClient.files.create({ requestBody: { name: snapshot.fileName, parents: [pending.destination_folder_id], appProperties, mimeType: 'application/x-sqlite3' }, media: { mimeType: 'application/x-sqlite3', body: stream }, fields: 'id,appProperties,size,createdTime,name,parents,trashed,mimeType' }, { resumable: true, signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS, onUploadProgress: (event: { bytesRead?: number }) => { if (jobId) { const job = parseJob(this.readSettings().google_drive_job); if (job?.id === jobId) this.writeJob({ ...job, state: 'uploading', bytes_sent: Math.min(snapshot.byteCount, event.bytesRead || 0), total_bytes: snapshot.byteCount, updated_at: now() }); } } } as never);
+        const remoteFileName = this.resolveRemoteFileName(snapshot, pending.kind);
+        const response = await driveClient.files.create({ requestBody: { name: remoteFileName, parents: [pending.destination_folder_id], appProperties, mimeType: 'application/x-sqlite3' }, media: { mimeType: 'application/x-sqlite3', body: stream }, fields: 'id,appProperties,size,createdTime,name,parents,trashed,mimeType' }, { resumable: true, signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS, onUploadProgress: (event: { bytesRead?: number }) => { if (jobId) { const job = parseJob(this.readSettings().google_drive_job); if (job?.id === jobId) this.writeJob({ ...job, state: 'uploading', bytes_sent: Math.min(snapshot.byteCount, event.bytesRead || 0), total_bytes: snapshot.byteCount, updated_at: now() }); } } } as never);
         const id = String((response.data as { id?: string }).id || '');
         if (safeId(id)) return { id };
         const reconciled = await this.findMatchingUploads(driveClient, pending.destination_folder_id, pending.run_id, marker, signal);
@@ -1763,12 +1767,57 @@ class GoogleDriveService {
     }
   }
 
+  private async findExistingAppFolder(driveClient: DriveClient, marker: string, signal?: AbortSignal): Promise<{ id: string; name: string; owned: boolean } | null> {
+    try {
+      const escapedMarker = marker.replace(/'/g, "\\'");
+      const response = await driveClient.files.list({
+        q: `mimeType = 'application/vnd.google-apps.folder' and trashed = false and appProperties has { key='flo_installation_id' and value='${escapedMarker}' }`,
+        fields: 'files(id,name,mimeType,trashed,capabilities,appProperties)',
+        pageSize: 10,
+      }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+      const files = response.data.files || [];
+      for (const file of files) {
+        if (file.id && safeId(file.id) && file.capabilities?.canAddChildren !== false) {
+          return { id: file.id, name: file.name || this.resolveBackupFolderName(), owned: true };
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private resolveBackupFolderName(): string {
+    const businessName = this.readSettings().business_name;
+    const sanitized = (businessName || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return sanitized ? `${sanitized}_flocafe_backups` : 'flocafe_backups';
+  }
+
+  private resolveRemoteFileName(snapshot: SnapshotDescriptor, kind: BackupKind): string {
+    const businessName = this.readSettings().business_name;
+    const sanitized = (businessName || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    const prefix = sanitized ? `${sanitized}_backup` : 'flo_backup';
+    const timestamp = (snapshot.backupCreatedAt || new Date().toISOString())
+      .replace(/[:.]/g, '-')
+      .replace(/Z$/, '');
+    return `${prefix}_${timestamp}_${kind}.db`;
+  }
+
   private async createAppFolder(driveClient: DriveClient, marker: string, signal?: AbortSignal): Promise<{ id: string; name: string; owned: boolean }> {
     try {
-      const response = await driveClient.files.create({ requestBody: { name: DRIVE_BACKUP_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder', appProperties: { flo_marker_version: MARKER_VERSION, flo_installation_id: marker, flo_destination_kind: 'flocafe' } }, fields: 'id,name,mimeType,trashed,capabilities,appProperties' }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+      const folderName = this.resolveBackupFolderName();
+      const response = await driveClient.files.create({ requestBody: { name: folderName, mimeType: 'application/vnd.google-apps.folder', appProperties: { flo_marker_version: MARKER_VERSION, flo_installation_id: marker, flo_destination_kind: 'flocafe' } }, fields: 'id,name,mimeType,trashed,capabilities,appProperties' }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
       const file = response.data as { id?: string; name?: string };
       if (!file.id || !safeId(file.id)) throw createDriveError('destination_required');
-      return { id: file.id, name: file.name || DRIVE_BACKUP_FOLDER_NAME, owned: true };
+      return { id: file.id, name: file.name || folderName, owned: true };
     } catch (error) {
       const classified = classifyDriveError(error);
       if (classified.retryable) throw classified;

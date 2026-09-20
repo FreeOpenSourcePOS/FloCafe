@@ -68,7 +68,7 @@ export function useConfirm() {
       <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>{state.title || t('confirm')}</DialogTitle>
-          <DialogDescription>{state.message}</DialogDescription>
+          <DialogDescription className="whitespace-pre-line">{state.message}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={handleCancel}>

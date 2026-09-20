@@ -1881,6 +1881,7 @@
     "businessNamePlaceholder": "Nome do restaurante",
     "chooseCountry": "Escolha seu País",
     "chooseCountryHint": "O FloCafe usa seu país para escolher a moeda correta, o formato de imposto e os dados de demonstração.",
+    "chooseCountryRequired": "Escolha seu país para continuar",
     "chooseLanguage": "Escolha seu Idioma",
     "chooseLanguageHint": "Escolha o idioma deste fluxo de configuração antes de escolher o país.",
     "cloudEnableHint": "Os serviços em nuvem são opcionais e vêm desativados por padrão. Ative-os para conectar o FloCafe ao FloAdmin para recursos como relatórios do RevFlo, emparelhamento de dispositivos e serviços de conta compatíveis.",

@@ -79,6 +79,11 @@ async function main() {
 
   await startServerApp();
   const baseUrl = `http://127.0.0.1:${getServerAppPort()}`;
+  // This test bypasses the shared test harness (initDatabase() directly, not
+  // initTestDb()), so it doesn't get the central seedTestRegionalDefaults()
+  // choke point. Now that seedInstallDefaults() no longer writes a country
+  // row, a plain UPDATE against a nonexistent row silently no-ops — upsert
+  // instead so these settings always actually take effect.
   const setSetting = (key: string, value: string) =>
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
 
@@ -90,6 +95,7 @@ async function main() {
 
     setSetting('country', 'CO');
     setSetting('currency', 'COP');
+    setSetting('currency_symbol', '$');
     const copInfo = await getJson(baseUrl, '/api/server-app/info');
     assert.equal(copInfo.status, 200);
     assert.deepEqual({
@@ -108,6 +114,7 @@ async function main() {
 
     setSetting('country', 'KW');
     setSetting('currency', 'KWD');
+    setSetting('currency_symbol', 'KWD');
     const kwdInfo = await getJson(baseUrl, '/api/server-app/info');
     assert.equal(kwdInfo.status, 200);
     assert.deepEqual({

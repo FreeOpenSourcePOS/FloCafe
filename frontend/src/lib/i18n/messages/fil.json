@@ -1881,6 +1881,7 @@
     "businessNamePlaceholder": "Pangalan ng restaurant",
     "chooseCountry": "Piliin ang Iyong Bansa",
     "chooseCountryHint": "Ginagamit ng FloCafe ang iyong bansa upang itakda ang tamang currency at format ng buwis.",
+    "chooseCountryRequired": "Piliin ang iyong bansa upang magpatuloy",
     "chooseLanguage": "Piliin ang Iyong Wika",
     "chooseLanguageHint": "Piliin ang wika para sa setup bago piliin ang bansa.",
     "cloudEnableHint": "Opsyonal ang Mga Serbisyong Cloud. I-enable ang mga ito upang ikonekta ang FloCafe sa FloAdmin.",

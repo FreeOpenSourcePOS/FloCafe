@@ -1881,6 +1881,7 @@
     "businessNamePlaceholder": "İşletmenizin adı",
     "chooseCountry": "Ülkenizi Seçin",
     "chooseCountryHint": "FloCafe doğru para birimini, vergi formatını ve demo verilerini seçmek için ülkenizi kullanır.",
+    "chooseCountryRequired": "Devam etmek için ülkenizi seçin",
     "chooseLanguage": "Dilinizi Seçin",
     "chooseLanguageHint": "Ülke seçiminden önce bu kurulum sihirbazının dilini seçin.",
     "cloudEnableHint": "Bulut Hizmetleri isteğe bağlıdır ve varsayılan olarak kapalıdır. FloAdmin, RevFlo raporlama ve uzaktan eşleştirme için etkinleştirebilirsiniz.",

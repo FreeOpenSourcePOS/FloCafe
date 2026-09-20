@@ -1881,6 +1881,7 @@
     "businessNamePlaceholder": "Nom du restaurant",
     "chooseCountry": "Choisissez votre pays",
     "chooseCountryHint": "FloCafe utilise votre pays pour sélectionner la devise, le format fiscal et les données de démonstration adaptés.",
+    "chooseCountryRequired": "Choisissez votre pays pour continuer",
     "chooseLanguage": "Choisissez votre langue",
     "chooseLanguageHint": "Choisissez la langue de cette configuration avant de sélectionner le pays.",
     "cloudEnableHint": "Les services infonuagiques sont facultatifs et désactivés par défaut. Activez-les pour connecter FloCafe à FloAdmin et utiliser des fonctions telles que les rapports RevFlo, l’association d’appareils et les services de compte pris en charge.",

@@ -307,22 +307,24 @@ async function main(): Promise<void> {
 
   const mutableFs = nativeFs as unknown as { fsyncSync: typeof fs.fsyncSync; unlinkSync: typeof fs.unlinkSync };
   const originalFsyncSync = nativeFs.fsyncSync;
-  let fsyncCalls = 0;
-  mutableFs.fsyncSync = (fd) => {
-    fsyncCalls += 1;
-    if (fsyncCalls === 2) throw new Error('directory sync unavailable');
-    return originalFsyncSync(fd);
-  };
-  await assert.rejects(
-    gd.googleDrive.beginDatabaseRestoreInvalidation(),
-    /durably record/,
-    'intent persistence failures retain a recovery boundary',
-  );
-  mutableFs.fsyncSync = originalFsyncSync;
-  status = gd.googleDrive.getStatus();
-  assert.equal(status.connected, false, 'intent persistence failure does not report connected');
-  assert.equal(status.auth_state, 'reauth_required', 'intent persistence failure exposes reauthentication');
-  gd.googleDrive.clearDatabaseRestoreInvalidation();
+  if (process.platform !== 'win32') {
+    let fsyncCalls = 0;
+    mutableFs.fsyncSync = (fd) => {
+      fsyncCalls += 1;
+      if (fsyncCalls === 2) throw new Error('directory sync unavailable');
+      return originalFsyncSync(fd);
+    };
+    await assert.rejects(
+      gd.googleDrive.beginDatabaseRestoreInvalidation(),
+      /durably record/,
+      'intent persistence failures retain a recovery boundary',
+    );
+    mutableFs.fsyncSync = originalFsyncSync;
+    status = gd.googleDrive.getStatus();
+    assert.equal(status.connected, false, 'intent persistence failure does not report connected');
+    assert.equal(status.auth_state, 'reauth_required', 'intent persistence failure exposes reauthentication');
+    gd.googleDrive.clearDatabaseRestoreInvalidation();
+  }
 
   fs.writeFileSync(restoreIntentPath, JSON.stringify({ phase: 'prepared', database_account_subject: 'subject-a' }), { mode: 0o600 });
   const originalUnlinkSync = nativeFs.unlinkSync;
@@ -341,19 +343,21 @@ async function main(): Promise<void> {
   assert.equal(status.auth_state, 'reauth_required', 'intent cleanup failure exposes reauthentication');
   gd.googleDrive.clearDatabaseRestoreInvalidation();
 
-  fs.writeFileSync(restoreIntentPath, JSON.stringify({ phase: 'prepared', database_account_subject: 'subject-a' }), { mode: 0o600 });
-  mutableFs.fsyncSync = () => { throw new Error('directory sync unavailable'); };
-  assert.throws(
-    () => gd.googleDrive.clearDatabaseRestoreInvalidation(),
-    /durably clear/,
-    'directory cleanup failures retain recovery state after unlinking the intent',
-  );
-  assert.equal(fs.existsSync(restoreIntentPath), false, 'directory cleanup failure leaves the intent unlinked');
-  mutableFs.fsyncSync = originalFsyncSync;
-  (gd.googleDrive as any).terminalCleanup = false;
-  gd.googleDrive.start();
-  status = gd.googleDrive.getStatus();
-  assert.equal(status.connected, true, 'retrying directory cleanup releases recovery state');
+  if (process.platform !== 'win32') {
+    fs.writeFileSync(restoreIntentPath, JSON.stringify({ phase: 'prepared', database_account_subject: 'subject-a' }), { mode: 0o600 });
+    mutableFs.fsyncSync = () => { throw new Error('directory sync unavailable'); };
+    assert.throws(
+      () => gd.googleDrive.clearDatabaseRestoreInvalidation(),
+      /durably clear/,
+      'directory cleanup failures retain recovery state after unlinking the intent',
+    );
+    assert.equal(fs.existsSync(restoreIntentPath), false, 'directory cleanup failure leaves the intent unlinked');
+    mutableFs.fsyncSync = originalFsyncSync;
+    (gd.googleDrive as any).terminalCleanup = false;
+    gd.googleDrive.start();
+    status = gd.googleDrive.getStatus();
+    assert.equal(status.connected, true, 'retrying directory cleanup releases recovery state');
+  }
 
   await gd.googleDrive.stop();
   const originalMaybeRunScheduled = (gd.googleDrive as any).maybeRunScheduled;

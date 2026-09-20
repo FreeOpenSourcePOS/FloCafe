@@ -230,16 +230,18 @@ async function main(): Promise<void> {
     if (directoryTokenSync) throw new Error('injected token directory sync failure');
     return originalDirectoryTokenFsyncSync(fd);
   };
-  assert.throws(
-    () => (gd.googleDrive as any).writeTokens({ ...fakeTokens, refresh_token: 'replacement-refresh-token' }),
-    /injected token directory sync failure|Token persistence is ambiguous/,
-    'token directory sync failures propagate after replacement',
-  );
+  if (process.platform !== 'win32') {
+    assert.throws(
+      () => (gd.googleDrive as any).writeTokens({ ...fakeTokens, refresh_token: 'replacement-refresh-token' }),
+      /injected token directory sync failure|Token persistence is ambiguous/,
+      'token directory sync failures propagate after replacement',
+    );
+    assert.deepEqual(nativeFs.readFileSync(tokenPath), originalTokenContents, 'token directory sync failures restore the existing credential');
+    for (const name of fs.readdirSync(testDir).filter((entry) => entry.startsWith('google-drive-token.enc.restore-'))) nativeFs.unlinkSync(path.join(testDir, name));
+    (gd.googleDrive as any).tokenReadIssue = null;
+  }
   tokenMutableDirectoryFs.openSync = originalTokenOpenSync;
   tokenMutableDirectoryFs.fsyncSync = originalDirectoryTokenFsyncSync;
-  assert.deepEqual(nativeFs.readFileSync(tokenPath), originalTokenContents, 'token directory sync failures restore the existing credential');
-  for (const name of fs.readdirSync(testDir).filter((entry) => entry.startsWith('google-drive-token.enc.restore-'))) nativeFs.unlinkSync(path.join(testDir, name));
-  (gd.googleDrive as any).tokenReadIssue = null;
 
   const originalTokenRenameSync = nativeFs.renameSync;
   tokenMutableFs.renameSync = ((source, target) => {

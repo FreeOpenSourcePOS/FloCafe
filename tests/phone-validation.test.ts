@@ -28,6 +28,16 @@ try {
   const stripped = stripPhoneDigits('+91 987-654-3210');
   if (stripped !== '919876543210') throw new Error('Failed stripPhoneDigits');
 
+  // A full E.164 number needs no defaultCountry — libphonenumber-js ignores
+  // it anyway for '+'-prefixed input (CodeRabbit review on #780: the
+  // pre-login support-ticket route has no resolvable country).
+  parsed = parsePhoneE164('+919876543210', '');
+  if (!parsed || parsed.e164 !== '+919876543210') throw new Error('Failed E164 parsing with no defaultCountry');
+
+  // National-format input still requires defaultCountry to be resolvable.
+  parsed = parsePhoneE164('9876543210', '');
+  if (parsed !== null) throw new Error('National-format input without defaultCountry should be rejected');
+
   console.log('All phone validation tests passed');
   process.exit(0);
 } catch (err) {

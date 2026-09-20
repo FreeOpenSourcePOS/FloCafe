@@ -4,20 +4,19 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
+import { Trash2, Printer, Percent, Banknote, Search, Plus, Loader2, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import CreateCustomerModal from '@/components/pos/CreateCustomerModal';
 import AddonModal from '@/components/pos/AddonModal';
 import RefundModal from '@/components/orders/RefundModal';
-import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
+import { sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
-import type { OrderItem, Table, Product, Customer, Addon } from '@/lib/types';
+import type { Table, Product, Customer, Addon } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getDiscountInputStep, normalizeFixedDiscountValue } from '@/lib/currency-input';
-import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatReceiptErrorToast, extractPrinterErrorMessage } from '@/lib/printer/warnings';
@@ -50,40 +49,9 @@ import { preferChildScopedBill } from '@/lib/printer/tax-components';
 import { matchesOrderSearch } from '@/lib/orders-search';
 import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
+import { OrderCard } from '@/components/orders/OrderCard';
+
 type OrdersKey = keyof AppConfig['Messages']['orders'];
-
-const itemStatusConfig: Record<OrderItem['status'], { dot: string; color: string; labelKey: OrdersKey }> = {
-  pending: { dot: 'bg-yellow-400', color: 'text-yellow-700 dark:text-yellow-300', labelKey: 'itemStatusWaiting' },
-  preparing: { dot: 'bg-blue-500 dark:bg-blue-400', color: 'text-blue-700 dark:text-blue-300', labelKey: 'itemStatusPreparing' },
-  ready: { dot: 'bg-green-500 dark:bg-green-400', color: 'text-green-700 dark:text-green-300', labelKey: 'itemStatusReady' },
-  served: { dot: 'bg-purple-500 dark:bg-purple-400', color: 'text-purple-700 dark:text-purple-300', labelKey: 'itemStatusServed' },
-  cancelled: { dot: 'bg-red-400', color: 'text-red-500 dark:text-red-400', labelKey: 'itemStatusCancelled' },
-  voided: { dot: 'bg-red-500 dark:bg-red-400', color: 'text-red-600 dark:text-red-400 line-through', labelKey: 'itemStatusVoided' },
-  void_adjustment: { dot: 'bg-red-300 dark:bg-red-400', color: 'text-red-500 dark:text-red-400 italic', labelKey: 'itemStatusVoidAdjustment' },
-};
-
-const orderStatusBadge: Record<Order['status'], { bg: string; text: string; labelKey: OrdersKey }> = {
-  pending: { bg: 'bg-yellow-100 dark:bg-yellow-950/40', text: 'text-yellow-700 dark:text-yellow-300', labelKey: 'pending' },
-  preparing: { bg: 'bg-blue-100 dark:bg-blue-950/40', text: 'text-blue-700 dark:text-blue-300', labelKey: 'preparing' },
-  ready: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'ready' },
-  served: { bg: 'bg-purple-100 dark:bg-purple-950/40', text: 'text-purple-700 dark:text-purple-300', labelKey: 'served' },
-  completed: { bg: 'bg-muted', text: 'text-muted-foreground', labelKey: 'completed' },
-  cancelled: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'cancelled' },
-};
-
-const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; text: string; labelKey: OrdersKey }> = {
-  paid: { bg: 'bg-green-100 dark:bg-green-950/40', text: 'text-green-700 dark:text-green-300', labelKey: 'paid' },
-  partial: { bg: 'bg-amber-100 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-300', labelKey: 'partiallyPaid' },
-  unpaid: { bg: 'bg-red-100 dark:bg-red-950/40', text: 'text-red-700 dark:text-red-300', labelKey: 'unpaidBadge' },
-};
-
-// Typed leaf-key order-type map.
-const ORDER_TYPE_KEYS = {
-  dine_in: 'dineIn',
-  takeaway: 'takeaway',
-  delivery: 'delivery',
-  online: 'online',
-} as const satisfies Record<Order['type'], OrdersKey>;
 
 type FilterType = 'all' | 'active' | 'unpaid' | 'held';
 
@@ -131,7 +99,6 @@ export default function OrdersPage() {
   const cartStore = useCartStore();
   const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
-  const tPos = useTranslations('pos');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
   const tWhatsappSend = useTranslations('whatsapp.send');
@@ -148,7 +115,7 @@ export default function OrdersPage() {
         | 'error.blocked'
         | 'error.rateLimited',
     );
-  const { formatTime, formatDateTime } = useFormatDate();
+  const { formatTime } = useFormatDate();
   const locale = useLocale();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,7 +157,6 @@ export default function OrdersPage() {
 
   // Other states
   const [addItemsOrder, setAddItemsOrder] = useState<Order | null>(null);
-  const [printHistoryExpanded, setPrintHistoryExpanded] = useState<Record<number, boolean>>({});
   const [printHistory, setPrintHistory] = useState<Record<number, { id: number; print_type: string; user_name: string; printed_at: string }[]>>({});
   const fetchedBillIdsRef = useRef<Set<number>>(new Set());
 
@@ -405,20 +371,11 @@ export default function OrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setTablesRequired]);
 
-  const isOrderPaid = (order: Order) => order.bill?.payment_status === 'paid';
-
   const paymentStatusOf = (order: Order): 'paid' | 'partial' | 'unpaid' | null => {
     if (order.status === 'cancelled') return null;
     if (order.bill?.payment_status === 'paid') return 'paid';
     if (order.bill?.payment_status === 'partial') return 'partial';
     return 'unpaid';
-  };
-
-  const getTimeSince = (dateStr: string) => {
-    const minutes = Math.floor((now - parseDbTimestamp(dateStr).getTime()) / 60000);
-    if (minutes < 1) return tCommon('justNow');
-    if (minutes < 60) return tCommon('timeMinutesAgo', { m: minutes });
-    return tCommon('timeHoursMinutesAgo', { h: Math.floor(minutes / 60), m: minutes % 60 });
   };
 
   const handleCreateNewOrderForCustomer = async (order: Order) => {
@@ -685,34 +642,6 @@ export default function OrdersPage() {
     }
   };
 
-  const handleWhatsAppShare = async (order: Order) => {
-    if (!order.bill) {
-      toast.error(tOrders('billNotFound'));
-      return;
-    }
-    if (!order.customer?.phone) {
-      toast.error(tOrders('customerPhoneMissing'));
-      return;
-    }
-
-    try {
-      const opened = await shareBillViaWhatsApp(
-        { ...order.bill, order },
-        { phone: order.customer.phone, country_code: order.customer.country_code },
-        {
-          business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
-          currency,
-          country: currentTenant?.country || '',
-        },
-        { pointsEarned: order.bill.points_earned ?? 0 },
-        locale,
-      );
-      if (!opened) toast.error(tOrders('whatsappFailed'));
-    } catch {
-      toast.error(tOrders('whatsappFailed'));
-    }
-  };
-
   const handleSendViaFlo = async (order: Order) => {
     if (!order.bill) {
       toast.error(tOrders('billNotFound'));
@@ -736,6 +665,7 @@ export default function OrdersPage() {
         { pointsEarned: order.bill.points_earned ?? 0 },
         locale,
       );
+      await fetchOrders();
     } finally {
       setSendingWaOrderId(null);
     }
@@ -774,10 +704,6 @@ export default function OrdersPage() {
       setDiscountModal(null);
       setDiscountPin('');
     }
-  };
-
-  const showCheckout = (order: Order) => {
-    return !isOrderPaid(order) && !['completed', 'cancelled'].includes(order.status);
   };
 
   const handleConvertToTakeaway = async (order: Order) => {
@@ -931,7 +857,7 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-foreground">{tNav('orders')}</h1>
@@ -1009,15 +935,15 @@ export default function OrdersPage() {
       {/* Orders List */}
       {tabFilter === 'held' ? (
         loading ? (
-          <div className="flex items-center justify-center flex-1">
+          <div className="flex items-center justify-center py-24">
             <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
           </div>
         ) : Object.keys(heldOrdersStore.orders).length === 0 ? (
-          <div className="flex items-center justify-center flex-1 text-gray-400">
+          <div className="flex items-center justify-center py-24 text-gray-400">
             <p>{tOrders('heldEmpty')}</p>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
+          <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
             {Object.values(heldOrdersStore.orders).map((heldOrder) => (
               <div key={heldOrder.tableId} className="bg-card rounded-xl border border-blue-200 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
                  <div className="p-4 border-b border-border bg-blue-50/50 flex justify-between items-center">
@@ -1076,388 +1002,67 @@ export default function OrdersPage() {
           </div>
         )
       ) : loading ? (
-        <div className="flex items-center justify-center flex-1">
+        <div className="flex items-center justify-center py-24">
           <div className="w-8 h-8 border-4 border-brand border-t-transparent rounded-full animate-spin" />
         </div>
       ) : filteredOrders.length === 0 ? (
-        <div className="flex items-center justify-center flex-1 text-gray-400">
+        <div className="flex items-center justify-center py-24 text-gray-400">
           <p>{tOrders('empty')}</p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
-          {filteredOrders.map((order) => {
-            const activeItems = (order.items || []).filter((i: OrderItem) => i.status !== 'cancelled');
-            const cancelledItems = (order.items || []).filter((i: OrderItem) => i.status === 'cancelled');
-            const paid = isOrderPaid(order);
-            const payStatus = paymentStatusOf(order);
-            const payBadge = payStatus ? paymentStatusBadge[payStatus] : null;
-            const bill = order.bill;
-            const discount = bill ? Number(bill.discount_amount) : Number(order.discount_amount);
-            const tax = bill ? Number(bill.tax_amount) : Number(order.tax_amount);
-            const subtotal = bill ? Number(bill.subtotal) : Number(order.subtotal);
-            const total = bill ? Number(bill.total) : Number(order.total);
-
-            return (
-              <div
-                key={order.id}
-                className={`bg-card rounded-xl border overflow-hidden flex flex-col ${
-                  order.status === 'cancelled' ? 'border-red-200 opacity-75' : 'border-border'
-                }`}
-              >
-                {/* Top bar: order id/status on the left, payment badge + reprint on the right */}
-                <div className="flex items-center justify-between gap-2 px-4 py-3 bg-muted border-b border-border">
-                  <div className="flex items-center gap-2 flex-wrap min-w-0">
-                    <span className="font-bold text-foreground">#<Ltr>{order.order_number}</Ltr></span>
-                    {(() => { const badge = orderStatusBadge[order.status]; return badge ? (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>{tOrders(badge.labelKey)}</span>
-                    ) : null; })()}
-                    <span className="text-sm text-muted-foreground capitalize">{tOrders(ORDER_TYPE_KEYS[order.type])}</span>
-                    {order.table && (
-                      <span className="text-sm text-orange-600 font-medium">{order.table.name}</span>
-                    )}
-                    <span className="flex items-center gap-1 text-xs text-gray-400">
-                      <Clock size={12} />
-                      {getTimeSince(order.created_at)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {payBadge && (
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${payBadge.bg} ${payBadge.text}`}>
-                        {tOrders(payBadge.labelKey)}
-                      </span>
-                    )}
-                    {paid && order.customer?.phone && (
-                      <button
-                        onClick={() => isWhatsAppReady ? handleSendViaFlo(order) : handleWhatsAppShare(order)}
-                        disabled={sendingWaOrderId === order.id}
-                        className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-70"
-                        title={isWhatsAppReady ? tCommon('sendViaFlo') : tCommon('shareViaWhatsApp')}
-                      >
-                        {sendingWaOrderId === order.id ? <Loader2 className="size-4 animate-spin" /> : isWhatsAppReady ? <Send size={14} /> : <MessageCircle size={14} />}
-                      </button>
-                    )}
-                    {order.bill && (
-                      <button
-                        onClick={() => setConfirmPrintBillId(order.bill!.id)}
-                        disabled={printingBillId === order.bill.id}
-                        className="p-1.5 rounded-lg border border-border text-muted-foreground hover:bg-muted disabled:opacity-50 transition-colors"
-                        title={(printHistory[order.bill.id]?.length ?? 0) > 0 ? tCommon('reprint') : tCommon('print')}
-                      >
-                        <Printer size={14} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Order notes */}
-                {order.special_instructions && (
-                  <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-100 dark:border-amber-800/40">
-                    <p className="text-sm text-amber-700 dark:text-amber-300 font-medium break-words">
-                      📝 {order.special_instructions}
-                    </p>
-                  </div>
-                )}
-
-                {/* Customer info strip */}
-                {order.customer ? (
-                  <div className="px-4 py-2 bg-blue-50 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-800/40 flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <User size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
-                      <span className="text-sm font-medium text-blue-800 dark:text-blue-300 truncate">{order.customer.name}</span>
-                      {order.customer.phone && (
-                        <span className="text-xs text-blue-600 dark:text-blue-400 shrink-0"><Ltr>{order.customer.phone}</Ltr></span>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleCreateNewOrderForCustomer(order)}
-                      className="flex items-center gap-1 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-200 bg-blue-100 dark:bg-blue-950/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 px-2.5 py-1 rounded-lg transition-colors shrink-0"
-                      title={tOrders('startNewOrderForCustomer')}
-                    >
-                      <Plus size={12} /> {tOrders('newOrder')}
-                    </button>
-                  </div>
-                ) : isOwnerOrManager && !['completed', 'cancelled'].includes(order.status) ? (
-                  <div className="px-4 py-2 bg-muted border-b border-border">
-                    {linkCustomerOrderId === order.id ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={linkCustomerSearch}
-                          onChange={(e) => {
-                            setLinkCustomerSearch(e.target.value);
-                            searchCustomersForLink(e.target.value);
-                          }}
-                          placeholder={tOrders('searchCustomer')}
-                          className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                          autoFocus
-                        />
-                        <button
-                          onClick={() => {
-                            setLinkCustomerOrderId(null);
-                            setLinkCustomerSearch('');
-                            setLinkCustomerResults([]);
-                          }}
-                          className="text-gray-400 hover:text-muted-foreground"
-                        >
-                          <XCircle size={16} />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => setLinkCustomerOrderId(order.id)}
-                        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-blue-600 transition-colors"
-                      >
-                        <UserPlus size={14} />
-                        {tOrders('linkCustomer')}
-                      </button>
-                    )}
-                    {linkCustomerOrderId === order.id && (
-                      <div className="mt-2 space-y-1">
-                        {linkCustomerResults.map((customer) => (
-                          <button
-                            key={customer.id}
-                            onClick={() => handleLinkCustomer(order.id, String(customer.id))}
-                            disabled={linkingCustomer}
-                            className="w-full flex items-center justify-between px-3 py-2 bg-card rounded-lg border border-border hover:border-blue-300 hover:bg-blue-50 transition-colors text-start disabled:opacity-50"
-                          >
-                            <div>
-                              <span className="text-sm font-medium text-foreground">{customer.name}</span>
-                              {customer.phone && (
-                                <span className="text-xs text-muted-foreground ms-2"><Ltr>{customer.phone}</Ltr></span>
-                              )}
-                            </div>
-                            {linkingCustomer && <span className="text-xs text-gray-400">{tOrders('linking')}</span>}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCreateCustomerSearch(linkCustomerSearch);
-                            setCreateCustomerOrderId(order.id);
-                          }}
-                          disabled={linkingCustomer}
-                          className="w-full flex items-center gap-1.5 px-3 py-2 text-sm text-blue-600 bg-card hover:bg-blue-50 rounded-lg border border-dashed border-blue-300 transition-colors font-medium text-start disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Plus size={15} />
-                          {linkCustomerSearch.trim()
-                            ? `${tPos('addCustomer')} "${linkCustomerSearch.trim()}"`
-                            : tPos('addCustomer')}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-
-                {/* Items — presented like a bill */}
-                <div className="px-4 py-3 flex-1">
-                  <div className="divide-y divide-gray-50">
-                    {activeItems.map((item: OrderItem) => {
-                      const config = itemStatusConfig[item.status] || itemStatusConfig.pending;
-                      return (
-                        <div key={item.id} className="py-1.5">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span className={`w-2 h-2 rounded-full shrink-0 ${config.dot}`} title={tOrders(config.labelKey)} />
-                              <span className={`text-sm font-medium ${config.color}`}>
-                                {item.quantity}x
-                              </span>
-                              <span className="text-sm text-foreground truncate">{item.product_name}</span>
-                              {item.special_instructions && (
-                                <span className="text-xs text-red-500 italic break-words">&quot;{item.special_instructions}&quot;</span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-muted-foreground">{fmt(Number(item.total))}</span>
-                              {item.status === 'pending' && isOwnerOrManager && !paid && (
-                                <button
-                                  onClick={() => deleteItem(order.id, item.id)}
-                                  className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
-                                  title={tCommon('removeItem')}
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                              {(item.status === 'preparing' || item.status === 'ready') && isOwnerOrManager && !paid && (
-                                <button
-                                  onClick={() => setVoidItemModal({ orderId: order.id, itemId: item.id, productName: item.product_name, overridePin: '' })}
-                                  className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
-                                  title={tOrders('voidItem')}
-                                >
-                                  <Ban size={14} />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          {item.addons && item.addons.length > 0 && (
-                            <div className="ps-4 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
-                              {item.addons.map((addon, idx) => (
-                                <span key={addon.id ?? `${item.id}-${idx}`} className="text-xs text-gray-400">
-                                  + {addon.name}{(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}{addon.price ? ` (${fmt(Number(addon.price) * (addon.quantity || 1))})` : ''}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Bill summary */}
-                  <div className="mt-3 pt-3 border-t border-dashed border-border space-y-1">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">{tCommon('subtotal')}</span>
-                      <span className="text-foreground">{fmt(subtotal)}</span>
-                    </div>
-                    {discount > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-purple-600">{tCommon('discount')}</span>
-                        <span className="text-purple-600">-{fmt(discount)}</span>
-                      </div>
-                    )}
-                    {tax > 0 && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">{tCommon('tax')}</span>
-                        <span className="text-foreground">{fmt(tax)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between text-base font-bold pt-1 border-t border-border">
-                      <span className="text-foreground">{tCommon('total')}</span>
-                      <span className="text-foreground">{fmt(total)}</span>
-                    </div>
-                    {bill && payStatus === 'partial' && (
-                      <div className="flex justify-between text-xs text-muted-foreground pt-0.5">
-                        <span>{tOrders('paid')} {fmt(Number(bill.paid_amount))}</span>
-                        <span>{tOrders('balance')} {fmt(Number(bill.balance))}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Cancelled items */}
-                  {cancelledItems.length > 0 && isOwnerOrManager && (
-                    <div className="mt-2 pt-2 border-t border-gray-50">
-                      {cancelledItems.map((item: OrderItem) => (
-                        <div key={item.id} className="flex items-center justify-between py-1 opacity-50">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs">❌</span>
-                            <span className="text-xs text-gray-400 line-through">
-                              {item.quantity}x {item.product_name}
-                            </span>
-                          </div>
-                          {!paid && order.status !== 'completed' && order.status !== 'cancelled' && (
-                            <button
-                              onClick={() => restoreItem(order.id, item.id)}
-                              className="p-1 rounded hover:bg-green-50 text-green-400 hover:text-green-600"
-                              title={tCommon('restore')}
-                            >
-                              <RotateCcw size={12} />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {order.bill && printHistory[order.bill.id]?.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-border">
-                      <button
-                        onClick={() => {
-                          setPrintHistoryExpanded(prev => ({ ...prev, [order.bill!.id]: !prev[order.bill!.id] }));
-                        }}
-                        className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                      >
-                        {printHistoryExpanded[order.bill!.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} className="rtl-flip" />}
-                        {tOrders('printHistory')}
-                      </button>
-
-                      {printHistoryExpanded[order.bill!.id] && (
-                        <div className="mt-2 ps-4 space-y-1">
-                          {printHistory[order.bill!.id].map((print, index) => (
-                            <div key={print.id} className="text-xs text-muted-foreground">
-                              {index + 1}. {tOrders('printHistoryEntry', { printedType: print.print_type === 'reprint' ? tOrders('reprint') : tOrders('printed'), user: print.user_name, time: formatDateTime(print.printed_at) })}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Footer with actions */}
-                <div className="px-4 py-3 border-t border-border flex flex-wrap gap-2">
-                    {showCheckout(order) && (
-                      <Button
-                        onClick={() => handleCheckout(order.id)}
-                        disabled={generatingBill === order.id}
-                        size="sm"
-                        className="flex-1 justify-center"
-                      >
-                        <CreditCard size={14} className="me-1.5" />
-                        {generatingBill === order.id ? tOrders('generating') : tOrders('checkout')}
-                      </Button>
-                    )}
-                    {!['completed', 'cancelled'].includes(order.status) && (
-                      <Button
-                        variant="outline"
-                        onClick={() => openAddItemsModal(order)}
-                        size="sm"
-                        className="flex-1 justify-center border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
-                      >
-                        <Plus size={14} className="me-1.5" />
-                        {tOrders('addItem')}
-                      </Button>
-                    )}
-                    {isOwnerOrManager && (() => {
-                      const orderBills = order.bills?.length ? order.bills : (order.bill ? [order.bill] : []);
-                      const paidBills = orderBills.filter((b) => Number(b.paid_amount) > 0 && b.payment_status !== 'refunded');
-                      if (paidBills.length === 0) return null;
-                      return (
-                        <Button
-                          variant="outline"
-                          onClick={() => setRefundModal({ order, bills: paidBills })}
-                          size="sm"
-                          className="flex-1 justify-center border-purple-300 text-purple-600 hover:bg-purple-50 hover:text-purple-700"
-                        >
-                          <RotateCcw size={14} className="me-1.5" />
-                          {tOrders('refundButton')}
-                        </Button>
-                      );
-                    })()}
-                    {order.type === 'dine_in' && !['completed', 'cancelled'].includes(order.status) && (
-                      <Button
-                        variant="outline"
-                        onClick={() => handleConvertToTakeaway(order)}
-                        disabled={convertingOrderId === order.id}
-                        size="sm"
-                        className="flex-1 justify-center border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                      >
-                        <ShoppingBag size={14} className="me-1.5" />
-                        {convertingOrderId === order.id ? tOrders('converting') : tOrders('convertToTakeaway')}
-                      </Button>
-                    )}
-                    {!['completed', 'cancelled'].includes(order.status) && (
-                      <Button
-                        variant="outline"
-                        onClick={() => setCancelModal({ order, reason: '', freeTable: true, overridePin: '' })}
-                        disabled={cancellingOrderId === order.id}
-                        size="sm"
-                        className={`flex-1 justify-center ${
-                          order.status === 'pending'
-                            ? 'border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700'
-                            : 'border-orange-300 text-orange-600 hover:bg-orange-50 hover:text-orange-700'
-                        }`}
-                      >
-                        {order.status === 'pending' ? (
-                          <XCircle size={14} className="me-1.5" />
-                        ) : (
-                          <Lock size={14} className="me-1.5" />
-                        )}
-                        {cancellingOrderId === order.id ? tOrders('cancelling') : tCommon('cancel')}
-                      </Button>
-                    )}
-                  </div>
-              </div>
-            );
-          })}
+        <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
+          {filteredOrders.map((order) => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              now={now}
+              isOwnerOrManager={isOwnerOrManager}
+              isWhatsAppReady={isWhatsAppReady}
+              printHistory={printHistory}
+              generatingBillId={generatingBill}
+              printingBillId={printingBillId}
+              sendingWaOrderId={sendingWaOrderId}
+              cancellingOrderId={cancellingOrderId}
+              convertingOrderId={convertingOrderId}
+              isLinkingCustomer={linkCustomerOrderId === order.id}
+              linkCustomerSearch={linkCustomerSearch}
+              linkCustomerResults={linkCustomerResults}
+              linkingCustomer={linkingCustomer}
+              onCheckout={handleCheckout}
+              onAddItems={openAddItemsModal}
+              onRefund={(ord, bills) => setRefundModal({ order: ord, bills })}
+              onConvertToTakeaway={handleConvertToTakeaway}
+              onCancelOrder={(ord) => setCancelModal({ order: ord, reason: '', freeTable: true, overridePin: '' })}
+              onPrint={(billId) => setConfirmPrintBillId(billId)}
+              onSendWhatsApp={handleSendViaFlo}
+              onLinkCustomer={(orderId) => {
+                setLinkCustomerOrderId(orderId);
+                setLinkCustomerSearch('');
+                setLinkCustomerResults([]);
+              }}
+              onCancelLinkCustomer={() => {
+                setLinkCustomerOrderId(null);
+                setLinkCustomerSearch('');
+                setLinkCustomerResults([]);
+              }}
+              onSearchCustomer={(query) => {
+                setLinkCustomerSearch(query);
+                searchCustomersForLink(query);
+              }}
+              onSelectCustomer={handleLinkCustomer}
+              onCreateCustomer={(orderId, search) => {
+                setCreateCustomerSearch(search);
+                setCreateCustomerOrderId(orderId);
+              }}
+              onCreateNewOrderForCustomer={handleCreateNewOrderForCustomer}
+              onDownloadPrintPreview={handleDownloadPrintPreview}
+              onDeleteItem={deleteItem}
+              onVoidItem={(orderId, itemId, productName) =>
+                setVoidItemModal({ orderId, itemId, productName, overridePin: '' })
+              }
+              onRestoreItem={restoreItem}
+            />
+          ))}
         </div>
       )}
 

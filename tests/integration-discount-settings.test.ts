@@ -160,6 +160,10 @@ async function main() {
   }
 
   const db = getDatabase();
+  // Regional settings are no longer auto-seeded (docs/business-decisions.md,
+  // "Regional settings come from signup, never from a fallback") — seed a
+  // resolvable country explicitly so resolveRegionalSnapshot() doesn't throw.
+  db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?) ON CONFLICT(key) DO UPDATE SET value='IN', updated_at=excluded.updated_at`).run(now());
   seedTestData(db);
 
   // Build a minimal Express app with just the settings and orders routes

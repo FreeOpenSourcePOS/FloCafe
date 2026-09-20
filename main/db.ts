@@ -12,7 +12,7 @@ import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 import { ROLE_KEYS } from '../shared/role-permissions';
-import { getCurrencyFractionDigits } from './countries';
+import { getCurrencyFractionDigits, resolveRegionalSnapshot } from './countries';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
 
@@ -5167,10 +5167,11 @@ function seedInstallDefaults(): void {
 
   insert('business_name', '');
   insert('business_type', 'restaurant');
-  insert('country', 'IN');
-  insert('currency', 'INR');
-  insert('currency_symbol', '₹');
-  insert('timezone', 'Asia/Kolkata');
+  // country/currency/currency_symbol/timezone are deliberately not seeded here:
+  // they come only from the signup wizard (docs/business-decisions.md,
+  // "Regional settings come from signup, never from a fallback"). Until setup
+  // completes, resolveRegionalSnapshot() throws RegionalNotConfiguredError
+  // rather than a caller substituting a default country.
   insert('business_day_start_time', '00:00');
   insert('address', '');
   insert('phone', '');
@@ -5350,11 +5351,26 @@ function sanitizedNumberPrefix(value: string | null | undefined, fallback: strin
   return (value ?? fallback).replace(/[^A-Za-z0-9]/g, '');
 }
 
+// Order/bill numbering buckets and displayed date/period segments on a
+// tenant-local day. A missing timezone must not silently fall through to the
+// date helpers' own UTC fallback — at a local day/month/year boundary that
+// produces the wrong period segment and sequence bucket for the identifier.
+// Resolves through the country profile when the stored timezone is missing
+// or invalid, matching resolveRegionalSnapshot's own contract — only throws
+// RegionalNotConfiguredError when the country itself is unresolvable.
+function requireTenantTimezone(): string {
+  return resolveRegionalSnapshot({
+    country: getSettingValue('country') ?? undefined,
+    currency: getSettingValue('currency') ?? undefined,
+    timezone: getSettingValue('timezone') ?? undefined,
+  }).timezone;
+}
+
 export function generateOrderNumber(): string {
   const prefix = sanitizedNumberPrefix(getSettingValue('order_number_prefix'), 'ORD');
   const includeDate = getSettingValue('order_number_include_date') !== 'false';
   const resetDaily = getSettingValue('order_number_reset_daily') !== 'false';
-  const timezone = getSettingValue('timezone') || '';
+  const timezone = requireTenantTimezone();
 
   // Per-day bucket when reset daily, otherwise a single bucket.
   const bucket = resetDaily ? dateStampInTimezone(timezone) : 'ALL';
@@ -5371,7 +5387,7 @@ export function generateBillNumber(): string {
   const resetPeriod: InvoiceResetPeriod = ['never', 'daily', 'monthly', 'financial_year'].includes(configuredPeriod)
     ? configuredPeriod as InvoiceResetPeriod
     : 'daily';
-  const timezone = getSettingValue('timezone') || '';
+  const timezone = requireTenantTimezone();
   const fyStart = clampFinancialYearStart(
     getSettingValue('invoice_financial_year_start_month'),
     getSettingValue('invoice_financial_year_start_day'),

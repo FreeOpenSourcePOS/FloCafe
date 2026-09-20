@@ -234,12 +234,16 @@ export const getCountryByCode = (code: string): Country | undefined => {
 // already-configured store's settings/tenant, so RegionalNotConfiguredError
 // here indicates a real bug upstream, not a state to silently paper over.
 export function resolveTenantCurrency(currency: unknown, countryCode: string): string {
+  // The country must be real before an explicit currency is ever trusted —
+  // otherwise a syntactically-valid-but-bogus currency (e.g. 'ZZZ') masks an
+  // unresolvable country and this never throws, silently processing money
+  // under invalid regional settings.
+  const country = getCountryByCode(countryCode);
+  if (!country) throw new RegionalNotConfiguredError(countryCode);
   if (typeof currency === 'string') {
     const normalized = currency.trim().toUpperCase();
     if (isSyntacticallyValidCurrencyCode(normalized)) return normalized;
   }
-  const country = getCountryByCode(countryCode);
-  if (!country) throw new RegionalNotConfiguredError(countryCode);
   return country.currency;
 }
 
@@ -536,15 +540,21 @@ export const DEFAULT_COUNTRY_PROFILE = {
 // The country chosen at signup, and the ISO 4217 currency that follows from
 // it, are the only source of a store's regional identity. Everything else
 // here is derived from that pair via Intl/ISO/IANA conventions — there is no
-// default country and no per-store override of a derived value. See
-// docs/business-decisions.md, "Regional settings come from signup, never
-// from a fallback".
+// default country, and no per-store override of symbol, position, or
+// separators. Timezone is the one exception: country.timezone is only the
+// fallback, and a valid stored settings.timezone overrides it, for stores in
+// multi-zone countries. See docs/business-decisions.md, "Regional settings
+// come from signup, never from a fallback".
 
-/** Thrown when a store has no resolvable country. Callers should surface this
- * as a 409, not substitute a default country. */
+/** Thrown when a store has no resolvable country or, via the optional `field`,
+ * another required regional setting (e.g. timezone). Callers should surface
+ * this as a 409, not substitute a default. statusCode lets the many existing
+ * `error.statusCode || 500` route catch blocks map it correctly without each
+ * needing an explicit instanceof check. */
 export class RegionalNotConfiguredError extends Error {
-  constructor(countryCode: unknown) {
-    super(`Regional settings are not configured (country: ${JSON.stringify(countryCode)})`);
+  readonly statusCode = 409;
+  constructor(value: unknown, field: string = 'country') {
+    super(`Regional settings are not configured (${field}: ${JSON.stringify(value)})`);
     this.name = 'RegionalNotConfiguredError';
   }
 }
@@ -620,7 +630,24 @@ export function resolveRegionalSnapshot(settings: Record<string, string | undefi
   };
 }
 
-type AmountFormat = Pick<RegionalSnapshot, 'decimalSeparator' | 'groupSeparator' | 'currencySymbol'>;
+type AmountFormat = Pick<RegionalSnapshot, 'decimalSeparator' | 'groupSeparator' | 'currencySymbol' | 'locale'>;
+
+// True if `digits` either has no grouping at all, or its grouping exactly
+// matches what Intl would produce for this locale — catching malformed
+// grouping (e.g. "1,00" for en-US, a 2-digit trailing group) instead of
+// silently stripping it into a wrong value. Locale-correct by construction
+// (en-IN's 2-3-3 groups, not just Western 3s), not a hardcoded pattern.
+function hasValidLocaleGrouping(digits: string, format: Pick<AmountFormat, 'groupSeparator' | 'locale'>): boolean {
+  if (!format.groupSeparator || !digits.includes(format.groupSeparator)) return true;
+  const rawDigits = digits.split(format.groupSeparator).join('');
+  if (!/^\d+$/.test(rawDigits)) return false;
+  try {
+    const regrouped = new Intl.NumberFormat(format.locale, { useGrouping: true, numberingSystem: 'latn' }).format(BigInt(rawDigits));
+    return regrouped === digits;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Reduces a locale-formatted amount (as typed, or as pasted from a
@@ -628,30 +655,48 @@ type AmountFormat = Pick<RegionalSnapshot, 'decimalSeparator' | 'groupSeparator'
  * snapshot's own separators — never a hardcoded '.'/','. Strips group
  * separators and one occurrence of the snapshot's own currency symbol;
  * swaps the decimal separator to '.'. Returns null for anything that
- * doesn't reduce to a plain number (unknown text, wrong symbol, ...) —
- * this narrows what "strips the symbol" means to exactly this store's
- * symbol, not any stray character.
+ * doesn't reduce to a plain number: unknown text, a repeated or
+ * misplaced currency symbol, more than one decimal separator, or
+ * grouping that doesn't match this locale's actual pattern.
  */
 export function canonicalizeLocalizedAmount(raw: string, format: AmountFormat): string | null {
   let cleaned = String(raw ?? '').trim();
   if (!cleaned) return null;
-  if (format.currencySymbol) cleaned = cleaned.split(format.currencySymbol).join('').trim();
+
+  if (format.currencySymbol) {
+    const symbolCount = cleaned.split(format.currencySymbol).length - 1;
+    if (symbolCount > 1) return null;
+    if (symbolCount === 1) {
+      if (!cleaned.startsWith(format.currencySymbol) && !cleaned.endsWith(format.currencySymbol)) return null;
+      cleaned = cleaned.split(format.currencySymbol).join('').trim();
+    }
+  }
+
   const sign = /^[+-]/.test(cleaned) ? cleaned[0] : '';
   if (sign) cleaned = cleaned.slice(1);
-  if (format.groupSeparator) cleaned = cleaned.split(format.groupSeparator).join('');
-  if (format.decimalSeparator && format.decimalSeparator !== '.') {
-    cleaned = cleaned.replace(format.decimalSeparator, '.');
-  }
-  if (!cleaned || !/^\d*\.?\d*$/.test(cleaned)) return null;
-  return sign + cleaned;
+
+  const decimalParts = format.decimalSeparator ? cleaned.split(format.decimalSeparator) : [cleaned];
+  if (decimalParts.length > 2) return null;
+  const [integerPart, fractionPart] = decimalParts;
+
+  if (!hasValidLocaleGrouping(integerPart, format)) return null;
+  const normalizedInteger = format.groupSeparator ? integerPart.split(format.groupSeparator).join('') : integerPart;
+  const normalized = fractionPart !== undefined ? `${normalizedInteger}.${fractionPart}` : normalizedInteger;
+
+  if (!normalized || !/^\d*\.?\d*$/.test(normalized)) return null;
+  return sign + normalized;
 }
 
 /**
  * Formats an amount for a CSV cell using the snapshot's decimal separator,
  * with ASCII digits and no grouping — CSV numeric fields are not grouped,
- * so canonicalizeLocalizedAmount can read the value straight back.
+ * so canonicalizeLocalizedAmount can read the value straight back. Preserves
+ * the value's own precision rather than rounding to currencyFractionDigits:
+ * a stored price can carry more precision than its currency's nominal
+ * fraction digits (nothing currently enforces that at write time), and
+ * rounding on export would silently change the stored value on re-import.
  */
-export function formatAmountForCsv(value: number, snapshot: Pick<RegionalSnapshot, 'decimalSeparator' | 'currencyFractionDigits'>): string {
-  const fixed = value.toFixed(snapshot.currencyFractionDigits);
-  return snapshot.decimalSeparator === '.' ? fixed : fixed.replace('.', snapshot.decimalSeparator);
+export function formatAmountForCsv(value: number, snapshot: Pick<RegionalSnapshot, 'decimalSeparator'>): string {
+  const plain = String(value);
+  return snapshot.decimalSeparator === '.' ? plain : plain.replace('.', snapshot.decimalSeparator);
 }

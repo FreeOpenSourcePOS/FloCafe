@@ -175,7 +175,7 @@ function parseNumericField(
     integer?: boolean;
     min?: number;
     max?: number;
-    localized?: Pick<RegionalSnapshot, 'decimalSeparator' | 'groupSeparator' | 'currencySymbol'>;
+    localized?: Pick<RegionalSnapshot, 'decimalSeparator' | 'groupSeparator' | 'currencySymbol' | 'locale'>;
   } = {},
 ): NumericParseResult {
   const rawValue = raw ?? '';

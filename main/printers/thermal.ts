@@ -14,7 +14,7 @@ import {
   dotsForPaperWidth,
   capabilitiesForPrinter,
 } from './profiles';
-import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency, RegionalNotConfiguredError } from '../countries';
+import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
 import { renderMerchantReceiptViaDocument } from './document-merchant';
@@ -861,8 +861,15 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const db = getDatabase();
     const biz = db.prepare('SELECT * FROM settings LIMIT 1').get() as any;
     const locale = biz?.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
-    const timezone = getSettingValue('timezone');
-    if (!timezone) throw new RegionalNotConfiguredError(getSettingValue('country'));
+    // Resolves through the country profile when the stored timezone is
+    // missing or invalid, matching resolveRegionalSnapshot's own contract.
+    // Throws RegionalNotConfiguredError (naming country, the actual missing
+    // field) only when the country itself is unresolvable.
+    const timezone = resolveRegionalSnapshot({
+      country: getSettingValue('country') ?? undefined,
+      currency: getSettingValue('currency') ?? undefined,
+      timezone: getSettingValue('timezone') ?? undefined,
+    }).timezone;
     const tzOptions = { timeZone: timezone };
 
     const warnings: PrintWarning[] = [];
@@ -1138,8 +1145,8 @@ function receiptDocumentLines(
   cutMode: PrinterCutMode,
   capabilities: ThermalPrinterCapabilities,
 ): RasterDocumentLines | null {
-  // See formatReceipt's identical placeholder below for why currency: 'USD'.
-  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', currency: 'USD' };
+  // See formatReceipt's identical placeholder below for why country + currency are both required.
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', country: 'US', currency: 'USD' };
   const rasterBiz = {
     ...biz,
     ...(biz.customer_phone ? { customer_phone: maskPhoneOnReceipt(String(biz.customer_phone)) } : {}),
@@ -1377,9 +1384,10 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
 
   const lang = normalizePrintLanguage(language);
   // No business info supplied at all (e.g. a synthetic preview) — a neutral
-  // explicit currency short-circuits resolveTenantCurrency's country lookup
-  // (docs/business-decisions.md: no default country, and specifically not INR).
-  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', currency: 'USD' };
+  // explicit country + currency, never a default country or INR
+  // (docs/business-decisions.md). resolveTenantCurrency validates the
+  // country before it ever looks at currency, so both must be present.
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', country: 'US', currency: 'USD' };
   // Merchant templates resolve through document pipeline; pack templates use compliance renderer.
   const selection = parseBillTemplateSelection(template);
   const templateCapabilities = selection?.source === 'pack' || selection?.source === 'merchant'
@@ -1903,18 +1911,22 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
   const additionalLanguage = z?.__additionalLanguage
     ? normalizePrintLanguage(z.__additionalLanguage)
     : undefined;
-  const tz = getSettingValue('timezone');
   const settingsRows = getDatabase()
     .prepare('SELECT key, value FROM settings')
     .all() as { key: string; value: string }[];
   const settings: Record<string, string> = Object.fromEntries(
     settingsRows.map((r) => [r.key, r.value]),
   );
-  const currency = resolveTenantCurrency(settings.currency, settings.country);
+  // Single resolution for currency/locale/timezone — resolves the stored
+  // timezone through the country profile when missing or invalid, instead of
+  // leaving it undefined (which would use the server's own host timezone,
+  // not the tenant's, for the printed period timestamps).
+  const snapshot = resolveRegionalSnapshot(settings);
+  const currency = snapshot.currency;
   const fractionDigits = getCurrencyFractionDigits(currency);
   const factor = 10 ** fractionDigits;
-  const countryCode = settings.country;
-  const locale = getCountryByCode(countryCode)?.locale ?? 'en-US';
+  const locale = snapshot.locale;
+  const tz = snapshot.timezone;
   const prefix = resolveCurrencyPrefix(
     getCurrencySymbol(currency, locale),
     false,
@@ -1926,7 +1938,7 @@ export function buildZReportBody(z: any, language?: string, printer?: { columns?
     try {
       const d = parseDbTimestamp(iso);
       if (isNaN(d.getTime())) return iso;
-      return d.toLocaleString('en-US-u-nu-latn', tz ? { timeZone: tz } : undefined);
+      return d.toLocaleString('en-US-u-nu-latn', { timeZone: tz });
     } catch {
       return iso;
     }

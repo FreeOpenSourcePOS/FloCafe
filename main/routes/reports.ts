@@ -9,7 +9,7 @@ import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
-import { getCurrencyMinorUnitFactor } from '../countries';
+import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
 import { computeDayAggregates, paymentMethodBreakdown } from './cash-closures';
 
 const router = Router();
@@ -20,8 +20,18 @@ const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', '
 // "occupying" its table until it's completed or cancelled.
 const ACTIVE_ORDER_STATUS_SQL = "o.status NOT IN ('completed', 'cancelled')";
 
+// Resolves through the country profile when the stored timezone is missing
+// or invalid, matching resolveRegionalSnapshot's own contract, instead of
+// letting bucketByLocalHourAndWeekday()/dayBoundsInTimezone() silently fall
+// back to UTC — reporting a tenant-local day or hour bucket in the wrong
+// zone produces incorrect report data. Only throws RegionalNotConfiguredError
+// when the country itself is unresolvable.
 function tenantTimezone(): string {
-  return getSettingValue('timezone') || '';
+  return resolveRegionalSnapshot({
+    country: getSettingValue('country') ?? undefined,
+    currency: getSettingValue('currency') ?? undefined,
+    timezone: getSettingValue('timezone') ?? undefined,
+  }).timezone;
 }
 
 function tenantStartTime(): string {
@@ -134,7 +144,7 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -180,7 +190,7 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
     });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -241,7 +251,7 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
     });
   } catch (error: any) {
     console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -292,7 +302,7 @@ router.get('/tax-components', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
     });
   } catch (error: any) {
     console.error('[API] Tax component report failed:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -351,7 +361,7 @@ router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
     });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -385,7 +395,7 @@ router.get('/topProducts', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
     res.json({ topProducts });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -459,7 +469,7 @@ router.get('/recentOrders', requireRole(...ROLE_ACCESS.ownerManager), (req: Requ
     res.json({ recentOrders: ordersWithItems });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -495,7 +505,7 @@ router.get('/tables', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
     });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -601,7 +611,7 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -694,7 +704,7 @@ router.get('/x-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     });
   } catch (error: any) {
     console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 
@@ -748,7 +758,7 @@ router.get('/z-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     });
   } catch (error: any) {
     console.error('[API] Internal error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 

@@ -4,8 +4,13 @@ export function parsePhoneE164(input: string, defaultCountry: string): { e164: s
   try {
     const raw = String(input || '').trim();
     if (!raw) return null;
-    if (!defaultCountry) return null;
-    const country = defaultCountry.toUpperCase() as CountryCode;
+    // libphonenumber-js ignores defaultCountry for a number already in full
+    // E.164 form (leading '+') — only national-format input actually needs
+    // it, so a store with no resolvable country can still accept a
+    // complete international number (e.g. the pre-login support-ticket route).
+    const isFullE164 = raw.startsWith('+');
+    if (!isFullE164 && !defaultCountry) return null;
+    const country = defaultCountry ? (defaultCountry.toUpperCase() as CountryCode) : undefined;
     const parsed = parsePhoneNumber(raw, { defaultCountry: country, extract: false });
     if (!parsed?.isValid()) return null;
     return { e164: parsed.number, countryCode: `+${parsed.countryCallingCode}` };

@@ -4,18 +4,29 @@ export type CurrencyAmountTarget = 'payment' | 'wallet' | 'discount';
 export type CurrencyDiscountType = 'percentage' | 'amount';
 
 export interface AmountFormat {
+  /** BCP-47 locale tag (e.g. 'en-IN') — grouping is derived from this via Intl, never assumed to be 3-digit Western groups. */
+  locale: string;
   decimalSeparator: string;
   groupSeparator: string;
   currencyFractionDigits: number;
 }
 
-/** Keeps only digits and, when the currency has fraction digits, a single decimal separator — as the user types. */
+/** Keeps only digits and, when the currency has fraction digits, a single decimal separator with at most
+ * currencyFractionDigits digits after it — as the user types. */
 export function sanitizeAmountKeystrokes(raw: string, format: AmountFormat): string {
   const allowDecimal = format.currencyFractionDigits > 0;
   let out = '';
   let seenDecimal = false;
+  let fractionDigits = 0;
   for (const ch of raw) {
-    if (ch >= '0' && ch <= '9') { out += ch; continue; }
+    if (ch >= '0' && ch <= '9') {
+      if (seenDecimal) {
+        if (fractionDigits >= format.currencyFractionDigits) continue;
+        fractionDigits++;
+      }
+      out += ch;
+      continue;
+    }
     if (allowDecimal && !seenDecimal && ch === format.decimalSeparator) {
       out += ch;
       seenDecimal = true;
@@ -24,11 +35,17 @@ export function sanitizeAmountKeystrokes(raw: string, format: AmountFormat): str
   return out;
 }
 
-/** Inserts the locale's group separator into a sanitized amount's integer part, for live display as typed. */
+/** Groups a sanitized amount's integer part per the locale's own grouping pattern (via Intl — en-IN's
+ * 2-3-3 groups, not just Western 3s), for live display as typed. */
 export function groupAmountForDisplay(sanitized: string, format: AmountFormat): string {
-  if (!format.groupSeparator) return sanitized;
   const [intPart, ...rest] = sanitized.split(format.decimalSeparator);
-  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d)$)/g, format.groupSeparator);
+  if (!format.groupSeparator || !intPart) return sanitized;
+  let grouped: string;
+  try {
+    grouped = new Intl.NumberFormat(format.locale, { useGrouping: true, numberingSystem: 'latn' }).format(BigInt(intPart));
+  } catch {
+    grouped = intPart;
+  }
   return rest.length ? `${grouped}${format.decimalSeparator}${rest.join(format.decimalSeparator)}` : grouped;
 }
 

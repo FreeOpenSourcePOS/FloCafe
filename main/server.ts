@@ -161,7 +161,7 @@ export function startServer(): Promise<void> {
       if (req.body === undefined) req.body = {};
       next();
     });
-    app.use(databaseMaintenanceMiddleware);
+    app.use('/api', databaseMaintenanceMiddleware);
 
     // ── Global API rate limiting ───────────────────────────────────────
     // Protect all API routes with express-rate-limit and LAN bypass.

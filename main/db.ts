@@ -216,6 +216,11 @@ function isDatabaseMaintenanceRoute(req: Request): boolean {
 }
 
 export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
+  if (!req.path.startsWith('/api')) {
+    next();
+    return;
+  }
+
   if (databaseShutdownRequested) {
     res.status(503).json({ error: 'Database is shutting down' });
     return;

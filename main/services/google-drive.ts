@@ -1768,8 +1768,9 @@ class GoogleDriveService {
   }
 
   private async findExistingAppFolder(driveClient: DriveClient, marker: string, signal?: AbortSignal): Promise<{ id: string; name: string; owned: boolean } | null> {
+    if (!safeId(marker)) return null;
     try {
-      const escapedMarker = marker.replace(/'/g, "\\'");
+      const escapedMarker = marker.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const response = await driveClient.files.list({
         q: `mimeType = 'application/vnd.google-apps.folder' and trashed = false and appProperties has { key='flo_installation_id' and value='${escapedMarker}' }`,
         fields: 'files(id,name,mimeType,trashed,capabilities,appProperties)',

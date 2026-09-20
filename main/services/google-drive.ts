@@ -411,8 +411,26 @@ function readCommittedRestoreJobResult(): GoogleDriveJob | null {
 function getClientCredentials(): { clientId: string; clientSecret: string } | null {
   const clientId = process.env.GOOGLE_DRIVE_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_DRIVE_CLIENT_SECRET?.trim();
-  if (!clientId || !clientSecret) return null;
-  return { clientId, clientSecret };
+  if (clientId || clientSecret) {
+    if (!clientId || !clientSecret) return null;
+    return { clientId, clientSecret };
+  }
+
+  if (process.env.ELECTRON_RUN_AS_NODE !== '1') {
+    try {
+      const configPath = path.join(__dirname, '../../google-drive-client.json');
+      if (fs.existsSync(configPath)) {
+        const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        if (parsed.clientId?.trim() && parsed.clientSecret?.trim()) {
+          return { clientId: parsed.clientId.trim(), clientSecret: parsed.clientSecret.trim() };
+        }
+      }
+    } catch {
+      // Fall through to null on read or parse error
+    }
+  }
+
+  return null;
 }
 
 export function isGoogleDriveConfigured(): boolean { return getClientCredentials() !== null; }

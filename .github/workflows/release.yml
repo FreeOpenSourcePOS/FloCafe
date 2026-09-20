@@ -383,6 +383,8 @@ jobs:
         env:
           SNAPCRAFT_BUILD_ENVIRONMENT: lxd
           FLO_LINUX_ARCH: ${{ matrix.arch }}
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
 
       - name: Verify Linux release assets
         run: |
@@ -579,6 +581,8 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: BKDY677XJA
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
 
       - name: Verify macOS release assets
         run: |
@@ -720,6 +724,8 @@ jobs:
           # disabled either way so it never picks up an unrelated identity
           # (mirrors release-mac; see #168, electron-userland/electron-builder#7515).
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
+          GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
 
       - name: Verify Windows release assets
         # Same class of bug as macOS's missing latest-mac.yml: electron-updater's

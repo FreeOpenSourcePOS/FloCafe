@@ -40,7 +40,7 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
-import { getCurrencyMinorUnitFactor, RegionalNotConfiguredError } from '../countries';
+import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
 import { getOrdersWithItemsForBills } from './bills';
 import { getHttpRequestSignal } from '../shutdown';
 import {
@@ -76,13 +76,18 @@ function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
 }
 
-// A missing timezone must reject rather than let dayBoundsInTimezone() fall
-// back to UTC — at a tenant-local day boundary that includes/excludes
-// transactions at the wrong instant, producing an incorrect closure total.
+// Resolves through the country profile when the stored timezone is missing
+// or invalid, matching resolveRegionalSnapshot's own contract, instead of
+// letting dayBoundsInTimezone() silently fall back to UTC — at a
+// tenant-local day boundary that includes/excludes transactions at the
+// wrong instant, producing an incorrect closure total. Only throws
+// RegionalNotConfiguredError when the country itself is unresolvable.
 function tenantTimezone(): string {
-  const timezone = getSettingValue('timezone');
-  if (!timezone) throw new RegionalNotConfiguredError(timezone, 'timezone');
-  return timezone;
+  return resolveRegionalSnapshot({
+    country: getSettingValue('country') ?? undefined,
+    currency: getSettingValue('currency') ?? undefined,
+    timezone: getSettingValue('timezone') ?? undefined,
+  }).timezone;
 }
 
 function tenantStartTime(db?: ReturnType<typeof getDatabase>): string {

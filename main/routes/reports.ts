@@ -9,7 +9,7 @@ import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
-import { getCurrencyMinorUnitFactor, RegionalNotConfiguredError } from '../countries';
+import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
 import { computeDayAggregates, paymentMethodBreakdown } from './cash-closures';
 
 const router = Router();
@@ -20,13 +20,18 @@ const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', '
 // "occupying" its table until it's completed or cancelled.
 const ACTIVE_ORDER_STATUS_SQL = "o.status NOT IN ('completed', 'cancelled')";
 
-// A missing timezone must reject rather than let bucketByLocalHourAndWeekday()
-// / dayBoundsInTimezone() fall back to UTC — reporting a tenant-local day or
-// hour bucket in the wrong zone produces incorrect report data.
+// Resolves through the country profile when the stored timezone is missing
+// or invalid, matching resolveRegionalSnapshot's own contract, instead of
+// letting bucketByLocalHourAndWeekday()/dayBoundsInTimezone() silently fall
+// back to UTC — reporting a tenant-local day or hour bucket in the wrong
+// zone produces incorrect report data. Only throws RegionalNotConfiguredError
+// when the country itself is unresolvable.
 function tenantTimezone(): string {
-  const timezone = getSettingValue('timezone');
-  if (!timezone) throw new RegionalNotConfiguredError(timezone, 'timezone');
-  return timezone;
+  return resolveRegionalSnapshot({
+    country: getSettingValue('country') ?? undefined,
+    currency: getSettingValue('currency') ?? undefined,
+    timezone: getSettingValue('timezone') ?? undefined,
+  }).timezone;
 }
 
 function tenantStartTime(): string {

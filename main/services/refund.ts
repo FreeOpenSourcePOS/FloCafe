@@ -5,7 +5,7 @@ import {
 } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
-import { getCurrencyMinorUnitFactor, resolveTenantCurrency } from '../countries';
+import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -102,12 +102,18 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   // Past the short window, an owner-only PIN is required for the rest of the business day (docs/business-decisions.md).
   let lateRefund = false;
   if (nowMs - orderCreatedAt > REFUND_WINDOW_MS) {
-    // A missing timezone must reject rather than let localDateInTimezone()/
-    // dayBoundsInTimezone() fall back to UTC — at a tenant offset from UTC,
-    // that can wrongly accept or reject a late refund relative to the
-    // tenant's actual business-day end.
-    const timezone = getSettingValue('timezone');
-    if (!timezone) throw httpError('Regional settings are not configured', 409);
+    // Resolves through the country profile when the stored timezone is
+    // missing or invalid, matching resolveRegionalSnapshot's own contract,
+    // instead of letting localDateInTimezone()/dayBoundsInTimezone() silently
+    // fall back to UTC — at a tenant offset from UTC, that can wrongly accept
+    // or reject a late refund relative to the tenant's actual business-day
+    // end. Throws RegionalNotConfiguredError (409) only when the country
+    // itself is unresolvable.
+    const timezone = resolveRegionalSnapshot({
+      country: getSettingValue('country') ?? undefined,
+      currency: getSettingValue('currency') ?? undefined,
+      timezone: getSettingValue('timezone') ?? undefined,
+    }).timezone;
     const startTime = tenantBusinessDayStartTime(db);
     const orderBusinessDate = localDateInTimezone(new Date(orderCreatedAt), timezone, startTime);
     const [, businessDayEnd] = dayBoundsInTimezone(orderBusinessDate, timezone, startTime);

@@ -12,7 +12,7 @@ import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 import { ROLE_KEYS } from '../shared/role-permissions';
-import { getCurrencyFractionDigits, RegionalNotConfiguredError } from './countries';
+import { getCurrencyFractionDigits, resolveRegionalSnapshot } from './countries';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
 
@@ -5354,10 +5354,15 @@ function sanitizedNumberPrefix(value: string | null | undefined, fallback: strin
 // tenant-local day. A missing timezone must not silently fall through to the
 // date helpers' own UTC fallback — at a local day/month/year boundary that
 // produces the wrong period segment and sequence bucket for the identifier.
+// Resolves through the country profile when the stored timezone is missing
+// or invalid, matching resolveRegionalSnapshot's own contract — only throws
+// RegionalNotConfiguredError when the country itself is unresolvable.
 function requireTenantTimezone(): string {
-  const timezone = getSettingValue('timezone');
-  if (!timezone) throw new RegionalNotConfiguredError(timezone, 'timezone');
-  return timezone;
+  return resolveRegionalSnapshot({
+    country: getSettingValue('country') ?? undefined,
+    currency: getSettingValue('currency') ?? undefined,
+    timezone: getSettingValue('timezone') ?? undefined,
+  }).timezone;
 }
 
 export function generateOrderNumber(): string {

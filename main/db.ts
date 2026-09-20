@@ -565,7 +565,7 @@ function restoreReplacementCleanupEvidence(backupDir: string, dbPath: string): v
     const journalEvidence = group.get(journalName) || group.get(`${journalName}.tmp`);
     const recoveryEvidence = group.get(recoveryName);
     if (!journalEvidence || !recoveryEvidence) {
-      if (!pathEntryExists(journalPath) || !pathEntryExists(recoveryPath)) throw new Error(`Incomplete database replacement cleanup evidence: ${canonicalBase}`);
+      if (pathEntryExists(journalPath) || pathEntryExists(recoveryPath)) throw new Error(`Incomplete database replacement cleanup evidence: ${canonicalBase}`);
       for (const evidenceName of new Set(group.values())) {
         const evidencePath = path.join(backupDir, evidenceName);
         if (pathEntryExists(evidencePath)) fs.unlinkSync(evidencePath);

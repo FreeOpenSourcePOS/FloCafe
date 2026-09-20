@@ -2266,7 +2266,7 @@ export default function SettingsPage() {
     setGoogleDriveDestinations([]);
     setConnectingGoogleDrive(true);
     try {
-      const res = await api.post('/settings/google-drive/connect', { warning_acknowledged: true, allow_switch: googleDriveStatus.auth_state === 'reauth_required' });
+      const res = await api.post('/settings/google-drive/connect', { warning_acknowledged: true, allow_switch: true });
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       await Promise.all([fetchGoogleDriveDestinations(), fetchRemoteGoogleDriveBackups()]);
       toast.success(t('googleDriveConnectedSuccess'));
@@ -2340,11 +2340,21 @@ export default function SettingsPage() {
   };
 
   const restoreRemoteGoogleDriveBackup = async (backup: GoogleDriveRemoteBackup) => {
-    const confirmation = window.prompt(t('googleDriveRestorePrompt'));
-    if (confirmation !== 'RESTORE GOOGLE DRIVE BACKUP') {
-      if (confirmation !== null) toast.error(t('confirmationPhraseMismatch'));
+    if (masterPinStatus.available && !masterPinStatus.isSet) {
+      toast.error(t('setMasterPinFirst'));
       return;
     }
+    if (!masterPinStatus.available) {
+      toast.error(tCommon('notAvailable'));
+      return;
+    }
+    const ok = await confirm(t('restoreConfirm', { fileName: backup.name }), {
+      title: t('googleDriveRestoreTitle'),
+      confirmLabel: t('googleDriveRestore'),
+      destructive: true,
+    });
+    if (!ok) return;
+
     setPinGate({ mode: 'restore-google-drive', payload: { fileId: backup.id, sha256: backup.sha256 } });
   };
 

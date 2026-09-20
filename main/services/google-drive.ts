@@ -639,6 +639,7 @@ class GoogleDriveService {
       if (this.restoreInvalidationActive()) this.scheduleRestoreRecoveryRetry();
       else this.start();
     }, delay);
+    this.restoreRecoveryRetryTimer.unref?.();
   }
 
   private databaseRestoreRecoveryDecision(): 'committed' | 'recovered' | 'ambiguous' {
@@ -752,8 +753,10 @@ class GoogleDriveService {
   private armScheduling(): void {
     if (this.scheduleTimer || this.stopping || this.terminalCleanup || !this.stopSettled) return;
     this.scheduleTimer = setInterval(() => { void this.maybeRunScheduled().catch(() => {}); }, SCHEDULE_CHECK_INTERVAL_MS);
+    this.scheduleTimer.unref?.();
     this.cleanupStaging();
     this.startupTimer = setTimeout(() => { this.startupTimer = null; void this.maybeRunScheduled().catch(() => {}); }, 0);
+    this.startupTimer.unref?.();
   }
 
   start(): void {
@@ -1043,7 +1046,7 @@ class GoogleDriveService {
     if (!identity.subject) throw createDriveError('reauth_required');
     const candidateDrive = drive({ version: 'v3', auth: client });
     const existingSubjects = [current?.account_subject, settings.google_drive_account_subject].filter((subject): subject is string => typeof subject === 'string' && subject.length > 0);
-    if (existingSubjects.some((subject) => subject !== identity.subject)) throw createDriveError('reauth_required');
+    if (!allowSwitch && existingSubjects.some((subject) => subject !== identity.subject)) throw createDriveError('reauth_required');
     const preservedDestinations = this.readOwnedDestinations();
     const destinationCandidates = [...new Set([
       settings.google_drive_destination_folder_id || settings.google_drive_folder_id,

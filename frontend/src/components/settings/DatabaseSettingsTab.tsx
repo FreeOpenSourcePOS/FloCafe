@@ -15,6 +15,11 @@ import {
   Trash2,
   Folder,
   Info,
+  Copy,
+  Calendar,
+  History,
+  RotateCcw,
+  Check,
 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -139,6 +144,36 @@ export interface DatabaseSettingsTabProps {
   confirm: (message: string, options?: { title?: string; confirmLabel?: string; destructive?: boolean }) => Promise<boolean>;
 }
 
+function GoogleDriveIcon({ className = 'w-9 h-9' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 800 741.37" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <mask id="drive-mask" width="168" height="154" x="12" y="18" maskUnits="userSpaceOnUse">
+        <path fill="#fff" d="M63.09 37c14.626-25.333 51.193-25.334 65.819 0l45.033 78c14.626 25.334-3.657 57.001-32.91 57.001H50.967c-29.253 0-47.536-31.667-32.91-57.001Z" />
+      </mask>
+      <g mask="url(#drive-mask)" transform="matrix(4.8140532,0,0,4.8140532,-62.146701,-86.652356)">
+        <path fill="url(#drive-b)" d="M206.905 172.02h-91.888l-19.015-32.934 45.944-79.578Z" />
+        <path fill="url(#drive-c)" d="M-14.919 172.006 50.04 59.494v.002L31.032 92.422h38.02L115 172.004l-129.918.001Z" />
+        <path fill="url(#drive-d)" d="M96.007-20.085 141.954 59.5l-19.011 32.928H31.048Z" />
+      </g>
+      <defs>
+        <linearGradient id="drive-b" x1="193.6" x2="103.09" y1="165.6" y2="111.21" gradientUnits="userSpaceOnUse">
+          <stop offset=".09" stopColor="#ffe921" />
+          <stop offset="1" stopColor="#fec700" />
+        </linearGradient>
+        <linearGradient id="drive-c" x1="114.4" x2="15.53" y1="181.61" y2="121.8" gradientUnits="userSpaceOnUse">
+          <stop offset=".15" stopColor="#a9a8ff" />
+          <stop offset=".33" stopColor="#6d97ff" />
+          <stop offset=".48" stopColor="#3186ff" />
+        </linearGradient>
+        <linearGradient id="drive-d" x1="128.88" x2="28.7" y1="37.88" y2="84.64" gradientUnits="userSpaceOnUse">
+          <stop offset=".55" stopColor="#0ebc5f" />
+          <stop offset=".85" stopColor="#78c9ff" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
 function formatBackupSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -185,6 +220,14 @@ export function DatabaseSettingsTab({
   const [tableInfoOpen, setTableInfoOpen] = useState(false);
   const [tableInfo, setTableInfo] = useState<Array<{ name: string; rows: number }>>([]);
   const [retentionInput, setRetentionInput] = useState<string | null>(null);
+  const [copiedFolder, setCopiedFolder] = useState(false);
+
+  const handleCopyFolder = () => {
+    if (!googleDriveStatus.destination_folder_name) return;
+    navigator.clipboard.writeText(googleDriveStatus.destination_folder_name);
+    setCopiedFolder(true);
+    setTimeout(() => setCopiedFolder(false), 2000);
+  };
 
   return (
     <SettingsTabShell title={t('tabBackupData')}>
@@ -309,11 +352,11 @@ export function DatabaseSettingsTab({
         </div>
 
         {/* Google Drive - automated off-device backups */}
-        {isOwner && <div className="bg-card rounded-xl border border-border p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <HardDrive size={20} className="text-muted-foreground" />
+        {isOwner && <div className="bg-card rounded-2xl border border-border p-6 space-y-6">
+          <div className="flex items-center gap-3">
+            <GoogleDriveIcon className="w-10 h-10 shrink-0" />
             <div>
-              <h2 className="font-semibold text-foreground">{t('googleDrive')}</h2>
+              <h2 className="text-xl font-bold text-foreground">{t('googleDrive')}</h2>
               <p className="text-xs text-muted-foreground mt-0.5">{t('googleDriveHint')}</p>
             </div>
           </div>
@@ -333,76 +376,149 @@ export function DatabaseSettingsTab({
             </div>
           ) : (
             <>
-              <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 rounded-lg px-4 py-3">
-                <AlertTriangle size={16} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                <p className="text-sm text-amber-900 dark:text-amber-200">{t('googleDriveUnencryptedWarning')}</p>
-              </div>
-              {!googleDriveStatus.connected && (
-                <div className="flex items-start gap-2.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/50 rounded-lg px-4 py-3">
-                  <Info size={16} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                  <p className="text-sm text-blue-950 dark:text-blue-200 font-medium">
-                    {t('googleDrivePermissionNotice')}
+              {/* Not Encrypted Banner */}
+              <div className="flex items-start gap-3 bg-amber-50/80 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 rounded-xl p-4">
+                <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    {t('googleDrivePrivacyWarningTitle')}
+                  </p>
+                  <p className="text-xs text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                    {t('googleDriveUnencryptedWarning')}
                   </p>
                 </div>
-              )}
-              <div className="rounded-lg border border-border px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  {googleDriveStatus.connected ? (
-                    <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-                  ) : (
-                    <CloudOff size={16} className="text-muted-foreground shrink-0" />
-                  )}
-                  <div>
-                    <p className="text-sm font-medium text-foreground">
-                      {googleDriveStatus.connected ? t('googleDriveConnected') : t('googleDriveNotConnected')}
-                    </p>
-                    {googleDriveStatus.connected && googleDriveStatus.account_email && (
-                      <p className="text-xs text-muted-foreground">{t('googleDriveAccount')}: <Ltr>{googleDriveStatus.account_email}</Ltr></p>
-                    )}
+              </div>
+
+              {/* Allow Google Drive file access banner */}
+              <div className="flex items-start gap-3 bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/50 rounded-xl p-4">
+                <Info size={18} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-900/90 dark:text-blue-300/90 leading-relaxed font-medium">
+                  {t('googleDrivePermissionNotice')}
+                </p>
+              </div>
+
+              {/* Status Box: Connected vs Not Connected */}
+              {!googleDriveStatus.connected ? (
+                <div className="rounded-xl border border-border bg-card p-5 flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center shrink-0">
+                      <CloudOff size={22} className="text-muted-foreground" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold text-foreground">
+                        {t('googleDriveNotConnected')}
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {t('googleDriveHint')}
+                      </p>
+                    </div>
                   </div>
+                  {isOwner && (
+                    googleDriveRevokePending ? (
+                      <button
+                        onClick={onDisconnectGoogleDrive}
+                        disabled={disconnectingGoogleDrive}
+                        className="px-4 py-2 text-sm border border-border bg-card hover:bg-muted text-foreground rounded-lg disabled:opacity-50 font-medium shrink-0 shadow-sm transition-colors"
+                      >
+                        {disconnectingGoogleDrive ? t('googleDriveDisconnecting') : t('googleDriveRetryDisconnect')}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={onConnectGoogleDrive}
+                        disabled={connectingGoogleDrive}
+                        className="px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 font-medium shrink-0 transition-colors shadow-sm"
+                      >
+                        {connectingGoogleDrive ? t('googleDriveConnecting') : googleDriveStatus.auth_state === 'reauth_required' ? t('googleDriveReauthenticate') : t('googleDriveConnect')}
+                      </button>
+                    )
+                  )}
                 </div>
-                {isOwner && (
-                  googleDriveStatus.connected || googleDriveRevokePending ? (
+              ) : (
+                <div className="rounded-xl border border-green-200 dark:border-green-800/50 bg-green-50/60 dark:bg-green-950/20 p-5 flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-green-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                      <CheckCircle2 size={22} className="text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-green-800 dark:text-green-300">
+                        {t('googleDriveConnected')}
+                      </h3>
+                      {googleDriveStatus.account_email && (
+                        <p className="text-xs text-muted-foreground mt-0.5 font-medium">
+                          <Ltr>{googleDriveStatus.account_email}</Ltr>
+                        </p>
+                      )}
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                        <span>{t('googleDriveDestination')}:</span>
+                        <Folder size={13} className="text-muted-foreground" />
+                        <span className="font-mono text-[11px] text-foreground font-medium">
+                          {googleDriveStatus.destination_folder_name || 'flocafe_backups'}
+                        </span>
+                        {googleDriveStatus.destination_folder_name && (
+                          <button
+                            type="button"
+                            onClick={handleCopyFolder}
+                            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label="Copy"
+                          >
+                            {copiedFolder ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {isOwner && (
                     <button
                       onClick={onDisconnectGoogleDrive}
                       disabled={disconnectingGoogleDrive}
-                      className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted disabled:opacity-50 font-medium shrink-0"
+                      className="px-4 py-2 text-sm border border-border bg-card hover:bg-muted text-foreground rounded-lg disabled:opacity-50 font-medium shrink-0 shadow-sm transition-colors"
                     >
                       {disconnectingGoogleDrive ? t('googleDriveDisconnecting') : googleDriveRevokePending ? t('googleDriveRetryDisconnect') : t('googleDriveDisconnect')}
                     </button>
-                  ) : (
-                    <button
-                      onClick={onConnectGoogleDrive}
-                      disabled={connectingGoogleDrive}
-                      className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
-                    >
-                      {connectingGoogleDrive ? t('googleDriveConnecting') : googleDriveStatus.auth_state === 'reauth_required' ? t('googleDriveReauthenticate') : t('googleDriveConnect')}
-                    </button>
-                  )
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {googleDriveRevokePending && (
                 <p className="text-xs text-red-600">{t('googleDriveRevokePending')}</p>
               )}
 
-              {googleDriveStatus.connected && (
-                <>
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">{t('googleDriveFrequency')}</label>
+              {/* Preferences & Destination Grid */}
+              <div className="rounded-xl border border-border p-5 space-y-4">
+                <div className="grid sm:grid-cols-2 gap-4">
+                  {/* Backup frequency */}
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Calendar size={16} className="text-muted-foreground" />
+                      <label className="text-sm font-semibold text-foreground">{t('googleDriveFrequency')}</label>
+                    </div>
+                    {googleDriveStatus.connected ? (
                       <select
                         value={googleDriveStatus.frequency}
                         disabled={savingGoogleDrivePrefs}
                         onChange={(e) => onUpdateGoogleDrivePrefs({ frequency: e.target.value as 'daily' | 'weekly' })}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
+                        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
                       >
                         <option value="daily">{t('googleDriveFrequencyDaily')}</option>
                         <option value="weekly">{t('googleDriveFrequencyWeekly')}</option>
                       </select>
+                    ) : (
+                      <input
+                        type="text"
+                        disabled
+                        value="—"
+                        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-muted/40 text-muted-foreground cursor-not-allowed"
+                      />
+                    )}
+                  </div>
+
+                  {/* Keep last N backups */}
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Database size={16} className="text-muted-foreground" />
+                      <label className="text-sm font-semibold text-foreground">{t('googleDriveRetention')}</label>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-1">{t('googleDriveRetention')}</label>
+                    {googleDriveStatus.connected ? (
                       <input
                         type="number"
                         min={1}
@@ -412,7 +528,7 @@ export function DatabaseSettingsTab({
                         onChange={(e) => setRetentionInput(e.target.value)}
                         onBlur={() => {
                           if (retentionInput === null) return;
-                          const n = parseInt(retentionInput, 10);
+                          const n = Number(retentionInput);
                           if (Number.isInteger(n) && n >= 1 && n <= 100) {
                             setGoogleDriveStatus((prev) => ({ ...prev, retention_count: n }));
                             onUpdateGoogleDrivePrefs({ retention_count: n });
@@ -424,92 +540,167 @@ export function DatabaseSettingsTab({
                             (e.target as HTMLInputElement).blur();
                           }
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
+                        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
                       />
-                    </div>
+                    ) : (
+                      <input
+                        type="text"
+                        disabled
+                        value="—"
+                        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-muted/40 text-muted-foreground cursor-not-allowed"
+                      />
+                    )}
                   </div>
-                  <p className="text-xs text-muted-foreground">{t('googleDriveRetentionHint')}</p>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-foreground mb-1">{t('googleDriveDestination')}</label>
-                    <div className="flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-border rounded-lg bg-muted/40 text-foreground text-sm font-mono">
-                      <Folder size={16} className="text-muted-foreground shrink-0" />
-                      <span>{googleDriveStatus.destination_folder_name || t('googleDriveDestination')}</span>
-                    </div>
-                  </div>
-                  {googleDriveStatus.last_error && (
-                    <p className="text-xs text-red-600">{t('googleDriveLastError', { code: googleDriveStatus.last_error })}</p>
-                  )}
-                  {googleDriveStatus.job && (
-                    <p className="text-xs text-muted-foreground">
-                      {googleDriveStatus.job.state === 'offline_pending'
-                        ? t('googleDriveBackupRetryPending')
-                        : googleDriveStatus.job.state === 'retention_pending'
-                          ? t('googleDriveRetentionPending')
-                          : t('googleDriveJobStatus', { state: googleDriveStatus.job.state })}
-                    </p>
-                  )}
+                </div>
 
-                  <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
-                    <div className="text-xs text-muted-foreground">
-                      {googleDriveStatus.last_backup_at ? (
-                        googleDriveStatus.last_backup_status === 'error' ? (
-                          <span className="flex items-center gap-1 text-red-600">
-                            <AlertTriangle size={13} />
-                            {t('googleDriveLastBackupErrorAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1 text-muted-foreground">
-                            <CheckCircle2 size={13} className="text-green-600" />
-                            {t('googleDriveLastBackupSuccessAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
-                          </span>
-                        )
-                      ) : (
-                        <span>{t('googleDriveLastBackup')}: {t('googleDriveLastBackupNever')}</span>
-                      )}
-                    </div>
-                    {isOwner && (
+                <p className="text-xs text-muted-foreground">{t('googleDriveRetentionHint')}</p>
+
+                {/* Drive destination */}
+                <div className="pt-3 border-t border-border">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Folder size={16} className="text-muted-foreground" />
+                    <label className="text-sm font-semibold text-foreground">{t('googleDriveDestination')}</label>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-muted/40 text-foreground text-sm font-mono justify-between">
+                    <span className={googleDriveStatus.connected ? "text-foreground font-medium" : "text-muted-foreground text-xs"}>
+                      {googleDriveStatus.connected
+                        ? (googleDriveStatus.destination_folder_name || 'flocafe_backups')
+                        : '—'}
+                    </span>
+                    {googleDriveStatus.connected && googleDriveStatus.destination_folder_name && (
                       <button
-                        onClick={onBackupToGoogleDriveNow}
-                        disabled={backingUpGoogleDrive}
-                        className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
+                        type="button"
+                        onClick={handleCopyFolder}
+                        className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                        aria-label="Copy"
                       >
-                        <UploadCloud size={15} />
-                        {backingUpGoogleDrive ? t('googleDriveBackingUp') : t('googleDriveBackupNow')}
+                        {copiedFolder ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
                       </button>
                     )}
                   </div>
-                  <div className="border-t border-border pt-3 space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-foreground">{t('googleDriveRemoteHistory')}</p>
-                      <button onClick={onFetchRemoteBackups} disabled={remoteBackupsLoading} className="text-xs px-3 py-1.5 border border-border rounded-lg hover:bg-muted disabled:opacity-50">
-                        {remoteBackupsLoading ? t('googleDriveLoadingRemoteHistory') : t('googleDriveRefreshRemoteHistory')}
-                      </button>
-                    </div>
-                    {remoteBackups.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">{t('googleDriveNoRemoteBackups')}</p>
-                    ) : remoteBackups.map((backup) => (
-                      <div key={backup.id} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-foreground">
-                              {backup.created_at ? formatDateTime(backup.created_at) : backup.name}
-                            </span>
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                              {backup.kind === 'automatic' ? t('googleDriveAutomaticBadge') : t('googleDriveManualBadge')}
-                            </span>
+                </div>
+              </div>
+
+              {googleDriveStatus.last_error && (
+                <p className="text-xs text-red-600">{t('googleDriveLastError', { code: googleDriveStatus.last_error })}</p>
+              )}
+              {googleDriveStatus.job && (
+                <p className="text-xs text-muted-foreground">
+                  {googleDriveStatus.job.state === 'offline_pending'
+                    ? t('googleDriveBackupRetryPending')
+                    : googleDriveStatus.job.state === 'retention_pending'
+                      ? t('googleDriveRetentionPending')
+                      : t('googleDriveJobStatus', { state: googleDriveStatus.job.state })}
+                </p>
+              )}
+
+              {/* Action row when connected */}
+              {googleDriveStatus.connected && (
+                <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {googleDriveStatus.last_backup_at ? (
+                      googleDriveStatus.last_backup_status === 'error' ? (
+                        <span className="flex items-center gap-1.5 text-red-600 font-medium">
+                          <AlertTriangle size={15} />
+                          {t('googleDriveLastBackupErrorAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-foreground font-medium">
+                          <CheckCircle2 size={15} className="text-green-600" />
+                          {t('googleDriveLastBackupSuccessAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
+                        </span>
+                      )
+                    ) : (
+                      <span>{t('googleDriveLastBackup')}: {t('googleDriveLastBackupNever')}</span>
+                    )}
+                  </div>
+                  {isOwner && (
+                    <button
+                      onClick={onBackupToGoogleDriveNow}
+                      disabled={backingUpGoogleDrive}
+                      className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 font-medium shrink-0 transition-colors shadow-sm"
+                    >
+                      <UploadCloud size={16} />
+                      {backingUpGoogleDrive ? t('googleDriveBackingUp') : t('googleDriveBackupNow')}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Recent Drive backups list */}
+              <div className="rounded-xl border border-border p-5 space-y-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <History size={18} className="text-muted-foreground" />
+                    <h3 className="text-sm font-semibold text-foreground">{t('googleDriveRemoteHistory')}</h3>
+                  </div>
+                  {googleDriveStatus.connected && (
+                    <button
+                      onClick={onFetchRemoteBackups}
+                      disabled={remoteBackupsLoading}
+                      className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-border rounded-lg bg-card hover:bg-muted disabled:opacity-50 font-medium transition-colors"
+                    >
+                      <RefreshCw size={13} className={remoteBackupsLoading ? 'animate-spin' : ''} />
+                      {t('googleDriveRefreshRemoteHistory')}
+                    </button>
+                  )}
+                </div>
+
+                {!googleDriveStatus.connected || remoteBackups.length === 0 ? (
+                  <div className="py-8 flex flex-col items-center justify-center text-center space-y-2 text-muted-foreground">
+                    <Database size={24} className="opacity-40" />
+                    <p className="text-xs">{t('googleDriveNoRemoteBackups')}</p>
+                  </div>
+                ) : remoteBackupsLoading && remoteBackups.length === 0 ? (
+                  <div className="py-8 flex items-center justify-center text-xs text-muted-foreground">
+                    <RefreshCw size={16} className="animate-spin mr-2" />
+                    {t('googleDriveLoadingRemoteHistory')}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border border border-border rounded-lg overflow-hidden">
+                    {remoteBackups.map((backup) => (
+                      <div key={backup.id} className="p-3 bg-card hover:bg-muted/30 transition-colors flex items-center justify-between gap-4 flex-wrap">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                            <Database size={16} className="text-muted-foreground" />
                           </div>
-                          <p className="text-xs text-muted-foreground truncate">
-                            <span className="font-mono text-[11px]">{backup.name}</span> · {backup.app_version} · {formatBackupSize(backup.bytes)}
-                          </p>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-semibold text-foreground">
+                                {backup.created_at ? formatDateTime(backup.created_at) : backup.name}
+                              </span>
+                              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                                backup.kind === 'automatic'
+                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300'
+                                  : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {backup.kind === 'automatic' ? t('googleDriveAutomaticBadge') : t('googleDriveManualBadge')}
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-mono text-muted-foreground truncate mt-0.5">
+                              {backup.name}
+                            </p>
+                          </div>
                         </div>
-                        <button onClick={() => onRestoreRemoteBackup(backup)} disabled={!backup.compatible || googleDriveJobActive} className="px-3 py-1.5 text-xs border border-border rounded-lg hover:bg-muted disabled:opacity-50 shrink-0">
-                          {t('googleDriveRestore')}
-                        </button>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="text-xs text-muted-foreground">
+                            {formatBackupSize(backup.bytes)}
+                          </span>
+                          <button
+                            onClick={() => onRestoreRemoteBackup(backup)}
+                            disabled={!backup.compatible || googleDriveJobActive}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-lg bg-card hover:bg-muted disabled:opacity-50 transition-colors"
+                          >
+                            <RotateCcw size={13} />
+                            {t('googleDriveRestore')}
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
-                </>
-              )}
+                )}
+              </div>
             </>
           )}
         </div>}

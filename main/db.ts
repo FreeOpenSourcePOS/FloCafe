@@ -212,11 +212,13 @@ const DATABASE_MAINTENANCE_ROUTES = new Set([
 ]);
 
 function isDatabaseMaintenanceRoute(req: Request): boolean {
-  return DATABASE_MAINTENANCE_ROUTES.has(`${req.method} ${req.path}`);
+  const fullPath = (req.baseUrl || '') + req.path;
+  return DATABASE_MAINTENANCE_ROUTES.has(`${req.method} ${fullPath}`);
 }
 
 export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
-  if (!req.path.startsWith('/api')) {
+  const fullPath = (req.baseUrl || '') + req.path;
+  if (!fullPath.startsWith('/api')) {
     next();
     return;
   }

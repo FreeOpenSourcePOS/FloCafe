@@ -565,8 +565,9 @@ async function detectWindowsPrinters(signal?: AbortSignal): Promise<PrinterInfo[
     // The detection script is also passed as -EncodedCommand, and the app log
     // tail is attached to support tickets, so the raw error (whose message
     // embeds the command line) must never be logged.
-    const detail = sanitizePowerShellStderr(String((err as { stderr?: unknown })?.stderr || '').trim())
+    const rawDetail = sanitizePowerShellStderr(String((err as { stderr?: unknown })?.stderr || '').trim())
       || describeWindowsPrintProcessFailure(err);
+    const detail = capWindowsPrintDetail(rawDetail);
     console.log(`[Printer] Could not detect Windows printers via Get-CimInstance: ${detail}`);
   }
 
@@ -2713,9 +2714,12 @@ function redactWindowsPrintPayloadPath(detail: string, payloadPath: string): str
     .split(path.dirname(payloadPath)).join('<temp directory>');
 }
 
+const WINDOWS_PRINT_TRUNCATION_SUFFIX = ' [truncated]';
+
 function capWindowsPrintDetail(detail: string): string {
   if (detail.length <= WINDOWS_PRINT_DETAIL_MAX_LENGTH) return detail;
-  return `${detail.slice(0, WINDOWS_PRINT_DETAIL_MAX_LENGTH).trimEnd()} [truncated]`;
+  const maxContentLength = Math.max(0, WINDOWS_PRINT_DETAIL_MAX_LENGTH - WINDOWS_PRINT_TRUNCATION_SUFFIX.length);
+  return `${detail.slice(0, maxContentLength).trimEnd()}${WINDOWS_PRINT_TRUNCATION_SUFFIX}`;
 }
 
 /** Bounded, leak-free diagnostic for a failed Windows raw-print subprocess. */

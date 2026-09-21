@@ -134,7 +134,7 @@ async function main(): Promise<void> {
     const verbose = await runWindowsDispatch('verbose_stderr');
     assert.ok(verbose.detail, 'verbose stderr still yields a diagnostic');
     assert.ok(
-      (verbose.detail || '').length <= MAX_DETAIL_LENGTH + 16,
+      (verbose.detail || '').length <= MAX_DETAIL_LENGTH,
       `verbose stderr is bounded (got ${(verbose.detail || '').length} chars)`,
     );
     assert.ok((verbose.detail || '').includes('SendRaw'), 'the useful stderr text survives the bound');

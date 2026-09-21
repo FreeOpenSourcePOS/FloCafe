@@ -667,6 +667,7 @@
     "orderPaid": "Pedido #{number} pago!",
     "orderPaidWithPoints": "Pedido #{number} pago! {points} pontos de fidelidade creditados.",
     "orderPlaced": "Pedido #{number} realizado!",
+    "orderStorageUnavailable": "O pedido não foi salvo porque este dispositivo está bloqueando o armazenamento local. Libere espaço em disco ou reinicie o FloCafe e tente de novo.",
     "orderTypeDelivery": "Entrega",
     "orderTypeDineIn": "No local",
     "orderTypeOnline": "Online",

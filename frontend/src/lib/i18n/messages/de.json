@@ -667,6 +667,7 @@
     "orderPaid": "Bestellung #{number} bezahlt!",
     "orderPaidWithPoints": "Bestellung #{number} bezahlt! {points} Treuepunkte gutgeschrieben.",
     "orderPlaced": "Bestellung #{number} aufgegeben!",
+    "orderStorageUnavailable": "Die Bestellung wurde nicht gespeichert, weil dieses Gerät den lokalen Speicher blockiert. Gib Speicherplatz frei oder starte FloCafe neu und versuche es erneut.",
     "orderTypeDelivery": "Lieferung",
     "orderTypeDineIn": "Im Restaurant",
     "orderTypeOnline": "Online",

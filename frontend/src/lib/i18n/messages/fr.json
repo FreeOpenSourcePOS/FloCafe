@@ -667,6 +667,7 @@
     "orderPaid": "Commande n° {number} payée !",
     "orderPaidWithPoints": "Commande n° {number} payée ! {points} points de fidélité crédités.",
     "orderPlaced": "Commande n° {number} passée !",
+    "orderStorageUnavailable": "La commande n'a pas été enregistrée car cet appareil bloque le stockage local. Libérez de l'espace disque ou redémarrez FloCafe, puis réessayez.",
     "orderTypeDelivery": "Livraison",
     "orderTypeDineIn": "Sur place",
     "orderTypeOnline": "En ligne",

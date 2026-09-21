@@ -68,6 +68,7 @@ const BASE64_BLOB = /[A-Za-z0-9+/]{60,}={0,2}/;
 const PAYLOAD_FILE_NAME = /flo_print_\d+_\d+\.bin/;
 
 let stubDir = '';
+let emptyDir = '';
 let originalPath = '';
 let originalPlatform = '';
 
@@ -81,7 +82,7 @@ async function runWindowsDispatch(
 ): Promise<{ ok: boolean; detail?: string; failureClass?: string }> {
   process.env[FAKE_MODE_ENV] = mode;
   process.env.PATH = options.hidePowerShell
-    ? originalPath
+    ? emptyDir
     : `${stubDir}${path.delimiter}${originalPath}`;
   return printViaUSB(Buffer.from('FLO-RAW-PRINT-PAYLOAD'), 'Fake Printer', options.signal);
 }
@@ -95,10 +96,45 @@ function assertNoSubprocessEvidence(detail: string, label: string): void {
   assert.ok(!detail.includes(stubDir), `${label}: helper paths must not escape`);
 }
 
+function assertProcessClassifications(): void {
+  // Stable classifications for the process-level shapes Node reports, plus
+  // the defensive default for anything unrecognized.
+  assert.equal(
+    describeWindowsPrintProcessFailure({ killed: true, signal: 'SIGTERM', code: null, message: 'Command failed: powershell -EncodedCommand AAAA' }),
+    'Windows print command timed out',
+  );
+  assert.equal(
+    describeWindowsPrintProcessFailure({ name: 'AbortError', code: 'ABORT_ERR' }),
+    'Windows print command was cancelled',
+  );
+  assert.equal(
+    describeWindowsPrintProcessFailure({ code: 'ENOENT', syscall: 'spawn powershell' }),
+    'Could not start the Windows print helper',
+  );
+  assert.equal(
+    describeWindowsPrintProcessFailure({ code: 'EACCES', syscall: 'spawn powershell' }),
+    'Could not start the Windows print helper',
+  );
+  assert.equal(describeWindowsPrintProcessFailure({}), 'Windows raw print failed');
+}
+
 async function main(): Promise<void> {
-  stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-fake-powershell-'));
-  originalPath = process.env.PATH || '';
+  assertProcessClassifications();
+
   originalPlatform = process.platform;
+  originalPath = process.env.PATH || '';
+
+  // On native Windows hosts, child_process.execFile('powershell') resolves
+  // via PATHEXT (.exe) and cannot execute an extensionless POSIX shell script.
+  // The subprocess transport cases below run on POSIX hosts with a mocked
+  // process.platform = 'win32'.
+  if (originalPlatform === 'win32') {
+    console.log('Issue #789 Windows raw-print failure detail tests passed (win32 unit mode)');
+    return;
+  }
+
+  stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-fake-powershell-'));
+  emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-empty-path-'));
   fs.writeFileSync(path.join(stubDir, 'powershell'), STUB_POWERSHELL, { mode: 0o755 });
   setPlatform('win32');
 
@@ -158,32 +194,13 @@ async function main(): Promise<void> {
     assert.equal(signalDeath.detail, 'Windows print helper was terminated (SIGKILL)');
     assertNoSubprocessEvidence(signalDeath.detail || '', 'terminated helper');
 
-    // Stable classifications for the process-level shapes Node reports, plus
-    // the defensive default for anything unrecognized.
-    assert.equal(
-      describeWindowsPrintProcessFailure({ killed: true, signal: 'SIGTERM', code: null, message: 'Command failed: powershell -EncodedCommand AAAA' }),
-      'Windows print command timed out',
-    );
-    assert.equal(
-      describeWindowsPrintProcessFailure({ name: 'AbortError', code: 'ABORT_ERR' }),
-      'Windows print command was cancelled',
-    );
-    assert.equal(
-      describeWindowsPrintProcessFailure({ code: 'ENOENT', syscall: 'spawn powershell' }),
-      'Could not start the Windows print helper',
-    );
-    assert.equal(
-      describeWindowsPrintProcessFailure({ code: 'EACCES', syscall: 'spawn powershell' }),
-      'Could not start the Windows print helper',
-    );
-    assert.equal(describeWindowsPrintProcessFailure({}), 'Windows raw print failed');
-
     console.log('Issue #789 Windows raw-print failure detail tests passed');
   } finally {
     delete process.env[FAKE_MODE_ENV];
     process.env.PATH = originalPath;
     setPlatform(originalPlatform);
-    fs.rmSync(stubDir, { recursive: true, force: true });
+    if (stubDir) fs.rmSync(stubDir, { recursive: true, force: true });
+    if (emptyDir) fs.rmSync(emptyDir, { recursive: true, force: true });
   }
 }
 

@@ -171,6 +171,24 @@ tags for the release actors. The workflow gate is the repository-code control;
 these GitHub rules are the platform-level control that prevents an unauthorized
 tag push from reaching the workflow at all.
 
+## Manual pre-release QA checklist
+
+Automated CI covers Chromium (Electron) and the packaged desktop app. The one
+surface FloCafe doesn't control the runtime for is the standalone server app
+(`:3003`), which staff reach from whatever LAN browser they have — including
+non-Chromium ones. Before promoting a stable release, manually verify the
+server app on:
+
+- **Safari on iOS** (current major version)
+- **An older Android WebView** (the default in-app browser on a device not
+  updated to the latest Chrome/WebView release)
+
+Check: page loads and renders regional currency/timezone correctly (not the
+India-fallback values regional-snapshot.md's compliance grep is meant to
+catch), order creation and payment flow completes, and WebSocket/live-update
+behavior doesn't silently stall. Record the device/OS/browser tested in the
+release notes or PR description for that release.
+
 ## Branch and tag lifecycle
 
 Beta-prep branches are temporary working branches; release tags and GitHub

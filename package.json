@@ -16,6 +16,7 @@
     "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc && node scripts/copy-runtime-assets.cjs",
     "lint:backend": "eslint main/ shared/",
     "lint": "npm run lint:backend && npm --prefix frontend run lint",
+    "lint:budget": "node scripts/ci/check-lint-budget.cjs",
     "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop npm run build",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",

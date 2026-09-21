@@ -118,6 +118,9 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      - name: Lint warning budget
+        run: npm run lint:budget
+
       - name: Build frontend
         run: cd frontend && npx cross-env NEXT_BUILD_MODE=desktop npm run build
         env:

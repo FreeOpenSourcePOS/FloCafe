@@ -28,6 +28,25 @@ Results:
 
 <!-- If applicable, add screenshots or recordings of UI changes -->
 
+## Cross-cutting surfaces
+
+<!-- For each row: affected / not affected / verified. Delete rows that obviously don't apply (e.g. a docs-only PR). -->
+
+| Surface | Status |
+|---|---|
+| UI | |
+| API | |
+| Persistence | |
+| Upgrade path | |
+| CSV | |
+| Web print | |
+| Thermal print | |
+| LAN / server app | |
+| RTL | |
+| Dark mode | |
+| Timezone | |
+| Permissions | |
+
 ## Contributor checklist
 
 - [ ] This is a small isolated fix/doc update OR follows an approved issue/direction.

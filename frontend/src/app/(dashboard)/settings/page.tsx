@@ -817,13 +817,13 @@ export default function SettingsPage() {
   // ── Printers ─────────────────────────────────────────────────────────────
   const [hwPrinters, setHwPrinters] = useState<HwPrinter[]>([]);
 
-  const fetchPrinters = async (signal?: AbortSignal) => {
+  const fetchPrinters = async (signal?: AbortSignal): Promise<boolean> => {
     try {
       const res = await api.get('/printers', signal ? { signal } : undefined);
-      if (!signal?.aborted) setHwPrinters(res.data.printers || []);
-    } catch (error) {
-      if (!isRequestCancelled(error)) return;
-    }
+      if (signal?.aborted) return false;
+      setHwPrinters(res.data.printers || []);
+      return true;
+    } catch { return false; }
   };
 
   // ── Kitchen Stations ─────────────────────────────────────────────────────
@@ -838,11 +838,12 @@ export default function SettingsPage() {
   const [stationCategories, setStationCategories] = useState<CategoryOption[]>([]);
   const [stationStaff, setStationStaff] = useState<StaffOption[]>([]);
   const [stationUsersByStation, setStationUsersByStation] = useState<Record<string, StaffOption[]>>({});
+  const [kdsSettingTenantId, setKdsSettingTenantId] = useState<number | null>(null);
   const [showStationForm, setShowStationForm] = useState(false);
   const [editingStationId, setEditingStationId] = useState<string | null>(null);
   const [stationForm, setStationForm] = useState<{
-    name: string; category_ids: string[]; printer_id: string; user_ids: string[];
-  }>({ name: '', category_ids: [], printer_id: '', user_ids: [] });
+    name: string; category_ids: string[]; printer_id: string; chef_user_id: string;
+  }>({ name: '', category_ids: [], printer_id: '', chef_user_id: '' });
   const [savingStation, setSavingStation] = useState(false);
 
   const fetchStations = async (signal?: AbortSignal): Promise<boolean> => {
@@ -863,7 +864,7 @@ export default function SettingsPage() {
   };
   const fetchStationStaff = async (signal?: AbortSignal): Promise<boolean> => {
     try {
-      const res = await api.get('/staff', signal ? { signal } : undefined);
+      const res = await api.get('/staff?role=chef&active=true', signal ? { signal } : undefined);
       if (signal?.aborted) return false;
       setStationStaff(res.data.staff || []);
       return true;
@@ -880,7 +881,7 @@ export default function SettingsPage() {
 
   const openAddStation = () => {
     setEditingStationId(null);
-    setStationForm({ name: '', category_ids: [], printer_id: '', user_ids: [] });
+    setStationForm({ name: '', category_ids: [], printer_id: '', chef_user_id: '' });
     setShowStationForm(true);
   };
 
@@ -888,20 +889,20 @@ export default function SettingsPage() {
     setEditingStationId(station.id);
     let categoryIds: string[] = [];
     try { categoryIds = station.category_ids ? JSON.parse(station.category_ids) : []; } catch { categoryIds = []; }
-    let userIds: string[] = stationUsersByStation[station.id]?.map((u) => u.id) || [];
+    let chefUserId = stationUsersByStation[station.id]?.find((u) => u.role === 'chef')?.id || '';
     if (!stationUsersByStation[station.id]) {
       try {
         const res = await api.get(`/kitchen-stations/${station.id}`);
         const users = res.data.kitchenStation.users || [];
         setStationUsersByStation((prev) => ({ ...prev, [station.id]: users }));
-        userIds = users.map((u: StaffOption) => u.id);
+        chefUserId = users.find((u: StaffOption) => u.role === 'chef')?.id || '';
       } catch { /* ignore */ }
     }
-    setStationForm({ name: station.name, category_ids: categoryIds, printer_id: station.printer_id || '', user_ids: userIds });
+    setStationForm({ name: station.name, category_ids: categoryIds, printer_id: station.printer_id || '', chef_user_id: chefUserId });
     setShowStationForm(true);
   };
 
-  const toggleStationFormValue = (field: 'category_ids' | 'user_ids', value: string) => {
+  const toggleStationFormValue = (field: 'category_ids', value: string) => {
     setStationForm((prev) => {
       const set = new Set(prev[field]);
       if (set.has(value)) set.delete(value); else set.add(value);
@@ -926,7 +927,11 @@ export default function SettingsPage() {
         stationId = res.data.kitchenStation.id;
       }
       if (stationId) {
-        await api.put(`/kitchen-stations/${stationId}/users`, { user_ids: stationForm.user_ids });
+        if (kdsEnabledSetting && kdsSettingTenantId === currentTenant?.id) {
+          await api.put(`/kitchen-stations/${stationId}/users`, {
+            user_ids: stationForm.chef_user_id ? [stationForm.chef_user_id] : [],
+          });
+        }
         await fetchStationUsers(stationId);
       }
       toast.success(editingStationId ? t('stationUpdated') : t('stationSaved'));
@@ -951,7 +956,7 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    if (activeTab !== 'kds') return;
+    if (activeTab !== 'kitchen-stations') return;
     const controller = new AbortController();
     stations.forEach((s) => {
       if (!stationUsersByStation[s.id]) fetchStationUsers(s.id, controller.signal);
@@ -1904,24 +1909,41 @@ export default function SettingsPage() {
         ]);
         return;
       }
-      if (tab === 'kds') {
-        const [kdsInfoLoaded, stationsLoaded, categoriesLoaded, staffLoaded, settingLoaded] = await Promise.all([
-          fetchKdsInfo(signal),
+      if (tab === 'kitchen-stations') {
+        const { data } = await get('/settings/kds_enabled');
+        if (!active()) return;
+        const enabled = data.setting?.value !== 'false';
+        setKdsEnabledSetting(enabled);
+        posSettings.setKdsEnabled(enabled);
+        setKdsSettingTenantId(currentTenant?.id ?? null);
+
+        const [stationsLoaded, categoriesLoaded, staffLoaded, printersLoaded] = await Promise.all([
           fetchStations(signal),
           fetchStationCategories(signal),
           fetchStationStaff(signal),
+          fetchPrinters(signal),
+        ]);
+        if (!stationsLoaded || !categoriesLoaded || !staffLoaded || !printersLoaded) {
+          throw new Error('Kitchen station hydration failed');
+        }
+        return;
+      }
+      if (tab === 'kds') {
+        const [kdsInfoLoaded, settingLoaded] = await Promise.all([
+          fetchKdsInfo(signal),
           get('/settings/kds_enabled').then((res) => {
             if (!active()) return false;
             const enabled = res.data.setting?.value !== 'false';
             setKdsEnabledSetting(enabled);
             posSettings.setKdsEnabled(enabled);
+            setKdsSettingTenantId(currentTenant?.id ?? null);
             return true;
           }).catch((error) => {
             if (isRequestCancelled(error)) throw error;
             return false;
           }),
         ]);
-        if (!kdsInfoLoaded || !stationsLoaded || !categoriesLoaded || !staffLoaded || !settingLoaded) {
+        if (!kdsInfoLoaded || !settingLoaded) {
           throw new Error('KDS hydration failed');
         }
         return;
@@ -2422,6 +2444,8 @@ export default function SettingsPage() {
     setSavingKdsEnabled(true);
     try {
       await api.put('/settings/kds_enabled', { value: enabled ? 'true' : 'false' });
+      setKdsSettingTenantId(currentTenant?.id ?? null);
+      if (currentTenant?.id) loadedSettingsTabs.current.delete(`${currentTenant.id}:kitchen-stations`);
       toast.success(enabled ? t('kdsEnabledOn') : t('kdsEnabledOff'));
     } catch {
       setKdsEnabledSetting(previous);
@@ -2817,6 +2841,7 @@ export default function SettingsPage() {
               <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t('navGroupOperations')}</p>
             </div>
             <SettingsNavItem label={t('posWorkflow')} value="pos" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('kitchenStations')} value="kitchen-stations" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tablesideOrdering')} value="server-app" active={activeTab} onClick={handleSettingsTabChange} />
             {/* WhatsApp opt-in lives under Operations because the receive-bill
@@ -3082,6 +3107,139 @@ export default function SettingsPage() {
           </SettingsTabShell>
         </TabsContent>
 
+        <TabsContent value="kitchen-stations">
+          <SettingsTabShell>
+            <div className="bg-card rounded-xl border border-border p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <ChefHat size={20} className="text-muted-foreground" />
+                  <h2 className="font-semibold text-foreground">{t('kitchenStations')}</h2>
+                </div>
+                <button onClick={openAddStation}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
+                  <Plus size={14} />
+                  {t('addStation')}
+                </button>
+              </div>
+              <p className="text-sm text-muted-foreground mb-5">{t('kitchenStationsHint')}</p>
+
+              {stations.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">{t('noStationsYet')}</p>
+              ) : (
+                <div className="space-y-2">
+                  {stations.map((station) => {
+                    let categoryIds: string[] = [];
+                    try { categoryIds = station.category_ids ? JSON.parse(station.category_ids) : []; } catch { categoryIds = []; }
+                    const categoryNames = categoryIds
+                      .map((id) => stationCategories.find((c) => c.id === id)?.name)
+                      .filter(Boolean);
+                    const printer = hwPrinters.find((p) => p.id === station.printer_id);
+                    const chefs = (stationUsersByStation[station.id] || []).filter((u) => u.role === 'chef');
+                    return (
+                      <div key={station.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
+                        <div className="min-w-0">
+                          <p className="font-medium text-foreground">{station.name}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {categoryNames.length > 0 ? categoryNames.join(', ') : t('stationNoCategories')}
+                            {' · '}
+                            {printer ? printer.name : t('stationNoPrinter')}
+                            {' · '}
+                            {chefs[0]?.name || t('stationNoChef')}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => openEditStation(station)}
+                            className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded">
+                            {tCommon('edit')}
+                          </button>
+                          <button onClick={() => deleteStation(station.id)}
+                            className="p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {showStationForm && (
+                <Dialog open={showStationForm} onOpenChange={setShowStationForm}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>{editingStationId ? t('editStation') : t('addStation')}</DialogTitle>
+                      <DialogDescription>{t('stationFormHint')}</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">{t('stationName')}</label>
+                        <input type="text" value={stationForm.name}
+                          onChange={(e) => setStationForm((f) => ({ ...f, name: e.target.value }))}
+                          placeholder={t('stationNamePlaceholder')}
+                          className="w-full px-3 py-2 border border-border rounded-lg text-sm" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">{t('stationCategories')}</label>
+                        {stationCategories.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">{t('noCategoriesYet')}</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                            {stationCategories.map((cat) => (
+                              <label key={cat.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-border rounded-full text-xs cursor-pointer hover:bg-muted">
+                                <input type="checkbox" checked={stationForm.category_ids.includes(cat.id)}
+                                  onChange={() => toggleStationFormValue('category_ids', cat.id)}
+                                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                                {cat.name}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">{t('stationPrinter')}</label>
+                        <select value={stationForm.printer_id}
+                          onChange={(e) => setStationForm((f) => ({ ...f, printer_id: e.target.value }))}
+                          className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card">
+                          <option value="">{t('stationUseDefaultPrinter')}</option>
+                          {hwPrinters.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">{t('stationChef')}</label>
+                        <select value={stationForm.chef_user_id}
+                          onChange={(e) => setStationForm((f) => ({ ...f, chef_user_id: e.target.value }))}
+                          disabled={!kdsEnabledSetting || kdsSettingTenantId !== currentTenant?.id}
+                          className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card">
+                          <option value="">{t('stationNoChef')}</option>
+                          {stationStaff.map((chef) => (
+                            <option key={chef.id} value={chef.id}>{chef.name}</option>
+                          ))}
+                        </select>
+                        {(!kdsEnabledSetting || kdsSettingTenantId !== currentTenant?.id) ? (
+                          <p className="text-xs text-muted-foreground mt-1">{t('stationChefRequiresKds')}</p>
+                        ) : stationStaff.length === 0 && (
+                          <p className="text-xs text-muted-foreground mt-1">{t('noChefsYet')}</p>
+                        )}
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowStationForm(false)}>{tCommon('cancel')}</Button>
+                      <Button onClick={saveStation} disabled={savingStation}>
+                        {savingStation ? tCommon('saving') : tCommon('save')}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </div>
+          </SettingsTabShell>
+        </TabsContent>
+
         {/* Kitchen Display — own tab under Operations */}
         <TabsContent value="kds">
           <SettingsTabShell>
@@ -3214,134 +3372,6 @@ export default function SettingsPage() {
               )}
             </div>
             )}
-
-            <div className="bg-card rounded-xl border border-border p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <ChefHat size={20} className="text-muted-foreground" />
-                  <h2 className="font-semibold text-foreground">{t('kitchenStations')}</h2>
-                </div>
-                <button onClick={openAddStation}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
-                  <Plus size={14} />
-                  {t('addStation')}
-                </button>
-              </div>
-              <p className="text-sm text-muted-foreground mb-5">{t('kitchenStationsHint')}</p>
-
-              {stations.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">{t('noStationsYet')}</p>
-              ) : (
-                <div className="space-y-2">
-                  {stations.map((station) => {
-                    let categoryIds: string[] = [];
-                    try { categoryIds = station.category_ids ? JSON.parse(station.category_ids) : []; } catch { categoryIds = []; }
-                    const categoryNames = categoryIds
-                      .map((id) => stationCategories.find((c) => c.id === id)?.name)
-                      .filter(Boolean);
-                    const printer = hwPrinters.find((p) => p.id === station.printer_id);
-                    const users = stationUsersByStation[station.id] || [];
-                    return (
-                      <div key={station.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
-                        <div className="min-w-0">
-                          <p className="font-medium text-foreground">{station.name}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {categoryNames.length > 0 ? categoryNames.join(', ') : t('stationNoCategories')}
-                            {' · '}
-                            {printer ? printer.name : t('stationNoPrinter')}
-                            {users.length > 0 && ` · ${users.map((u) => u.name).join(', ')}`}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button onClick={() => openEditStation(station)}
-                            className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded">
-                            {tCommon('edit')}
-                          </button>
-                          <button onClick={() => deleteStation(station.id)}
-                            className="p-1.5 text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {showStationForm && (
-                <Dialog open={showStationForm} onOpenChange={setShowStationForm}>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>{editingStationId ? t('editStation') : t('addStation')}</DialogTitle>
-                      <DialogDescription>{t('stationFormHint')}</DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-2">
-                      <div>
-                        <label className="block text-sm font-medium text-foreground mb-1">{t('stationName')}</label>
-                        <input type="text" value={stationForm.name}
-                          onChange={(e) => setStationForm((f) => ({ ...f, name: e.target.value }))}
-                          placeholder={t('stationNamePlaceholder')}
-                          className="w-full px-3 py-2 border border-border rounded-lg text-sm" />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-foreground mb-1">{t('stationCategories')}</label>
-                        {stationCategories.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">{t('noCategoriesYet')}</p>
-                        ) : (
-                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                            {stationCategories.map((cat) => (
-                              <label key={cat.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-border rounded-full text-xs cursor-pointer hover:bg-muted">
-                                <input type="checkbox" checked={stationForm.category_ids.includes(cat.id)}
-                                  onChange={() => toggleStationFormValue('category_ids', cat.id)}
-                                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                                {cat.name}
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-foreground mb-1">{t('stationPrinter')}</label>
-                        <select value={stationForm.printer_id}
-                          onChange={(e) => setStationForm((f) => ({ ...f, printer_id: e.target.value }))}
-                          className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card">
-                          <option value="">{t('stationUseDefaultPrinter')}</option>
-                          {hwPrinters.map((p) => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-foreground mb-1">{t('stationStaff')}</label>
-                        {stationStaff.length === 0 ? (
-                          <p className="text-xs text-muted-foreground">{t('noStaffYet')}</p>
-                        ) : (
-                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                            {stationStaff.map((u) => (
-                              <label key={u.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-border rounded-full text-xs cursor-pointer hover:bg-muted">
-                                <input type="checkbox" checked={stationForm.user_ids.includes(u.id)}
-                                  onChange={() => toggleStationFormValue('user_ids', u.id)}
-                                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                                {u.name}
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowStationForm(false)}>{tCommon('cancel')}</Button>
-                      <Button onClick={saveStation} disabled={savingStation}>
-                        {savingStation ? tCommon('saving') : tCommon('save')}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              )}
-            </div>
 
             <KdsDefaultViewCard />
 

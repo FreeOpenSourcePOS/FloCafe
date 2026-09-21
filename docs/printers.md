@@ -36,7 +36,7 @@ For the full study of non-Latin script support on thermal printers — including
 
 ## Kitchen printing
 
-FloCafe can print kitchen order tickets to the default printer or route items to configured kitchen stations. A station needs an active printer and the product categories it handles. Items without a matching station fall back to the default kitchen route.
+FloCafe can print kitchen order tickets to the default printer or route items to configured kitchen stations. Configure stations under **Settings → Operations → Kitchen Stations**, whether or not KDS is enabled. Each station maps product categories to any configured FloCafe printer. When KDS is enabled, the station can also be assigned to an active chef account; that chef's KDS view is limited to the station's categories. Items without a matching station fall back to the default kitchen route.
 
 KOT printing can be disabled for the business. When it is disabled, neither automatic nor manual KOT print requests are sent.
 

@@ -622,7 +622,7 @@ test('Rotating pairing code does not update the code after leaving and re-enteri
   await expect(page.getByText('STALECODE', { exact: true })).toHaveCount(0);
 });
 
-test('Leaving KDS cancels station-user hydration', async ({ page }) => {
+test('Leaving Kitchen Stations cancels station-user hydration', async ({ page }) => {
   await startMockedSettingsSession(page);
   const apiPaths = collectApiPaths(page);
   await page.route('**/api/kitchen-stations', async (route) => {
@@ -643,13 +643,13 @@ test('Leaving KDS cancels station-user hydration', async ({ page }) => {
     } catch {}
   });
 
-  await page.goto(`${BASE}/settings?tab=kds`);
-  await expect(page.getByRole('heading', { name: 'KDS', exact: true })).toBeVisible();
+  await page.goto(`${BASE}/settings?tab=kitchen-stations`);
+  await expect(page.getByRole('heading', { name: 'Kitchen Stations', exact: true })).toBeVisible();
   await expect.poll(() => apiPaths.filter((path) => path === '/api/kitchen-stations/station-1').length).toBe(1);
   await page.getByRole('button', { name: 'Store Details', exact: true }).click();
   await expect(page).toHaveURL(/\/settings\/?$/);
   await page.waitForTimeout(1200);
-  await page.getByRole('button', { name: 'Kitchen Display', exact: true }).click();
+  await page.getByRole('button', { name: 'Kitchen Stations', exact: true }).click();
   await expect.poll(() => apiPaths.filter((path) => path === '/api/kitchen-stations/station-1').length).toBe(2);
 });
 

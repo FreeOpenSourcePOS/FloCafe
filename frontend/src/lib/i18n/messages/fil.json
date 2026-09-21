@@ -667,6 +667,7 @@
     "orderPaid": "Bayad na ang Order #{number}!",
     "orderPaidWithPoints": "Bayad na ang Order #{number}! Na-credit ang {points} loyalty points.",
     "orderPlaced": "Nailagay na ang Order #{number}!",
+    "orderStorageUnavailable": "Hindi na-save ang order dahil hinaharang ng device na ito ang lokal na imbakan. Magbakante ng espasyo sa disk o i-restart ang FloCafe, pagkatapos ay subukan muli.",
     "orderTypeDelivery": "Delivery",
     "orderTypeDineIn": "Dine In",
     "orderTypeOnline": "Online",

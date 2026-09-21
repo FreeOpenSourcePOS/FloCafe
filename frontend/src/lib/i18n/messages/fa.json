@@ -667,6 +667,7 @@
     "orderPaid": "سفارش شماره {number} پرداخت شد!",
     "orderPaidWithPoints": "سفارش شماره {number} پرداخت شد! {points} امتیاز وفاداری افزوده شد.",
     "orderPlaced": "سفارش شماره {number} ثبت شد!",
+    "orderStorageUnavailable": "سفارش ذخیره نشد زیرا این دستگاه حافظه محلی را مسدود کرده است. فضای دیسک را آزاد کنید یا FloCafe را دوباره اجرا کنید و سپس تلاش کنید.",
     "orderTypeDelivery": "رسانش",
     "orderTypeDineIn": "خوردن در محل",
     "orderTypeOnline": "آنلاین",

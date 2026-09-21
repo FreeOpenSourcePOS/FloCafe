@@ -667,6 +667,7 @@
     "orderPaid": "Order #{number} paid!",
     "orderPaidWithPoints": "Order #{number} paid! {points} loyalty points credited.",
     "orderPlaced": "Order #{number} placed!",
+    "orderStorageUnavailable": "Order not saved because this device is blocking local storage. Free up disk space or restart FloCafe, then try again.",
     "orderTypeDelivery": "Delivery",
     "orderTypeDineIn": "Dine in",
     "orderTypeOnline": "Online",

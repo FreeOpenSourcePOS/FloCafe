@@ -505,6 +505,38 @@ async function isMacOSDefaultPrinter(name: string, signal?: AbortSignal): Promis
   }
 }
 
+// Windows PowerShell 5.1 encodes redirected stdout/stderr with the console/OEM
+// code page, so decoding those bytes as UTF-8 turns accented diagnostics into
+// replacement characters. Every helper therefore switches its .NET writers to
+// UTF-8 explicitly, and the console code page too where a console exists. The
+// module-loading progress record is silenced because it is framing, not a
+// device reason. Best-effort on purpose: this must never be able to break
+// printing, so a failure here leaves the default streams in place.
+const POWERSHELL_UTF8_PRELUDE = `
+$ProgressPreference = 'SilentlyContinue'
+try {
+  $floUtf8 = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
+  $floOut = New-Object -TypeName System.IO.StreamWriter -ArgumentList ([Console]::OpenStandardOutput()), $floUtf8
+  $floErr = New-Object -TypeName System.IO.StreamWriter -ArgumentList ([Console]::OpenStandardError()), $floUtf8
+  $floOut.AutoFlush = $true
+  $floErr.AutoFlush = $true
+  [Console]::SetOut($floOut)
+  [Console]::SetError($floErr)
+  [Console]::OutputEncoding = $floUtf8
+} catch { }
+`;
+
+/** Command line for a Windows PowerShell helper, with the UTF-8 stream
+ * contract prefixed so no helper can emit console-code-page output. */
+function windowsPowerShellCommandArgs(script: string): string[] {
+  return [
+    '-NoProfile',
+    '-NonInteractive',
+    '-EncodedCommand',
+    Buffer.from(`${POWERSHELL_UTF8_PRELUDE}${script}`, 'utf16le').toString('base64'),
+  ];
+}
+
 // Enumerate printers via Get-CimInstance (Win32_Printer) using -EncodedCommand.
 const DETECT_WINDOWS_PRINTERS_SCRIPT = `
 $ErrorActionPreference = 'Stop'
@@ -514,6 +546,7 @@ try {
     ConvertTo-Json -Compress
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
+  [Console]::Error.Flush()
   exit 1
 }
 `;
@@ -529,10 +562,9 @@ async function detectWindowsPrinters(signal?: AbortSignal): Promise<PrinterInfo[
   const printers: PrinterInfo[] = [];
 
   try {
-    const encoded = Buffer.from(DETECT_WINDOWS_PRINTERS_SCRIPT, 'utf16le').toString('base64');
     const { stdout } = await execFileAsync(
       'powershell',
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      windowsPowerShellCommandArgs(DETECT_WINDOWS_PRINTERS_SCRIPT),
       { encoding: 'utf8', timeout: PRINTER_DETECTION_TIMEOUT_MS, signal, windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
     );
 
@@ -2656,6 +2688,7 @@ ${WINSPOOL_HELPER_SOURCE}
   exit 0
 } catch {
   [Console]::Error.WriteLine($_.Exception.Message)
+  [Console]::Error.Flush()
   exit 1
 }
 `;
@@ -2695,11 +2728,9 @@ async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: A
   try {
     fs.writeFileSync(tmpFile, data);
 
-    const encoded = Buffer.from(WINSPOOL_HELPER_SCRIPT, 'utf16le').toString('base64');
-
     const { stdout } = await execFileAsync(
       'powershell',
-      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      windowsPowerShellCommandArgs(WINSPOOL_HELPER_SCRIPT),
       {
         encoding: 'utf8',
         timeout: 20000,

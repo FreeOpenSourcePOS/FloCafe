@@ -126,10 +126,20 @@ function clixmlErrorRecord(text: string): Buffer {
 }
 
 async function runEncodingRegression(): Promise<void> {
+  originalPlatform = process.platform;
+  originalPath = process.env.PATH || "";
+
+  // On native Windows hosts, child_process.execFile('powershell') resolves
+  // against PATHEXT (.exe) and cannot execute an extensionless POSIX shell script.
+  // The subprocess transport cases below run on POSIX hosts with a mocked
+  // process.platform = 'win32'.
+  if (originalPlatform === "win32") {
+    console.log("✓ Windows PowerShell stderr encoding tests skipped on native win32 (POSIX stub mode).");
+    return;
+  }
+
   stubDir = fs.mkdtempSync(path.join(os.tmpdir(), "flo-utf8-powershell-"));
   fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), "flo-utf8-fixtures-"));
-  originalPath = process.env.PATH || "";
-  originalPlatform = process.platform;
   fs.writeFileSync(path.join(stubDir, "powershell"), STUB_POWERSHELL, { mode: 0o755 });
   setPlatform("win32");
 
@@ -196,8 +206,8 @@ async function runEncodingRegression(): Promise<void> {
     delete process.env[DUMP_ENV];
     process.env.PATH = originalPath;
     setPlatform(originalPlatform);
-    fs.rmSync(stubDir, { recursive: true, force: true });
-    fs.rmSync(fixtureDir, { recursive: true, force: true });
+    if (stubDir) fs.rmSync(stubDir, { recursive: true, force: true });
+    if (fixtureDir) fs.rmSync(fixtureDir, { recursive: true, force: true });
   }
 }
 

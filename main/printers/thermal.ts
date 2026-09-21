@@ -562,7 +562,12 @@ async function detectWindowsPrinters(signal?: AbortSignal): Promise<PrinterInfo[
       }
     }
   } catch (err) {
-    console.log('[Printer] Could not detect Windows printers via Get-CimInstance:', err);
+    // The detection script is also passed as -EncodedCommand, and the app log
+    // tail is attached to support tickets, so the raw error (whose message
+    // embeds the command line) must never be logged.
+    const detail = sanitizePowerShellStderr(String((err as { stderr?: unknown })?.stderr || '').trim())
+      || describeWindowsPrintProcessFailure(err);
+    console.log(`[Printer] Could not detect Windows printers via Get-CimInstance: ${detail}`);
   }
 
   return printers;
@@ -2682,6 +2687,50 @@ function parseWindowsPrintOutput(output: unknown): Pick<DispatchResult, 'jobId' 
   return parsed;
 }
 
+// Node's execFile error message embeds the complete command line, which for the
+// raw-print helper is `powershell ... -EncodedCommand <base64>`. Process-level
+// failures (timeout, kill, launch failure) report an empty stderr, so that
+// message must never become the printer detail.
+const WINDOWS_PRINT_DETAIL_MAX_LENGTH = 400;
+const WINDOWS_PRINT_COMMAND_EVIDENCE = /Command failed:|-EncodedCommand/i;
+
+/** Stable classification of a failed Windows PowerShell subprocess. */
+export function describeWindowsPrintProcessFailure(error: unknown): string {
+  const failure = (error || {}) as { name?: unknown; code?: unknown; killed?: unknown; signal?: unknown };
+  if (failure.name === 'AbortError' || failure.code === 'ABORT_ERR') return 'Windows print command was cancelled';
+  if (failure.killed === true || failure.code === 'ETIMEDOUT') return 'Windows print command timed out';
+  // Spawn-level failures report an errno string instead of an exit status.
+  if (typeof failure.code === 'string') return 'Could not start the Windows print helper';
+  if (typeof failure.signal === 'string' && failure.signal) return `Windows print helper was terminated (${failure.signal})`;
+  if (typeof failure.code === 'number') return `Windows print helper exited with code ${failure.code}`;
+  return 'Windows raw print failed';
+}
+
+function redactWindowsPrintPayloadPath(detail: string, payloadPath: string): string {
+  if (!detail || !payloadPath) return detail;
+  return detail
+    .split(payloadPath).join('<payload file>')
+    .split(path.dirname(payloadPath)).join('<temp directory>');
+}
+
+function capWindowsPrintDetail(detail: string): string {
+  if (detail.length <= WINDOWS_PRINT_DETAIL_MAX_LENGTH) return detail;
+  return `${detail.slice(0, WINDOWS_PRINT_DETAIL_MAX_LENGTH).trimEnd()} [truncated]`;
+}
+
+/** Bounded, leak-free diagnostic for a failed Windows raw-print subprocess. */
+function describeWindowsRawPrintFailure(
+  error: unknown,
+  options: { payloadPath: string; printerName?: string },
+): string {
+  const cleanStderr = sanitizePowerShellStderr(String((error as { stderr?: unknown })?.stderr || '').trim());
+  const detail = cleanStderr && !WINDOWS_PRINT_COMMAND_EVIDENCE.test(cleanStderr)
+    ? cleanStderr
+    : describeWindowsPrintProcessFailure(error);
+  const redacted = redactWindowsPrintPayloadPath(detail, options.payloadPath).trim();
+  return capWindowsPrintDetail(redacted) || `Windows raw print failed for "${options.printerName || 'printer'}"`;
+}
+
 async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
   if (!printerName) {
     const detail = 'No Windows printer configured; refusing to guess a target';
@@ -2713,13 +2762,11 @@ async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: A
     console.log(`[Printer] Windows raw print accepted for "${printerName}" (${String(stdout).trim()})`);
     return { ok: true, ...metadata };
   } catch (err: any) {
-    const rawStderr = String(err.stderr || '').trim();
-    const cleanStderr = sanitizePowerShellStderr(rawStderr);
-    const detail = cleanStderr || String(err.message || '').trim();
+    const detail = describeWindowsRawPrintFailure(err, { payloadPath: tmpFile, printerName });
     console.error(`[Printer] Windows raw print failed for "${printerName}": ${detail}`);
     return {
       ok: false,
-      detail: detail || `Windows raw print failed for "${printerName}"`,
+      detail,
       failureClass: classifyPrintFailure(detail),
       platformErrorCode: extractPlatformErrorCode(detail),
       ...parseWindowsPrintOutput(err.stdout),

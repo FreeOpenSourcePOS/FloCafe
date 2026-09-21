@@ -667,6 +667,7 @@
     "orderPaid": "#{number} numaralı sipariş ödendi!",
     "orderPaidWithPoints": "#{number} numaralı sipariş ödendi! {points} sadakat puanı kazanıldı.",
     "orderPlaced": "Sipariş oluşturuldu #{number}",
+    "orderStorageUnavailable": "Sipariş kaydedilemedi çünkü bu cihaz yerel depolamayı engelliyor. Disk alanı açın veya FloCafe'i yeniden başlatıp tekrar deneyin.",
     "orderTypeDelivery": "Teslimat",
     "orderTypeDineIn": "Masada",
     "orderTypeOnline": "Çevrimiçi Sipariş",

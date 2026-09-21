@@ -41,6 +41,45 @@ async function blockStorageWrites(page: Page, options: StorageBlockOptions): Pro
   }, options);
 }
 
+/**
+ * Fails writes for the given prefix only when the stored attempt already
+ * carries the created order, so the checkout reaches `POST /api/orders` and
+ * then loses its retry state. The block is lifted by storing a marker in
+ * localStorage, which survives the reload used to retry the checkout.
+ */
+const ATTEMPT_WRITE_LOCK = 'flo.e2e.attempt-write-lock';
+
+async function blockAttemptWritesCarryingOrder(page: Page, prefix: string): Promise<void> {
+  await page.addInitScript((config: { prefix: string; lockKey: string }) => {
+    const originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function patchedSetItem(key: string, value: string) {
+      const blocked = (() => {
+        try {
+          return window.localStorage.getItem(config.lockKey) !== 'unlocked';
+        } catch {
+          return true;
+        }
+      })();
+      if (blocked && typeof key === 'string' && key.startsWith(config.prefix) && String(value).includes('"order":')) {
+        throw new DOMException('The quota has been exceeded.', 'QuotaExceededError');
+      }
+      return originalSetItem.call(this, key, value);
+    };
+  }, { prefix, lockKey: ATTEMPT_WRITE_LOCK });
+}
+
+/** Ignores deletes for the given prefix, like a browser that lets the renderer
+ * clear the retry key only on the next load. */
+async function blockStorageRemovals(page: Page, prefix: string): Promise<void> {
+  await page.addInitScript((config: { prefix: string }) => {
+    const originalRemoveItem = Storage.prototype.removeItem;
+    Storage.prototype.removeItem = function patchedRemoveItem(key: string) {
+      if (typeof key === 'string' && key.startsWith(config.prefix)) return;
+      originalRemoveItem.call(this, key);
+    };
+  }, { prefix });
+}
+
 function trackOrderRequests(page: Page): Array<{ idempotencyKey: string | undefined }> {
   const requests: Array<{ idempotencyKey: string | undefined }> = [];
   page.on('request', (request) => {
@@ -155,6 +194,85 @@ test('postpaid: a sessionStorage fallback keeps the retry key across a reload wi
     expect(
       orderRequests[1].idempotencyKey,
       'the reloaded renderer replays the recovered attempt instead of creating a second order',
+    ).toBe(orderRequests[0].idempotencyKey);
+  } finally {
+    await restoreBusiness(page, originalBusiness);
+  }
+});
+
+test('postpaid: a confirmed sale whose cleanup is blocked never reuses the completed key', async ({ page }) => {
+  test.setTimeout(90_000);
+  const originalBusiness = await setBillingType(page, 'postpaid');
+  try {
+    await blockStorageRemovals(page, POSTPAID_ATTEMPT_PREFIX);
+    const orderRequests = trackOrderRequests(page);
+
+    await loginAndOpenPos(page);
+    await addProductToCart(page);
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect(page.getByText(/Order #.+ placed!/)).toBeVisible();
+    expect(orderRequests).toHaveLength(1);
+
+    // The completed attempt could not be deleted, so it survives the reload. It
+    // must be recognised as closed instead of being replayed into the sale that
+    // happens next.
+    await page.reload();
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+    await addProductToCart(page);
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect(page.getByText(/Order #.+ placed!/)).toBeVisible();
+
+    expect(orderRequests).toHaveLength(2);
+    expect(orderRequests[0].idempotencyKey).toBeTruthy();
+    expect(
+      orderRequests[1].idempotencyKey,
+      'an identical sale after a completed one starts a new attempt instead of reusing the confirmed key',
+    ).not.toBe(orderRequests[0].idempotencyKey);
+  } finally {
+    await restoreBusiness(page, originalBusiness);
+  }
+});
+
+test('prepaid: losing the retry state after the order was created replays that order instead of duplicating it', async ({ page }) => {
+  test.setTimeout(90_000);
+  const originalBusiness = await setBillingType(page, 'prepaid');
+  try {
+    await blockAttemptWritesCarryingOrder(page, PREPAID_ATTEMPT_KEY);
+    const orderRequests = trackOrderRequests(page);
+
+    await loginAndOpenPos(page);
+    await addProductToCart(page);
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
+    await page.getByRole('button', { name: 'Cash' }).click();
+    const confirmPayment = page.getByRole('button', { name: /Confirm Payment/ });
+    await expect(confirmPayment).toBeEnabled();
+    await confirmPayment.click();
+
+    // The order exists on the server but its retry state could not be stored,
+    // so the checkout stops with the actionable storage message.
+    await expect(page.getByRole('status')).toContainText(STORAGE_UNAVAILABLE_MESSAGE);
+    expect(orderRequests, 'the order request itself was sent').toHaveLength(1);
+
+    await page.evaluate((lockKey: string) => window.localStorage.setItem(lockKey, 'unlocked'), ATTEMPT_WRITE_LOCK);
+    await page.reload();
+    await expect(page.getByTestId('pos-product-grid')).toBeVisible();
+
+    // The retry replays the same order under the original key and completes the
+    // payment, so the customer is charged once for one order.
+    await addProductToCart(page);
+    await page.getByRole('button', { name: 'Place Order' }).click();
+    await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
+    await page.getByRole('button', { name: 'Cash' }).click();
+    const retryConfirm = page.getByRole('button', { name: /Confirm Payment/ });
+    await expect(retryConfirm).toBeEnabled();
+    await retryConfirm.click();
+
+    await expect(page.getByText(/Order #.+ paid!/)).toBeVisible({ timeout: 30000 });
+    expect(orderRequests).toHaveLength(2);
+    expect(
+      orderRequests[1].idempotencyKey,
+      'a checkout that lost its retry state replays the original order instead of creating a second one',
     ).toBe(orderRequests[0].idempotencyKey);
   } finally {
     await restoreBusiness(page, originalBusiness);

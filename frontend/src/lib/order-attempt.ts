@@ -1,6 +1,8 @@
 import type { AppendAttemptStorage } from './append-attempt';
 
+/** Global key used by builds before prepaid attempts became user scoped. */
 export const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
+const ORDER_ATTEMPT_USER_SUFFIX = '.user.';
 
 /** Raised when new-order attempt state cannot be durably read or written.
  * Callers must not send the order request when this is thrown. */
@@ -11,8 +13,37 @@ export class OrderAttemptStorageError extends Error {
   }
 }
 
-interface StoredOrderAttempt {
+export interface StoredOrderAttempt {
   userId: string;
+}
+
+interface CompletedOrderAttempt {
+  completed: true;
+  userId: string;
+  completedAt: number;
+}
+
+/** Prepaid attempts are user scoped. A single shared key let one cashier's read
+ * drop another cashier's pending retry, which hands a possibly committed
+ * request a fresh idempotency key. */
+export function getPrepaidOrderAttemptStorageKey(userId: string): string {
+  return `${PREPAID_ATTEMPT_STORAGE_KEY}${ORDER_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}`;
+}
+
+function isCompletedAttempt(value: unknown): value is CompletedOrderAttempt {
+  return !!value
+    && typeof value === 'object'
+    && (value as { completed?: unknown }).completed === true;
+}
+
+interface ReadOrderAttemptOptions<T extends StoredOrderAttempt> {
+  /** Set for global keys written before attempts were user scoped. Those keys
+   * are shared, so a foreign or unreadable value means "not mine" instead of
+   * "damaged", and mutating it would drop another cashier's pending retry. */
+  sharedKey?: boolean;
+  /** Structural check for the fields the caller needs. A record that fails it
+   * is damaged, not absent. */
+  isValid?: (attempt: T) => boolean;
 }
 
 /** Read an attempt back from the durable store. Fails closed rather than
@@ -22,6 +53,7 @@ export function readOrderAttempt<T extends StoredOrderAttempt>(
   storage: AppendAttemptStorage,
   key: string,
   userId: string,
+  options: ReadOrderAttemptOptions<T> = {},
 ): T | null {
   let raw: string | null;
   try {
@@ -36,17 +68,23 @@ export function readOrderAttempt<T extends StoredOrderAttempt>(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    clearOrderAttempt(storage, key);
+    if (options.sharedKey) return null;
+    throw new OrderAttemptStorageError();
+  }
+  if (isCompletedAttempt(parsed)) {
+    // The order was confirmed; this record only survived because cleanup could
+    // not delete it. Its keys must never be reused for a later sale.
+    if (parsed.userId === userId) clearOrderAttempt(storage, key, parsed);
     return null;
   }
-  if (
-    !parsed
-    || typeof parsed !== 'object'
-    || Array.isArray(parsed)
-    || (parsed as StoredOrderAttempt).userId !== userId
-  ) {
-    clearOrderAttempt(storage, key);
-    return null;
+  const usable = !!parsed
+    && typeof parsed === 'object'
+    && !Array.isArray(parsed)
+    && (parsed as StoredOrderAttempt).userId === userId
+    && (options.isValid?.(parsed as T) ?? true);
+  if (!usable) {
+    if (options.sharedKey) return null;
+    throw new OrderAttemptStorageError();
   }
   return parsed as T;
 }
@@ -71,13 +109,36 @@ export function persistOrderAttempt(
   }
 }
 
-/** Cleanup is best-effort: a stale retry record must never fail a placed order. */
-export function clearOrderAttempt(storage: AppendAttemptStorage, key: string): void {
+/** Close an attempt whose response was confirmed. The completion marker is
+ * stored before removal so a record the browser refuses to delete is still
+ * never read back as a reusable attempt. Returns false when not even the marker
+ * could be stored, which the caller reports as a storage problem. */
+export function clearOrderAttempt(
+  storage: AppendAttemptStorage,
+  key: string,
+  attempt: StoredOrderAttempt,
+): boolean {
+  const marker: CompletedOrderAttempt = {
+    completed: true,
+    userId: attempt.userId,
+    completedAt: Date.now(),
+  };
+  const serializedMarker = JSON.stringify(marker);
+  let markerPersisted = false;
   try {
-    storage.removeItem(key);
+    storage.setItem(key, serializedMarker);
+    markerPersisted = storage.getItem(key) === serializedMarker;
   } catch {
-    // Ignore storage cleanup failures.
+    markerPersisted = false;
   }
+  let removed = false;
+  try {
+    removed = storage.removeItem(key) !== false;
+  } catch {
+    removed = false;
+  }
+  const removalVerified = removed && !storage.hasUnverifiedRemoval?.(key);
+  return removalVerified || markerPersisted;
 }
 
 /** Bounded, payload-free classification of a failed order request. */

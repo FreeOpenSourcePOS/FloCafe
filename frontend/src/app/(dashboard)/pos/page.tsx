@@ -53,6 +53,7 @@ import {
   OrderAttemptStorageError,
   classifyOrderRequestFailure,
   clearOrderAttempt,
+  getPrepaidOrderAttemptStorageKey,
   persistOrderAttempt,
   readOrderAttempt,
 } from '@/lib/order-attempt';
@@ -76,6 +77,17 @@ interface PrepaidAttempt {
   orderIdempotencyKey: string;
   paymentIdempotencyKey: string;
 }
+
+/** A stored attempt missing any of these is damaged, not absent: replacing it
+ * with a fresh idempotency key could duplicate an order whose response was lost. */
+const isUsablePostpaidAttempt = (attempt: PostpaidAttempt): boolean =>
+  typeof attempt.fingerprint === 'string' && !!attempt.idempotencyKey;
+
+const isUsablePrepaidAttempt = (attempt: PrepaidAttempt): boolean =>
+  typeof attempt.cartFingerprint === 'string'
+  && typeof attempt.paymentFingerprint === 'string'
+  && !!attempt.orderIdempotencyKey
+  && !!attempt.paymentIdempotencyKey;
 
 export default function POSPage() {
   const { currentTenant, user } = useAuthStore();
@@ -115,6 +127,7 @@ export default function POSPage() {
   );
   const activeUserId = user?.id == null ? null : String(user.id);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
+  const prepaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
   const postpaidAttemptKeyRef = useRef<string | null>(null);
   const postpaidAttemptWasLegacyRef = useRef(false);
@@ -160,7 +173,7 @@ export default function POSPage() {
     postpaidAttemptWasLegacyRef.current = false;
     if (activeUserId) {
       const userStorageKey = getPostpaidOrderAttemptStorageKey(activeUserId);
-      const scoped = readOrderAttempt<PostpaidAttempt>(storage, userStorageKey, activeUserId);
+      const scoped = readOrderAttempt<PostpaidAttempt>(storage, userStorageKey, activeUserId, { isValid: isUsablePostpaidAttempt });
       if (scoped) {
         postpaidAttemptRef.current = scoped;
         postpaidAttemptKeyRef.current = userStorageKey;
@@ -169,7 +182,10 @@ export default function POSPage() {
     }
     const legacy = sharedLegacyAppendRetained
       ? null
-      : readOrderAttempt<PostpaidAttempt>(storage, POSTPAID_ATTEMPT_STORAGE_KEY, activeUserId || '');
+      : readOrderAttempt<PostpaidAttempt>(storage, POSTPAID_ATTEMPT_STORAGE_KEY, activeUserId || '', {
+        sharedKey: true,
+        isValid: isUsablePostpaidAttempt,
+      });
     if (legacy) {
       postpaidAttemptRef.current = legacy;
       postpaidAttemptKeyRef.current = POSTPAID_ATTEMPT_STORAGE_KEY;
@@ -177,61 +193,112 @@ export default function POSPage() {
     }
     return postpaidAttemptRef.current;
   };
+  /** Only advance the in-memory attempt after a verified write: keys that never
+   * reached a backend must not be executed from memory either. */
   const savePostpaidAttempt = (attempt: PostpaidAttempt): boolean => {
-    postpaidAttemptRef.current = attempt;
+    const previous = postpaidAttemptRef.current;
     if (!activeUserId) return false;
     const storageKey = getPostpaidOrderAttemptStorageKey(activeUserId);
     try {
       persistOrderAttempt(getAppendAttemptStorage(), storageKey, attempt);
     } catch {
+      postpaidAttemptRef.current = previous;
       return false;
     }
+    postpaidAttemptRef.current = attempt;
     postpaidAttemptKeyRef.current = storageKey;
     return true;
   };
   const clearPostpaidAttempt = () => {
+    const completedAttempt = postpaidAttemptRef.current;
+    const storageKeys = [
+      postpaidAttemptKeyRef.current,
+      postpaidAttemptWasLegacyRef.current ? POSTPAID_ATTEMPT_STORAGE_KEY : null,
+    ];
     postpaidAttemptRef.current = null;
-    const storage = getAppendAttemptStorage();
-    if (postpaidAttemptKeyRef.current) clearOrderAttempt(storage, postpaidAttemptKeyRef.current);
-    if (postpaidAttemptWasLegacyRef.current) clearOrderAttempt(storage, POSTPAID_ATTEMPT_STORAGE_KEY);
     postpaidAttemptKeyRef.current = null;
     postpaidAttemptWasLegacyRef.current = false;
+    if (!completedAttempt) return;
+    const storage = getAppendAttemptStorage();
+    for (const storageKey of storageKeys) {
+      // The order is already placed: report a cleanup problem without turning a
+      // completed sale into a failure.
+      if (storageKey && !clearOrderAttempt(storage, storageKey, completedAttempt)) {
+        console.error('Failed to close the postpaid retry attempt after the order was placed');
+      }
+    }
   };
 
-  const readPrepaidAttempt = () => {
+  const stripPrepaidDiscountPin = (attempt: PrepaidAttempt): PrepaidAttempt => {
+    if (!attempt.discount || !('override_pin' in attempt.discount)) return attempt;
+    const safeDiscount = { ...attempt.discount };
+    delete safeDiscount.override_pin;
+    return { ...attempt, discount: safeDiscount };
+  };
+
+  const readPrepaidAttempt = (): PrepaidAttempt | null => {
     if (prepaidAttemptRef.current?.userId === activeUserId) return prepaidAttemptRef.current;
     prepaidAttemptRef.current = null;
-    if (typeof window === 'undefined') return null;
+    prepaidAttemptKeyRef.current = null;
+    if (typeof window === 'undefined' || !activeUserId) return null;
     const storage = getAppendAttemptStorage();
-    const parsed = readOrderAttempt<PrepaidAttempt>(storage, PREPAID_ATTEMPT_STORAGE_KEY, activeUserId || '');
-    if (!parsed) return null;
-    if (parsed.discount && 'override_pin' in parsed.discount) {
-      const safeDiscount = { ...parsed.discount };
-      delete safeDiscount.override_pin;
-      parsed.discount = safeDiscount;
-      persistOrderAttempt(storage, PREPAID_ATTEMPT_STORAGE_KEY, parsed);
+    const scopedKey = getPrepaidOrderAttemptStorageKey(activeUserId);
+    const scoped = readOrderAttempt<PrepaidAttempt>(storage, scopedKey, activeUserId, { isValid: isUsablePrepaidAttempt });
+    if (scoped) {
+      const safeAttempt = stripPrepaidDiscountPin(scoped);
+      if (safeAttempt !== scoped) {
+        if (!savePrepaidAttempt(safeAttempt)) throw new OrderAttemptStorageError();
+      } else {
+        prepaidAttemptRef.current = safeAttempt;
+        prepaidAttemptKeyRef.current = scopedKey;
+      }
+      return safeAttempt;
     }
-    prepaidAttemptRef.current = parsed;
-    return parsed;
+    // Builds before user-scoped attempts shared one global prepaid record.
+    // Adopt it only for its owner and leave a foreign record untouched: clearing
+    // another cashier's pending retry is what forced fresh keys onto a request
+    // that may already have committed.
+    const legacy = readOrderAttempt<PrepaidAttempt>(storage, PREPAID_ATTEMPT_STORAGE_KEY, activeUserId, {
+      sharedKey: true,
+      isValid: isUsablePrepaidAttempt,
+    });
+    if (!legacy) return null;
+    const migrated = stripPrepaidDiscountPin(legacy);
+    if (!savePrepaidAttempt(migrated)) throw new OrderAttemptStorageError();
+    clearOrderAttempt(storage, PREPAID_ATTEMPT_STORAGE_KEY, migrated);
+    return migrated;
   };
   const savePrepaidAttempt = (attempt: PrepaidAttempt): boolean => {
-    const safeAttempt = { ...attempt };
-    if (safeAttempt.discount) {
-      const safeDiscount = { ...safeAttempt.discount };
-      delete safeDiscount.override_pin;
-      safeAttempt.discount = safeDiscount;
-    }
-    prepaidAttemptRef.current = safeAttempt;
+    const previous = prepaidAttemptRef.current;
+    if (!activeUserId) return false;
+    const storageKey = getPrepaidOrderAttemptStorageKey(activeUserId);
+    const safeAttempt = stripPrepaidDiscountPin(attempt);
     try {
-      persistOrderAttempt(getAppendAttemptStorage(), PREPAID_ATTEMPT_STORAGE_KEY, safeAttempt);
+      persistOrderAttempt(getAppendAttemptStorage(), storageKey, safeAttempt);
     } catch {
+      prepaidAttemptRef.current = previous;
       return false;
     }
+    prepaidAttemptRef.current = safeAttempt;
+    prepaidAttemptKeyRef.current = storageKey;
     return true;
   };
+  /** Intermediate prepaid states are persisted too: a request that runs under a
+   * key the next run cannot replay can capture the same payment twice. */
+  const requirePrepaidAttemptSaved = (attempt: PrepaidAttempt) => {
+    if (!savePrepaidAttempt(attempt)) throw new OrderAttemptStorageError();
+  };
   const clearPrepaidAttempt = () => {
+    const completedAttempt = prepaidAttemptRef.current;
+    const storageKey = prepaidAttemptKeyRef.current;
     prepaidAttemptRef.current = null;
-    clearOrderAttempt(getAppendAttemptStorage(), PREPAID_ATTEMPT_STORAGE_KEY);
+    prepaidAttemptKeyRef.current = null;
+    if (!completedAttempt || !storageKey) return;
+    // The payment is already captured: report a cleanup problem without turning
+    // a completed sale into a failure.
+    if (!clearOrderAttempt(getAppendAttemptStorage(), storageKey, completedAttempt)) {
+      console.error('Failed to close the prepaid retry attempt after the payment was captured');
+    }
   };
 
   /** Records a payload-free order failure for the support-ticket flow. */
@@ -587,7 +654,9 @@ export default function POSPage() {
         const { data } = orderAttempt.order
           ? { data: { order: orderAttempt.order } }
           : await api.post('/orders', orderPayload, { headers: { 'Idempotency-Key': orderAttempt.idempotencyKey } });
-        if (!orderAttempt.order) savePostpaidAttempt({ ...orderAttempt, order: data.order as Order });
+        if (!orderAttempt.order && !savePostpaidAttempt({ ...orderAttempt, order: data.order as Order })) {
+          throw new OrderAttemptStorageError();
+        }
         toast.success(t('orderPlaced', { number: data.order.order_number }));
         orderForKot = data.order as Order;
         clearPostpaidAttempt();
@@ -687,10 +756,31 @@ export default function POSPage() {
         orderIdempotencyKey: newIdempotencyKey(),
         paymentIdempotencyKey: newIdempotencyKey(),
       };
-    // Persist the key before the first order mutation. The server replays the
+    // A lost payment response wins over a later UI edit: an already-settled or
+    // unreadable bill must replay the original request. Resolving that before
+    // the attempt is stored keeps the persisted keys identical to the keys the
+    // request carries, even when a later write fails.
+    let paymentMustBeReplayed = false;
+    if (existingAttempt?.bill && discountChanged) {
+      try {
+        const { data: currentBillData } = await api.get(`/bills/${existingAttempt.bill.id}`);
+        paymentMustBeReplayed = currentBillData.bill?.payment_status === 'paid';
+      } catch {
+        paymentMustBeReplayed = true;
+      }
+    }
+    if (paymentMustBeReplayed && existingAttempt) {
+      attempt = {
+        ...attempt,
+        discount: existingAttempt.discount,
+        bill: existingAttempt.bill,
+        paymentFingerprint: existingAttempt.paymentFingerprint,
+        paymentIdempotencyKey: existingAttempt.paymentIdempotencyKey,
+      };
+    }
+    // Persist the keys before the first order mutation. The server replays the
     // order response if this renderer loses the response or restarts.
     if (!savePrepaidAttempt(attempt)) {
-      clearPrepaidAttempt();
       reportOrderStorageFailure(t('processOrderFailed'));
       setSubmitting(false);
       return;
@@ -698,34 +788,6 @@ export default function POSPage() {
     let orderData: { order: Order };
     let billData: { bill: Bill };
     try {
-      if (existingAttempt?.bill && discountChanged) {
-        try {
-          const { data: currentBillData } = await api.get(`/bills/${existingAttempt.bill.id}`);
-          if (currentBillData.bill?.payment_status === 'paid') {
-            // A lost payment response wins over a later UI edit; replay the
-            // original request instead of mutating an already-settled bill.
-            attempt = {
-              ...attempt,
-              discount: existingAttempt.discount,
-              bill: existingAttempt.bill,
-              paymentFingerprint: existingAttempt.paymentFingerprint,
-              paymentIdempotencyKey: existingAttempt.paymentIdempotencyKey,
-            };
-            savePrepaidAttempt(attempt);
-          }
-        } catch {
-          // An unknown bill state must replay the original request. Applying a
-          // new discount/key could turn a committed payment into a stuck retry.
-          attempt = {
-            ...attempt,
-            discount: existingAttempt.discount,
-            bill: existingAttempt.bill,
-            paymentFingerprint: existingAttempt.paymentFingerprint,
-            paymentIdempotencyKey: existingAttempt.paymentIdempotencyKey,
-          };
-          savePrepaidAttempt(attempt);
-        }
-      }
       if (attempt.order) {
         orderData = { order: attempt.order };
       } else {
@@ -740,7 +802,7 @@ export default function POSPage() {
           items: orderItems,
         }, { headers: { 'Idempotency-Key': attempt.orderIdempotencyKey } });
         orderData = data;
-        savePrepaidAttempt({ ...attempt, order: data.order });
+        requirePrepaidAttemptSaved({ ...attempt, order: data.order });
       }
       const orderId = orderData.order.id;
 
@@ -781,7 +843,7 @@ export default function POSPage() {
       } else {
         const { data: generatedBill } = await api.post('/bills/generate', { order_id: orderId });
         billData = generatedBill;
-        savePrepaidAttempt({ ...attempt, order: orderData.order, bill: generatedBill.bill });
+        requirePrepaidAttemptSaved({ ...attempt, order: orderData.order, bill: generatedBill.bill });
       }
 
       // Record every split in one atomic request. The persisted bill/key pair

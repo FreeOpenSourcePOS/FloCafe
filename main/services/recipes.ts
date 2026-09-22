@@ -55,7 +55,7 @@ export interface SaveRecipeInput {
   productId: string;
   yieldQuantity?: number;
   isActive?: boolean;
-  items: { supplyId: string; quantity: number; unit: string }[];
+  items: { supplyId?: string; supply_id?: string; quantity: number; unit: string }[];
 }
 
 function newId(prefix: string): string {
@@ -143,7 +143,7 @@ export function saveRecipe(db: ReturnType<typeof getDatabase>, input: SaveRecipe
   const seenSupplies = new Set<string>();
   const normalizedItems: { supplyId: string; quantity: number; unit: SupplyUnit }[] = [];
   for (const item of input.items) {
-    const supplyId = String(item?.supplyId || '').trim();
+    const supplyId = String(item?.supply_id || item?.supplyId || '').trim();
     if (!supplyId) throw new RecipeServiceError(400, 'each item requires a supply_id');
     if (seenSupplies.has(supplyId)) {
       throw new RecipeServiceError(400, 'duplicate supply_id in recipe');

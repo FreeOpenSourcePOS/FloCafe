@@ -20,8 +20,8 @@ const {
   api, assertEqual, assert, getResults, resetCounters, closeDatabase,
 } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes/index');
-const { createSupply, getSupply } = require('../main/services/supplies');
-const { saveRecipe, buildRecipeSnapshot } = require('../main/services/recipes');
+const { createSupply, getSupply, softDeleteSupply } = require('../main/services/supplies');
+const { deleteRecipe, saveRecipe, buildRecipeSnapshot } = require('../main/services/recipes');
 
 function stockOf(db: any, id: string): number {
   return Number(getSupply(db, id).stock_quantity);
@@ -57,7 +57,7 @@ async function main() {
     productId: 'prod-latte',
     yieldQuantity: 1,
     items: [
-      { supplyId: beans.id, quantity: 18, unit: 'g' },
+      { supply_id: beans.id, quantity: 18, unit: 'g' },
       { supplyId: milkS.id, quantity: 200, unit: 'ml' },
     ],
   });
@@ -79,6 +79,19 @@ async function main() {
   const { baseUrl, server } = await startServer(app);
 
   try {
+    const snakeCaseRecipe = await api(baseUrl, '/api/recipes/product/prod-latte', {
+      method: 'PUT',
+      headers: authHeader,
+      body: {
+        yield_quantity: 1,
+        items: [
+          { supply_id: beans.id, quantity: 18, unit: 'g' },
+          { supply_id: milkS.id, quantity: 200, unit: 'ml' },
+        ],
+      },
+    });
+    assertEqual(snakeCaseRecipe.status, 200, 'recipe API accepts documented snake_case supply_id payloads');
+
     console.log('\n--- 1. Deplete at order creation ---');
     const beansBefore = stockOf(db, beans.id);
     const milkBefore = stockOf(db, milkS.id);
@@ -283,6 +296,36 @@ async function main() {
       stockOf(db, beans.id),
       beansBeforeSnapshotCancel + 36,
       'restore uses original snapshot (2 x 18 g), not edited recipe (2 x 30 g)',
+    );
+
+    console.log('\n--- 11. Historical restore survives supply soft delete ---');
+    const historicalSupply = createSupply(db, {
+      name: 'Historical beans', baseUnit: 'g', stockQuantity: 100, actorUserId: userId,
+    });
+    seedProduct(db, 'prod-soft-delete', 'cat-rec', 'Soft-delete restore', 100, { track_inventory: false, stock_quantity: 0 });
+    saveRecipe(db, {
+      productId: 'prod-soft-delete',
+      items: [{ supplyId: historicalSupply.id, quantity: 18, unit: 'g' }],
+    });
+    const historicalOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-soft-delete', quantity: 1 }] },
+    });
+    assertEqual(historicalOrder.status, 201, 'order stores historical supply snapshot');
+    const historicalItem = historicalOrder.data.order.items[0];
+    deleteRecipe(db, 'prod-soft-delete');
+    softDeleteSupply(db, historicalSupply.id);
+    const historicalCancel = await api(baseUrl, `/api/orders/${historicalOrder.data.order.id}/items/${historicalItem.id}/cancel`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: {},
+    });
+    assertEqual(historicalCancel.status, 200, 'cancel restores from a soft-deleted supply');
+    assertEqual(
+      db.prepare('SELECT stock_quantity FROM supplies WHERE id = ?').get(historicalSupply.id).stock_quantity,
+      100,
+      'soft-deleted supply stock is restored from historical snapshot',
     );
 
     console.log('='.repeat(65));

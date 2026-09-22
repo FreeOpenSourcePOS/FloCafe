@@ -18,7 +18,7 @@ const {
   initTestDb, assertEqual, assert, getResults, resetCounters, seedOwnerUser, seedCategory, seedProduct,
 } = require('./helpers/test-setup');
 const {
-  createSupply, getSupply, listSupplies, listSupplyMovements, recordSupplyMovement,
+  applySupplyStockChange, createSupply, getSupply, listSupplies, listSupplyMovements, recordSupplyMovement,
   softDeleteSupply, updateSupply, SupplyServiceError,
 } = require('../main/services/supplies');
 const { saveRecipe } = require('../main/services/recipes');
@@ -102,6 +102,20 @@ async function main() {
   });
   assert(recv, 'receive returns movement row');
   assertEqual(getSupply(db, coffee.id).stock_quantity, 7, 'receive adds 2 kg (5 → 7)');
+
+  const recipeMovement = applySupplyStockChange(db, {
+    supplyId: cups.id,
+    quantityDelta: -1,
+    movementType: 'recipe_depletion',
+    unit: 'each',
+    actorUserId: actor,
+    createdAt: '2026-01-01 00:00:00',
+  });
+  assertEqual(
+    db.prepare('SELECT id FROM supply_movements WHERE id = ?').get(recipeMovement.movementId).id,
+    recipeMovement.movementId,
+    'stock change returns inserted movement id',
+  );
 
   // unit conversion on receive: 500 g into kg-based supply
   recordSupplyMovement(db, {

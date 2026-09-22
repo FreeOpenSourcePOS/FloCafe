@@ -283,8 +283,11 @@ export default function InventoryPage() {
       toast.success(tCommon('delete'));
       setDeletingSupply(null);
       refresh();
-    } catch {
-      toast.error(t('deleteFailed'));
+    } catch (err: unknown) {
+      const message = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { error?: string } } }).response?.data?.error
+        : undefined;
+      toast.error(message || t('deleteFailed'));
     }
   };
 
@@ -599,7 +602,12 @@ export default function InventoryPage() {
                     <select value={item.supply_id}
                       onChange={(e) => {
                         const items = [...recipeForm.items];
-                        items[index] = { ...items[index], supply_id: e.target.value };
+                        const targetSupply = supplies.find((s) => s.id === e.target.value);
+                        items[index] = {
+                          ...items[index],
+                          supply_id: e.target.value,
+                          unit: (targetSupply?.base_unit || 'each') as SupplyUnit,
+                        };
                         setRecipeForm({ ...recipeForm, items });
                       }}
                       className="flex-1 min-w-0 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card">

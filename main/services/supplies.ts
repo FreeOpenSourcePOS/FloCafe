@@ -228,8 +228,8 @@ export function applySupplyStockChange(
     referenceId?: string | number | null;
     createdAt?: string;
   },
-): { stockBefore: number; stockAfter: number } {
-  const supply = db.prepare('SELECT * FROM supplies WHERE id = ? AND deleted_at IS NULL').get(options.supplyId) as
+): { stockBefore: number; stockAfter: number; movementId: number } {
+  const supply = db.prepare('SELECT * FROM supplies WHERE id = ?').get(options.supplyId) as
     | SupplyRecord
     | undefined;
   if (!supply) throw new SupplyServiceError(404, 'Supply not found');
@@ -248,7 +248,7 @@ export function applySupplyStockChange(
   db.prepare('UPDATE supplies SET stock_quantity = ?, updated_at = ? WHERE id = ?')
     .run(stockAfter, timestamp, options.supplyId);
 
-  db.prepare(`
+  const movement = db.prepare(`
     INSERT INTO supply_movements (
       supply_id, quantity_delta, movement_type, unit, stock_after,
       reason, actor_user_id, reference_type, reference_id, created_at
@@ -266,7 +266,7 @@ export function applySupplyStockChange(
     timestamp,
   );
 
-  return { stockBefore, stockAfter };
+  return { stockBefore, stockAfter, movementId: Number(movement.lastInsertRowid) };
 }
 
 function recordSupplyMovementInTxn(db: ReturnType<typeof getDatabase>, input: RecordMovementInput): SupplyMovement | null {
@@ -301,7 +301,7 @@ function recordSupplyMovementInTxn(db: ReturnType<typeof getDatabase>, input: Re
       throw new SupplyServiceError(400, `movement_type ${input.movementType} is not allowed via this path`);
   }
 
-  const { stockAfter } = applySupplyStockChange(db, {
+  const { movementId } = applySupplyStockChange(db, {
     supplyId: input.supplyId,
     quantityDelta: delta,
     movementType: input.movementType,
@@ -321,10 +321,8 @@ function recordSupplyMovementInTxn(db: ReturnType<typeof getDatabase>, input: Re
     FROM supply_movements m
     LEFT JOIN supplies s ON s.id = m.supply_id
     LEFT JOIN users u ON u.id = m.actor_user_id
-    WHERE m.supply_id = ? AND m.created_at = ? AND m.stock_after = ?
-    ORDER BY m.id DESC
-    LIMIT 1
-  `).get(input.supplyId, timestamp, stockAfter) as SupplyMovement | undefined;
+    WHERE m.id = ?
+  `).get(movementId) as SupplyMovement | undefined;
   return row || null;
 }
 

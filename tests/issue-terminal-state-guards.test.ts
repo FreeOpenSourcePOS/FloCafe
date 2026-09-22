@@ -3,10 +3,10 @@
  *
  * Covers proven defects where payment/discount/item mutations ignored
  * terminal order or refunded-bill state:
- * - C2: paying a bill on a cancelled order flips it to completed
- * - H1a: accepting a new payment on a fully or partially refunded bill
- * - H1b: applying discounts to refunded / partially refunded bills
- * - H1c: adding items to an order whose bill was refunded / partially refunded
+ * - cancelled-order-payment: paying a bill on a cancelled order flips it to completed
+ * - payment-refund-guard: accepting a new payment on a fully or partially refunded bill
+ * - discount-refund-guard: applying discounts to refunded / partially refunded bills
+ * - add-items-refund-guard: adding items to an order whose bill was refunded / partially refunded
  * - Item discount endpoint rejects refunded / partially refunded bills
  *
  * Usage: node tests/run-electron-node-test.cjs tests/issue-terminal-state-guards.test.ts
@@ -111,85 +111,85 @@ async function main(): Promise<void> {
   }
 
   try {
-    // ── C2: payment on a cancelled order must not resurrect it ───────────────
-    console.log('\n─── C2: cancelled order stays cancelled after payment ───');
+    // ── cancelled-order-payment: payment on a cancelled order must not resurrect it ───────────────
+    console.log('\n─── cancelled-order-payment: cancelled order stays cancelled after payment ───');
     {
       const create = await createOrder({
         type: 'dine_in',
         table_id: 'table-tsg',
         items: [{ product_id: 'prod-1000', quantity: 1 }],
       });
-      assertEqual(create.status, 201, 'C2: dine-in order created');
+      assertEqual(create.status, 201, 'cancelled-order-payment: dine-in order created');
       const orderId = create.data.order.id;
       const gen = await generateBill(orderId);
-      assertEqual(gen.status, 201, 'C2: bill generated');
+      assertEqual(gen.status, 201, 'cancelled-order-payment: bill generated');
       const billId = gen.data.bill.id;
 
-      const cancel = await setOrderStatus(orderId, { status: 'cancelled', reason: 'tsg C2' });
-      assertEqual(cancel.status, 200, 'C2: order cancelled');
-      assertEqual(orderRow(db, orderId).status, 'cancelled', 'C2: status is cancelled before payment');
+      const cancel = await setOrderStatus(orderId, { status: 'cancelled', reason: 'tsg cancelled-order-payment' });
+      assertEqual(cancel.status, 200, 'cancelled-order-payment: order cancelled');
+      assertEqual(orderRow(db, orderId).status, 'cancelled', 'cancelled-order-payment: status is cancelled before payment');
 
       const paid = await pay(billId, { method: 'cash', amount: null });
-      assertEqual(paid.status, 200, 'C2: bill payment still accepted');
+      assertEqual(paid.status, 200, 'cancelled-order-payment: bill payment still accepted');
       assertEqual(
         orderRow(db, orderId).status,
         'cancelled',
-        'C2: cancelled order is not flipped to completed by payment',
+        'cancelled-order-payment: cancelled order is not flipped to completed by payment',
       );
     }
 
-    // ── H1a: reject payment on a fully refunded bill ─────────────────────────
-    console.log('\n─── H1a: payment rejected on refunded bill ───');
+    // ── payment-refund-guard: reject payment on a fully refunded bill ─────────────────────────
+    console.log('\n─── payment-refund-guard: payment rejected on refunded bill ───');
     {
       const { billId } = await newTakeawayOrder('prod-1000');
       const partial = await pay(billId, { method: 'cash', amount: 500 });
-      assertEqual(partial.status, 200, 'H1a: partial payment accepted');
+      assertEqual(partial.status, 200, 'payment-refund-guard: partial payment accepted');
       const ref = await refund({
         bill_id: billId,
         amount: 500,
         method: 'cash',
-        reason: 'tsg H1a',
+        reason: 'tsg payment-refund-guard',
         override_pin: pin,
         approver_id: approver,
       });
-      assertEqual(ref.status, 201, 'H1a: refund created');
-      assertEqual(billRow(db, billId).payment_status, 'refunded', 'H1a: bill is refunded');
+      assertEqual(ref.status, 201, 'payment-refund-guard: refund created');
+      assertEqual(billRow(db, billId).payment_status, 'refunded', 'payment-refund-guard: bill is refunded');
 
       const pay2 = await pay(billId, { method: 'cash', amount: 100 });
-      assertEqual(pay2.status, 409, 'H1a: post-refund payment rejected with 409');
+      assertEqual(pay2.status, 409, 'payment-refund-guard: post-refund payment rejected with 409');
       const after = billRow(db, billId);
-      assertEqual(after.paid_amount, 500, 'H1a: paid_amount unchanged after rejected payment');
-      assertEqual(after.payment_status, 'refunded', 'H1a: still refunded after rejected payment');
+      assertEqual(after.paid_amount, 500, 'payment-refund-guard: paid_amount unchanged after rejected payment');
+      assertEqual(after.payment_status, 'refunded', 'payment-refund-guard: still refunded after rejected payment');
     }
 
-    // ── H1a: reject payment on a partially refunded bill ─────────────────────
-    console.log('\n─── H1a: payment rejected on partially refunded bill ───');
+    // ── payment-refund-guard: reject payment on a partially refunded bill ─────────────────────
+    console.log('\n─── payment-refund-guard: payment rejected on partially refunded bill ───');
     {
       resetPinRateLimitForTests();
       const { billId } = await newTakeawayOrder('prod-1000');
       const full = await pay(billId, { method: 'cash', amount: null });
-      assertEqual(full.status, 200, 'H1a-partial: full payment accepted');
+      assertEqual(full.status, 200, 'partial-payment-refund: full payment accepted');
       const ref = await refund({
         bill_id: billId,
         amount: 400,
         method: 'cash',
-        reason: 'tsg H1a partial',
+        reason: 'tsg payment-refund-guard partial',
         override_pin: pin,
         approver_id: approver,
       });
-      assertEqual(ref.status, 201, 'H1a-partial: partial refund created');
+      assertEqual(ref.status, 201, 'partial-payment-refund: partial refund created');
       const before = billRow(db, billId);
-      assertEqual(before.payment_status, 'partially_refunded', 'H1a-partial: bill partially refunded');
+      assertEqual(before.payment_status, 'partially_refunded', 'partial-payment-refund: bill partially refunded');
 
       const pay2 = await pay(billId, { method: 'cash', amount: 100 });
-      assertEqual(pay2.status, 409, 'H1a-partial: payment rejected with 409');
+      assertEqual(pay2.status, 409, 'partial-payment-refund: payment rejected with 409');
       const after = billRow(db, billId);
-      assertEqual(after.payment_status, 'partially_refunded', 'H1a-partial: still partially_refunded after rejected payment');
-      assertEqual(after.paid_amount, before.paid_amount, 'H1a-partial: paid_amount unchanged');
+      assertEqual(after.payment_status, 'partially_refunded', 'partial-payment-refund: still partially_refunded after rejected payment');
+      assertEqual(after.paid_amount, before.paid_amount, 'partial-payment-refund: paid_amount unchanged');
     }
 
-    // ── H1b: reject discounts on refunded / partially refunded bills ─────────
-    console.log('\n─── H1b: discounts rejected on refunded bills ───');
+    // ── discount-refund-guard: reject discounts on refunded / partially refunded bills ─────────
+    console.log('\n─── discount-refund-guard: discounts rejected on refunded bills ───');
     {
       // Fully refunded bill: order-level discount must not rewrite totals.
       const { orderId, billId } = await newTakeawayOrder('prod-1000');
@@ -198,26 +198,26 @@ async function main(): Promise<void> {
         bill_id: billId,
         amount: 500,
         method: 'cash',
-        reason: 'tsg H1b full',
+        reason: 'tsg discount-refund-guard full',
         override_pin: pin,
         approver_id: approver,
       });
-      assertEqual(ref.status, 201, 'H1b: full refund of paid amount created');
+      assertEqual(ref.status, 201, 'discount-refund-guard: full refund of paid amount created');
       const beforeFull = billRow(db, billId);
-      assertEqual(beforeFull.payment_status, 'refunded', 'H1b: bill fully refunded');
+      assertEqual(beforeFull.payment_status, 'refunded', 'discount-refund-guard: bill fully refunded');
 
       const orderDisc = await applyOrderDiscount(orderId, { discount_type: 'amount', discount_value: 100 });
-      assertEqual(orderDisc.status, 409, 'H1b: order discount on refunded bill rejected with 409');
+      assertEqual(orderDisc.status, 409, 'discount-refund-guard: order discount on refunded bill rejected with 409');
       const afterOrderDisc = billRow(db, billId);
-      assertEqual(Number(afterOrderDisc.total), Number(beforeFull.total), 'H1b: bill total unchanged after rejected order discount');
+      assertEqual(Number(afterOrderDisc.total), Number(beforeFull.total), 'discount-refund-guard: bill total unchanged after rejected order discount');
       assertEqual(
         Number(afterOrderDisc.discount_amount),
         Number(beforeFull.discount_amount),
-        'H1b: bill discount_amount unchanged after rejected order discount',
+        'discount-refund-guard: bill discount_amount unchanged after rejected order discount',
       );
 
       const billDisc = await applyBillDiscount(billId, { type: 'amount', value: 50 });
-      assertEqual(billDisc.status, 409, 'H1b: bill discount on refunded bill rejected with 409');
+      assertEqual(billDisc.status, 409, 'discount-refund-guard: bill discount on refunded bill rejected with 409');
 
       // Partially refunded bill (full payment, partial refund).
       const second = await newTakeawayOrder('prod-1000');
@@ -226,19 +226,19 @@ async function main(): Promise<void> {
         bill_id: second.billId,
         amount: 400,
         method: 'cash',
-        reason: 'tsg H1b partial',
+        reason: 'tsg discount-refund-guard partial',
         override_pin: pin,
         approver_id: approver,
       });
-      assertEqual(partialRef.status, 201, 'H1b: partial refund created');
-      assertEqual(billRow(db, second.billId).payment_status, 'partially_refunded', 'H1b: bill partially refunded');
+      assertEqual(partialRef.status, 201, 'discount-refund-guard: partial refund created');
+      assertEqual(billRow(db, second.billId).payment_status, 'partially_refunded', 'discount-refund-guard: bill partially refunded');
 
       const partialDisc = await applyBillDiscount(second.billId, { type: 'amount', value: 50 });
-      assertEqual(partialDisc.status, 409, 'H1b: bill discount on partially refunded bill rejected with 409');
+      assertEqual(partialDisc.status, 409, 'discount-refund-guard: bill discount on partially refunded bill rejected with 409');
     }
 
-    // ── H1c: reject add-items when the bill was refunded ─────────────────────
-    console.log('\n─── H1c: add-items rejected on refunded order ───');
+    // ── add-items-refund-guard: reject add-items when the bill was refunded ─────────────────────
+    console.log('\n─── add-items-refund-guard: add-items rejected on refunded order ───');
     {
       const { orderId, billId } = await newTakeawayOrder('prod-1000');
       await pay(billId, { method: 'cash', amount: 500 });
@@ -246,49 +246,49 @@ async function main(): Promise<void> {
         bill_id: billId,
         amount: 500,
         method: 'cash',
-        reason: 'tsg H1c',
+        reason: 'tsg add-items-refund-guard',
         override_pin: pin,
         approver_id: approver,
       });
-      assertEqual(ref.status, 201, 'H1c: refund created');
+      assertEqual(ref.status, 201, 'add-items-refund-guard: refund created');
       const before = billRow(db, billId);
-      assertEqual(before.payment_status, 'refunded', 'H1c: bill refunded');
+      assertEqual(before.payment_status, 'refunded', 'add-items-refund-guard: bill refunded');
 
       const add = await addItems(orderId, [{ product_id: 'prod-400', quantity: 1 }]);
-      assertEqual(add.status, 409, 'H1c: add-items on refunded order rejected with 409');
+      assertEqual(add.status, 409, 'add-items-refund-guard: add-items on refunded order rejected with 409');
       const after = billRow(db, billId);
-      assertEqual(Number(after.subtotal), Number(before.subtotal), 'H1c: bill subtotal unchanged');
-      assertEqual(Number(after.total), Number(before.total), 'H1c: bill total unchanged');
+      assertEqual(Number(after.subtotal), Number(before.subtotal), 'add-items-refund-guard: bill subtotal unchanged');
+      assertEqual(Number(after.total), Number(before.total), 'add-items-refund-guard: bill total unchanged');
     }
 
-    // ── H1c: reject add-items when the bill is partially refunded ────────────
-    console.log('\n─── H1c: add-items rejected on partially refunded order ───');
+    // ── add-items-refund-guard: reject add-items when the bill is partially refunded ────────────
+    console.log('\n─── add-items-refund-guard: add-items rejected on partially refunded order ───');
     {
       resetPinRateLimitForTests();
       const { orderId, billId } = await newTakeawayOrder('prod-1000');
       const partialPay = await pay(billId, { method: 'cash', amount: 600 });
-      assertEqual(partialPay.status, 200, 'H1c-partial: partial payment accepted');
-      assertEqual(orderRow(db, orderId).status !== 'completed', true, 'H1c-partial: order still active after partial payment');
+      assertEqual(partialPay.status, 200, 'partial-refund-add-items: partial payment accepted');
+      assertEqual(orderRow(db, orderId).status !== 'completed', true, 'partial-refund-add-items: order still active after partial payment');
       const ref = await refund({
         bill_id: billId,
         amount: 200,
         method: 'cash',
-        reason: 'tsg H1c partial',
+        reason: 'tsg add-items-refund-guard partial',
         override_pin: pin,
         approver_id: approver,
       });
-      assertEqual(ref.status, 201, 'H1c-partial: partial refund created');
+      assertEqual(ref.status, 201, 'partial-refund-add-items: partial refund created');
       const before = billRow(db, billId);
-      assertEqual(before.payment_status, 'partially_refunded', 'H1c-partial: bill partially refunded');
+      assertEqual(before.payment_status, 'partially_refunded', 'partial-refund-add-items: bill partially refunded');
 
       const add = await addItems(orderId, [{ product_id: 'prod-400', quantity: 1 }]);
-      assertEqual(add.status, 409, 'H1c-partial: add-items rejected with 409');
+      assertEqual(add.status, 409, 'partial-refund-add-items: add-items rejected with 409');
       const after = billRow(db, billId);
-      assertEqual(Number(after.subtotal), Number(before.subtotal), 'H1c-partial: bill subtotal unchanged');
-      assertEqual(Number(after.total), Number(before.total), 'H1c-partial: bill total unchanged');
+      assertEqual(Number(after.subtotal), Number(before.subtotal), 'partial-refund-add-items: bill subtotal unchanged');
+      assertEqual(Number(after.total), Number(before.total), 'partial-refund-add-items: bill total unchanged');
     }
 
-    // ── Finding 3: reject item discount when bill is refunded/partial ────────
+    // ── item-discount-refund-guard: reject item discount when bill is refunded/partial ────────
     console.log('\n─── Item discount rejected on partially refunded bill ───');
     {
       resetPinRateLimitForTests();

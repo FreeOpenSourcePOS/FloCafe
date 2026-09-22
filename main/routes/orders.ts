@@ -1426,15 +1426,15 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       return res.status(409).json({ error: 'Discounts cannot be changed after a check has been split' });
     }
 
-    // Cannot apply discount to completed or cancelled orders
-    if (['completed', 'cancelled'].includes(order.status)) {
-      return res.status(400).json({ error: 'Cannot apply discount to a completed or cancelled order' });
-    }
     const refundedBill = db.prepare(
       `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
     ).get(req.params.id);
     if (refundedBill) {
       return res.status(409).json({ error: 'Cannot apply discount to a refunded bill' });
+    }
+    // Cannot apply discount to completed or cancelled orders
+    if (['completed', 'cancelled'].includes(order.status)) {
+      return res.status(400).json({ error: 'Cannot apply discount to a completed or cancelled order' });
     }
 
     const item = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(req.params.itemId, req.params.id) as any;

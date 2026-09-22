@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatKOT, escPosToText } from '../main/printers/thermal';
 import { printLabel } from '../main/print/print-labels.generated';
 
-const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'fa', 'ja', 'zh'] as const;
+const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'fa', 'it', 'ja', 'zh'] as const;
 const order = {
   order_number: 'KOT-PHASE3-001',
   type: 'dine_in',
@@ -89,8 +89,8 @@ async function run(): Promise<void> {
     ));
     assert.match(thermalText, /KOT-PHASE3-001/, `${language}: thermal order number remains visible`);
     assert.match(thermalText, /Main Kitchen/, `${language}: thermal station remains visible`);
-    assert.match(thermalText, /(?:Time|Hora|Uhrzeit|Saat|Oras|Heure)/, `${language}: thermal time remains visible`);
-    assert.match(thermalText, /KITCHEN ORDER TICKET|COMANDA DE COCINA|KUECHENBESTELLSCHEIN|BON DE COMMANDE CUISINE|COMANDA DE COZINHA/, `${language}: thermal banner remains visible`);
+    assert.match(thermalText, /(?:Time|Hora|Uhrzeit|Saat|Oras|Heure|Ora)/, `${language}: thermal time remains visible`);
+    assert.match(thermalText, /KITCHEN ORDER TICKET|COMANDA DE COCINA|KUECHENBESTELLSCHEIN|BON DE COMMANDE CUISINE|COMANDA DE COZINHA|BIGLIETTO ORDINE DI CUCINA/, `${language}: thermal banner remains visible`);
     assert.match(thermalText, /Pending coffee/, `${language}: thermal pending item`);
     assert.match(thermalText, /\+ Oat milk x3/, `${language}: thermal preserves addon quantity`);
     assert.match(thermalText, />> Less sugar/, `${language}: thermal preserves special-instruction marker`);

@@ -1,6 +1,6 @@
 <div align="center">
   <h1>FloCafe</h1>
-  <p><a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a> · <a href="README.fr.md">Français</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.fil.md">Filipino</a> · <a href="README.de.md">Deutsch</a></p>
+  <p><a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a> · <a href="README.fr.md">Français</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.fil.md">Filipino</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a></p>
   <p><strong>Free, open-source, offline-first point of sale for cafés, restaurants, and small kitchens.</strong></p>
   <p>
     <a href="https://flopos.com">Website</a> ·
@@ -82,7 +82,7 @@ Both scripts ask whether to keep application data. Do not choose their data-purg
 - **Receipt printing:** ESC/POS thermal printing over USB, local network (TCP), and OS-managed print queues, with WebUSB supported in compatible browsers (58 mm and 80 mm paper support).
 - **Kitchen operations:** Standalone Kitchen Display System (KDS) server and category-based kitchen station routing.
 - **Catalog management:** Product images, barcode scanning, and CSV menu import/export.
-- **Administration:** Role-based staff accounts (Owner, Manager, Cashier, Chef), sales analytics, and audit logs.
+- **Administration:** Role-based staff accounts (Owner, Manager, Cashier, Server, Chef), sales analytics, and audit logs.
 - **Data protection:** Local SQLite database with automated pre-migration backups, manual restore tools, and optional Google Drive backup.
 
 ## Project status

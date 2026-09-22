@@ -284,7 +284,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
-    "@googleapis/drive": "^25.0.0",
+    "@googleapis/drive": "^26.0.0",
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.13.13",
     "qrcode": "^1.5.3",

@@ -54,6 +54,7 @@
     "test:csp-lan": "ts-node --transpile-only -P tests/tsconfig.json tests/csp-lan-header.test.ts",
     "test:smoke": "node tests/run-electron-node-test.cjs tests/smoke-test.test.ts",
     "test:server-port-collision": "node tests/run-electron-node-test.cjs tests/server-port-collision.test.ts",
+    "test:daily-sales-export": "node tests/run-electron-node-test.cjs tests/daily-sales-export.test.ts",
     "test:payment-methods-split": "node tests/run-electron-node-test.cjs tests/payment-methods-split-checks.test.ts",
     "test:kds-integration": "node tests/run-electron-node-test.cjs tests/kds-integration.test.ts",
     "test:kds-contract": "node tests/run-electron-node-test.cjs tests/kds-contract.test.ts",

@@ -37,6 +37,8 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  12. German safeguards: de.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  13. Indonesian safeguards: id.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *  13. Italian safeguards: it.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
  *  14. Japanese and Chinese safeguards: ja.json and zh.json values never contain
@@ -1182,6 +1184,45 @@ function koFallbackErrors(koFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Indonesian translation safeguards. */
+const ID_INTENTIONAL_IDENTICAL = new Set<string>([
+  'common.appTitle', 'common.brandName', 'common.logoAlt', 'settings.revflo', 'setup.finedineLabel',
+  'auth.email', 'auth.recoverPinLabel', 'kds.connectionPolling', 'kds.emptyColumn', 'kds.viewKanban',
+  'nav.kds', 'nav.pos', 'nav.whatsapp', 'nav.heapLabel', 'nav.portLabel', 'nav.serverLabel',
+  'pos.orderTypeOnline', 'printTest.escpos', 'printTest.item', 'printTest.paperWidth58',
+  'printTest.paperWidth80', 'print.hsn', 'print.zReport.paymentCount', 'print.zReport.amount',
+  'products.barcodeLabel', 'products.fieldBarcode', 'products.fieldSku', 'products.skuLabel',
+  'settings.apiKeyInputPlaceholder', 'settings.connectionUsb', 'settings.paymentMethodUpi',
+  'settings.ipAddressPlaceholder', 'settings.kds', 'settings.paperSize58', 'settings.paperSize80',
+  'settings.port', 'settings.portPlaceholder', 'settings.stationPrinter', 'settings.status',
+  'settings.tabData', 'settings.tabDataCloud', 'settings.tabWhatsapp', 'settings.unicode',
+  'settings.whatsapp', 'setup.pinLabel', 'support.platform', 'whatsapp.connect.pairingPhonePlaceholder',
+  'auth.countryIndia', 'auth.countryThailand', 'common.subtotal', 'common.total', 'customer.email',
+  'dashboard.exportCsv', 'dashboard.exportXlsx', 'dashboard.ticketMethodCount', 'pos.addonPrice', 'pos.loadingEllipsis', 'pos.subtotal', 'pos.tagCount',
+  'pos.tagVegan', 'pos.taxLine', 'pos.total', 'print.grandTotal', 'products.addonSelectionRange',
+  'products.cashbackGlobalBadge', 'products.colorAmber', 'products.columnCashback', 'products.columnStatus',
+  'products.saleUnitCl', 'products.saleUnitFlOz', 'products.saleUnitG', 'products.saleUnitKg', 'products.saleUnitL', 'products.saleUnitLb', 'products.saleUnitMl', 'products.saleUnitOz', 'products.tagVegan',
+  'serverApp.emailPlaceholder', 'serverApp.orderSlipSubtotal', 'serverApp.orderSlipTotal', 'settings.email',
+  'settings.iranCurrencyDisplayRial', 'settings.iranCurrencyDisplayToman', 'settings.iranNumberDigitsLatin',
+  'setup.demoLabel', 'setup.expressLabel', 'setup.qsrLabel', 'permissionMatrix.areas.menu', 'support.email',
+  'tax.auditCreateOverride', 'tax.auditUpdateOverride', 'tax.target', 'update.downloadingBadge',
+  'whatsapp.sent.colStatus', 'receipt.item',
+]);
+
+function idFallbackErrors(idFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const idVal = idFlat[k];
+    if (idVal === undefined) continue;
+    if (idVal.startsWith('[ID]') || idVal.startsWith('[TODO]')) {
+      errors.push(`id.json ${k} — placeholder prefix found: "${idVal}"`);
+    } else if (idVal === enFlat[k] && !ID_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`id.json ${k} — identical to English value (renders as English for Indonesian users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1515,6 +1556,17 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated ko.json values (${KO_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 16. id.json values must not contain placeholders or fall back to English.
+  const idMessages = loadedStrings.get('id');
+  if (!idMessages) throw new Error('languages registry must include the maintained id locale');
+  const idErrors = idFallbackErrors(idMessages, loadedStrings.get('en')!);
+  if (idErrors.length) {
+    console.error(`\nid.json values with errors (${idErrors.length}):`);
+    for (const e of idErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'id.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated id.json values (${ID_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1620,7 +1672,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil, de, it).
+  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -1684,6 +1736,14 @@ function runNegativeTests(): void {
   expectDetected(
     'ko: placeholder prefix value',
     koFallbackErrors({ 'a.b': '[KO] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'id: English-identical value',
+    idFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'id: placeholder prefix value',
+    idFallbackErrors({ 'a.b': '[ID] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

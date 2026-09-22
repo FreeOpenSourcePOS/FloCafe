@@ -243,7 +243,7 @@ async function run(): Promise<void> {
   console.log('  ✓ getBrowserLanguage resolves fa for fa* locales and defaults correctly');
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all supported languages.
-  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko'] as const;
+  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko', 'id'] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {

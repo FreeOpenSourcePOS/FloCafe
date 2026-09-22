@@ -1379,7 +1379,10 @@ export function syncUnpaidBillsForOrder(
 ): void {
   const bills = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(orderId) as any[];
   const splitBills = bills.some((bill) => bill.split_group_id);
-  const settledSplitBill = (bill: any) => Number(bill.paid_amount || 0) > 0 || (bill.payment_status === 'paid' && Number(bill.total || 0) > 0) || (bill.payment_status !== 'unpaid' && bill.payment_status !== 'paid');
+  const settledSplitBill = (bill: { paid_amount?: number | string | null; payment_status?: string; total?: number | string | null }) =>
+    Number(bill.paid_amount || 0) > 0
+    || (bill.payment_status === 'paid' && Number(bill.total || 0) > 0)
+    || (bill.payment_status !== 'unpaid' && bill.payment_status !== 'paid');
   if (splitBills && bills.some(settledSplitBill)) {
     throw Object.assign(new Error('Cannot modify an order after a split check is paid'), { statusCode: 409 });
   }

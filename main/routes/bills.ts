@@ -9,6 +9,7 @@ import {
   now,
   parseItemJson,
   parseRowJson,
+  recordOrderAudit,
   utcTodayDate,
   verifyPin,
   withTxn,
@@ -33,6 +34,7 @@ import {
   getCurrencyMinorUnitFactor,
   resolveTenantCurrency,
 } from '../countries';
+import { calculateServiceCharge, isServiceChargeEnabled } from '../services/service-charge';
 
 const router = Router();
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
@@ -2109,6 +2111,117 @@ router.post('/:id/payments', requireRole(...ROLE_ACCESS.ownerManagerCashier), (r
       } catch { /* diagnostics must never mask the original failure */ }
     }
     res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message });
+  }
+});
+
+router.patch('/:id/service-charge', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+  try {
+    const { waived } = req.body || {};
+    if (typeof waived !== 'boolean') {
+      return res.status(400).json({ error: 'waived must be a boolean' });
+    }
+
+    const db = getDatabase();
+    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
+    if (!bill) return res.status(404).json({ error: 'Bill not found' });
+    if (bill.payment_status === 'paid' || Number(bill.paid_amount || 0) > 0) {
+      return res.status(400).json({ error: 'Service charge cannot be changed after payment' });
+    }
+    if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
+      return res.status(409).json({ error: 'Cannot change service charge on a refunded bill' });
+    }
+    if (bill.split_group_id) {
+      return res.status(409).json({ error: 'Service charge cannot be changed after a bill is split' });
+    }
+    if (!isServiceChargeEnabled(getSettingValue('service_charge_enabled'))) {
+      return res.status(400).json({ error: 'Service charge is not enabled' });
+    }
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as any;
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const currency = getTenantCurrency();
+    const decimals = getCurrencyFractionDigits(currency);
+    const minorFactor = getCurrencyMinorUnitFactor(currency);
+    const {
+      totalTax: itemTaxAmount,
+      exclusiveTax: itemExclusiveTax,
+      allTaxBreakdowns: itemBreakdowns,
+      allTaxSnapshots: itemSnapshots,
+    } = calculateOrderTotals(db, order.id);
+    const discountAmount = Math.min(Math.max(0, Number(bill.discount_amount || 0)), Number(order.subtotal || 0));
+    const discountedSubtotal = Math.max(0, Number(order.subtotal || 0) - discountAmount);
+    const taxRatio = Number(order.subtotal || 0) > 0 ? discountedSubtotal / Number(order.subtotal) : 1;
+    const tenantInfo = {
+      country: getSettingValue('country') || '',
+      business_type: getSettingValue('business_type') || 'restaurant',
+      state_code: getSettingValue('state_code') || '',
+      currency,
+      taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+    };
+    const customer = bill.customer_id
+      ? db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id) as any
+      : null;
+    const serviceCharge = waived
+      ? 0
+      : calculateServiceCharge(
+        getSettingValue('service_charge_enabled'),
+        getSettingValue('service_charge_rate'),
+        getSettingValue('service_charge_order_types'),
+        order.type,
+        discountedSubtotal,
+      );
+    const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
+      ...order,
+      packaging_charge: bill.packaging_charge || 0,
+      delivery_charge: bill.delivery_charge || 0,
+      service_charge: serviceCharge,
+    }, customer);
+    const taxRollup = combineItemAndChargeTaxes({
+      itemTaxAmount: Number((itemTaxAmount * taxRatio).toFixed(decimals)),
+      itemExclusiveTaxAmount: Number((itemExclusiveTax * taxRatio).toFixed(decimals)),
+      itemBreakdowns,
+      itemSnapshots,
+      itemTaxRatio: taxRatio,
+      chargeTaxes,
+      minorFactor,
+    });
+    const exactTotal = Number((discountedSubtotal + taxRollup.exclusiveTaxAmount
+      + (bill.delivery_charge || 0) + (bill.packaging_charge || 0) + serviceCharge).toFixed(decimals));
+    const pack = getActiveCountryPack(tenantInfo.country);
+    const { total: newTotal, adjustment: newRoundOff } = applyPayableRounding(exactTotal, pack, currency);
+
+    const updatedBill = withTxn(() => {
+      const updatedAt = now();
+      db.prepare(`
+        UPDATE bills SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, service_charge = ?,
+          total = ?, balance = ?, round_off = ?, updated_at = ? WHERE id = ?
+      `).run(
+        taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson,
+        serviceCharge, newTotal, newTotal, newRoundOff, updatedAt, req.params.id,
+      );
+      db.prepare(`
+        UPDATE orders SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, service_charge = ?,
+          total = ?, round_off = ?, updated_at = ? WHERE id = ?
+      `).run(
+        taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson,
+        serviceCharge, exactTotal, 0, updatedAt, order.id,
+      );
+      recordOrderAudit(db, {
+        orderId: String(order.id),
+        actorUserId: String((req as any).user.userId),
+        action: waived ? 'service_charge_waived' : 'service_charge_reapplied',
+        details: { service_charge: serviceCharge },
+      });
+      return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));
+    });
+
+    notifyOrderUpdated();
+    res.json({ bill: updatedBill });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 500;
+    console.error('[API] Service charge update failed:', error);
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : error.message });
   }
 });
 

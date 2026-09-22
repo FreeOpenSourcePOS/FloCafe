@@ -38,6 +38,7 @@ import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { resolveScannedProduct } from '@/lib/scale-barcode';
+import { calculateServiceCharge, SERVICE_CHARGE_ORDER_TYPES, type ServiceChargeOrderType } from '@/lib/service-charge';
 import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
@@ -96,7 +97,7 @@ export default function POSPage() {
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
-  const { customerMandatory, autoPrintKot, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
+  const { customerMandatory, autoPrintKot, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, serviceChargeEnabled, serviceChargeRate, serviceChargeOrderTypes, setBillingType, setTablesRequired, setKotPrintingEnabled, setServiceChargeEnabled, setServiceChargeRate, setServiceChargeOrderTypes } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const t = useTranslations('pos');
   const tSupport = useTranslations('support');
@@ -511,6 +512,12 @@ export default function POSPage() {
         setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
         const isTablesRequired = typeof d.tables_required === 'boolean' ? d.tables_required : true;
         setTablesRequired(isTablesRequired);
+        setServiceChargeEnabled(d.service_charge_enabled === true);
+        setServiceChargeRate(Number(d.service_charge_rate) || 0);
+        const configuredServiceChargeTypes = Array.isArray(d.service_charge_order_types)
+          ? d.service_charge_order_types.filter((value: unknown): value is ServiceChargeOrderType => (SERVICE_CHARGE_ORDER_TYPES as readonly string[]).includes(String(value)))
+          : ['dine_in'];
+        setServiceChargeOrderTypes(configuredServiceChargeTypes);
 
         api.get('/settings/kot_printing_enabled')
           .then((res) => setKotPrintingEnabled(res.data.setting?.value !== 'false'))
@@ -645,6 +652,8 @@ export default function POSPage() {
           type: cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
+          service_charge: calculateServiceCharge(serviceChargeEnabled, serviceChargeRate, serviceChargeOrderTypes, cart.orderType, cart.subtotal(), cart.serviceChargeWaived),
+          service_charge_waived: cart.serviceChargeWaived,
           online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
           external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           items: cart.items.map((item) => ({
@@ -724,6 +733,7 @@ export default function POSPage() {
       type: cart.orderType,
       guest_count: cart.guestCount,
       special_instructions: cart.orderNotes,
+      service_charge_waived: cart.serviceChargeWaived,
       online_platform: cart.orderType === 'online' ? cart.onlinePlatform : undefined,
       external_order_id: cart.orderType === 'online' ? cart.externalOrderId : undefined,
       items: orderItems,
@@ -808,6 +818,8 @@ export default function POSPage() {
           type: cart.orderType,
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
+          service_charge: calculateServiceCharge(serviceChargeEnabled, serviceChargeRate, serviceChargeOrderTypes, cart.orderType, cart.subtotal(), cart.serviceChargeWaived),
+          service_charge_waived: cart.serviceChargeWaived,
           online_platform: cart.orderType === 'online' ? cart.onlinePlatform || undefined : undefined,
           external_order_id: cart.orderType === 'online' ? cart.externalOrderId || undefined : undefined,
           items: orderItems,

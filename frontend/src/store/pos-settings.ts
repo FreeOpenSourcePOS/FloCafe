@@ -11,6 +11,7 @@ export type PaperSize = 'thermal58' | 'thermal80';
 export type PrinterPrintMode = 'escpos' | 'browser';
 export type CoreBillTemplate = 'classic' | 'compact';
 export type BillTemplate = CoreBillTemplate | (string & {});
+export type ServiceChargeOrderType = 'dine_in' | 'takeaway' | 'delivery' | 'online';
 
 export interface PosSettingsState {
   showProductImages: boolean;
@@ -54,6 +55,9 @@ export interface PosSettingsState {
   // Kitchen workflow toggles synced from backend settings.
   kdsEnabled: boolean;
   kotPrintingEnabled: boolean;
+  serviceChargeEnabled: boolean;
+  serviceChargeRate: number;
+  serviceChargeOrderTypes: ServiceChargeOrderType[];
   // Whether WhatsApp messaging is enabled for this tenant.
   whatsappEnabled: boolean;
   // Print language policies synced from backend settings.
@@ -92,6 +96,9 @@ export interface PosSettingsState {
   setPrinterTrimDecimals: (v: boolean) => void;
   setKdsEnabled: (v: boolean) => void;
   setKotPrintingEnabled: (v: boolean) => void;
+  setServiceChargeEnabled: (enabled: boolean) => void;
+  setServiceChargeRate: (rate: number) => void;
+  setServiceChargeOrderTypes: (types: ServiceChargeOrderType[]) => void;
   setWhatsappEnabled: (v: boolean) => void;
   setBillLanguagePolicy: (policy: ReceiptLanguagePolicy) => void;
   setKotLanguagePolicy: (policy: KotLanguagePolicy) => void;
@@ -135,6 +142,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       printerTrimDecimals: false,
       kdsEnabled: true,
       kotPrintingEnabled: true,
+      serviceChargeEnabled: false,
+      serviceChargeRate: 0,
+      serviceChargeOrderTypes: ['dine_in'],
       // Default false so sidebar hides WhatsApp nav until tenant enables it.
       // Synced from /api/whatsapp/status on auth load.
       whatsappEnabled: false,
@@ -175,6 +185,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setPrinterTrimDecimals: (v) => set({ printerTrimDecimals: v }),
       setKdsEnabled: (v) => set({ kdsEnabled: v }),
       setKotPrintingEnabled: (v) => set({ kotPrintingEnabled: v }),
+      setServiceChargeEnabled: (enabled) => set({ serviceChargeEnabled: enabled }),
+      setServiceChargeRate: (rate) => set({ serviceChargeRate: rate }),
+      setServiceChargeOrderTypes: (types) => set({ serviceChargeOrderTypes: types }),
       setWhatsappEnabled: (v: boolean) => set({ whatsappEnabled: v }),
       setBillLanguagePolicy: (billLanguagePolicy) => set({ billLanguagePolicy }),
       setKotLanguagePolicy: (kotLanguagePolicy) => set({ kotLanguagePolicy }),

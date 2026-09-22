@@ -16,6 +16,7 @@ interface CartState {
   onlinePlatform: string;
   externalOrderId: string;
   orderNotes: string;
+  serviceChargeWaived: boolean;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
   updateItemDetails: (cartItemId: string, quantity: number, addons: Addon[], specialInstructions: string) => void;
@@ -32,6 +33,7 @@ interface CartState {
   setOnlinePlatform: (platform: string) => void;
   setExternalOrderId: (id: string) => void;
   setOrderNotes: (notes: string) => void;
+  setServiceChargeWaived: (waived: boolean) => void;
 
   subtotal: () => number;
   itemCount: () => number;
@@ -49,6 +51,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   onlinePlatform: '',
   externalOrderId: '',
   orderNotes: '',
+  serviceChargeWaived: false,
 
   addItem: (product, quantity = 1, addons = [], specialInstructions = '') => {
     const items = get().items;
@@ -117,11 +120,11 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   clearCart: () => {
-    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', onlinePlatform: '', externalOrderId: '', orderNotes: '' });
+    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', onlinePlatform: '', externalOrderId: '', orderNotes: '', serviceChargeWaived: false });
   },
 
   loadItems: (items, tableId, customerId, guestCount, orderNotes, heldOrderId) => {
-    set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, guestCount, orderNotes: orderNotes || '' });
+    set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, guestCount, orderNotes: orderNotes || '', serviceChargeWaived: false });
   },
 
   setOrderType: (type) => set((state) => ({
@@ -129,6 +132,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     deliveryAddress: type !== 'delivery' ? '' : state.deliveryAddress,
     onlinePlatform: type !== 'online' ? '' : state.onlinePlatform,
     externalOrderId: type !== 'online' ? '' : state.externalOrderId,
+    serviceChargeWaived: false,
   })),
   setTableId: (id) => set({ tableId: id, heldOrderId: null }),
   setCustomerId: (id) => set({ customerId: id }),
@@ -138,6 +142,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   setOnlinePlatform: (platform) => set({ onlinePlatform: platform }),
   setExternalOrderId: (id) => set({ externalOrderId: id }),
   setOrderNotes: (notes) => set({ orderNotes: notes }),
+  setServiceChargeWaived: (waived) => set({ serviceChargeWaived: waived }),
 
   subtotal: () => {
     return get().items.reduce((sum, item) => {

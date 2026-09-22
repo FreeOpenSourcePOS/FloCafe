@@ -29,6 +29,7 @@ import {
   validateLanguagePolicySetting,
 } from '../lib/print-language-settings';
 import { isThemeMode } from '../title-bar-theme';
+import { DEFAULT_SERVICE_CHARGE_ORDER_TYPES, SERVICE_CHARGE_ORDER_TYPES, normalizeServiceChargeRate, parseServiceChargeOrderTypes } from '../services/service-charge';
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -97,6 +98,9 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   calendar: 'locale',
   // Returns 'system' if not yet explicitly saved by the user.
   theme_mode: 'system',
+  service_charge_enabled: 'false',
+  service_charge_rate: '0',
+  service_charge_order_types: JSON.stringify(DEFAULT_SERVICE_CHARGE_ORDER_TYPES),
 };
 
 function maskSetting(key: string, value: string): string {
@@ -163,6 +167,9 @@ function businessShape(s: Record<string, string>) {
     bill_show_customer_name: s.bill_show_customer_name !== 'false',
     bill_show_customer_phone: s.bill_show_customer_phone !== 'false',
     bill_show_table_number: s.bill_show_table_number !== 'false',
+    service_charge_enabled: s.service_charge_enabled === 'true' || s.service_charge_enabled === '1',
+    service_charge_rate: normalizeServiceChargeRate(s.service_charge_rate),
+    service_charge_order_types: parseServiceChargeOrderTypes(s.service_charge_order_types),
     currency_display: resolveStoredLocalePreference('currency_display', s.currency_display, s.country || ''),
     number_digits: resolveStoredLocalePreference('number_digits', s.number_digits, s.country || ''),
     calendar: resolveStoredLocalePreference('calendar', s.calendar, s.country || ''),
@@ -201,7 +208,8 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
-      currency_display, number_digits, calendar } = req.body;
+      currency_display, number_digits, calendar,
+      service_charge_enabled, service_charge_rate, service_charge_order_types } = req.body;
     const normalizedCurrency = typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
 
     if (!validBusinessLocation(timezone, normalizedCurrency, country)) {
@@ -218,6 +226,22 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
     const currentSettings = getAllSettings(db);
     const effectiveCountry = country || currentSettings.country || '';
     const effectiveCurrency = normalizedCurrency || currentSettings.currency || '';
+
+    if (service_charge_enabled !== undefined && typeof service_charge_enabled !== 'boolean') {
+      return res.status(400).json({ error: 'service_charge_enabled must be a boolean' });
+    }
+    if (service_charge_rate !== undefined) {
+      const rate = Number(service_charge_rate);
+      if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+        return res.status(400).json({ error: 'service_charge_rate must be between 0 and 100' });
+      }
+    }
+    if (service_charge_order_types !== undefined) {
+      if (!Array.isArray(service_charge_order_types)
+        || service_charge_order_types.some((value: unknown) => !(SERVICE_CHARGE_ORDER_TYPES as readonly string[]).includes(String(value)))) {
+        return res.status(400).json({ error: 'service_charge_order_types contains an invalid order type' });
+      }
+    }
 
     // Validate locale preferences against country options, normalizing unsupported legacy values.
     const localeUpdates: Record<string, string> = {};
@@ -268,6 +292,9 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
+      service_charge_enabled: boolFlag(service_charge_enabled),
+      service_charge_rate: service_charge_rate !== undefined ? String(service_charge_rate) : undefined,
+      service_charge_order_types: service_charge_order_types !== undefined ? JSON.stringify(parseServiceChargeOrderTypes(service_charge_order_types)) : undefined,
       ...localeUpdates,
       // Only mark country as user-confirmed if it actually changed in this submission.
       ...countryConfirmationPatch(country, currentSettings.country, req.body.country_selected),
@@ -878,6 +905,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, Z_REPORT_LANGUAGE_POLICY_KEY,
   'currency_display', 'number_digits', 'calendar',
   'theme_mode',
+  'service_charge_enabled', 'service_charge_rate', 'service_charge_order_types',
 ]);
 
 function isAllowedWildcardKey(key: string): boolean {

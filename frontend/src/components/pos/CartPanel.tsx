@@ -16,6 +16,7 @@ import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
+import { calculateServiceCharge } from '@/lib/service-charge';
 
 interface Props {
   tables: Table[];
@@ -134,11 +135,24 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
   const billingType = usePosSettingsStore((s) => s.billingType);
+  const serviceChargeEnabled = usePosSettingsStore((s) => s.serviceChargeEnabled);
+  const serviceChargeRate = usePosSettingsStore((s) => s.serviceChargeRate);
+  const serviceChargeOrderTypes = usePosSettingsStore((s) => s.serviceChargeOrderTypes);
   const t = useTranslations('pos');
   const tCommon = useTranslations('common');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
+  const tReceipt = useTranslations('receipt');
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
+  const serviceCharge = calculateServiceCharge(
+    serviceChargeEnabled,
+    serviceChargeRate,
+    serviceChargeOrderTypes,
+    cart.orderType,
+    cart.subtotal(),
+    cart.serviceChargeWaived,
+  );
+  const showServiceCharge = !existingOrder && serviceChargeEnabled && serviceChargeOrderTypes.includes(cart.orderType) && serviceChargeRate > 0;
 
   const handleHold = async () => {
     if (!cart.tableId) {
@@ -343,6 +357,21 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             {fmt(cart.subtotal())}
           </span>
         </div>
+        {showServiceCharge && (
+          <div className="flex items-center justify-between gap-2 mb-4 text-sm">
+            <span className="text-muted-foreground">{tReceipt('serviceCharge')}</span>
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{cart.serviceChargeWaived ? fmt(0) : fmt(serviceCharge)}</span>
+              <button
+                type="button"
+                onClick={() => cart.setServiceChargeWaived(!cart.serviceChargeWaived)}
+                className="text-xs font-medium text-brand hover:underline"
+              >
+                {cart.serviceChargeWaived ? tCommon('restore') : tCommon('remove')}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex gap-2">
           {canHold && (
             <Button variant="outline" onClick={handleHold} className="flex-1">

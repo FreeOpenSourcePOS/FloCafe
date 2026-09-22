@@ -68,6 +68,9 @@ export interface BusinessForm {
   calendar: CalendarMode;
   billingType: 'postpaid' | 'prepaid';
   tablesRequired: boolean;
+  serviceChargeEnabled: boolean;
+  serviceChargeRate: number;
+  serviceChargeOrderTypes: Array<'dine_in' | 'takeaway' | 'delivery' | 'online'>;
   taxRegistered: boolean;
   taxRegistrationNumber: string;
   businessPhone: string;

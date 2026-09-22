@@ -265,7 +265,7 @@ async function run(): Promise<void> {
   assert(tFa('settings.languageFa') === 'فارسی (FA)', 'settings.languageFa in fa must be فارسی (FA)');
   assert(tEn('setup.languagePersian') === 'Persian', 'setup.languagePersian in en must be Persian');
   assert(tEn('settings.languageFa') === 'Persian (FA)', 'settings.languageFa in en must be Persian (FA)');
-  console.log('  ✓ setup.languagePersian and settings.languageFa translate across en, es, fr, pt, fa, ko');
+  console.log('  ✓ setup.languagePersian and settings.languageFa translate across en, es, fr, pt, fa, it, ja, zh, ko, id');
 
   console.log('\n✅ All RTL/LTR Setup, Auth, and Settings checks passed.');
 }

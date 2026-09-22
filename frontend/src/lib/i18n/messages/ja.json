@@ -320,7 +320,12 @@
     "closeStepDone": "締める",
     "xReportSales": "本日の売上",
     "refundsCount": "{count}件の返金",
-    "ticketNoPayments": "この日の支払いはありません"
+    "ticketNoPayments": "この日の支払いはありません",
+    "exportSales": "売上をエクスポート",
+    "exportXlsx": "Excel（.xlsx）",
+    "exportCsv": "CSV（.csv）",
+    "exportCsvHint": "CSVでは概要と明細の2つのファイルをダウンロードします。",
+    "exportCsvStarted": "概要と明細のCSVファイルをダウンロードしています…"
   },
   "kds": {
     "addonsLabel": "追加項目",

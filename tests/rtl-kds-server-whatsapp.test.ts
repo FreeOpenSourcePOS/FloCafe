@@ -212,7 +212,7 @@ async function run(): Promise<void> {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko'] as const) {
     await loadLocaleMessages(lang);
   }
 
@@ -290,7 +290,7 @@ async function run(): Promise<void> {
   //    #376: HtmlLangSync reads the active locale from the i18n context
   //    (useLocale), so each render is wrapped in an IntlProvider whose locale
   //    matches the language under test.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko'] as const) {
     usePosSettingsStore.getState().setLanguage(lang);
     const kdsMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(KdsHtmlLang));
     assert(kdsMarkup === '', `KdsHtmlLang must render null, got: ${kdsMarkup}`);
@@ -301,14 +301,14 @@ async function run(): Promise<void> {
   }
 
   assert(getLanguageDirection('fa') === 'rtl', 'Persian (fa) must resolve to rtl');
-  for (const ltrLang of ['en', 'es', 'fr', 'pt', 'it', 'ja', 'zh'] as const) {
+  for (const ltrLang of ['en', 'es', 'fr', 'pt', 'it', 'ja', 'zh', 'ko'] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
   }
   console.log('  ✓ standalone layouts sync document dir/lang (KdsHtmlLang / HtmlLangSync)');
 
   // 5. KDS disabled screens and Server App strings resolve localized i18n keys.
   const { createTranslator } = frontendRequire('use-intl/core');
-  const getTestTranslator = (lang: 'en' | 'es' | 'fr' | 'pt' | 'fa' | 'it' | 'ja' | 'zh') => {
+  const getTestTranslator = (lang: 'en' | 'es' | 'fr' | 'pt' | 'fa' | 'it' | 'ja' | 'zh' | 'ko') => {
     const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
     return createTranslator({ locale: getLanguageLocale(lang), messages }) as unknown as (
       key: string,
@@ -346,7 +346,7 @@ async function run(): Promise<void> {
   const guestFa = getTestTranslator('fa')('serverApp.guestFallbackName', { last4: '5678' });
   assert(guestFa.includes('5678') && !guestFa.startsWith('Guest '), `serverApp.guestFallbackName FA substitution failed, got: ${guestFa}`);
 
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko'] as const) {
     for (const key of ['kds.disabledTitle', 'kds.disabledHint', 'serverApp.disabledTitle', 'serverApp.disabledHint']) {
       const val = getTestTranslator(lang)(key);
       assert(val && val !== key, `Translation key ${key} must resolve for ${lang}`);

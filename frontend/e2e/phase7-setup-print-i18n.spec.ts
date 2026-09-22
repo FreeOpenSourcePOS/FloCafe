@@ -16,6 +16,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   it: { basic: 'Ricevuta base (termica)', web: 'Stampa web (browser)', whatsapp: 'Condivisione WhatsApp' },
   ja: { basic: '基本レシート（感熱）', web: 'ウェブ印刷（ブラウザ）', whatsapp: 'WhatsApp共有' },
   zh: { basic: '基础小票（热敏）', web: '网页打印（浏览器）', whatsapp: 'WhatsApp 分享' },
+  ko: { basic: '기본 영수증 (열전사)', web: '웹 인쇄 (브라우저)', whatsapp: 'WhatsApp 공유' },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

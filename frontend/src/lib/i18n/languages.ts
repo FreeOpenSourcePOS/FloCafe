@@ -92,6 +92,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/zh.json'),
   },
+  ko: {
+    locale: 'ko-KR',
+    nativeName: '한국어',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ko.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

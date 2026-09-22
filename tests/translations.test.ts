@@ -1147,6 +1147,41 @@ function zhFallbackErrors(zhFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Korean translation safeguards. */
+const KO_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', 'common.appTitle', 'common.brandName', 'common.logoAlt',
+  'dashboard.exportCsv', 'dashboard.exportXlsx', 'dashboard.ticketMethodCount',
+  'kds.emptyColumn', 'nav.kds', 'nav.pos', 'nav.whatsapp', 'pos.addonPrice',
+  'pos.loadingEllipsis', 'pos.tagCount', 'pos.taxLine', 'print.hsn',
+  'print.zReport.paymentCount', 'printTest.escpos', 'printTest.paperWidth58',
+  'printTest.paperWidth80', 'products.addonSelectionRange', 'products.fieldSku',
+  'products.saleUnitCl', 'products.saleUnitFlOz', 'products.saleUnitG', 'products.saleUnitKg',
+  'products.saleUnitL', 'products.saleUnitLb', 'products.saleUnitMl', 'products.saleUnitOz',
+  'products.skuLabel', 'serverApp.emailPlaceholder', 'settings.apiKeyInputPlaceholder',
+  'settings.connectionUsb', 'settings.instagramPlaceholder', 'settings.ipAddressPlaceholder',
+  'settings.kds', 'settings.paperSize58', 'settings.paperSize80',
+  'settings.paymentMethodUpi', 'settings.portPlaceholder', 'settings.registrationEmailPlaceholder',
+  'settings.registrationLastError', 'settings.revflo', 'settings.tabOrderflow',
+  'settings.tabWhatsapp', 'settings.unicode', 'settings.whatsapp', 'setup.finedineLabel',
+  'setup.ownerEmailPlaceholder', 'setup.pinLabel', 'setup.qsrLabel',
+  'tax.auditCreateOverride', 'tax.auditUpdateOverride', 'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function koFallbackErrors(koFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const koVal = koFlat[k];
+    if (koVal === undefined) continue;
+    if (koVal.startsWith('[KO]') || koVal.startsWith('[TODO]')) {
+      errors.push(`ko.json ${k} — placeholder prefix found: "${koVal}"`);
+    } else if (koVal === enFlat[k] && !KO_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`ko.json ${k} — identical to English value (renders as English for Korean users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1469,6 +1504,17 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated zh.json values (${ZH_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 15. Korean values must not contain placeholders or fall back to English.
+  const koMessages = loadedStrings.get('ko');
+  if (!koMessages) throw new Error('languages registry must include the maintained ko locale');
+  const koErrors = koFallbackErrors(koMessages, loadedStrings.get('en')!);
+  if (koErrors.length) {
+    console.error(`\nko.json values with errors (${koErrors.length}):`);
+    for (const e of koErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'ko.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated ko.json values (${KO_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1630,6 +1676,14 @@ function runNegativeTests(): void {
   expectDetected(
     'zh: placeholder prefix value',
     zhFallbackErrors({ 'a.b': '[ZH] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ko: English-identical value',
+    koFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'ko: placeholder prefix value',
+    koFallbackErrors({ 'a.b': '[KO] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

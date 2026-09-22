@@ -2200,6 +2200,7 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
     const currency = getTenantCurrency();
     const decimals = getCurrencyFractionDigits(currency);
     const minorFactor = getCurrencyMinorUnitFactor(currency);
+    discountAmount = Math.min(discountAmount, bill.subtotal);
     discountAmount = Number(discountAmount.toFixed(decimals));
 
     // Derive undiscounted tax basis directly from active items to prevent compounding discounts.

@@ -25,6 +25,7 @@ const router = Router();
 const orderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
 const orderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
+const MAX_ORDER_ITEMS = 200;
 const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 
 function orderIdempotencyKey(req: Request): string | null {
@@ -442,8 +443,11 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
     // Always use authenticated user ID to ensure correct server visibility and attribution.
     const authenticatedUserId = (req as any).user.userId;
 
-    if (!items || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'At least one item is required' });
+    }
+    if (items.length > MAX_ORDER_ITEMS) {
+      return res.status(400).json({ error: `A maximum of ${MAX_ORDER_ITEMS} items is allowed per request` });
     }
 
     if (!type || !['dine_in', 'takeaway', 'delivery', 'online'].includes(type)) {
@@ -718,8 +722,11 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       if (replayResponse) return res.json(replayResponse);
     }
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'At least one item is required' });
+    }
+    if (items.length > MAX_ORDER_ITEMS) {
+      return res.status(400).json({ error: `A maximum of ${MAX_ORDER_ITEMS} items is allowed per request` });
     }
 
     // Get settings

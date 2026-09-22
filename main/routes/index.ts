@@ -568,7 +568,7 @@ export function registerRoutes(app: Express): void {
         if (['completed', 'cancelled'].includes(currentOrder.status)) {
           throw Object.assign(new Error('Cannot restore items on completed or cancelled orders'), { statusCode: 400 });
         }
-        if (db.prepare("SELECT id FROM bills WHERE order_id = ? AND payment_status = 'paid'").get(orderId)) {
+        if (db.prepare("SELECT id FROM bills WHERE order_id = ? AND payment_status = 'paid' AND COALESCE(paid_amount, 0) > 0").get(orderId)) {
           throw Object.assign(new Error('Cannot restore items on a paid order'), { statusCode: 400 });
         }
 

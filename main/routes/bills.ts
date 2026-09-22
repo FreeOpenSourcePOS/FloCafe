@@ -1379,7 +1379,8 @@ export function syncUnpaidBillsForOrder(
 ): void {
   const bills = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(orderId) as any[];
   const splitBills = bills.some((bill) => bill.split_group_id);
-  if (splitBills && bills.some((bill) => bill.payment_status !== 'unpaid' || Number(bill.paid_amount || 0) > 0)) {
+  const settledSplitBill = (bill: any) => Number(bill.paid_amount || 0) > 0 || (bill.payment_status === 'paid' && Number(bill.total || 0) > 0) || (bill.payment_status !== 'unpaid' && bill.payment_status !== 'paid');
+  if (splitBills && bills.some(settledSplitBill)) {
     throw Object.assign(new Error('Cannot modify an order after a split check is paid'), { statusCode: 409 });
   }
   const unpaidBills = bills.filter((bill) => bill.payment_status !== 'paid');
@@ -1477,13 +1478,22 @@ export function syncUnpaidBillsForOrder(
   `);
 
   bills.forEach((bill, index) => {
-    if (bill.payment_status === 'paid') return;
     const total = allocations.total[index];
+    const balance = Math.max(0, total - Number(bill.paid_amount || 0));
+    const zeroClosed = bill.payment_status === 'paid' && Number(bill.paid_amount || 0) === 0;
+    if (bill.payment_status === 'paid' && !zeroClosed) return;
     update.run(
       allocations.subtotal[index], allocations.taxAmount[index], breakdowns[index], snapshots[index],
       allocations.discountAmount[index], allocations.deliveryCharge[index], allocations.packagingCharge[index], allocations.serviceCharge[index],
-      allocations.roundOff[index], total, Math.max(0, total - Number(bill.paid_amount || 0)), now(), bill.id,
+      allocations.roundOff[index], total, balance, now(), bill.id,
     );
+    if (total <= 0 && balance <= 0) {
+      if (bill.payment_status !== 'paid') {
+        db.prepare(`UPDATE bills SET payment_status = 'paid', paid_at = ?, updated_at = ? WHERE id = ?`).run(now(), now(), bill.id);
+      }
+    } else if (zeroClosed) {
+      db.prepare(`UPDATE bills SET payment_status = 'unpaid', paid_at = NULL, updated_at = ? WHERE id = ?`).run(now(), bill.id);
+    }
   });
 }
 
@@ -1854,7 +1864,12 @@ function preparePaymentBatch(
   }
   if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
   const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * minorFactor));
-  if (remainingCents <= 0) throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
+  if (remainingCents <= 0) {
+    if (Number(bill.paid_amount || 0) > 0) {
+      return { bill, prepared: [], existingPayments, effectiveCustomerId };
+    }
+    throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
+  }
   const raw = resolvedPayments.map((payment) => {
     // Single-line payments may omit amount to pay remaining balance; multi-line requires explicit amounts.
     const supportsOmittedAmount = allowOmittedAmount || payments.length === 1;
@@ -1993,7 +2008,7 @@ function applyPaymentBatch(
   db.prepare(`UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?, payment_details = ?, paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END, updated_at = ? WHERE id = ?`).run(newPaidCents / minorFactor, newBalanceCents / minorFactor, paymentStatus, JSON.stringify(allPayments), paymentStatus, paymentStatus === 'paid' ? changedAt : null, changedAt, billId);
   let loyaltyPointsEarned = 0;
   if (paymentStatus === 'paid') {
-    const unpaidSibling = db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status != 'paid' LIMIT 1`).get(bill.order_id, bill.id);
+    const unpaidSibling = db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded') LIMIT 1`).get(bill.order_id, bill.id);
     const orderFullyPaid = !unpaidSibling;
     if (orderFullyPaid) {
       db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?").run(changedAt, changedAt, bill.order_id);

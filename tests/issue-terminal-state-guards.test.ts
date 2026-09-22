@@ -1,15 +1,6 @@
 /**
- * Terminal-state & refund mutation guards.
- *
- * Covers proven defects where payment/discount/item mutations ignored
- * terminal order or refunded-bill state:
- * - cancelled-order-payment: paying a bill on a cancelled order flips it to completed
- * - payment-refund-guard: accepting a new payment on a fully or partially refunded bill
- * - discount-refund-guard: applying discounts to refunded / partially refunded bills
- * - add-items-refund-guard: adding items to an order whose bill was refunded / partially refunded
- * - Item discount endpoint rejects refunded / partially refunded bills
- *
- * Usage: node tests/run-electron-node-test.cjs tests/issue-terminal-state-guards.test.ts
+ * Payment, discount, and add-items must not mutate cancelled orders or refunded bills.
+ * Run: node tests/run-electron-node-test.cjs tests/issue-terminal-state-guards.test.ts
  */
 
 // ── Electron Mock (must be before any app imports) ───────────────────────────
@@ -111,7 +102,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    // ── cancelled-order-payment: payment on a cancelled order must not resurrect it ───────────────
+    // ── payment must not flip cancelled order to completed ──
     console.log('\n─── cancelled-order-payment: cancelled order stays cancelled after payment ───');
     {
       const create = await createOrder({
@@ -138,7 +129,7 @@ async function main(): Promise<void> {
       );
     }
 
-    // ── payment-refund-guard: reject payment on a fully refunded bill ─────────────────────────
+    // ── reject payment on fully refunded bill ──
     console.log('\n─── payment-refund-guard: payment rejected on refunded bill ───');
     {
       const { billId } = await newTakeawayOrder('prod-1000');
@@ -162,7 +153,7 @@ async function main(): Promise<void> {
       assertEqual(after.payment_status, 'refunded', 'payment-refund-guard: still refunded after rejected payment');
     }
 
-    // ── payment-refund-guard: reject payment on a partially refunded bill ─────────────────────
+    // ── reject payment on partially refunded bill ──
     console.log('\n─── payment-refund-guard: payment rejected on partially refunded bill ───');
     {
       resetPinRateLimitForTests();
@@ -188,10 +179,10 @@ async function main(): Promise<void> {
       assertEqual(after.paid_amount, before.paid_amount, 'partial-payment-refund: paid_amount unchanged');
     }
 
-    // ── discount-refund-guard: reject discounts on refunded / partially refunded bills ─────────
+    // ── reject discounts on refunded bills ──
     console.log('\n─── discount-refund-guard: discounts rejected on refunded bills ───');
     {
-      // Fully refunded bill: order-level discount must not rewrite totals.
+      // Fully refunded: order discount must not rewrite totals.
       const { orderId, billId } = await newTakeawayOrder('prod-1000');
       await pay(billId, { method: 'cash', amount: 500 });
       const ref = await refund({
@@ -219,7 +210,7 @@ async function main(): Promise<void> {
       const billDisc = await applyBillDiscount(billId, { type: 'amount', value: 50 });
       assertEqual(billDisc.status, 409, 'discount-refund-guard: bill discount on refunded bill rejected with 409');
 
-      // Partially refunded bill (full payment, partial refund).
+      // Partially refunded (full pay, partial refund).
       const second = await newTakeawayOrder('prod-1000');
       await pay(second.billId, { method: 'cash', amount: null });
       const partialRef = await refund({
@@ -237,7 +228,7 @@ async function main(): Promise<void> {
       assertEqual(partialDisc.status, 409, 'discount-refund-guard: bill discount on partially refunded bill rejected with 409');
     }
 
-    // ── add-items-refund-guard: reject add-items when the bill was refunded ─────────────────────
+    // ── reject add-items when bill refunded ──
     console.log('\n─── add-items-refund-guard: add-items rejected on refunded order ───');
     {
       const { orderId, billId } = await newTakeawayOrder('prod-1000');
@@ -261,7 +252,7 @@ async function main(): Promise<void> {
       assertEqual(Number(after.total), Number(before.total), 'add-items-refund-guard: bill total unchanged');
     }
 
-    // ── add-items-refund-guard: reject add-items when the bill is partially refunded ────────────
+    // ── reject add-items when bill partially refunded ──
     console.log('\n─── add-items-refund-guard: add-items rejected on partially refunded order ───');
     {
       resetPinRateLimitForTests();
@@ -288,7 +279,7 @@ async function main(): Promise<void> {
       assertEqual(Number(after.total), Number(before.total), 'partial-refund-add-items: bill total unchanged');
     }
 
-    // ── item-discount-refund-guard: reject item discount when bill is refunded/partial ────────
+    // ── reject item discount when bill refunded/partial ──
     console.log('\n─── Item discount rejected on partially refunded bill ───');
     {
       resetPinRateLimitForTests();

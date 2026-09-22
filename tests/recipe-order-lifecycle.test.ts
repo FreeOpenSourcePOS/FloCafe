@@ -38,7 +38,7 @@ async function main() {
   resetCounters();
 
   const db = initTestDb();
-  const { authHeader } = seedOwnerUser(db);
+  const { authHeader, userId } = seedOwnerUser(db);
   seedManagerUser(db);
   seedCategory(db, 'cat-rec', 'Recipes');
 
@@ -46,8 +46,12 @@ async function main() {
   seedProduct(db, 'prod-water', 'cat-rec', 'Water', 50, { track_inventory: false, stock_quantity: 0 });
   seedTable(db, 'tbl-rec-1', 1, 4);
 
-  const beans = createSupply(db, { name: 'Beans', baseUnit: 'g', stockQuantity: 1000, lowStockThreshold: 100 });
-  const milkS = createSupply(db, { name: 'Milk', baseUnit: 'ml', stockQuantity: 5000, lowStockThreshold: 500 });
+  const beans = createSupply(db, {
+    name: 'Beans', baseUnit: 'g', stockQuantity: 1000, lowStockThreshold: 100, actorUserId: userId,
+  });
+  const milkS = createSupply(db, {
+    name: 'Milk', baseUnit: 'ml', stockQuantity: 5000, lowStockThreshold: 500, actorUserId: userId,
+  });
 
   saveRecipe(db, {
     productId: 'prod-latte',

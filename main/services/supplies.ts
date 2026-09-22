@@ -55,6 +55,7 @@ export interface CreateSupplyInput {
   stockQuantity?: number;
   lowStockThreshold?: number | null;
   isActive?: boolean;
+  actorUserId?: string;
 }
 
 export interface RecordMovementInput {
@@ -153,10 +154,27 @@ export function createSupply(db: ReturnType<typeof getDatabase>, input: CreateSu
   const timestamp = now();
   const isActive = input.isActive === false ? 0 : 1;
 
-  db.prepare(`
-    INSERT INTO supplies (id, name, base_unit, stock_quantity, low_stock_threshold, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, baseUnit, stockQuantity, lowStockThreshold, isActive, timestamp, timestamp);
+  withTxn(() => {
+    db.prepare(`
+      INSERT INTO supplies (id, name, base_unit, stock_quantity, low_stock_threshold, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, 0, ?, ?, ?, ?)
+    `).run(id, name, baseUnit, lowStockThreshold, isActive, timestamp, timestamp);
+
+    if (stockQuantity !== 0) {
+      if (!input.actorUserId) throw new SupplyServiceError(400, 'actor_user_id is required for opening stock');
+      applySupplyStockChange(db, {
+        supplyId: id,
+        quantityDelta: stockQuantity,
+        movementType: 'adjustment',
+        unit: baseUnit,
+        reason: 'Opening balance',
+        actorUserId: input.actorUserId,
+        referenceType: 'opening_balance',
+        referenceId: id,
+        createdAt: timestamp,
+      });
+    }
+  });
 
   return getSupply(db, id);
 }

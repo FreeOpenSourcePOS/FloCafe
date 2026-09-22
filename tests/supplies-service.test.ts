@@ -42,13 +42,20 @@ async function main() {
   const actor = seedOwnerUser(db).userId;
 
   // ── Create ──
-  const coffee = createSupply(db, { name: 'Coffee beans', baseUnit: 'kg', stockQuantity: 5, lowStockThreshold: 2 });
+  const coffee = createSupply(db, {
+    name: 'Coffee beans', baseUnit: 'kg', stockQuantity: 5, lowStockThreshold: 2, actorUserId: actor,
+  });
   assertEqual(coffee.name, 'Coffee beans', 'create stores name');
   assertEqual(coffee.base_unit, 'kg', 'create stores base unit');
   assertEqual(coffee.stock_quantity, 5, 'create stores initial stock');
   assertEqual(coffee.low_stock_threshold, 2, 'create stores threshold');
   assertEqual(coffee.is_active, 1, 'create defaults to active');
   assert(coffee.id.startsWith('sup_'), 'create generates supply id');
+  assertEqual(
+    db.prepare('SELECT movement_type FROM supply_movements WHERE supply_id = ?').get(coffee.id).movement_type,
+    'adjustment',
+    'create records opening stock in the supply ledger',
+  );
 
   seedCategory(db, 'cat-supplies', 'Supply Recipes');
   seedProduct(db, 'prod-supply-recipe', 'cat-supplies', 'Recipe product', 100);
@@ -63,8 +70,8 @@ async function main() {
   expectServiceError(() => createSupply(db, { name: 'Neg', baseUnit: 'g', lowStockThreshold: -1 }), 400, 'create rejects negative threshold');
 
   // ── List filters ──
-  const milk = createSupply(db, { name: 'Milk', baseUnit: 'ml', stockQuantity: 100, lowStockThreshold: 50 });
-  const cups = createSupply(db, { name: 'Cups', baseUnit: 'each', stockQuantity: 10 });
+  const milk = createSupply(db, { name: 'Milk', baseUnit: 'ml', stockQuantity: 100, lowStockThreshold: 50, actorUserId: actor });
+  const cups = createSupply(db, { name: 'Cups', baseUnit: 'each', stockQuantity: 10, actorUserId: actor });
   updateSupply(db, cups.id, { isActive: false });
 
   const active = listSupplies(db, {});

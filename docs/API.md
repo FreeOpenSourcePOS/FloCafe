@@ -349,7 +349,7 @@ List active supplies (owner or manager only). Optional query params: `search`, `
 ```
 
 ### POST `/api/supplies`
-Create a supply. `base_unit` must be one of `each`, `g`, `kg`, `ml`, `l` and is immutable after creation. `stock_quantity` defaults to 0; `low_stock_threshold` is optional. Returns `201` with `{ "supply": ... }`.
+Create a supply. `base_unit` must be one of `each`, `g`, `kg`, `ml`, `l` and is immutable after creation. `stock_quantity` defaults to 0; a nonzero opening balance is recorded as an `adjustment` movement. `low_stock_threshold` is optional. Returns `201` with `{ "supply": ... }`.
 
 ### GET `/api/supplies/:id`
 Fetch one non-deleted supply.

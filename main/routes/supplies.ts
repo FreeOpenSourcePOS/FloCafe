@@ -48,12 +48,15 @@ router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Re
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
+    const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    if (!actorId) return res.status(403).json({ error: 'Authentication required' });
     const supply = createSupply(getDatabase(), {
       name: body.name,
       baseUnit: body.base_unit,
       stockQuantity: body.stock_quantity,
       lowStockThreshold: body.low_stock_threshold,
       isActive: body.is_active,
+      actorUserId: actorId,
     });
     res.status(201).json({ supply });
   } catch (error: unknown) {

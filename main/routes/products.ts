@@ -384,25 +384,13 @@ function validateInventoryLinkFields(
     effectiveLink = current?.inventory_product_id ?? null;
   }
 
-  let effectiveQuantity: number;
   if (quantityProvided) {
     if (typeof values.inventory_deduction_quantity !== 'number'
       || !Number.isFinite(values.inventory_deduction_quantity)
       || values.inventory_deduction_quantity <= 0) {
       return 'inventory_deduction_quantity must be a positive finite number';
     }
-    effectiveQuantity = values.inventory_deduction_quantity;
-  } else if (effectiveLink) {
-    const current = productId
-      ? db.prepare(
-        'SELECT inventory_deduction_quantity FROM products WHERE id = ?',
-      ).get(productId) as { inventory_deduction_quantity?: number | null } | undefined
-      : undefined;
-    effectiveQuantity = Number(current?.inventory_deduction_quantity ?? 1);
-    if (!Number.isFinite(effectiveQuantity) || effectiveQuantity <= 0) {
-      effectiveQuantity = 1;
-    }
-  } else {
+  } else if (!effectiveLink) {
     return null;
   }
 

@@ -993,9 +993,14 @@ const JA_INTENTIONAL_IDENTICAL = new Set<string>([
   'print.zReport.paymentCount', // pure format: x{count}
   'products.addonSelectionRange', // pure format: {min} – {max}
   'products.fieldSku', // technical identifier
+  'products.saleUnitCl', // measurement unit
+  'products.saleUnitFlOz', // measurement unit
   'products.saleUnitG', // measurement unit
   'products.saleUnitKg', // measurement unit
+  'products.saleUnitL', // measurement unit
   'products.saleUnitLb', // measurement unit
+  'products.saleUnitMl', // measurement unit
+  'products.saleUnitOz', // measurement unit
   'serverApp.emailPlaceholder', // example email
   'settings.apiKeyInputPlaceholder', // example API key
   'settings.connectionUsb', // technical acronym
@@ -1057,9 +1062,14 @@ const ZH_INTENTIONAL_IDENTICAL = new Set<string>([
   'printTest.paperWidth80',
   'products.addonSelectionRange',
   'products.fieldSku',
+  'products.saleUnitCl',
+  'products.saleUnitFlOz',
   'products.saleUnitG',
   'products.saleUnitKg',
+  'products.saleUnitL',
   'products.saleUnitLb',
+  'products.saleUnitMl',
+  'products.saleUnitOz',
   'products.skuLabel',
   'serverApp.emailPlaceholder',
   'settings.apiKeyInputPlaceholder',

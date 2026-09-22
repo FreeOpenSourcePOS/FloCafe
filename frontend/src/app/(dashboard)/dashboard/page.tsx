@@ -184,6 +184,7 @@ export default function DashboardPage() {
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [insights, setInsights] = useState<Insights | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
 
   const isOwner = hasRole(currentTenant?.role, ROLE_ACCESS.owner);
   const fmt = useFormatCurrency();
@@ -281,7 +282,8 @@ export default function DashboardPage() {
   };
 
   const exportDailySales = async (format: 'xlsx' | 'csv') => {
-    if (periodMode !== 'day') return;
+    if (periodMode !== 'day' || isExporting) return;
+    setIsExporting(true);
     try {
       if (format === 'xlsx') {
         const res = await api.get('/reports/daily-sales/export', {
@@ -301,6 +303,8 @@ export default function DashboardPage() {
       }
     } catch {
       toast.error(tCommon('downloadFailed'));
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -520,6 +524,7 @@ export default function DashboardPage() {
                 type="button"
                 variant="outline"
                 onClick={() => exportDailySales('xlsx')}
+                disabled={isExporting}
                 className="h-9"
                 title={t('exportSales')}
               >
@@ -530,6 +535,7 @@ export default function DashboardPage() {
                 type="button"
                 variant="outline"
                 onClick={() => exportDailySales('csv')}
+                disabled={isExporting}
                 className="h-9"
                 title={t('exportCsvHint')}
               >

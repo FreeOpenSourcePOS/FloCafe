@@ -1239,7 +1239,7 @@ CSV cells that would start with `=`, `+`, `-`, or `@` and are not numeric are ne
 
 **Errors:** `400` invalid `format` or CSV without `part`; `401` unauthenticated; `403` non-owner; `409` concurrent-write passthrough as JSON; `500` otherwise.
 
-**Summary metrics** (stable field order in `dailySalesSummaryMetricRows`): `business_date`, `timezone`, `business_day_start`, `currency`, `order_count`, `paid_bill_count`, `gross_collected`, `refunds_issued`, `net_collected`, `tax_total`, `discount_total`, `service_charge_total`, `packaging_charge_total`, `delivery_charge_total`, then `payment_<method>` / `payment_<method>_count` pairs.
+**Summary metrics** (stable field order in `dailySalesSummaryMetricRows`): `business_date`, `timezone`, `business_day_start`, `currency`, `order_count`, `paid_bill_count`, `gross_collected`, `refunds_issued`, `net_collected`, `tax_total`, `discount_total`, `service_charge_total`, `packaging_charge_total`, `delivery_charge_total`, then one `payment_<method>` total per method (snake_case key via `dailySalesPaymentMetricKey`; no per-method `_count` — the underlying count covers payment+refund lines, not payments).
 
 **Reconciliation identities:** `Σ net_item_sales = Σ bills.subtotal` over the paid window; `Σ gross_item_sales = Σ net_item_sales + Σ item_discounts`; `Σ payment_<method> totals = net_collected`; `Σ item tax_amount ≠ tax_total` is intentional (item tax is per-line, `tax_total` is the aggregated component total). Sale day is keyed on `bills.paid_at`; refunds on `refunds.created_at`; `net_collected = gross_collected - refunds_issued`. `discount_total` = order-level (`bills.discount_amount`) + item-level discounts.
 

@@ -26,7 +26,7 @@ Backend owns all logic; the frontend never computes totals.
 - **Refunds:** keyed on `refunds.created_at` (not attributed to the original pay day).
 - **`net_collected = gross_collected - refunds_issued`.**
 - **Counts:** both `order_count` (distinct orders) and `paid_bill_count`.
-- **Payment methods:** `paymentMethodBreakdown(paidOnly, refunds-by-created_at, keyByPaidAt)` so `Σ payment totals = net_collected`.
+- **Payment methods:** `paymentMethodBreakdown(paidOnly, refunds-by-created_at, keyByPaidAt)` so `Σ payment totals = net_collected`. Only totals are exported (no per-method `count` — that count covers payment+refund lines, not payments). Summary keys use stable snake_case (`payment_visa_terminal_2` for `Visa Terminal 2`).
 - **Items:** products on paid bills, split via `bill_items`; exclude `status IN ('cancelled','voided','void_adjustment')`; include `refunded` originals (they were collected; cash reversal lives only in `refunds_issued`). Group by `product_id` + snapshot `product_name` + `product_sku`. Add-ons fold into the parent item. Order-level discounts are Summary-only.
 - **`discount_total`** = order-level (`bills.discount_amount`) + item-level discounts.
 - **No** tips, no alternate refund attribution, no `net_ex_tax` metric.
@@ -48,7 +48,7 @@ Backend owns all logic; the frontend never computes totals.
 
 ### Summary metric field order
 
-`business_date`, `timezone`, `business_day_start`, `currency`, `order_count`, `paid_bill_count`, `gross_collected`, `refunds_issued`, `net_collected`, `tax_total`, `discount_total`, `service_charge_total`, `packaging_charge_total`, `delivery_charge_total`, then `payment_<method>` / `payment_<method>_count` pairs.
+`business_date`, `timezone`, `business_day_start`, `currency`, `order_count`, `paid_bill_count`, `gross_collected`, `refunds_issued`, `net_collected`, `tax_total`, `discount_total`, `service_charge_total`, `packaging_charge_total`, `delivery_charge_total`, then one `payment_<method>` total per method (snake_case key via `dailySalesPaymentMetricKey`).
 
 ### Items columns
 

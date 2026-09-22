@@ -47,7 +47,7 @@ export async function serializeDailySalesExportXlsx(
 
   for (const row of dailySalesSummaryMetricRows(dataset.summary)) {
     const entry = summarySheet.addRow({ metric: row.metric, value: row.value });
-    if (typeof row.value === 'number' && !row.metric.endsWith('_count') && row.metric !== 'order_count' && row.metric !== 'paid_bill_count') {
+    if (typeof row.value === 'number' && !row.metric.endsWith('_count')) {
       entry.getCell('value').numFmt = moneyFmt;
     }
   }

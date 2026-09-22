@@ -24,7 +24,6 @@ export type DailySalesExportItemRow = {
 
 export type DailySalesExportPaymentRow = {
   method: string;
-  count: number;
   total: number;
 };
 
@@ -57,6 +56,15 @@ function resolveExportTimezone(): string {
     currency: getSettingValue('currency') ?? undefined,
     timezone: getSettingValue('timezone') ?? undefined,
   }).timezone;
+}
+
+/** Stable snake_case Summary key for a payment method (custom names may contain spaces). */
+export function dailySalesPaymentMetricKey(method: string): string {
+  const key = String(method)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return key || 'unknown';
 }
 
 /**
@@ -110,12 +118,18 @@ export function buildDailySalesExportDataset(
   `).get(minorFactor, start, end) as { refunds_issued: number };
 
   // Tax components: same paid-window hydration as computeDayAggregates / X-report.
+  type PaidBillTaxRow = {
+    id: number;
+    tax_amount?: number | null;
+    tax_snapshot?: unknown;
+    tax_breakdown?: unknown;
+  };
   const bills = db.prepare(`
     SELECT b.*
     FROM bills b
     WHERE b.paid_at >= ? AND b.paid_at < ?
     ORDER BY b.paid_at, b.id
-  `).all(start, end) as any[];
+  `).all(start, end) as PaidBillTaxRow[];
   const orders = getOrdersWithItemsForBills(db, bills);
   const taxDocuments = bills.map((bill) => ({
     tax_amount: bill.tax_amount,
@@ -186,6 +200,8 @@ export function buildDailySalesExportDataset(
 
   // paidOnly + refunds by created_at + keyByPaidAt ⇒ Σ method totals = net_collected
   // under the approved refund-day rule (attributeRefundsToBillDate=false).
+  // count is intentionally dropped: paymentMethodBreakdown COUNT(*) covers
+  // payment+refund lines, which is not a payment count (review: misleading).
   const paymentMethods = paymentMethodBreakdown(
     db,
     businessDate,
@@ -195,7 +211,6 @@ export function buildDailySalesExportDataset(
     true,
   ).map((row) => ({
     method: String(row.method || 'unknown'),
-    count: Number(row.count || 0),
     total: Number(row.total || 0),
   }));
 
@@ -243,8 +258,7 @@ export function dailySalesSummaryMetricRows(
     { metric: 'delivery_charge_total', value: summary.delivery_charge_total },
   ];
   for (const payment of summary.payment_methods) {
-    rows.push({ metric: `payment_${payment.method}`, value: payment.total });
-    rows.push({ metric: `payment_${payment.method}_count`, value: payment.count });
+    rows.push({ metric: `payment_${dailySalesPaymentMetricKey(payment.method)}`, value: payment.total });
   }
   return rows;
 }

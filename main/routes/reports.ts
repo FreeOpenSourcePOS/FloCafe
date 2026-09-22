@@ -799,12 +799,16 @@ router.get('/daily-sales/export', requireRole(...ROLE_ACCESS.owner), async (req:
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send(csv);
-  } catch (error: any) {
-    if (error?.statusCode === 409) {
-      return res.status(409).json({ error: error.message });
+  } catch (error: unknown) {
+    const statusCode = typeof error === 'object' && error !== null
+      ? (error as { statusCode?: number }).statusCode
+      : undefined;
+    const message = error instanceof Error ? error.message : 'Internal server error';
+    if (statusCode === 409) {
+      return res.status(409).json({ error: message });
     }
     console.error('[API] Daily sales export error:', error);
-    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Internal server error' });
+    res.status(statusCode || 500).json({ error: statusCode ? message : 'Internal server error' });
   }
 });
 

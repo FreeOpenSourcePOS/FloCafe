@@ -6,6 +6,45 @@ import { ROLE_ACCESS } from '../../shared/role-permissions';
 
 const router = Router();
 
+type StationCategoryRow = { id: string; name: string; category_ids: string | null };
+
+function normalizeCategoryIds(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.some((id) => typeof id !== 'string' || id.trim().length === 0)) {
+    return null;
+  }
+  return [...new Set(value.map((id) => id.trim()))];
+}
+
+function removeCategoriesFromOtherStations(db: ReturnType<typeof getDatabase>, categoryIds: string[], excludedStationId: string) {
+  if (categoryIds.length === 0) return [];
+
+  const stations = db.prepare(`
+    SELECT id, name, category_ids
+    FROM kitchen_stations
+    WHERE is_active = 1 AND id != ?
+  `).all(excludedStationId) as StationCategoryRow[];
+
+  const claimedIds = new Set(categoryIds);
+  const movedFrom: { station_id: string; station_name: string; category_ids: string[] }[] = [];
+  const update = db.prepare('UPDATE kitchen_stations SET category_ids = ?, updated_at = ? WHERE id = ?');
+  for (const station of stations) {
+    let assignedIds: unknown = [];
+    try {
+      assignedIds = station.category_ids ? JSON.parse(station.category_ids) : [];
+    } catch {
+      assignedIds = [];
+    }
+    if (!Array.isArray(assignedIds)) continue;
+    const normalizedAssignedIds = assignedIds.map(String);
+    const movedCategoryIds = normalizedAssignedIds.filter((categoryId) => claimedIds.has(categoryId));
+    if (movedCategoryIds.length === 0) continue;
+    const remainingCategoryIds = normalizedAssignedIds.filter((categoryId) => !claimedIds.has(categoryId));
+    update.run(JSON.stringify(remainingCategoryIds), now(), station.id);
+    movedFrom.push({ station_id: station.id, station_name: station.name, category_ids: movedCategoryIds });
+  }
+  return movedFrom;
+}
+
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -51,6 +90,10 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
 
     const db = getDatabase();
 
+    const normalizedCategoryIds = category_ids === undefined ? [] : normalizeCategoryIds(category_ids);
+    if (normalizedCategoryIds === null) {
+      return res.status(400).json({ error: 'category_ids must be an array of valid category IDs' });
+    }
     if (printer_id !== undefined && printer_id !== null) {
       if (typeof printer_id !== 'string' || printer_id.trim().length === 0) {
         return res.status(400).json({ error: 'printer_id must be a valid printer ID or null' });
@@ -60,19 +103,24 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     }
 
     const id = randomUUID();
-    db.prepare(`
-      INSERT INTO kitchen_stations (id, name, description, category_ids, printer_id, printer_ip, printer_port, printer_name, sort_order, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id, name, description || null,
-      category_ids ? JSON.stringify(category_ids) : null,
-      printer_id ?? null,
-      printer_ip || null, printer_port || 9100, printer_name || null,
-      sort_order || 0, now(), now()
-    );
+    const createStation = db.transaction(() => {
+      const reassignedFrom = removeCategoriesFromOtherStations(db, normalizedCategoryIds, id);
+      db.prepare(`
+        INSERT INTO kitchen_stations (id, name, description, category_ids, printer_id, printer_ip, printer_port, printer_name, sort_order, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id, name, description || null,
+        normalizedCategoryIds.length > 0 ? JSON.stringify(normalizedCategoryIds) : null,
+        printer_id ?? null,
+        printer_ip || null, printer_port || 9100, printer_name || null,
+        sort_order || 0, now(), now()
+      );
+      return reassignedFrom;
+    });
+    const reassignedFrom = createStation();
 
     const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(id);
-    res.status(201).json({ kitchenStation: station });
+    res.status(201).json({ kitchenStation: station, reassignedFrom });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -89,6 +137,10 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       return res.status(404).json({ error: 'Kitchen station not found' });
     }
 
+    const normalizedCategoryIds = category_ids === undefined ? undefined : normalizeCategoryIds(category_ids);
+    if (normalizedCategoryIds === null) {
+      return res.status(400).json({ error: 'category_ids must be an array of valid category IDs' });
+    }
     if (printer_id !== undefined && printer_id !== null) {
       if (typeof printer_id !== 'string' || printer_id.trim().length === 0) {
         return res.status(400).json({ error: 'printer_id must be a valid printer ID or null' });
@@ -100,7 +152,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const fields: Record<string, unknown> = {
       name,
       description,
-      category_ids: category_ids !== undefined ? JSON.stringify(category_ids) : undefined,
+      category_ids: normalizedCategoryIds !== undefined ? JSON.stringify(normalizedCategoryIds) : undefined,
       printer_id,
       printer_ip,
       printer_port: printer_port !== undefined ? (printer_port || 9100) : undefined,
@@ -120,10 +172,17 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     sets.push('updated_at = ?');
     params.push(now(), req.params.id);
 
-    db.prepare(`UPDATE kitchen_stations SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+    const updateStation = db.transaction(() => {
+      const reassignedFrom = normalizedCategoryIds
+        ? removeCategoriesFromOtherStations(db, normalizedCategoryIds, String(req.params.id))
+        : [];
+      db.prepare(`UPDATE kitchen_stations SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+      return reassignedFrom;
+    });
+    const reassignedFrom = updateStation();
 
     const updated = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(req.params.id);
-    res.json({ kitchenStation: updated });
+    res.json({ kitchenStation: updated, reassignedFrom });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

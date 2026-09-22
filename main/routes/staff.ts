@@ -34,6 +34,14 @@ function normalizeStaffEmail(email: unknown): string {
   return String(email || '').trim().toLowerCase();
 }
 
+function normalizeStationIds(value: unknown): string[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 100 || value.some((id) => typeof id !== 'string' || id.trim().length === 0 || id.length > 128)) {
+    return null;
+  }
+  return [...new Set(value.map((id) => id.trim()))];
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
 router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
@@ -96,8 +104,9 @@ router.get('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
 
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req: Request, res: Response) => {
   try {
-    const { name, email, password, role, pin } = req.body;
+    const { name, email, password, role, pin, station_ids } = req.body;
     const normalizedEmail = normalizeStaffEmail(email);
+    const normalizedStationIds = normalizeStationIds(station_ids);
 
     if (!name || !normalizedEmail || !password || !role) {
       return res.status(400).json({ error: 'name, email, password, and role are required' });
@@ -111,6 +120,12 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
 
     if (!VALID_ROLES.includes(role)) {
       return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
+    }
+    if (normalizedStationIds === null) {
+      return res.status(400).json({ error: 'station_ids must contain at most 100 valid station IDs' });
+    }
+    if (role !== 'chef' && normalizedStationIds.length > 0) {
+      return res.status(400).json({ error: 'Kitchen stations can only be assigned to chef accounts' });
     }
 
     const requesterRole = (req as any).user.role;
@@ -132,21 +147,37 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
       return res.status(400).json({ error: 'Email already in use' });
     }
 
+    if (normalizedStationIds.length > 0) {
+      const placeholders = normalizedStationIds.map(() => '?').join(',');
+      const activeStations = db.prepare(`SELECT id FROM kitchen_stations WHERE is_active = 1 AND id IN (${placeholders})`).all(...normalizedStationIds);
+      if (activeStations.length !== normalizedStationIds.length) {
+        return res.status(400).json({ error: 'One or more station_ids do not match an active kitchen station' });
+      }
+    }
+
     const id = randomUUID();
     const hashedPassword = bcrypt.hashSync(password, 10);
 
     const hashedPin = hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null;
 
-    db.prepare(`
-      INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, name, normalizedEmail, hashedPassword, role, hashedPin, now(), now());
+    const createStaff = db.transaction(() => {
+      db.prepare(`
+        INSERT INTO users (id, name, email, password, role, pin_hash, station_assignments_configured, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(id, name, normalizedEmail, hashedPassword, role, hashedPin, normalizedStationIds.length > 0 ? 1 : 0, now(), now());
+
+      if (normalizedStationIds.length > 0) {
+        const insertAssignment = db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)');
+        for (const stationId of normalizedStationIds) insertAssignment.run(id, stationId, now());
+      }
+    });
+    createStaff();
 
     const member = db.prepare(
       `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
     ).get(id);
 
-    res.status(201).json({ staff: member });
+    res.status(201).json({ staff: { ...(member as object), station_ids: normalizedStationIds } });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

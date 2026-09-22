@@ -842,9 +842,41 @@ export default function SettingsPage() {
   const [showStationForm, setShowStationForm] = useState(false);
   const [editingStationId, setEditingStationId] = useState<string | null>(null);
   const [stationForm, setStationForm] = useState<{
-    name: string; category_ids: string[]; printer_id: string; chef_user_id: string;
-  }>({ name: '', category_ids: [], printer_id: '', chef_user_id: '' });
+    name: string; category_ids: string[]; printer_id: string; chef_user_ids: string[];
+  }>({ name: '', category_ids: [], printer_id: '', chef_user_ids: [] });
   const [savingStation, setSavingStation] = useState(false);
+
+  const stationCategoryIdsByStation = new Map<string, string[]>();
+  const stationsByCategoryId = new Map<string, KitchenStation[]>();
+  for (const station of stations) {
+    let categoryIds: string[] = [];
+    try {
+      const parsed = station.category_ids ? JSON.parse(station.category_ids) : [];
+      categoryIds = Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch { /* ignore malformed legacy values */ }
+    stationCategoryIdsByStation.set(station.id, categoryIds);
+    for (const categoryId of categoryIds) {
+      const assignedStations = stationsByCategoryId.get(categoryId) || [];
+      assignedStations.push(station);
+      stationsByCategoryId.set(categoryId, assignedStations);
+    }
+  }
+  const defaultStationCategories = stationCategories.filter((category) => !stationsByCategoryId.has(category.id));
+  const defaultKitchenPrinter = [...hwPrinters]
+    .filter((printer) => printer.connection_type !== 'webusb')
+    .sort((a, b) => (b.is_default - a.is_default) || a.name.localeCompare(b.name))[0];
+  const selectedStationCategories = stationCategories.filter((category) => stationForm.category_ids.includes(category.id));
+  const availableStationCategories = stationCategories.filter((category) => {
+    if (stationForm.category_ids.includes(category.id)) return false;
+    const assignedElsewhere = (stationsByCategoryId.get(category.id) || [])
+      .some((station) => station.id !== editingStationId);
+    return !assignedElsewhere;
+  });
+  const categoriesAssignedElsewhere = stationCategories.filter((category) => {
+    if (stationForm.category_ids.includes(category.id)) return false;
+    return (stationsByCategoryId.get(category.id) || [])
+      .some((station) => station.id !== editingStationId);
+  });
 
   const fetchStations = async (signal?: AbortSignal): Promise<boolean> => {
     try {
@@ -881,7 +913,7 @@ export default function SettingsPage() {
 
   const openAddStation = () => {
     setEditingStationId(null);
-    setStationForm({ name: '', category_ids: [], printer_id: '', chef_user_id: '' });
+    setStationForm({ name: '', category_ids: [], printer_id: '', chef_user_ids: [] });
     setShowStationForm(true);
   };
 
@@ -889,16 +921,16 @@ export default function SettingsPage() {
     setEditingStationId(station.id);
     let categoryIds: string[] = [];
     try { categoryIds = station.category_ids ? JSON.parse(station.category_ids) : []; } catch { categoryIds = []; }
-    let chefUserId = stationUsersByStation[station.id]?.find((u) => u.role === 'chef')?.id || '';
+    let chefUserIds = (stationUsersByStation[station.id] || []).filter((u) => u.role === 'chef').map((u) => u.id);
     if (!stationUsersByStation[station.id]) {
       try {
         const res = await api.get(`/kitchen-stations/${station.id}`);
         const users = res.data.kitchenStation.users || [];
         setStationUsersByStation((prev) => ({ ...prev, [station.id]: users }));
-        chefUserId = users.find((u: StaffOption) => u.role === 'chef')?.id || '';
+        chefUserIds = users.filter((u: StaffOption) => u.role === 'chef').map((u: StaffOption) => u.id);
       } catch { /* ignore */ }
     }
-    setStationForm({ name: station.name, category_ids: categoryIds, printer_id: station.printer_id || '', chef_user_id: chefUserId });
+    setStationForm({ name: station.name, category_ids: categoryIds, printer_id: station.printer_id || '', chef_user_ids: chefUserIds });
     setShowStationForm(true);
   };
 
@@ -929,7 +961,7 @@ export default function SettingsPage() {
       if (stationId) {
         if (kdsEnabledSetting && kdsSettingTenantId === currentTenant?.id) {
           await api.put(`/kitchen-stations/${stationId}/users`, {
-            user_ids: stationForm.chef_user_id ? [stationForm.chef_user_id] : [],
+            user_ids: stationForm.chef_user_ids,
           });
         }
         await fetchStationUsers(stationId);
@@ -3123,13 +3155,26 @@ export default function SettingsPage() {
               </div>
               <p className="text-sm text-muted-foreground mb-5">{t('kitchenStationsHint')}</p>
 
-              {stations.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4 text-center">{t('noStationsYet')}</p>
-              ) : (
-                <div className="space-y-2">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between p-3 border border-dashed border-border rounded-lg bg-muted/30">
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground">
+                      {t('default').toUpperCase()} → {defaultKitchenPrinter?.name || t('stationNoPrinterConfigured')}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {defaultStationCategories.length > 0
+                        ? defaultStationCategories.map((category) => category.name).join(', ')
+                        : t('stationNoDefaultCategories')}
+                    </p>
+                  </div>
+                </div>
+
+                {stations.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">{t('noStationsYet')}</p>
+                ) : (
+                  <>
                   {stations.map((station) => {
-                    let categoryIds: string[] = [];
-                    try { categoryIds = station.category_ids ? JSON.parse(station.category_ids) : []; } catch { categoryIds = []; }
+                    const categoryIds = stationCategoryIdsByStation.get(station.id) || [];
                     const categoryNames = categoryIds
                       .map((id) => stationCategories.find((c) => c.id === id)?.name)
                       .filter(Boolean);
@@ -3144,7 +3189,7 @@ export default function SettingsPage() {
                             {' · '}
                             {printer ? printer.name : t('stationNoPrinter')}
                             {' · '}
-                            {chefs[0]?.name || t('stationNoChef')}
+                            {chefs.length > 0 ? chefs.map((chef) => chef.name).join(', ') : t('stationNoChef')}
                           </p>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
@@ -3160,8 +3205,9 @@ export default function SettingsPage() {
                       </div>
                     );
                   })}
-                </div>
-              )}
+                  </>
+                )}
+              </div>
 
               {showStationForm && (
                 <Dialog open={showStationForm} onOpenChange={setShowStationForm}>
@@ -3184,15 +3230,61 @@ export default function SettingsPage() {
                         {stationCategories.length === 0 ? (
                           <p className="text-xs text-muted-foreground">{t('noCategoriesYet')}</p>
                         ) : (
-                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
-                            {stationCategories.map((cat) => (
-                              <label key={cat.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-border rounded-full text-xs cursor-pointer hover:bg-muted">
-                                <input type="checkbox" checked={stationForm.category_ids.includes(cat.id)}
-                                  onChange={() => toggleStationFormValue('category_ids', cat.id)}
-                                  className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
-                                {cat.name}
-                              </label>
-                            ))}
+                          <div className="space-y-3 max-h-56 overflow-y-auto pe-1">
+                            <div>
+                              <p className="text-xs font-medium text-foreground mb-1.5">{t('stationSelectedCategories')}</p>
+                              {selectedStationCategories.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {selectedStationCategories.map((cat) => (
+                                    <label key={cat.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-brand/50 bg-brand/5 rounded-full text-xs cursor-pointer hover:bg-brand/10">
+                                      <input type="checkbox" checked
+                                        onChange={() => toggleStationFormValue('category_ids', cat.id)}
+                                        className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                                      {cat.name}
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">{t('stationNoCategories')}</p>
+                              )}
+                            </div>
+
+                            <div>
+                              <p className="text-xs font-medium text-foreground mb-1.5">{t('stationAvailableCategories')}</p>
+                              {availableStationCategories.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                  {availableStationCategories.map((cat) => (
+                                    <label key={cat.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-border rounded-full text-xs cursor-pointer hover:bg-muted">
+                                      <input type="checkbox" checked={false}
+                                        onChange={() => toggleStationFormValue('category_ids', cat.id)}
+                                        className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                                      {cat.name}
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">{t('stationNoAvailableCategories')}</p>
+                              )}
+                            </div>
+
+                            {categoriesAssignedElsewhere.length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground mb-1.5">{t('stationAssignedCategories')}</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {categoriesAssignedElsewhere.map((cat) => (
+                                    <label key={cat.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-border rounded-full text-xs cursor-pointer hover:bg-muted">
+                                      <input type="checkbox" checked={false}
+                                        onChange={() => toggleStationFormValue('category_ids', cat.id)}
+                                        className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                                      {cat.name} · {(stationsByCategoryId.get(cat.id) || [])
+                                        .filter((station) => station.id !== editingStationId)
+                                        .map((station) => station.name)
+                                        .join(', ')}
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -3211,20 +3303,27 @@ export default function SettingsPage() {
 
                       <div>
                         <label className="block text-sm font-medium text-foreground mb-1">{t('stationChef')}</label>
-                        <select value={stationForm.chef_user_id}
-                          onChange={(e) => setStationForm((f) => ({ ...f, chef_user_id: e.target.value }))}
-                          disabled={!kdsEnabledSetting || kdsSettingTenantId !== currentTenant?.id}
-                          className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card">
-                          <option value="">{t('stationNoChef')}</option>
+                        <div className={`flex flex-wrap gap-2 rounded-lg border border-border p-2 ${(!kdsEnabledSetting || kdsSettingTenantId !== currentTenant?.id) ? 'opacity-60' : ''}`}>
                           {stationStaff.map((chef) => (
-                            <option key={chef.id} value={chef.id}>{chef.name}</option>
+                            <label key={chef.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs hover:bg-muted">
+                              <input type="checkbox"
+                                checked={stationForm.chef_user_ids.includes(chef.id)}
+                                onChange={() => setStationForm((current) => ({
+                                  ...current,
+                                  chef_user_ids: current.chef_user_ids.includes(chef.id)
+                                    ? current.chef_user_ids.filter((id) => id !== chef.id)
+                                    : [...current.chef_user_ids, chef.id],
+                                }))}
+                                disabled={!kdsEnabledSetting || kdsSettingTenantId !== currentTenant?.id}
+                                className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                              {chef.name}
+                            </label>
                           ))}
-                        </select>
+                          {stationStaff.length === 0 && <p className="text-xs text-muted-foreground">{t('noChefsYet')}</p>}
+                        </div>
                         {(!kdsEnabledSetting || kdsSettingTenantId !== currentTenant?.id) ? (
                           <p className="text-xs text-muted-foreground mt-1">{t('stationChefRequiresKds')}</p>
-                        ) : stationStaff.length === 0 && (
-                          <p className="text-xs text-muted-foreground mt-1">{t('noChefsYet')}</p>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                     <DialogFooter>

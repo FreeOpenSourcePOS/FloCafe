@@ -46,6 +46,8 @@ export default function StaffPage() {
   const { currentTenant } = useAuthStore();
   const canViewPermissionMatrix = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [kitchenStations, setKitchenStations] = useState<{ id: string; name: string }[]>([]);
+  const [kdsEnabled, setKdsEnabled] = useState(true);
   const [, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
@@ -58,6 +60,7 @@ export default function StaffPage() {
     confirmPassword: '',
     role: 'server',
     pin: '',
+    station_ids: [] as string[],
   });
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -81,12 +84,18 @@ export default function StaffPage() {
       .then(({ data }) => setStaff(data.staff || []))
       .catch(() => toast.error(t('failedToLoad')))
       .finally(() => setLoading(false));
+    api.get('/kitchen-stations')
+      .then(({ data }) => setKitchenStations(data.kitchenStations || []))
+      .catch(() => setKitchenStations([]));
+    api.get('/settings/kds_enabled')
+      .then(({ data }) => setKdsEnabled(data.setting?.value !== 'false'))
+      .catch(() => setKdsEnabled(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openAdd = () => {
     setEditingStaff(null);
-    setForm({ name: '', email: '', password: '', confirmPassword: '', role: 'server', pin: '' });
+    setForm({ name: '', email: '', password: '', confirmPassword: '', role: 'server', pin: '', station_ids: [] });
     setShowPassword(false);
     setShowPin(false);
     setShowForm(true);
@@ -94,7 +103,7 @@ export default function StaffPage() {
 
   const openEdit = (s: Staff) => {
     setEditingStaff(s);
-    setForm({ name: s.name, email: s.email || '', password: '', confirmPassword: '', role: s.role, pin: '' });
+    setForm({ name: s.name, email: s.email || '', password: '', confirmPassword: '', role: s.role, pin: '', station_ids: [] });
     setShowPassword(false);
     setShowPin(false);
     setShowForm(true);
@@ -131,6 +140,7 @@ export default function StaffPage() {
           password: form.password,
           role: form.role,
           ...(form.pin ? { pin: form.pin } : {}),
+          ...(form.role === 'chef' ? { station_ids: form.station_ids } : {}),
         });
         toast.success(t('addedToast'));
       }
@@ -228,7 +238,7 @@ export default function StaffPage() {
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-2xl p-6 w-full max-w-sm">
+          <div className="bg-card rounded-2xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{editingStaff ? t('modalTitleEdit') : t('modalTitleAdd')}</h2>
               <button type="button" onClick={closeForm}><X size={20} className="text-gray-400" /></button>
@@ -269,7 +279,12 @@ export default function StaffPage() {
               <select
                 value={form.role} onChange={(e) => {
                   const role = e.target.value;
-                  setForm({ ...form, role, pin: hasRole(role, ROLE_ACCESS.ownerManager) ? form.pin : '' });
+                  setForm({
+                    ...form,
+                    role,
+                    pin: hasRole(role, ROLE_ACCESS.ownerManager) ? form.pin : '',
+                    station_ids: role === 'chef' ? form.station_ids : [],
+                  });
                 }}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               >
@@ -277,6 +292,34 @@ export default function StaffPage() {
                   <option key={r} value={r} disabled={editingLastActiveOwner && r !== 'owner'}>{roleLabel(r, t)}</option>
                 ))}
               </select>
+              {!editingStaff && form.role === 'chef' && (
+                <div>
+                  <p className="text-sm font-medium text-foreground mb-1">{t('kitchenStationsOptional')}</p>
+                  <div className={`space-y-1 rounded-lg border border-border p-2 ${!kdsEnabled ? 'opacity-60' : ''}`}>
+                    {kitchenStations.map((station) => (
+                      <label key={station.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted">
+                        <input type="checkbox"
+                          checked={form.station_ids.includes(station.id)}
+                          onChange={() => setForm((current) => ({
+                            ...current,
+                            station_ids: current.station_ids.includes(station.id)
+                              ? current.station_ids.filter((id) => id !== station.id)
+                              : [...current.station_ids, station.id],
+                          }))}
+                          disabled={!kdsEnabled}
+                          className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
+                        {station.name}
+                      </label>
+                    ))}
+                    {kitchenStations.length === 0 && (
+                      <p className="px-2 py-1 text-xs text-muted-foreground">{t('noKitchenStations')}</p>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {kdsEnabled ? t('kitchenStationsOptionalHint') : t('kitchenStationsRequireKds')}
+                  </p>
+                </div>
+              )}
               {hasRole(form.role, ROLE_ACCESS.ownerManager) && (
                 <div>
                   <div className="relative">

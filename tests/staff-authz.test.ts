@@ -70,6 +70,9 @@ async function main() {
   seedUser(db, 'cashier-target-145', 'cashier', '');
   seedUser(db, 'server-target-145', 'server', '');
   seedUser(db, 'chef-target-145', 'chef', '');
+  db.prepare(`INSERT INTO kitchen_stations (id, name, is_active, created_at, updated_at)
+    VALUES ('station-145', 'Main Kitchen', 1, ?, ?)`
+  ).run(now(), now());
 
   const app = createApp({ '/api/staff': staffRoutes });
 
@@ -114,6 +117,28 @@ async function main() {
     managerCreated[role] = result.body.staff?.id;
     assert(!('pin_hash' in result.body.staff), `create ${role} response does not expose pin_hash`);
   }
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'Station Chef', email: 'station-chef@test.local', password: 'StrongPass1', role: 'chef', station_ids: ['station-145'],
+  });
+  assertEqual(result.status, 201, 'chef can be optionally assigned to a station during creation');
+  assertEqual(result.body.staff.station_ids[0], 'station-145', 'created chef response includes the station assignment');
+  const stationChef = db.prepare('SELECT station_assignments_configured FROM users WHERE id = ?').get(result.body.staff.id) as any;
+  assertEqual(stationChef.station_assignments_configured, 1, 'station-scoped chef is marked as explicitly configured');
+  const stationLink = db.prepare('SELECT station_id FROM station_users WHERE user_id = ?').get(result.body.staff.id) as any;
+  assertEqual(stationLink.station_id, 'station-145', 'chef station assignment is persisted');
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'Unassigned Chef', email: 'unassigned-chef@test.local', password: 'StrongPass1', role: 'chef', station_ids: [],
+  });
+  assertEqual(result.status, 201, 'chef creation does not require a station');
+  const unassignedChef = db.prepare('SELECT station_assignments_configured FROM users WHERE id = ?').get(result.body.staff.id) as any;
+  assertEqual(unassignedChef.station_assignments_configured, 0, 'unassigned chef remains unrestricted by station configuration');
+
+  result = await request(app).post('/api/staff').set(managerAuth).send({
+    name: 'Invalid Station Cashier', email: 'station-cashier@test.local', password: 'StrongPass1', role: 'cashier', station_ids: ['station-145'],
+  });
+  assertEqual(result.status, 400, 'non-chef accounts cannot receive kitchen station assignments');
 
   for (const role of ['cashier', 'server', 'chef']) {
     result = await request(app).put(`/api/staff/${managerCreated[role]}`).set(managerAuth).send({

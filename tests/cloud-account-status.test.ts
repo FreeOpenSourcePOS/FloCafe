@@ -396,7 +396,7 @@ async function run() {
     assert(isDatabaseMaintenanceActive(), 'database maintenance starts for queued CloudSync work');
     queuedService.reportDiagnostic({
       event_id: 'queued-cloud-sync-shutdown-test',
-      event_code: 'shutdown.test',
+      event_code: 'server.internal_error',
       occurred_at: new Date().toISOString(),
       severity: 'info',
       metadata: { test: true },

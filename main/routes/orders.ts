@@ -705,7 +705,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         event_id: randomUUID(),
         event_code: 'order.create.failed',
         severity: 'error',
-        message: String(error.message || 'Order creation failed').slice(0, 300),
+        message: 'Order creation failed',
         metadata: {
           stage: error.message === 'Insufficient stock' ? 'inventory_validation' : 'order_insert',
           status: statusCode,

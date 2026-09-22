@@ -104,11 +104,11 @@ async function main() {
     assertEqual(row?.status, 'pending', 'the outbox row starts pending');
     assert(row?.event_id && /^[0-9a-f-]{36}$/i.test(row.event_id), 'event_id is a server-generated UUID');
     assertEqual(row?.severity, 'error', 'severity is preserved');
-    assertEqual(row?.message, 'The order could not be completed on this device', 'message is stored');
+    assertEqual(row?.message, 'Order placement failed', 'message is replaced with the approved diagnostic text');
     assertEqual(row?.metadata.stage, 'order_place', 'metadata is stored');
+    assertEqual(row?.metadata.detail, undefined, 'unapproved free-form metadata is not persisted');
 
     console.log('\n2. Unauthenticated and malformed requests are rejected without writing anything');
-    const before = countDiagnostics(db);
     const unauth = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       body: { event_code: 'order.place.failed', severity: 'error' },
@@ -143,7 +143,13 @@ async function main() {
       body: { event_code: 'Order Place Failed!', severity: 'error' },
     });
     assertEqual(badCode.status, 400, 'a non dot-namespaced event_code is rejected with 400');
-
+    const unsupportedCode = await api(baseUrl, '/api/diagnostics/event', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { event_code: 'order.place.unapproved', severity: 'error' },
+    });
+    assertEqual(unsupportedCode.status, 400, 'an otherwise well-formed but unsupported event_code is rejected with 400');
+    const before = countDiagnostics(db);
     const noBody = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
@@ -151,42 +157,57 @@ async function main() {
     });
     assertEqual(noBody.status, 400, 'an empty payload is rejected with 400');
     assertEqual(countDiagnostics(db), before, 'no outbox rows were written by rejected requests');
+    for (const [eventCode, message] of [
+      ['order.place.rejected', 'Order rejected'],
+      ['order.place.unreachable', 'Order server unreachable'],
+      ['order.place.storage_unavailable', 'Order storage unavailable'],
+    ] as const) {
+      const supported = await api(baseUrl, '/api/diagnostics/event', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: { event_code: eventCode, severity: 'warn' },
+      });
+      assertEqual(supported.status, 202, `${eventCode} is accepted`);
+      assert(await settle(() => findDiagnostic(db, eventCode) !== null), `${eventCode} is enqueued`);
+      assertEqual(findDiagnostic(db, eventCode)?.message, message, `${eventCode} uses approved diagnostic text`);
+    }
 
-    console.log('\n3. Boundary: message clamps to 300 chars; oversized metadata is rejected');
+    console.log('\n3. Boundary: messages use approved text; oversized metadata is rejected');
     const longMessage = 'M'.repeat(500);
     const clampRes = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
-      body: { event_code: 'order.place.clamped', severity: 'warn', message: longMessage },
+      body: { event_code: 'payment.batch.failed', severity: 'warn', message: longMessage },
     });
     assertEqual(clampRes.status, 202, 'an event with an over-long message is still accepted');
-    const clamped = await settle(() => findDiagnostic(db, 'order.place.clamped') !== null);
+    const clamped = await settle(() => findDiagnostic(db, 'payment.batch.failed') !== null);
     assert(clamped, 'the clamped event is enqueued');
-    const clampedRow = findDiagnostic(db, 'order.place.clamped');
-    assertEqual((clampedRow?.message || '').length, 300, 'the stored message is clamped to 300 characters');
+    const clampedRow = findDiagnostic(db, 'payment.batch.failed');
+    assertEqual(clampedRow?.message, 'Payment batch failed', 'the stored message uses the approved diagnostic text');
 
     const hugeMetadata: Record<string, string> = {};
     for (let i = 0; i < 40; i++) hugeMetadata[`key_${i}`] = 'X'.repeat(300);
     const oversizeRes = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
-      body: { event_code: 'order.place.oversize', severity: 'error', metadata: hugeMetadata },
+      body: { event_code: 'payment.batch.failed', severity: 'error', metadata: hugeMetadata },
     });
     assertEqual(oversizeRes.status, 400, 'metadata beyond the size cap is rejected with 400');
 
     console.log('\n4. Depth clamp: nested structures beyond depth 3 are trimmed, not rejected');
-    const nested = { a: { b: { c: { d: { e: 'too deep' } } } }, keep: 'shallow' };
+    const nested = { method: 'GET', a: { b: { c: { d: { e: 'too deep' } } } }, keep: 'shallow' };
     const depthRes = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
-      body: { event_code: 'order.place.depth', severity: 'info', metadata: nested },
+      body: { event_code: 'server.internal_error', severity: 'info', metadata: nested },
     });
     assertEqual(depthRes.status, 202, 'a deeply nested metadata payload is accepted after trimming');
-    const depthQueued = await settle(() => findDiagnostic(db, 'order.place.depth') !== null);
+    const depthQueued = await settle(() => findDiagnostic(db, 'server.internal_error') !== null);
     assert(depthQueued, 'the depth-trimmed event is enqueued');
-    const depthRow = findDiagnostic(db, 'order.place.depth');
-    assertEqual(depthRow?.metadata.keep, 'shallow', 'shallow keys survive depth trimming');
-    assertEqual(depthRow?.metadata.a?.b?.c?.d, undefined, 'values past depth 3 are dropped');
+    const depthRow = findDiagnostic(db, 'server.internal_error');
+    assertEqual(depthRow?.metadata.method, 'GET', 'approved server metadata survives projection');
+    assertEqual(depthRow?.metadata.keep, undefined, 'unapproved metadata is dropped');
+    assertEqual(depthRow?.metadata.a, undefined, 'nested metadata is dropped');
 
     console.log('\n5. Consent toggle: diagnostics_consent=false discards events (never written)');
     const consentBefore = countDiagnostics(db);
@@ -195,12 +216,11 @@ async function main() {
     const consentOff = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
-      body: { event_code: 'order.place.consent_off', severity: 'error' },
+      body: { event_code: 'order.place.failed', severity: 'error' },
     });
     assertEqual(consentOff.status, 202, 'the endpoint still acknowledges the event while consent is off');
     await settle(() => false, 400); // allow any in-flight enqueue to run
     assertEqual(countDiagnostics(db), consentBefore, 'no row was written while diagnostics consent was disabled');
-    assert(findDiagnostic(db, 'order.place.consent_off') === null, 'the consent-off event is absent from the outbox');
     db.prepare(`UPDATE settings SET value = 'true', updated_at = ? WHERE key = 'diagnostics_consent'`).run(now());
 
     console.log('\n6. order.create.failed: insufficient-stock rejection is enqueued (order still 400)');
@@ -249,9 +269,9 @@ async function main() {
         body: { payments: [{ method: 'cash', amount: 10 }] },
       });
       assertEqual(payFail.status, 500, 'the forced payment failure surfaces as 500');
-      const payQueued = await settle(() => findDiagnostic(db, 'payment.batch.failed') !== null);
+      const payQueued = await settle(() => findDiagnosticByStage(db, 'payment.batch.failed', 'payment_batch') !== null);
       assert(payQueued, 'payment.batch.failed is enqueued on a 500');
-      const payDiag = findDiagnostic(db, 'payment.batch.failed');
+      const payDiag = findDiagnosticByStage(db, 'payment.batch.failed', 'payment_batch');
       assertEqual(payDiag?.metadata.status, 500, 'payment diagnostic metadata carries the HTTP status');
       assertEqual(payDiag?.metadata.stage, 'payment_batch', 'payment diagnostic reports the payment_batch stage');
     } finally {
@@ -272,40 +292,40 @@ async function main() {
     assert(localSupportShown, 'local support prompt is staged regardless of telemetry outcome');
     assert(telemetryFailed, 'telemetry dispatch failure is caught and swallowed');
 
-    console.log('\n10. Validation hardening: non-object metadata rejected; message trimmed; __proto__ keys dropped');
+    console.log('\n10. Validation hardening: non-object metadata rejected; messages and keys are controlled');
     const primitiveMeta = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
-      body: { event_code: 'order.place.primitive_meta', severity: 'info', metadata: 'not-an-object' },
+      body: { event_code: 'order.place.failed', severity: 'info', metadata: 'not-an-object' },
     });
     assertEqual(primitiveMeta.status, 400, 'a primitive root metadata value is rejected with 400');
     const arrayMeta = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
-      body: { event_code: 'order.place.array_meta', severity: 'info', metadata: [1, 2, 3] },
+      body: { event_code: 'order.place.failed', severity: 'info', metadata: [1, 2, 3] },
     });
     assertEqual(arrayMeta.status, 400, 'an array root metadata value is rejected with 400');
 
     const paddedRes = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
-      body: { event_code: 'order.place.padded', severity: 'warn', message: '   padded failure message   ' },
+      body: { event_code: 'payment.batch.failed', severity: 'warn', message: '   padded failure message   ' },
     });
     assertEqual(paddedRes.status, 202, 'an event with a padded message is accepted');
-    const paddedQueued = await settle(() => findDiagnostic(db, 'order.place.padded') !== null);
+    const paddedQueued = await settle(() => findDiagnostic(db, 'payment.batch.failed') !== null);
     assert(paddedQueued, 'the padded-message event is enqueued');
-    assertEqual(findDiagnostic(db, 'order.place.padded')?.message, 'padded failure message', 'message is trimmed before clamping');
+    assertEqual(findDiagnostic(db, 'payment.batch.failed')?.message, 'Payment batch failed', 'free-form message is replaced with the approved diagnostic text');
 
     const protoRes = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
-      body: '{"event_code":"order.place.proto","severity":"info","metadata":{"__proto__":{"polluted":true},"stage":"order_place"}}',
+      body: '{"event_code":"print.receipt.failed","severity":"info","metadata":{"__proto__":{"polluted":true},"kind":"receipt"}}',
     });
     assertEqual(protoRes.status, 202, 'metadata containing a __proto__ key is accepted');
-    const protoQueued = await settle(() => findDiagnostic(db, 'order.place.proto') !== null);
+    const protoQueued = await settle(() => findDiagnostic(db, 'print.receipt.failed') !== null);
     assert(protoQueued, 'the __proto__-bearing event is enqueued');
-    const protoRow = findDiagnostic(db, 'order.place.proto');
-    assertEqual(protoRow?.metadata.stage, 'order_place', 'sibling metadata keys survive alongside a dropped __proto__ key');
+    const protoRow = findDiagnostic(db, 'print.receipt.failed');
+    assertEqual(protoRow?.metadata.kind, 'receipt', 'approved metadata survives alongside a dropped __proto__ key');
     assert(!Object.prototype.hasOwnProperty.call(protoRow?.metadata || {}, '__proto__'), 'the __proto__ key is not persisted as an own property');
     assertEqual((protoRow?.metadata as any)?.polluted, undefined, 'metadata carries no prototype-chain pollution');
 

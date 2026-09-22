@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import expressRateLimit from 'express-rate-limit';
 import { requireRole } from '../middleware/security';
-import { cloudSync, DiagnosticEventInput } from '../services/cloud-sync';
+import { cloudSync, DiagnosticEventInput, isAllowedDiagnosticEventCode } from '../services/cloud-sync';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 
 const router = Router();
@@ -60,7 +60,7 @@ function sanitizeDiagnosticMetadata(value: unknown, depth: number): unknown {
 export function buildDiagnosticEvent(body: unknown): DiagnosticEventInput | null {
   const raw = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {};
   const eventCode = typeof raw.event_code === 'string' ? raw.event_code.trim() : '';
-  if (!EVENT_CODE_RE.test(eventCode)) return null;
+  if (!EVENT_CODE_RE.test(eventCode) || !isAllowedDiagnosticEventCode(eventCode)) return null;
   const severity = typeof raw.severity === 'string' ? raw.severity : '';
   if (!ALLOWED_SEVERITIES.has(severity)) return null;
 

@@ -123,6 +123,81 @@ export type DiagnosticEventInput = {
   occurred_at: string;
 };
 
+const DIAGNOSTIC_MESSAGE_BY_CODE = {
+  'order.place.failed': 'Order placement failed',
+  'order.place.rejected': 'Order rejected',
+  'order.place.unreachable': 'Order server unreachable',
+  'order.place.storage_unavailable': 'Order storage unavailable',
+  'order.create.failed': 'Order creation failed',
+  'payment.batch.failed': 'Payment batch failed',
+  'server.internal_error': 'Internal server error',
+  'print.receipt.failed': 'Receipt print failed',
+  'print.kot.failed': 'Kitchen order print failed',
+} as const;
+
+type DiagnosticEventCode = keyof typeof DIAGNOSTIC_MESSAGE_BY_CODE;
+
+export const ALLOWED_DIAGNOSTIC_EVENT_CODES = new Set<DiagnosticEventCode>(
+  Object.keys(DIAGNOSTIC_MESSAGE_BY_CODE) as DiagnosticEventCode[],
+);
+
+const ALLOWED_DIAGNOSTIC_SEVERITIES = new Set<DiagnosticEventInput['severity']>(['debug', 'info', 'warn', 'error', 'critical']);
+const ALLOWED_ORDER_PLACE_STAGES = new Set(['order_place']);
+const ALLOWED_ORDER_CREATE_STAGES = new Set(['inventory_validation', 'order_insert']);
+const ALLOWED_PAYMENT_STAGES = new Set(['payment_batch']);
+const ALLOWED_DIAGNOSTIC_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']);
+const ALLOWED_PRINT_CONNECTION_TYPES = new Set(['network', 'usb', 'webusb', 'unknown']);
+const ALLOWED_PRINT_KINDS = new Set(['receipt', 'kot']);
+const ALLOWED_PRINT_FAILURE_CLASSES = new Set([
+  'not_configured', 'offline', 'queue_unavailable', 'spooler_error', 'driver_error',
+  'permission_denied', 'timeout', 'write_error', 'unsupported', 'unknown',
+]);
+const ALLOWED_PRINT_PLATFORMS = new Set(['aix', 'android', 'darwin', 'freebsd', 'linux', 'openbsd', 'win32']);
+const DIAGNOSTIC_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
+
+export function isAllowedDiagnosticEventCode(value: unknown): value is DiagnosticEventCode {
+  return typeof value === 'string' && ALLOWED_DIAGNOSTIC_EVENT_CODES.has(value as DiagnosticEventCode);
+}
+
+function pickInteger(source: Record<string, unknown>, target: Record<string, unknown>, key: string, min: number, max: number): void {
+  if (typeof source[key] === 'number' && Number.isSafeInteger(source[key]) && source[key] >= min && source[key] <= max) target[key] = source[key];
+}
+
+function pickEnum(source: Record<string, unknown>, target: Record<string, unknown>, key: string, allowed: Set<string>): void {
+  if (typeof source[key] === 'string' && allowed.has(source[key])) target[key] = source[key];
+}
+
+/** Projects diagnostic metadata to the small set of event-specific non-PII fields. */
+function sanitizeDiagnosticMetadata(eventCode: DiagnosticEventCode, metadata: unknown): Record<string, unknown> | undefined {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+  const source = metadata as Record<string, unknown>;
+  const target: Record<string, unknown> = {};
+
+  if (eventCode.startsWith('order.place.')) {
+    pickEnum(source, target, 'stage', ALLOWED_ORDER_PLACE_STAGES);
+    pickInteger(source, target, 'status', 100, 599);
+  } else if (eventCode === 'order.create.failed') {
+    pickEnum(source, target, 'stage', ALLOWED_ORDER_CREATE_STAGES);
+    pickInteger(source, target, 'status', 100, 599);
+    pickInteger(source, target, 'item_count', 0, 10_000);
+  } else if (eventCode === 'payment.batch.failed') {
+    pickEnum(source, target, 'stage', ALLOWED_PAYMENT_STAGES);
+    pickInteger(source, target, 'status', 100, 599);
+  } else if (eventCode === 'server.internal_error') {
+    pickEnum(source, target, 'method', ALLOWED_DIAGNOSTIC_METHODS);
+    pickInteger(source, target, 'status', 500, 599);
+  } else {
+    pickEnum(source, target, 'connection_type', ALLOWED_PRINT_CONNECTION_TYPES);
+    pickEnum(source, target, 'kind', ALLOWED_PRINT_KINDS);
+    pickEnum(source, target, 'failure_class', ALLOWED_PRINT_FAILURE_CLASSES);
+    pickEnum(source, target, 'os_platform', ALLOWED_PRINT_PLATFORMS);
+    pickInteger(source, target, 'platform_error_code', -1_000_000, 1_000_000);
+    pickInteger(source, target, 'job_id', 1, Number.MAX_SAFE_INTEGER);
+    pickInteger(source, target, 'printer_status', 0, Number.MAX_SAFE_INTEGER);
+  }
+  return Object.keys(target).length > 0 ? target : undefined;
+}
+
 type DateRange = {
   from: string;
   to: string;
@@ -905,12 +980,22 @@ export class CloudSyncService {
   /** Queue a Tier 2 diagnostic event durably if consent is enabled. */
   reportDiagnostic(input: DiagnosticEventInput): void {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
-    // Enforce event_code format and message length regardless of call site.
-    const DIAG_CODE_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
-    if (!DIAG_CODE_RE.test(input.event_code)) return;
+    if (!isAllowedDiagnosticEventCode(input.event_code)) return;
+    if (!ALLOWED_DIAGNOSTIC_SEVERITIES.has(input.severity)) return;
+    if (typeof input.event_id !== 'string' || !DIAGNOSTIC_ID_RE.test(input.event_id)) return;
+    const metadata = sanitizeDiagnosticMetadata(input.event_code, input.metadata);
     const sanitized: DiagnosticEventInput = {
-      ...input,
-      ...(input.message != null ? { message: String(input.message).slice(0, 300) } : {}),
+      event_id: input.event_id,
+      event_code: input.event_code,
+      severity: input.severity,
+      message: DIAGNOSTIC_MESSAGE_BY_CODE[input.event_code],
+      ...(typeof input.correlation_id === 'string' && DIAGNOSTIC_ID_RE.test(input.correlation_id)
+        ? { correlation_id: input.correlation_id }
+        : {}),
+      ...(metadata ? { metadata } : {}),
+      occurred_at: typeof input.occurred_at === 'string' && input.occurred_at.length <= 64
+        ? input.occurred_at
+        : new Date().toISOString(),
     };
     this.runBackground(this.withDatabaseRequest(() => {
       if (this.cloudDeletionInProgress || this.shutdownRequested || !isDiagnosticsConsentEnabled()) return;

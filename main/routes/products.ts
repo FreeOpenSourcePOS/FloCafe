@@ -360,7 +360,7 @@ function validateWeightedProductFields(
 }
 
 function validateInventoryLinkFields(
-  db: any,
+  db: ReturnType<typeof getDatabase>,
   values: Record<string, unknown>,
   productId?: string,
 ): string | null {

@@ -432,6 +432,33 @@ async function main(): Promise<void> {
         db.prepare(`UPDATE tables SET status = 'available' WHERE id = ?`).run('table-zb');
       }
     }
+
+    // ── settle attempt on a refunded bill is rejected ──
+    console.log('\n─── refunded-settle-rejected: settle attempt on refunded bill stays refunded ───');
+    {
+      const create = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-1000', quantity: 1 }] });
+      assertEqual(create.status, 201, 'refunded-settle-rejected: order created');
+      const gen = await generateBill(create.data.order.id);
+      assertEqual(gen.status, 201, 'refunded-settle-rejected: bill generated');
+      const billId = gen.data.bill.id;
+      const paid = await pay(billId, { method: 'cash', amount: null });
+      assertEqual(paid.status, 200, 'refunded-settle-rejected: bill paid in full');
+      const live = billRow(db, billId);
+      const ref = await refund({
+        bill_id: billId,
+        amount: Number(live.paid_amount),
+        method: 'cash',
+        reason: 'zb refunded-settle-rejected',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      assertEqual(ref.status, 201, 'refunded-settle-rejected: bill refunded');
+      assertEqual(billRow(db, billId).payment_status, 'refunded', 'refunded-settle-rejected: status is refunded');
+
+      const settle = await pay(billId, { method: 'cash', amount: null });
+      assertEqual(settle.status, 400, `refunded-settle-rejected: settle rejected (got ${settle.status})`);
+      assertEqual(billRow(db, billId).payment_status, 'refunded', 'refunded-settle-rejected: status still refunded after settle attempt');
+    }
   } finally {
     server.close();
     closeDatabase();

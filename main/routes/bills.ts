@@ -1866,6 +1866,9 @@ function preparePaymentBatch(
     if (key) seenTransactionKeys.add(key);
   }
   if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
+  if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
+    throw Object.assign(new Error('Bill has been refunded'), { statusCode: 400 });
+  }
   const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * minorFactor));
   if (remainingCents <= 0) {
     return { bill, prepared: [], existingPayments, effectiveCustomerId };

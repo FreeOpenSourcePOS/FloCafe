@@ -905,6 +905,13 @@ export class CloudSyncService {
   /** Queue a Tier 2 diagnostic event durably if consent is enabled. */
   reportDiagnostic(input: DiagnosticEventInput): void {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
+    // Enforce event_code format and message length regardless of call site.
+    const DIAG_CODE_RE = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/;
+    if (!DIAG_CODE_RE.test(input.event_code)) return;
+    const sanitized: DiagnosticEventInput = {
+      ...input,
+      ...(input.message != null ? { message: String(input.message).slice(0, 300) } : {}),
+    };
     this.runBackground(this.withDatabaseRequest(() => {
       if (this.cloudDeletionInProgress || this.shutdownRequested || !isDiagnosticsConsentEnabled()) return;
       const db = getDatabase();
@@ -913,7 +920,7 @@ export class CloudSyncService {
         INSERT OR IGNORE INTO store_diagnostics_outbox
           (event_id, payload, status, created_at, updated_at)
         VALUES (?, ?, 'pending', ?, ?)
-      `).run(input.event_id, JSON.stringify(input), timestamp, timestamp);
+      `).run(sanitized.event_id, JSON.stringify(sanitized), timestamp, timestamp);
       this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
     }), 'diagnostic enqueue', (error) => this.markError((error as Error).message));
   }

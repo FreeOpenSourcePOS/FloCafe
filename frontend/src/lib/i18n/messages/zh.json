@@ -325,7 +325,11 @@
     "exportXlsx": "Excel（.xlsx）",
     "exportCsv": "CSV（.csv）",
     "exportCsvHint": "CSV会下载两个文件：汇总和明细。",
-    "exportCsvStarted": "正在下载汇总和明细CSV文件…"
+    "exportCsvStarted": "正在下载汇总和明细CSV文件…",
+    "liveNow": "实时",
+    "kpiChangeVsSameDayLastWeek": "较上周同日 {percent}%",
+    "kpiNewVsSameDayLastWeek": "较上周同日新增",
+    "kpiNoChangeVsSameDayLastWeek": "较上周同日无变化"
   },
   "inventory": {
     "tabSupplies": "库存",

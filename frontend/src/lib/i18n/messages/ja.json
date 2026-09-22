@@ -325,7 +325,11 @@
     "exportXlsx": "Excel（.xlsx）",
     "exportCsv": "CSV（.csv）",
     "exportCsvHint": "CSVでは概要と明細の2つのファイルをダウンロードします。",
-    "exportCsvStarted": "概要と明細のCSVファイルをダウンロードしています…"
+    "exportCsvStarted": "概要と明細のCSVファイルをダウンロードしています…",
+    "liveNow": "現在",
+    "kpiChangeVsSameDayLastWeek": "先週の同じ曜日と比べて{percent}%",
+    "kpiNewVsSameDayLastWeek": "先週の同じ曜日と比べて新規",
+    "kpiNoChangeVsSameDayLastWeek": "先週の同じ曜日と比べて変化なし"
   },
   "inventory": {
     "tabSupplies": "食材",

@@ -278,6 +278,12 @@ async function main() {
       });
       assertEqual(chainTarget.status, 400, 'relinking an already-targeted product rejected');
 
+      const deleteTarget = await api(baseUrl, '/api/products/milk-bottle', {
+        method: 'DELETE',
+        headers: owner.authHeader,
+      });
+      assertEqual(deleteTarget.status, 409, 'deleting product targeted by active inventory link rejected with 409');
+
       console.log('\n─── API: linked deduction on order create + restore on cancel ───');
       const order = await api(baseUrl, '/api/orders', {
         method: 'POST',

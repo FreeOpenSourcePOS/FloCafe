@@ -1119,6 +1119,13 @@ router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
       return res.status(404).json({ error: 'Product not found' });
     }
 
+    const linkedBy = db.prepare(
+      'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL LIMIT 1',
+    ).get(req.params.id);
+    if (linkedBy) {
+      return res.status(409).json({ error: 'Cannot delete a product that is the inventory target for another product. Remove the inventory link first.' });
+    }
+
     db.prepare('UPDATE products SET deleted_at = ? WHERE id = ?').run(now(), req.params.id);
     res.json({ message: 'Product deleted' });
   } catch (error: any) {

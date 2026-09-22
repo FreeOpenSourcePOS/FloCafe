@@ -58,7 +58,7 @@ function ItemQuantityControl({
       setDraft(String(item.quantity));
       return;
     }
-    const rounded = roundToQuantityPrecision(parsed, step);
+    const rounded = Math.max(step, roundToQuantityPrecision(parsed, step));
     updateQuantity(item.id, rounded);
     setDraft(String(rounded));
   };

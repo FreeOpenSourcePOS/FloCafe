@@ -456,7 +456,7 @@ async function main(): Promise<void> {
       assertEqual(billRow(db, billId).payment_status, 'refunded', 'refunded-settle-rejected: status is refunded');
 
       const settle = await pay(billId, { method: 'cash', amount: null });
-      assertEqual(settle.status, 400, `refunded-settle-rejected: settle rejected (got ${settle.status})`);
+      assertEqual(settle.status, 409, `refunded-settle-rejected: settle rejected (got ${settle.status})`);
       assertEqual(billRow(db, billId).payment_status, 'refunded', 'refunded-settle-rejected: status still refunded after settle attempt');
     }
 

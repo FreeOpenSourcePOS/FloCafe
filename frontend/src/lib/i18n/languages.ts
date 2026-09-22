@@ -55,6 +55,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/fr.json'),
   },
+  it: {
+    locale: 'it-IT',
+    nativeName: 'Italiano',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/it.json'),
+  },
   pt: {
     locale: 'pt-BR',
     nativeName: 'Português',
@@ -70,6 +77,27 @@ export const LANGUAGES = {
     // for end-user selection (#241 / #372).
     selectable: true,
     load: () => import('./messages/fa.json'),
+  },
+  ja: {
+    locale: 'ja-JP',
+    nativeName: '日本語',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ja.json'),
+  },
+  zh: {
+    locale: 'zh-CN',
+    nativeName: '简体中文',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/zh.json'),
+  },
+  ko: {
+    locale: 'ko-KR',
+    nativeName: '한국어',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ko.json'),
   },
 } as const satisfies Record<string, LanguageConfig>;
 

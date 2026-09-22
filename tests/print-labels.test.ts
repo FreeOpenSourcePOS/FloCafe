@@ -108,6 +108,10 @@ function run(): void {
   console.log('\n✅ Test 1: printLabel language selection and fallback');
   assert('en resolves grand total to TOTAL', printLabel('en', 'print.grandTotal') === 'TOTAL');
   assert('fa resolves grand total to Persian', printLabel('fa', 'print.grandTotal') === 'جمع کل');
+  assert('it resolves grand total to Italian', printLabel('it', 'print.grandTotal') === 'TOTALE');
+  assert('ja resolves grand total to Japanese', printLabel('ja', 'print.grandTotal') === '合計');
+  assert('zh resolves grand total to Chinese', printLabel('zh', 'print.grandTotal') === '合计');
+  assert('ko resolves grand total to Korean', printLabel('ko', 'print.grandTotal') === '합계');
   assert('tr resolves grand total to Turkish', printLabel('tr', 'print.grandTotal') === 'GENEL TOPLAM');
   assert('fil resolves grand total to Filipino', printLabel('fil', 'print.grandTotal') === 'KABUUAN');
   assert('de resolves grand total to German', printLabel('de', 'print.grandTotal') === 'GESAMTSUMME');

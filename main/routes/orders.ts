@@ -11,7 +11,7 @@ import {
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals } from '../services/orders';
-import { adjustProductStock } from '../services/inventory';
+import { adjustProductStock, resolveInventoryDeduction } from '../services/inventory';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes, validateProductQuantity } from './orders-validation';
@@ -562,10 +562,10 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
       const customer = customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id) as any : null;
 
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
+        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
           modifier_selection, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       for (const item of items) {
@@ -581,6 +581,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
 
         // Validate quantity and price
         validateProductQuantity(product, quantity);
+        const deduction = resolveInventoryDeduction(product, quantity);
         if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
           throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
         }
@@ -617,7 +618,8 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
 
         const itemCreatedAt = now();
         const insertItemResult = insertItem.run(
-          orderId, product.id, product.name, product.sku, unitPrice, quantity, product.track_inventory ? quantity : 0,
+          orderId, product.id, product.name, product.sku, unitPrice, quantity,
+          deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
@@ -626,10 +628,10 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         );
         insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
 
-        if (product.track_inventory) {
+        if (deduction) {
           adjustProductStock(db, {
-            productId: product.id,
-            quantityDelta: -quantity,
+            productId: deduction.productId,
+            quantityDelta: -deduction.deductedQuantity,
             movementType: 'sale',
             referenceType: 'order_item',
             referenceId: String(insertItemResult.lastInsertRowid),
@@ -784,10 +786,10 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       const customer = currentOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any : null;
 
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
+        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
           modifier_selection, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       const insertedItemIds: (number | bigint)[] = [];
@@ -803,6 +805,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
 
         // Validate quantity and price
         validateProductQuantity(product, quantity);
+        const deduction = resolveInventoryDeduction(product, quantity);
         if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
           throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
         }
@@ -828,7 +831,8 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
 
         const itemCreatedAt = now();
         const insertItemResult = insertItem.run(
-          req.params.id, product.id, product.name, product.sku, unitPrice, quantity, product.track_inventory ? quantity : 0,
+          req.params.id, product.id, product.name, product.sku, unitPrice, quantity,
+          deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
@@ -838,10 +842,10 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
         insertedItemIds.push(insertItemResult.lastInsertRowid);
 
-        if (product.track_inventory) {
+        if (deduction) {
           adjustProductStock(db, {
-            productId: product.id,
-            quantityDelta: -quantity,
+            productId: deduction.productId,
+            quantityDelta: -deduction.deductedQuantity,
             movementType: 'sale',
             referenceType: 'order_item',
             referenceId: String(insertItemResult.lastInsertRowid),
@@ -1074,7 +1078,8 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
           `).all(req.params.id) as any[];
 
           for (const item of eligibleItems) {
-            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
+            const restoreProductId = item.inventory_product_id || item.product_id;
+            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(restoreProductId) as any;
             if (product && item.inventory_deducted_quantity > 0) {
               adjustProductStock(db, {
                 productId: product.id,

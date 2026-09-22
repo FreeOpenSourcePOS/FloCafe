@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { formatCurrencyForTenant } from '@/lib/countries';
+import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
 import type { Product, Addon, AddonGroup } from '@/lib/types';
 
 interface Props {
@@ -41,7 +42,26 @@ export default function AddonModal({
   const fmt = country ? (n: number) => formatCurrencyForTenant(n, country, currency) : tenantFmt;
   const [selected, setSelected] = useState<Record<string | number, Addon[]>>(() => groupInitialAddons(initialAddons));
   const [quantity, setQuantity] = useState(initialQuantity);
+  const [qtyDraft, setQtyDraft] = useState(() => String(initialQuantity));
   const [instructions, setInstructions] = useState(initialInstructions);
+  const step = fractionalQuantityStep(product);
+
+  const setQty = (next: number) => {
+    setQuantity(next);
+    setQtyDraft(String(next));
+  };
+
+  const commitQtyDraft = () => {
+    if (step == null) return;
+    const parsed = Number(qtyDraft);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setQtyDraft(String(quantity));
+      return;
+    }
+    const rounded = Math.max(step, roundToQuantityPrecision(parsed, step));
+    setQuantity(rounded);
+    setQtyDraft(String(rounded));
+  };
 
   const groups = product.addon_groups || [];
 
@@ -109,7 +129,16 @@ export default function AddonModal({
 
   const handleAdd = () => {
     if (!isValid) return;
-    onAdd(product, quantity, allAddons, instructions);
+    let effectiveQuantity = quantity;
+    if (step != null) {
+      const parsed = Number(qtyDraft);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        effectiveQuantity = Math.max(step, roundToQuantityPrecision(parsed, step));
+        setQuantity(effectiveQuantity);
+        setQtyDraft(String(effectiveQuantity));
+      }
+    }
+    onAdd(product, effectiveQuantity, allAddons, instructions);
     onClose();
   };
 
@@ -288,7 +317,11 @@ export default function AddonModal({
         <div className="p-5 border-t border-border">
           <div className="flex items-center justify-center gap-4 mb-4">
             <button
-              onClick={() => setQuantity(Math.max(1, quantity - 1))}
+              onClick={() =>
+                step == null
+                  ? setQty(Math.max(1, quantity - 1))
+                  : setQty(Math.max(step, roundToQuantityPrecision(quantity - step, step)))
+              }
               className="touch-target rounded-full bg-muted flex items-center justify-center hover:bg-muted active:bg-muted"
               aria-label={t('remove')}
             >
@@ -299,7 +332,7 @@ export default function AddonModal({
                 <button
                   key={quickQty}
                   type="button"
-                  onClick={() => setQuantity(quickQty)}
+                  onClick={() => setQty(quickQty)}
                   className={`touch-target rounded-lg border px-3 text-sm font-bold tabular-nums ${
                     quantity === quickQty ? 'border-brand bg-brand text-white' : 'border-border bg-card text-foreground'
                   }`}
@@ -308,9 +341,30 @@ export default function AddonModal({
                 </button>
               ))}
             </div>
-            <span className="text-lg font-bold w-10 text-center tabular-nums">{quantity}</span>
+            {step == null ? (
+              <span className="text-lg font-bold w-10 text-center tabular-nums">{quantity}</span>
+            ) : (
+              <input
+                type="number"
+                inputMode="decimal"
+                min={step}
+                step={step}
+                value={qtyDraft}
+                onChange={(e) => setQtyDraft(e.target.value)}
+                onBlur={commitQtyDraft}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitQtyDraft();
+                }}
+                aria-label={t('quantity')}
+                className="w-16 text-lg font-bold text-center tabular-nums border border-border bg-background rounded-md px-1 py-0.5 outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+              />
+            )}
             <button
-              onClick={() => setQuantity(quantity + 1)}
+              onClick={() =>
+                step == null
+                  ? setQty(quantity + 1)
+                  : setQty(roundToQuantityPrecision(quantity + step, step))
+              }
               className="touch-target rounded-full bg-muted flex items-center justify-center hover:bg-muted active:bg-muted"
               aria-label={t('addItems')}
             >

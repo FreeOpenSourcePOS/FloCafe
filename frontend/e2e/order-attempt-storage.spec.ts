@@ -244,7 +244,7 @@ test('prepaid: losing the retry state after the order was created replays that o
     await addProductToCart(page);
     await page.getByRole('button', { name: 'Place Order' }).click();
     await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
-    await page.getByRole('button', { name: 'Cash' }).click();
+    await page.getByRole('button', { name: 'Cash', exact: true }).click();
     const confirmPayment = page.getByRole('button', { name: /Confirm Payment/ });
     await expect(confirmPayment).toBeEnabled();
     await confirmPayment.click();
@@ -263,7 +263,7 @@ test('prepaid: losing the retry state after the order was created replays that o
     await addProductToCart(page);
     await page.getByRole('button', { name: 'Place Order' }).click();
     await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
-    await page.getByRole('button', { name: 'Cash' }).click();
+    await page.getByRole('button', { name: 'Cash', exact: true }).click();
     const retryConfirm = page.getByRole('button', { name: /Confirm Payment/ });
     await expect(retryConfirm).toBeEnabled();
     await retryConfirm.click();
@@ -295,7 +295,7 @@ test('prepaid: no order is sent and the storage problem is reported when every a
     await page.getByRole('button', { name: 'Place Order' }).click();
     // The confirm button stays disabled until the server preview resolves.
     await expect(page.getByRole('button', { name: /^Tax / })).toBeVisible();
-    await page.getByRole('button', { name: 'Cash' }).click();
+    await page.getByRole('button', { name: 'Cash', exact: true }).click();
     const confirmPayment = page.getByRole('button', { name: /Confirm Payment/ });
     await expect(confirmPayment).toBeEnabled();
     await confirmPayment.click();

@@ -323,6 +323,7 @@ export function registerRoutes(app: Express): void {
           SELECT 1
           FROM bills
           WHERE order_id = ?
+            AND NOT (COALESCE(payment_status, '') = 'paid' AND COALESCE(paid_amount, 0) = 0)
             AND (
               COALESCE(payment_status, 'unpaid') <> 'unpaid'
               OR COALESCE(paid_amount, 0) > 0

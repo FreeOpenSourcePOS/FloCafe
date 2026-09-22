@@ -1,5 +1,6 @@
 /**
- * Zero-balance settle, zero-total split siblings, and refunded sibling completion.
+ * Zero-balance settle, zero-total split siblings, refunded/partially-refunded sibling completion,
+ * cancel/restore after zero-close, and full-discount settle with no prior payment.
  * Run: node tests/run-electron-node-test.cjs tests/issue-zero-balance-settlement.test.ts
  */
 
@@ -268,6 +269,168 @@ async function main(): Promise<void> {
       const ordFinal = orderRow(db, orderId);
       assertEqual(ordFinal.status, 'completed', 'refunded-sibling-completion: order completed after B paid + A refunded');
       assert(tableRow(db, 'table-zb')?.status === 'available', 'refunded-sibling-completion: table freed');
+    }
+
+    // ── full discount with no prior payment settles ──
+    console.log('\n─── full-discount-no-payment: settle after 100% discount with paid_amount=0 ───');
+    {
+      const create = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-1000', quantity: 1 }] });
+      assertEqual(create.status, 201, 'full-discount-no-payment: order created');
+      const orderId = create.data.order.id;
+      const gen = await generateBill(orderId);
+      assertEqual(gen.status, 201, 'full-discount-no-payment: bill generated');
+      const billId = gen.data.bill.id;
+      const disc = await applyBillDiscount(billId, { type: 'amount', value: 1000, reason: 'zb full-discount-no-payment' });
+      assertEqual(disc.status, 200, 'full-discount-no-payment: 100% discount applied');
+      const afterDisc = billRow(db, billId);
+      assertEqual(Number(afterDisc.balance), 0, 'full-discount-no-payment: balance is 0 after discount');
+      assertEqual(Number(afterDisc.paid_amount), 0, 'full-discount-no-payment: paid_amount stays 0');
+      const settle = await pay(billId, { method: 'cash', amount: null });
+      assert(settle.status >= 200 && settle.status < 300, `full-discount-no-payment: settle not rejected (got ${settle.status} ${JSON.stringify(settle.data)})`);
+      assertEqual(billRow(db, billId).payment_status, 'paid', 'full-discount-no-payment: bill is paid after settle');
+      assertEqual(orderRow(db, orderId).status, 'completed', 'full-discount-no-payment: order completed after settle');
+    }
+
+    // ── cancel is not blocked by a zero-closed sibling ──
+    console.log('\n─── cancel-after-zero-close: cancel not blocked by zero-closed sibling ───');
+    {
+      const create = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-zb',
+        items: [
+          { product_id: 'prod-1000', quantity: 1 },
+          { product_id: 'prod-400', quantity: 1 },
+        ],
+      });
+      assertEqual(create.status, 201, 'cancel-after-zero-close: dine-in created');
+      const orderId = create.data.order.id;
+      const items = create.data.order.items as any[];
+      const itemA = items.find((i: any) => i.product_id === 'prod-1000');
+      const itemB = items.find((i: any) => i.product_id === 'prod-400');
+      const gen = await generateBill(orderId);
+      assertEqual(gen.status, 201, 'cancel-after-zero-close: bill generated');
+      const split = await api(baseUrl, `/api/bills/${gen.data.bill.id}/split-check`, {
+        method: 'POST',
+        body: {
+          checks: [
+            { label: 'Guest A', items: [{ order_item_id: itemA.id, quantity: 1 }] },
+            { label: 'Guest B', items: [{ order_item_id: itemB.id, quantity: 1 }] },
+          ],
+        },
+        headers: A,
+      });
+      assertEqual(split.status, 201, 'cancel-after-zero-close: split created');
+      const checkB = split.data.bills[1];
+      const cancelB = await cancelItem(orderId, itemB.id, { reason: 'zb cancel-after-zero-close B' });
+      assertEqual(cancelB.status, 200, 'cancel-after-zero-close: B cancelled');
+      assertEqual(billRow(db, checkB.id).payment_status, 'paid', 'cancel-after-zero-close: B zero-closed as paid');
+      const cancelA = await cancelItem(orderId, itemA.id, { reason: 'zb cancel-after-zero-close A' });
+      assertEqual(cancelA.status, 200, 'cancel-after-zero-close: A still cancellable despite zero-closed sibling');
+      if (tableRow(db, 'table-zb')?.status !== 'available') {
+        db.prepare(`UPDATE tables SET status = 'available' WHERE id = ?`).run('table-zb');
+      }
+    }
+
+    // ── partially refunded sibling does not block completion ──
+    console.log('\n─── partially-refunded-sibling: partially refunded sibling does not block completion ───');
+    {
+      const create = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-zb',
+        items: [{ product_id: 'prod-1000', quantity: 2 }],
+      });
+      assertEqual(create.status, 201, 'partially-refunded-sibling: dine-in created');
+      const orderId = create.data.order.id;
+      const itemId = create.data.order.items[0].id;
+      const gen = await generateBill(orderId);
+      assertEqual(gen.status, 201, 'partially-refunded-sibling: bill generated');
+      const split = await api(baseUrl, `/api/bills/${gen.data.bill.id}/split-check`, {
+        method: 'POST',
+        body: {
+          checks: [
+            { label: 'Guest A', items: [{ order_item_id: itemId, quantity: 1 }] },
+            { label: 'Guest B', items: [{ order_item_id: itemId, quantity: 1 }] },
+          ],
+        },
+        headers: A,
+      });
+      assertEqual(split.status, 201, 'partially-refunded-sibling: split created');
+      const billA = split.data.bills[0];
+      const billB = split.data.bills[1];
+
+      const payA = await pay(billA.id, { method: 'cash', amount: null });
+      assertEqual(payA.status, 200, 'partially-refunded-sibling: paid A');
+      const refA = await refund({
+        bill_id: billA.id,
+        amount: 500,
+        method: 'cash',
+        reason: 'zb partially-refunded-sibling',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      assertEqual(refA.status, 201, 'partially-refunded-sibling: partial refund of A');
+      assertEqual(billRow(db, billA.id).payment_status, 'partially_refunded', 'partially-refunded-sibling: A is partially_refunded');
+
+      const payB = await pay(billB.id, { method: 'cash', amount: null });
+      assertEqual(payB.status, 200, 'partially-refunded-sibling: paid B');
+      assertEqual(orderRow(db, orderId).status, 'completed', 'partially-refunded-sibling: order completed after B paid + A partially refunded');
+      assert(tableRow(db, 'table-zb')?.status === 'available', 'partially-refunded-sibling: table freed');
+    }
+
+    // ── restore re-syncs when all split bills were zero-closed ──
+    console.log('\n─── restore-after-zero-close: restore re-syncs zero-closed split bills ───');
+    {
+      const create = await createOrder({
+        type: 'dine_in',
+        table_id: 'table-zb',
+        items: [
+          { product_id: 'prod-1000', quantity: 1 },
+          { product_id: 'prod-400', quantity: 1 },
+        ],
+      });
+      assertEqual(create.status, 201, 'restore-after-zero-close: dine-in created');
+      const orderId = create.data.order.id;
+      const items = create.data.order.items as any[];
+      const itemA = items.find((i: any) => i.product_id === 'prod-1000');
+      const itemB = items.find((i: any) => i.product_id === 'prod-400');
+
+      const disc = await itemDiscount(orderId, itemB.id, { discount_type: 'amount', discount_value: 400 });
+      assertEqual(disc.status, 200, 'restore-after-zero-close: item B fully discounted');
+
+      const gen = await generateBill(orderId);
+      assertEqual(gen.status, 201, 'restore-after-zero-close: bill generated');
+      const split = await api(baseUrl, `/api/bills/${gen.data.bill.id}/split-check`, {
+        method: 'POST',
+        body: {
+          checks: [
+            { label: 'Guest A', items: [{ order_item_id: itemA.id, quantity: 1 }] },
+            { label: 'Guest B', items: [{ order_item_id: itemB.id, quantity: 1 }] },
+          ],
+        },
+        headers: A,
+      });
+      assertEqual(split.status, 201, 'restore-after-zero-close: split created');
+      const checkA = split.data.bills[0];
+      const checkB = split.data.bills[1];
+
+      const cancelA = await cancelItem(orderId, itemA.id, { reason: 'zb restore-after-zero-close A' });
+      assertEqual(cancelA.status, 200, 'restore-after-zero-close: A cancelled');
+      assertEqual(billRow(db, checkA.id).payment_status, 'paid', 'restore-after-zero-close: check A zero-closed as paid');
+      assertEqual(billRow(db, checkB.id).payment_status, 'paid', 'restore-after-zero-close: check B zero-closed as paid');
+      assertEqual(orderRow(db, orderId).status, 'pending', 'restore-after-zero-close: order still open (B active)');
+
+      const restore = await api(baseUrl, `/api/orders/${orderId}/items/${itemA.id}/restore`, {
+        method: 'PATCH',
+        body: { reason: 'zb restore-after-zero-close' },
+        headers: A,
+      });
+      assertEqual(restore.status, 200, 'restore-after-zero-close: A restored');
+      const aAfter = billRow(db, checkA.id);
+      assertEqual(aAfter.payment_status, 'unpaid', 'restore-after-zero-close: check A flipped back to unpaid after restore');
+      assert(Number(aAfter.total) > 0, `restore-after-zero-close: check A total re-synced (got ${aAfter.total})`);
+      if (tableRow(db, 'table-zb')?.status !== 'available') {
+        db.prepare(`UPDATE tables SET status = 'available' WHERE id = ?`).run('table-zb');
+      }
     }
   } finally {
     server.close();

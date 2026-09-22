@@ -1386,7 +1386,7 @@ export function syncUnpaidBillsForOrder(
   if (splitBills && bills.some(settledSplitBill)) {
     throw Object.assign(new Error('Cannot modify an order after a split check is paid'), { statusCode: 409 });
   }
-  const unpaidBills = bills.filter((bill) => bill.payment_status !== 'paid');
+  const unpaidBills = bills.filter((bill) => bill.payment_status !== 'paid' || Number(bill.paid_amount || 0) === 0);
   if (unpaidBills.length === 0) return;
 
   const tenantCurrency = getTenantCurrency();
@@ -1868,10 +1868,7 @@ function preparePaymentBatch(
   if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
   const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * minorFactor));
   if (remainingCents <= 0) {
-    if (Number(bill.paid_amount || 0) > 0) {
-      return { bill, prepared: [], existingPayments, effectiveCustomerId };
-    }
-    throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
+    return { bill, prepared: [], existingPayments, effectiveCustomerId };
   }
   const raw = resolvedPayments.map((payment) => {
     // Single-line payments may omit amount to pay remaining balance; multi-line requires explicit amounts.
@@ -2011,7 +2008,7 @@ function applyPaymentBatch(
   db.prepare(`UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?, payment_details = ?, paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END, updated_at = ? WHERE id = ?`).run(newPaidCents / minorFactor, newBalanceCents / minorFactor, paymentStatus, JSON.stringify(allPayments), paymentStatus, paymentStatus === 'paid' ? changedAt : null, changedAt, billId);
   let loyaltyPointsEarned = 0;
   if (paymentStatus === 'paid') {
-    const unpaidSibling = db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded') LIMIT 1`).get(bill.order_id, bill.id);
+    const unpaidSibling = db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`).get(bill.order_id, bill.id);
     const orderFullyPaid = !unpaidSibling;
     if (orderFullyPaid) {
       db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?").run(changedAt, changedAt, bill.order_id);

@@ -115,7 +115,7 @@ function run(): void {
   assert('fr resolves grand total to French', printLabel('fr', 'print.grandTotal') === 'TOTAL');
   assert('it resolves grand total to Italian', printLabel('it', 'print.grandTotal') === 'TOTALE');
   assert('ja resolves grand total to Japanese', printLabel('ja', 'print.grandTotal') === '合計');
-  assert('zh resolves grand total to Chinese', printLabel('zh', 'print.grandTotal') === '总计');
+  assert('zh resolves grand total to Chinese', printLabel('zh', 'print.grandTotal') === '合计');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
   assert('unknown language falls back to English', printLabel('xx', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');

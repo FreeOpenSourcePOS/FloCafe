@@ -85,7 +85,7 @@ export function buildDiagnosticEvent(body: unknown): DiagnosticEventInput | null
   };
 }
 
-router.post('/event', diagnosticsWriteRateLimit, requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
+router.post('/event', requireRole(...ROLE_ACCESS.allStaff), diagnosticsWriteRateLimit, (req: Request, res: Response) => {
   const event = buildDiagnosticEvent(req.body);
   if (!event) return res.status(400).json({ error: 'Invalid diagnostic event' });
   try {

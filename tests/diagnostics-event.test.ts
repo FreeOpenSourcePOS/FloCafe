@@ -147,8 +147,7 @@ async function main() {
       headers: { 'Content-Type': 'application/json', ...owner.authHeader },
       body: '{not json',
     });
-    assert(malformed.status === 400 || malformed.status === 500 || malformed.status === 413,
-      `malformed JSON is rejected (got ${malformed.status})`);
+    assertEqual(malformed.status, 400, 'malformed JSON is rejected with 400');
 
     const missingCode = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',

@@ -854,8 +854,8 @@
     "pointsBalance": "积分余额",
     "pointsRedeemed": "兑换积分",
     "kot": {
-      "title": "厨房订单单",
-      "banner": "厨房订单单",
+      "title": "厨房订单",
+      "banner": "厨房订单",
       "station": "工作站",
       "type": "类型",
       "noPendingItems": "没有待处理条目",

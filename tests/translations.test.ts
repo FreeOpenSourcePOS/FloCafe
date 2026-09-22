@@ -439,6 +439,8 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'customers.columnDate', // same word in French
   'customers.columnDescription', // same word in French
   'customers.columnPoints', // same word in French
+  'dashboard.exportCsv', // format label "CSV (.csv)"
+  'dashboard.exportXlsx', // format label "Excel (.xlsx)"
   'kds.emptyColumn', // em dash
   'kds.tableLabel', // same word in French
   'kds.viewKanban', // product term
@@ -536,6 +538,8 @@ const TR_INTENTIONAL_IDENTICAL = new Set<string>([
   'common.appTitle', // brand name "Flo"
   'common.brandName', // brand name "Flo Cafe"
   'common.logoAlt', // brand name "Flo Cafe"
+  'dashboard.exportCsv', // format label "CSV (.csv)"
+  'dashboard.exportXlsx', // format label "Excel (.xlsx)"
   'nav.portLabel', // technical term "Port"
   'nav.whatsapp', // product name "WhatsApp"
   'pos.addonPrice', // pure format "+{currency}{price}"
@@ -597,6 +601,8 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'customers.columnCustomer',
   'customers.columnLedger',
   'customers.loyaltyLedger',
+  'dashboard.exportCsv', // format label "CSV (.csv)"
+  'dashboard.exportXlsx', // format label "Excel (.xlsx)"
   'dashboard.minutesValue',
   'dashboard.title',
   'dashboard.walkIn',
@@ -842,6 +848,8 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'common.brandName',
   'common.logoAlt',
   'common.namePlaceholder',
+  'dashboard.exportCsv', // format label "CSV (.csv)"
+  'dashboard.exportXlsx', // format label "Excel (.xlsx)"
   'dashboard.title',
   'kds.connectionLive',
   'kds.emptyColumn',

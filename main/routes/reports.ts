@@ -11,6 +11,13 @@ import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
 import { computeDayAggregates, paymentMethodBreakdown } from './cash-closures';
+import { getCurrencyFractionDigits } from '../countries';
+import { buildDailySalesExportDataset } from '../services/daily-sales-export';
+import {
+  dailySalesExportFilename,
+  serializeDailySalesExportCsv,
+  serializeDailySalesExportXlsx,
+} from '../services/daily-sales-export-files';
 
 const router = Router();
 
@@ -759,6 +766,45 @@ router.get('/z-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
   } catch (error: any) {
     console.error('[API] Internal error:', error);
     res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+  }
+});
+
+// Owner-only daily sales export (xlsx workbook or summary/items CSV pair).
+// Accounting lives in buildDailySalesExportDataset; serializers only encode.
+router.get('/daily-sales/export', requireRole(...ROLE_ACCESS.owner), async (req: Request, res: Response) => {
+  try {
+    const date = reportDate(req.query.date, reportToday());
+    const format = req.query.format === 'csv' ? 'csv' : req.query.format === 'xlsx' ? 'xlsx' : null;
+    if (!format) {
+      return res.status(400).json({ error: 'format must be xlsx or csv' });
+    }
+    const part = req.query.part === 'summary' || req.query.part === 'items' ? req.query.part : undefined;
+    if (format === 'csv' && !part) {
+      return res.status(400).json({ error: 'CSV export requires part=summary or part=items' });
+    }
+
+    const dataset = buildDailySalesExportDataset(date);
+    const filename = dailySalesExportFilename(date, format, part);
+
+    if (format === 'xlsx') {
+      const buffer = await serializeDailySalesExportXlsx(dataset, {
+        fractionDigits: getCurrencyFractionDigits(dataset.summary.currency),
+      });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(buffer);
+    }
+
+    const csv = serializeDailySalesExportCsv(dataset, part!);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csv);
+  } catch (error: any) {
+    if (error?.statusCode === 409) {
+      return res.status(409).json({ error: error.message });
+    }
+    console.error('[API] Daily sales export error:', error);
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'Internal server error' });
   }
 });
 

@@ -11,6 +11,7 @@ import {
   resolveRegionalSnapshot,
   type RegionalSnapshot,
 } from '../countries';
+import { toCsvRow } from '../lib/csv';
 
 const router = Router();
 
@@ -218,21 +219,6 @@ function csvImportErrorResponse(res: Response, error: unknown): Response {
   }
   console.error('[API] Menu CSV import failed:', error);
   return res.status(500).json({ error: 'Menu CSV import failed' });
-}
-
-function toCsvRow(fields: (string | number | null | undefined)[]): string {
-  return fields
-    .map((f) => {
-      let s = String(f ?? '');
-      // Escape spreadsheet formula triggers (=, +, -, @) on non-numeric strings with a leading quote.
-      if (typeof f !== 'number' && /^[=+\-@]/.test(s)) {
-        s = "'" + s;
-      }
-      return s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')
-        ? '"' + s.replace(/"/g, '""') + '"'
-        : s;
-    })
-    .join(',');
 }
 
 function isTruthy(v: string) {

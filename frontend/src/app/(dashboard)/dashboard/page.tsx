@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
-import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass, CalendarDays, Lock } from 'lucide-react';
+import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet, RotateCcw, ReceiptText, Hourglass, CalendarDays, Lock, Download } from 'lucide-react';
 import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { CashCloseModal } from '@/components/dashboard/CashCloseModal';
@@ -271,6 +271,39 @@ export default function DashboardPage() {
   const cashClose = useCashClose();
   const cashDrawer = useCashDrawerMovements();
 
+  const downloadBlob = (data: Blob, filename: string) => {
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportDailySales = async (format: 'xlsx' | 'csv') => {
+    if (periodMode !== 'day') return;
+    try {
+      if (format === 'xlsx') {
+        const res = await api.get('/reports/daily-sales/export', {
+          params: { date: selectedDate, format: 'xlsx' },
+          responseType: 'blob',
+        });
+        downloadBlob(res.data as Blob, `daily-sales-${selectedDate}.xlsx`);
+        return;
+      }
+      toast(t('exportCsvStarted'));
+      for (const part of ['summary', 'items'] as const) {
+        const res = await api.get('/reports/daily-sales/export', {
+          params: { date: selectedDate, format: 'csv', part },
+          responseType: 'blob',
+        });
+        downloadBlob(res.data as Blob, `daily-sales-${selectedDate}-${part}.csv`);
+      }
+    } catch {
+      toast.error(tCommon('downloadFailed'));
+    }
+  };
+
   if (!isOwner) return null;
 
   const paymentMethods = financialSummary?.paymentMethods ?? [];
@@ -481,6 +514,30 @@ export default function DashboardPage() {
             <Banknote size={14} />
             {t('cashMovement')}
           </Button>
+          {periodMode === 'day' && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => exportDailySales('xlsx')}
+                className="h-9"
+                title={t('exportSales')}
+              >
+                <Download size={14} />
+                {t('exportXlsx')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => exportDailySales('csv')}
+                className="h-9"
+                title={t('exportCsvHint')}
+              >
+                <Download size={14} />
+                {t('exportCsv')}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 

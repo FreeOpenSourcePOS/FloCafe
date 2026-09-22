@@ -1213,6 +1213,38 @@ Stored day-close snapshot. Reads the immutable `cash_closures` row for the reque
 
 ---
 
+### GET `/api/reports/daily-sales/export`
+
+Owner-only daily sales export for one tenant business date. Returns either a single XLSX workbook (Summary + Items sheets) or one half of a two-file CSV pair (summary or items). Accounting and row grouping live entirely in `buildDailySalesExportDataset`; the endpoint only serializes and sets headers. See [daily-sales-export.md](daily-sales-export.md) for the full reconciliation contract.
+
+**Role:** owner only
+
+**Headers:** `Authorization: Bearer <owner-token>`
+
+**Query params:**
+
+| Param | Values | Notes |
+|-------|--------|-------|
+| `date` | `YYYY-MM-DD` | Tenant business date; defaults to the current business date (report date convention above). |
+| `format` | `xlsx` \| `csv` | Required. Any other value → 400. |
+| `part` | `summary` \| `items` | Required when `format=csv` (each CSV file is one part). Ignored for `xlsx`. Missing on CSV → 400. |
+
+**Responses:**
+
+- `format=xlsx` → `200`, `Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, `Content-Disposition: attachment; filename="daily-sales-YYYY-MM-DD.xlsx"`. Workbook has two sheets: `Summary` (metric/value rows) and `Items` (per-product rows). Money cells are numeric with a currency-fraction-digit number format; no formulas.
+- `format=csv&part=summary` → `200`, `text/csv`, filename `daily-sales-YYYY-MM-DD-summary.csv`. Header `metric,value`.
+- `format=csv&part=items` → `200`, `text/csv`, filename `daily-sales-YYYY-MM-DD-items.csv`. Header `product_id,product_name,product_sku,quantity,gross_item_sales,item_discounts,net_item_sales,tax_amount`.
+
+CSV cells that would start with `=`, `+`, `-`, or `@` and are not numeric are neutralized with a leading quote (CWE-1236, shared `toCsvRow` in `main/lib/csv.ts`). Decimal separator in CSV is always ASCII `.`.
+
+**Errors:** `400` invalid `format` or CSV without `part`; `401` unauthenticated; `403` non-owner; `409` concurrent-write passthrough as JSON; `500` otherwise.
+
+**Summary metrics** (stable field order in `dailySalesSummaryMetricRows`): `business_date`, `timezone`, `business_day_start`, `currency`, `order_count`, `paid_bill_count`, `gross_collected`, `refunds_issued`, `net_collected`, `tax_total`, `discount_total`, `service_charge_total`, `packaging_charge_total`, `delivery_charge_total`, then `payment_<method>` / `payment_<method>_count` pairs.
+
+**Reconciliation identities:** `Σ net_item_sales = Σ bills.subtotal` over the paid window; `Σ gross_item_sales = Σ net_item_sales + Σ item_discounts`; `Σ payment_<method> totals = net_collected`; `Σ item tax_amount ≠ tax_total` is intentional (item tax is per-line, `tax_total` is the aggregated component total). Sale day is keyed on `bills.paid_at`; refunds on `refunds.created_at`; `net_collected = gross_collected - refunds_issued`. `discount_total` = order-level (`bills.discount_amount`) + item-level discounts.
+
+---
+
 ## Cash Closures
 
 ### GET `/api/cash-closures/movements`

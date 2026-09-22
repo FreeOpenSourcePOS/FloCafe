@@ -237,7 +237,8 @@ export function registerIpcHandlers(
         }
       }
 
-      await googleDrive.prepareForDatabaseRestore();
+      const coordinateDriveRestore = googleDrive.getStatus().configured;
+      if (coordinateDriveRestore) await googleDrive.prepareForDatabaseRestore();
       try {
       if (versionMismatch) {
         const restoreResult = await withDatabaseMaintenanceLock(

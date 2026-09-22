@@ -1129,7 +1129,16 @@ class GoogleDriveService {
   }
 
   async prepareForDatabaseRestore(): Promise<void> {
-    if (this.restoreInvalidationActive()) throw createDriveError('conflict');
+    const hadRestoreBoundary = this.databaseRestorePending || this.restoreInvalidationCleanupPending;
+    if (this.restoreInvalidationActive()) {
+      if (hadRestoreBoundary || this.operationRunning || this.activeJobs.size > 0) throw createDriveError('conflict');
+      try {
+        this.clearDatabaseRestoreInvalidation();
+      } catch {
+        throw createDriveError('conflict');
+      }
+      if (this.restoreInvalidationActive()) throw createDriveError('conflict');
+    }
     this.databaseRestorePending = true;
     this.backupAbortController?.abort();
     this.abortQueuedDriveOperations();

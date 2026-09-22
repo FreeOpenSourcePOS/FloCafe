@@ -127,6 +127,16 @@ async function main() {
       });
       assertEqual(malformed.status, 400, 'C: rejects category_ids that are not an array');
 
+      const unknownCreate = await api(baseUrl, '/api/kitchen-stations', {
+        method: 'POST', body: { name: 'Unknown Category', category_ids: ['cat-missing'], printer_id: 'pr-bar' }, headers: authHeader,
+      });
+      assertEqual(unknownCreate.status, 400, 'C: rejects an unknown category on create');
+
+      const unknownUpdate = await api(baseUrl, `/api/kitchen-stations/${stationId!}`, {
+        method: 'PUT', body: { category_ids: ['cat-missing'] }, headers: authHeader,
+      });
+      assertEqual(unknownUpdate.status, 400, 'C: rejects an unknown category on update');
+
       const prep = await api(baseUrl, '/api/kitchen-stations', {
         method: 'POST', body: { name: 'Prep', category_ids: ['cat-food'], printer_id: 'pr-bar' }, headers: authHeader,
       });

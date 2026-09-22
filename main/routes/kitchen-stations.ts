@@ -15,6 +15,13 @@ function normalizeCategoryIds(value: unknown): string[] | null {
   return [...new Set(value.map((id) => id.trim()))];
 }
 
+function categoryIdsExist(db: ReturnType<typeof getDatabase>, categoryIds: string[]) {
+  if (categoryIds.length === 0) return true;
+  const placeholders = categoryIds.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT id FROM categories WHERE id IN (${placeholders})`).all(...categoryIds);
+  return rows.length === categoryIds.length;
+}
+
 function removeCategoriesFromOtherStations(db: ReturnType<typeof getDatabase>, categoryIds: string[], excludedStationId: string) {
   if (categoryIds.length === 0) return [];
 
@@ -94,6 +101,9 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
     if (normalizedCategoryIds === null) {
       return res.status(400).json({ error: 'category_ids must be an array of valid category IDs' });
     }
+    if (!categoryIdsExist(db, normalizedCategoryIds)) {
+      return res.status(400).json({ error: 'One or more category_ids do not match an existing category' });
+    }
     if (printer_id !== undefined && printer_id !== null) {
       if (typeof printer_id !== 'string' || printer_id.trim().length === 0) {
         return res.status(400).json({ error: 'printer_id must be a valid printer ID or null' });
@@ -140,6 +150,9 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const normalizedCategoryIds = category_ids === undefined ? undefined : normalizeCategoryIds(category_ids);
     if (normalizedCategoryIds === null) {
       return res.status(400).json({ error: 'category_ids must be an array of valid category IDs' });
+    }
+    if (normalizedCategoryIds !== undefined && !categoryIdsExist(db, normalizedCategoryIds)) {
+      return res.status(400).json({ error: 'One or more category_ids do not match an existing category' });
     }
     if (printer_id !== undefined && printer_id !== null) {
       if (typeof printer_id !== 'string' || printer_id.trim().length === 0) {

@@ -759,8 +759,8 @@ async function main(): Promise<void> {
   settingsStatement.run('google_drive_next_retry_at', new Date(0).toISOString(), now());
   settingsStatement.run('google_drive_job', JSON.stringify({ id: 'retention-job', operation: 'backup', kind: 'manual', state: 'retention_pending', updated_at: now() }), now());
   await (gd.googleDrive as any).retryPendingRetention();
-  assert.equal(gd.googleDrive.getJob('retention-job')?.state, 'failed', 'non-retryable retention failure stops the pending job');
-  assert.equal(gd.googleDrive.getJob('retention-job')?.error_code, 'reauth_required', 'retention failure preserves the reauthentication error');
+  assert.equal(gd.googleDrive.getJob('retention-job')?.state, 'succeeded', 'non-retryable retention failure keeps the uploaded backup job successful');
+  assert.equal(gd.googleDrive.getJob('retention-job')?.error_code, undefined, 'retention failure does not overwrite the job with a backup error');
   const retentionSettings = getDatabase().prepare('SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?) ORDER BY key').all(
     'google_drive_retention_status', 'google_drive_retention_retry_count', 'google_drive_next_retry_at', 'google_drive_last_error_code',
   ) as { key: string; value: string }[];
@@ -769,10 +769,251 @@ async function main(): Promise<void> {
     google_drive_next_retry_at: '',
     google_drive_retention_retry_count: '',
     google_drive_retention_status: 'error',
-  }, 'non-retryable retention failure pauses automatic retry');
+  }, 'non-retryable retention failure pauses automatic retry and keeps its error code');
   assert.equal(gd.googleDrive.getStatus().retention_status, 'error', 'non-retryable retention failure remains visibly non-ok');
   (gd.googleDrive as any).getAuthorizedClient = originalRetentionClient;
-  console.log('   ✓ non-retryable retention failures pause and preserve their error');
+  console.log('   ✓ non-retryable retention failures pause without failing a successful backup job');
+
+  // ── upload success stays independent of retention outcome ──────────
+  {
+    const originalListFiles = (gd.googleDrive as any).listFilesInDestination;
+    const originalAuthorized = (gd.googleDrive as any).getAuthorizedClient;
+    const originalResolveDest = (gd.googleDrive as any).resolveDestinationForUpload;
+    const originalUpload = (gd.googleDrive as any).uploadSnapshot;
+    const originalApplyRetention = (gd.googleDrive as any).applyRetention;
+    const originalSnapshotFromPending = (gd.googleDrive as any).snapshotFromPending;
+    const readSetting = (key: string): string =>
+      (getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value?: string } | undefined)?.value || '';
+    const settleJobs = async (): Promise<void> => {
+      for (let attempt = 0; attempt < 400 && (gd.googleDrive as any).activeJobs.size > 0; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+    const primeConnectedSettings = (): void => {
+      for (const [key, value] of [
+        ['google_drive_account_subject', 'subject-a'],
+        ['google_drive_destination_folder_id', 'folder-a'],
+        ['google_drive_destination_folder_name', 'FloCafe Backups'],
+        ['google_drive_folder_id', 'folder-a'],
+        ['google_drive_owned_destinations', '["folder-a"]'],
+        ['google_drive_revoke_status', ''],
+        ['google_drive_pending_upload', ''],
+        ['google_drive_job', ''],
+        ['google_drive_last_error_code', ''],
+        ['google_drive_last_backup_status', ''],
+        ['google_drive_last_automatic_backup_at', ''],
+        ['google_drive_last_success_at', ''],
+        ['google_drive_last_success_kind', ''],
+        ['google_drive_last_backup_at', ''],
+        ['google_drive_retention_status', ''],
+        ['google_drive_retention_retry_count', ''],
+        ['google_drive_next_retry_at', ''],
+      ] as const) settingsStatement.run(key, value, now());
+    };
+    const mockHappyUploadPath = (): void => {
+      (gd.googleDrive as any).getAuthorizedClient = async () => ({});
+      (gd.googleDrive as any).resolveDestinationForUpload = async () => 'folder-a';
+      (gd.googleDrive as any).snapshotFromPending = async () => ({
+        path: pendingUploadPath,
+        fileName: 'upload-test.db',
+        sha256: 'a'.repeat(64),
+        byteCount: 1,
+        schemaVersion: 1,
+        appVersion: 'test',
+        backupCreatedAt: new Date().toISOString(),
+      });
+      (gd.googleDrive as any).uploadSnapshot = async () => ({ id: 'remote-upload-ok' });
+      settingsStatement.run('google_drive_pending_upload', JSON.stringify({
+        run_id: 'upload-ok-run',
+        kind: 'manual',
+        local_path: pendingUploadPath,
+        sha256: 'a'.repeat(64),
+        byte_count: 1,
+        schema_version: 1,
+        app_version: 'test',
+        backup_created_at: new Date().toISOString(),
+        destination_folder_id: 'folder-a',
+        attempt_count: 1,
+        next_retry_at: null,
+      }), now());
+    };
+    try {
+      primeConnectedSettings();
+
+      // 1. Empty Drive folder / zero automatic backups — retention is a no-op.
+      (gd.googleDrive as any).listFilesInDestination = async () => [];
+      let emptyFolderTrashCalls = 0;
+      await (gd.googleDrive as any).applyRetention(
+        { files: { update: async () => { emptyFolderTrashCalls += 1; return {}; } } },
+        new AbortController().signal,
+      );
+      assert.equal(emptyFolderTrashCalls, 0, 'zero existing automatic backups trash nothing');
+      console.log('   ✓ empty Drive folder retention succeeds as a no-op');
+
+      // 2. Exactly one automatic backup with retention_count >= 1 is kept.
+      gd.googleDrive.updatePreferences({ retention_count: 1 });
+      const markerForRetention = (gd.googleDrive as any).ensureInstallationMarker();
+      (gd.googleDrive as any).listFilesInDestination = async (_client: unknown, _folderId: string, _signal: AbortSignal, options: { onFile?: (file: unknown) => Promise<void> }) => {
+        if (options.onFile) {
+          await options.onFile({
+            id: 'remote-single',
+            createdTime: '2024-01-02T00:00:00.000Z',
+            appProperties: {
+              flo_installation_id: markerForRetention,
+              flo_backup_kind: 'automatic',
+              flo_destination_folder_id: 'folder-a',
+            },
+          });
+        }
+        return [];
+      };
+      let singleTrashCalls = 0;
+      await (gd.googleDrive as any).applyRetention(
+        { files: { update: async () => { singleTrashCalls += 1; return {}; } } },
+        new AbortController().signal,
+      );
+      assert.equal(singleTrashCalls, 0, 'a single automatic backup within retention count is kept');
+      console.log('   ✓ exactly one automatic backup is kept when retention allows it');
+
+      // 3. First tracked manual backup job on fresh state: upload + retention success.
+      // (startBackupJob creates a tracked job id; scheduled automatic runs do not.)
+      primeConnectedSettings();
+      mockHappyUploadPath();
+      (gd.googleDrive as any).applyRetention = async () => {};
+      const firstRunJob = gd.googleDrive.startBackupJob('manual', true);
+      await settleJobs();
+      assert.equal(gd.googleDrive.getJob(firstRunJob.job!.id)?.state, 'succeeded', 'first successful manual upload records a succeeded job');
+      assert.equal(readSetting('google_drive_last_backup_status'), 'success', 'first successful upload records last_backup_status success');
+      assert.equal(readSetting('google_drive_last_success_kind'), 'manual', 'tracked startBackupJob path records manual success kind');
+      assert.equal(readSetting('google_drive_last_automatic_backup_at'), '', 'manual tracked job does not stamp last_automatic_backup_at');
+      assert.equal(gd.googleDrive.getStatus().retention_status, 'ok', 'successful retention after first upload clears retention state');
+      assert.equal(readSetting('google_drive_pending_upload'), '', 'successful first upload clears pending upload metadata');
+      console.log('   ✓ first tracked manual backup job succeeds when retention succeeds');
+
+      // 4. Upload succeeds, then non-retryable retention listing fails.
+      primeConnectedSettings();
+      mockHappyUploadPath();
+      (gd.googleDrive as any).applyRetention = originalApplyRetention;
+      (gd.googleDrive as any).listFilesInDestination = async () => { throw { response: { status: 403 } }; };
+      const listFailJob = gd.googleDrive.startBackupJob('manual', true);
+      await settleJobs();
+      const listFailJobRecord = gd.googleDrive.getJob(listFailJob.job!.id);
+      assert.equal(readSetting('google_drive_last_backup_status'), 'success', 'upload success is preserved when retention listing fails');
+      assert.equal(listFailJobRecord?.state, 'succeeded', 'non-retryable retention failure after a successful upload must not fail the backup job');
+      assert.equal(listFailJobRecord?.remote_id, 'remote-upload-ok', 'successful upload keeps its remote id on the job');
+      assert.equal(gd.googleDrive.getStatus().retention_status, 'error', 'retention failure is recorded on retention_status');
+      assert.equal(gd.googleDrive.getStatus().last_error, 'permission_denied', 'retention failure code is preserved for the status panel');
+      assert.equal(gd.googleDrive.getStatus().last_backup_status, 'success', 'status still reports a successful backup after retention failure');
+      console.log('   ✓ non-retryable retention list failure keeps a successful backup job');
+
+      // 5. Upload succeeds, then non-retryable retention trash fails.
+      primeConnectedSettings();
+      mockHappyUploadPath();
+      (gd.googleDrive as any).listFilesInDestination = originalListFiles;
+      (gd.googleDrive as any).applyRetention = async () => {
+        throw Object.assign(new Error('permission_denied'), { code: 'permission_denied', retryable: false });
+      };
+      const trashFailJob = gd.googleDrive.startBackupJob('manual', true);
+      await settleJobs();
+      const trashFailJobRecord = gd.googleDrive.getJob(trashFailJob.job!.id);
+      assert.equal(readSetting('google_drive_last_backup_status'), 'success', 'upload success is preserved when retention trash fails');
+      assert.equal(trashFailJobRecord?.state, 'succeeded', 'non-retryable retention trash failure after a successful upload must not fail the backup job');
+      assert.equal(trashFailJobRecord?.remote_id, 'remote-upload-ok', 'trashed retention candidate does not erase the uploaded remote id');
+      assert.equal(gd.googleDrive.getStatus().retention_status, 'error', 'trash failure is recorded on retention_status');
+      assert.equal(gd.googleDrive.getStatus().last_backup_status, 'success', 'status still reports a successful backup after trash failure');
+      console.log('   ✓ non-retryable retention trash failure keeps a successful backup job');
+
+      // 6. Upload succeeds, then retryable retention failure stays pending.
+      primeConnectedSettings();
+      mockHappyUploadPath();
+      (gd.googleDrive as any).listFilesInDestination = originalListFiles;
+      (gd.googleDrive as any).applyRetention = async () => {
+        throw Object.assign(new Error('retention_pending'), { code: 'retention_pending', retryable: true });
+      };
+      const retryPendingJob = gd.googleDrive.startBackupJob('manual', true);
+      await settleJobs();
+      const retryPendingJobRecord = gd.googleDrive.getJob(retryPendingJob.job!.id);
+      assert.equal(retryPendingJobRecord?.state, 'retention_pending', 'retryable retention failure keeps the job pending');
+      assert.equal(gd.googleDrive.getStatus().retention_status, 'pending', 'retryable retention failure keeps retention pending');
+      assert.equal(gd.googleDrive.getStatus().last_backup_status, 'success', 'retryable retention failure does not mark the upload failed');
+      assert.equal(readSetting('google_drive_last_error_code'), 'retention_pending', 'retryable retention failure records retention_pending');
+      console.log('   ✓ retryable retention failure after upload stays pending without failing the backup');
+
+      // 7. Remote history on an empty folder returns an empty list.
+      (gd.googleDrive as any).getAuthorizedClient = async () => ({});
+      (gd.googleDrive as any).listFilesInDestination = async () => [];
+      const emptyRemoteHistory = await gd.googleDrive.listRemoteBackups();
+      assert.deepEqual(emptyRemoteHistory, [], 'empty Drive folder remote history is an empty list, not an error');
+      console.log('   ✓ remote history on an empty folder returns []');
+
+      // 8. First scheduled automatic backup (maybeRunScheduled → backupNow without a job id).
+      primeConnectedSettings();
+      (gd.googleDrive as any).getAuthorizedClient = async () => ({});
+      (gd.googleDrive as any).resolveDestinationForUpload = async () => 'folder-a';
+      (gd.googleDrive as any).uploadSnapshot = async () => ({ id: 'remote-auto-first' });
+      (gd.googleDrive as any).listFilesInDestination = async () => [];
+      (gd.googleDrive as any).applyRetention = async () => {};
+      assert.equal(readSetting('google_drive_last_automatic_backup_at'), '', 'fresh automatic run starts with no prior automatic backup timestamp');
+      await (gd.googleDrive as any).maybeRunScheduled();
+      await settleJobs();
+      assert.equal(readSetting('google_drive_last_success_kind'), 'automatic', 'scheduled automatic backup records automatic success kind');
+      assert.ok(readSetting('google_drive_last_automatic_backup_at'), 'first automatic backup populates last_automatic_backup_at');
+      assert.equal(readSetting('google_drive_last_backup_status'), 'success', 'first automatic backup records last_backup_status success');
+      assert.equal(gd.googleDrive.getStatus().retention_status, 'ok', 'automatic backup with successful retention clears retention state');
+      assert.equal(gd.googleDrive.getStatus().last_backup_status, 'success', 'status reports automatic backup success');
+      assert.equal(readSetting('google_drive_pending_upload'), '', 'automatic backup clears pending upload metadata');
+      const automaticFirstJob = JSON.parse(readSetting('google_drive_job') || 'null');
+      assert.ok(!automaticFirstJob || automaticFirstJob.state !== 'failed', 'untracked automatic backup does not record a failed job');
+      console.log('   ✓ first scheduled automatic backup succeeds without a prior backup or tracked job');
+
+      // 9. Scheduled automatic backup: upload succeeds, then non-retryable retention fails.
+      primeConnectedSettings();
+      (gd.googleDrive as any).getAuthorizedClient = async () => ({});
+      (gd.googleDrive as any).resolveDestinationForUpload = async () => 'folder-a';
+      (gd.googleDrive as any).uploadSnapshot = async () => ({ id: 'remote-auto-retention-fail' });
+      (gd.googleDrive as any).listFilesInDestination = async () => [];
+      (gd.googleDrive as any).applyRetention = async () => {
+        throw Object.assign(new Error('permission_denied'), { code: 'permission_denied', retryable: false });
+      };
+      await (gd.googleDrive as any).maybeRunScheduled();
+      await settleJobs();
+      assert.equal(readSetting('google_drive_last_success_kind'), 'automatic', 'automatic upload success is recorded despite retention failure');
+      assert.ok(readSetting('google_drive_last_automatic_backup_at'), 'automatic upload still stamps last_automatic_backup_at after retention failure');
+      assert.equal(readSetting('google_drive_last_backup_status'), 'success', 'last_backup_status remains success after automatic upload + retention failure');
+      assert.equal(gd.googleDrive.getStatus().last_backup_status, 'success', 'status still reports automatic backup success after retention failure');
+      assert.equal(gd.googleDrive.getStatus().retention_status, 'error', 'automatic path records retention_status error');
+      assert.equal(gd.googleDrive.getStatus().last_error, 'permission_denied', 'automatic path surfaces the retention error code');
+      assert.notEqual(readSetting('google_drive_last_backup_status'), 'error', 'automatic path does not mark the uploaded backup itself failed');
+      const automaticRetentionFailJob = JSON.parse(readSetting('google_drive_job') || 'null');
+      assert.ok(!automaticRetentionFailJob || automaticRetentionFailJob.state !== 'failed', 'automatic path does not invent a failed tracked job for retention errors');
+      console.log('   ✓ automatic backup keeps upload success when non-retryable retention fails');
+    } finally {
+      (gd.googleDrive as any).listFilesInDestination = originalListFiles;
+      (gd.googleDrive as any).getAuthorizedClient = originalAuthorized;
+      (gd.googleDrive as any).resolveDestinationForUpload = originalResolveDest;
+      (gd.googleDrive as any).uploadSnapshot = originalUpload;
+      (gd.googleDrive as any).applyRetention = originalApplyRetention;
+      (gd.googleDrive as any).snapshotFromPending = originalSnapshotFromPending;
+      gd.googleDrive.updatePreferences({ retention_count: 25 });
+      primeConnectedSettings();
+      settingsStatement.run('google_drive_owned_destinations', '["folder-a","folder-b"]', now());
+      if (!fs.existsSync(pendingUploadPath)) fs.writeFileSync(pendingUploadPath, 'pending-upload-fixture');
+      settingsStatement.run('google_drive_pending_upload', JSON.stringify({
+        run_id: 'pending-run',
+        kind: 'manual',
+        local_path: pendingUploadPath,
+        sha256: 'a'.repeat(64),
+        byte_count: 1,
+        schema_version: 1,
+        app_version: 'test',
+        backup_created_at: new Date().toISOString(),
+        destination_folder_id: 'folder-a',
+        attempt_count: 1,
+        next_retry_at: null,
+      }), now());
+    }
+  }
 
   const originalFetch = globalThis.fetch;
   try {

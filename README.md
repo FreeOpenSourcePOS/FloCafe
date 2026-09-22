@@ -110,6 +110,7 @@ FloCafe includes UI translations for:
 - Persian (Farsi), including RTL support
 - German
 - Japanese
+- Simplified Chinese
 
 UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/i18n.md).
 

@@ -39,6 +39,8 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  13. Japanese safeguards: ja.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  14. Chinese safeguards: zh.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -1018,6 +1020,72 @@ function jaFallbackErrors(jaFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Chinese translation safeguards (feat/add-chinese-support). */
+const ZH_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder',
+  'common.appTitle',
+  'common.brandName',
+  'common.logoAlt',
+  'dashboard.ticketMethodCount',
+  'kds.emptyColumn',
+  'nav.kds',
+  'nav.pos',
+  'nav.whatsapp',
+  'pos.addonPrice',
+  'pos.loadingEllipsis',
+  'pos.tagCount',
+  'pos.taxLine',
+  'print.hsn',
+  'print.zReport.paymentCount',
+  'printTest.escpos',
+  'printTest.paperWidth58',
+  'printTest.paperWidth80',
+  'products.addonSelectionRange',
+  'products.fieldSku',
+  'products.saleUnitG',
+  'products.saleUnitKg',
+  'products.saleUnitLb',
+  'products.skuLabel',
+  'serverApp.emailPlaceholder',
+  'settings.apiKeyInputPlaceholder',
+  'settings.connectionUsb',
+  'settings.instagramPlaceholder',
+  'settings.ipAddressPlaceholder',
+  'settings.kds',
+  'settings.paperSize58',
+  'settings.paperSize80',
+  'settings.paymentMethodUpi',
+  'settings.portPlaceholder',
+  'settings.registrationEmailPlaceholder',
+  'settings.registrationLastError',
+  'settings.revflo',
+  'settings.tabOrderflow',
+  'settings.tabWhatsapp',
+  'settings.unicode',
+  'settings.whatsapp',
+  'setup.finedineLabel',
+  'setup.ownerEmailPlaceholder',
+  'setup.pinLabel',
+  'tax.auditCreateOverride',
+  'tax.auditUpdateOverride',
+  'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function zhFallbackErrors(zhFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const zhVal = zhFlat[k];
+    if (zhVal === undefined) continue;
+    if (zhVal.startsWith('[ZH]') || zhVal.startsWith('[TODO]')) {
+      errors.push(`zh.json ${k} — placeholder prefix found: "${zhVal}"`);
+    } else if (zhVal === enFlat[k] && !ZH_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`zh.json ${k} — identical to English value (renders as English for Chinese users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1319,6 +1387,17 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated ja.json values (${JA_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 14. zh.json values must not contain placeholders or fall back to English.
+  const zhMessages = loadedStrings.get('zh');
+  if (!zhMessages) throw new Error('languages registry must include the maintained zh locale');
+  const zhErrors = zhFallbackErrors(zhMessages, loadedStrings.get('en')!);
+  if (zhErrors.length) {
+    console.error(`\nzh.json values with errors (${zhErrors.length}):`);
+    for (const e of zhErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'zh.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated zh.json values (${ZH_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1424,7 +1503,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil, de, ja).
+  // 7. Language safeguards (fa, fr, tr, fil, de, ja, zh).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -1464,6 +1543,14 @@ function runNegativeTests(): void {
   expectDetected(
     'ja: placeholder prefix value',
     jaFallbackErrors({ 'a.b': '[JA] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'zh: English-identical value',
+    zhFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'zh: placeholder prefix value',
+    zhFallbackErrors({ 'a.b': '[ZH] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

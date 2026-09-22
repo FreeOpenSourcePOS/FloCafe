@@ -14,6 +14,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   fil: { basic: 'Basic Resibo (Thermal)', web: 'Web Print (Browser)', whatsapp: 'Ibahagi sa WhatsApp' },
   fa: { basic: 'رسید ساده (حرارتی)', web: 'چاپ وب (مرورگر)', whatsapp: 'اشتراک‌گذاری واتساپ' },
   ja: { basic: '基本レシート（感熱）', web: 'ウェブ印刷（ブラウザ）', whatsapp: 'WhatsApp共有' },
+  zh: { basic: '基础小票（热敏）', web: '网页打印（浏览器）', whatsapp: 'WhatsApp 分享' },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

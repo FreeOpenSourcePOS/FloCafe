@@ -77,7 +77,7 @@ async function run() {
   console.log('Section 1: Web-print Message Loading & BCP-47 Locale Tags');
 
   // 1.1 ensureReceiptMessagesLoaded loads messages into memory
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'ja'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh'] as const) {
     await ensureReceiptMessagesLoaded(lang);
     const cached = getCachedMessages(lang);
     assert(
@@ -146,6 +146,7 @@ async function run() {
     pt: { tag: 'pt-BR', dir: 'ltr' },
     fa: { tag: 'fa-IR', dir: 'rtl' },
     ja: { tag: 'ja-JP', dir: 'ltr' },
+    zh: { tag: 'zh-CN', dir: 'ltr' },
   };
 
   for (const [lang, { tag, dir }] of Object.entries(expectedLocaleTags)) {
@@ -338,7 +339,7 @@ async function run() {
 
   // 2.2 Translation parity in all message files
   const MESSAGES_DIR = path.resolve(__dirname, '../frontend/src/lib/i18n/messages');
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'ja']) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh']) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);
     const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const translation = content?.orders?.itemStatusVoidAdjustment;

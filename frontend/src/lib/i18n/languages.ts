@@ -78,6 +78,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/ja.json'),
   },
+  zh: {
+    locale: 'zh-CN',
+    nativeName: '简体中文',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/zh.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

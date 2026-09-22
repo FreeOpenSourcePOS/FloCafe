@@ -23,6 +23,10 @@ const MAX_METADATA_DEPTH = 3;
 const MAX_METADATA_KEYS = 40;
 const MAX_METADATA_STRING_CHARS = 300;
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /** Depth-clamps, key-limits, and string-trims client metadata without PII-shaped passthrough. */
 function sanitizeDiagnosticMetadata(value: unknown, depth: number): unknown {
   if (depth > MAX_METADATA_DEPTH) return undefined;
@@ -38,7 +42,10 @@ function sanitizeDiagnosticMetadata(value: unknown, depth: number): unknown {
   }
   const out: Record<string, unknown> = {};
   let keys = 0;
-  for (const [key, childValue] of Object.entries(value as Record<string, unknown>)) {
+  for (const [key, childValue] of Object.entries(value)) {
+    // Assignment would trigger the Object.prototype __proto__ setter and swap
+    // the result's prototype instead of defining an own property.
+    if (key === '__proto__') continue;
     if (keys >= MAX_METADATA_KEYS) break;
     const child = sanitizeDiagnosticMetadata(childValue, depth + 1);
     if (child !== undefined) {
@@ -57,9 +64,10 @@ export function buildDiagnosticEvent(body: unknown): DiagnosticEventInput | null
   const severity = typeof raw.severity === 'string' ? raw.severity : '';
   if (!ALLOWED_SEVERITIES.has(severity)) return null;
 
-  const metadata = raw.metadata === undefined || raw.metadata === null
-    ? undefined
-    : sanitizeDiagnosticMetadata(raw.metadata, 0) as Record<string, unknown> | undefined;
+  if (raw.metadata !== undefined && raw.metadata !== null && !isPlainObject(raw.metadata)) return null;
+  const metadata = isPlainObject(raw.metadata)
+    ? sanitizeDiagnosticMetadata(raw.metadata, 0) as Record<string, unknown>
+    : undefined;
   if (metadata !== undefined && JSON.stringify(metadata).length > MAX_METADATA_JSON_BYTES) return null;
 
   return {
@@ -70,7 +78,7 @@ export function buildDiagnosticEvent(body: unknown): DiagnosticEventInput | null
       ? raw.correlation_id.trim().slice(0, MAX_CORRELATION_ID_CHARS)
       : undefined,
     message: typeof raw.message === 'string' && raw.message.trim()
-      ? raw.message.slice(0, MAX_MESSAGE_CHARS)
+      ? raw.message.trim().slice(0, MAX_MESSAGE_CHARS)
       : undefined,
     metadata,
     occurred_at: new Date().toISOString(),

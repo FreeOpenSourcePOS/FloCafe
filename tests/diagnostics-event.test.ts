@@ -272,6 +272,43 @@ async function main() {
     assert(localSupportShown, 'local support prompt is staged regardless of telemetry outcome');
     assert(telemetryFailed, 'telemetry dispatch failure is caught and swallowed');
 
+    console.log('\n10. Validation hardening: non-object metadata rejected; message trimmed; __proto__ keys dropped');
+    const primitiveMeta = await api(baseUrl, '/api/diagnostics/event', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { event_code: 'order.place.primitive_meta', severity: 'info', metadata: 'not-an-object' },
+    });
+    assertEqual(primitiveMeta.status, 400, 'a primitive root metadata value is rejected with 400');
+    const arrayMeta = await api(baseUrl, '/api/diagnostics/event', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { event_code: 'order.place.array_meta', severity: 'info', metadata: [1, 2, 3] },
+    });
+    assertEqual(arrayMeta.status, 400, 'an array root metadata value is rejected with 400');
+
+    const paddedRes = await api(baseUrl, '/api/diagnostics/event', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { event_code: 'order.place.padded', severity: 'warn', message: '   padded failure message   ' },
+    });
+    assertEqual(paddedRes.status, 202, 'an event with a padded message is accepted');
+    const paddedQueued = await settle(() => findDiagnostic(db, 'order.place.padded') !== null);
+    assert(paddedQueued, 'the padded-message event is enqueued');
+    assertEqual(findDiagnostic(db, 'order.place.padded')?.message, 'padded failure message', 'message is trimmed before clamping');
+
+    const protoRes = await api(baseUrl, '/api/diagnostics/event', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: '{"event_code":"order.place.proto","severity":"info","metadata":{"__proto__":{"polluted":true},"stage":"order_place"}}',
+    });
+    assertEqual(protoRes.status, 202, 'metadata containing a __proto__ key is accepted');
+    const protoQueued = await settle(() => findDiagnostic(db, 'order.place.proto') !== null);
+    assert(protoQueued, 'the __proto__-bearing event is enqueued');
+    const protoRow = findDiagnostic(db, 'order.place.proto');
+    assertEqual(protoRow?.metadata.stage, 'order_place', 'sibling metadata keys survive alongside a dropped __proto__ key');
+    assert(!Object.prototype.hasOwnProperty.call(protoRow?.metadata || {}, '__proto__'), 'the __proto__ key is not persisted as an own property');
+    assertEqual((protoRow?.metadata as any)?.polluted, undefined, 'metadata carries no prototype-chain pollution');
+
     console.log('\n' + '='.repeat(56));
     const results = getResults();
     console.log(`${results.passed} passed, ${results.failed} failed`);

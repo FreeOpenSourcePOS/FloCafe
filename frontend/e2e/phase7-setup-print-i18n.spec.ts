@@ -13,6 +13,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   tr: { basic: 'Temel Fiş (Termal)', web: 'Web Yazdırma (Tarayıcı)', whatsapp: 'WhatsApp Paylaşımı' },
   fil: { basic: 'Basic Resibo (Thermal)', web: 'Web Print (Browser)', whatsapp: 'Ibahagi sa WhatsApp' },
   fa: { basic: 'رسید ساده (حرارتی)', web: 'چاپ وب (مرورگر)', whatsapp: 'اشتراک‌گذاری واتساپ' },
+  ja: { basic: '基本レシート（感熱）', web: 'ウェブ印刷（ブラウザ）', whatsapp: 'WhatsApp共有' },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

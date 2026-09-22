@@ -72,7 +72,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'ja'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 

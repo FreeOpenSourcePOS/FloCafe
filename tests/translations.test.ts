@@ -37,6 +37,8 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  12. German safeguards: de.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  13. Japanese safeguards: ja.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -946,6 +948,76 @@ function deFallbackErrors(deFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/**
+ * Japanese translation safeguards.
+ *
+ * ja.json is complete and must not silently fall back to English. The small
+ * exception list is limited to brands, technical identifiers, pure format
+ * strings, example inputs, and printer measurements.
+ */
+const JA_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', // example email
+  'common.appTitle', // brand
+  'common.brandName', // brand
+  'common.logoAlt', // brand
+  'dashboard.ticketMethodCount', // pure format: {count} ×
+  'kds.emptyColumn', // em dash
+  'nav.kds', // technical acronym
+  'nav.pos', // technical acronym
+  'nav.whatsapp', // product name
+  'pos.addonPrice', // pure format: +{currency}{price}
+  'pos.loadingEllipsis', // ellipsis
+  'pos.tagCount', // pure format: {tag} ×{count}
+  'pos.taxLine', // pure format: {title} @{rate}%
+  'printTest.escpos', // technical acronym
+  'printTest.paperWidth58', // measurement
+  'printTest.paperWidth80', // measurement
+  'print.hsn', // jurisdiction-specific technical acronym
+  'print.zReport.paymentCount', // pure format: x{count}
+  'products.addonSelectionRange', // pure format: {min} – {max}
+  'products.fieldSku', // technical identifier
+  'products.saleUnitG', // measurement unit
+  'products.saleUnitKg', // measurement unit
+  'products.saleUnitLb', // measurement unit
+  'serverApp.emailPlaceholder', // example email
+  'settings.apiKeyInputPlaceholder', // example API key
+  'settings.connectionUsb', // technical acronym
+  'settings.paymentMethodUpi', // technical acronym (payment rail name)
+  'settings.instagramPlaceholder', // example handle
+  'settings.ipAddressPlaceholder', // example IP
+  'settings.kds', // technical acronym
+  'settings.portPlaceholder', // example port
+  'settings.registrationEmailPlaceholder', // example email
+  'settings.registrationLastError', // pure placeholder: {error}
+  'settings.revflo', // brand
+  'settings.serverApp', // product surface name
+  'settings.tabOrderflow', // product name
+  'settings.tabWhatsapp', // product name
+  'settings.unicode', // technical standard name
+  'settings.whatsapp', // product name
+  'setup.finedineLabel', // FloCafe product flow name
+  'setup.ownerEmailPlaceholder', // example email
+  'setup.qsrLabel', // FloCafe product flow name
+  'tax.auditCreateOverride', // technical audit identifiers
+  'tax.auditUpdateOverride', // technical audit identifiers
+  'update.downloadingBadge', // pure format: ↓ {percent}%
+  'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX
+]);
+
+function jaFallbackErrors(jaFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const jaVal = jaFlat[k];
+    if (jaVal === undefined) continue; // reported by key parity
+    if (jaVal.startsWith('[JA]') || jaVal.startsWith('[TODO]')) {
+      errors.push(`ja.json ${k} — placeholder prefix found: "${jaVal}"`);
+    } else if (jaVal === enFlat[k] && !JA_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`ja.json ${k} — identical to English value (renders as English for Japanese users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1236,6 +1308,17 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated de.json values (${DE_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 13. ja.json values must not contain placeholders or fall back to English.
+  const jaMessages = loadedStrings.get('ja');
+  if (!jaMessages) throw new Error('languages registry must include the maintained ja locale');
+  const jaErrors = jaFallbackErrors(jaMessages, loadedStrings.get('en')!);
+  if (jaErrors.length) {
+    console.error(`\nja.json values with errors (${jaErrors.length}):`);
+    for (const e of jaErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'ja.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated ja.json values (${JA_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1341,7 +1424,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil, de).
+  // 7. Language safeguards (fa, fr, tr, fil, de, ja).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -1373,6 +1456,14 @@ function runNegativeTests(): void {
   expectDetected(
     'de: placeholder prefix value',
     deFallbackErrors({ 'a.b': '[DE] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ja: English-identical value',
+    jaFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'ja: placeholder prefix value',
+    jaFallbackErrors({ 'a.b': '[JA] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

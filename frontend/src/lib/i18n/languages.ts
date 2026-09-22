@@ -71,6 +71,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/fa.json'),
   },
+  ja: {
+    locale: 'ja-JP',
+    nativeName: '日本語',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ja.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

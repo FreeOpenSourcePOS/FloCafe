@@ -405,7 +405,8 @@ export function registerRoutes(app: Express): void {
           db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
             .run(now(), itemId);
 
-          const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
+          const restoreProductId = currentItem.inventory_product_id || currentItem.product_id;
+          const product = db.prepare('SELECT * FROM products WHERE id = ?').get(restoreProductId) as any;
           if (product && currentItem.inventory_deducted_quantity > 0) {
             adjustProductStock(db, {
               productId: product.id,
@@ -580,7 +581,8 @@ export function registerRoutes(app: Express): void {
         }
 
         // Re-deduct the inventory quantity originally consumed by the item
-        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
+        const restoreProductId = currentItem.inventory_product_id || currentItem.product_id;
+        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(restoreProductId) as any;
         if (product && currentItem.inventory_deducted_quantity > 0) {
           adjustProductStock(db, {
             productId: product.id,

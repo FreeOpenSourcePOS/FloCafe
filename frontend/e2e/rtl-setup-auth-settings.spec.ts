@@ -249,6 +249,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     expect(optionValues).toContain('es');
     expect(optionValues).toContain('pt');
     expect(optionValues).toContain('fa');
+    expect(optionValues).toContain('ja');
 
     // Check document does not overflow horizontally in RTL
     const storeOverflow = await page.evaluate(() => ({

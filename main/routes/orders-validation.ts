@@ -30,7 +30,7 @@ export function validateProductQuantity(
     throw Object.assign(new Error(`Invalid quantity for ${productName}: must be a positive number`), { statusCode: 400 });
   }
   if (Number.isInteger(quantity)) return;
-  if (!['kg', 'g', 'lb'].includes(product.sale_unit || 'each') || Number(product.allow_fractional_quantity) !== 1) {
+  if (!['kg', 'g', 'lb', 'ml', 'cl', 'l', 'fl oz', 'oz'].includes(product.sale_unit || 'each') || Number(product.allow_fractional_quantity) !== 1) {
     throw Object.assign(new Error(`Invalid quantity for ${productName}: fractional quantities are not allowed`), { statusCode: 400 });
   }
 

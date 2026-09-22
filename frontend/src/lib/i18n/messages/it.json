@@ -1139,7 +1139,7 @@
   "serverApp": {
     "addToOrder": "Aggiungi all'ordine",
     "billPrintFailed": "Ordine inviato, ma il conto non è stato stampato",
-    "couldNotLoadData": "Impossibile caricare i dati dell'Server App",
+    "couldNotLoadData": "Impossibile caricare i dati dell'app Server",
     "couldNotSendOrder": "Impossibile inviare l'ordine",
     "currentTicket": "Biglietto corrente",
     "customerNamePlaceholder": "Nome cliente",

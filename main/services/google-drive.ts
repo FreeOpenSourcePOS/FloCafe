@@ -1444,7 +1444,6 @@ class GoogleDriveService {
       removeStagingFile(snapshot.path);
       upsertSettings({ google_drive_pending_upload: '' });
       let retentionPending = false;
-      let retentionError: DriveErrorCode | null = null;
       try {
         await this.applyRetention(driveClient, signal);
         upsertSettings({ google_drive_retention_status: '', google_drive_retention_retry_count: '', google_drive_next_retry_at: '', google_drive_last_error_code: '' });
@@ -1455,11 +1454,10 @@ class GoogleDriveService {
           retentionPending = true;
           this.scheduleRetentionRetry();
         } else {
-          retentionError = classified.code;
           upsertSettings({ google_drive_retention_status: 'error', google_drive_retention_retry_count: '', google_drive_next_retry_at: '', google_drive_last_error_code: classified.code });
         }
       }
-      if (trackedJobId) this.writeJob({ id: trackedJobId, operation: 'backup', kind: backupKind, state: retentionPending ? 'retention_pending' : retentionError ? 'failed' : 'succeeded', ...(retentionError ? { error_code: retentionError } : {}), remote_id: remote.id, bytes_sent: snapshot.byteCount, total_bytes: snapshot.byteCount, updated_at: now() });
+      if (trackedJobId) this.writeJob({ id: trackedJobId, operation: 'backup', kind: backupKind, state: retentionPending ? 'retention_pending' : 'succeeded', remote_id: remote.id, bytes_sent: snapshot.byteCount, total_bytes: snapshot.byteCount, updated_at: now() });
       return this.getStatus();
     } catch (error) {
       const missingDestination = isMissingDestinationError(error);
@@ -1524,7 +1522,7 @@ class GoogleDriveService {
           return;
         }
         const job = parseJob(this.readSettings().google_drive_job);
-        if (job?.state === 'retention_pending') this.writeJob({ ...job, state: 'failed', error_code: classified.code, updated_at: now() });
+        if (job?.state === 'retention_pending') this.writeJob({ ...job, state: 'succeeded', error_code: undefined, updated_at: now() });
         upsertSettings({ google_drive_retention_status: 'error', google_drive_retention_retry_count: '', google_drive_next_retry_at: '', google_drive_last_error_code: classified.code });
       }
     });

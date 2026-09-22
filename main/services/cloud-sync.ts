@@ -167,6 +167,10 @@ function pickEnum(source: Record<string, unknown>, target: Record<string, unknow
   if (typeof source[key] === 'string' && allowed.has(source[key])) target[key] = source[key];
 }
 
+function pickString(source: Record<string, unknown>, target: Record<string, unknown>, key: string, maxLength: number): void {
+  if (typeof source[key] === 'string' && source[key].length > 0) target[key] = source[key].slice(0, maxLength);
+}
+
 /** Projects diagnostic metadata to the small set of event-specific non-PII fields. */
 function sanitizeDiagnosticMetadata(eventCode: DiagnosticEventCode, metadata: unknown): Record<string, unknown> | undefined {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
@@ -184,6 +188,7 @@ function sanitizeDiagnosticMetadata(eventCode: DiagnosticEventCode, metadata: un
     pickEnum(source, target, 'stage', ALLOWED_PAYMENT_STAGES);
     pickInteger(source, target, 'status', 100, 599);
   } else if (eventCode === 'server.internal_error') {
+    pickString(source, target, 'route', 200);
     pickEnum(source, target, 'method', ALLOWED_DIAGNOSTIC_METHODS);
     pickInteger(source, target, 'status', 500, 599);
   } else {

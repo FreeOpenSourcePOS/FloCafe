@@ -56,6 +56,20 @@ function findDiagnosticByStage(db: any, eventCode: string, stage: string): any |
   return null;
 }
 
+function findDiagnosticByStageAndStatus(db: any, eventCode: string, stage: string, status: number, itemCount: number): any | null {
+  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC').all() as Array<{ payload: string; status: string }>;
+  for (const row of rows) {
+    try {
+      const payload = JSON.parse(row.payload);
+      if (payload.event_code === eventCode
+        && payload.metadata?.stage === stage
+        && payload.metadata?.status === status
+        && payload.metadata?.item_count === itemCount) return { ...payload, status: row.status };
+    } catch { /* skip corrupt */ }
+  }
+  return null;
+}
+
 async function main() {
   console.log('Diagnostics Event Ingestion Tests');
   console.log('='.repeat(56));
@@ -195,7 +209,7 @@ async function main() {
     assertEqual(oversizeRes.status, 400, 'metadata beyond the size cap is rejected with 400');
 
     console.log('\n4. Depth clamp: nested structures beyond depth 3 are trimmed, not rejected');
-    const nested = { method: 'GET', a: { b: { c: { d: { e: 'too deep' } } } }, keep: 'shallow' };
+    const nested = { route: '/api/orders', method: 'GET', a: { b: { c: { d: { e: 'too deep' } } } }, keep: 'shallow' };
     const depthRes = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,
@@ -205,6 +219,7 @@ async function main() {
     const depthQueued = await settle(() => findDiagnostic(db, 'server.internal_error') !== null);
     assert(depthQueued, 'the depth-trimmed event is enqueued');
     const depthRow = findDiagnostic(db, 'server.internal_error');
+    assertEqual(depthRow?.metadata.route, '/api/orders', 'approved server route survives projection');
     assertEqual(depthRow?.metadata.method, 'GET', 'approved server metadata survives projection');
     assertEqual(depthRow?.metadata.keep, undefined, 'unapproved metadata is dropped');
     assertEqual(depthRow?.metadata.a, undefined, 'nested metadata is dropped');
@@ -223,7 +238,20 @@ async function main() {
     assertEqual(countDiagnostics(db), consentBefore, 'no row was written while diagnostics consent was disabled');
     db.prepare(`UPDATE settings SET value = 'true', updated_at = ? WHERE key = 'diagnostics_consent'`).run(now());
 
-    console.log('\n6. order.create.failed: insufficient-stock rejection is enqueued (order still 400)');
+    console.log('\n6. order.create.failed: missing-item validation is enqueued (order still 400)');
+    const missingItemsRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { table_id: 'diag-table-1', type: 'dine_in' },
+    });
+    assertEqual(missingItemsRes.status, 400, 'missing-item order is rejected with 400');
+    const missingItemsQueued = await settle(() => {
+      const row = findDiagnosticByStage(db, 'order.create.failed', 'order_insert');
+      return row?.metadata.status === 400 && row?.metadata.item_count === 0;
+    });
+    assert(missingItemsQueued, 'order.create.failed is enqueued for missing-item validation');
+
+    console.log('\n7. order.create.failed: insufficient-stock rejection is enqueued (order still 400)');
     const stockRes = await api(baseUrl, '/api/orders', {
       method: 'POST',
       headers: owner.authHeader,
@@ -234,27 +262,27 @@ async function main() {
       },
     });
     assert(stockRes.status >= 400, `insufficient stock order is rejected (got ${stockRes.status})`);
-    const stockQueued = await settle(() => findDiagnostic(db, 'order.create.failed') !== null);
+    const stockQueued = await settle(() => findDiagnosticByStageAndStatus(db, 'order.create.failed', 'inventory_validation', 400, 1) !== null);
     assert(stockQueued, 'order.create.failed is enqueued on inventory failure');
-    const stockDiag = findDiagnostic(db, 'order.create.failed');
+    const stockDiag = findDiagnosticByStageAndStatus(db, 'order.create.failed', 'inventory_validation', 400, 1);
     assertEqual(stockDiag?.metadata.status, stockRes.status, 'diagnostic metadata carries the HTTP status');
     assertEqual(stockDiag?.metadata.item_count, 1, 'diagnostic metadata carries the product count');
     assertEqual(stockDiag?.metadata.stage, 'inventory_validation', 'inventory failures report the inventory stage');
     assertEqual(stockDiag?.status_ignored, undefined, 'row status remains driven by the outbox');
 
-    console.log('\n7. order.create.failed: other create failures (missing product) are also reported');
+    console.log('\n8. order.create.failed: other create failures (missing product) are also reported');
     const badOrderRes = await api(baseUrl, '/api/orders', {
       method: 'POST',
       headers: owner.authHeader,
       body: { type: 'dine_in', items: [{ product_id: 'missing-product', quantity: 1 }], table_id: 'diag-table-1' },
     });
     assert(badOrderRes.status >= 400, `order with unknown product is rejected (got ${badOrderRes.status})`);
-    const badOrderQueued = await settle(() => findDiagnosticByStage(db, 'order.create.failed', 'order_insert') !== null);
+    const badOrderQueued = await settle(() => findDiagnosticByStageAndStatus(db, 'order.create.failed', 'order_insert', 500, 1) !== null);
     assert(badOrderQueued, 'order.create.failed is enqueued for other create failures too');
-    const badOrderDiag = findDiagnosticByStage(db, 'order.create.failed', 'order_insert');
+    const badOrderDiag = findDiagnosticByStageAndStatus(db, 'order.create.failed', 'order_insert', 500, 1);
     assertEqual(badOrderDiag?.metadata.stage, 'order_insert', 'non-inventory failures report the order_insert stage');
 
-    console.log('\n8. payment.batch.failed: unexpected 500 from applyPaymentBatch is enqueued');
+    console.log('\n9. payment.batch.failed: unexpected 500 from applyPaymentBatch is enqueued');
     const diagOrder = db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
       VALUES ('ORD-DIAG-1', 'dine_in', 'pending', 10, 10, ?, ?)`).run(now(), now());
     const diagBill = db.prepare(`INSERT INTO bills (order_id, bill_number, subtotal, discount_amount, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
@@ -278,7 +306,7 @@ async function main() {
       db.prepare('DROP TRIGGER diag_force_payment_failure').run();
     }
 
-    console.log('\n9. POS checkout failure path: reporting must not throw or add toasts when telemetry fails');
+    console.log('\n10. POS checkout failure path: reporting must not throw or add toasts when telemetry fails');
     // Mirror of frontend reportOrderFailure: dispatch failure is swallowed and
     // the local support state is independent of the telemetry request.
     let telemetryFailed = false;
@@ -292,7 +320,7 @@ async function main() {
     assert(localSupportShown, 'local support prompt is staged regardless of telemetry outcome');
     assert(telemetryFailed, 'telemetry dispatch failure is caught and swallowed');
 
-    console.log('\n10. Validation hardening: non-object metadata rejected; messages and keys are controlled');
+    console.log('\n11. Validation hardening: non-object metadata rejected; messages and keys are controlled');
     const primitiveMeta = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,

@@ -1,15 +1,6 @@
 /**
- * Zero-balance settlement & split auto-completion.
- *
- * order-discount-zero-balance/bill-discount-zero-balance/item-discount-zero-balance: discounts that drive remaining balance to 0 leave the bill
- * stuck (payment_status != 'paid') and the subsequent settle is rejected
- * with 400 "Bill is already fully paid".
- * zero-total-split-sibling: cancelling an item after split-check zeroes a sibling guest check;
- * that zero-total sibling is unpayable and blocks parent order completion.
- * refunded-sibling-completion: a refunded split sibling matches payment_status != 'paid' and blocks
- * parent order completion forever.
- *
- * Usage: node tests/run-electron-node-test.cjs tests/issue-zero-balance-settlement.test.ts
+ * Zero-balance settle, zero-total split siblings, and refunded sibling completion.
+ * Run: node tests/run-electron-node-test.cjs tests/issue-zero-balance-settlement.test.ts
  */
 
 // ── Electron Mock (must be before any app imports) ───────────────────────────
@@ -117,7 +108,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    // ── order-discount-zero-balance: order discount drives balance to 0 ───────────────────────────────
+    // ── order discount zeroes balance, then settle ──
     console.log('\n─── order-discount-zero-balance: settle after order discount zeroes balance ───');
     {
       const create = await createOrder({
@@ -146,7 +137,7 @@ async function main(): Promise<void> {
       }
     }
 
-    // ── bill-discount-zero-balance: bill applyDiscount drives balance to 0 ───────────────────────────
+    // ── bill discount zeroes balance, then settle ──
     console.log('\n─── bill-discount-zero-balance: settle after bill discount zeroes balance ───');
     {
       const { orderId, billId } = await newTakeawayOrder('prod-1000');
@@ -163,7 +154,7 @@ async function main(): Promise<void> {
       assertEqual(orderRow(db, orderId).status, 'completed', 'bill-discount-zero-balance: order completed after settle');
     }
 
-    // ── item-discount-zero-balance: item discount drives balance to 0 ────────────────────────────────
+    // ── item discount zeroes balance, then settle ──
     console.log('\n─── item-discount-zero-balance: settle after item discount zeroes balance ───');
     {
       const create = await createOrder({ type: 'takeaway', items: [{ product_id: 'prod-1000', quantity: 1 }] });
@@ -186,7 +177,7 @@ async function main(): Promise<void> {
       assertEqual(orderRow(db, orderId).status, 'completed', 'item-discount-zero-balance: order completed after settle');
     }
 
-    // ── zero-total-split-sibling: zero-total split sibling auto-closes ─────────────────────────────
+    // ── zero-total sibling auto-closes ──
     console.log('\n─── zero-total-split-sibling: zero-total sibling auto-closes, order completes ───');
     {
       const create = await createOrder({
@@ -231,7 +222,7 @@ async function main(): Promise<void> {
       assert(tableRow(db, 'table-zb')?.status === 'available', 'zero-total-split-sibling: table freed');
     }
 
-    // ── refunded-sibling-completion: refunded split sibling does not block completion ──────────────────
+    // ── refunded sibling does not block completion ──
     console.log('\n─── refunded-sibling-completion: refunded sibling does not block order completion ───');
     {
       const create = await createOrder({

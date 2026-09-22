@@ -709,7 +709,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         metadata: {
           stage: error.message === 'Insufficient stock' ? 'inventory_validation' : 'order_insert',
           status: statusCode,
-          item_count: Array.isArray((req.body as any)?.items) ? (req.body as any).items.length : 0,
+          item_count: Array.isArray(req.body?.items) ? req.body.items.length : 0,
         },
         occurred_at: new Date().toISOString(),
       });

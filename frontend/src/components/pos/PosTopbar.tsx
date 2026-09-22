@@ -52,12 +52,12 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
       <button
         type="button"
         onClick={onShowCashMovement}
-        className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
+        className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted whitespace-nowrap"
         title={tDashboard('cashMovement')}
         aria-label={tDashboard('cashMovement')}
       >
         <Banknote size={16} />
-        {tDashboard('cashMovement')}
+        <span className="hidden sm:inline">{tDashboard('cashMovement')}</span>
       </button>
 
       <div className="shrink-0">

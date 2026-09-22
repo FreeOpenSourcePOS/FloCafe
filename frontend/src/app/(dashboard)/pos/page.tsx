@@ -1140,7 +1140,6 @@ export default function POSPage() {
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
       />
-      <CashDrawerMovementModal model={cashDrawer} />
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">
@@ -1185,6 +1184,7 @@ export default function POSPage() {
       </Drawer>
 
       {/* Modals */}
+      <CashDrawerMovementModal model={cashDrawer} />
       {isRestaurant && showTablePicker && (
         <TablePickerModal
           tables={tables}

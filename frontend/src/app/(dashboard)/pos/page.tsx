@@ -318,6 +318,14 @@ export default function POSPage() {
         diagnostics: { stage: 'order_place', http_status: entry.status, message: entry.detail },
       },
     });
+    // Fire-and-forget remote diagnostics: a dismissed support prompt must still
+    // leave a record. Swallow every failure so telemetry never surfaces a toast.
+    void api.post('/diagnostics/event', {
+      event_code: entry.code,
+      severity: 'error',
+      message: entry.detail,
+      metadata: { detail: entry.detail, status: entry.status, stage: 'order_place' },
+    }).catch(() => {});
     toast.error(entry.message);
   };
 

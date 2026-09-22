@@ -2,6 +2,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import * as http from 'http';
+import * as crypto from 'crypto';
 import { closeServerResources, createShutdownCancellationError, installHttpShutdownTracking } from './shutdown';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -13,6 +14,7 @@ import { setupKdsWebSocket } from './services/kds';
 import expressRateLimit from 'express-rate-limit';
 import { staticRouteRateLimit, corsOptions, getUserAuthStatus, isAllowedPrivateIp, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
+import { cloudSync } from './services/cloud-sync';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
@@ -248,7 +250,24 @@ export function startServer(): Promise<void> {
       const status = typeof err.status === 'number' && err.status >= 400 && err.status < 500
         ? err.status
         : 500;
-      if (status >= 500) console.error('[Server] Error:', err);
+      if (status >= 500) {
+        console.error('[Server] Error:', err);
+        // Fire-and-forget: reportDiagnostic never throws and consent-gates its own writes.
+        try {
+          cloudSync.reportDiagnostic({
+            event_id: crypto.randomUUID(),
+            event_code: 'server.internal_error',
+            severity: 'error',
+            message: String(err.message || 'Unhandled server error').slice(0, 300),
+            metadata: {
+              route: _req.path.slice(0, 200),
+              method: _req.method,
+              status,
+            },
+            occurred_at: new Date().toISOString(),
+          });
+        } catch { /* diagnostics must never mask the original error */ }
+      }
       res.status(status).json({ error: status >= 500 ? 'Internal server error' : (err.message || 'Client error') });
     });
 

@@ -20,6 +20,7 @@ import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 import { getTenantCurrency } from './bills';
 import expressRateLimit from 'express-rate-limit';
+import { randomUUID } from 'crypto';
 
 const router = Router();
 const orderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -698,7 +699,22 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
   } catch (error: any) {
     console.error('[Orders] Create error:', error);
     console.error("[API] Internal error:", error);
-    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
+    const statusCode = error.statusCode || 500;
+    try {
+      cloudSync.reportDiagnostic({
+        event_id: randomUUID(),
+        event_code: 'order.create.failed',
+        severity: 'error',
+        message: String(error.message || 'Order creation failed').slice(0, 300),
+        metadata: {
+          stage: error.message === 'Insufficient stock' ? 'inventory_validation' : 'order_insert',
+          status: statusCode,
+          item_count: Array.isArray((req.body as any)?.items) ? (req.body as any).items.length : 0,
+        },
+        occurred_at: new Date().toISOString(),
+      });
+    } catch { /* diagnostics must never mask the original failure */ }
+    res.status(statusCode).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 

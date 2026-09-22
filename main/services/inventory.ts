@@ -63,6 +63,38 @@ export interface InventoryMovementPage {
 }
 
 /** Apply a stock delta and append its ledger row. Callers must provide the transaction boundary. */
+export interface InventoryDeduction {
+  productId: string;
+  deductedQuantity: number;
+}
+
+/**
+ * Resolve which product stock a sale quantity consumes.
+ * A 1-to-1 inventory link takes precedence over self track_inventory deduction.
+ */
+export function resolveInventoryDeduction(
+  product: {
+    id: string | number;
+    track_inventory?: number | boolean | null;
+    inventory_product_id?: string | null;
+    inventory_deduction_quantity?: number | null;
+  },
+  quantity: number,
+): InventoryDeduction | null {
+  if (product.inventory_product_id) {
+    const factor = Number(product.inventory_deduction_quantity ?? 1);
+    if (!Number.isFinite(factor) || factor <= 0) return null;
+    const deductedQuantity = quantity * factor;
+    if (!Number.isFinite(deductedQuantity) || deductedQuantity <= 0) return null;
+    return { productId: product.inventory_product_id, deductedQuantity };
+  }
+  if (Number(product.track_inventory) === 1 || product.track_inventory === true) {
+    if (!Number.isFinite(quantity) || quantity <= 0) return null;
+    return { productId: String(product.id), deductedQuantity: quantity };
+  }
+  return null;
+}
+
 export function adjustProductStock(
   db: ReturnType<typeof getDatabase>,
   options: StockChangeOptions,

@@ -98,6 +98,7 @@ export default function ProductsPage() {
   const [form, setForm] = useState({
     name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
     sale_unit: 'each' as Product['sale_unit'], allow_fractional_quantity: false, weight_precision: '3',
+    inventory_product_id: '', inventory_deduction_quantity: '1',
     tax_category_id: '', tax_behavior: 'country_default', description: '',
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
@@ -245,6 +246,7 @@ export default function ProductsPage() {
     setForm({
       name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
       sale_unit: 'each', allow_fractional_quantity: false, weight_precision: '3',
+      inventory_product_id: '', inventory_deduction_quantity: '1',
       tax_category_id: '', tax_behavior: 'country_default', description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
@@ -273,6 +275,8 @@ export default function ProductsPage() {
       sale_unit: product.sale_unit || 'each',
       allow_fractional_quantity: !!product.allow_fractional_quantity,
       weight_precision: String(product.weight_precision ?? 3),
+      inventory_product_id: product.inventory_product_id || '',
+      inventory_deduction_quantity: String(product.inventory_deduction_quantity ?? 1),
       tax_category_id: product.tax_category_id || '',
       tax_behavior: product.tax_behavior || 'country_default',
       description: product.description || '',
@@ -311,6 +315,10 @@ export default function ProductsPage() {
         sale_unit: form.sale_unit,
         allow_fractional_quantity: form.allow_fractional_quantity,
         weight_precision: Number(form.weight_precision),
+        inventory_product_id: form.inventory_product_id || null,
+        inventory_deduction_quantity: form.inventory_product_id
+          ? Number(form.inventory_deduction_quantity) || 1
+          : null,
         tax_category_id: form.tax_category_id || null,
         tax_behavior: form.tax_category_id ? form.tax_behavior : 'country_default',
         description: form.description || null,
@@ -746,6 +754,11 @@ export default function ProductsPage() {
                     <option value="kg">{t('saleUnitKg')}</option>
                     <option value="g">{t('saleUnitG')}</option>
                     <option value="lb">{t('saleUnitLb')}</option>
+                    <option value="ml">{t('saleUnitMl')}</option>
+                    <option value="cl">{t('saleUnitCl')}</option>
+                    <option value="l">{t('saleUnitL')}</option>
+                    <option value="fl oz">{t('saleUnitFlOz')}</option>
+                    <option value="oz">{t('saleUnitOz')}</option>
                   </select>
                 </div>
                 <div>
@@ -768,6 +781,36 @@ export default function ProductsPage() {
                   />
                   <span className="text-sm text-foreground">{t('fieldAllowFractionalQuantity')}</span>
                 </label>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1">{t('fieldInventoryProduct')}</label>
+                  <select
+                    value={form.inventory_product_id}
+                    onChange={(e) => setForm({ ...form, inventory_product_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                  >
+                    <option value="">{t('fieldInventoryProductNone')}</option>
+                    {products
+                      .filter((p) => p.id !== editingProduct?.id && !p.inventory_product_id)
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                  </select>
+                </div>
+                {!!form.inventory_product_id && (
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-1">{t('fieldInventoryDeductionQuantity')}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={form.inventory_deduction_quantity}
+                      onChange={(e) => setForm({ ...form, inventory_deduction_quantity: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-border rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                    />
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

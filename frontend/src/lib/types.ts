@@ -73,9 +73,11 @@ export interface Product {
   name: string;
   sku: string | null;
   barcode: string | null;
-  sale_unit: 'each' | 'kg' | 'g' | 'lb';
+  sale_unit: 'each' | 'kg' | 'g' | 'lb' | 'ml' | 'cl' | 'l' | 'fl oz' | 'oz';
   allow_fractional_quantity: boolean;
   weight_precision: number;
+  inventory_product_id?: string | null;
+  inventory_deduction_quantity?: number | null;
   description: string | null;
   price: number;
   cost_price: number | null;

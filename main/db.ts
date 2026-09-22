@@ -4849,6 +4849,91 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       addColumn('source_created_at', 'source_created_at TEXT');
     },
   },
+  {
+    version: 87,
+    name: 'add_volume_units_and_inventory_links',
+    up: () => {
+      const productColumns = getColumns(db, 'products');
+      const needsRebuild = !productColumns.includes('inventory_product_id')
+        || !productColumns.includes('inventory_deduction_quantity');
+      const saleUnitSql = db.prepare(`
+        SELECT sql FROM sqlite_master
+        WHERE type = 'table' AND name = 'products'
+      `).get() as { sql: string } | undefined;
+      const needsWideSaleUnit = !!saleUnitSql
+        && !/sale_unit[^)]*'ml'/.test(saleUnitSql.sql);
+
+      if (needsRebuild || needsWideSaleUnit) {
+        // SQLite cannot ALTER a column CHECK constraint; rebuild products with
+        // volume units and the 1-to-1 inventory-link columns in one pass.
+        const productIndexes = (db.prepare(`
+          SELECT name, sql FROM sqlite_master
+          WHERE type = 'index' AND tbl_name = 'products' AND sql IS NOT NULL
+        `).all() as { name: string; sql: string }[])
+          .filter((index) => index.name.startsWith('idx_products_'));
+        db.exec(`
+          PRAGMA foreign_keys = OFF;
+          CREATE TABLE products_volume_migration (
+            id TEXT PRIMARY KEY,
+            category_id TEXT,
+            name TEXT NOT NULL,
+            description TEXT,
+            price REAL NOT NULL DEFAULT 0,
+            cost REAL DEFAULT 0,
+            sku TEXT,
+            barcode TEXT,
+            sale_unit TEXT NOT NULL DEFAULT 'each' CHECK (sale_unit IN ('each', 'kg', 'g', 'lb', 'ml', 'cl', 'l', 'fl oz', 'oz')),
+            allow_fractional_quantity INTEGER NOT NULL DEFAULT 0,
+            weight_precision INTEGER NOT NULL DEFAULT 3 CHECK (weight_precision BETWEEN 0 AND 4),
+            image_url TEXT,
+            is_active INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            track_inventory INTEGER DEFAULT 0,
+            stock_quantity REAL DEFAULT 0,
+            low_stock_threshold REAL DEFAULT 5,
+            tax_type TEXT DEFAULT 'none',
+            tax_rate REAL DEFAULT 0,
+            tax_category_id TEXT DEFAULT NULL,
+            tax_behavior TEXT DEFAULT 'country_default',
+            cb_percent REAL DEFAULT 0,
+            tags TEXT,
+            inventory_product_id TEXT DEFAULT NULL REFERENCES products(id),
+            inventory_deduction_quantity REAL DEFAULT 1,
+            deleted_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (category_id) REFERENCES categories(id)
+          );
+          INSERT INTO products_volume_migration (
+            id, category_id, name, description, price, cost, sku, barcode,
+            sale_unit, allow_fractional_quantity, weight_precision, image_url,
+            is_active, sort_order, track_inventory, stock_quantity, low_stock_threshold,
+            tax_type, tax_rate, tax_category_id, tax_behavior, cb_percent, tags,
+            inventory_product_id, inventory_deduction_quantity, deleted_at, created_at, updated_at
+          )
+          SELECT
+            id, category_id, name, description, price, cost, sku, barcode,
+            sale_unit, allow_fractional_quantity, weight_precision, image_url,
+            is_active, sort_order, track_inventory, stock_quantity, low_stock_threshold,
+            tax_type, tax_rate, tax_category_id, tax_behavior, cb_percent, tags,
+            ${productColumns.includes('inventory_product_id') ? 'inventory_product_id' : 'NULL'},
+            ${productColumns.includes('inventory_deduction_quantity') ? 'inventory_deduction_quantity' : '1'},
+            deleted_at, created_at, updated_at
+          FROM products;
+          DROP TABLE products;
+          ALTER TABLE products_volume_migration RENAME TO products;
+          PRAGMA foreign_keys = ON;
+        `);
+        for (const index of productIndexes) {
+          db.exec(index.sql);
+        }
+      }
+
+      if (!getColumns(db, 'order_items').includes('inventory_product_id')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN inventory_product_id TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4988,7 +5073,7 @@ function createSchema(): void {
       cost REAL DEFAULT 0,
       sku TEXT,
       barcode TEXT,
-      sale_unit TEXT NOT NULL DEFAULT 'each' CHECK (sale_unit IN ('each', 'kg', 'g', 'lb')),
+      sale_unit TEXT NOT NULL DEFAULT 'each' CHECK (sale_unit IN ('each', 'kg', 'g', 'lb', 'ml', 'cl', 'l', 'fl oz', 'oz')),
       allow_fractional_quantity INTEGER NOT NULL DEFAULT 0,
       weight_precision INTEGER NOT NULL DEFAULT 3 CHECK (weight_precision BETWEEN 0 AND 4),
       image_url TEXT,
@@ -5004,6 +5089,8 @@ function createSchema(): void {
       -- Defaults to 0 so fresh and upgraded installs have identical schema.
       cb_percent REAL DEFAULT 0,
       tags TEXT,
+      inventory_product_id TEXT DEFAULT NULL REFERENCES products(id),
+      inventory_deduction_quantity REAL DEFAULT 1,
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -5167,6 +5254,7 @@ function createSchema(): void {
       unit_price REAL NOT NULL,
       quantity INTEGER NOT NULL DEFAULT 1,
       inventory_deducted_quantity REAL NOT NULL DEFAULT 0,
+      inventory_product_id TEXT DEFAULT NULL,
       subtotal REAL NOT NULL,
       tax_amount REAL DEFAULT 0,
       tax_breakdown TEXT,

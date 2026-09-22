@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck, Globe,
   Plus, Minus, Trash2, Pause, MapPin, SquarePen,
@@ -14,6 +15,7 @@ import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { fractionalQuantityStep, roundToQuantityPrecision } from '@/lib/utils';
 
 interface Props {
   tables: Table[];
@@ -32,6 +34,100 @@ const orderTypeIcons = {
   delivery: Truck,
   online: Globe,
 };
+
+function ItemQuantityControl({
+  item,
+  updateQuantity,
+}: {
+  item: CartItem;
+  updateQuantity: (cartItemId: string, quantity: number) => void;
+}) {
+  const t = useTranslations('pos');
+  const step = fractionalQuantityStep(item.product);
+  const [draft, setDraft] = useState(() => String(item.quantity));
+  const [lastQuantity, setLastQuantity] = useState(item.quantity);
+  if (lastQuantity !== item.quantity) {
+    setLastQuantity(item.quantity);
+    setDraft(String(item.quantity));
+  }
+
+  const commitDraft = () => {
+    if (step == null) return;
+    const parsed = Number(draft);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      setDraft(String(item.quantity));
+      return;
+    }
+    const rounded = roundToQuantityPrecision(parsed, step);
+    updateQuantity(item.id, rounded);
+    setDraft(String(rounded));
+  };
+
+  const stepBy = (sign: 1 | -1) => {
+    if (step == null) {
+      updateQuantity(item.id, item.quantity + sign);
+      return;
+    }
+    const next = roundToQuantityPrecision(item.quantity + sign * step, step);
+    updateQuantity(item.id, next);
+    setDraft(String(next));
+  };
+
+  if (step == null) {
+    return (
+      <>
+        <button
+          onClick={() => stepBy(-1)}
+          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          aria-label={t('remove')}
+        >
+          <Minus size={16} />
+        </button>
+        <span className="w-6 text-center text-base font-semibold tabular-nums">{item.quantity}</span>
+        <button
+          onClick={() => stepBy(1)}
+          className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+          aria-label={t('addItems')}
+        >
+          <Plus size={16} />
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => stepBy(-1)}
+        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        aria-label={t('remove')}
+      >
+        <Minus size={16} />
+      </button>
+      <input
+        type="number"
+        inputMode="decimal"
+        min={step}
+        step={step}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commitDraft}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commitDraft();
+        }}
+        aria-label={t('quantity')}
+        className="w-14 text-center text-base font-semibold tabular-nums border border-border bg-card rounded-md px-1 py-0.5 outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
+      />
+      <button
+        onClick={() => stepBy(1)}
+        className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
+        aria-label={t('addItems')}
+      >
+        <Plus size={16} />
+      </button>
+    </>
+  );
+}
 
 export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
@@ -212,21 +308,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                         {tCommon('edit')}
                       </button>
                     )}
-                    <button
-                      onClick={() => cart.updateQuantity(item.id, item.quantity - 1)}
-                      className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
-                      aria-label={t('remove')}
-                    >
-                      <Minus size={16} />
-                    </button>
-                    <span className="w-6 text-center text-base font-semibold tabular-nums">{item.quantity}</span>
-                    <button
-                      onClick={() => cart.updateQuantity(item.id, item.quantity + 1)}
-                      className="touch-target rounded-full bg-muted transition-colors hover:bg-muted/70 active:bg-muted/70"
-                      aria-label={t('addItems')}
-                    >
-                      <Plus size={16} />
-                    </button>
+                    <ItemQuantityControl item={item} updateQuantity={cart.updateQuantity} />
                   </div>
                 </div>
               </div>

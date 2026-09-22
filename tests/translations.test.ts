@@ -554,9 +554,14 @@ const TR_INTENTIONAL_IDENTICAL = new Set<string>([
   'products.addonSelectionRange', // pure format "{min} – {max}"
   'products.columnCashback', // financial loanword "Cashback"
   'products.fieldSku', // technical acronym "SKU"
+  'products.saleUnitCl', // unit "cl"
+  'products.saleUnitFlOz', // unit "fl oz"
   'products.saleUnitG', // unit "g"
   'products.saleUnitKg', // unit "kg"
+  'products.saleUnitL', // unit "l"
   'products.saleUnitLb', // unit "lb"
+  'products.saleUnitMl', // unit "ml"
+  'products.saleUnitOz', // unit "oz"
   'products.skuLabel', // pure format "SKU: {sku}"
   'products.tagVegan', // universal dietary term "Vegan"
   'settings.ipAddressPlaceholder', // example IP "192.168.1.100"
@@ -688,9 +693,14 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'products.fieldBarcode',
   'products.fieldSku',
   'products.imageCamera',
+  'products.saleUnitCl',
+  'products.saleUnitFlOz',
   'products.saleUnitG',
   'products.saleUnitKg',
+  'products.saleUnitL',
   'products.saleUnitLb',
+  'products.saleUnitMl',
+  'products.saleUnitOz',
   'products.skuLabel',
   'products.tagBestseller',
   'products.tagOrganic',
@@ -890,9 +900,14 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'products.nameLabel',
   'products.optional',
   'products.optionalTag',
+  'products.saleUnitCl',
+  'products.saleUnitFlOz',
   'products.saleUnitG',
   'products.saleUnitKg',
+  'products.saleUnitL',
   'products.saleUnitLb',
+  'products.saleUnitMl',
+  'products.saleUnitOz',
   'products.skuLabel',
   'products.tagBestseller',
   'products.tagVegan',

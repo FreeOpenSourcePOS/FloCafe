@@ -2093,14 +2093,16 @@ router.post('/:id/payments', requireRole(...ROLE_ACCESS.ownerManagerCashier), (r
     res.json(result);
   } catch (error: any) {
     const statusCode = error.statusCode || 500;
+    const errorMessage = String(error.message || '');
+    const isCustomerMismatch = errorMessage === 'Payment customer does not match the bill customer';
     console.error('[API] Batch bill payment failed:', error);
-    if (statusCode >= 500 || /mismatch/i.test(String(error.message || ''))) {
+    if (statusCode >= 500 || isCustomerMismatch) {
       try {
         cloudSync.reportDiagnostic({
           event_id: randomUUID(),
           event_code: 'payment.batch.failed',
           severity: 'error',
-          message: String(error.message || 'Payment batch failed').slice(0, 300),
+          message: 'Payment batch failed',
           metadata: { status: statusCode, stage: 'payment_batch' },
           occurred_at: new Date().toISOString(),
         });

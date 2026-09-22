@@ -21,7 +21,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const {
-  initTestDb, createApp, startServer, seedOwnerUser, seedProduct, seedTable, seedCategory,
+  initTestDb, createApp, startServer, seedOwnerUser, seedProduct, seedTable, seedCategory, seedCustomer,
   api, assert, assertEqual, getResults, closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes/index');
@@ -51,6 +51,19 @@ function findDiagnosticByStage(db: any, eventCode: string, stage: string): any |
     try {
       const payload = JSON.parse(row.payload);
       if (payload.event_code === eventCode && payload.metadata?.stage === stage) return { ...payload, status: row.status };
+    } catch { /* skip corrupt */ }
+  }
+  return null;
+}
+
+function findDiagnosticByStageAndHttpStatus(db: any, eventCode: string, stage: string, status: number): any | null {
+  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC').all() as Array<{ payload: string; status: string }>;
+  for (const row of rows) {
+    try {
+      const payload = JSON.parse(row.payload);
+      if (payload.event_code === eventCode
+        && payload.metadata?.stage === stage
+        && payload.metadata?.status === status) return { ...payload, status: row.status };
     } catch { /* skip corrupt */ }
   }
   return null;
@@ -306,7 +319,26 @@ async function main() {
       db.prepare('DROP TRIGGER diag_force_payment_failure').run();
     }
 
-    console.log('\n10. POS checkout failure path: reporting must not throw or add toasts when telemetry fails');
+    console.log('\n10. payment.batch.failed: customer mismatch validation is enqueued while the request remains 400');
+    seedCustomer(db, 'diag-customer-a', 'Diagnostic Customer A');
+    seedCustomer(db, 'diag-customer-b', 'Diagnostic Customer B');
+    const mismatchOrder = db.prepare(`INSERT INTO orders (order_number, customer_id, type, status, subtotal, total, created_at, updated_at)
+      VALUES ('ORD-DIAG-MISMATCH', 'diag-customer-a', 'dine_in', 'pending', 10, 10, ?, ?)`).run(now(), now());
+    const mismatchBill = db.prepare(`INSERT INTO bills (order_id, bill_number, customer_id, subtotal, discount_amount, tax_amount, total, paid_amount, balance, payment_status, created_at, updated_at)
+      VALUES (?, 'INV-DIAG-MISMATCH', 'diag-customer-a', 10, 0, 0, 10, 0, 10, 'unpaid', ?, ?)`).run(mismatchOrder.lastInsertRowid, now(), now());
+    const mismatchRes = await api(baseUrl, `/api/bills/${mismatchBill.lastInsertRowid}/payments`, {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { customer_id: 'diag-customer-b', payments: [{ method: 'cash', amount: 10 }] },
+    });
+    assertEqual(mismatchRes.status, 400, 'a payment for a different customer is rejected with 400');
+    const mismatchQueued = await settle(() => findDiagnosticByStageAndHttpStatus(db, 'payment.batch.failed', 'payment_batch', 400) !== null);
+    assert(mismatchQueued, 'payment.batch.failed is enqueued for a customer mismatch');
+    const mismatchDiag = findDiagnosticByStageAndHttpStatus(db, 'payment.batch.failed', 'payment_batch', 400);
+    assertEqual(mismatchDiag?.metadata.status, 400, 'customer mismatch diagnostic metadata carries the HTTP status');
+    assertEqual(mismatchDiag?.message, 'Payment batch failed', 'customer mismatch diagnostic uses approved text');
+
+    console.log('\n11. POS checkout failure path: reporting must not throw or add toasts when telemetry fails');
     // Mirror of frontend reportOrderFailure: dispatch failure is swallowed and
     // the local support state is independent of the telemetry request.
     let telemetryFailed = false;
@@ -320,7 +352,7 @@ async function main() {
     assert(localSupportShown, 'local support prompt is staged regardless of telemetry outcome');
     assert(telemetryFailed, 'telemetry dispatch failure is caught and swallowed');
 
-    console.log('\n11. Validation hardening: non-object metadata rejected; messages and keys are controlled');
+    console.log('\n12. Validation hardening: non-object metadata rejected; messages and keys are controlled');
     const primitiveMeta = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
       headers: owner.authHeader,

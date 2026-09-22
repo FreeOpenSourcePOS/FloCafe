@@ -305,6 +305,19 @@ async function main(): Promise<void> {
   gd.googleDrive.clearDatabaseRestoreInvalidation();
   console.log('   ✓ partial account bindings do not infer a completed replacement');
 
+  fs.writeFileSync(restoreIntentPath, JSON.stringify({ phase: 'prepared', database_account_subject: 'subject-a' }), { mode: 0o600 });
+  await gd.googleDrive.prepareForDatabaseRestore();
+  gd.googleDrive.releaseDatabaseRestore();
+  assert.equal(fs.existsSync(restoreIntentPath), false, 'a recoverable prior restore boundary does not block a new local restore');
+  console.log('   ✓ local restore can recover a stale bound Drive restore boundary');
+
+  fs.writeFileSync(restoreIntentPath, JSON.stringify({ phase: 'prepared', database_account_subject: 'subject-a' }), { mode: 0o600 });
+  (gd.googleDrive as any).databaseRestorePending = true;
+  await assert.rejects(gd.googleDrive.prepareForDatabaseRestore(), (error: any) => error?.code === 'conflict', 'a second restore cannot take over an active restore boundary');
+  (gd.googleDrive as any).databaseRestorePending = false;
+  gd.googleDrive.clearDatabaseRestoreInvalidation();
+  console.log('   ✓ active local restore boundaries still reject concurrent restores');
+
   const mutableFs = nativeFs as unknown as { fsyncSync: typeof fs.fsyncSync; unlinkSync: typeof fs.unlinkSync };
   const originalFsyncSync = nativeFs.fsyncSync;
   if (process.platform !== 'win32') {

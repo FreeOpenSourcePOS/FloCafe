@@ -459,6 +459,44 @@ async function main(): Promise<void> {
       assertEqual(settle.status, 400, `refunded-settle-rejected: settle rejected (got ${settle.status})`);
       assertEqual(billRow(db, billId).payment_status, 'refunded', 'refunded-settle-rejected: status still refunded after settle attempt');
     }
+
+    // ── restore blocked when bill has a positive partial payment ──
+    console.log('\n─── restore-partial-payment: restore rejected when bill has a positive partial payment ───');
+    {
+      // Two items: cancel the cheaper one so the remaining bill is 1000, then partially pay.
+      const create = await createOrder({ type: 'takeaway', items: [
+        { product_id: 'prod-1000', quantity: 1 },
+        { product_id: 'prod-400', quantity: 1 },
+      ]});
+      assertEqual(create.status, 201, 'restore-partial-payment: order created');
+      const orderId = create.data.order.id;
+      const gen = await generateBill(orderId);
+      assertEqual(gen.status, 201, 'restore-partial-payment: bill generated');
+      const billId = gen.data.bill.id;
+
+      // Cancel the prod-400 item so the bill syncs to 1000
+      const orderData = await api(baseUrl, `/api/orders/${orderId}`, { method: 'GET', headers: A });
+      const items = orderData.data?.order?.items ?? [];
+      const item400 = items.find((i: any) => i.product_id === 'prod-400');
+      const item1000 = items.find((i: any) => i.product_id === 'prod-1000');
+      const cancelR = await cancelItem(orderId, item400.id, { reason: 'zb restore-partial-payment cancel 400' });
+      assertEqual(cancelR.status, 200, 'restore-partial-payment: prod-400 item cancelled');
+
+      // Partial payment on the remaining 1000-total bill
+      const partialPay = await pay(billId, { method: 'cash', amount: 300 });
+      assertEqual(partialPay.status, 200, 'restore-partial-payment: partial payment of 300 accepted');
+      assertEqual(billRow(db, billId).payment_status, 'partial', 'restore-partial-payment: bill status is partial after partial payment');
+      assertEqual(Number(billRow(db, billId).paid_amount) > 0, true, 'restore-partial-payment: paid_amount is positive');
+
+      // Restore the cancelled item — must be rejected because the bill has a positive partial payment
+      const restore = await api(baseUrl, `/api/orders/${orderId}/items/${item400.id}/restore`, {
+        method: 'PATCH',
+        body: { reason: 'zb restore-partial-payment' },
+        headers: A,
+      });
+      assertEqual(restore.status, 400, 'restore-partial-payment: restore rejected when partial payment recorded');
+      assertEqual(billRow(db, billId).payment_status, 'partial', 'restore-partial-payment: bill stays partial after rejected restore');
+    }
   } finally {
     server.close();
     closeDatabase();

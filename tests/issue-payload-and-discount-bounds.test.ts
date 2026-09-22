@@ -1,9 +1,9 @@
 /**
- * Issue: payload and discount bounds (H1d + H3)
+ * Issue: payload and discount bounds (order-item-payload-cap + bill-discount-clamp)
  *
- * H1d: POST /api/orders and POST /api/orders/:id/items accept unbounded
+ * order-item-payload-cap: POST /api/orders and POST /api/orders/:id/items accept unbounded
  *      item arrays (no cap), unlike held orders (MAX_HELD_ORDER_ITEMS).
- * H3:  POST /api/bills/:id/applyDiscount accepts a flat amount discount
+ * bill-discount-clamp:  POST /api/bills/:id/applyDiscount accepts a flat amount discount
  *      larger than bill.subtotal, zeroing the tax ratio with no clamp.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/issue-payload-and-discount-bounds.test.ts
@@ -64,7 +64,7 @@ async function main() {
   const { baseUrl, server } = await startServer(app);
 
   try {
-    console.log('\n─── H1d: order create item cap ───');
+    console.log('\n─── order-item-payload-cap: order create item cap ───');
     const overLimit = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: { type: 'takeaway', items: itemsPayload(MAX_ORDER_ITEMS + 1) },
@@ -87,7 +87,7 @@ async function main() {
     });
     assertEqual(smallOrder.status, 201, 'small order create still succeeds');
 
-    console.log('\n─── H1d: order append-items cap ───');
+    console.log('\n─── order-item-payload-cap: order append-items cap ───');
     const appendOver = await api(baseUrl, `/api/orders/${smallOrder.data.order.id}/items`, {
       method: 'POST',
       body: { items: itemsPayload(MAX_ORDER_ITEMS + 1) },
@@ -103,7 +103,7 @@ async function main() {
     });
     assertEqual(appendOk.status, 200, 'append within cap still succeeds');
 
-    console.log('\n─── H3: flat bill discount clamped to subtotal ───');
+    console.log('\n─── bill-discount-clamp: flat bill discount clamped to subtotal ───');
     const discountOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: { type: 'takeaway', items: itemsPayload(1) },

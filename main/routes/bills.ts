@@ -1865,7 +1865,9 @@ function preparePaymentBatch(
     }
     if (key) seenTransactionKeys.add(key);
   }
-  if (bill.payment_status === 'refunded') throw Object.assign(new Error('Cannot accept payment on a refunded bill'), { statusCode: 409 });
+  if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
+    throw Object.assign(new Error('Cannot accept payment on a refunded bill'), { statusCode: 409 });
+  }
   if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
   if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
     throw Object.assign(new Error('Bill has been refunded'), { statusCode: 400 });

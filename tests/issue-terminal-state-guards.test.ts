@@ -4,9 +4,10 @@
  * Covers proven defects where payment/discount/item mutations ignored
  * terminal order or refunded-bill state:
  * - C2: paying a bill on a cancelled order flips it to completed
- * - H1a: accepting a new payment on a fully refunded bill
+ * - H1a: accepting a new payment on a fully or partially refunded bill
  * - H1b: applying discounts to refunded / partially refunded bills
- * - H1c: adding items to an order whose bill was refunded
+ * - H1c: adding items to an order whose bill was refunded / partially refunded
+ * - Item discount endpoint rejects refunded / partially refunded bills
  *
  * Usage: node tests/run-electron-node-test.cjs tests/issue-terminal-state-guards.test.ts
  */
@@ -29,7 +30,7 @@ const {
   api, assert, assertEqual, getResults, closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
 
-const { orderRoutes } = require('../main/routes/orders');
+const { orderRoutes, resetPinRateLimitForTests } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { refundRoutes } = require('../main/routes/refunds');
 
@@ -161,6 +162,32 @@ async function main(): Promise<void> {
       assertEqual(after.payment_status, 'refunded', 'H1a: still refunded after rejected payment');
     }
 
+    // ── H1a: reject payment on a partially refunded bill ─────────────────────
+    console.log('\n─── H1a: payment rejected on partially refunded bill ───');
+    {
+      resetPinRateLimitForTests();
+      const { billId } = await newTakeawayOrder('prod-1000');
+      const full = await pay(billId, { method: 'cash', amount: null });
+      assertEqual(full.status, 200, 'H1a-partial: full payment accepted');
+      const ref = await refund({
+        bill_id: billId,
+        amount: 400,
+        method: 'cash',
+        reason: 'tsg H1a partial',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      assertEqual(ref.status, 201, 'H1a-partial: partial refund created');
+      const before = billRow(db, billId);
+      assertEqual(before.payment_status, 'partially_refunded', 'H1a-partial: bill partially refunded');
+
+      const pay2 = await pay(billId, { method: 'cash', amount: 100 });
+      assertEqual(pay2.status, 409, 'H1a-partial: payment rejected with 409');
+      const after = billRow(db, billId);
+      assertEqual(after.payment_status, 'partially_refunded', 'H1a-partial: still partially_refunded after rejected payment');
+      assertEqual(after.paid_amount, before.paid_amount, 'H1a-partial: paid_amount unchanged');
+    }
+
     // ── H1b: reject discounts on refunded / partially refunded bills ─────────
     console.log('\n─── H1b: discounts rejected on refunded bills ───');
     {
@@ -232,6 +259,62 @@ async function main(): Promise<void> {
       const after = billRow(db, billId);
       assertEqual(Number(after.subtotal), Number(before.subtotal), 'H1c: bill subtotal unchanged');
       assertEqual(Number(after.total), Number(before.total), 'H1c: bill total unchanged');
+    }
+
+    // ── H1c: reject add-items when the bill is partially refunded ────────────
+    console.log('\n─── H1c: add-items rejected on partially refunded order ───');
+    {
+      resetPinRateLimitForTests();
+      const { orderId, billId } = await newTakeawayOrder('prod-1000');
+      const partialPay = await pay(billId, { method: 'cash', amount: 600 });
+      assertEqual(partialPay.status, 200, 'H1c-partial: partial payment accepted');
+      assertEqual(orderRow(db, orderId).status !== 'completed', true, 'H1c-partial: order still active after partial payment');
+      const ref = await refund({
+        bill_id: billId,
+        amount: 200,
+        method: 'cash',
+        reason: 'tsg H1c partial',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      assertEqual(ref.status, 201, 'H1c-partial: partial refund created');
+      const before = billRow(db, billId);
+      assertEqual(before.payment_status, 'partially_refunded', 'H1c-partial: bill partially refunded');
+
+      const add = await addItems(orderId, [{ product_id: 'prod-400', quantity: 1 }]);
+      assertEqual(add.status, 409, 'H1c-partial: add-items rejected with 409');
+      const after = billRow(db, billId);
+      assertEqual(Number(after.subtotal), Number(before.subtotal), 'H1c-partial: bill subtotal unchanged');
+      assertEqual(Number(after.total), Number(before.total), 'H1c-partial: bill total unchanged');
+    }
+
+    // ── Finding 3: reject item discount when bill is refunded/partial ────────
+    console.log('\n─── Item discount rejected on partially refunded bill ───');
+    {
+      resetPinRateLimitForTests();
+      const { orderId, billId } = await newTakeawayOrder('prod-1000');
+      const partialPay = await pay(billId, { method: 'cash', amount: 600 });
+      assertEqual(partialPay.status, 200, 'item-disc: partial payment accepted');
+      const ref = await refund({
+        bill_id: billId,
+        amount: 200,
+        method: 'cash',
+        reason: 'tsg item discount',
+        override_pin: pin,
+        approver_id: approver,
+      });
+      assertEqual(ref.status, 201, 'item-disc: partial refund created');
+      const itemRow = db.prepare('SELECT id FROM order_items WHERE order_id = ? LIMIT 1').get(orderId) as any;
+      const before = billRow(db, billId);
+
+      const disc = await api(baseUrl, `/api/orders/${orderId}/items/${itemRow.id}/discount`, {
+        method: 'PATCH',
+        body: { discount_type: 'amount', discount_value: 50 },
+        headers: A,
+      });
+      assertEqual(disc.status, 409, 'item-disc: discount on partially refunded bill rejected with 409');
+      const after = billRow(db, billId);
+      assertEqual(Number(after.total), Number(before.total), 'item-disc: bill total unchanged');
     }
   } finally {
     server.close();

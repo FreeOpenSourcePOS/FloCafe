@@ -157,6 +157,7 @@ export async function printWebBill(
     };
 
     const triggerPrint = () => {
+      if (settled) return;
       try {
         if (printWindow.closed) {
           settle(new Error('Print window was closed before receipt could be printed'));

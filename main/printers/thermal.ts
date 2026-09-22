@@ -2342,6 +2342,7 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
   return new Promise((resolve) => {
     const client = new net.Socket();
     let settled = false;
+    let connected = false;
     let timer: NodeJS.Timeout | null = null;
 
     const onAbort = (): void => {
@@ -2358,6 +2359,7 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
     };
 
     client.connect(port, ip, () => {
+      connected = true;
       // For small payloads (typical text receipts <4KB), write directly in a single pass.
       if (data.length <= NETWORK_PRINT_CHUNK_SIZE) {
         client.write(data, () => {
@@ -2413,7 +2415,10 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer, si
 
     client.setTimeout(5000, () => {
       client.destroy();
-      finish({ ok: false, detail: `Timed out connecting to ${ip}:${port}` });
+      finish({
+        ok: false,
+        detail: connected ? `Timed out writing to ${ip}:${port}` : `Timed out connecting to ${ip}:${port}`,
+      });
     });
     signal?.addEventListener('abort', onAbort, { once: true });
     if (signal?.aborted) onAbort();

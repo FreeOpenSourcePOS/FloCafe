@@ -70,8 +70,17 @@ function closeKdsClient(client: KdsClient, message?: string): void {
   }
   clearClientIdentity(client);
   if (client.ws.readyState === WebSocket.OPEN || client.ws.readyState === WebSocket.CONNECTING) {
-    client.ws.close(1008, message || 'Session invalid');
+    try { client.ws.close(1008, message || 'Session invalid'); } catch { }
   }
+}
+
+export function getKdsClientCount(): number {
+  return clients.size;
+}
+
+export function closeKdsClientForTest(ws: WebSocket, message?: string): void {
+  const client = clients.get(ws);
+  if (client) closeKdsClient(client, message);
 }
 
 function isKdsClientAuthorized(client: KdsClient): boolean {
@@ -622,7 +631,11 @@ function broadcastOrderUpdate(): void {
       closeKdsClient(client, 'Session expired or revoked');
       return;
     }
-    if (client.ws.readyState !== WebSocket.OPEN) return;
+    if (client.ws.readyState !== WebSocket.OPEN) {
+      clients.delete(client.ws);
+      clearClientAuthTimeout(client);
+      return;
+    }
     try {
       sendActiveOrders(client.ws, client.categoryIds, client.stationIds, client.role === 'chef' || client.categoryIds.length > 0 || client.stationIds.length > 0);
       client.categoryIdsChanged = false;

@@ -14,11 +14,14 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initTestDb, assertEqual, assert, getResults, resetCounters, seedOwnerUser } = require('./helpers/test-setup');
+const {
+  initTestDb, assertEqual, assert, getResults, resetCounters, seedOwnerUser, seedCategory, seedProduct,
+} = require('./helpers/test-setup');
 const {
   createSupply, getSupply, listSupplies, listSupplyMovements, recordSupplyMovement,
   softDeleteSupply, updateSupply, SupplyServiceError,
 } = require('../main/services/supplies');
+const { saveRecipe } = require('../main/services/recipes');
 const { convertQuantity } = require('../main/services/units');
 
 function expectServiceError(fn: () => void, statusCode: number, label: string): void {
@@ -46,6 +49,14 @@ async function main() {
   assertEqual(coffee.low_stock_threshold, 2, 'create stores threshold');
   assertEqual(coffee.is_active, 1, 'create defaults to active');
   assert(coffee.id.startsWith('sup_'), 'create generates supply id');
+
+  seedCategory(db, 'cat-supplies', 'Supply Recipes');
+  seedProduct(db, 'prod-supply-recipe', 'cat-supplies', 'Recipe product', 100);
+  saveRecipe(db, {
+    productId: 'prod-supply-recipe',
+    items: [{ supplyId: coffee.id, quantity: 1, unit: 'kg' }],
+  });
+  expectServiceError(() => softDeleteSupply(db, coffee.id), 409, 'cannot delete a recipe-linked supply');
 
   expectServiceError(() => createSupply(db, { name: '   ', baseUnit: 'g' }), 400, 'create rejects blank name');
   expectServiceError(() => createSupply(db, { name: 'Bad', baseUnit: 'lb' as any }), 400, 'create rejects unknown base unit');

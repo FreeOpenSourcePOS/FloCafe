@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { getDatabase, now } from '../db';
+import { getDatabase, now, withTxn } from '../db';
 import {
   SupplyUnit,
   assertSupplyUnit,
@@ -190,6 +190,8 @@ export function updateSupply(
 
 export function softDeleteSupply(db: ReturnType<typeof getDatabase>, id: string): void {
   getSupply(db, id);
+  const linkedRecipe = db.prepare('SELECT 1 FROM recipe_items WHERE supply_id = ? LIMIT 1').get(id);
+  if (linkedRecipe) throw new SupplyServiceError(409, 'Cannot delete a supply used by a recipe');
   const timestamp = now();
   db.prepare('UPDATE supplies SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
     .run(timestamp, timestamp, id);
@@ -249,7 +251,7 @@ export function applySupplyStockChange(
   return { stockBefore, stockAfter };
 }
 
-export function recordSupplyMovement(db: ReturnType<typeof getDatabase>, input: RecordMovementInput): SupplyMovement | null {
+function recordSupplyMovementInTxn(db: ReturnType<typeof getDatabase>, input: RecordMovementInput): SupplyMovement | null {
   const supply = getSupply(db, input.supplyId);
   if (!input.actorUserId) throw new SupplyServiceError(400, 'actor_user_id is required');
   const quantity = normalizeQuantity(input.quantity);
@@ -308,6 +310,10 @@ export function recordSupplyMovement(db: ReturnType<typeof getDatabase>, input: 
   return row || null;
 }
 
+export function recordSupplyMovement(db: ReturnType<typeof getDatabase>, input: RecordMovementInput): SupplyMovement | null {
+  return withTxn(() => recordSupplyMovementInTxn(db, input));
+}
+
 export function listSupplyMovements(
   db: ReturnType<typeof getDatabase>,
   filters: {
@@ -358,4 +364,3 @@ export function listSupplyMovements(
     nextCursor: hasMore ? movements[movements.length - 1].id : null,
   };
 }
-

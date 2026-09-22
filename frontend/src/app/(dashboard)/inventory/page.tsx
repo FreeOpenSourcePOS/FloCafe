@@ -545,7 +545,7 @@ export default function InventoryPage() {
                 <option value="waste">{t('waste')}</option>
               </select>
               <div className="flex gap-2">
-                <input type="number" step="any" min="0" placeholder={t('quantity')} value={movementForm.quantity}
+                <input type="number" step="any" min={movementForm.movement_type === 'adjustment' ? undefined : 0} placeholder={t('quantity')} value={movementForm.quantity}
                   onChange={(e) => setMovementForm({ ...movementForm, quantity: e.target.value })}
                   className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
                 <select value={movementForm.unit}

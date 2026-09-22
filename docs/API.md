@@ -358,7 +358,7 @@ Fetch one non-deleted supply.
 Update `name`, `is_active`, and/or `low_stock_threshold`. Does not change `base_unit` or `stock_quantity` (use movements for stock).
 
 ### DELETE `/api/supplies/:id`
-Soft-delete a supply (`deleted_at` is set). Movement history is retained. Subsequent list/get omit it.
+Soft-delete a supply (`deleted_at` is set). Movement history is retained. Subsequent list/get omit it. A supply referenced by a recipe cannot be deleted until that recipe is removed (returns `409`).
 
 ### POST `/api/supplies/:id/movements`
 Record a manual stock movement.

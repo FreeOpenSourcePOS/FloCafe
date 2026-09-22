@@ -372,9 +372,11 @@ export default function DashboardPage() {
     const direction = difference === 0 ? 'flat' : difference > 0 ? 'up' : 'down';
     const percent = previous === 0 ? null : Math.round((Math.abs(difference) / Math.abs(previous)) * 100);
     const Icon = direction === 'up' ? ArrowUpRight : direction === 'down' ? ArrowDownRight : Minus;
-    const label = previous === 0
-      ? difference === 0 ? t('kpiNoChangeVsSameDayLastWeek') : t('kpiNewVsSameDayLastWeek')
-      : t('kpiChangeVsSameDayLastWeek', { percent: `${direction === 'down' ? '-' : direction === 'up' ? '+' : ''}${percent}` });
+    const label = difference === 0
+      ? t('kpiNoChangeVsSameDayLastWeek')
+      : previous === 0
+        ? t('kpiNewVsSameDayLastWeek')
+        : t('kpiChangeVsSameDayLastWeek', { percent: `${direction === 'down' ? '-' : direction === 'up' ? '+' : ''}${percent}` });
     const tone = direction === 'up'
       ? 'bg-emerald-100/80 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300'
       : direction === 'down'
@@ -504,7 +506,7 @@ export default function DashboardPage() {
           },
         ];
 
-  const secondaryMetrics: DashboardMetric[] = periodMode === 'day'
+  const secondaryMetrics: DashboardMetric[] = periodMode === 'day' && isToday
     ? [
         {
           label: t('avgTableTurn'),
@@ -537,9 +539,8 @@ export default function DashboardPage() {
     <div className="min-h-full bg-background p-4 sm:p-6 lg:p-7">
       <div className="mb-7 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand">{t('title')}</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            {periodMode === 'month' ? t('month') : isToday ? t('todaySales') : t('sales')}
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {t('title')}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {periodMode === 'month' ? t('selectMonth') : t('selectDate')}

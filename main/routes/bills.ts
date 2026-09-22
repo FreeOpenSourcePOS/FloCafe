@@ -1865,6 +1865,7 @@ function preparePaymentBatch(
     }
     if (key) seenTransactionKeys.add(key);
   }
+  if (bill.payment_status === 'refunded') throw Object.assign(new Error('Cannot accept payment on a refunded bill'), { statusCode: 409 });
   if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
   if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
     throw Object.assign(new Error('Bill has been refunded'), { statusCode: 400 });
@@ -2014,9 +2015,13 @@ function applyPaymentBatch(
     const unpaidSibling = db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status NOT IN ('paid', 'refunded', 'partially_refunded') LIMIT 1`).get(bill.order_id, bill.id);
     const orderFullyPaid = !unpaidSibling;
     if (orderFullyPaid) {
-      db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?").run(changedAt, changedAt, bill.order_id);
-      const order = db.prepare('SELECT table_id FROM orders WHERE id = ?').get(bill.order_id) as any;
-      if (order?.table_id) db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(changedAt, order.table_id);
+      // Payment must not resurrect terminal orders (VALID_TRANSITIONS.cancelled = []).
+      const order = db.prepare('SELECT status, table_id FROM orders WHERE id = ?').get(bill.order_id) as any;
+      const canComplete = order && !['cancelled', 'completed'].includes(order.status);
+      if (canComplete) {
+        db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?").run(changedAt, changedAt, bill.order_id);
+        if (order.table_id) db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(changedAt, order.table_id);
+      }
     }
     const cashback = calculateCashback(db, bill, effectiveCustomerId);
     const alreadyCredited = db.prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`).get(bill.id);
@@ -2111,8 +2116,11 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
       return res.status(404).json({ error: 'Bill not found' });
     }
 
-    if (bill.payment_status === 'paid' || bill.payment_status === 'refunded') {
-      return res.status(400).json({ error: 'Cannot apply discount to a paid or refunded bill' });
+    if (bill.payment_status === 'refunded' || bill.payment_status === 'partially_refunded') {
+      return res.status(409).json({ error: 'Cannot apply discount to a refunded bill' });
+    }
+    if (bill.payment_status === 'paid') {
+      return res.status(400).json({ error: 'Cannot apply discount to a paid bill' });
     }
     if (bill.split_group_id) {
       return res.status(409).json({ error: 'Apply discounts before splitting a bill' });

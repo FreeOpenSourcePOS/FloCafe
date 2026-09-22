@@ -751,6 +751,12 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
       }
+      const refundedBill = db.prepare(
+        `SELECT 1 FROM bills WHERE order_id = ? AND payment_status = 'refunded' LIMIT 1`,
+      ).get(req.params.id);
+      if (refundedBill) {
+        throw Object.assign(new Error('Cannot add items to a refunded order'), { statusCode: 409 });
+      }
 
       try {
         for (const item of items) {
@@ -1296,6 +1302,12 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), { statusCode: 400 });
+      }
+      const refundedBill = db.prepare(
+        `SELECT 1 FROM bills WHERE order_id = ? AND payment_status IN ('refunded', 'partially_refunded') LIMIT 1`,
+      ).get(req.params.id);
+      if (refundedBill) {
+        throw Object.assign(new Error('Cannot apply discount to a refunded bill'), { statusCode: 409 });
       }
 
       const customer = currentOrder.customer_id

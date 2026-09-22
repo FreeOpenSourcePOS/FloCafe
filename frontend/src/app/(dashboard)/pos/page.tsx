@@ -24,6 +24,8 @@ import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
 import PaymentModal from '@/components/pos/PaymentModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
+import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
+import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { formatKotErrorToast, formatReceiptErrorToast } from '@/lib/printer/warnings';
@@ -100,6 +102,7 @@ export default function POSPage() {
   const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
+  const cashDrawer = useCashDrawerMovements();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -554,7 +557,7 @@ export default function POSPage() {
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
   const anyModalOpen = showTablePicker || !!addonProduct || !!editingCartItem || !!checkoutTable
-    || !!paymentBill || showCustomerPrompt || showPrepaidCheckout;
+    || !!paymentBill || showCustomerPrompt || showPrepaidCheckout || cashDrawer.open;
 
   useBarcodeScanner((code) => {
     const scan = resolveScannedProduct(code, products);
@@ -1133,9 +1136,11 @@ export default function POSPage() {
       <PosTopbar
         tables={tables}
         onShowTablePicker={() => setShowTablePicker(true)}
+        onShowCashMovement={cashDrawer.openModal}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
       />
+      <CashDrawerMovementModal model={cashDrawer} />
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 overflow-hidden p-4 gap-4">

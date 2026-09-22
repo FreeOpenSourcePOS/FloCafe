@@ -5,9 +5,13 @@ import { ArrowDownToLine, ArrowUpFromLine, Banknote, Loader2, Shield, X } from '
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Ltr } from '@/components/layout/Ltr';
+import { useAuthStore } from '@/store/auth';
+import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 import type { CashDrawerMovementType, CashDrawerMovementsModel } from '@/hooks/useCashDrawerMovements';
 
 export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsModel }) {
+  const { currentTenant } = useAuthStore();
+  const canVoid = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
   const {
     open, setOpen, businessDate, setBusinessDate, loadMovements, movementType, setMovementType,
     amountInput, setAmountInput, reason, setReason, movements, loading, submitting, error,
@@ -126,7 +130,7 @@ export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsM
                     </div>
                     {movement.voided_at ? (
                       <p className="text-xs text-muted-foreground">{movement.void_reason}</p>
-                    ) : voidingId === movement.id ? (
+                    ) : !canVoid ? null : voidingId === movement.id ? (
                       <div className="flex items-center gap-2">
                         <input
                           autoFocus

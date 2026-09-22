@@ -5,22 +5,24 @@ import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
+import { Banknote, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 
 interface Props {
   tables: Table[];
   onShowTablePicker: () => void;
+  onShowCashMovement: () => void;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
 }
 
-export default function PosTopbar({ tables, onShowTablePicker, fullscreen, onToggleFullscreen }: Props) {
+export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, fullscreen, onToggleFullscreen }: Props) {
   const cart = useCartStore();
   const { currentTenant } = useAuthStore();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
   const t = useTranslations('pos');
+  const tDashboard = useTranslations('dashboard');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const showTableBtn = isRestaurant && cart.orderType === 'dine_in' && tablesRequired;
 
@@ -46,6 +48,17 @@ export default function PosTopbar({ tables, onShowTablePicker, fullscreen, onTog
             : t('selectTable')}
         </button>
       )}
+
+      <button
+        type="button"
+        onClick={onShowCashMovement}
+        className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
+        title={tDashboard('cashMovement')}
+        aria-label={tDashboard('cashMovement')}
+      >
+        <Banknote size={16} />
+        {tDashboard('cashMovement')}
+      </button>
 
       <div className="shrink-0">
         <PrinterStatus />

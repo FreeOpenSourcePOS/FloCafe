@@ -1,13 +1,13 @@
 /**
- * Issue: printing and KDS resilience (T3a, T3b, H3b, H3c)
+ * Issue: printing and KDS resilience (web-print-once, phase-aware-timeout, kds-zombie-eviction, kds-close-throw-guard)
  *
- * T3a: printWebBill can call window.print() twice when both the poll timer
+ * web-print-once: printWebBill can call window.print() twice when both the poll timer
  *      and onload invoke triggerPrint after the first settle.
- * T3b: printViaNetwork timeout always reports "connecting" even after the
+ * phase-aware-timeout: printViaNetwork timeout always reports "connecting" even after the
  *      socket is connected and stalled mid-write.
- * H3b: broadcastOrderUpdate leaves CLOSED KDS sockets in the clients map
+ * kds-zombie-eviction: broadcastOrderUpdate leaves CLOSED KDS sockets in the clients map
  *      (zombie entries) when the close event never runs.
- * H3c: closeKdsClient can throw if ws.close() throws, breaking the caller.
+ * kds-close-throw-guard: closeKdsClient can throw if ws.close() throws, breaking the caller.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/issue-printing-and-kds-resilience.test.ts
  */
@@ -123,7 +123,7 @@ const sampleTenant = {
 } as any;
 
 async function testWebPrintSingleTrigger(): Promise<void> {
-  console.log('\n─── T3a: printWebBill prints once when poll and onload both fire ───');
+  console.log('\n─── web-print-once: printWebBill prints once when poll and onload both fire ───');
   const originalWindow = (global as any).window;
   try {
     const mockWindow = createMockWindow('loading');
@@ -184,7 +184,7 @@ class StallAfterConnectSocket extends EventEmitter {
 }
 
 async function testThermalPhaseAwareTimeout(): Promise<void> {
-  console.log('\n─── T3b: network timeout message is phase-aware after connect ───');
+  console.log('\n─── phase-aware-timeout: network timeout message is phase-aware after connect ───');
   const originalSocket = net.Socket;
   let mock: StallAfterConnectSocket | null = null;
   (net as any).Socket = function () {
@@ -260,7 +260,7 @@ function createFakeWs(options?: { closeThrows?: boolean }): any {
 }
 
 async function testKdsZombieEvictionAndCloseGuard(): Promise<void> {
-  console.log('\n─── H3b/H3c: zombie KDS eviction and closeKdsClient throw guard ───');
+  console.log('\n─── kds-zombie-eviction/kds-close-throw-guard: zombie KDS eviction and closeKdsClient throw guard ───');
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = 'test-secret-print-kds-resilience';
   const db = initTestDb();
   const bcrypt = require('bcryptjs');

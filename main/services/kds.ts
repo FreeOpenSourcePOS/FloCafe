@@ -627,13 +627,13 @@ function broadcastOrderUpdate(): void {
   // and share it across every client in this broadcast.
   const sharedExpiredVoidMarker = getExpiredVoidMarker();
   clients.forEach((client) => {
-    if (!isKdsClientAuthorized(client)) {
-      closeKdsClient(client, 'Session expired or revoked');
-      return;
-    }
     if (client.ws.readyState !== WebSocket.OPEN) {
       clients.delete(client.ws);
       clearClientAuthTimeout(client);
+      return;
+    }
+    if (!isKdsClientAuthorized(client)) {
+      closeKdsClient(client, 'Session expired or revoked');
       return;
     }
     try {

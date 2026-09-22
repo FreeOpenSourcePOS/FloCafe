@@ -1,15 +1,6 @@
 /**
- * Issue: printing and KDS resilience (web-print-once, phase-aware-timeout, kds-zombie-eviction, kds-close-throw-guard)
- *
- * web-print-once: printWebBill can call window.print() twice when both the poll timer
- *      and onload invoke triggerPrint after the first settle.
- * phase-aware-timeout: printViaNetwork timeout always reports "connecting" even after the
- *      socket is connected and stalled mid-write.
- * kds-zombie-eviction: broadcastOrderUpdate leaves CLOSED KDS sockets in the clients map
- *      (zombie entries) when the close event never runs.
- * kds-close-throw-guard: closeKdsClient can throw if ws.close() throws, breaking the caller.
- *
- * Usage: node tests/run-electron-node-test.cjs tests/issue-printing-and-kds-resilience.test.ts
+ * Single web print, phase-aware network timeout, KDS zombie eviction, close throw guard.
+ * Run: node tests/run-electron-node-test.cjs tests/issue-printing-and-kds-resilience.test.ts
  */
 
 const Module = require('module');

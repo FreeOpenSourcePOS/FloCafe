@@ -647,9 +647,10 @@ export default function DashboardPage() {
       <CashCloseModal model={cashClose} />
 
       {loading ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4" role="status" aria-live="polite">
+          <span className="sr-only">{tCommon('loading')}</span>
           {[0, 1, 2, 3].map((item) => (
-            <div key={item} className="h-36 animate-pulse rounded-2xl border border-border bg-card/70" />
+            <div key={item} aria-hidden="true" className="h-36 animate-pulse rounded-2xl border border-border bg-card/70" />
           ))}
         </div>
       ) : (

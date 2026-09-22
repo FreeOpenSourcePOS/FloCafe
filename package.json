@@ -276,6 +276,7 @@
     "decimal.js": "^10.6.0",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "@googleapis/drive": "^25.0.0",

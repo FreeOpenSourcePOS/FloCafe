@@ -385,6 +385,9 @@ function validateInventoryLinkFields(
   }
 
   if (quantityProvided) {
+    if (values.inventory_deduction_quantity === null && !effectiveLink) {
+      return null;
+    }
     if (typeof values.inventory_deduction_quantity !== 'number'
       || !Number.isFinite(values.inventory_deduction_quantity)
       || values.inventory_deduction_quantity <= 0) {
@@ -407,6 +410,14 @@ function validateInventoryLinkFields(
   }
   if (target.inventory_product_id) {
     return 'inventory_product_id target cannot itself be linked to another product';
+  }
+  if (productId && linkProvided) {
+    const incomingLink = db.prepare(
+      'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL LIMIT 1',
+    ).get(productId) as { id: string } | undefined;
+    if (incomingLink) {
+      return 'A product that is already an inventory target cannot be linked to another product';
+    }
   }
   const otherLink = db.prepare(
     'SELECT id FROM products WHERE inventory_product_id = ? AND deleted_at IS NULL AND id != ?',
@@ -980,6 +991,18 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const hasStockQuantity = hasOwn(req.body, 'stock_quantity') && stock_quantity !== null && stock_quantity !== undefined;
     const stockAdjustmentReason = stockReason(req.body.reason, 'Manual product stock update');
     const actorUserId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+    let normalizedInventoryDeductionQuantity: number | null = null;
+    if (hasInventoryDeductionQuantity) {
+      if (inventory_deduction_quantity === null) {
+        normalizedInventoryDeductionQuantity = null;
+      } else if (typeof inventory_deduction_quantity === 'number'
+        && Number.isFinite(inventory_deduction_quantity)
+        && inventory_deduction_quantity > 0) {
+        normalizedInventoryDeductionQuantity = inventory_deduction_quantity;
+      } else {
+        normalizedInventoryDeductionQuantity = 1;
+      }
+    }
 
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
@@ -1034,11 +1057,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
         has_inventory_product_id: hasInventoryProductId ? 1 : 0,
         inventory_product_id: hasInventoryProductId ? (inventory_product_id || null) : null,
         has_inventory_deduction_quantity: hasInventoryDeductionQuantity ? 1 : 0,
-        inventory_deduction_quantity: hasInventoryDeductionQuantity
-          ? (typeof inventory_deduction_quantity === 'number' && Number.isFinite(inventory_deduction_quantity) && inventory_deduction_quantity > 0
-            ? inventory_deduction_quantity
-            : 1)
-          : null,
+        inventory_deduction_quantity: normalizedInventoryDeductionQuantity,
         has_description: hasDescription ? 1 : 0,
         description: normalizeNullableString(description),
         price: price ?? null,

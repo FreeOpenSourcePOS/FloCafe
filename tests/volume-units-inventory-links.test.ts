@@ -215,6 +215,7 @@ async function main() {
     seedCategory(db, 'cat-link', 'Menu');
     seedProduct(db, 'milk-bottle', 'cat-link', 'Milk Bottle', 60, { track_inventory: true, stock_quantity: 10 });
     seedProduct(db, 'syrup-bottle', 'cat-link', 'Syrup Bottle', 80, { track_inventory: true, stock_quantity: 5 });
+    seedProduct(db, 'water-bottle', 'cat-link', 'Water Bottle', 40, { track_inventory: true, stock_quantity: 8 });
 
     const app = createApp({});
     registerRoutes(app);
@@ -258,6 +259,29 @@ async function main() {
       assertEqual(linked.data.product.inventory_product_id, 'milk-bottle', 'link target persisted');
       assertEqual(linked.data.product.inventory_deduction_quantity, 0.25, 'link factor persisted');
 
+      const unlinkedNullPayload = await api(baseUrl, '/api/products', {
+        method: 'POST',
+        headers: owner.authHeader,
+        body: {
+          category_id: 'cat-link',
+          name: 'Unlinked Null Payload',
+          price: 90,
+          inventory_product_id: null,
+          inventory_deduction_quantity: null,
+        },
+      });
+      assertEqual(unlinkedNullPayload.status, 201, 'unlinked product accepts nullable inventory form payload');
+      assertEqual(unlinkedNullPayload.data.product.inventory_product_id, null, 'nullable inventory link remains cleared');
+      assertEqual(unlinkedNullPayload.data.product.inventory_deduction_quantity, null, 'nullable inventory factor remains cleared');
+
+      const updatedNullPayload = await api(baseUrl, `/api/products/${unlinkedNullPayload.data.product.id}`, {
+        method: 'PUT',
+        headers: owner.authHeader,
+        body: { inventory_product_id: null, inventory_deduction_quantity: null },
+      });
+      assertEqual(updatedNullPayload.status, 200, 'editing an unlinked product accepts nullable inventory form payload');
+      assertEqual(updatedNullPayload.data.product.inventory_deduction_quantity, null, 'editing preserves cleared inventory factor');
+
       const exclusive = await api(baseUrl, '/api/products', {
         method: 'POST',
         headers: owner.authHeader,
@@ -271,6 +295,14 @@ async function main() {
         body: { category_id: 'cat-link', name: 'Syrup Link', price: 10, inventory_product_id: 'syrup-bottle' },
       });
       assertEqual(syrupLink.status, 201, 'second independent link to a free target accepted');
+      const chainedTarget = await api(baseUrl, '/api/products/syrup-bottle', {
+        method: 'PUT',
+        headers: owner.authHeader,
+        body: { inventory_product_id: 'water-bottle', inventory_deduction_quantity: 1 },
+      });
+      assertEqual(chainedTarget.status, 400, 'relinking an existing inventory target rejected');
+      const syrupBottle = db.prepare('SELECT inventory_product_id FROM products WHERE id = ?').get('syrup-bottle') as { inventory_product_id: string | null };
+      assertEqual(syrupBottle.inventory_product_id, null, 'rejected chain update leaves the existing target unlinked');
       const chainTarget = await api(baseUrl, `/api/products/${syrupLink.data.product.id}`, {
         method: 'PUT',
         headers: owner.authHeader,

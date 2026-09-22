@@ -315,10 +315,12 @@ export default function ProductsPage() {
         sale_unit: form.sale_unit,
         allow_fractional_quantity: form.allow_fractional_quantity,
         weight_precision: Number(form.weight_precision),
-        inventory_product_id: form.inventory_product_id || null,
-        inventory_deduction_quantity: form.inventory_product_id
-          ? Number(form.inventory_deduction_quantity) || 1
-          : null,
+        ...(form.inventory_product_id
+          ? {
+            inventory_product_id: form.inventory_product_id,
+            inventory_deduction_quantity: Number(form.inventory_deduction_quantity) || 1,
+          }
+          : { inventory_product_id: null }),
         tax_category_id: form.tax_category_id || null,
         tax_behavior: form.tax_category_id ? form.tax_behavior : 'country_default',
         description: form.description || null,

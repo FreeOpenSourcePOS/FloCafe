@@ -321,6 +321,106 @@ metadata is not authenticated attribution.
 
 ---
 
+## Supplies
+
+Supplies track non-product inventory (ingredients, packaging). All endpoints require an authenticated owner or manager.
+
+### GET `/api/supplies`
+List active supplies (owner or manager only). Optional query params: `search`, `low_stock=true`, `include_inactive=true`.
+
+**Response (200):**
+```json
+{
+  "supplies": [
+    {
+      "id": "sup_abc123",
+      "name": "Coffee beans",
+      "base_unit": "kg",
+      "stock_quantity": 5,
+      "low_stock_threshold": 2,
+      "is_active": 1,
+      "deleted_at": null,
+      "created_at": "2026-09-22 10:00:00",
+      "updated_at": "2026-09-22 10:00:00",
+      "is_low_stock": 0
+    }
+  ]
+}
+```
+
+### POST `/api/supplies`
+Create a supply. `base_unit` must be one of `each`, `g`, `kg`, `ml`, `l` and is immutable after creation. `stock_quantity` defaults to 0; `low_stock_threshold` is optional. Returns `201` with `{ "supply": ... }`.
+
+### GET `/api/supplies/:id`
+Fetch one non-deleted supply.
+
+### PUT `/api/supplies/:id`
+Update `name`, `is_active`, and/or `low_stock_threshold`. Does not change `base_unit` or `stock_quantity` (use movements for stock).
+
+### DELETE `/api/supplies/:id`
+Soft-delete a supply (`deleted_at` is set). Movement history is retained. Subsequent list/get omit it.
+
+### POST `/api/supplies/:id/movements`
+Record a manual stock movement.
+
+**Request:**
+```json
+{
+  "movement_type": "receive",
+  "quantity": 2,
+  "unit": "kg",
+  "reason": "Delivery"
+}
+```
+
+- `movement_type` must be one of `receive`, `count`, `adjustment`, `waste`.
+- `receive` requires a positive quantity and adds stock.
+- `waste` requires a positive quantity, a `reason`, and subtracts stock.
+- `adjustment` requires a non-zero signed quantity and a `reason`.
+- `count` sets absolute stock to the counted value (non-negative); delta is computed as target minus current.
+- Quantities are converted to the supply's `base_unit` before applying; cross-dimension units return `400`.
+- Stock may go negative (no clamp). Returns `201` with `{ "movement": ... }`.
+
+### GET `/api/supplies/movements`
+List supply movements, newest first. Query: `supply_id`, `movement_type` (including `recipe_depletion` / `recipe_restore`), `before_id` cursor, `per_page` (max 500, default 50). Returns `{ "movements": [...], "nextCursor": ... }`.
+
+---
+
+## Recipes
+
+Recipes (BOMs) link a product to the supplies consumed per unit of yield. Owner or manager only. One recipe per product.
+
+### GET `/api/recipes`
+List all recipes with their items.
+
+### GET `/api/recipes/product/:productId`
+Fetch the recipe for a product, or `{ "recipe": null }` when none exists.
+
+### PUT `/api/recipes/product/:productId`
+Create or replace the recipe for a product.
+
+**Request:**
+```json
+{
+  "yield_quantity": 1,
+  "is_active": true,
+  "items": [
+    { "supply_id": "sup_abc123", "quantity": 18, "unit": "g" }
+  ]
+}
+```
+
+- `items` must be non-empty with unique `supply_id`s.
+- Each item unit must be convertible to the supply's `base_unit` (validated at save time).
+- `yield_quantity` must be > 0 (defaults to 1). Duplicate supplies or unknown units return `400`.
+
+### DELETE `/api/recipes/product/:productId`
+Delete the recipe and its items.
+
+When an order item is created (or items are appended), an immutable `recipe_snapshot` is stored on the order item and supply stock is depleted proportionally to `order_quantity / yield_quantity`. Cancelling a pending item or cancelling the order restores those amounts; voiding an in-preparation item does not. Refunds do not restore supply stock.
+
+---
+
 ### DELETE `/api/products/:id`
 Delete (deactivate) product.
 

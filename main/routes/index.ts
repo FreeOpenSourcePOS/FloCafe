@@ -11,6 +11,8 @@ import { billRoutes, syncUnpaidBillsForOrder, getTenantCurrency } from './bills'
 import { refundRoutes } from './refunds';
 import { cashClosureRoutes } from './cash-closures';
 import { inventoryRoutes } from './inventory';
+import { supplyRoutes } from './supplies';
+import { recipeRoutes } from './recipes';
 import { tableRoutes } from './tables';
 import { kitchenStationRoutes } from './kitchen-stations';
 import { kitchenRoutes } from './kitchen';
@@ -49,6 +51,7 @@ import {
 } from '../services/tax';
 import { calculateOrderTotals } from '../services/orders';
 import { adjustProductStock } from '../services/inventory';
+import { applyRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import QRCode from 'qrcode';
@@ -89,6 +92,8 @@ export function registerRoutes(app: Express): void {
   app.use('/api/refunds', refundRoutes);
   app.use('/api/cash-closures', cashClosureRoutes);
   app.use('/api/inventory', inventoryRoutes);
+  app.use('/api/supplies', supplyRoutes);
+  app.use('/api/recipes', recipeRoutes);
   app.use('/api/tables', tableRoutes);
   app.use('/api/kitchen-stations', kitchenStationRoutes);
   app.use('/api/customers', customerRoutes);
@@ -420,6 +425,14 @@ export function registerRoutes(app: Express): void {
               actorUserId: actorId,
             });
           }
+          const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
+          if (recipeSnapshot) {
+            applyRecipeSnapshot(db, recipeSnapshot, {
+              direction: 'restore',
+              actorUserId: actorId,
+              referenceId: `${currentItem.id}:${currentItem.updated_at}`,
+            });
+          }
         }
 
         // Recalculate order totals excluding terminal items.
@@ -594,6 +607,14 @@ export function registerRoutes(app: Express): void {
             referenceId: `${currentItem.id}:${currentItem.updated_at}`,
             reason: 'Cancelled item restored',
             actorUserId: actorId,
+          });
+        }
+        const recipeSnapshot = parseRecipeSnapshot(currentItem.recipe_snapshot);
+        if (recipeSnapshot) {
+          applyRecipeSnapshot(db, recipeSnapshot, {
+            direction: 'deplete',
+            actorUserId: actorId,
+            referenceId: `${currentItem.id}:${currentItem.updated_at}`,
           });
         }
 

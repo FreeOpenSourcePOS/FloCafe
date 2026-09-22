@@ -94,6 +94,7 @@ export const PERMISSION_CAPABILITIES = [
   { id: 'customerCleanup', area: 'customers', labelKey: 'customerCleanup', allowedRoles: ROLE_ACCESS.owner },
   { id: 'catalogManagement', area: 'menu', labelKey: 'catalogManagement', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'menuImportExport', area: 'menu', labelKey: 'menuImportExport', allowedRoles: ROLE_ACCESS.ownerManager },
+  { id: 'inventoryManage', area: 'menu', labelKey: 'inventoryManage', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'tablesManage', area: 'orders', labelKey: 'tablesManage', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'tablesMoveOrders', area: 'orders', labelKey: 'tablesMoveOrders', allowedRoles: ROLE_ACCESS.sales },
   { id: 'kds', area: 'kitchen', labelKey: 'kds', allowedRoles: ROLE_ACCESS.kitchen },

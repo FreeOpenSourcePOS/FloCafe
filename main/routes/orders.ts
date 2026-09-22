@@ -12,6 +12,7 @@ import {
 import { applyPayableRounding } from '../services/tax-engine';
 import { calculateOrderTotals } from '../services/orders';
 import { adjustProductStock, resolveInventoryDeduction } from '../services/inventory';
+import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes, validateProductQuantity } from './orders-validation';
@@ -579,7 +580,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
       const insertItem = db.prepare(`
         INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
-          modifier_selection, special_instructions, status, created_at, updated_at)
+          modifier_selection, special_instructions, recipe_snapshot, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
@@ -632,6 +633,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         subtotal += itemSubtotal;
 
         const itemCreatedAt = now();
+        const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity);
         const insertItemResult = insertItem.run(
           orderId, product.id, product.name, product.sku, unitPrice, quantity,
           deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null,
@@ -639,7 +641,9 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
           taxResult.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
           JSON.stringify(item.modifier_selection || null),
-          item.special_instructions || null, itemCreatedAt, itemCreatedAt
+          item.special_instructions || null,
+          recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
+          itemCreatedAt, itemCreatedAt
         );
         insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
 
@@ -651,6 +655,15 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
             referenceType: 'order_item',
             referenceId: String(insertItemResult.lastInsertRowid),
             actorUserId: authenticatedUserId,
+            createdAt: itemCreatedAt,
+          });
+        }
+
+        if (recipeSnapshot) {
+          applyRecipeSnapshot(db, recipeSnapshot, {
+            direction: 'deplete',
+            actorUserId: authenticatedUserId,
+            referenceId: String(insertItemResult.lastInsertRowid),
             createdAt: itemCreatedAt,
           });
         }
@@ -809,7 +822,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
       const insertItem = db.prepare(`
         INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
-          modifier_selection, special_instructions, status, created_at, updated_at)
+          modifier_selection, special_instructions, recipe_snapshot, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
@@ -851,6 +864,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         const itemTaxSnapshotJson = taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null;
 
         const itemCreatedAt = now();
+        const recipeSnapshot = buildRecipeSnapshot(db, product.id, quantity);
         const insertItemResult = insertItem.run(
           req.params.id, product.id, product.name, product.sku, unitPrice, quantity,
           deduction ? deduction.deductedQuantity : 0, deduction ? deduction.productId : null,
@@ -858,7 +872,9 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
           taxResult.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
           JSON.stringify(item.modifier_selection || null),
-          item.special_instructions || null, itemCreatedAt, itemCreatedAt
+          item.special_instructions || null,
+          recipeSnapshot ? JSON.stringify(recipeSnapshot) : null,
+          itemCreatedAt, itemCreatedAt
         );
         insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
         insertedItemIds.push(insertItemResult.lastInsertRowid);
@@ -871,6 +887,15 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
             referenceType: 'order_item',
             referenceId: String(insertItemResult.lastInsertRowid),
             actorUserId: idempotencyUserId,
+            createdAt: itemCreatedAt,
+          });
+        }
+
+        if (recipeSnapshot) {
+          applyRecipeSnapshot(db, recipeSnapshot, {
+            direction: 'deplete',
+            actorUserId: idempotencyUserId,
+            referenceId: String(insertItemResult.lastInsertRowid),
             createdAt: itemCreatedAt,
           });
         }
@@ -1110,6 +1135,14 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
                 referenceId: `${item.id}:${item.updated_at}`,
                 reason: reason || 'Order cancelled',
                 actorUserId: authUser.userId,
+              });
+            }
+            const recipeSnapshot = parseRecipeSnapshot(item.recipe_snapshot);
+            if (recipeSnapshot) {
+              applyRecipeSnapshot(db, recipeSnapshot, {
+                direction: 'restore',
+                actorUserId: authUser.userId,
+                referenceId: `${item.id}:${item.updated_at}`,
               });
             }
           }

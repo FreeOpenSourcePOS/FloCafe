@@ -4934,6 +4934,77 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 88,
+    name: 'add_supplies_and_recipes',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS supplies (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          base_unit TEXT NOT NULL CHECK (base_unit IN ('each', 'g', 'kg', 'ml', 'l')),
+          stock_quantity REAL NOT NULL DEFAULT 0,
+          low_stock_threshold REAL,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          deleted_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_supplies_name ON supplies(name COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_supplies_deleted ON supplies(deleted_at);
+
+        CREATE TABLE IF NOT EXISTS supply_movements (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          supply_id TEXT NOT NULL REFERENCES supplies(id),
+          quantity_delta REAL NOT NULL,
+          movement_type TEXT NOT NULL CHECK (movement_type IN ('receive', 'count', 'adjustment', 'waste', 'recipe_depletion', 'recipe_restore')),
+          unit TEXT NOT NULL CHECK (unit IN ('each', 'g', 'kg', 'ml', 'l')),
+          stock_after REAL NOT NULL,
+          reason TEXT,
+          actor_user_id TEXT NOT NULL REFERENCES users(id),
+          reference_type TEXT,
+          reference_id TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_supply_movements_supply_created
+          ON supply_movements(supply_id, created_at, id);
+        CREATE INDEX IF NOT EXISTS idx_supply_movements_reference
+          ON supply_movements(reference_type, reference_id);
+        CREATE INDEX IF NOT EXISTS idx_supply_movements_created
+          ON supply_movements(created_at, id);
+
+        CREATE TABLE IF NOT EXISTS recipes (
+          id TEXT PRIMARY KEY,
+          product_id TEXT NOT NULL REFERENCES products(id),
+          yield_quantity REAL NOT NULL DEFAULT 1 CHECK (yield_quantity > 0),
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_recipes_product
+          ON recipes(product_id);
+
+        CREATE TABLE IF NOT EXISTS recipe_items (
+          id TEXT PRIMARY KEY,
+          recipe_id TEXT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+          supply_id TEXT NOT NULL REFERENCES supplies(id),
+          quantity REAL NOT NULL CHECK (quantity > 0),
+          unit TEXT NOT NULL CHECK (unit IN ('each', 'g', 'kg', 'ml', 'l')),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_recipe_items_recipe ON recipe_items(recipe_id);
+      `);
+    },
+  },
+  {
+    version: 89,
+    name: 'add_order_item_recipe_snapshot',
+    up: () => {
+      if (!getColumns(db, 'order_items').includes('recipe_snapshot')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN recipe_snapshot TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -6107,6 +6178,7 @@ export function parseItemJson(item: any): any {
     modifier_selection: tryParse(item.modifier_selection),
     tax_breakdown: tryParse(item.tax_breakdown),
     tax_snapshot: tryParse(item.tax_snapshot),
+    recipe_snapshot: tryParse(item.recipe_snapshot),
   };
 }
 

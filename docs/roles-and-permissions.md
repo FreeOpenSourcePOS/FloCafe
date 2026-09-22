@@ -32,6 +32,7 @@ A check means the role is allowed to use the capability. A dash means it is not 
 | Customers | Clean up customer records | ✓ | — | — | — | — |
 | Menu | Manage products, categories, and addons | ✓ | ✓ | — | — | — |
 | Menu | Import and export menu data | ✓ | ✓ | — | — | — |
+| Menu | Manage supplies and recipes | ✓ | ✓ | — | — | — |
 | Orders | Manage tables | ✓ | ✓ | — | — | — |
 | Orders | Move orders between tables | ✓ | ✓ | ✓ | ✓ | — |
 | Kitchen | Use the kitchen display system | ✓ | ✓ | — | — | ✓ |

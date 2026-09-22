@@ -447,6 +447,10 @@ const FR_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'customers.columnDate', // same word in French
   'customers.columnDescription', // same word in French
   'customers.columnPoints', // same word in French
+  'inventory.actions', // same word in French
+  'inventory.date', // same word in French
+  'inventory.movementType', // same word in French
+  'inventory.stock', // same word in French
   'kds.emptyColumn', // em dash
   'kds.tableLabel', // same word in French
   'kds.viewKanban', // product term
@@ -617,6 +621,9 @@ const FIL_INTENTIONAL_IDENTICAL = new Set<string>([
   'dashboard.minutesValue',
   'dashboard.title',
   'dashboard.walkIn',
+  'inventory.stock', // loanword in Filipino UI
+  'inventory.supply', // loanword in Filipino UI
+  'inventory.yield', // technical term
   'kds.connectionLive',
   'kds.modalOrderNumber',
   'kds.viewKanban',
@@ -867,6 +874,7 @@ const DE_INTENTIONAL_IDENTICAL = new Set<string>([
   'common.logoAlt',
   'common.namePlaceholder',
   'dashboard.title',
+  'inventory.supplyName', // same word in German
   'kds.connectionLive',
   'kds.emptyColumn',
   'kds.viewKanban',

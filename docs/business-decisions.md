@@ -76,4 +76,25 @@ Each decision states: the rule, why it exists, where it's enforced in code, how 
 
 ---
 
+## Supplies stock and recipe depletion
+
+**Rule:** Supplies (ingredients/packaging) track stock in dedicated tables (`supplies`, `supply_movements`) with a signed ledger, separate from product `inventory_movements`. Depletion and restoration rules:
+
+1. **Negative stock is allowed and must never block order taking.** A rush of orders before a morning delivery is logged still goes through at the POS; negative balances are flagged in the UI for physical count reconciliation. No clamp, no 409.
+2. **Depletion happens at order creation** (and item append), when `recipe_snapshot` - an immutable JSON copy of the scaled recipe components - is written to `order_items`.
+3. **Restoration is keyed off the snapshot, never the current recipe.** Cancelling a pending item or an order restores exactly what the snapshot recorded, even if the recipe was edited since.
+4. **Void after preparation is physical waste.** Items voided while `in_progress`/`ready`/`completed` do NOT restore supplies (they do not restore product stock either); only `pending` cancels restore.
+5. **Refunds never restore supplies** - same as product inventory behavior.
+6. **Product stock tracking and recipe depletion are independent** and may both be active on the same product.
+
+**Why:** POS availability during stockouts matters more than ledger neatness (a store that cannot sell because flour has not been counted in yet is worse than a negative row to reconcile later). Snapshots keep historical cancellations correct under recipe edits, mirroring the existing `tax_snapshot` pattern.
+
+**Enforced by:** `main/services/supplies.ts` (`applySupplyStockChange` - no clamping), `main/services/recipes.ts` (`buildRecipeSnapshot`, `applyRecipeSnapshot`), `main/routes/orders.ts` (deplete on create/append, restore on order cancel), `main/routes/index.ts` (restore only on pending item cancel; re-deplete on item restore).
+
+**How to verify:** `npm run test:recipe-order-lifecycle` (deplete, restore, void-no-restore, snapshot immutability) and `npm run test:supplies-service` (negative stock, ledger, pagination).
+
+**Decided:** 2026-09-22.
+
+---
+
 *(Add new decisions above this line, most recent first is not required — organize by topic. Keep each entry self-contained: a future reader should not need this conversation's context to understand the rule, why it exists, or how to check it.)*

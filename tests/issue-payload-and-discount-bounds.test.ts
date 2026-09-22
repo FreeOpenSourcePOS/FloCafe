@@ -1,12 +1,6 @@
 /**
- * Issue: payload and discount bounds (order-item-payload-cap + bill-discount-clamp)
- *
- * order-item-payload-cap: POST /api/orders and POST /api/orders/:id/items accept unbounded
- *      item arrays (no cap), unlike held orders (MAX_HELD_ORDER_ITEMS).
- * bill-discount-clamp:  POST /api/bills/:id/applyDiscount accepts a flat amount discount
- *      larger than bill.subtotal, zeroing the tax ratio with no clamp.
- *
- * Usage: node tests/run-electron-node-test.cjs tests/issue-payload-and-discount-bounds.test.ts
+ * Cap order item arrays per request and clamp bill discounts to subtotal.
+ * Run: node tests/run-electron-node-test.cjs tests/issue-payload-and-discount-bounds.test.ts
  */
 
 const Module = require('module');

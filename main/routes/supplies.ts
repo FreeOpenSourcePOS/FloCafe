@@ -125,7 +125,7 @@ router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
 
 router.post('/:id/movements', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
-    const actorId = String((req as any).user?.userId || '');
+    const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     if (!actorId) return res.status(403).json({ error: 'Authentication required' });
     const body = req.body || {};
     const movementType = body.movement_type;

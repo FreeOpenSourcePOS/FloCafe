@@ -26,6 +26,8 @@ A check means the role is allowed to use the capability. A dash means it is not 
 | Payments | View payment methods | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Payments | Manage payment methods | ✓ | ✓ | — | — | — |
 | Payments | Print bills and kitchen tickets | ✓ | ✓ | ✓ | — | — |
+| Payments | Open a cash shift | ✓ | ✓ | ✓ | — | — |
+| Payments | Close own cash shift (force-close others: owner/manager) | ✓ | ✓ | ✓ | — | — |
 | Customers | View, search, and create customers | ✓ | ✓ | ✓ | ✓ | — |
 | Customers | Edit customers | ✓ | ✓ | ✓ | — | — |
 | Customers | Repair customer phone records | ✓ | ✓ | — | — | — |

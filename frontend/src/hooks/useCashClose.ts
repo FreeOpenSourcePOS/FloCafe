@@ -9,6 +9,7 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { printerService } from '@/lib/printer/PrinterService';
+import { displayAmountToCents } from '@/lib/money';
 import { businessDateInTimezone } from '@/lib/business-date';
 /** Live day aggregates returned by GET /api/reports/x-report. Display totals
  *  are in tenant major units (minorFactor-divided); expectedCashCents is the
@@ -312,21 +313,11 @@ export function useCashClose() {
     setOpenToken((n) => n + 1);
   };
 
-  // Convert a display-amount input string to integer cents. The adapter's
-  // `toStored` returns the value in MAJOR units (Rial for IRR/Toman — the
-  // adapter folds the Toman-to-Rial ratio itself), so multiplying by the
-  // storage minor factor gives integer cents. Empty/invalid/negative →
-  // null: the operator can type `-5` and the input would render `-5`
-  // while submit sent 0, leaving a misleading variance preview and a
-  // 400 on a row that is about to become immutable. The X already
-  // exposes `expectedCashCents` in cents and the submit gate now reads
-  // `amountsValid`, so we can return null and let the caller decide.
-  const displayToCents = (raw: string): number | null => {
-    if (raw.trim() === '') return null;
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n < 0) return null;
-    return Math.round(unitAdapter.toStored(n) * minorFactor);
-  };
+  // Shared display→cents semantics with shift close (lib/money.ts): the
+  // adapter's `toStored` returns MAJOR units, so multiply by the storage
+  // minor factor. Empty/invalid/negative → null (see that file).
+  const displayToCents = (raw: string): number | null =>
+    displayAmountToCents(raw, unitAdapter, minorFactor);
 
   const openingFloatCentsOrNull = displayToCents(openingFloatInput);
   const countedCashCentsOrNull = displayToCents(countedInput);

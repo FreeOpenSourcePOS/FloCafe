@@ -107,7 +107,7 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
         COALESCE((SELECT SUM(paid_amount) FROM bills WHERE paid_at >= ? AND paid_at < ?), 0)
         - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) AS sales
     `).get(start, end, minorFactor, start, end) as { sales: number };
-    const paymentMethodsToday = paymentMethodBreakdown(db, today) as { total: number }[];
+    const paymentMethodsToday = paymentMethodBreakdown(db, { startDate: today }) as { total: number }[];
 
     const runningOrders = db.prepare(`
       SELECT COUNT(*) as count FROM orders WHERE status IN ('pending', 'preparing')
@@ -175,7 +175,7 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
         - COALESCE((SELECT SUM(CAST(amount_cents AS REAL)) / ? FROM refunds WHERE created_at >= ? AND created_at < ?), 0) as collected
       FROM bills WHERE created_at >= ? AND created_at < ?
     `).get(start, end, minorFactor, start, end, start, end) as { count: number; total: number; collected: number };
-    const paymentMethodsToday = paymentMethodBreakdown(db, date);
+    const paymentMethodsToday = paymentMethodBreakdown(db, { startDate: date });
 
     const customersToday = db.prepare(`
       SELECT COUNT(*) as count FROM customers WHERE created_at >= ? AND created_at < ?
@@ -252,7 +252,7 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
         billCount: Number(collections.bill_count || 0),
         refundCount: Number(refundTotals.refund_count || 0),
         averageOrderValue: collections.bill_count ? (grossCollected - refunded) / collections.bill_count : 0,
-        paymentMethods: paymentMethodBreakdown(db, startDate, endDate, true, true),
+        paymentMethods: paymentMethodBreakdown(db, { startDate, endDate, paidOnly: true, attributeRefundsToBillDate: true }),
         refunds,
       },
     });
@@ -348,7 +348,7 @@ router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([date, totals]) => ({ date, ...totals }));
 
-    const byPaymentMethod = paymentMethodBreakdown(db, startDate, endDate, true) as { method: string; count: number; total: number }[];
+    const byPaymentMethod = paymentMethodBreakdown(db, { startDate, endDate, paidOnly: true }) as { method: string; count: number; total: number }[];
 
     const byOrderType = db.prepare(`
       SELECT type, COUNT(*) as count, SUM(total) as total

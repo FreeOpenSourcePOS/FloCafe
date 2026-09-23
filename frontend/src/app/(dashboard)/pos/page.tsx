@@ -24,6 +24,10 @@ import TableCheckoutModal from '@/components/pos/TableCheckoutModal';
 import PaymentModal from '@/components/pos/PaymentModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
+import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
+import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
+import { useCashSession } from '@/hooks/useCashSession';
+import { hasRole, ROLE_ACCESS } from '@shared/role-permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
 import { usePrinterStore } from '@/hooks/usePrinter';
@@ -103,6 +107,10 @@ export default function POSPage() {
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
   const cashDrawer = useCashDrawerMovements();
+  const shift = useCashSession();
+  // Shift actions follow the same owner/manager/cashier group as the
+  // backend route gates (backend still enforces; this only hides the entry).
+  const canUseShift = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManagerCashier);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -565,7 +573,8 @@ export default function POSPage() {
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
   const anyModalOpen = showTablePicker || !!addonProduct || !!editingCartItem || !!checkoutTable
-    || !!paymentBill || showCustomerPrompt || showPrepaidCheckout || cashDrawer.open;
+    || !!paymentBill || showCustomerPrompt || showPrepaidCheckout || cashDrawer.open
+    || shift.openModalOpen || shift.closeModalOpen;
 
   useBarcodeScanner((code) => {
     const scan = resolveScannedProduct(code, products);
@@ -1145,6 +1154,18 @@ export default function POSPage() {
         tables={tables}
         onShowTablePicker={() => setShowTablePicker(true)}
         onShowCashMovement={cashDrawer.openModal}
+        // Re-fetch on entry: the mount snapshot can be hours stale on a
+        // multi-terminal POS (backend still guards stale operations). On a
+        // load failure offer nothing — unknown state is not "no shift".
+        onShowShift={async () => {
+          const { session: s, failed } = await shift.refresh();
+          if (failed) return;
+          if (s) shift.setCloseModalOpen(true); else shift.setOpenModalOpen(true);
+        }}
+        shiftHasOpenSession={!!shift.session}
+        shiftLoading={shift.loading}
+        shiftError={shift.error}
+        canUseShift={canUseShift}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
       />
@@ -1193,6 +1214,8 @@ export default function POSPage() {
 
       {/* Modals */}
       <CashDrawerMovementModal model={cashDrawer} />
+      <ShiftOpenModal model={shift} />
+      <ShiftCloseModal model={shift} />
       {isRestaurant && showTablePicker && (
         <TablePickerModal
           tables={tables}

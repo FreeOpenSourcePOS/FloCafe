@@ -204,11 +204,7 @@ export function buildDailySalesExportDataset(
   // payment+refund lines, which is not a payment count (review: misleading).
   const paymentMethods = paymentMethodBreakdown(
     db,
-    businessDate,
-    businessDate,
-    true,
-    false,
-    true,
+    { startDate: businessDate, endDate: businessDate, paidOnly: true, attributeRefundsToBillDate: false, keyByPaidAt: true },
   ).map((row) => ({
     method: String(row.method || 'unknown'),
     total: Number(row.total || 0),

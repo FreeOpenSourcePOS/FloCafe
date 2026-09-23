@@ -5,7 +5,7 @@ import CustomerSearch from './CustomerSearch';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { Banknote, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react';
+import { Banknote, LayoutGrid, Maximize2, Minimize2, LockOpen, Lock } from 'lucide-react';
 import type { Table } from '@/lib/types';
 import { useTranslations } from 'use-intl';
 
@@ -13,11 +13,16 @@ interface Props {
   tables: Table[];
   onShowTablePicker: () => void;
   onShowCashMovement: () => void;
+  onShowShift: () => void;
+  shiftHasOpenSession: boolean;
+  shiftLoading: boolean;
+  shiftError: string | null;
+  canUseShift: boolean;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
 }
 
-export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, fullscreen, onToggleFullscreen }: Props) {
+export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovement, onShowShift, shiftHasOpenSession, shiftLoading, shiftError, canUseShift, fullscreen, onToggleFullscreen }: Props) {
   const cart = useCartStore();
   const { currentTenant } = useAuthStore();
   const tablesRequired = usePosSettingsStore((s) => s.tablesRequired);
@@ -59,6 +64,20 @@ export default function PosTopbar({ tables, onShowTablePicker, onShowCashMovemen
         <Banknote size={16} />
         <span className="hidden sm:inline">{tDashboard('cashMovement')}</span>
       </button>
+
+      {canUseShift && (
+        <button
+          type="button"
+          onClick={onShowShift}
+          disabled={shiftLoading}
+          className="touch-target shrink-0 gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted active:bg-muted whitespace-nowrap disabled:opacity-50"
+          title={shiftError ?? (shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift'))}
+          aria-label={shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}
+        >
+          {shiftHasOpenSession ? <Lock size={16} /> : <LockOpen size={16} />}
+          <span className="hidden sm:inline">{shiftHasOpenSession ? tDashboard('closeShiftSession') : tDashboard('openShift')}</span>
+        </button>
+      )}
 
       <div className="shrink-0">
         <PrinterStatus />

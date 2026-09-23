@@ -18,6 +18,7 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
 import { requireRole } from '../middleware/security';
+import { requireOpenSessionForCashTender } from '../services/shift-session-gate';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import {
   calculateConfiguredChargeTaxes,
@@ -2049,6 +2050,8 @@ router.post('/:id/payment', requireRole(...ROLE_ACCESS.ownerManagerCashier), (re
       return res.status(400).json({ error: 'Payment body must be an object' });
     }
     const db = getDatabase();
+    // Shift enforcement (#279): cash needs an open session when opted in.
+    requireOpenSessionForCashTender(db, [payment]);
     const requestHash = paymentRequestHash(req.params.id as string, [payment], payment.customer_id);
     const result = withTxn(() => applyPaymentBatch(
       db, req.params.id as string, [payment], payment.customer_id, true,
@@ -2080,6 +2083,8 @@ router.post('/:id/payments', requireRole(...ROLE_ACCESS.ownerManagerCashier), (r
     }
 
     const db = getDatabase();
+    // Shift enforcement (#279): any cash line needs an open session when opted in.
+    requireOpenSessionForCashTender(db, payments);
     const requestHash = paymentRequestHash(req.params.id as string, payments, bodyCustomerId);
     const result = withTxn(() => applyPaymentBatch(
       db, req.params.id as string, payments, bodyCustomerId, false,

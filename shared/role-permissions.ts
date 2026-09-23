@@ -88,6 +88,8 @@ export const PERMISSION_CAPABILITIES = [
   { id: 'paymentMethodsView', area: 'payments', labelKey: 'paymentMethodsView', allowedRoles: ROLE_ACCESS.allStaff },
   { id: 'paymentMethodsManage', area: 'payments', labelKey: 'paymentMethodsManage', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'printing', area: 'payments', labelKey: 'printing', allowedRoles: ROLE_ACCESS.ownerManagerCashier },
+  { id: 'shiftOpen', area: 'payments', labelKey: 'shiftOpen', allowedRoles: ROLE_ACCESS.ownerManagerCashier },
+  { id: 'shiftClose', area: 'payments', labelKey: 'shiftClose', allowedRoles: ROLE_ACCESS.ownerManagerCashier },
   { id: 'customersViewCreate', area: 'customers', labelKey: 'customersViewCreate', allowedRoles: ROLE_ACCESS.sales },
   { id: 'customersEdit', area: 'customers', labelKey: 'customersEdit', allowedRoles: ROLE_ACCESS.ownerManagerCashier },
   { id: 'customerMaintenance', area: 'customers', labelKey: 'customerMaintenance', allowedRoles: ROLE_ACCESS.ownerManager },

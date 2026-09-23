@@ -5153,6 +5153,35 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 90,
+    name: 'add_cash_sessions',
+    up: () => {
+      // Shift lifecycle, open state (#279, approach A). Close rows stay
+      // final in `cash_closures` (scope='session'); an open session has no
+      // count and no Z number yet, so it lives here until close writes the
+      // closure row and points back via `closure_id`.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS cash_sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          opened_by TEXT NOT NULL REFERENCES users(id),
+          opened_by_name TEXT NOT NULL DEFAULT '',
+          opened_at TEXT NOT NULL,
+          opening_float_cents INTEGER NOT NULL DEFAULT 0 CHECK (opening_float_cents >= 0),
+          status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+          closed_at TEXT,
+          closed_by TEXT REFERENCES users(id),
+          closure_id INTEGER REFERENCES cash_closures(id)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS cash_sessions_one_open
+          ON cash_sessions(status) WHERE status = 'open';
+      `);
+      // Seeded here (not only in seedInstallDefaults) so pre-v90 upgrades
+      // get the rows too — same pattern as v83's opt-in toggle.
+      insertSettingIfMissing('require_open_shift', 'false');
+      insertSettingIfMissing('stale_session_days', '7');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5885,6 +5914,10 @@ function seedInstallDefaults(): void {
   // completes, resolveRegionalSnapshot() throws RegionalNotConfiguredError
   // rather than a caller substituting a default country.
   insert('business_day_start_time', '00:00');
+  // Shift enforcement ships default-off (#279, approach A): sales work with
+  // no open session unless the owner opts in. Stale auto-close threshold in days.
+  insert('require_open_shift', 'false');
+  insert('stale_session_days', '7');
   insert('address', '');
   insert('phone', '');
   insert('email', '');

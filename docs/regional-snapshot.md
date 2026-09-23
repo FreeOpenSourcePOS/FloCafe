@@ -4,7 +4,9 @@
 
 This note defines one backend resolver for a store's regional identity (country, currency, number formatting, business timezone) so that every surface renders money and dates from the same answer. It is the design that PR #697 was closed in favour of, and the contract that issue #693 (locale-aware price input and CSV parsing) is re-implemented against.
 
-The rule it implements is short: **the country the owner selects at signup, and the ISO 4217 currency that follows from it, are the only source of regional truth. Everything else is derived from international conventions (CLDR via `Intl`, IANA time zones). There is no default country, no hard-coded symbol, and no override mechanism.**
+The rule it implements is short: **the country and ISO 4217 currency the owner selects at signup are the only source of regional truth. The country's native currency is recommended first, followed by a curated popular group and then all supported currencies. Everything else is derived from international conventions (CLDR via `Intl`, IANA time zones). There is no default country, no hard-coded symbol, and no override mechanism.**
+
+After setup, changing country does not change the active currency. An actual currency change is available only through the owner-only destructive reset flow because existing invoices, orders, menu prices, costs, payments, refunds, and reports cannot be reinterpreted as another currency. See `docs/business-decisions.md` for the preservation contract.
 
 ## Problem
 

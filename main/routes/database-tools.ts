@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { resetDatabaseWithBackup, listBackups, deleteBackup, getCurrentSchemaVersion } from '../db';
+import { resetDatabaseWithBackup, resetDatabaseForCurrencyChange, getCurrencyResetImpact, listBackups, deleteBackup, getCurrentSchemaVersion } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { asyncHandler } from '../middleware/async-handler';
@@ -9,6 +9,7 @@ import { clearJWTSecretCache } from './auth';
 import { getHttpRequestSignal } from '../shutdown';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { googleDrive } from '../services/google-drive';
+import { isSupportedCurrencyCode } from '../../shared/currencies';
 
 const router = Router();
 
@@ -90,6 +91,58 @@ router.post('/master-pin/reset', requireRole(...ROLE_ACCESS.owner), (req: Reques
 });
 
 const INITIALIZE_CONFIRM_PHRASE = 'INITIALIZE';
+
+router.get('/currency-reset-impact', requireRole(...ROLE_ACCESS.owner), (_req: Request, res: Response) => {
+  try {
+    res.json(getCurrencyResetImpact());
+  } catch (error: any) {
+    console.error('[DB Tools] currency reset impact error:', error);
+    res.status(500).json({ error: 'Could not inspect currency reset impact' });
+  }
+});
+
+router.post('/currency-reset', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+  const currency = typeof req.body?.currency === 'string' ? req.body.currency.trim().toUpperCase() : '';
+  if (!isSupportedCurrencyCode(currency)) {
+    return res.status(400).json({ error: 'Invalid or unsupported currency' });
+  }
+
+  const impact = getCurrencyResetImpact();
+  if (!impact.currentCurrency) {
+    return res.status(409).json({ error: 'Store currency is not configured' });
+  }
+  if (impact.currentCurrency === currency) {
+    return res.status(409).json({ error: 'The selected currency is already active' });
+  }
+  if (req.body?.current_currency !== impact.currentCurrency) {
+    return res.status(409).json({ error: 'The active currency changed. Reload settings and try again.' });
+  }
+
+  const confirmationPhrase = `CHANGE TO ${currency}`;
+  if (req.body?.confirmation_phrase !== confirmationPhrase) {
+    return res.status(400).json({ error: `Type "${confirmationPhrase}" to confirm` });
+  }
+
+  try {
+    await googleDrive.prepareForDatabaseRestore();
+    const result = await resetDatabaseForCurrencyChange(currency, getHttpRequestSignal(req));
+    const cleanup = googleDrive.completeDatabaseRestore();
+    clearUserAuthCache();
+    clearInMemoryRevokedTokens();
+    clearJWTSecretCache();
+    res.json({
+      success: true,
+      currency,
+      backupPath: result.backupPath,
+      cleanupPending: result.cleanupPending || cleanup.cleanupPending,
+    });
+  } catch (error: any) {
+    console.error('[DB Tools] currency reset error:', error);
+    res.status(500).json({ error: 'Currency reset failed' });
+  } finally {
+    googleDrive.releaseDatabaseRestore();
+  }
+}));
 
 router.post('/initialize', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   if (req.body?.confirmation_phrase !== INITIALIZE_CONFIRM_PHRASE) {

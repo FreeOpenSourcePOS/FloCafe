@@ -216,6 +216,13 @@ router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
+    if (normalizedCurrency !== undefined && normalizedCurrency !== currentSettings.currency) {
+      return res.status(409).json({
+        error: 'currency_change_requires_reset',
+        current_currency: currentSettings.currency || '',
+        requested_currency: normalizedCurrency,
+      });
+    }
     const effectiveCountry = country || currentSettings.country || '';
     const effectiveCurrency = normalizedCurrency || currentSettings.currency || '';
 
@@ -1087,6 +1094,16 @@ router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerMana
       valueToPersist = validation.stored;
     }
     const db = getDatabase();
+    if (req.params.key === 'currency') {
+      const currentCurrency = getAllSettings(db).currency || '';
+      if (valueToPersist !== currentCurrency) {
+        return res.status(409).json({
+          error: 'currency_change_requires_reset',
+          current_currency: currentCurrency,
+          requested_currency: valueToPersist,
+        });
+      }
+    }
     const wildcardKey = String(req.params.key);
     if (isLocalePreferenceKey(wildcardKey)) {
       const countryCode = getAllSettings(db).country || '';

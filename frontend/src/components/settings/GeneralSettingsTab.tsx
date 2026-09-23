@@ -8,6 +8,7 @@ import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
+import { CurrencySelect } from '@/components/CurrencySelect';
 import {
   COUNTRIES,
   getCountryByCode,
@@ -107,6 +108,7 @@ function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' |
 
 export interface GeneralSettingsTabProps {
   isAdmin: boolean;
+  isOwner: boolean;
   form: BusinessForm;
   setForm: React.Dispatch<React.SetStateAction<BusinessForm>>;
   taxIdFormat: { pattern: string; description: string } | null;
@@ -114,10 +116,12 @@ export interface GeneralSettingsTabProps {
   orderNumberForm: OrderNumberForm;
   setOrderNumberForm: React.Dispatch<React.SetStateAction<OrderNumberForm>>;
   markHydrationTouched: (field: string) => void;
+  onRequestCurrencyChange: (currency: string) => void;
 }
 
 export function GeneralSettingsTab({
   isAdmin,
+  isOwner,
   form,
   setForm,
   taxIdFormat,
@@ -125,6 +129,7 @@ export function GeneralSettingsTab({
   orderNumberForm,
   setOrderNumberForm,
   markHydrationTouched,
+  onRequestCurrencyChange,
 }: GeneralSettingsTabProps) {
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
@@ -199,7 +204,6 @@ export function GeneralSettingsTab({
                   value={form.countryCode}
                   onChange={(e) => {
                     markHydrationTouched('countryCode');
-                    markHydrationTouched('currency');
                     markHydrationTouched('timezone');
                     markHydrationTouched('currencyDisplay');
                     markHydrationTouched('numberDigits');
@@ -224,7 +228,6 @@ export function GeneralSettingsTab({
                       return {
                         ...p,
                         countryCode: e.target.value,
-                        currency: country?.currency || p.currency,
                         timezone: timezoneWasDefault ? country?.timezone || p.timezone : p.timezone,
                         currencyDisplay,
                         numberDigits,
@@ -252,15 +255,23 @@ export function GeneralSettingsTab({
                   className="px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
                   ariaLabel={t('timezone')}
                 />
-                <input
-                  type="text"
-                  value={form.currency}
-                  onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
-                  placeholder={t('currencyAutoFilled')}
-                  className="px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-muted"
-                  readOnly
-                  dir="ltr"
-                />
+                {isOwner ? (
+                  <CurrencySelect
+                    value={form.currency}
+                    recommendedCurrency={getCountryByCode(form.countryCode)?.currency}
+                    locale={locale}
+                    onChange={(currency) => {
+                      if (currency !== form.currency) onRequestCurrencyChange(currency);
+                    }}
+                    recommendedLabel={t('currencyRecommended')}
+                    popularLabel={t('currencyPopular')}
+                    allLabel={t('currencyAll')}
+                    ariaLabel={t('currency')}
+                    className="px-3 py-2 text-sm border border-border rounded-lg outline-none focus:ring-2 focus:ring-brand bg-card"
+                  />
+                ) : (
+                  <p className="font-medium text-foreground"><Ltr>{form.currency || '-'}</Ltr></p>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-2">

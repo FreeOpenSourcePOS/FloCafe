@@ -25,6 +25,7 @@ import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import BetaChannelToggle from '@/components/settings/BetaChannelToggle';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
+import { CurrencyResetDialog } from '@/components/settings/CurrencyResetDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
@@ -318,6 +319,7 @@ export default function SettingsPage() {
   const [healthReport, setHealthReport] = useState<HealthCheckReport | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
   const [initializeDbOpen, setInitializeDbOpen] = useState(() => searchParams?.get('action') === 'initialize-db');
+  const [currencyResetTarget, setCurrencyResetTarget] = useState('');
   const [shakeSaveBar, setShakeSaveBar] = useState(false);
   const [savingAllSettings, setSavingAllSettings] = useState(false);
   const [saveAllHydrationRun, setSaveAllHydrationRun] = useState(0);
@@ -2912,6 +2914,7 @@ export default function SettingsPage() {
         <TabsContent value="store">
           <GeneralSettingsTab
             isAdmin={isAdmin}
+            isOwner={isOwner}
             form={form}
             setForm={setForm}
             taxIdFormat={taxIdFormat}
@@ -2919,6 +2922,7 @@ export default function SettingsPage() {
             orderNumberForm={orderNumberForm}
             setOrderNumberForm={setOrderNumberForm}
             markHydrationTouched={markHydrationTouched}
+            onRequestCurrencyChange={setCurrencyResetTarget}
           />
         </TabsContent>
 
@@ -4534,6 +4538,15 @@ export default function SettingsPage() {
         onSuccess={() => {
           toast.success(t('dbInitializedRedirecting'));
           setTimeout(() => window.location.replace('/setup'), 1200);
+        }}
+      />
+      <CurrencyResetDialog
+        open={Boolean(currencyResetTarget)}
+        targetCurrency={currencyResetTarget}
+        onOpenChange={(open) => { if (!open) setCurrencyResetTarget(''); }}
+        onSuccess={() => {
+          toast.success(t('currencyResetComplete'));
+          window.location.replace('/setup');
         }}
       />
       {isAdmin && isDirty && (

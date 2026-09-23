@@ -5,7 +5,7 @@
  * preferences (currency_display, number_digits, calendar):
  *   - Unsupported preferences for a country are rejected with HTTP 400.
  *   - Valid Iran (IR) preferences continue to save.
- *   - Switching IR -> US (and back) normalizes stale values to neutral defaults.
+ *   - Switching the country IR -> US (and back) normalizes stale values to neutral defaults.
  *   - Legacy non-IR databases with stale Iran values can still save without
  *     being rejected, and both storage and businessShape() are cleansed.
  *   - Canonical currency storage (IRR) is never altered by display preferences.
@@ -76,6 +76,8 @@ async function main() {
     const owner = seedOwnerUser(db);
 
     // ── 1. Explicitly unsupported preferences for US are rejected ──
+    setSetting(db, 'country', 'US');
+    setSetting(db, 'currency', 'USD');
     const usPersian = await api(baseUrl, '/api/settings/business', {
       method: 'PUT',
       body: { business_name: 'US Cafe', country: 'US', currency: 'USD', calendar: 'persian' },
@@ -101,6 +103,10 @@ async function main() {
     assert.equal(usLatin.data.error, 'Invalid number_digits for country US', 'number_digits rejection message is country-scoped');
 
     // ── 2. Valid IR preferences save and keep canonical IRR storage ──
+    // Currency selection/reset is tested separately. Establish IRR directly so
+    // these requests continue to isolate country-scoped display preferences.
+    setSetting(db, 'country', 'IR');
+    setSetting(db, 'currency', 'IRR');
     const irSave = await api(baseUrl, '/api/settings/business', {
       method: 'PUT',
       body: {
@@ -122,7 +128,7 @@ async function main() {
     // ── 3. IR -> US transition neutralizes stale display preferences ──
     const usTransition = await api(baseUrl, '/api/settings/business', {
       method: 'PUT',
-      body: { business_name: 'US Cafe', country: 'US', currency: 'USD' },
+      body: { business_name: 'US Cafe', country: 'US', currency: 'IRR' },
       headers: owner.authHeader,
     });
     assert.equal(usTransition.status, 200, 'IR -> US transition saves without error');
@@ -133,7 +139,7 @@ async function main() {
     assert.equal(settingValue(db, 'number_digits'), 'locale', 'stored number_digits is neutralized after IR -> US');
     assert.equal(settingValue(db, 'calendar'), 'locale', 'stored calendar is neutralized after IR -> US');
 
-    // ── 4. US -> IR transition re-accepts Iran preferences ──
+    // ── 4. US -> IR country transition re-accepts Iran preferences ──
     const usToIr = await api(baseUrl, '/api/settings/business', {
       method: 'PUT',
       body: {

@@ -12,6 +12,7 @@ import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkl
 import toast from 'react-hot-toast';
 import { COUNTRIES, getCountryByCode, getLocalizedCountryName, countryMatchesQuery, sortCountriesByLocalizedName, type Country } from '@/lib/countries';
 import { TimeZoneSelect } from '@/components/TimeZoneSelect';
+import { CurrencySelect } from '@/components/CurrencySelect';
 import { useLocale, useTranslations, type AppConfig } from 'use-intl';
 import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
 
@@ -86,6 +87,7 @@ export default function SetupPage() {
   // selects here (docs/business-decisions.md, "Regional settings come from
   // signup, never from a fallback").
   const [country, setCountry] = useState<string>('');
+  const [currency, setCurrency] = useState<string>('');
   const [countryQuery, setCountryQuery] = useState<string>('');
   // The country profile timezone is only a suggested default, set once a
   // country is chosen below; the owner can override it for multi-timezone countries.
@@ -127,6 +129,7 @@ export default function SetupPage() {
   };
   const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
   const t = useTranslations('setup');
+  const tSettings = useTranslations('settings');
   const locale = useLocale();
 
   useEffect(() => {
@@ -135,6 +138,12 @@ export default function SetupPage() {
       .then(({ data }) => {
         if (!mounted) return;
         setMasterPinAvailable(!!data.masterPinAvailable);
+        if (data.currencyReset) {
+          setCountry(String(data.currencyReset.country || ''));
+          setCurrency(String(data.currencyReset.currency || ''));
+          setTimezone(String(data.currencyReset.timezone || ''));
+          setProfile('empty');
+        }
         // Redirect to login if setup was already completed.
         if (!data.needsSetup) {
           toast.error(t('alreadyCompleted'));
@@ -243,7 +252,7 @@ export default function SetupPage() {
       const countryCode = countryProfile?.code || country;
       const countryPayload = {
         country: countryCode,
-        currency: countryProfile?.currency,
+        currency: currency || countryProfile?.currency,
         timezone,
         language,
       };
@@ -355,6 +364,9 @@ export default function SetupPage() {
                         onClick={() => {
                           const previousCountry = getCountryByCode(country);
                           setCountry(c.code);
+                          if (!currency || currency === previousCountry?.currency) {
+                            setCurrency(c.currency);
+                          }
                           // Update default timezone when switching countries unless user has manually customized it.
                           if (!previousCountry || timezone === previousCountry.timezone) {
                             setTimezone(c.timezone || timezone);
@@ -378,6 +390,24 @@ export default function SetupPage() {
                     <p className="text-center text-gray-500 py-6 text-sm">{t('noMatches', { query: countryQuery })}</p>
                   )}
                 </div>
+
+                {selectedCountry ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="setup-currency">{tSettings('currency')}</Label>
+                    <CurrencySelect
+                      id="setup-currency"
+                      value={currency}
+                      recommendedCurrency={selectedCountry.currency}
+                      locale={locale}
+                      onChange={setCurrency}
+                      recommendedLabel={tSettings('currencyRecommended')}
+                      popularLabel={tSettings('currencyPopular')}
+                      allLabel={tSettings('currencyAll')}
+                      className="h-10 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                    />
+                    <p className="text-xs text-muted-foreground">{tSettings('currencySelectionHint')}</p>
+                  </div>
+                ) : null}
 
                 <div className="space-y-2">
                   <Label htmlFor="setup-timezone">{t('timezoneLabel')}</Label>

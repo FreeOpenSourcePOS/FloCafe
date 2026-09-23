@@ -61,6 +61,8 @@ async function main() {
 
   try {
     const owner = seedOwnerUser(db);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'CA', ?)").run(new Date().toISOString());
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('currency', 'CAD', ?)").run(new Date().toISOString());
 
     // ── Custom timezone for a multi-timezone country persists + round-trips ──
     const putRes = await api(baseUrl, '/api/settings/business', {
@@ -90,18 +92,18 @@ async function main() {
       body: { currency: 'xxx' },
       headers: owner.authHeader,
     });
-    assert.equal(lowercaseCurrencyRes.status, 200, 'PUT /api/settings/business accepts lowercase currency codes');
-    assert.equal(lowercaseCurrencyRes.data.currency, 'XXX', 'business settings response canonicalizes currency codes');
+    assert.equal(lowercaseCurrencyRes.status, 409, 'PUT /api/settings/business cannot bypass the destructive currency-reset flow');
+    assert.equal(lowercaseCurrencyRes.data.error, 'currency_change_requires_reset');
     const storedCurrency = db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as { value: string };
-    assert.equal(storedCurrency.value, 'XXX', 'settings.currency row persists the canonical uppercase code');
+    assert.equal(storedCurrency.value, 'CAD', 'rejected direct change preserves the active currency');
 
     const wildcardCurrencyRes = await api(baseUrl, '/api/settings/currency', {
       method: 'PUT',
       body: { value: 'jpy' },
       headers: owner.authHeader,
     });
-    assert.equal(wildcardCurrencyRes.status, 200, 'wildcard currency settings accept lowercase input');
-    assert.equal(wildcardCurrencyRes.data.setting.value, 'JPY', 'wildcard currency settings canonicalize input');
+    assert.equal(wildcardCurrencyRes.status, 409, 'wildcard currency settings cannot bypass the destructive reset');
+    assert.equal(wildcardCurrencyRes.data.error, 'currency_change_requires_reset');
 
     const invalidWildcardCurrencyRes = await api(baseUrl, '/api/settings/currency', {
       method: 'PUT',

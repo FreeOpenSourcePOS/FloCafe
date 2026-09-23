@@ -209,6 +209,7 @@ const DATABASE_MAINTENANCE_ROUTES = new Set([
   'POST /api/db/backup',
   'GET /api/db/download',
   'POST /api/db-tools/initialize',
+  'POST /api/db-tools/currency-reset',
 ]);
 
 function isDatabaseMaintenanceRoute(req: Request): boolean {
@@ -1373,9 +1374,13 @@ function removeDatabaseFiles(dbPath: string): string[] {
   return failures;
 }
 
-/** Resets database while holding maintenance lock; recovers safety backup if reset fails. */
-export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ backupPath: string; committed?: boolean; cleanupPending?: boolean }> {
-  return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
+type ResetAfterInit = (freshDb: Database.Database) => void;
+
+/** Resets database under an existing maintenance lock; recovers its safety backup if reset fails. */
+async function resetDatabaseWithBackupUnlocked(
+  maintenanceSignal: AbortSignal,
+  afterInit?: ResetAfterInit,
+): Promise<{ backupPath: string; committed?: boolean; cleanupPending?: boolean }> {
     const { path: backupPath } = await createBackupUnlocked(undefined, maintenanceSignal);
     throwIfDatabaseMaintenanceAborted(maintenanceSignal);
     const dbPath = getDbPath();
@@ -1407,6 +1412,8 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
       throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       initDatabase(false, true);
       await new Promise<void>((resolve) => setImmediate(resolve));
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+      afterInit?.(getDatabase());
       throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       (db ?? getDatabase()).pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
@@ -1454,6 +1461,132 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
     } finally {
       if (recoveryCompleted) removeReplacementArtifactsDurably(journalPath, recoveryPath);
     }
+}
+
+/** Resets database while holding maintenance lock; recovers safety backup if reset fails. */
+export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ backupPath: string; committed?: boolean; cleanupPending?: boolean }> {
+  return withDatabaseMaintenanceLock(
+    (maintenanceSignal) => resetDatabaseWithBackupUnlocked(maintenanceSignal),
+    signal,
+  );
+}
+
+type CurrencyResetMenuSnapshot = {
+  categories: Record<string, unknown>[];
+  products: Record<string, unknown>[];
+  addonGroups: Record<string, unknown>[];
+  addons: Record<string, unknown>[];
+  addonGroupProducts: Record<string, unknown>[];
+};
+
+export interface CurrencyResetImpact {
+  currentCurrency: string;
+  invoices: number;
+  orders: number;
+  refunds: number;
+  customers: number;
+  products: number;
+  addons: number;
+}
+
+function countTableRows(dbInstance: Database.Database, table: string): number {
+  return (dbInstance.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count;
+}
+
+export function getCurrencyResetImpact(dbInstance: Database.Database = getDatabase()): CurrencyResetImpact {
+  const currentCurrency = (dbInstance.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as { value?: string } | undefined)?.value || '';
+  return {
+    currentCurrency,
+    invoices: countTableRows(dbInstance, 'bills'),
+    orders: countTableRows(dbInstance, 'orders'),
+    refunds: countTableRows(dbInstance, 'refunds'),
+    customers: countTableRows(dbInstance, 'customers'),
+    products: countTableRows(dbInstance, 'products'),
+    addons: countTableRows(dbInstance, 'addons'),
+  };
+}
+
+function captureCurrencyResetMenu(dbInstance: Database.Database): CurrencyResetMenuSnapshot {
+  const rows = (table: string) => dbInstance.prepare(`SELECT * FROM ${table}`).all() as Record<string, unknown>[];
+  return {
+    categories: rows('categories'),
+    products: rows('products'),
+    addonGroups: rows('addon_groups'),
+    addons: rows('addons'),
+    addonGroupProducts: rows('addon_group_product'),
+  };
+}
+
+function insertSnapshotRows(dbInstance: Database.Database, table: string, rows: Record<string, unknown>[]): void {
+  if (rows.length === 0) return;
+  const targetColumns = new Set(
+    (dbInstance.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((column) => column.name),
+  );
+  const columns = Object.keys(rows[0]).filter((column) => targetColumns.has(column));
+  const sql = `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`;
+  const insert = dbInstance.prepare(sql);
+  for (const row of rows) insert.run(...columns.map((column) => row[column]));
+}
+
+function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: CurrencyResetMenuSnapshot): void {
+  const inventoryLinks = snapshot.products.map((product) => ({ id: product.id, inventoryProductId: product.inventory_product_id }));
+  const products = snapshot.products.map((product) => ({
+    ...product,
+    price: 0,
+    cost: 0,
+    stock_quantity: 0,
+    tax_type: 'none',
+    tax_rate: 0,
+    tax_category_id: null,
+    tax_behavior: 'country_default',
+    cb_percent: 0,
+    inventory_product_id: null,
+  }));
+  const addons = snapshot.addons.map((addon) => ({
+    ...addon,
+    price: 0,
+    tax_category_id: null,
+    tax_behavior: 'country_default',
+    inherit_parent_tax_category: 1,
+  }));
+
+  insertSnapshotRows(dbInstance, 'categories', snapshot.categories);
+  insertSnapshotRows(dbInstance, 'addon_groups', snapshot.addonGroups);
+  insertSnapshotRows(dbInstance, 'products', products);
+  const restoreInventoryLink = dbInstance.prepare('UPDATE products SET inventory_product_id = ? WHERE id = ?');
+  for (const link of inventoryLinks) {
+    if (link.inventoryProductId) restoreInventoryLink.run(link.inventoryProductId, link.id);
+  }
+  insertSnapshotRows(dbInstance, 'addons', addons);
+  insertSnapshotRows(dbInstance, 'addon_group_product', snapshot.addonGroupProducts);
+}
+
+export async function resetDatabaseForCurrencyChange(
+  targetCurrency: string,
+  signal?: AbortSignal,
+): Promise<{ backupPath: string; committed?: boolean; cleanupPending?: boolean }> {
+  return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
+    const currentDb = getDatabase();
+    const snapshot = captureCurrencyResetMenu(currentDb);
+    const settingsRows = currentDb.prepare("SELECT key, value FROM settings WHERE key IN ('country', 'timezone')").all() as { key: string; value: string }[];
+    const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
+    const regional = resolveRegionalSnapshot({ country: settings.country, currency: targetCurrency, timezone: settings.timezone });
+
+    return resetDatabaseWithBackupUnlocked(maintenanceSignal, (freshDb) => {
+      freshDb.transaction(() => {
+        freshDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+        restoreCurrencyResetMenu(freshDb, snapshot);
+        const writeSetting = freshDb.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+        writeSetting.run('country', regional.country, now());
+        writeSetting.run('currency', regional.currency, now());
+        writeSetting.run('currency_symbol', regional.currencySymbol, now());
+        writeSetting.run('timezone', regional.timezone, now());
+        freshDb.prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)').run(
+          'currency_reset_pending',
+          JSON.stringify({ country: regional.country, currency: regional.currency, timezone: regional.timezone }),
+        );
+      })();
+    });
   }, signal);
 }
 

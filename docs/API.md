@@ -1932,3 +1932,10 @@ Users with `chef` role have `category_ids` array. When accessing KDS:
 4. One user can have multiple categories
 
 Example: Chef1 (cat-1, cat-2) only sees Food and Beverages items.
+## Currency reset
+
+`GET /api/db-tools/currency-reset-impact` is owner-only and returns the active currency plus invoice, order, refund, customer, product, and add-on counts used by the destructive warning.
+
+`POST /api/db-tools/currency-reset` is owner-only and Master-PIN-gated. It accepts `currency`, `current_currency`, `confirmation_phrase` (`CHANGE TO <CODE>`), and `master_pin`. It creates a recovery backup, recreates the local database, preserves the sanitized menu catalog with monetary fields reset to zero, and returns the backup path. The active session becomes invalid and the client must return to first-run setup.
+
+Ordinary `PUT /api/settings/business` and `PUT /api/settings/currency` requests return HTTP 409 with `error: "currency_change_requires_reset"` when they attempt to change an already configured currency.

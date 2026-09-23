@@ -87,7 +87,10 @@ async function main() {
   try {
     console.log('\n1. Settings save updates the derived currency symbol');
     upsertSetting(db, 'country', 'IN');
-    upsertSetting(db, 'currency', 'INR');
+    // Currency changes are destructive and no longer allowed through this route.
+    // Seed MAD as the established store currency, then verify an ordinary
+    // regional settings save repairs a stale derived symbol.
+    upsertSetting(db, 'currency', 'MAD');
     upsertSetting(db, 'currency_symbol', '₹');
 
     const settingsRes = await api(baseUrl, '/api/settings/business', {

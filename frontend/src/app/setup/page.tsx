@@ -133,13 +133,11 @@ export default function SetupPage() {
   // Country labels are generated from CLDR data, which can differ between the server
   // and the browser even within the same locale. Keep the first paint deterministic
   // and only switch to the locale-specific names after hydration.
-  const [isCountryNamesReady, setIsCountryNamesReady] = useState(false);
-  const resolvedCountryLocale = mounted && isCountryNamesReady ? locale : 'en';
+  const resolvedCountryLocale = mounted ? locale : 'en';
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       setMounted(true);
-      setIsCountryNamesReady(true);
       setBrowserLanguage(getBrowserLanguage());
     });
     let mountedFlag = true;

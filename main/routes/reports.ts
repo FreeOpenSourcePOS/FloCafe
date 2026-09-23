@@ -218,9 +218,10 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
     const collections = db.prepare(`
-      SELECT COUNT(*) AS bill_count, COALESCE(SUM(paid_amount), 0) AS gross_collected
+      SELECT COUNT(*) AS bill_count, COALESCE(SUM(paid_amount), 0) AS gross_collected,
+        COALESCE(SUM(service_charge), 0) AS service_charge_total
       FROM bills WHERE paid_at >= ? AND paid_at < ?
-    `).get(start, end) as { bill_count: number; gross_collected: number };
+    `).get(start, end) as { bill_count: number; gross_collected: number; service_charge_total: number };
     const refundTotals = db.prepare(`
       SELECT COUNT(*) AS refund_count, COALESCE(SUM(CAST(r.amount_cents AS REAL)) / ?, 0) AS refunded
       FROM refunds r JOIN bills b ON b.id = r.bill_id
@@ -249,6 +250,7 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
         grossCollected,
         refunded,
         netCollected: grossCollected - refunded,
+        serviceChargeTotal: Number(collections.service_charge_total || 0),
         billCount: Number(collections.bill_count || 0),
         refundCount: Number(refundTotals.refund_count || 0),
         averageOrderValue: collections.bill_count ? (grossCollected - refunded) / collections.bill_count : 0,

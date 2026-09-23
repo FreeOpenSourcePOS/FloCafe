@@ -66,6 +66,7 @@ interface FinancialSummary {
   startDate: string;
   endDate: string;
   grossCollected: number;
+  serviceChargeTotal: number;
   refunded: number;
   netCollected: number;
   billCount: number;
@@ -211,6 +212,7 @@ export default function DashboardPage() {
   const tCommon = useTranslations('common');
   const tPos = useTranslations('pos');
   const tOrders = useTranslations('orders');
+  const tReceipt = useTranslations('receipt');
   const router = useRouter();
   const [stats, setStats] = useState<DailyStats | null>(null);
   const [daySummary, setDaySummary] = useState<DaySummary | null>(null);
@@ -412,6 +414,14 @@ export default function DashboardPage() {
           icon: TrendingUp,
           color: 'border-blue-200 bg-blue-50/80 dark:border-blue-800/50 dark:bg-blue-950/30',
           iconBg: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
+          href: '/orders',
+        },
+        {
+          label: tReceipt('serviceCharge'),
+          value: fmt(financialSummary?.serviceChargeTotal ?? 0),
+          icon: Tags,
+          color: 'border-amber-200 bg-amber-50/80 dark:border-amber-800/50 dark:bg-amber-950/30',
+          iconBg: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
           href: '/orders',
         },
         {

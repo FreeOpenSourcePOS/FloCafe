@@ -121,6 +121,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
   const [applyingDiscount, setApplyingDiscount] = useState(false);
+  const [serviceChargeWaived, setServiceChargeWaived] = useState(false);
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
   const [amountTarget, setAmountTarget] = useState<AmountTarget>(null);
 
@@ -129,6 +130,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [syncedBill, setSyncedBill] = useState(bill);
   if (bill !== syncedBill) {
     setSyncedBill(bill);
+    setServiceChargeWaived(Number(bill.service_charge) <= 0 && Number(syncedBill.service_charge) > 0);
     if (bill && Number(bill.discount_amount) > 0) {
       const nextType = (bill.discount_type === 'percentage' || bill.discount_type === 'amount')
         ? bill.discount_type
@@ -144,6 +146,19 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       setShowDiscount(false);
     }
   }
+
+  const handleServiceChargeToggle = async () => {
+    const nextWaived = !serviceChargeWaived;
+    try {
+      const response = await api.patch(`/bills/${bill.id}/service-charge`, { waived: nextWaived });
+      setServiceChargeWaived(nextWaived);
+      onBillUpdate?.(response.data.bill as Bill);
+      toast.success(nextWaived ? 'Service charge waived' : 'Service charge reapplied');
+    } catch (error: unknown) {
+      const responseError = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+      toast.error(responseError || 'Unable to update service charge');
+    }
+  };
 
   if (!isDiscountTypeAllowed(discountMode, discountType)) {
     setDiscountType(defaultDiscountTypeForMode(discountMode));
@@ -515,10 +530,15 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                   <span>{currencyFmt(Number(bill.packaging_charge))}</span>
                 </div>
               )}
-              {Number(bill.service_charge) > 0 && (
-                <div className="flex justify-between text-slate-300">
+              {(Number(bill.service_charge) > 0 || serviceChargeWaived) && (
+                <div className="flex items-center justify-between gap-2 text-slate-300">
                   <span>{tReceipt('serviceCharge')}</span>
-                  <span>{currencyFmt(Number(bill.service_charge))}</span>
+                  <div className="flex items-center gap-2">
+                    <span>{currencyFmt(Number(bill.service_charge))}</span>
+                    <button type="button" onClick={handleServiceChargeToggle} className="text-[11px] font-medium text-sky-300 hover:underline">
+                      {serviceChargeWaived ? tCommon('restore') : tCommon('remove')}
+                    </button>
+                  </div>
                 </div>
               )}
               {Number(bill.round_off) !== 0 && (

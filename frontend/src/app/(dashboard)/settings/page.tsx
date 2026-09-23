@@ -256,6 +256,8 @@ export default function SettingsPage() {
   const { printMethod, setPrintMethod } = usePrinterStore();
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
+  const tReceipt = useTranslations('receipt');
+  const tPos = useTranslations('pos');
   const tRestore = useTranslations('restore');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
@@ -1187,6 +1189,9 @@ export default function SettingsPage() {
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', businessDayStartTime: '00:00', currency: '', billingType: 'postpaid',
     tablesRequired: true,
+    serviceChargeEnabled: false,
+    serviceChargeRate: 0,
+    serviceChargeOrderTypes: ['dine_in'],
     taxRegistered: false,
     taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
     currencyDisplay: 'rial',
@@ -1389,6 +1394,11 @@ export default function SettingsPage() {
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
+        serviceChargeEnabled: d.service_charge_enabled === true,
+        serviceChargeRate: Number(d.service_charge_rate) || 0,
+        serviceChargeOrderTypes: Array.isArray(d.service_charge_order_types)
+          ? d.service_charge_order_types.filter((value: unknown) => ['dine_in', 'takeaway', 'delivery', 'online'].includes(String(value)))
+          : ['dine_in'],
         taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
         taxRegistrationNumber: d.tax_registration_number || '',
         businessAddress: d.business_address || '',
@@ -1422,6 +1432,9 @@ export default function SettingsPage() {
       posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
       posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
       posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
+      posSettings.setServiceChargeEnabled(loaded.serviceChargeEnabled);
+      posSettings.setServiceChargeRate(loaded.serviceChargeRate);
+      posSettings.setServiceChargeOrderTypes(loaded.serviceChargeOrderTypes);
 
       setLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
       setSavedLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
@@ -1581,6 +1594,11 @@ export default function SettingsPage() {
           currency: d.currency || '',
           billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
           tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
+          serviceChargeEnabled: d.service_charge_enabled === true,
+          serviceChargeRate: Number(d.service_charge_rate) || 0,
+          serviceChargeOrderTypes: Array.isArray(d.service_charge_order_types)
+            ? d.service_charge_order_types.filter((value: unknown) => ['dine_in', 'takeaway', 'delivery', 'online'].includes(String(value)))
+            : ['dine_in'],
           taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
           taxRegistrationNumber: d.tax_registration_number || '',
           businessAddress: d.business_address || '',
@@ -1625,6 +1643,9 @@ export default function SettingsPage() {
         if (d.business_phone) posSettings.setBillPhone(d.business_phone);
         posSettings.setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
         posSettings.setTablesRequired(typeof d.tables_required === 'boolean' ? d.tables_required : true);
+        posSettings.setServiceChargeEnabled(loaded.serviceChargeEnabled);
+        posSettings.setServiceChargeRate(loaded.serviceChargeRate);
+        posSettings.setServiceChargeOrderTypes(loaded.serviceChargeOrderTypes);
         businessHydrated.current = true;
       })();
       businessHydrationPromise.current = promise;
@@ -2614,6 +2635,9 @@ export default function SettingsPage() {
         country: form.countryCode,
         billing_type: form.billingType,
         tables_required: form.tablesRequired,
+        service_charge_enabled: form.serviceChargeEnabled,
+        service_charge_rate: form.serviceChargeRate,
+        service_charge_order_types: form.serviceChargeOrderTypes,
         tax_registered: form.taxRegistered,
         tax_registration_number: form.taxRegistrationNumber,
         business_address: form.businessAddress,
@@ -2664,6 +2688,9 @@ export default function SettingsPage() {
       posSettings.setBillPhone(normalizedBusinessPhone);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
+      posSettings.setServiceChargeEnabled(form.serviceChargeEnabled);
+      posSettings.setServiceChargeRate(form.serviceChargeRate);
+      posSettings.setServiceChargeOrderTypes(form.serviceChargeOrderTypes);
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone, business_day_start_time: form.businessDayStartTime, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
       if (!silent) toast.success(t('storeSaved'));
     } catch (err: unknown) {
@@ -2999,6 +3026,73 @@ export default function SettingsPage() {
                   posSettings.setShowProductImages(v);
                   toast.success(v ? t('productImagesEnabled') : t('productImagesDisabled'), { id: 'pos-local' });
                 }} />
+              </div>
+            </div>
+
+            {/* Discretionary staff charge */}
+            <div className="bg-card rounded-xl border border-border p-6">
+              <div className="flex items-center gap-2 mb-2">
+                <Percent size={20} className="text-muted-foreground" />
+                <h2 className="font-semibold text-foreground">{tReceipt('serviceCharge')}</h2>
+              </div>
+              <p className="text-sm text-muted-foreground mb-5">
+                Optional discretionary staff charge. It is not a government tax, and cashiers can waive it at checkout when requested by the customer.
+              </p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-foreground">Enable service charge</p>
+                    <p className="text-sm text-muted-foreground">Apply the configured percentage automatically to eligible orders.</p>
+                  </div>
+                  <Toggle value={form.serviceChargeEnabled} label="Enable service charge" onChange={(value) => {
+                    markHydrationTouched('serviceChargeEnabled');
+                    setForm((previous) => ({ ...previous, serviceChargeEnabled: value }));
+                  }} />
+                </div>
+                <label className="block max-w-xs">
+                  <span className="text-sm font-medium text-foreground">Rate (%)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={form.serviceChargeRate}
+                    onChange={(event) => {
+                      markHydrationTouched('serviceChargeRate');
+                      setForm((previous) => ({ ...previous, serviceChargeRate: Math.min(100, Math.max(0, Number(event.target.value) || 0)) }));
+                    }}
+                    className="mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/30"
+                  />
+                </label>
+                <div>
+                  <p className="text-sm font-medium text-foreground mb-2">Apply to order types</p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {([
+                      ['dine_in', tPos('orderTypeDineIn')],
+                      ['takeaway', tPos('orderTypeTakeaway')],
+                      ['delivery', tPos('orderTypeDelivery')],
+                      ['online', tPos('orderTypeOnline')],
+                    ] as const).map(([type, label]) => (
+                      <label key={type} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.serviceChargeOrderTypes.includes(type)}
+                          onChange={(event) => {
+                            markHydrationTouched('serviceChargeOrderTypes');
+                            setForm((previous) => ({
+                              ...previous,
+                              serviceChargeOrderTypes: event.target.checked
+                                ? [...previous.serviceChargeOrderTypes, type]
+                                : previous.serviceChargeOrderTypes.filter((current) => current !== type),
+                            }));
+                          }}
+                          className="accent-brand"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 

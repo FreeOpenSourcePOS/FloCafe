@@ -5005,6 +5005,16 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 90,
+    name: 'add_service_charge_settings',
+    up: () => {
+      const insert = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      insert.run('service_charge_enabled', 'false');
+      insert.run('service_charge_rate', '0');
+      insert.run('service_charge_order_types', '["dine_in"]');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5750,6 +5760,9 @@ function seedInstallDefaults(): void {
   insert('taxes_enabled', 'false');
   insert('billing_type', 'postpaid');
   insert('tables_required', 'true');
+  insert('service_charge_enabled', 'false');
+  insert('service_charge_rate', '0');
+  insert('service_charge_order_types', '["dine_in"]');
   insert('service_model', 'finedine');
   insert('setup_profile', '');
   insert('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);

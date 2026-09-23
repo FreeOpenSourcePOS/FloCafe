@@ -22,6 +22,7 @@ import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countr
 import { getTenantCurrency } from './bills';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
+import { calculateServiceCharge, isServiceChargeEnabled, parseServiceChargeOrderTypes } from '../services/service-charge';
 
 const router = Router();
 const orderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
@@ -448,8 +449,7 @@ router.get('/:id', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: 
 router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
-    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id } = body;
-    // Carries optional service charge without automatic calculation policy.
+    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, service_charge_waived, items, online_platform, external_order_id } = body;
     const idempotencyKey = orderIdempotencyKey(req);
     const idempotencyUserId = String((req as any).user.userId);
     const requestHash = idempotencyKey
@@ -471,6 +471,9 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
     }
     if (guest_count !== undefined && guest_count !== null && (!Number.isSafeInteger(guest_count) || guest_count < 1 || guest_count > 99)) {
       return res.status(400).json({ error: 'guest_count must be a whole number between 1 and 99' });
+    }
+    if (service_charge_waived !== undefined && typeof service_charge_waived !== 'boolean') {
+      return res.status(400).json({ error: 'service_charge_waived must be a boolean' });
     }
 
     let pkgCharge: number;
@@ -548,7 +551,9 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         taxes_enabled: settings.taxes_enabled === 'true',
       };
       const chargeCategories = getConfiguredChargeTaxCategories(tenantInfo.country);
-      const chargeContext = {
+      const serviceChargeConfigured = isServiceChargeEnabled(settings.service_charge_enabled);
+      if (serviceChargeConfigured) serviceCharge = 0;
+      let chargeContext = {
         packaging_charge: pkgCharge,
         delivery_charge: delCharge,
         service_charge: serviceCharge,
@@ -667,6 +672,19 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
             createdAt: itemCreatedAt,
           });
         }
+      }
+
+      if (serviceChargeConfigured) {
+        serviceCharge = calculateServiceCharge(
+          settings.service_charge_enabled,
+          settings.service_charge_rate,
+          parseServiceChargeOrderTypes(settings.service_charge_order_types),
+          type,
+          subtotal,
+          service_charge_waived === true,
+        );
+        chargeContext = { ...chargeContext, service_charge: serviceCharge };
+        db.prepare('UPDATE orders SET service_charge = ?, updated_at = ? WHERE id = ?').run(serviceCharge, now(), orderId);
       }
 
       const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, chargeContext, customer);
@@ -934,7 +952,11 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
       }
 
-      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, currentOrder, customer);
+      const newServiceCharge = isServiceChargeEnabled(settings.service_charge_enabled) && (currentOrder.service_charge || 0) > 0
+        ? calculateServiceCharge(settings.service_charge_enabled, settings.service_charge_rate, settings.service_charge_order_types, currentOrder.type, discountedSubtotal)
+        : currentOrder.service_charge || 0;
+      const chargeOrder = { ...currentOrder, service_charge: newServiceCharge };
+      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, chargeOrder, customer);
       const taxRollup = combineItemAndChargeTaxes({
         itemTaxAmount: newTaxAmount,
         itemExclusiveTaxAmount: newExclusiveTax,
@@ -945,19 +967,19 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         minorFactor,
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
+        + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + newServiceCharge;
       const total = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
       // Update order totals and optionally update order-level notes
       if (special_instructions !== undefined) {
         db.prepare(`
-          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, special_instructions = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, special_instructions || null, now(), req.params.id);
+          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, total = ?, round_off = ?, special_instructions = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, newServiceCharge, total, roundOff, special_instructions || null, now(), req.params.id);
       } else {
         db.prepare(`
-          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), req.params.id);
+          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, newServiceCharge, total, roundOff, now(), req.params.id);
       }
 
       // BUG #4 FIX: Sync bill if it exists (add-items didn't update the bill)
@@ -967,7 +989,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales)
         const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-          .run(subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, currentOrder.service_charge || 0, billRoundOff, now(), existingBill.id);
+          .run(subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, newServiceCharge, billRoundOff, now(), existingBill.id);
       }
 
       recordOrderAudit(db, { orderId: req.params.id as string, actorUserId: idempotencyUserId, action: 'items_added', details: { item_ids: insertedItemIds } });
@@ -1253,6 +1275,56 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole(...ROL
         throw Object.assign(new Error('A split dine-in check cannot be converted to takeaway'), { statusCode: 409 });
       }
 
+      let convertedServiceCharge = order.service_charge || 0;
+      if (isServiceChargeEnabled(getSettingValue('service_charge_enabled')) && convertedServiceCharge > 0) {
+        const currency = getTenantCurrency();
+        const decimals = getCurrencyFractionDigits(currency);
+        const minorFactor = getCurrencyMinorUnitFactor(currency);
+        const { totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots } = calculateOrderTotals(db, req.params.id as string);
+        const discountedSubtotal = Math.max(0, order.subtotal - (order.discount_amount || 0));
+        const taxRatio = order.subtotal > 0 ? discountedSubtotal / order.subtotal : 1;
+        const chargeTaxOrder = {
+          ...order,
+          type: 'takeaway',
+          service_charge: calculateServiceCharge(
+            getSettingValue('service_charge_enabled'),
+            getSettingValue('service_charge_rate'),
+            getSettingValue('service_charge_order_types'),
+            'takeaway',
+            discountedSubtotal,
+          ),
+        };
+        convertedServiceCharge = chargeTaxOrder.service_charge;
+        const tenantInfo = {
+          country: getSettingValue('country') || '',
+          business_type: getSettingValue('business_type') || 'restaurant',
+          state_code: getSettingValue('state_code') || '',
+          currency,
+          taxes_enabled: getSettingValue('taxes_enabled') === 'true',
+        };
+        const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, chargeTaxOrder, order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any : null);
+        const taxRollup = combineItemAndChargeTaxes({
+          itemTaxAmount: Number((totalTax * taxRatio).toFixed(decimals)),
+          itemExclusiveTaxAmount: Number((exclusiveTax * taxRatio).toFixed(decimals)),
+          itemBreakdowns: allTaxBreakdowns,
+          itemSnapshots: allTaxSnapshots,
+          itemTaxRatio: taxRatio,
+          chargeTaxes,
+          minorFactor,
+        });
+        const total = Number((discountedSubtotal + taxRollup.exclusiveTaxAmount
+          + (order.delivery_charge || 0) + (order.packaging_charge || 0) + convertedServiceCharge).toFixed(decimals));
+        db.prepare('UPDATE orders SET service_charge = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, updated_at = ? WHERE id = ?')
+          .run(convertedServiceCharge, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, total, nowStr, req.params.id);
+        const bill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
+        if (bill) {
+          const pack = getActiveCountryPack(tenantInfo.country);
+          const rounded = applyPayableRounding(total, pack, currency);
+          db.prepare('UPDATE bills SET service_charge = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?, round_off = ?, updated_at = ? WHERE id = ?')
+            .run(convertedServiceCharge, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, rounded.total, Math.max(0, rounded.total - (bill.paid_amount || 0)), rounded.adjustment, nowStr, bill.id);
+        }
+      }
+
       db.prepare("UPDATE orders SET type = 'takeaway', table_id = NULL, updated_at = ? WHERE id = ?")
         .run(nowStr, req.params.id);
 
@@ -1416,7 +1488,11 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
       }
 
       const discountedSubtotal = Math.max(0, currentOrder.subtotal - discountAmount);
-      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, currentOrder, customer);
+      const newServiceCharge = isServiceChargeEnabled(getSettingValue('service_charge_enabled')) && (currentOrder.service_charge || 0) > 0
+        ? calculateServiceCharge(getSettingValue('service_charge_enabled'), getSettingValue('service_charge_rate'), getSettingValue('service_charge_order_types'), currentOrder.type, discountedSubtotal)
+        : currentOrder.service_charge || 0;
+      const chargeOrder = { ...currentOrder, service_charge: newServiceCharge };
+      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, chargeOrder, customer);
       const taxRollup = combineItemAndChargeTaxes({
         itemTaxAmount: newTaxAmount,
         itemExclusiveTaxAmount: newExclusiveTax,
@@ -1427,19 +1503,19 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         minorFactor,
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + (currentOrder.packaging_charge || 0) + (currentOrder.delivery_charge || 0) + (currentOrder.service_charge || 0);
+        + (currentOrder.packaging_charge || 0) + (currentOrder.delivery_charge || 0) + newServiceCharge;
       const newTotal = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
       db.prepare(`
         UPDATE orders SET discount_amount = ?, discount_type = ?, discount_value = ?,
-          discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
+        discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, service_charge = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
       `).run(
         discountAmount,
         discount_value > 0 ? discount_type : null,
         discount_value > 0 ? discount_value : null,
         discount_value > 0 ? (discount_reason || null) : null,
-        taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newTotal, roundOff, now(), req.params.id
+        taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newServiceCharge, newTotal, roundOff, now(), req.params.id
       );
 
       // Sync discount to bill if it exists and is unpaid
@@ -1458,7 +1534,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
           discount_value > 0 ? discount_type : null,
           discount_value > 0 ? discount_value : null,
           discount_value > 0 ? (discount_reason || null) : null,
-          taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, billTotal, newBillBalance, currentOrder.service_charge || 0, billRoundOff, now(), existingBill.id
+          taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, billTotal, newBillBalance, newServiceCharge, billRoundOff, now(), existingBill.id
         );
       }
 
@@ -1647,7 +1723,11 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
         newExclusiveOrderTax = Number((exclusiveOrderTax * taxRatio).toFixed(decimals));
       }
 
-      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, order, customer);
+      const newServiceCharge = isServiceChargeEnabled(getSettingValue('service_charge_enabled')) && (order.service_charge || 0) > 0
+        ? calculateServiceCharge(getSettingValue('service_charge_enabled'), getSettingValue('service_charge_rate'), getSettingValue('service_charge_order_types'), order.type, discountedSubtotal)
+        : order.service_charge || 0;
+      const chargeOrder = { ...order, service_charge: newServiceCharge };
+      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, chargeOrder, customer);
       const taxRollup = combineItemAndChargeTaxes({
         itemTaxAmount: newOrderTax,
         itemExclusiveTaxAmount: newExclusiveOrderTax,
@@ -1658,13 +1738,13 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
         minorFactor,
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + (order.packaging_charge || 0) + (order.delivery_charge || 0) + (order.service_charge || 0);
+        + (order.packaging_charge || 0) + (order.delivery_charge || 0) + newServiceCharge;
       const orderTotal = Number(preRoundTotal.toFixed(decimals));
       const roundOff = 0;
 
       db.prepare(`
-        UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-      `).run(orderSubtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, orderTotal, roundOff, now(), req.params.id);
+        UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
+      `).run(orderSubtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, newServiceCharge, orderTotal, roundOff, now(), req.params.id);
 
       // BUG #15 FIX: Sync item-level discount to bill
       const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
@@ -1673,7 +1753,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
         const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(orderTotal, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-          .run(orderSubtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, order.service_charge || 0, billRoundOff, now(), existingBill.id);
+          .run(orderSubtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, newServiceCharge, billRoundOff, now(), existingBill.id);
       }
 
       recordOrderAudit(db, {

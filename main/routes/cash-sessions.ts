@@ -32,6 +32,17 @@ function httpError(message: string, statusCode: number): Error {
   return Object.assign(new Error(message), { statusCode });
 }
 
+function errorStatus(error: unknown): number {
+  if (typeof error !== 'object' || error === null || !('statusCode' in error)) return 500;
+  return typeof error.statusCode === 'number' ? error.statusCode || 500 : 500;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) return error.message || fallback;
+  if (typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string') return error.message || fallback;
+  return fallback;
+}
+
 function validateCents(raw: unknown, field: string): number {
   if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0) {
     throw httpError(`${field} must be an integer number of cents >= 0`, 400);
@@ -93,8 +104,8 @@ function closeSessionTxn(
   let zNumber: number;
   try {
     zNumber = nextZNumber();
-  } catch (err: any) {
-    throw httpError(`Could not allocate Z number: ${err?.message || 'sequence failure'}`, 500);
+  } catch (err: unknown) {
+    throw httpError(`Could not allocate Z number: ${errorMessage(err, 'sequence failure')}`, 500);
   }
   const businessDate = localDateInTimezone(new Date(), tenantTimezone(), tenantBusinessDayStartTime(db));
   const insert = db.prepare(`
@@ -183,9 +194,9 @@ router.post('/open', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Requ
       return db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(Number(insert.lastInsertRowid));
     });
     res.json(result);
-  } catch (error: any) {
-    const status = error.statusCode || 500;
-    res.status(status).json({ error: status >= 500 ? 'Failed to open shift' : error.message });
+  } catch (error: unknown) {
+    const status = errorStatus(error);
+    res.status(status).json({ error: status >= 500 ? 'Failed to open shift' : errorMessage(error, 'Failed to open shift') });
   }
 });
 
@@ -205,9 +216,9 @@ router.get('/current', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Re
       Number(session.opening_float_cents || 0),
     );
     res.json({ ...session, expected_cash_cents: expectedCashCents });
-  } catch (error: any) {
-    const status = error.statusCode || 500;
-    res.status(status).json({ error: status >= 500 ? 'Failed to read current shift' : error.message });
+  } catch (error: unknown) {
+    const status = errorStatus(error);
+    res.status(status).json({ error: status >= 500 ? 'Failed to read current shift' : errorMessage(error, 'Failed to read current shift') });
   }
 });
 
@@ -232,9 +243,9 @@ router.post('/:id/close', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req:
       return closeSessionTxn(db, session, countedCashCents, closer, notes);
     });
     res.json(result);
-  } catch (error: any) {
-    const status = error.statusCode || 500;
-    res.status(status).json({ error: status >= 500 ? 'Failed to close shift' : error.message });
+  } catch (error: unknown) {
+    const status = errorStatus(error);
+    res.status(status).json({ error: status >= 500 ? 'Failed to close shift' : errorMessage(error, 'Failed to close shift') });
   }
 });
 

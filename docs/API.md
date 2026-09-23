@@ -1539,11 +1539,11 @@ A concurrent winner of a double-`POST` race still returns 409 — the partial un
 
 Dispatch the stored Z to the default receipt printer. The forced drawer pulse is appended server-side (bypassing bill-bound `shouldPulseForPayment`, which can never fire for a bill-less Z) and is **not** filtered through `cash_drawer_pulse_methods`: the Z is the document the merchant prints while counting the drawer. The stored row is never mutated by printing.
 
-**Role:** owner (manager / cashier / server → 403)
+**Role:** owner, manager, or cashier for `scope='session'` rows; owner only for `scope='day'` rows (server / chef → 403)
 
-**Headers:** `Authorization: Bearer <owner-token>`
+**Headers:** `Authorization: Bearer <owner-manager-or-cashier-token>` (owner token required for day-close rows)
 
-**Path params:** `:id` — positive integer, the `cash_closures.id` returned by `POST /api/cash-closures` or `GET /api/reports/z-report`.
+**Path params:** `:id` — positive integer, the `cash_closures.id` returned by `POST /api/cash-closures`, `GET /api/reports/z-report`, or a session close response.
 
 **Request:**
 ```json

@@ -95,6 +95,7 @@ async function main() {
   let app: any = null;
   let past: (msAgo: number) => string = () => '';
   let cashierToken = '';
+  let cashier2Token = '';
   if (cashSessionRoutes) {
     const ts = (d: Date) => d.toISOString().replace('T', ' ').replace(/\..*$/, '');
     // Regional settings are never auto-seeded (business-decisions.md) — a
@@ -106,6 +107,7 @@ async function main() {
       ['owner-sess', 'Owner', 'owner-sess@test.local', 'owner'],
       ['manager-sess', 'Manager', 'manager-sess@test.local', 'manager'],
       ['cashier-sess', 'Cashier', 'cashier-sess@test.local', 'cashier'],
+      ['cashier2-sess', 'Cashier Two', 'cashier2-sess@test.local', 'cashier'],
       ['server-sess', 'Server', 'server-sess@test.local', 'server'],
     ] as const) {
       db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
@@ -128,6 +130,7 @@ async function main() {
     const token = (userId: string, email: string, role: string) =>
       jwt.sign({ userId, email, role }, getJWTSecret(), { expiresIn: '1h' });
     cashierToken = token('cashier-sess', 'cashier-sess@test.local', 'cashier');
+    cashier2Token = token('cashier2-sess', 'cashier2-sess@test.local', 'cashier');
     const serverToken = token('server-sess', 'server-sess@test.local', 'server');
 
     const openRes = await request(app).post('/api/cash-sessions/open')
@@ -209,6 +212,19 @@ async function main() {
   assert(payOn.status === 409, 'enforcement on: cash payment without a session is 409');
   assert(/shift/i.test(String(payOn.body?.error || '')), '409 names the missing open shift');
 
+  const billBatch = seedUnpaidBill('batch');
+  const batchBlocked = await request(app).post(`/api/bills/${billBatch}/payments`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 25 }, { method: 'cash', amount: 25 }] });
+  assert(batchBlocked.status === 409, 'enforcement on: cash batch payment without a session is 409');
+  assert(/shift/i.test(String(batchBlocked.body?.error || '')), 'batch 409 names the missing open shift');
+  const batchAfterBlocked = db.prepare('SELECT paid_amount, payment_status FROM bills WHERE id = ?').get(billBatch) as any;
+  assert(batchAfterBlocked?.paid_amount === 0 && batchAfterBlocked?.payment_status === 'unpaid', 'blocked cash batch leaves the bill unpaid');
+
+  const billBatchCard = seedUnpaidBill('batch-card');
+  const batchCard = await request(app).post(`/api/bills/${billBatchCard}/payments`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 50 }] });
+  assert(batchCard.status === 200, 'enforcement on: card batch payment without a session works (200)');
+
   const billCard = seedUnpaidBill('card');
   const cardOn = await request(app).post(`/api/bills/${billCard}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'card', amount: 50 });
@@ -222,6 +238,9 @@ async function main() {
   const payOnLate = await request(app).post(`/api/bills/${billOn}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'cash', amount: 50 });
   assert(payOnLate.status === 200, 'blocked bill pays fine once enforcement is off (200)');
+  const batchPaidLate = await request(app).post(`/api/bills/${billBatch}/payments`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 25 }, { method: 'cash', amount: 25 }] });
+  assert(batchPaidLate.status === 200, 'blocked cash batch pays once enforcement is off (200)');
 
   // ── Section 4: close guards ───────────────────────────────────────────
   console.log('Section 4: unpaid-bills block + stale auto-close');
@@ -241,6 +260,41 @@ async function main() {
   const unblockedClose = await request(app).post(`/api/cash-sessions/${guardId}/close`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 5000 });
   assert(unblockedClose.status === 200, 'close succeeds once bills are paid (200)');
+
+  const activeStaleOpen = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 100 });
+  assert(activeStaleOpen.status === 200, 'active stale-candidate session opens (200)');
+  const activeStaleId = activeStaleOpen.body?.id;
+  db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(activeStaleId);
+  db.prepare(`INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at)
+    VALUES (?, 'pay_in', 1000, 'recent activity', 'cashier-sess', datetime('now'))`).run(todayLocal);
+  const activeStaleBlocked = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 200 });
+  assert(activeStaleBlocked.status === 409, 'stale session with recent activity is not auto-closed (409)');
+  const activeStaleRow = db.prepare('SELECT status FROM cash_sessions WHERE id = ?').get(activeStaleId) as any;
+  assert(activeStaleRow?.status === 'open', 'stale session with recent activity remains open');
+  const activeStaleClose = await request(app).post(`/api/cash-sessions/${activeStaleId}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 1100 });
+  assert(activeStaleClose.status === 200, 'active stale candidate closes normally after the guard test');
+  db.prepare(`UPDATE cash_drawer_movements SET created_at = datetime('now', '-8 days')`).run();
+
+  const paidBillStaleOpen = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(paidBillStaleOpen.status === 200, 'paid-bill stale-candidate session opens (200)');
+  const paidBillStaleId = paidBillStaleOpen.body?.id;
+  db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(paidBillStaleId);
+  const recentPaidBill = seedUnpaidBill('stale-paid');
+  const recentPaid = await request(app).post(`/api/bills/${recentPaidBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'cash', amount: 50 });
+  assert(recentPaid.status === 200, 'recent paid bill settles for the stale guard test');
+  const paidBillStaleBlocked = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 200 });
+  assert(paidBillStaleBlocked.status === 409, 'stale session with a recent paid bill is not auto-closed (409)');
+  const paidBillStaleRow = db.prepare('SELECT status FROM cash_sessions WHERE id = ?').get(paidBillStaleId) as any;
+  assert(paidBillStaleRow?.status === 'open', 'stale session with a recent paid bill remains open');
+  const paidBillStaleClose = await request(app).post(`/api/cash-sessions/${paidBillStaleId}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 5000 });
+  assert(paidBillStaleClose.status === 200, 'paid-bill stale candidate closes normally after the guard test');
 
   const staleOpen = await request(app).post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 100 });
@@ -286,6 +340,19 @@ async function main() {
   assert(forceClose.status === 200, 'manager force-closes another shift (200)');
   const forced = db.prepare(`SELECT status, closed_by FROM cash_sessions WHERE id = ?`).get(mcOpen.body?.id) as any;
   assert(forced?.status === 'closed' && forced?.closed_by === 'manager-sess', 'force-close records the manager');
+
+  const otherCashierOpen = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashier2Token}`).send({ opening_float_cents: 0 });
+  assert(otherCashierOpen.status === 200, 'second cashier opens a session (200)');
+  const otherCashierClose = await request(app).post(`/api/cash-sessions/${otherCashierOpen.body?.id}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 0 });
+  assert(otherCashierClose.status === 403, 'cashier cannot close another cashier session (403)');
+  const otherCashierRow = db.prepare('SELECT status FROM cash_sessions WHERE id = ?').get(otherCashierOpen.body?.id) as any;
+  assert(otherCashierRow?.status === 'open', 'rejected cross-cashier close leaves the session open');
+  const otherCashierTidy = await request(app).post(`/api/cash-sessions/${otherCashierOpen.body?.id}/close`)
+    .set('Authorization', `Bearer ${cashier2Token}`).send({ counted_cash_cents: 0 });
+  assert(otherCashierTidy.status === 200, 'owning cashier closes their own session (200)');
+
   const chefCurrent = await request(app).get('/api/cash-sessions/current')
     .set('Authorization', `Bearer ${chefToken}`);
   assert(chefCurrent.status === 403, 'chef cannot read sessions (403)');

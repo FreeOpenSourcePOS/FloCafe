@@ -95,7 +95,7 @@ const INITIALIZE_CONFIRM_PHRASE = 'INITIALIZE';
 router.get('/currency-reset-impact', requireRole(...ROLE_ACCESS.owner), (_req: Request, res: Response) => {
   try {
     res.json(getCurrencyResetImpact());
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[DB Tools] currency reset impact error:', error);
     res.status(500).json({ error: 'Could not inspect currency reset impact' });
   }
@@ -136,7 +136,7 @@ router.post('/currency-reset', requireRole(...ROLE_ACCESS.owner), requireMasterP
       backupPath: result.backupPath,
       cleanupPending: result.cleanupPending || cleanup.cleanupPending,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[DB Tools] currency reset error:', error);
     res.status(500).json({ error: 'Currency reset failed' });
   } finally {

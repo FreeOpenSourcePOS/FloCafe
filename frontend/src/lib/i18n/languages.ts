@@ -82,9 +82,7 @@ export const LANGUAGES = {
     locale: 'ar-SA',
     nativeName: 'العربية',
     direction: 'rtl',
-    // Arabic scaffold is ready for translation, but it remains hidden until the
-    // message pass and RTL QA are complete.
-    selectable: false,
+    selectable: true,
     load: () => import('./messages/ar.json'),
   },
   ja: {

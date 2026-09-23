@@ -44,6 +44,17 @@ async function main() {
     ) VALUES ('oat', 'milk', 'Oat milk', 40, 'food', 'exclusive', 0, 1, ?, ?)`)
     .run(stamp, stamp);
   db.prepare("INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('latte', 'milk')").run();
+  db.pragma('foreign_keys = OFF');
+  db.prepare(`INSERT INTO products (
+      id, category_id, name, price, cost, stock_quantity, inventory_product_id,
+      tax_type, tax_rate, tax_behavior, is_active, created_at, updated_at
+    ) VALUES ('orphan-product', 'missing-category', 'Orphan', 99, 20, 3, 'missing-product',
+      'exclusive', 5, 'exclusive', 1, ?, ?)`).run(stamp, stamp);
+  db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active, created_at, updated_at)
+    VALUES ('orphan-addon', 'missing-group', 'Orphan add-on', 10, 1, ?, ?)`).run(stamp, stamp);
+  db.prepare("INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('missing-product', 'milk')").run();
+  db.prepare("INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('latte', 'missing-group')").run();
+  db.pragma('foreign_keys = ON');
   db.prepare(`INSERT INTO customers (id, name, is_active, created_at, updated_at)
     VALUES ('customer', 'Customer', 1, ?, ?)`).run(stamp, stamp);
   db.prepare(`INSERT INTO orders (order_number, user_id, status, subtotal, total, created_at, updated_at)
@@ -55,9 +66,9 @@ async function main() {
   assert.equal(impact.currentCurrency, 'INR');
   assert.equal(impact.invoices, 1);
   assert.equal(impact.orders, 1);
-  assert.equal(impact.products, 1);
+  assert.equal(impact.products, 2);
 
-  const result = await resetDatabaseForCurrencyChange('USD');
+  const result = await resetDatabaseForCurrencyChange('USD', 'INR');
   assert.equal(fs.existsSync(result.backupPath), true, 'a recovery backup is created before reset');
 
   const fresh = getDatabase();
@@ -67,10 +78,16 @@ async function main() {
   assert.equal(count('bills'), 0, 'invoices are erased');
   assert.equal(count('customers'), 0, 'customers are erased');
   assert.equal(count('categories'), 1, 'categories are preserved');
-  assert.equal(count('products'), 1, 'products are preserved');
+  assert.equal(count('products'), 2, 'products are preserved');
   assert.equal(count('addon_groups'), 1, 'add-on groups are preserved');
   assert.equal(count('addons'), 1, 'add-ons are preserved');
   assert.equal(count('addon_group_product'), 1, 'menu relationships are preserved');
+  assert.deepEqual(
+    fresh.prepare("SELECT category_id, inventory_product_id FROM products WHERE id = 'orphan-product'").get(),
+    { category_id: null, inventory_product_id: null },
+    'orphaned product references are cleared',
+  );
+  assert.equal(fresh.prepare("SELECT id FROM addons WHERE id = 'orphan-addon'").get(), undefined, 'add-ons with missing groups are omitted');
 
   const product = fresh.prepare(`SELECT price, cost, stock_quantity, tax_type, tax_rate,
     tax_category_id, tax_behavior, cb_percent FROM products WHERE id = 'latte'`).get();
@@ -92,6 +109,13 @@ async function main() {
   assert.deepEqual(JSON.parse(pending.value), regional);
   assert.deepEqual(fresh.pragma('foreign_key_check'), []);
 
+  await assert.rejects(
+    resetDatabaseForCurrencyChange('EUR', 'INR'),
+    (error: { code?: string }) => error.code === 'ERR_CURRENCY_CHANGED',
+    'a stale expected currency is rejected inside the maintenance lock',
+  );
+  assert.equal(fresh.prepare("SELECT value FROM settings WHERE key = 'currency'").get().value, 'USD');
+
   const app = express();
   app.use(express.json());
   app.use('/api/auth', authRoutes);
@@ -111,7 +135,7 @@ async function main() {
     timezone: 'Asia/Kolkata',
   });
   assert.equal(setup.status, 200, `post-reset setup succeeds: ${JSON.stringify(setup.body)}`);
-  assert.equal(count('products'), 1, 'post-reset setup skips demo menu seeding');
+  assert.equal(count('products'), 2, 'post-reset setup skips demo menu seeding');
   assert.equal(fresh.prepare("SELECT value FROM _flo_meta WHERE key = 'currency_reset_pending'").get(), undefined, 'setup clears the pending reset marker');
 
   closeDatabase();

@@ -1529,9 +1529,13 @@ function insertSnapshotRows(dbInstance: Database.Database, table: string, rows: 
 }
 
 function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: CurrencyResetMenuSnapshot): void {
+  const categoryIds = new Set(snapshot.categories.map((category) => category.id));
+  const productIds = new Set(snapshot.products.map((product) => product.id));
+  const addonGroupIds = new Set(snapshot.addonGroups.map((group) => group.id));
   const inventoryLinks = snapshot.products.map((product) => ({ id: product.id, inventoryProductId: product.inventory_product_id }));
   const products = snapshot.products.map((product) => ({
     ...product,
+    category_id: categoryIds.has(product.category_id) ? product.category_id : null,
     price: 0,
     cost: 0,
     stock_quantity: 0,
@@ -1542,34 +1546,45 @@ function restoreCurrencyResetMenu(dbInstance: Database.Database, snapshot: Curre
     cb_percent: 0,
     inventory_product_id: null,
   }));
-  const addons = snapshot.addons.map((addon) => ({
-    ...addon,
-    price: 0,
-    tax_category_id: null,
-    tax_behavior: 'country_default',
-    inherit_parent_tax_category: 1,
-  }));
+  const addons = snapshot.addons
+    .filter((addon) => addonGroupIds.has(addon.addon_group_id))
+    .map((addon) => ({
+      ...addon,
+      price: 0,
+      tax_category_id: null,
+      tax_behavior: 'country_default',
+      inherit_parent_tax_category: 1,
+    }));
+  const addonGroupProducts = snapshot.addonGroupProducts.filter(
+    (link) => productIds.has(link.product_id) && addonGroupIds.has(link.addon_group_id),
+  );
 
   insertSnapshotRows(dbInstance, 'categories', snapshot.categories);
   insertSnapshotRows(dbInstance, 'addon_groups', snapshot.addonGroups);
   insertSnapshotRows(dbInstance, 'products', products);
   const restoreInventoryLink = dbInstance.prepare('UPDATE products SET inventory_product_id = ? WHERE id = ?');
   for (const link of inventoryLinks) {
-    if (link.inventoryProductId) restoreInventoryLink.run(link.inventoryProductId, link.id);
+    if (link.inventoryProductId && productIds.has(link.inventoryProductId)) {
+      restoreInventoryLink.run(link.inventoryProductId, link.id);
+    }
   }
   insertSnapshotRows(dbInstance, 'addons', addons);
-  insertSnapshotRows(dbInstance, 'addon_group_product', snapshot.addonGroupProducts);
+  insertSnapshotRows(dbInstance, 'addon_group_product', addonGroupProducts);
 }
 
 export async function resetDatabaseForCurrencyChange(
   targetCurrency: string,
+  expectedCurrentCurrency: string,
   signal?: AbortSignal,
 ): Promise<{ backupPath: string; committed?: boolean; cleanupPending?: boolean }> {
   return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
     const currentDb = getDatabase();
-    const snapshot = captureCurrencyResetMenu(currentDb);
-    const settingsRows = currentDb.prepare("SELECT key, value FROM settings WHERE key IN ('country', 'timezone')").all() as { key: string; value: string }[];
+    const settingsRows = currentDb.prepare("SELECT key, value FROM settings WHERE key IN ('country', 'currency', 'timezone')").all() as { key: string; value: string }[];
     const settings = Object.fromEntries(settingsRows.map((row) => [row.key, row.value]));
+    if (settings.currency !== expectedCurrentCurrency || settings.currency === targetCurrency) {
+      throw Object.assign(new Error('Active currency changed'), { code: 'ERR_CURRENCY_CHANGED' });
+    }
+    const snapshot = captureCurrencyResetMenu(currentDb);
     const regional = resolveRegionalSnapshot({ country: settings.country, currency: targetCurrency, timezone: settings.timezone });
 
     return resetDatabaseWithBackupUnlocked(maintenanceSignal, (freshDb) => {

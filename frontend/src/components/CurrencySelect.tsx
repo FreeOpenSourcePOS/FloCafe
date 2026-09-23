@@ -30,26 +30,32 @@ export function CurrencySelect({
   id,
   ariaLabel,
 }: CurrencySelectProps) {
+  const currencyNames = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const code of listSupportedCurrencyCodes()) {
+      names.set(code, getCurrencyDisplayName(code, locale));
+    }
+    return names;
+  }, [locale]);
+
   const groups = useMemo(() => {
     const recommended = String(recommendedCurrency || '').toUpperCase();
-    const supported = new Set(listSupportedCurrencyCodes());
+    const supported = new Set(currencyNames.keys());
     if (recommended) supported.add(recommended);
     if (/^[A-Z]{3}$/.test(value)) supported.add(value);
+    const nameOf = (code: string) => currencyNames.get(code) || getCurrencyDisplayName(code, locale);
 
     const popular = POPULAR_CURRENCY_CODES.filter((code) => code !== recommended && supported.has(code));
     const excluded = new Set([recommended, ...popular]);
     const all = [...supported]
       .filter((code) => !excluded.has(code))
-      .sort((left, right) => {
-        const leftName = getCurrencyDisplayName(left, locale);
-        const rightName = getCurrencyDisplayName(right, locale);
-        return leftName.localeCompare(rightName, locale, { sensitivity: 'base' });
-      });
+      .sort((left, right) => nameOf(left).localeCompare(nameOf(right), locale, { sensitivity: 'base' }));
     return { recommended, popular, all };
-  }, [locale, recommendedCurrency, value]);
+  }, [currencyNames, locale, recommendedCurrency, value]);
 
   const optionLabel = (code: string, suffix?: string) => {
-    const label = `${code} — ${getCurrencyDisplayName(code, locale)}`;
+    const displayName = currencyNames.get(code) || getCurrencyDisplayName(code, locale);
+    const label = `${code} — ${displayName}`;
     return suffix ? `${label} (${suffix})` : label;
   };
 

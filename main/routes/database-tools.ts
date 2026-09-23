@@ -125,7 +125,7 @@ router.post('/currency-reset', requireRole(...ROLE_ACCESS.owner), requireMasterP
 
   try {
     await googleDrive.prepareForDatabaseRestore();
-    const result = await resetDatabaseForCurrencyChange(currency, getHttpRequestSignal(req));
+    const result = await resetDatabaseForCurrencyChange(currency, impact.currentCurrency, getHttpRequestSignal(req));
     const cleanup = googleDrive.completeDatabaseRestore();
     clearUserAuthCache();
     clearInMemoryRevokedTokens();
@@ -137,6 +137,9 @@ router.post('/currency-reset', requireRole(...ROLE_ACCESS.owner), requireMasterP
       cleanupPending: result.cleanupPending || cleanup.cleanupPending,
     });
   } catch (error: unknown) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ERR_CURRENCY_CHANGED') {
+      return res.status(409).json({ error: 'The active currency changed. Reload settings and try again.' });
+    }
     console.error('[DB Tools] currency reset error:', error);
     res.status(500).json({ error: 'Currency reset failed' });
   } finally {

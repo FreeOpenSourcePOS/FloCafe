@@ -67,7 +67,7 @@ Every field is derived from the selected country and currency using conventions 
 | --- | --- |
 | `country` | `getCountryByCode(settings.country)`. Missing or unknown → throw. There is no default. |
 | `locale` | `country.locale` from the profile. Never from the UI language. |
-| `currency` | `resolveTenantCurrency(settings.currency, country)` — the ISO 4217 code the wizard wrote from the country profile, or a valid code the owner later set in Business Settings. Its internal `'INR'` fallback is removed; with a known country it is unreachable anyway. |
+| `currency` | `resolveTenantCurrency(settings.currency, country)` — the ISO 4217 code the wizard wrote, or the code written by the owner-only currency-reset flow. Its internal `'INR'` fallback is removed; with a known country it is unreachable anyway. |
 | `currencySymbol` | `getCurrencySymbol(currency, locale)` — `Intl.NumberFormat(locale, { style: 'currency', currency, currencyDisplay: 'narrowSymbol' })`. The stored `currency_symbol` key is **not** an input; the key remains in the database untouched (no migration) but nothing reads it once a surface adopts the resolver. |
 | `currencyPosition` | From `Intl.NumberFormat(...).formatToParts(1)` — whether the currency part precedes the integer part. The `currencyPosition()` helper currently private to `main/server-app.ts` moves next to the resolver. |
 | `currencyFractionDigits` | `getCurrencyFractionDigits(currency)` — ISO 4217 minor units via `Intl` (keeps the existing IRR special case). |
@@ -156,7 +156,7 @@ One new suite, `tests/regional-snapshot.test.ts`, wired into `npm run test:curre
 
 ## What this design does not change
 
-- Which currency a country maps to (`COUNTRIES` in `main/countries.ts`) and the owner's ability to set a different valid ISO code in Business Settings.
+- Which currency a country recommends (`COUNTRIES` in `main/countries.ts`). Post-setup currency changes use only the destructive owner-only reset flow.
 - `business_day_start_time`. It travels with the timezone in `dayBoundsInTimezone()` but is an operational setting, not part of a store's regional identity.
 - Tax, tax packs, and anything under `main/tax-packs/` (`AGENTS.md` invariant 3).
 - Thermal, browser, and plugin-template print rendering, beyond losing their silent `'₹'` default (see the expansion rule).

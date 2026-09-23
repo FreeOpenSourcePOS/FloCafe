@@ -1625,9 +1625,12 @@ Update business settings.
 period used by reports and cash closures. It is returned as `HH:mm`, defaults
 to `00:00`, and is trimmed before persistence; invalid values return HTTP 400.
 
-`currency` accepts any three-letter ASCII currency code. Leading/trailing
-whitespace is trimmed and lowercase input is normalized to uppercase before
-the value is persisted; invalid codes return the same HTTP 400 response.
+`currency` accepts the already-configured three-letter ASCII currency code.
+Leading/trailing whitespace is trimmed and lowercase input is normalized to
+uppercase. A different valid currency returns HTTP 409 with
+`currency_change_requires_reset`; post-setup changes must use the destructive
+[Currency reset](#currency-reset) flow. Invalid codes return the same HTTP 400
+response.
 
 When `tax_registration_number` is provided, the backend validates it against the active country pack's registration format. A mismatch returns HTTP 400:
 

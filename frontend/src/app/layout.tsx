@@ -56,7 +56,21 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head />
+      <head>
+        {/* gh-513 FOUC guard: apply the last-resolved palette before first
+            paint. Priority: ?theme= URL param (standalone windows opened by
+            main with the current palette) → localStorage mirror → system
+            matchMedia. try/catch: worst case is one light flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var p=new URLSearchParams(location.search).get('theme');" +
+              "var t=(p==='dark'||p==='light')?p:localStorage.getItem('flo-theme-resolved');" +
+              "if(t==='dark'||(t!=='light'&&window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)){" +
+              'document.documentElement.classList.add(\'dark\');}}catch(e){}})();',
+          }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
@@ -69,6 +83,17 @@ export default function RootLayout({
           <AuthGuard>{children}</AuthGuard>
           <DirectionalToaster />
         </I18nProvider>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                  navigator.serviceWorker.register('/sw.js').catch(() => {});
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );

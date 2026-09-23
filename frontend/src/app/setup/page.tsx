@@ -81,7 +81,7 @@ export default function SetupPage() {
   // Wizard language follows shared store to update translations immediately.
   const language = usePosSettingsStore((s) => s.language);
   const setStoreLanguage = usePosSettingsStore((s) => s.setLanguage);
-  const [browserLanguage] = useState<Language>(() => getBrowserLanguage());
+  const [browserLanguage, setBrowserLanguage] = useState<Language>('en');
   // No default country: regional settings come only from what the owner
   // selects here (docs/business-decisions.md, "Regional settings come from
   // signup, never from a fallback").
@@ -140,6 +140,7 @@ export default function SetupPage() {
     const frame = window.requestAnimationFrame(() => {
       setMounted(true);
       setIsCountryNamesReady(true);
+      setBrowserLanguage(getBrowserLanguage());
     });
     let mountedFlag = true;
     api.get('/auth/setup/status')
@@ -289,7 +290,7 @@ export default function SetupPage() {
   };
 
   return (
-    <div suppressHydrationWarning className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted px-4 py-12">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted px-4 py-12">
       <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
           <img src="/logo.svg" alt="Flo" width={72} height={72} className="mx-auto mb-4" />
@@ -379,7 +380,7 @@ export default function SetupPage() {
                         }`}
                       >
                         <div>
-                          <div className="font-semibold" suppressHydrationWarning>
+                          <div className="font-semibold">
                             {getLocalizedCountryName(c.code, resolvedCountryLocale)}
                           </div>
                           <div className="text-xs text-muted-foreground">

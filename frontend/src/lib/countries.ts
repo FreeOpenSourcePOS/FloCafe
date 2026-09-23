@@ -51,9 +51,7 @@ export function getLocalizedCountryName(code: string, locale: string): string {
 
   const englishName = englishCountryName(normalizedCode) || normalizedCode;
 
-  // Avoid SSR/client hydration drift from ICU CLDR differences between server and browser
-  // runtimes; use the stable English name before the locale has hydrated.
-  if (typeof window === 'undefined' || !locale || locale === 'en') {
+  if (!locale || locale === 'en') {
     return englishName;
   }
 

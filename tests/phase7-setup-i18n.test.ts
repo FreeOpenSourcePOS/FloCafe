@@ -83,6 +83,10 @@ async function run(): Promise<void> {
     seedSetupProfile(db, 'express', 'qsr', language);
     assert.equal(rows('categories', 'name', "id = 'cat-express-food'").length, 1, `${language}: express setup seeds food category`);
     assert.equal(rows('products', 'name', "id = 'prod-express-meal'").length, 1, `${language}: express setup seeds starter product`);
+    if (language === 'ar') {
+      assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'الأطعمة', 'Arabic express category is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'وجبة', 'Arabic express product is localized');
+    }
 
     seedSetupProfile(db, 'demo', 'finedine', language, 'IN');
     const snapshot = {

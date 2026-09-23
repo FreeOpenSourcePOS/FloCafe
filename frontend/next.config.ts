@@ -14,22 +14,6 @@ const nextConfig: NextConfig = {
   // Trailing slashes make static paths predictable: /pos → /pos/index.html
   trailingSlash: isDesktop,
 
-  // During local frontend development, proxy API and KDS requests to the
-  // backend servers running on the standard Flo ports.
-  async rewrites() {
-    if (isDesktop) return [];
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://127.0.0.1:3001/api/:path*',
-      },
-      {
-        source: '/kds/:path*',
-        destination: 'http://127.0.0.1:3002/kds/:path*',
-      },
-    ];
-  },
-
   // next/image optimisation requires a running server; disable for static export.
   images: {
     unoptimized: isDesktop,

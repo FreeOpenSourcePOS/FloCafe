@@ -131,6 +131,11 @@ function run(): void {
     const totalLabel = printLabel(locale, 'print.grandTotal');
     assert(`${locale} resolves a runtime print concept`, totalLabel.length > 0 && totalLabel !== 'print.grandTotal');
   }
+  assert('Arabic bill number label is invoice-specific', printLabel('ar', 'receipt.billNumber') === 'رقم الفاتورة');
+  assert('Arabic phone label is readable on receipts', printLabel('ar', 'receipt.phone') === 'هاتف');
+  assert('Arabic receipt rate is translated as price', printLabel('ar', 'receipt.rate') === 'السعر');
+  assert('Arabic print-test amount is localized', printLabel('ar', 'printTest.amt') === 'المبلغ');
+  assert('Arabic takeaway is distinct from delivery', printLabel('ar', 'pos.orderTypeTakeaway') === 'سفري' && printLabel('ar', 'pos.orderTypeDelivery') === 'توصيل');
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {

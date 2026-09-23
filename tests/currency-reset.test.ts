@@ -136,6 +136,7 @@ async function main() {
   });
   assert.equal(setup.status, 200, `post-reset setup succeeds: ${JSON.stringify(setup.body)}`);
   assert.equal(count('products'), 2, 'post-reset setup skips demo menu seeding');
+  assert.equal(fresh.prepare("SELECT value FROM settings WHERE key = 'setup_profile'").get().value, 'empty', 'post-reset setup records the effective empty profile');
   assert.equal(fresh.prepare("SELECT value FROM _flo_meta WHERE key = 'currency_reset_pending'").get(), undefined, 'setup clears the pending reset marker');
 
   closeDatabase();

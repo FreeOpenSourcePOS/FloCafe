@@ -1218,7 +1218,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         billing_type: billing_type || (normalizedServiceModel === 'qsr' ? 'prepaid' : 'postpaid'),
         tables_required: normalizedServiceModel === 'finedine' ? 'true' : 'false',
         service_model: normalizedServiceModel,
-        setup_profile: normalizedSetupProfile,
+        setup_profile: pendingCurrencyReset ? 'empty' : normalizedSetupProfile,
         onboarding_completed: 'true',
         // Confirm country if user explicitly selected it or differed from default.
         ...countryConfirmationPatch(resolvedCountry.code, getSettingValue('country'), req.body.country_selected),

@@ -190,6 +190,13 @@ test.describe('setup with a Persian browser language', () => {
   test.use({ locale: 'fa-IR' });
 
   test('setup wizard offers Persian as a language option when the browser language is fa', async ({ page }) => {
+    const hydrationErrors: string[] = [];
+    page.on('console', (message) => {
+      if (/hydration/i.test(message.text())) hydrationErrors.push(message.text());
+    });
+    page.on('pageerror', (error) => {
+      if (/hydration/i.test(error.message)) hydrationErrors.push(error.message);
+    });
     await page.route('**/api/auth/setup/status', (route) => {
       route.fulfill({
         status: 200,
@@ -199,6 +206,12 @@ test.describe('setup with a Persian browser language', () => {
     });
 
     await page.goto(`${BASE}/setup`);
+
+    // After mount, the fa browser preference moves Persian to the first option.
+    const firstLanguageOption = page.locator('button').first();
+    await expect(firstLanguageOption).toContainText('فارسی');
+    await expect(firstLanguageOption).toContainText('FA');
+    expect(hydrationErrors).toEqual([]);
 
     // A fa browser locale surfaces the Persian option, labeled in Persian.
     const persianOption = page.locator('button', { hasText: 'فارسی' }).first();

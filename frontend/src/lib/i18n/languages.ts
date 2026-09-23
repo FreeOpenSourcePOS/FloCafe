@@ -78,6 +78,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/fa.json'),
   },
+  ar: {
+    locale: 'ar-SA',
+    nativeName: 'العربية',
+    direction: 'rtl',
+    selectable: true,
+    load: () => import('./messages/ar.json'),
+  },
   ja: {
     locale: 'ja-JP',
     nativeName: '日本語',

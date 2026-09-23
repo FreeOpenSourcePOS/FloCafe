@@ -49,6 +49,12 @@ export function getLocalizedCountryName(code: string, locale: string): string {
   const normalizedCode = String(code || '').trim().toUpperCase();
   if (!normalizedCode) return '';
 
+  const englishName = englishCountryName(normalizedCode) || normalizedCode;
+
+  if (!locale || locale === 'en') {
+    return englishName;
+  }
+
   try {
     const localized = displayNamesForLocale(locale).of(normalizedCode);
     if (localized) return localized;
@@ -56,7 +62,7 @@ export function getLocalizedCountryName(code: string, locale: string): string {
     // Fall through to the static English name/ISO code for unsupported runtimes or locales.
   }
 
-  return englishCountryName(normalizedCode) || normalizedCode;
+  return englishName;
 }
 
 /** Match localized names plus English names, ISO codes, currencies, and locale identifiers. */

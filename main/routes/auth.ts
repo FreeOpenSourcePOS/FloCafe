@@ -545,6 +545,10 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     insertCustomer(db, 'cust-demo-1', 'Budi Santoso', '81234567801', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Siti Rahayu', '81234567802', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-3', 'Andi Wijaya', '81234567803', dialCode, demoCountry);
+  } else if (lang === 'ar') {
+    insertCustomer(db, 'cust-demo-1', 'علي حسن', '9876543210', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'سارة أحمد', '9876543211', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'مريم خالد', '9876543212', dialCode, demoCountry);
   } else {
     insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '9876543210', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '9876543211', dialCode, demoCountry);

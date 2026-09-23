@@ -75,7 +75,7 @@ async function run(): Promise<void> {
     return translator(key, values);
   };
 
-  const snapshots = new Map<string, { category: string; product: string; manager: string }>();
+  const snapshots = new Map<string, { category: string; product: string; manager: string; customer: string }>();
   for (const language of languages) {
     resetDatabase();
     const db = getDatabase();
@@ -93,6 +93,7 @@ async function run(): Promise<void> {
       category: rows('categories', 'name', "id = 'cat-demo-starters'")[0].name,
       product: rows('products', 'name', "id LIKE 'prod-demo-%'")[0].name,
       manager: rows('users', 'name', "id = 'user-demo-manager'")[0].name,
+      customer: rows('customers', 'name', "id = 'cust-demo-1'")[0].name,
     };
     snapshots.set(language, snapshot);
     assert.equal(rows('customers', 'id', 'is_active = 1').length, 3, `${language}: demo setup seeds customers`);
@@ -106,6 +107,7 @@ async function run(): Promise<void> {
       assert.notEqual(snapshot.category, english.category, `${language}: demo category is localized`);
       assert.notEqual(snapshot.product, english.product, `${language}: demo product is localized`);
       assert.notEqual(snapshot.manager, english.manager, `${language}: demo staff name is localized`);
+      assert.notEqual(snapshot.customer, english.customer, `${language}: demo customer name is localized`);
     }
   }
 

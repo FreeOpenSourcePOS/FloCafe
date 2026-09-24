@@ -206,16 +206,19 @@ test('table selection preserves explicit customers and replaces or clears inheri
     await setLanguage(page, 'en');
 
     const phoneInput = page.locator('input[type="tel"]');
-    const explicitSearch = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === 'GET'
-        && url.pathname === '/api/customers-search'
-        && url.searchParams.get('q') === explicitCustomer.phone.replace(/\D/g, '');
-    });
-    await phoneInput.fill(explicitCustomer.phone);
-    const explicitSearchResults = await (await explicitSearch).json();
-    expect(explicitSearchResults.some((customer: { id: string }) => customer.id === customers[2].id)).toBeTruthy();
-    await page.getByRole('button', { name: 'Select', exact: true }).click();
+    const selectCustomerByPhone = async (phone: string, customerId: string) => {
+      const search = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === 'GET'
+          && url.pathname === '/api/customers-search'
+          && url.searchParams.get('q') === phone.replace(/\D/g, '');
+      });
+      await phoneInput.fill(phone);
+      const results = await (await search).json();
+      expect(results.some((customer: { id: string }) => customer.id === customerId)).toBeTruthy();
+      await page.getByRole('button', { name: 'Select', exact: true }).click();
+    };
+    await selectCustomerByPhone(explicitCustomer.phone, customers[2].id);
     await expect(page.getByText(explicitCustomer.name, { exact: true })).toBeVisible();
 
     const selectTable = async (name: string, currentTableName?: string) => {
@@ -235,6 +238,15 @@ test('table selection preserves explicit customers and replaces or clears inheri
 
     await page.getByRole('button', { name: 'Remove' }).click();
     await selectTable(tableNames[0], tableNames[0]);
+    await expect(page.getByText(reservationCustomer.name, { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Remove' }).click();
+    await selectCustomerByPhone(reservationCustomer.phone, customers[0].id);
+    await selectTable(tableNames[1], tableNames[0]);
+    await expect(page.getByText(reservationCustomer.name, { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Remove' }).click();
+    await selectTable(tableNames[0], tableNames[1]);
     await expect(page.getByText(reservationCustomer.name, { exact: true })).toBeVisible();
 
     await selectTable(tableNames[1], tableNames[0]);

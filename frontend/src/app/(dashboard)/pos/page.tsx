@@ -916,16 +916,11 @@ export default function POSPage() {
 
 
   const handleSelectAvailableTable = (tableId: string, customer?: { id: string; name: string; phone: string } | null) => {
-    const previousTable = tables.find((table) => table.id === cart.tableId);
-    const previousReservationCustomerId = previousTable?.status === 'reserved'
-      ? previousTable.reservation_customer_id
-      : null;
-    const cartCustomerWasInherited = previousReservationCustomerId != null
-      && String(cart.customerId) === String(previousReservationCustomerId);
+    const cartCustomerWasInherited = cart.customerSource === 'reservation';
 
     cart.setTableId(tableId);
     if (customer && (!cart.customerId || cartCustomerWasInherited)) {
-      cart.setCustomer({ ...customer, email: null, visits_count: 0, total_spent: 0, last_visit_at: null, country_code: '' });
+      cart.setReservationCustomer({ ...customer, email: null, visits_count: 0, total_spent: 0, last_visit_at: null, country_code: '' });
     } else if (!customer && cartCustomerWasInherited) {
       cart.setCustomer(null);
     }

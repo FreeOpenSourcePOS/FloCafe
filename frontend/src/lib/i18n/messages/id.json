@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "Jumlah",
     "billNumber": "Tagihan #",
+    "cashReceived": "Tunai diterima",
     "customerNo": "No Pelanggan",
     "date": "Tanggal",
     "deliveryCharge": "Biaya Pengantaran",

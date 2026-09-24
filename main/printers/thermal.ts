@@ -49,6 +49,8 @@ import {
   buildZReportDocument,
   containsRtlScript,
   layoutStyledUnit,
+  optionalPaymentAmount,
+  projectCashTender,
   selectBilingualFit,
   thermalDisplayWidth,
   type SemanticLabel,
@@ -1630,8 +1632,23 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
+            const amount = Number(payment.amount) || 0;
             const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12, lang, capabilities);
-            pushFinancialLines(financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+            pushFinancialLines(financialRows(methodLabel, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+            const tender = projectCashTender({
+              method: String(payment.method),
+              amount,
+              tendered: optionalPaymentAmount(payment.tendered_amount),
+              change: optionalPaymentAmount(payment.change_amount),
+            });
+            if (tender) {
+              const tenderedLabel = truncate(printLabel(lang, 'receipt.cashReceived'), cols - 12, lang, capabilities);
+              pushFinancialLines(financialRows(tenderedLabel, formatCurrency(tender.tendered, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+              if (tender.change > 0) {
+                const changeLabel = truncate(printLabel(lang, 'pos.changeReturned'), cols - 12, lang, capabilities);
+                pushFinancialLines(financialRows(changeLabel, formatCurrency(tender.change, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+              }
+            }
           }
         }
       }

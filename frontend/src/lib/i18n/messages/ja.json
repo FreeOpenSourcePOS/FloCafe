@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "金額",
     "billNumber": "請求書番号",
+    "cashReceived": "預り金",
     "customerNo": "顧客番号",
     "date": "日付",
     "deliveryCharge": "配達料",

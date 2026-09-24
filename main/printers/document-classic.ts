@@ -33,6 +33,7 @@ import {
   buildBillDocument,
   containsRtlScript,
   type ItemTableBlock,
+  type PaymentSnapshot,
   type PrintContext,
   type PrintData,
   type PrintDocument,
@@ -42,6 +43,8 @@ import {
   type TextDirection,
   type TotalsBlock,
   layoutStyledUnit,
+  optionalPaymentAmount,
+  paymentDisplayRows,
   type ThermalLayoutContext,
 } from '../../shared/print';
 
@@ -65,7 +68,7 @@ export function detectPrintLanguageDirection(lang: string): TextDirection {
 
 // PrintData / PrintContext normalization (caller-side, main-process layer).
 
-function parsePaymentDetails(raw: unknown): Array<{ method: string; amount: number }> {
+function parsePaymentDetails(raw: unknown): PaymentSnapshot[] {
   let value: unknown = raw;
   if (typeof value === 'string') {
     try {
@@ -77,10 +80,16 @@ function parsePaymentDetails(raw: unknown): Array<{ method: string; amount: numb
   if (!Array.isArray(value)) return [];
   return value
     .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
-    .map((entry) => ({
-      method: String(entry.method ?? ''),
-      amount: Number(entry.amount) || 0,
-    }));
+    .map((entry) => {
+      const tendered = optionalPaymentAmount(entry.tendered_amount);
+      const change = optionalPaymentAmount(entry.change_amount);
+      return {
+        method: String(entry.method ?? ''),
+        amount: Number(entry.amount) || 0,
+        ...(tendered !== undefined ? { tendered } : {}),
+        ...(change !== undefined ? { change } : {}),
+      };
+    });
 }
 
 /** Normalize raw bill/order/business rows into authoritative PrintData. */
@@ -604,23 +613,27 @@ export function renderBillDocumentToClassicLines(
       }
       case 'payments': {
         const segment = segmentOf('payments');
-        for (const line of block.lines) {
-          const rawMethodLabel = paymentLabel(line.label);
-          const methodLabel = truncate(rawMethodLabel, cols - 12, options.language, options.capabilities);
-          const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
+        const pushPaymentRow = (rawLabel: string, amount: number): void => {
+          const methodLabel = truncate(rawLabel, cols - 12, options.language, options.capabilities);
+          const value = formatCurrency(amount, prefix, options.locale, trimDecimals, fractionDigits);
           const rendered = financialRows(methodLabel, value, cols, options.language, options.capabilities);
           const start = segment.main.length;
           segment.main.push(...rendered);
           segment.financialRanges.main.push({ start, count: rendered.length });
-          segment.sourceLines.main.push(`${rawMethodLabel} ${value.trimStart()}`);
+          segment.sourceLines.main.push(`${rawLabel} ${value.trimStart()}`);
           segment.sourceControlLines.main.push(rendered[0] ?? '');
           segment.sourceLayouts.main.push({
             kind: 'financial-summary',
             columns: [
-              { text: rawMethodLabel, align: 'left', widthRatio: Math.max(0.1, (cols - 12) / cols) },
+              { text: rawLabel, align: 'left', widthRatio: Math.max(0.1, (cols - 12) / cols) },
               { text: value.trimStart(), align: 'right', widthRatio: Math.min(0.9, 12 / cols) },
             ],
           });
+        };
+        for (const line of block.lines) {
+          for (const row of paymentDisplayRows(line)) {
+            pushPaymentRow(paymentLabel(row.label), row.amount);
+          }
         }
         break;
       }

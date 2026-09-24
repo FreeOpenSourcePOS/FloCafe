@@ -31,6 +31,7 @@ import {
   type ItemTableBlock,
   type MessageBlock,
   type PaymentsBlock,
+  paymentDisplayRows,
   type TaxBreakdownBlock,
   type TotalsBlock,
 } from '@print/document';
@@ -396,9 +397,9 @@ export function generateBillHtml(
         <tr><th colspan="2">${escapeHtml(L.paymentsHeader)}</th></tr>
       </thead>
       <tbody>
-        ${payments.lines.map((line) => `
-          <tr><td>${escapeHtml(paymentLineLabel(line.label))}</td><td class="text-end num">${fmtAmount(line.amount)}</td></tr>
-        `).join('')}
+        ${payments.lines.map((line) => paymentDisplayRows(line).map((row) => `
+          <tr><td>${escapeHtml(paymentLineLabel(row.label))}</td><td class="text-end num">${fmtAmount(row.amount)}</td></tr>
+        `).join('')).join('')}
       </tbody>
     </table>
     ` : ''}

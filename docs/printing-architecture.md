@@ -147,7 +147,7 @@ Receipt block vocabulary v1 ([`shared/print/document.ts`](../shared/print/docume
 | `item-table` | header labels, item rows (quantity, unit price, amount, add-ons with quantity and extended amount, special instructions) |
 | `totals` | subtotal, discount, flat tax, optional server-persisted service charge, delivery/packaging charges, grand total, loyalty points lines |
 | `tax-breakdown` | per-component lines when the merchant shows the breakdown |
-| `payments` | captured payment lines (known methods resolve through concept ids, unknown stay literal) |
+| `payments` | captured payment lines (known methods resolve through concept ids, unknown stay literal); over-tendered cash lines also carry semantic cash-received and positive-change rows |
 | `message` | reprint banner, footer note, thank-you |
 
 Kitchen tickets use a separate smaller vocabulary, `KotDocument` v1

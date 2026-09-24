@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "Halaga",
     "billNumber": "Bill #",
+    "cashReceived": "Natanggap na Cash",
     "customerNo": "Customer No.",
     "date": "Petsa",
     "deliveryCharge": "Bayad sa Delivery",

@@ -27,6 +27,7 @@ import {
   type SemanticLabel,
   type TaxBreakdownBlock,
   type TotalsBlock,
+  paymentDisplayRows,
 } from '@print/document';
 import { layoutStyledUnit } from '@print/layout';
 import type { ResolvedPrintLanguages } from '@print/types';
@@ -547,7 +548,9 @@ export function buildClassicReceiptBytes(
 
   // Payment methods
   for (const line of payments?.lines ?? []) {
-    safePrinterText(enc, padRow(paymentLabel(line.label), formatAmount(line.amount, currency, locale, opts.trimDecimals === true, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
+    for (const row of paymentDisplayRows(line)) {
+      safePrinterText(enc, padRow(paymentLabel(row.label), formatAmount(row.amount, currency, locale, opts.trimDecimals === true, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
+    }
   }
   if (totals?.pointsEarned || totals?.pointsBalance) {
     enc.rule({ style: 'single' });
@@ -765,7 +768,9 @@ export function buildCompactReceiptBytes(
   }
 
   for (const line of payments?.lines ?? []) {
-    safePrinterText(enc, padRow(paymentLabel(line.label), formatAmount(line.amount, currency, locale, trim, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
+    for (const row of paymentDisplayRows(line)) {
+      safePrinterText(enc, padRow(paymentLabel(row.label), formatAmount(row.amount, currency, locale, trim, fractionDigits), cols), warnings, false, arabicShaping, undefined, undefined, true).newline();
+    }
   }
 
   enc.newline().align('center');

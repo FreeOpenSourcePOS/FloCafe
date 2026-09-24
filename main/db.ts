@@ -5196,6 +5196,23 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_refunds_session ON refunds(cash_session_id)`);
     },
   },
+  {
+    version: 92,
+    name: 'add_table_reservation_customer',
+    up: () => {
+      if (!getColumns(db, 'tables').includes('reservation_customer_id')) {
+        db.exec('ALTER TABLE tables ADD COLUMN reservation_customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL');
+      }
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS clear_table_reservation_customer_on_status_change
+        AFTER UPDATE OF status ON tables
+        WHEN NEW.status != 'reserved' AND NEW.reservation_customer_id IS NOT NULL
+        BEGIN
+          UPDATE tables SET reservation_customer_id = NULL WHERE id = NEW.id;
+        END;
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5424,6 +5441,7 @@ function createSchema(): void {
       number TEXT NOT NULL UNIQUE,
       capacity INTEGER DEFAULT 4,
       status TEXT DEFAULT 'available',
+      reservation_customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
       floor TEXT,
       section TEXT,
       position_x REAL,

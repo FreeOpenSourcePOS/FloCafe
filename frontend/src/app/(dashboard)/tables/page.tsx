@@ -60,7 +60,7 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
     debounceRef.current = setTimeout(async () => {
       try {
         const { data } = await api.get(`/customers-search?q=${encodeURIComponent(q)}`);
-        setResults(data.customers || []);
+        setResults(Array.isArray(data) ? data : []);
       } catch { setResults([]); }
     }, 300);
   };
@@ -94,8 +94,6 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
       await api.patch(`/tables/${table.id}/status`, {
         status: 'reserved',
         reservation_customer_id: selected?.id ?? null,
-        reservation_customer_name: selected?.name ?? null,
-        reservation_customer_phone: selected?.phone ?? null,
       });
       const msg = selected
         ? tTables('reservedFor', { name: table.name, customer: selected.name })
@@ -505,6 +503,15 @@ export default function TablesPage() {
                     <span className="text-xs text-gray-400">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</span>
                   </div>
                 </div>
+
+                {table.status === 'reserved' && table.reservation_customer_name && (
+                  <div className="px-4 pt-2">
+                    <p className="text-xs text-yellow-700 font-medium truncate">{table.reservation_customer_name}</p>
+                    {table.reservation_customer_phone && (
+                      <p className="text-xs text-yellow-600 mt-0.5"><Ltr>{table.reservation_customer_phone}</Ltr></p>
+                    )}
+                  </div>
+                )}
 
                 {/* Orders section */}
                 {hasOrders ? (

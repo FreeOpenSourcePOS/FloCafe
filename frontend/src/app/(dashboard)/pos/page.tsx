@@ -915,7 +915,7 @@ export default function POSPage() {
   };
 
 
-  const handleSelectAvailableTable = (tableId: string, customer?: { id: number; name: string; phone: string } | null) => {
+  const handleSelectAvailableTable = (tableId: string, customer?: { id: string; name: string; phone: string } | null) => {
     cart.setTableId(tableId);
     if (customer) {
       cart.setCustomer({ ...customer, email: null, visits_count: 0, total_spent: 0, last_visit_at: null, country_code: '' });

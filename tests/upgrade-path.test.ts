@@ -131,6 +131,10 @@ function main() {
   const latestSchemaVersion = ideal.pragma('user_version', { simple: true }) as number;
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion,
     'migrated old install reaches the same schema version as a fresh install');
+  const tableColumns = db.prepare('PRAGMA table_info(tables)').all().map((column: any) => column.name);
+  assert.ok(tableColumns.includes('reservation_customer_id'), 'reservation customer association exists after upgrading an old install');
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'clear_table_reservation_customer_on_status_change'").get(),
+    'reservation customer cleanup trigger exists after upgrading an old install');
   ideal.close();
   assert.equal(
     (db.prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as { value: string }).value,

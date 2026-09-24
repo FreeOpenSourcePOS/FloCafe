@@ -11,7 +11,7 @@ import { countryConfirmationPatch } from '../services/country-provenance';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
-import { isSyntacticallyValidCurrencyCode } from '../../shared/print/currency';
+import { isSupportedCurrencyCode } from '../../shared/currencies';
 
 const router = Router();
 
@@ -1103,7 +1103,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const normalizedCurrency = currency === undefined
       ? resolvedCountry.currency
       : typeof currency === 'string' ? currency.trim().toUpperCase() : currency;
-    if (!isSyntacticallyValidCurrencyCode(normalizedCurrency)) {
+    if (!isSupportedCurrencyCode(normalizedCurrency)) {
       return res.status(400).json({ error: 'Invalid currency' });
     }
     const resolvedTimezone = timezone === undefined ? resolvedCountry.timezone : timezone;

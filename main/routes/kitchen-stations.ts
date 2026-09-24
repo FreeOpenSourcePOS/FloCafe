@@ -151,7 +151,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const { name, description, category_ids, printer_id, printer_ip, printer_port, printer_name, sort_order, is_active } = req.body;
     const db = getDatabase();
 
-    const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(req.params.id);
+    const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(req.params.id) as { category_ids: string | null } | undefined;
     if (!station) {
       return res.status(404).json({ error: 'Kitchen station not found' });
     }
@@ -161,8 +161,9 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       return res.status(400).json({ error: 'category_ids must be an array of valid category IDs' });
     }
     if (normalizedCategoryIds !== undefined) {
-      const previouslyAssignedIds = new Set(parseStoredCategoryIds((station as any).category_ids));
+      const previouslyAssignedIds = new Set(parseStoredCategoryIds(station.category_ids));
       const newlyAssignedIds = normalizedCategoryIds.filter((id) => !previouslyAssignedIds.has(id));
+      // Retain historical assignments, but require newly routed categories to be active.
       if (!categoryIdsExist(db, newlyAssignedIds)) {
         return res.status(400).json({ error: 'One or more category_ids do not match an existing category' });
       }

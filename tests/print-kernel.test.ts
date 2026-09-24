@@ -44,7 +44,7 @@ import {
 import type { LanguageRegistryFacts } from '../shared/print';
 
 // Test registry: mirrors what a call site injects from the central registry.
-const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja']);
+const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw']);
 const FACTS: LanguageRegistryFacts = {
   isSelectableLanguage: (code) => SELECTABLE.has(code),
 };
@@ -111,6 +111,12 @@ const fixedWithAdditional = parsePrintLanguagePolicy(
   FACTS,
 );
 assert.ok(fixedWithAdditional.ok);
+const fixedTaiwan = parsePrintLanguagePolicy(
+  { primary: { mode: 'fixed', language: 'zh-tw' }, additional: [] },
+  FACTS,
+);
+assert.ok(fixedTaiwan.ok);
+assert.equal(fixedTaiwan.ok ? fixedTaiwan.policy.primary.mode : '', 'fixed');
 if (fixedWithAdditional.ok) {
   assert.deepEqual(resolveReceiptLanguages(fixedWithAdditional.policy, 'en'), ['fa', 'es']);
 }

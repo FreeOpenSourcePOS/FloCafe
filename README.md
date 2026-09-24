@@ -112,6 +112,7 @@ FloCafe includes UI translations for:
 - Italian
 - Japanese
 - Simplified Chinese
+- Traditional Chinese (Taiwan)
 - Korean
 - Bahasa Indonesia
 - Dutch

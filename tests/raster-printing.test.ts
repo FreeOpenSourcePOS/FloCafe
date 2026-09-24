@@ -1086,6 +1086,10 @@ async function run(): Promise<void> {
   assert.ok(html.includes('PingFang SC'));
   assert.ok(html.includes('Microsoft YaHei'));
   assert.ok(html.includes('Noto Sans CJK SC'));
+  assert.ok(html.includes('PingFang TC'));
+  assert.ok(html.includes('Microsoft JhengHei'));
+  assert.ok(html.includes('Noto Sans CJK TC'));
+  assert.ok(html.includes('Intl.Segmenter'));
 
   // Test shared raster renderer lifecycle and idle teardown
   destroySharedRasterRenderer();

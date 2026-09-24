@@ -232,13 +232,25 @@ async function run(): Promise<void> {
     assert(i18nModule.getBrowserLanguage() === 'de', 'getBrowserLanguage must preserve same-script regional fallback for de-CH');
   });
   withNavigatorLanguage('zh-TW-u-nu-latn', () => {
-    assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must not fall back across zh-Hant to zh-Hans');
+    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must ignore extensions when matching zh-TW');
+  });
+  withNavigatorLanguage('zh-Hant-TW-u-ca-chinese', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must maximize zh-Hant-TW without its extensions');
   });
   withNavigatorLanguage('zh-Hans-CN-u-nu-latn', () => {
     assert(i18nModule.getBrowserLanguage() === 'zh', 'getBrowserLanguage must match a Unicode-extension tag to the registered zh-CN bundle');
   });
+  withNavigatorLanguage('zh-TW', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must return "zh-tw" for zh-TW');
+  });
+  withNavigatorLanguage('zh-Hant-TW', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must return "zh-tw" for zh-Hant-TW');
+  });
   withNavigatorLanguage('zh', () => {
     assert(i18nModule.getBrowserLanguage() === 'zh', 'bare zh must preserve the registered Simplified Chinese fallback');
+  });
+  withNavigatorLanguage('zh-CN', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh', 'zh-CN must preserve the Simplified Chinese bundle');
   });
   withNavigatorLanguage('nl-NL', () => {
     assert(i18nModule.getBrowserLanguage() === 'nl', 'getBrowserLanguage must return "nl" for nl-NL');
@@ -258,10 +270,10 @@ async function run(): Promise<void> {
   withNavigatorLanguage(undefined, () => {
     assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must fallback to "en" when navigator is undefined');
   });
-  console.log('  ✓ getBrowserLanguage resolves registered locales and defaults correctly');
+  console.log('  ✓ getBrowserLanguage resolves regional locales before primary-language fallbacks');
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all supported languages.
-  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko', 'id', 'nl'] as const;
+  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl'] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {
@@ -283,7 +295,7 @@ async function run(): Promise<void> {
   assert(tFa('settings.languageFa') === 'فارسی (FA)', 'settings.languageFa in fa must be فارسی (FA)');
   assert(tEn('setup.languagePersian') === 'Persian', 'setup.languagePersian in en must be Persian');
   assert(tEn('settings.languageFa') === 'Persian (FA)', 'settings.languageFa in en must be Persian (FA)');
-  console.log('  ✓ setup.languagePersian and settings.languageFa translate across en, es, fr, pt, fa, it, ja, zh, ko, id, nl');
+  console.log('  ✓ setup.languagePersian and settings.languageFa translate across en, es, fr, pt, fa, it, ja, zh, zh-tw, ko, id, nl');
 
   console.log('\n✅ All RTL/LTR Setup, Auth, and Settings checks passed.');
 }

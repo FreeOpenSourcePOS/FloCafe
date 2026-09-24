@@ -43,13 +43,20 @@ function runTest() {
     'i18n:add must explain why an existing language file was not overwritten',
   );
 
+  const regionalLanguage = spawnSync(process.execPath, [i18nAddScript, 'zh-tw'], {
+    encoding: 'utf8',
+    cwd: rootDir,
+  });
+  assert.strictEqual(regionalLanguage.status, 1, 'i18n:add must accept a regional key before refusing an existing file');
+  assert.doesNotMatch(regionalLanguage.stderr, /Invalid language code/, 'i18n:add must accept a canonical lowercase regional key');
+
   const invalidLanguage = spawnSync(process.execPath, [i18nAddScript, 'EN'], {
     encoding: 'utf8',
     cwd: rootDir,
   });
   assert.strictEqual(invalidLanguage.status, 1, 'i18n:add must reject non-canonical language codes');
   assert.match(invalidLanguage.stderr, /Invalid language code/);
-  console.log('✓ i18n:add validation and no-overwrite guard verified');
+  console.log('✓ i18n:add validation, regional keys, and no-overwrite guard verified');
 
   console.log('Testing kill-ports.js process identity matching...');
 

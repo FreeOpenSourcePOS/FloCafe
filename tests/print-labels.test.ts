@@ -110,7 +110,8 @@ function run(): void {
   assert('fa resolves grand total to Persian', printLabel('fa', 'print.grandTotal') === 'جمع کل');
   assert('it resolves grand total to Italian', printLabel('it', 'print.grandTotal') === 'TOTALE');
   assert('ja resolves grand total to Japanese', printLabel('ja', 'print.grandTotal') === '合計');
-  assert('zh resolves grand total to Chinese', printLabel('zh', 'print.grandTotal') === '合计');
+  assert('zh resolves grand total to Simplified Chinese', printLabel('zh', 'print.grandTotal') === '合计');
+  assert('zh-tw resolves grand total to Traditional Chinese', printLabel('zh-tw', 'print.grandTotal') === '合計');
   assert('ko resolves grand total to Korean', printLabel('ko', 'print.grandTotal') === '합계');
   assert('tr resolves grand total to Turkish', printLabel('tr', 'print.grandTotal') === 'GENEL TOPLAM');
   assert('fil resolves grand total to Filipino', printLabel('fil', 'print.grandTotal') === 'KABUUAN');

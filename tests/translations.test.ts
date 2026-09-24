@@ -41,8 +41,9 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  14. Italian safeguards: it.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
- *  15. Japanese and Chinese safeguards: ja.json and zh.json values never contain
- *      placeholders or silently fall back to English (documented intentional lists excepted).
+ *  15. Japanese and Chinese safeguards: ja.json, zh.json, and zh-tw.json values
+ *      never contain placeholders or silently fall back to English (documented
+ *      intentional lists excepted).
  *  16. Dutch safeguards: nl.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
  *

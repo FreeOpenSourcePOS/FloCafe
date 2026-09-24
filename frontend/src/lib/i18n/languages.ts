@@ -99,6 +99,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/zh.json'),
   },
+  'zh-tw': {
+    locale: 'zh-TW',
+    nativeName: '繁體中文',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/zh-tw.json'),
+  },
   ko: {
     locale: 'ko-KR',
     nativeName: '한국어',

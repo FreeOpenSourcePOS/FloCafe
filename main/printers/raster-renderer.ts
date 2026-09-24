@@ -59,7 +59,7 @@ export function rasterRendererHtml(): string {
       const fontSize = styles.includes('font-b') ? 17 : 24;
       const topPad = 3;
       const weight = styles.includes('bold') ? '700' : '400';
-      const fontFallback = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans", sans-serif';
+      const fontFallback = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Noto Sans", sans-serif';
       const fontSpec = request.bundledFont
         ? JSON.stringify(request.bundledFont.family) + ', ' + fontFallback
         : fontFallback;

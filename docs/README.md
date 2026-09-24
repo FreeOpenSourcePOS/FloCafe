@@ -31,6 +31,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [release-evidence-index.md](release-evidence-index.md) | Permanent sanitized release-summary contract, 90-day evidence retention, manual boundaries, and #512 integration boundary. | CURRENT |
 | [tax-packs.md](tax-packs.md) | Tax pack schema, authoring guide, cryptographic signing, and catalog distribution workflow. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
+| [zh-tw-language-support.md](zh-tw-language-support.md) | Taiwan Traditional Chinese (`zh-TW`) research, terminology decisions, implementation specification, challenge reviews, and validation record. | CURRENT |
 | [merchant-print-templates.md](merchant-print-templates.md) | Merchant print template schema (v1), validation/compatibility policy, provenance and trust model, and bill-template selection identity. Cross-links the compliance `escpos-line-template-v1` contract (#445). | CURRENT |
 | [title-bar-phase1.md](title-bar-phase1.md) | Native-controls title-bar implementation note for the main POS Electron window, including Phase 2 Linux verification and HTML fallback controls (#457). | CURRENT |
 | [title-bar-platform-matrix.md](title-bar-platform-matrix.md) | Cross-platform verification matrix for the custom title bar, runner/local evidence, and findings (#457/#462). | CURRENT |

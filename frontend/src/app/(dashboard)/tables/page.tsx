@@ -52,16 +52,20 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const searchRequestRef = useRef(0);
 
 
   const searchCustomers = (q: string) => {
+    const requestId = ++searchRequestRef.current;
     if (q.length < 2) { setResults([]); return; }
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
         const { data } = await api.get(`/customers-search?q=${encodeURIComponent(q)}`);
-        setResults(Array.isArray(data) ? data : []);
-      } catch { setResults([]); }
+        if (requestId === searchRequestRef.current) setResults(Array.isArray(data) ? data : []);
+      } catch {
+        if (requestId === searchRequestRef.current) setResults([]);
+      }
     }, 300);
   };
 

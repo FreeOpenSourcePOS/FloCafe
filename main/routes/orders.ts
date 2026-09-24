@@ -557,12 +557,18 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         service_charge_tax_category_id: chargeCategories.service_charge?.categoryId || null,
       };
 
+      const orderCustomerId = customer_id || (
+        type === 'dine_in' && table_id
+          ? (db.prepare("SELECT reservation_customer_id FROM tables WHERE id = ? AND status = 'reserved'").get(table_id) as { reservation_customer_id: string | null } | undefined)?.reservation_customer_id || null
+          : null
+      );
+
       const orderResult = db.prepare(`
         INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
           packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
           service_charge, service_charge_tax_category_id, online_platform, external_order_id, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `).run(orderNumber, table_id || null, customer_id || null, authenticatedUserId, type, guest_count || null,
+      `).run(orderNumber, table_id || null, orderCustomerId, authenticatedUserId, type, guest_count || null,
         special_instructions || null, pkgCharge, delCharge,
         chargeContext.packaging_tax_category_id, chargeContext.delivery_tax_category_id,
         serviceCharge, chargeContext.service_charge_tax_category_id,
@@ -575,7 +581,7 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
       let exclusiveTax = 0;
       const allTaxBreakdowns: any[] = [];
       const allTaxSnapshots: (string | null)[] = [];
-      const customer = customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id) as any : null;
+      const customer = orderCustomerId ? db.prepare('SELECT * FROM customers WHERE id = ?').get(orderCustomerId) as any : null;
 
       const insertItem = db.prepare(`
         INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity, inventory_product_id,
@@ -713,9 +719,9 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
       notifyKdsUpdate();
       cloudSync.recordOrderChanged(result.order.id, 'order.created');
 
-      if (customer_id) {
+      if (result.order.customer_id) {
         try {
-          syncCustomerTagCounts(db, customer_id, items);
+          syncCustomerTagCounts(db, result.order.customer_id, items);
         } catch (err) {
           console.error('[Orders] Tag sync failed:', err);
         }

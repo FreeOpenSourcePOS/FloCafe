@@ -70,7 +70,7 @@ function normalizeTableCapacity(value: unknown): number | null {
   return Number.isInteger(normalized) && normalized > 0 ? normalized : null;
 }
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = 'SELECT * FROM tables WHERE 1=1';
@@ -108,7 +108,7 @@ router.get('/', (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);

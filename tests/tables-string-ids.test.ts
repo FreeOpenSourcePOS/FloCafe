@@ -158,6 +158,15 @@ async function main() {
     const reloadRes = await api(baseUrl, '/api/tables/tbl-reservation', { headers: authHeader });
     assertEqual(reloadRes.data.table.reservation_customer_name, 'Reserved Guest', 'GET after reload returns reservation customer name');
     assertEqual(reloadRes.data.table.reservation_customer_phone, '+1 555 123 4567', 'GET after reload returns reservation customer phone');
+    const reservationChefToken = require('jsonwebtoken').sign(
+      { userId: 'reservation-chef', email: 'reservation-chef@test.local', role: 'chef' },
+      getReservationJwtSecret(),
+      { expiresIn: '1h' },
+    );
+    const chefTables = await api(baseUrl, '/api/tables', {
+      headers: { Authorization: `Bearer ${reservationChefToken}` },
+    });
+    assertEqual(chefTables.status, 403, 'chef cannot read reservation customer details from tables');
 
     const replaceRes = await api(baseUrl, '/api/tables/tbl-reservation/status', {
       method: 'PATCH', headers: authHeader,
@@ -195,6 +204,21 @@ async function main() {
       method: 'DELETE', headers: authHeader,
     });
     assertEqual(unholdRes.status, 200, 'held reservation can be released before creating a regular order');
+
+    await api(baseUrl, '/api/tables/tbl-reservation/status', {
+      method: 'PATCH', headers: authHeader,
+      body: { status: 'reserved', reservation_customer_id: 'cust-reservation-2' },
+    });
+    const reservationOrderWithoutCustomer = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'dine_in', table_id: 'tbl-reservation',
+        items: [{ product_id: 'prod-reservation', quantity: 1 }],
+      },
+    });
+    assertEqual(reservationOrderWithoutCustomer.status, 201, 'dine-in order without a customer can use a reserved table');
+    assertEqual(reservationOrderWithoutCustomer.data.order.customer_id, 'cust-reservation-2', 'reserved customer fills an omitted order customer');
+    db.prepare("UPDATE orders SET status = 'completed' WHERE id = ?").run(reservationOrderWithoutCustomer.data.order.id);
 
     await api(baseUrl, '/api/tables/tbl-reservation/status', {
       method: 'PATCH', headers: authHeader,

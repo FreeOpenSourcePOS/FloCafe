@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now, parseRowJson, withTxn } from '../db';
 import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { notifyKdsUpdate } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 
@@ -35,15 +35,20 @@ function reservationCustomerShape(db: ReturnType<typeof getDatabase>, table: any
   };
 }
 
-function tableShape(db: ReturnType<typeof getDatabase>, table: any, activeOrder?: any) {
+function tableShape(db: ReturnType<typeof getDatabase>, table: any, activeOrder?: any, includeReservationCustomer = true) {
   const currentOrder = activeOrder || null;
+  const visibleCurrentOrder = currentOrder && !includeReservationCustomer
+    ? { ...currentOrder, customer_id: null, customer: null }
+    : currentOrder;
   return {
     ...table,
     name: table.number,
-    ...reservationCustomerShape(db, table),
-    activeOrder: currentOrder,
-    current_order: currentOrder,
-    seated_at: currentOrder?.created_at ?? null,
+    ...(includeReservationCustomer
+      ? reservationCustomerShape(db, table)
+      : { reservation_customer_id: null, reservation_customer_name: null, reservation_customer_phone: null }),
+    activeOrder: visibleCurrentOrder,
+    current_order: visibleCurrentOrder,
+    seated_at: visibleCurrentOrder?.created_at ?? null,
   };
 }
 
@@ -70,7 +75,7 @@ function normalizeTableCapacity(value: unknown): number | null {
   return Number.isInteger(normalized) && normalized > 0 ? normalized : null;
 }
 
-router.get('/', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
+router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = 'SELECT * FROM tables WHERE 1=1';
@@ -99,8 +104,9 @@ router.get('/', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response)
     query += ' ORDER BY number';
 
     const rows = db.prepare(query).all(...params);
+    const includeReservationCustomer = hasRole((req as any).user?.role, ROLE_ACCESS.sales);
     // Normalize: frontend expects `name`, schema column is `number`
-    const tables = rows.map((t: any) => tableShape(db, t, activeOrderForTable(db, t.id)));
+    const tables = rows.map((t: any) => tableShape(db, t, activeOrderForTable(db, t.id), includeReservationCustomer));
     res.json({ tables });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -108,7 +114,7 @@ router.get('/', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response)
   }
 });
 
-router.get('/:id', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
+router.get('/:id', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
@@ -117,9 +123,10 @@ router.get('/:id', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Respon
     }
 
     const activeOrder = activeOrderForTable(db, req.params.id as string);
+    const includeReservationCustomer = hasRole((req as any).user?.role, ROLE_ACCESS.sales);
 
     // Normalize: frontend expects `name`, schema column is `number`
-    res.json({ table: tableShape(db, table as any, activeOrder) });
+    res.json({ table: tableShape(db, table as any, activeOrder, includeReservationCustomer) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

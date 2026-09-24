@@ -123,3 +123,138 @@ test('reserved customer is searchable, shown after reload, and linked to the din
     });
   }
 });
+
+test('table selection preserves explicit customers and replaces or clears inherited reservation customers', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
+  const authHeaders = { Authorization: `Bearer ${token}` };
+  const businessResponse = await page.request.get(`${BASE}/api/settings/business`, { headers: authHeaders });
+  expect(businessResponse.ok()).toBeTruthy();
+  const originalBusiness = await businessResponse.json();
+  const attemptId = Date.now();
+  const reservationCustomer = {
+    name: `Reservation Guest ${attemptId}`,
+    phone: `+668${String(attemptId).slice(-8)}`,
+  };
+  const replacementCustomer = {
+    name: `Replacement Guest ${attemptId}`,
+    phone: `+668${String(attemptId + 1).slice(-8)}`,
+  };
+  const explicitCustomer = {
+    name: `Explicit Guest ${attemptId}`,
+    phone: `+668${String(attemptId + 2).slice(-8)}`,
+  };
+  const tableNames = [`E2E-RES-A-${attemptId}`, `E2E-RES-B-${attemptId}`, `E2E-RES-FREE-${attemptId}`];
+  const tableIds: string[] = [];
+
+  try {
+    const businessUpdate = await page.request.put(`${BASE}/api/settings/business`, {
+      headers: authHeaders,
+      data: { ...originalBusiness, tables_required: true },
+    });
+    expect(businessUpdate.ok()).toBeTruthy();
+
+    const customers: Array<{ id: string }> = [];
+    for (const customer of [reservationCustomer, replacementCustomer, explicitCustomer]) {
+      const response = await page.request.post(`${BASE}/api/customers`, {
+        headers: authHeaders,
+        data: { ...customer, country_code: '+66' },
+      });
+      expect(response.ok()).toBeTruthy();
+      customers.push((await response.json()).customer);
+    }
+
+    for (const number of tableNames) {
+      const response = await page.request.post(`${BASE}/api/tables`, {
+        headers: authHeaders,
+        data: { number, capacity: 4 },
+      });
+      expect(response.ok()).toBeTruthy();
+      tableIds.push((await response.json()).table.id);
+    }
+    for (const [tableId, customer] of [[tableIds[0], customers[0]], [tableIds[1], customers[1]]] as const) {
+      const response = await page.request.patch(`${BASE}/api/tables/${tableId}/status`, {
+        headers: authHeaders,
+        data: { status: 'reserved', reservation_customer_id: customer.id },
+      });
+      expect(response.ok()).toBeTruthy();
+    }
+
+    await page.goto(`${BASE}/auth/login`);
+    await page.locator('#email').fill('manager@flo.local');
+    await page.locator('#password').fill(E2E_PASSWORD);
+    const tablesResponsePromise = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === '/api/tables'
+        && url.searchParams.get('active') === '1';
+    });
+    await page.locator('button[type="submit"]').click();
+    await page.waitForURL('**/pos/**', { timeout: 20_000 });
+    const tablesResponse = await tablesResponsePromise;
+    expect(tablesResponse.ok()).toBeTruthy();
+    const loadedTables = (await tablesResponse.json()).tables as Array<{
+      id: string;
+      status: string;
+      reservation_customer_id: string | null;
+    }>;
+    expect(loadedTables.find((table) => table.id === tableIds[0])).toMatchObject({
+      status: 'reserved',
+      reservation_customer_id: customers[0].id,
+    });
+    await setLanguage(page, 'en');
+
+    const phoneInput = page.locator('input[type="tel"]');
+    const explicitSearch = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return response.request().method() === 'GET'
+        && url.pathname === '/api/customers-search'
+        && url.searchParams.get('q') === explicitCustomer.phone.replace(/\D/g, '');
+    });
+    await phoneInput.fill(explicitCustomer.phone);
+    const explicitSearchResults = await (await explicitSearch).json();
+    expect(explicitSearchResults.some((customer: { id: string }) => customer.id === customers[2].id)).toBeTruthy();
+    await page.getByRole('button', { name: 'Select', exact: true }).click();
+    await expect(page.getByText(explicitCustomer.name, { exact: true })).toBeVisible();
+
+    const selectTable = async (name: string, currentTableName?: string) => {
+      if (currentTableName) {
+        await page.getByRole('button', { name: `Table: ${currentTableName}`, exact: true }).click();
+      } else {
+        await page.getByRole('button', { name: 'Select Table' }).click();
+      }
+      const picker = page.locator('div.fixed.inset-0').filter({
+        has: page.getByRole('heading', { name: 'Select Table' }),
+      }).last();
+      await picker.getByRole('button', { name: new RegExp(name) }).click();
+    };
+
+    await selectTable(tableNames[0]);
+    await expect(page.getByText(explicitCustomer.name, { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Remove' }).click();
+    await selectTable(tableNames[0], tableNames[0]);
+    await expect(page.getByText(reservationCustomer.name, { exact: true })).toBeVisible();
+
+    await selectTable(tableNames[1], tableNames[0]);
+    await expect(page.getByText(replacementCustomer.name, { exact: true })).toBeVisible();
+
+    await selectTable(tableNames[2], tableNames[1]);
+    await expect(phoneInput).toBeVisible();
+    await expect(phoneInput).toHaveValue('');
+    await expect(page.getByText(replacementCustomer.name, { exact: true })).toHaveCount(0);
+  } finally {
+    for (const tableId of tableIds) {
+      await page.request.patch(`${BASE}/api/tables/${tableId}/status`, {
+        headers: authHeaders,
+        data: { status: 'available' },
+      });
+      await page.request.post(`${BASE}/api/tables/${tableId}/deactivate`, { headers: authHeaders });
+    }
+    await page.request.put(`${BASE}/api/settings/business`, {
+      headers: authHeaders,
+      data: originalBusiness,
+    });
+  }
+});

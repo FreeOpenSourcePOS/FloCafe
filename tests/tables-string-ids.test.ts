@@ -15,6 +15,7 @@
 // ── Electron Mock ────────────────────────────────────────────────────────────
 const Module = require('module');
 const originalLoad = Module._load;
+const strictAssert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -163,10 +164,25 @@ async function main() {
       getReservationJwtSecret(),
       { expiresIn: '1h' },
     );
+    const unauthenticatedTables = await api(baseUrl, '/api/tables');
+    assertEqual(unauthenticatedTables.status, 401, 'table reads still require authentication');
     const chefTables = await api(baseUrl, '/api/tables', {
       headers: { Authorization: `Bearer ${reservationChefToken}` },
     });
-    assertEqual(chefTables.status, 403, 'chef cannot read reservation customer details from tables');
+    assertEqual(chefTables.status, 200, 'chef can read tables');
+    const chefReservationTable = chefTables.data.tables.find((table: any) => table.id === 'tbl-reservation');
+    assertEqual(chefReservationTable.status, 'reserved', 'chef can read the table status');
+    assertEqual(chefReservationTable.reservation_customer_id, null, 'table list redacts the reservation customer ID for chefs');
+    assertEqual(chefReservationTable.reservation_customer_name, null, 'table list redacts the reservation customer name for chefs');
+    assertEqual(chefReservationTable.reservation_customer_phone, null, 'table list redacts the reservation customer phone for chefs');
+    const chefTable = await api(baseUrl, '/api/tables/tbl-reservation', {
+      headers: { Authorization: `Bearer ${reservationChefToken}` },
+    });
+    assertEqual(chefTable.status, 200, 'chef can read one table');
+    assertEqual(chefTable.data.table.status, 'reserved', 'single-table read includes state for chefs');
+    assertEqual(chefTable.data.table.reservation_customer_id, null, 'single-table read redacts the reservation customer ID for chefs');
+    assertEqual(chefTable.data.table.reservation_customer_name, null, 'single-table read redacts the reservation customer name for chefs');
+    assertEqual(chefTable.data.table.reservation_customer_phone, null, 'single-table read redacts the reservation customer phone for chefs');
 
     const replaceRes = await api(baseUrl, '/api/tables/tbl-reservation/status', {
       method: 'PATCH', headers: authHeader,
@@ -217,7 +233,7 @@ async function main() {
       },
     });
     assertEqual(reservationOrderWithMismatch.status, 201, 'dine-in order with a mismatched customer can use a reserved table');
-    assertEqual(reservationOrderWithMismatch.data.order.customer_id, 'cust-reservation-2', 'reserved customer takes precedence over a mismatched order customer');
+    assertEqual(reservationOrderWithMismatch.data.order.customer_id, 'cust-reservation-1', 'explicit order customer takes precedence over the reserved customer');
     db.prepare("UPDATE orders SET status = 'completed' WHERE id = ?").run(reservationOrderWithMismatch.data.order.id);
 
     await api(baseUrl, '/api/tables/tbl-reservation/status', {
@@ -253,6 +269,24 @@ async function main() {
     const occupiedReservation = await api(baseUrl, '/api/tables/tbl-reservation', { headers: authHeader });
     assertEqual(occupiedReservation.data.table.status, 'occupied', 'order creation marks reserved table occupied');
     assertEqual(occupiedReservation.data.table.reservation_customer_id, null, 'order creation clears the consumed reservation');
+    strictAssert.equal(occupiedReservation.data.table.activeOrder.customer_id, 'cust-reservation-2', 'sales table reads retain the linked active-order customer ID');
+    strictAssert.equal(occupiedReservation.data.table.activeOrder.customer.name, 'Replacement Guest', 'sales table reads retain the linked active-order customer');
+    strictAssert.equal(occupiedReservation.data.table.activeOrder.customer.phone, '+1 555 765 4321', 'sales table reads retain the linked active-order customer phone');
+    const chefOccupiedTables = await api(baseUrl, '/api/tables', {
+      headers: { Authorization: `Bearer ${reservationChefToken}` },
+    });
+    const chefOccupiedTable = chefOccupiedTables.data.tables.find((table: any) => table.id === 'tbl-reservation');
+    strictAssert.equal(chefOccupiedTable.status, 'occupied', 'chef can still read occupied table state');
+    strictAssert.equal(chefOccupiedTable.activeOrder.customer_id, null, 'chef table list redacts the active-order customer ID');
+    strictAssert.equal(chefOccupiedTable.activeOrder.customer, null, 'chef table list redacts the active-order customer details');
+    strictAssert.equal(chefOccupiedTable.current_order.customer_id, null, 'chef table list redacts the current-order customer ID alias');
+    strictAssert.equal(chefOccupiedTable.current_order.customer, null, 'chef table list redacts the current-order customer details alias');
+    const chefOccupiedTableDetail = await api(baseUrl, '/api/tables/tbl-reservation', {
+      headers: { Authorization: `Bearer ${reservationChefToken}` },
+    });
+    strictAssert.equal(chefOccupiedTableDetail.data.table.status, 'occupied', 'chef can still read occupied table detail');
+    strictAssert.equal(chefOccupiedTableDetail.data.table.activeOrder.customer_id, null, 'chef table detail redacts the active-order customer ID');
+    strictAssert.equal(chefOccupiedTableDetail.data.table.activeOrder.customer, null, 'chef table detail redacts the active-order customer details');
     console.log('   ✓ Reservation customer survives reload, flows to orders, and clears on table transitions');
 
     // ═══════════════════════════════════════════════════════════════════

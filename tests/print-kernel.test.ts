@@ -285,6 +285,15 @@ assert.equal(financial.lines.join(' '), 'Credit Card (Mastercard) 1234567890', '
 const bidiControlled = `\u200f${'A'.repeat(32)}`;
 assert.equal(displayCellWidth(bidiControlled), 32, 'RTL formatting controls consume no display cells');
 assert.equal(fitThermalLine(bidiControlled, 32), bidiControlled, 'final fitting preserves 32 visible cells plus an RTL control');
+const vietnameseNfc = 'Tiếng Việt';
+const vietnameseNfd = vietnameseNfc.normalize('NFD');
+assert.equal(displayCellWidth(vietnameseNfc), 10, 'composed Vietnamese text measures by grapheme');
+assert.equal(displayCellWidth(vietnameseNfd), 10, 'decomposed Vietnamese combining marks consume no extra cells');
+assert.deepEqual(
+  wrapToDisplayCells(vietnameseNfd, 8).map((line) => line.normalize('NFC')),
+  wrapToDisplayCells(vietnameseNfc, 8).map((line) => line.normalize('NFC')),
+  'Vietnamese wrapping keeps NFC and NFD grapheme sequences equivalent',
+);
 const fullWidthText = '商品商品';
 assert.equal(displayCellWidth(fullWidthText), 8, 'full-width glyphs consume two display cells');
 assert.equal(fitThermalLine(fullWidthText, 6), '商品商', 'final fitting truncates full-width glyphs by display cells');

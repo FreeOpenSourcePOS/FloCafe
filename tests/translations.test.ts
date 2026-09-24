@@ -1392,6 +1392,99 @@ function sqFallbackErrors(sqFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Vietnamese translation safeguards, including canonical NFC text. */
+const VI_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.email',
+  'auth.emailPlaceholder',
+  'common.appTitle',
+  'common.brandName',
+  'common.logoAlt',
+  'customer.email',
+  'dashboard.exportCsv',
+  'dashboard.exportXlsx',
+  'dashboard.ticketMethodCount',
+  'kds.emptyColumn',
+  'kds.viewKanban',
+  'nav.kds',
+  'nav.pos',
+  'nav.whatsapp',
+  'pos.addonPrice',
+  'pos.loadingEllipsis',
+  'pos.tagCount',
+  'pos.taxLine',
+  'printTest.escpos',
+  'printTest.paperWidth58',
+  'printTest.paperWidth80',
+  'print.hsn',
+  'print.zReport.paymentCount',
+  'products.addonSelectionRange',
+  'products.fieldSku',
+  'products.saleUnitCl',
+  'products.saleUnitFlOz',
+  'products.saleUnitG',
+  'products.saleUnitKg',
+  'products.saleUnitL',
+  'products.saleUnitLb',
+  'products.saleUnitMl',
+  'products.saleUnitOz',
+  'products.skuLabel',
+  'serverApp.emailPlaceholder',
+  'serverApp.title',
+  'settings.apiKeyInputPlaceholder',
+  'settings.connectionUsb',
+  'settings.email',
+  'settings.instagramPlaceholder',
+  'settings.ipAddressPlaceholder',
+  'settings.iranCurrencyDisplayRial',
+  'settings.iranCurrencyDisplayToman',
+  'settings.iranNumberDigitsLatin',
+  'settings.kds',
+  'settings.languageEn',
+  'settings.languageEs',
+  'settings.languagePt',
+  'settings.paperSize58',
+  'settings.paperSize80',
+  'settings.paymentMethodUpi',
+  'settings.portPlaceholder',
+  'settings.registrationEmailPlaceholder',
+  'settings.registrationLastError',
+  'settings.revflo',
+  'settings.serverApp',
+  'settings.tabOrderflow',
+  'settings.tabWhatsapp',
+  'settings.unicode',
+  'settings.whatsapp',
+  'setup.demoLabel',
+  'setup.expressLabel',
+  'setup.finedineLabel',
+  'setup.ownerEmailPlaceholder',
+  'setup.pinLabel',
+  'setup.qsrLabel',
+  'support.email',
+  'tax.auditCreateOverride',
+  'tax.auditUpdateOverride',
+  'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function viFallbackErrors(viFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const viVal = viFlat[k];
+    if (viVal === undefined) continue;
+    if (viVal.startsWith('[VI]') || viVal.startsWith('[TODO]')) {
+      errors.push(`vi.json ${k} — placeholder prefix found: "${viVal}"`);
+    } else if (viVal === enFlat[k] && !VI_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`vi.json ${k} — identical to English value (renders as English for Vietnamese users)`);
+    } else if (viVal !== viVal.normalize('NFC')) {
+      errors.push(`vi.json ${k} — value must use Unicode NFC`);
+    } else if (viVal.includes('\uFFFD')) {
+      errors.push(`vi.json ${k} — value contains a Unicode replacement character`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1807,6 +1900,17 @@ async function run(): Promise<void> {
   assert(sqMessages['orders.orderConvertedTakeaway'] === 'Porosia u konvertua në porosi me vete', 'Albanian takeaway conversion result must use pickup wording');
   console.log('  ✓ Albanian cash-movement and takeaway terminology is consistent');
 
+  // 21. vi.json values must be complete, NFC text without malformed characters.
+  const viMessages = loadedStrings.get('vi');
+  if (!viMessages) throw new Error('languages registry must include the maintained vi locale');
+  const viErrors = viFallbackErrors(viMessages, loadedStrings.get('en')!);
+  if (viErrors.length) {
+    console.error(`\nvi.json values with errors (${viErrors.length}):`);
+    for (const e of viErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'vi.json contains untranslated, placeholder, non-NFC, or replacement-character values');
+  }
+  console.log(`  ✓ no untranslated vi.json values (${VI_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1912,7 +2016,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id, nl, hi, bn, sq).
+  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id, nl, hi, bn, sq, vi).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -2024,6 +2128,22 @@ function runNegativeTests(): void {
   expectDetected(
     'sq: placeholder prefix value',
     sqFallbackErrors({ 'a.b': '[SQ] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'vi: English-identical value',
+    viFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'vi: placeholder prefix value',
+    viFallbackErrors({ 'a.b': '[VI] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'vi: non-NFC value',
+    viFallbackErrors({ 'a.b': 'Tiếng Việt'.normalize('NFD') }, { 'a.b': 'Tiếng Việt'.normalize('NFC') }),
+  );
+  expectDetected(
+    'vi: Unicode replacement character',
+    viFallbackErrors({ 'a.b': 'Ti�ng Việt' }, { 'a.b': 'Tiếng Việt' }),
   );
 
   // 8. TypeScript key safety.

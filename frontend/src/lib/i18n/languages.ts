@@ -148,6 +148,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/sq.json'),
   },
+  vi: {
+    locale: 'vi-VN',
+    nativeName: 'Tiếng Việt',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/vi.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

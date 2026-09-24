@@ -34,6 +34,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [hindi-language-support.md](hindi-language-support.md) | Hindi research, specification, implementation plan, challenge reviews, and print/evidence boundaries. | CURRENT |
 | [bengali-language-support.md](bengali-language-support.md) | Bengali/Bangla research, terminology, shaping and printer constraints, implementation specification, and release plan. | CURRENT |
 | [albanian-language-support.md](albanian-language-support.md) | Albanian (`sq`) locale research, terminology and printer constraints, implementation specification, and release plan. | CURRENT |
+| [vietnamese-language-support.md](vietnamese-language-support.md) | Vietnamese locale research, terminology, implementation contract, verification record, and native-printing limitations. | CURRENT |
 | [merchant-print-templates.md](merchant-print-templates.md) | Merchant print template schema (v1), validation/compatibility policy, provenance and trust model, and bill-template selection identity. Cross-links the compliance `escpos-line-template-v1` contract (#445). | CURRENT |
 | [title-bar-phase1.md](title-bar-phase1.md) | Native-controls title-bar implementation note for the main POS Electron window, including Phase 2 Linux verification and HTML fallback controls (#457). | CURRENT |
 | [title-bar-platform-matrix.md](title-bar-platform-matrix.md) | Cross-platform verification matrix for the custom title bar, runner/local evidence, and findings (#457/#462). | CURRENT |

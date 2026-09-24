@@ -225,6 +225,11 @@ function run(): void {
     `DirectionalToaster must key its Toaster "rtl" for Persian so a direction flip fully remounts it (regression guard for the insertBefore/NotFoundError crash when react-hot-toast's position prop changes on a live instance), got: ${renderedFa.key}`
   );
 
+  usePosSettingsStore.getState().setLanguage('ur');
+  const renderedUr = renderDirectionalToaster(getLanguageLocale('ur'));
+  assert(renderedUr.position === 'top-left', `DirectionalToaster must set position="top-left" for Urdu (ur), got: ${renderedUr.position}`);
+  assert(renderedUr.key === 'rtl', `DirectionalToaster must key its Toaster "rtl" for Urdu (ur), got: ${renderedUr.key}`);
+
   for (const ltrLang of ['en', 'es', 'fr', 'pt', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const) {
     usePosSettingsStore.getState().setLanguage(ltrLang);
     const renderedLtr = renderDirectionalToaster(getLanguageLocale(ltrLang));
@@ -300,7 +305,9 @@ function run(): void {
 
   // 6. Shared language-direction metadata (single source of truth).
   const { getLanguageDirection } = require('../frontend/src/lib/i18n');
-  assert(getLanguageDirection('fa') === 'rtl', 'Persian (fa) must resolve to rtl');
+  for (const rtlLang of ['fa', 'ur'] as const) {
+    assert(getLanguageDirection(rtlLang) === 'rtl', `${rtlLang} must resolve to rtl`);
+  }
   for (const ltrLang of ['en', 'es', 'fr', 'pt', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
   }

@@ -116,6 +116,7 @@ function run(): void {
   console.log('\n✅ Test 1: printLabel language selection and fallback');
   assert('en resolves grand total to TOTAL', printLabel('en', 'print.grandTotal') === 'TOTAL');
   assert('fa resolves grand total to Persian', printLabel('fa', 'print.grandTotal') === 'جمع کل');
+  assert('ur resolves grand total to Urdu', printLabel('ur', 'print.grandTotal') === 'کل رقم');
   assert('it resolves grand total to Italian', printLabel('it', 'print.grandTotal') === 'TOTALE');
   assert('ja resolves grand total to Japanese', printLabel('ja', 'print.grandTotal') === '合計');
   assert('zh resolves grand total to Simplified Chinese', printLabel('zh', 'print.grandTotal') === '合计');
@@ -157,6 +158,9 @@ function run(): void {
   assert('Arabic receipt rate is translated as price', printLabel('ar', 'receipt.rate') === 'السعر');
   assert('Arabic print-test amount is localized', printLabel('ar', 'printTest.amt') === 'المبلغ');
   assert('Arabic takeaway is distinct from delivery', printLabel('ar', 'pos.orderTypeTakeaway') === 'سفري' && printLabel('ar', 'pos.orderTypeDelivery') === 'توصيل');
+  assert('Urdu bill number label is localized', printLabel('ur', 'receipt.billNumber') === 'بل #');
+  assert('Urdu amount label is localized', printLabel('ur', 'printTest.amt') === 'رقم');
+  assert('Urdu takeaway is distinct from delivery', printLabel('ur', 'pos.orderTypeTakeaway') === 'ٹیک اوے' && printLabel('ur', 'pos.orderTypeDelivery') === 'ڈیلیوری');
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {
@@ -170,6 +174,11 @@ function run(): void {
     assert('fa classic renders Persian subtotal (borrowed pos.subtotal)', faText.includes('جمع جزء'));
     assert('fa classic localizes cash payment method', faText.includes('نقدی'));
     assert('fa classic translates table prefix', faText.includes('میز:'));
+    const urText = escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'classic', 48, false, false, undefined, [], true, 'ur'));
+    assert('ur classic renders Urdu invoice title label', urText.includes('انوائس نمبر:'));
+    assert('ur classic renders Urdu grand total', urText.includes('کل رقم'));
+    assert('ur classic renders Urdu subtotal', urText.includes('ذیلی رقم'));
+    assert('ur classic localizes cash payment method', urText.includes('نقد'));
     const deText = escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'classic', 48, false, false, undefined, [], false, 'de'));
     assert('de classic renders German invoice title label', deText.includes('Rechnungsnr.:') || deText.includes('Rechnung'));
     assert('de classic renders German grand total', deText.includes('GESAMTSUMME'));
@@ -181,7 +190,7 @@ function run(): void {
         language: locale,
         isReprint: false,
         useUnicode: false,
-        arabicShaping: locale === 'fa',
+        arabicShaping: locale === 'fa' || locale === 'ur',
         cutMode: 'full',
       }).lines.join('\n');
       assert(`${locale} classic runtime matrix resolves grand total`, localized.includes(printLabel(locale, 'print.grandTotal')));
@@ -219,6 +228,11 @@ function run(): void {
     assert('fa KOT station label translated', faText.includes('ایستگاه:'));
     assert('fa KOT type label translated', faText.includes('نوع: خوردن در محل'));
     assert('fa KOT time label translated', faText.includes('ساعت:'));
+    const urText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'ur-PK', undefined, [], true, 'ur'));
+    assert('ur KOT banner translated', urText.includes('کچن آرڈر ٹکٹ'));
+    assert('ur KOT station label translated', urText.includes('اسٹیشن:'));
+    assert('ur KOT type label translated', urText.includes('قسم:'));
+    assert('ur KOT time label translated', urText.includes('وقت:'));
     const deWarnings: Array<{ field: string; text: string; message: string }> = [];
     const deText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'de-DE', undefined, deWarnings, false, 'de'));
     assert('de KOT banner survives generic thermal output', deText.includes('KUECHENBESTELLSCHEIN'));

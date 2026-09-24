@@ -7,12 +7,12 @@
 
 ## 1. Problem
 
-Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — remains limited by printer firmware and font coverage. The current runtime uses the shared profile-owned text capability contract described in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics): generic native profiles remain ASCII-only, current profiles declare raster separately, and unsupported item or financial rows are refused before transport so a receipt is never printed with missing financial content. This document covers the implemented Phase 9 raster boundary and deferred broader script and hardware validation.
+Raw thermal printing of Arabic, Persian, and Urdu — and non-Latin scripts generally — remains limited by printer firmware and font coverage. The current runtime uses the shared profile-owned text capability contract described in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics): generic native profiles remain ASCII-only, current profiles declare raster separately, and unsupported item or financial rows are refused before transport so a receipt is never printed with missing financial content. This document covers the implemented Phase 9 raster boundary and deferred broader script and hardware validation.
 
 Why generic ESC/POS printers fail non-Latin text:
 
 1. **Missing glyphs.** Cheap 58 mm / 80 mm clones carry small font ROMs covering CP437/CP850-class sets. Arabic, Hebrew, Devanagari, Thai, and CJK glyphs are absent, so bytes print as garbage or blank.
-2. **No contextual shaping.** Arabic/Persian requires contextual letter forms; printer firmware renders isolated forms at best.
+2. **No contextual shaping.** Arabic, Persian, and Urdu require contextual letter forms; printer firmware renders isolated forms at best.
 3. **No bidirectional reordering.** Printers emit left-to-right only; logical-order RTL text prints reversed.
 4. **Code pages do not save us** (evidence below).
 
@@ -26,7 +26,7 @@ The end-state contract from epic #438 is **no silent data loss**: native render,
 
 ## 3. Approach comparison
 
-### 3.1 Printer-native Arabic/Persian shaping (the profile capability)
+### 3.1 Printer-native Arabic-script shaping (the profile capability)
 
 The `capabilities.shaping.arabic` field means: *this specific printer's firmware performs contextual shaping and bidi ordering*. It must stay default-off and be set true only after a real print on the specific hardware proves shaped output. The legacy `arabicShaping` field is retained only as a compatibility input. Reality:
 

@@ -11,7 +11,7 @@ This protocol defines the physical hardware testing matrix, operating procedures
 Physical validation ensures that real-world thermal printers reliably handle:
 1. **Network transports (TCP Port 9100)** without socket buffer exhaustion or microcontroller buffer overruns on large raster or multilingual payloads.
 2. **USB & OS Spooler transports** (Windows Spooler RAW jobs, macOS/Linux CUPS raw queues) without driver truncation or garbled CLIXML serialization.
-3. **Multilingual and multi-script encoding** (Latin accents, Persian/Arabic RTL shaping, and CJK system rasterization).
+3. **Multilingual and multi-script encoding** (Latin accents, Arabic/Persian/Urdu RTL shaping, and CJK system rasterization).
 4. **Financial row safety and operator clarity** (proper refusal of unencodable currency/items and clear toast error presentation).
 
 ---
@@ -22,7 +22,7 @@ Physical validation ensures that real-world thermal printers reliably handle:
 |---|---|---|---|---|
 | **Tier 1: Industry standard** | Epson TM-T88VI, TM-T20III, Star TSP143III | Network (TCP 9100), USB (Spooler / CUPS) | 80 mm | Baseline Latin text, drawer kick pulse, raster logos, network throttling |
 | **Tier 2: High-volume budget** | Xprinter XP-N160I, XP-Q90EC, POS-58 / ZJ-58 clones | USB (Spooler / CUPS), Network | 58 mm / 80 mm | 4KB chunking buffer overrun verification, Chinese text, 42/48 col wrapping |
-| **Tier 3: Specialized RTL / Regional** | Meva TP-UN, Sewoo WTP-100, Bixolon SRP-350 | Network, USB | 80 mm | Arabic/Persian shaping (`capabilities.shaping.arabic`), right-to-left layout |
+| **Tier 3: Specialized RTL / Regional** | Meva TP-UN, Sewoo WTP-100, Bixolon SRP-350 | Network, USB | 80 mm | Arabic/Persian/Urdu shaping (`capabilities.shaping.arabic`), right-to-left layout |
 
 ---
 

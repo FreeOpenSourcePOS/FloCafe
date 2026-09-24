@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatKOT, escPosToText } from '../main/printers/thermal';
 import { printLabel } from '../main/print/print-labels.generated';
 
-const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const;
+const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const;
 const order = {
   order_number: 'KOT-PHASE3-001',
   type: 'dine_in',
@@ -322,6 +322,10 @@ async function run(): Promise<void> {
   const faShapedText = escPosToText(formatKOT(order, order.items, 'Main Kitchen', 42, false, 'full', 'fa-IR', { timeZone: 'UTC' }, faShapedWarnings, true, 'fa'));
   assert.match(faShapedText, /برگ سفارش آشپزخانه/, 'fa shaping path keeps localized KOT banner');
   assert.match(faShapedText, /نوع: خوردن در محل/, 'fa shaping path keeps localized order type');
+  const urShapedWarnings: any[] = [];
+  const urShapedText = escPosToText(formatKOT(order, order.items, 'Main Kitchen', 42, false, 'full', 'ur-PK', { timeZone: 'UTC' }, urShapedWarnings, true, 'ur'));
+  assert.match(urShapedText, /کچن آرڈر ٹکٹ/, 'ur shaping path keeps localized KOT banner');
+  assert.match(urShapedText, /قسم: ٹیبل سروس/, 'ur shaping path keeps localized order type');
 
   console.log(`Phase 3 print regressions: ${languages.length} locales covered across browser, backend thermal-safe, and WebUSB KOT paths.`);
 }

@@ -219,6 +219,15 @@ async function run(): Promise<void> {
   withNavigatorLanguage('fa-AF', () => {
     assert(i18nModule.getBrowserLanguage() === 'fa', 'getBrowserLanguage must return "fa" for fa-AF');
   });
+  withNavigatorLanguage('ur-PK', () => {
+    assert(i18nModule.getBrowserLanguage() === 'ur', 'getBrowserLanguage must return "ur" for ur-PK');
+  });
+  withNavigatorLanguage('ur', () => {
+    assert(i18nModule.getBrowserLanguage() === 'ur', 'getBrowserLanguage must return "ur" for ur');
+  });
+  withNavigatorLanguage('ur-IN', () => {
+    assert(i18nModule.getBrowserLanguage() === 'ur', 'getBrowserLanguage must return "ur" for ur-IN');
+  });
   withNavigatorLanguage('es-ES', () => {
     assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must return "es" for es-ES');
   });
@@ -294,7 +303,7 @@ async function run(): Promise<void> {
   console.log('  ✓ getBrowserLanguage resolves regional locales before primary-language fallbacks');
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all supported languages.
-  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const;
+  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {
@@ -311,7 +320,9 @@ async function run(): Promise<void> {
     assert(settingsLabel && settingsLabel !== 'settings.languageFa', `settings.languageFa must be translated in ${lang}, got: ${settingsLabel}`);
   }
   const tFa = createTranslator({ locale: 'fa-IR', messages: i18nModule.getCachedMessages('fa') });
+  const tUr = createTranslator({ locale: 'ur-PK', messages: i18nModule.getCachedMessages('ur') });
   const tEn = createTranslator({ locale: 'en', messages: i18nModule.getCachedMessages('en') });
+  assert(tUr('setup.welcome') === 'FloCafe میں خوش آمدید', 'Urdu setup welcome message is localized');
   assert(tFa('setup.languagePersian') === 'فارسی', 'setup.languagePersian in fa must be فارسی');
   assert(tFa('settings.languageFa') === 'فارسی (FA)', 'settings.languageFa in fa must be فارسی (FA)');
   assert(tEn('setup.languagePersian') === 'Persian', 'setup.languagePersian in en must be Persian');

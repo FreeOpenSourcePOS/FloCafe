@@ -208,14 +208,14 @@ function insertStaffUser(db: ReturnType<typeof getDatabase>, id: string, name: s
   `).run(id, name, email, bcrypt.hashSync(password, 10), role, isActive, now(), now());
 }
 
-type SeedLanguage = 'en' | 'es' | 'fr' | 'pt' | 'de' | 'tr' | 'fil' | 'fa' | 'ar' | 'it' | 'ja' | 'zh' | 'zh-tw' | 'ko' | 'id' | 'nl' | 'hi' | 'bn' | 'sq' | 'vi';
+type SeedLanguage = 'en' | 'es' | 'fr' | 'pt' | 'de' | 'tr' | 'fil' | 'fa' | 'ar' | 'ur' | 'it' | 'ja' | 'zh' | 'zh-tw' | 'ko' | 'id' | 'nl' | 'hi' | 'bn' | 'sq' | 'vi';
 
 /** Filipino intentionally uses the English sample data as its reviewed exception. */
 export const ENGLISH_IDENTICAL_SEED_LANGUAGES = ['fil'] as const;
 
 function resolveSeedLanguage(language?: string): SeedLanguage {
   return language === 'es' || language === 'fr' || language === 'pt' || language === 'de'
-    || language === 'tr' || language === 'fil' || language === 'fa' || language === 'ar' || language === 'it'
+    || language === 'tr' || language === 'fil' || language === 'fa' || language === 'ar' || language === 'ur' || language === 'it'
     || language === 'ja' || language === 'zh' || language === 'zh-tw' || language === 'ko' || language === 'id' || language === 'nl'
     || language === 'hi' || language === 'bn' || language === 'sq' || language === 'vi'
     ? language
@@ -234,6 +234,7 @@ function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel:
     fil: ['Food', 'Beverages', 'Meal', 'Tea'],
     fa: ['غذاها', 'نوشیدنی‌ها', 'غذا', 'چای'],
     ar: ['الأطعمة', 'المشروبات', 'وجبة', 'شاي'],
+    ur: ['کھانے', 'مشروبات', 'کھانا', 'چائے'],
     it: ['Cibo', 'Bevande', 'Pasto', 'Tè'],
     ja: ['料理', '飲み物', '食事', 'お茶'],
     zh: ['食物', '饮料', '餐点', '茶'],
@@ -248,12 +249,12 @@ function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel:
   };
   const [food, beverages, meal, tea] = labels[lang];
   const coffee = lang === 'es' ? 'Café' : lang === 'fr' ? 'Café' : lang === 'pt' ? 'Café'
-    : lang === 'de' ? 'Kaffee' : lang === 'tr' ? 'Kahve' : lang === 'fa' ? 'قهوه' : lang === 'ar' ? 'قهوة'
+    : lang === 'de' ? 'Kaffee' : lang === 'tr' ? 'Kahve' : lang === 'fa' ? 'قهوه' : lang === 'ar' ? 'قهوة' : lang === 'ur' ? 'کافی'
     : lang === 'it' ? 'Caffè' : lang === 'ja' ? 'コーヒー' : lang === 'zh' || lang === 'zh-tw' ? '咖啡'
     : lang === 'ko' ? '커피' : lang === 'id' ? 'Kopi' : lang === 'nl' ? 'Koffie' : lang === 'hi' ? 'कॉफ़ी'
     : lang === 'bn' ? 'কফি' : lang === 'sq' ? 'Kafe' : lang === 'vi' ? 'Cà phê' : 'Coffee';
   const snack = lang === 'es' ? 'Bocadillo' : lang === 'fr' ? 'Snack' : lang === 'pt' ? 'Lanche'
-    : lang === 'de' ? 'Snack' : lang === 'tr' ? 'Atıştırmalık' : lang === 'fa' ? 'میان‌وعده' : lang === 'ar' ? 'وجبة خفيفة'
+    : lang === 'de' ? 'Snack' : lang === 'tr' ? 'Atıştırmalık' : lang === 'fa' ? 'میان‌وعده' : lang === 'ar' ? 'وجبة خفيفة' : lang === 'ur' ? 'اسنیک'
     : lang === 'it' ? 'Spuntino' : lang === 'ja' ? '軽食' : lang === 'zh' ? '小吃' : lang === 'zh-tw' ? '小點'
     : lang === 'ko' ? '간식' : lang === 'id' ? 'Camilan' : lang === 'nl' ? 'Snack' : lang === 'hi' ? 'नाश्ता'
     : lang === 'bn' ? 'নাস্তা' : lang === 'sq' ? 'Ushqim i lehtë' : lang === 'vi' ? 'Đồ ăn vặt' : 'Snack';
@@ -364,6 +365,13 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['cat-demo-main', 'الأطباق الرئيسية', '#4ECDC4', '🍛', 2],
         ['cat-demo-beverages', 'المشروبات', '#45B7D1', '🥤', 3],
         ['cat-demo-desserts', 'الحلويات', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'ur'
+    ? [
+        ['cat-demo-starters', 'اسٹارٹرز', '#FF6B6B', '🍔', 1],
+        ['cat-demo-main', 'بنیادی کھانے', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', 'مشروبات', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'مٹھائیاں', '#96CEB4', '🍰', 4],
       ] as const
     : lang === 'nl'
     ? [
@@ -551,6 +559,17 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['prod-demo-lemon-soda', 'cat-demo-beverages', 'صودا الليمون', 70, 2],
         ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'جولاب جامون', 80, 1],
       ] as const
+    : lang === 'ur'
+    ? [
+        ['prod-demo-paneer-tikka', 'cat-demo-starters', 'پنیر ٹکّا', 250, 1],
+        ['prod-demo-chicken-wings', 'cat-demo-starters', 'چکن ونگز', 280, 2],
+        ['prod-demo-butter-chicken', 'cat-demo-main', 'مکھنی چکن', 320, 1],
+        ['prod-demo-dal-makhani', 'cat-demo-main', 'دال مکھنی', 220, 2],
+        ['prod-demo-jeera-rice', 'cat-demo-main', 'ذیرہ چاول', 150, 3],
+        ['prod-demo-cola', 'cat-demo-beverages', 'کولا', 60, 1],
+        ['prod-demo-lemon-soda', 'cat-demo-beverages', 'لیمون سوڈا', 70, 2],
+        ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'گلاب جامن', 80, 1],
+      ] as const
     : lang === 'nl'
     ? [
         ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Paneer tikka', 250, 1],
@@ -684,6 +703,10 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     insertCustomer(db, 'cust-demo-1', 'علي حسن', '+966512345678', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'سارة أحمد', '+966512345679', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-3', 'مريم خالد', '+966512345670', dialCode, demoCountry);
+  } else if (lang === 'ur') {
+    insertCustomer(db, 'cust-demo-1', 'عمر احمد', '+923001234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'عائشہ خان', '+923001234568', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'زینب علی', '+923001234569', dialCode, demoCountry);
   } else if (lang === 'nl') {
     insertCustomer(db, 'cust-demo-1', 'Sanne de Jong', '+31612345678', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Bram Jansen', '+31612345679', dialCode, demoCountry);
@@ -711,17 +734,17 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   }
 
   const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'fr' ? 'Gérant Démo' : lang === 'pt' ? 'Gerente Demo'
-    : lang === 'de' ? 'Demo-Manager' : lang === 'tr' ? 'Demo Müdürü' : lang === 'fa' ? 'مدیر نمایشی' : lang === 'ar' ? 'مدير تجريبي'
+    : lang === 'de' ? 'Demo-Manager' : lang === 'tr' ? 'Demo Müdürü' : lang === 'fa' ? 'مدیر نمایشی' : lang === 'ar' ? 'مدير تجريبي' : lang === 'ur' ? 'ڈیمو منیجر'
     : lang === 'it' ? 'Responsabile Demo' : lang === 'ja' ? 'デモマネージャー' : lang === 'zh' ? '演示经理' : lang === 'zh-tw' ? '示範經理'
     : lang === 'ko' ? '예시 매니저' : lang === 'id' ? 'Manajer Demo' : lang === 'nl' ? 'Demomanager' : lang === 'hi' ? 'डेमो मैनेजर'
     : lang === 'bn' ? 'ম্যানেজার ডেমো' : lang === 'sq' ? 'Menaxher Demo' : lang === 'vi' ? 'Quản lý Demo' : 'Demo Manager';
   const cashierName = lang === 'es' ? 'Cajero Demo' : lang === 'fr' ? 'Caissier Démo' : lang === 'pt' ? 'Caixa Demo'
-    : lang === 'de' ? 'Demo-Kassierer' : lang === 'tr' ? 'Demo Kasiyer' : lang === 'fa' ? 'صندوقدار نمایشی' : lang === 'ar' ? 'أمين صندوق تجريبي'
+    : lang === 'de' ? 'Demo-Kassierer' : lang === 'tr' ? 'Demo Kasiyer' : lang === 'fa' ? 'صندوقدار نمایشی' : lang === 'ar' ? 'أمين صندوق تجريبي' : lang === 'ur' ? 'ڈیمو کیشیئر'
     : lang === 'it' ? 'Cassiere Demo' : lang === 'ja' ? 'デモキャッシャー' : lang === 'zh' ? '演示收银员' : lang === 'zh-tw' ? '示範收銀員'
     : lang === 'ko' ? '예시 계산원' : lang === 'id' ? 'Kasir Demo' : lang === 'nl' ? 'Demo-kassier' : lang === 'hi' ? 'डेमो कैशियर'
     : lang === 'bn' ? 'ক্যাশিয়ার ডেমো' : lang === 'sq' ? 'Arkëtar Demo' : lang === 'vi' ? 'Thu ngân Demo' : 'Demo Cashier';
   const chefName = lang === 'es' ? 'Cocinero Demo' : lang === 'fr' ? 'Chef Démo' : lang === 'pt' ? 'Cozinheiro Demo'
-    : lang === 'de' ? 'Demo-Koch' : lang === 'tr' ? 'Demo Aşçı' : lang === 'fa' ? 'آشپز نمایشی' : lang === 'ar' ? 'طاهٍ تجريبي'
+    : lang === 'de' ? 'Demo-Koch' : lang === 'tr' ? 'Demo Aşçı' : lang === 'fa' ? 'آشپز نمایشی' : lang === 'ar' ? 'طاهٍ تجريبي' : lang === 'ur' ? 'ڈیمو شیف'
     : lang === 'it' ? 'Cuoco Demo' : lang === 'ja' ? 'デモシェフ' : lang === 'zh' ? '演示厨师' : lang === 'zh-tw' ? '示範廚師'
     : lang === 'ko' ? '예시 셰프' : lang === 'id' ? 'Koki Demo' : lang === 'nl' ? 'Demo-kok' : lang === 'hi' ? 'डेमो शेफ'
     : lang === 'bn' ? 'শেফ ডেমো' : lang === 'sq' ? 'Shef Demo' : lang === 'vi' ? 'Đầu bếp Demo' : 'Demo Chef';

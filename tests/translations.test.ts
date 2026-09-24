@@ -52,6 +52,8 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  19. Albanian safeguards: sq.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  20. Urdu safeguards: ur.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *  21. Vietnamese safeguards: vi.json values never contain placeholders,
  *      malformed replacement characters, or non-NFC text, and only documented
  *      shared values may remain identical to English.
@@ -1103,6 +1105,43 @@ function itFallbackErrors(itFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Urdu translation safeguards. */
+const UR_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', 'common.appTitle', 'common.brandName', 'common.logoAlt',
+  'dashboard.exportXlsx', 'dashboard.exportCsv', 'dashboard.ticketMethodCount',
+  'kds.emptyColumn', 'nav.kds', 'nav.pos', 'nav.whatsapp', 'pos.addonPrice',
+  'pos.loadingEllipsis', 'pos.tagCount', 'pos.taxLine', 'print.hsn',
+  'print.zReport.paymentCount', 'printTest.escpos', 'printTest.paperWidth58',
+  'printTest.paperWidth80', 'products.addonSelectionRange', 'products.fieldSku',
+  'products.saleUnitCl', 'products.saleUnitFlOz', 'products.saleUnitG', 'products.saleUnitKg',
+  'products.saleUnitL', 'products.saleUnitLb', 'products.saleUnitMl', 'products.saleUnitOz',
+  'products.skuLabel', 'serverApp.emailPlaceholder', 'serverApp.title',
+  'settings.apiKeyInputPlaceholder', 'settings.backupSchemaVersion', 'settings.connectionUsb',
+  'settings.instagramPlaceholder', 'settings.ipAddressPlaceholder', 'settings.kds',
+  'settings.languageEn', 'settings.languageEs', 'settings.languagePt', 'settings.paperSize58',
+  'settings.paperSize80', 'settings.paperWidth58', 'settings.paymentMethodUpi',
+  'settings.portPlaceholder', 'settings.registrationEmailPlaceholder', 'settings.registrationLastError',
+  'settings.revflo', 'settings.serverApp', 'settings.tabOrderflow', 'settings.tabWhatsapp',
+  'settings.unicode', 'settings.whatsapp', 'setup.expressLabel', 'setup.finedineLabel',
+  'setup.languageEnglish', 'setup.ownerEmailPlaceholder', 'setup.pinLabel', 'setup.qsrLabel',
+  'tax.auditCreateOverride', 'tax.auditUpdateOverride', 'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function urFallbackErrors(urFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const urVal = urFlat[k];
+    if (urVal === undefined) continue;
+    if (urVal.startsWith('[UR]') || urVal.startsWith('[TODO]')) {
+      errors.push(`ur.json ${k} — placeholder prefix found: "${urVal}"`);
+    } else if (urVal === enFlat[k] && !UR_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`ur.json ${k} — identical to English value (renders as English for Urdu users)`);
+    }
+  }
+  return errors;
+}
+
 /** Japanese translation safeguards. */
 const JA_INTENTIONAL_IDENTICAL = new Set<string>([
   'auth.emailPlaceholder', 'common.appTitle', 'common.brandName', 'common.logoAlt',
@@ -1789,6 +1828,16 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated it.json values (${IT_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  const urMessages = loadedStrings.get('ur');
+  if (!urMessages) throw new Error('languages registry must include the maintained ur locale');
+  const urErrors = urFallbackErrors(urMessages, loadedStrings.get('en')!);
+  if (urErrors.length) {
+    console.error(`\nur.json values with errors (${urErrors.length}) — these render as English for Urdu users:`);
+    for (const e of urErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'ur.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated ur.json values (${UR_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   // 14. Japanese and Chinese values must not contain placeholders or fall back to English.
   const jaMessages = loadedStrings.get('ja');
   if (!jaMessages) throw new Error('languages registry must include the maintained ja locale');
@@ -2062,6 +2111,14 @@ function runNegativeTests(): void {
   expectDetected(
     'it: placeholder prefix value',
     itFallbackErrors({ 'a.b': '[IT] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ur: English-identical value',
+    urFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'ur: placeholder prefix value',
+    urFallbackErrors({ 'a.b': '[UR] Placeholder value' }, { 'a.b': 'Different value' }),
   );
   expectDetected(
     'ja: English-identical value',

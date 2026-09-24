@@ -334,7 +334,8 @@
     "closeStepDone": "Fechar",
     "xReportSales": "Vendas do dia",
     "refundsCount": "{count} reembolsos",
-    "ticketNoPayments": "Sem pagamentos neste dia"
+    "ticketNoPayments": "Sem pagamentos neste dia",
+    "shiftLoadFailed": "Não foi possível carregar o status do turno."
   },
   "inventory": {
     "tabSupplies": "Insumos",

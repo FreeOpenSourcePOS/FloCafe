@@ -334,7 +334,8 @@
     "closeStepDone": "Tutup",
     "xReportSales": "Penjualan hari ini",
     "refundsCount": "{count} pengembalian dana",
-    "ticketNoPayments": "Tidak ada pembayaran untuk hari ini"
+    "ticketNoPayments": "Tidak ada pembayaran untuk hari ini",
+    "shiftLoadFailed": "Tidak dapat memuat status shift."
   },
   "inventory": {
     "tabSupplies": "Persediaan",

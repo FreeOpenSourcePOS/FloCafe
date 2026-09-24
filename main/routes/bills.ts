@@ -18,7 +18,7 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
 import { requireRole } from '../middleware/security';
-import { requireOpenSessionForCashTender } from '../services/shift-session-gate';
+import { getOpenSession, isCashTender, requireOpenSessionForCashTender } from '../services/shift-session-gate';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import {
   calculateConfiguredChargeTaxes,
@@ -1761,7 +1761,7 @@ function paymentTransactionKey(payment: unknown): string | null {
     : null;
 }
 
-function transactionPaymentMatches(existing: any, candidate: PaymentInput, currency: string): boolean {
+function transactionPaymentMatches(existing: any, candidate: PaymentInput, currency: string, db: ReturnType<typeof getDatabase>): boolean {
   if (!existing) return false;
   if (existing.method !== candidate.method || existing.transaction_id !== candidate.transaction_id) return false;
   if ((existing.notes ?? null) !== (candidate.notes ?? null)) return false;
@@ -1771,7 +1771,7 @@ function transactionPaymentMatches(existing: any, candidate: PaymentInput, curre
   const factor = getCurrencyMinorUnitFactor(currency);
   const requestedMinorUnits = paymentAmountMinorUnits(candidate.amount, currency);
   const storedRequested = existing.requested_amount
-    ?? (existing.method === 'cash' && existing.tendered_amount !== undefined ? existing.tendered_amount : existing.amount);
+    ?? (isCashTender(db, existing) && existing.tendered_amount !== undefined ? existing.tendered_amount : existing.amount);
   return typeof storedRequested === 'number' && Math.round(storedRequested * factor) === requestedMinorUnits;
 }
 
@@ -1855,7 +1855,7 @@ function preparePaymentBatch(
   const replay = requestTransactionKeys.every((key, index) => (
     key !== null
     && existingTransactionKeys.has(key)
-    && transactionPaymentMatches(existingTransactionPayments.get(key), resolvedPayments[index], currency)
+    && transactionPaymentMatches(existingTransactionPayments.get(key), resolvedPayments[index], currency, db)
   ));
   if (replay) {
     return { bill, prepared: [], existingPayments, effectiveCustomerId, idempotentReplay: true };
@@ -1891,19 +1891,18 @@ function preparePaymentBatch(
     if (payment.notes !== undefined) normalizedPayment.notes = payment.notes;
     return {
       payment: normalizedPayment,
-      method: normalizedPayment.method,
       requestedCents: amount,
       amountOmitted: amountValue === undefined,
     };
   });
-  const nonCashCents = raw.filter((line) => line.method !== 'cash').reduce((sum, line) => sum + line.requestedCents, 0);
+  const nonCashCents = raw.filter((line) => !isCashTender(db, line.payment)).reduce((sum, line) => sum + line.requestedCents, 0);
   if (nonCashCents > remainingCents) throw Object.assign(new Error('Non-cash payment exceeds the bill balance'), { statusCode: 400 });
   const cashRequiredCents = remainingCents - nonCashCents;
   // Partial payments remain supported. Cash is allocated up to the amount
   // needed after non-cash lines; a short tender simply leaves a partial bill.
   let cashLeft = cashRequiredCents;
   const prepared: PreparedPayment[] = raw.map((line) => {
-    if (line.method !== 'cash') return { payment: line.payment, amountCents: line.requestedCents, amountOmitted: line.amountOmitted };
+    if (!isCashTender(db, line.payment)) return { payment: line.payment, amountCents: line.requestedCents, amountOmitted: line.amountOmitted };
     const applied = Math.min(line.requestedCents, cashLeft);
     cashLeft -= applied;
     if (applied === 0 && line.payment.transaction_id) {
@@ -1977,6 +1976,10 @@ function applyPaymentBatch(
   if (idempotentReplay) {
     return { bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)), walletDebited: false, loyaltyPointsEarned: 0 };
   }
+  // Shift enforcement (#279) runs after replay detection: retrying an already
+  // recorded payment must succeed even if its shift has since closed.
+  requireOpenSessionForCashTender(db, payments);
+  const activeSessionId = getOpenSession(db)?.id ?? null;
   const currency = getTenantCurrency();
   const minorFactor = getCurrencyMinorUnitFactor(currency);
   const totalAppliedCents = prepared.reduce((sum, line) => sum + line.amountCents, 0);
@@ -1987,10 +1990,11 @@ function applyPaymentBatch(
   const paymentStatus = newBalanceCents === 0 ? 'paid' : 'partial';
   const newPayments = prepared.map((line) => ({
     ...line.payment,
+    cash_session_id: activeSessionId,
     amount: line.amountCents / minorFactor,
     requested_amount: (line.tenderedCents || line.amountCents) / minorFactor,
     amount_omitted: Boolean(line.amountOmitted),
-    ...(line.payment.method === 'cash' ? { tendered_amount: (line.tenderedCents || 0) / minorFactor, change_amount: (line.changeCents || 0) / minorFactor } : {}),
+    ...(isCashTender(db, line.payment) ? { tendered_amount: (line.tenderedCents || 0) / minorFactor, change_amount: (line.changeCents || 0) / minorFactor } : {}),
     timestamp: now(),
   }));
   let walletDebited = false;
@@ -2050,8 +2054,6 @@ router.post('/:id/payment', requireRole(...ROLE_ACCESS.ownerManagerCashier), (re
       return res.status(400).json({ error: 'Payment body must be an object' });
     }
     const db = getDatabase();
-    // Shift enforcement (#279): cash needs an open session when opted in.
-    requireOpenSessionForCashTender(db, [payment]);
     const requestHash = paymentRequestHash(req.params.id as string, [payment], payment.customer_id);
     const result = withTxn(() => applyPaymentBatch(
       db, req.params.id as string, [payment], payment.customer_id, true,
@@ -2083,8 +2085,6 @@ router.post('/:id/payments', requireRole(...ROLE_ACCESS.ownerManagerCashier), (r
     }
 
     const db = getDatabase();
-    // Shift enforcement (#279): any cash line needs an open session when opted in.
-    requireOpenSessionForCashTender(db, payments);
     const requestHash = paymentRequestHash(req.params.id as string, payments, bodyCustomerId);
     const result = withTxn(() => applyPaymentBatch(
       db, req.params.id as string, payments, bodyCustomerId, false,

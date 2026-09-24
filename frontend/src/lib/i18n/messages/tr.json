@@ -334,7 +334,8 @@
     "closeStepDone": "Kapat",
     "xReportSales": "Bugünkü satışlar",
     "refundsCount": "{count} iade",
-    "ticketNoPayments": "Bu gün ödeme yok"
+    "ticketNoPayments": "Bu gün ödeme yok",
+    "shiftLoadFailed": "Vardiya durumu yüklenemedi."
   },
   "inventory": {
     "tabSupplies": "Sarf malzemeleri",

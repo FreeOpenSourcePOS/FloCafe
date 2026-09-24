@@ -334,7 +334,8 @@
     "closeStepDone": "마감",
     "xReportSales": "오늘 매출",
     "refundsCount": "환불 {count}건",
-    "ticketNoPayments": "이날은 결제가 없습니다"
+    "ticketNoPayments": "이날은 결제가 없습니다",
+    "shiftLoadFailed": "근무 상태를 불러올 수 없습니다."
   },
   "inventory": {
     "tabSupplies": "재고",

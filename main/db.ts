@@ -5182,6 +5182,20 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSettingIfMissing('stale_session_days', '7');
     },
   },
+  {
+    version: 91,
+    name: 'add_cash_session_ownership',
+    up: () => {
+      if (!getColumns(db, 'cash_drawer_movements').includes('cash_session_id')) {
+        db.exec(`ALTER TABLE cash_drawer_movements ADD COLUMN cash_session_id INTEGER`);
+      }
+      if (!getColumns(db, 'refunds').includes('cash_session_id')) {
+        db.exec(`ALTER TABLE refunds ADD COLUMN cash_session_id INTEGER`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_cash_drawer_movements_session ON cash_drawer_movements(cash_session_id)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_refunds_session ON refunds(cash_session_id)`);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

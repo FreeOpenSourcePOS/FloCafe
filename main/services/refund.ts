@@ -4,6 +4,7 @@ import {
   dayBoundsInTimezone, localDateInTimezone, tenantBusinessDayStartTime, recordOrderAudit,
 } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
+import { getOpenSession } from './shift-session-gate';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
 
@@ -207,10 +208,11 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
       .run(timestamp, timestamp, item.id);
   }
 
+  const cashSessionId = getOpenSession(db)?.id ?? null;
   const insertResult = db.prepare(`
-    INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(req.billId, req.orderItemId ?? null, amountCents, req.method, req.reason ?? null, req.shiftId ?? null, approver.id, req.createdByUserId, timestamp);
+    INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at, cash_session_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(req.billId, req.orderItemId ?? null, amountCents, req.method, req.reason ?? null, req.shiftId ?? null, approver.id, req.createdByUserId, timestamp, cashSessionId);
 
   const newRefundedCents = refundedCents + amountCents;
   const paymentStatus = newRefundedCents >= paidCents ? 'refunded' : 'partially_refunded';

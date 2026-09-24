@@ -281,6 +281,11 @@ function main() {
   assert.equal(report.findings.length, 0,
     `a migrated old install should match a fresh install's schema exactly, found: ${JSON.stringify(report.findings)}`);
   console.log('   ✓ runHealthCheck() reports zero drift between the migrated old install and a fresh install');
+  for (const table of ['cash_drawer_movements', 'refunds'] as const) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
+    assert.ok(columns.includes('cash_session_id'), `${table}.cash_session_id exists after upgrading an old install`);
+  }
+  console.log('   ✓ cash ownership columns exist after upgrading an old install');
 
   // ── The columns must actually be usable, not just present ───────────────
   const customerId = db.prepare(`SELECT id FROM customers LIMIT 1`).get() as { id: string } | undefined;

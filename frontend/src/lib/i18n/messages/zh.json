@@ -334,7 +334,8 @@
     "liveNow": "实时",
     "kpiChangeVsSameDayLastWeek": "较上周同日 {percent}%",
     "kpiNewVsSameDayLastWeek": "较上周同日新增",
-    "kpiNoChangeVsSameDayLastWeek": "较上周同日无变化"
+    "kpiNoChangeVsSameDayLastWeek": "较上周同日无变化",
+    "shiftLoadFailed": "无法加载班次状态。"
   },
   "inventory": {
     "tabSupplies": "库存",

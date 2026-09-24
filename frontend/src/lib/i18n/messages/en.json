@@ -334,7 +334,8 @@
     "closeStepDone": "Close",
     "xReportSales": "Sales today",
     "refundsCount": "{count} refunds",
-    "ticketNoPayments": "No payments for this day"
+    "ticketNoPayments": "No payments for this day",
+    "shiftLoadFailed": "Could not load shift status."
   },
   "inventory": {
     "tabSupplies": "Supplies",

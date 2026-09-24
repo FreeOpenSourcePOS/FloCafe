@@ -1219,9 +1219,12 @@ Live day report (cierre de caja, issue #649). Recomputes the day's aggregates on
 
 The per-method `count` is the row count in the UNION'd `paymentMethodBreakdown` view (paid payment lines **plus** refund lines as negative-amount rows — paymentMethodBreakdown UNION semantics, same as `financial-summary`). UI labels that derive "N payments" from these counts therefore include the day's refund lines in the total; use `refundCount` to subtract.
 
-The canonical "cash" identity is the literal `method === 'cash'` filter — custom payment-method names are not joined into the cash-only expected figure.
+Day-close expected cash uses the literal `method === 'cash'` filter — custom payment-method names are not joined into the day's cash-only expected figure.
 
-**Convention — paid bills survive cancellation.** A paid bill counts toward the day's aggregates (`paymentMethods`, `taxComponents`, `grossCollected`, `staffSales`) even when its order is later cancelled: the cash left in the drawer is real, and the X uses the same aggregator the Z uses at close. Note this is **broader** than the live `/api/reports/tax-components` endpoint, which excludes cancelled orders (`main/routes/reports.ts:255-262`); the X intentionally follows the Z's drawer-reality convention so the live and stored views of the same day agree. Refunds recorded against a paid bill reverse the cash via the refunds UNION in `paymentMethodBreakdown`.
+**Convention — session cash attribution.** Session live expected cash and session Z use the effective shift-gate cash classifier: exact `cash` case-insensitively plus an active custom method resolving to `Cash`. Events prefer explicit `cash_session_id` ownership; legacy rows fall back to timestamp windows. Session and day reports may coexist but are not additive; day close remains settlement-based and uses its narrower built-in `cash` rule.
+
+**Convention — paid bills survive cancellation.**
+ A paid bill counts toward the day's aggregates (`paymentMethods`, `taxComponents`, `grossCollected`, `staffSales`) even when its order is later cancelled: the cash left in the drawer is real, and the X uses the same aggregator the Z uses at close. Note this is **broader** than the live `/api/reports/tax-components` endpoint, which excludes cancelled orders (`main/routes/reports.ts:255-262`); the X intentionally follows the Z's drawer-reality convention so the live and stored views of the same day agree. Refunds recorded against a paid bill reverse the cash via the refunds UNION in `paymentMethodBreakdown`.
 
 **Convention — staff and tax sections follow the paid day.** The X and Z key `staffSales` and `taxComponents` by `b.paid_at` (the day cash was collected) so every section of the immutable Z reconciles to the same window as `grossCollected`, `paymentMethods`, and `expectedCashCents`. On a cross-midnight day (order created Day 1, paid Day 2), staff revenue and tax components land in Day 2's snapshot. This **differs** from `/api/reports/insights` (`topStaff`, keyed by `orders.created_at`) and `/api/reports/tax-components` (keyed by `bills.created_at`) on cross-midnight days; the divergence is intentional — the Z must be internally reconcilable, while those live views prioritize the order's creation day. `staffSales[].orderCount` counts paid bills (not orders), so split checks multiply it; `/api/reports/insights` `topStaff.orderCount` counts orders instead.
 
@@ -1466,7 +1469,7 @@ expected_cash_cents = opening_float_cents
 variance_cents      = counted_cash_cents − expected_cash_cents
 ```
 
-The canonical "cash" identity is the literal `method === 'cash'` filter — custom payment-method names are not joined into the cash-only expected figure. Refunds are attributed by `refunds.created_at` for the drawer-reality split; display totals attribute refunds to the original bill's `paid_at` (matching `financial-summary`).
+Day-close expected cash uses the literal `method === 'cash'` filter — custom payment-method names are not joined into the day's cash-only expected figure. Refunds are attributed by `refunds.created_at` for the drawer-reality split; display totals attribute refunds to the original bill's `paid_at` (matching `financial-summary`). Session Z expected cash instead uses the session attribution rules above.
 
 **Response (201):**
 ```json

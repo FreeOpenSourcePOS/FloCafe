@@ -334,7 +334,8 @@
     "liveNow": "現在",
     "kpiChangeVsSameDayLastWeek": "先週の同じ曜日と比べて{percent}%",
     "kpiNewVsSameDayLastWeek": "先週の同じ曜日と比べて新規",
-    "kpiNoChangeVsSameDayLastWeek": "先週の同じ曜日と比べて変化なし"
+    "kpiNoChangeVsSameDayLastWeek": "先週の同じ曜日と比べて変化なし",
+    "shiftLoadFailed": "シフトの状態を読み込めませんでした。"
   },
   "inventory": {
     "tabSupplies": "食材",

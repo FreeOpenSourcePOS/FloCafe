@@ -82,6 +82,10 @@ async function main() {
   assert(!!oneOpen && oneOpen.sql.includes('WHERE'), 'partial unique index allows a single open session');
   assert(getSettingValue('require_open_shift') === 'false', 'enforcement defaults to off');
   assert(getSettingValue('stale_session_days') === '7', 'stale threshold defaults to 7 days');
+  const movementOwnershipCols = (db.prepare(`PRAGMA table_info(cash_drawer_movements)`).all() as { name: string }[]).map((c) => c.name);
+  assert(movementOwnershipCols.includes('cash_session_id'), 'movements carry cash_session_id');
+  const refundOwnershipCols = (db.prepare(`PRAGMA table_info(refunds)`).all() as { name: string }[]).map((c) => c.name);
+  assert(refundOwnershipCols.includes('cash_session_id'), 'refunds carry cash_session_id');
 
   // ── Section 2: open/current/close lifecycle ───────────────────────────
   console.log('Section 2: open/current/close lifecycle');
@@ -242,6 +246,97 @@ async function main() {
     .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'card', amount: 25 }, { method: 'cash', amount: 25 }] });
   assert(batchPaidLate.status === 200, 'blocked cash batch pays once enforcement is off (200)');
 
+  const replaySession = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(replaySession.status === 200, 'replay-test session opens');
+  const replaySessionId = replaySession.body?.id;
+  const replayBill = seedUnpaidBill('replay');
+  const replayFirst = await request(app).post(`/api/bills/${replayBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ method: 'cash', amount: 50, transaction_id: 'shift-replay' });
+  assert(replayFirst.status === 200, 'replay fixture payment is recorded while the shift is open');
+  const replayClose = await request(app).post(`/api/cash-sessions/${replaySessionId}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 5000 });
+  assert(replayClose.status === 200, 'replay-test shift closes');
+  db.prepare(`UPDATE settings SET value = 'true' WHERE key = 'require_open_shift'`).run();
+  const replayRetry = await request(app).post(`/api/bills/${replayBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ method: 'cash', amount: 50, transaction_id: 'shift-replay' });
+  assert(replayRetry.status === 200, 'recorded cash payment replays after its shift closes');
+  const replayPaid = db.prepare('SELECT paid_amount FROM bills WHERE id = ?').get(replayBill) as any;
+  assert(Number(replayPaid?.paid_amount) === 50, 'replay after shift close does not double-count');
+  db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();
+
+  const ownedSession = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(ownedSession.status === 200, 'ownership-test session opens');
+  const ownedSessionId = ownedSession.body?.id;
+  const ownedMovement = await request(app).post('/api/cash-closures/movements')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ business_date: todayLocal, movement_type: 'pay_in', amount_cents: 1000, reason: 'ownership' });
+  assert(ownedMovement.status === 201, 'movement records with an open session');
+  const ownedRow = db.prepare('SELECT cash_session_id FROM cash_drawer_movements WHERE id = ?').get(ownedMovement.body?.movement?.id) as any;
+  assert(Number(ownedRow?.cash_session_id) === Number(ownedSessionId), 'movement stores the active session owner');
+  const ownedTidy = await request(app).post(`/api/cash-sessions/${ownedSessionId}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 1000 });
+  assert(ownedTidy.status === 200, 'ownership-test session closes');
+
+  const { refundRoutes: lineRefundRoutes } = require('../main/routes/refunds');
+  app.use('/api/refunds', lineRefundRoutes);
+  const lineSession = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(lineSession.status === 200, 'line-ownership session opens');
+  const lineSessionId = lineSession.body?.id;
+  const ownedBill = seedUnpaidBill('owned-line');
+  const ownedPay = await request(app).post(`/api/bills/${ownedBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'cash', amount: 20 });
+  assert(ownedPay.status === 200, 'partial cash tender is accepted');
+  const ownedDetails = JSON.parse((db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(ownedBill) as any).payment_details);
+  assert(Number(ownedDetails[ownedDetails.length - 1]?.cash_session_id) === Number(lineSessionId), 'new payment line stores the active session owner');
+  assert((db.prepare('SELECT paid_at FROM bills WHERE id = ?').get(ownedBill) as any).paid_at === null, 'partial payment leaves paid_at unset');
+  db.prepare(`UPDATE users SET pin_hash = ? WHERE id = 'owner-sess'`).run(bcrypt.hashSync('1234', 10));
+  const ownedOwnerToken = jwt.sign({ userId: 'owner-sess', email: 'owner-sess@test.local', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
+  const ownedRefundBill = seedUnpaidBill('owned-refund');
+  const ownedRefundPay = await request(app).post(`/api/bills/${ownedRefundBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'cash', amount: 50 });
+  assert(ownedRefundPay.status === 200, 'refund fixture bill settles');
+  const ownedRefund = await request(app).post('/api/refunds')
+    .set('Authorization', `Bearer ${ownedOwnerToken}`)
+    .send({ bill_id: ownedRefundBill, amount: 10, method: 'cash', approver_id: 'owner-sess', override_pin: '1234' });
+  assert(ownedRefund.status === 201, 'cash refund is created');
+  const ownedRefundRow = db.prepare('SELECT cash_session_id FROM refunds WHERE id = ?').get(ownedRefund.body?.refund?.id) as any;
+  assert(Number(ownedRefundRow?.cash_session_id) === Number(lineSessionId), 'new refund stores the active session owner');
+  const ownedSettle = await request(app).post(`/api/bills/${ownedBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'cash', amount: 30 });
+  assert(ownedSettle.status === 200, 'partial fixture bill settles before cleanup');
+  const lineTidy = await request(app).post(`/api/cash-sessions/${lineSessionId}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 90 });
+  assert(lineTidy.status === 200, 'line-ownership fixtures close cleanly');
+
+  const { sessionExpectedCash } = require('../main/routes/cash-closures');
+  assert(typeof sessionExpectedCash === 'function', 'session expected-cash helper exists');
+  const boundaryMoment = '2020-01-01 12:00:00';
+  const firstBoundary = db.prepare(`INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
+    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`).run(boundaryMoment, boundaryMoment);
+  const secondBoundary = db.prepare(`INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status, closed_at, closed_by)
+    VALUES ('cashier-sess', 'Cashier', ?, 0, 'closed', ?, 'cashier-sess')`).run(boundaryMoment, boundaryMoment);
+  const firstBoundaryId = Number(firstBoundary.lastInsertRowid);
+  const secondBoundaryId = Number(secondBoundary.lastInsertRowid);
+  db.prepare(`INSERT INTO cash_drawer_movements (business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id)
+    VALUES ('2020-01-01', 'pay_in', 1000, 'boundary', 'cashier-sess', ?, ?)`).run(boundaryMoment, firstBoundaryId);
+  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-BOUND-1', 'cashier-sess', 'takeaway', 'pending', 50, 50, '2019-12-31 12:00:00', '2019-12-31 12:00:00', NULL)`).run();
+  const boundaryOrderId = Number((db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-BOUND-1'`).get() as any).id);
+  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('BOUND-1', ?, 50, 50, 20, 30, 'partial', ?, NULL, '2019-12-31 12:00:00', '2019-12-31 12:00:00')`)
+    .run(boundaryOrderId, JSON.stringify([{ method: 'cash', amount: 20, timestamp: boundaryMoment, cash_session_id: firstBoundaryId }]));
+  db.prepare(`INSERT INTO refunds (bill_id, amount_cents, method, approved_by, created_by, created_at, cash_session_id)
+    VALUES (?, 500, 'cash', 'owner-sess', 'cashier-sess', ?, ?)`).run(boundaryOrderId, boundaryMoment, firstBoundaryId);
+  const firstBoundaryCash = sessionExpectedCash(db, { id: firstBoundaryId, opening_float_cents: 0 }, boundaryMoment);
+  assert(firstBoundaryCash === 2500, 'same-second owned movement, partial payment, and refund net to 2500');
+  const secondBoundaryCash = sessionExpectedCash(db, { id: secondBoundaryId, opening_float_cents: 0 }, boundaryMoment);
+  assert(secondBoundaryCash === 0, 'adjacent session sharing the boundary second does not double-count');
+
   // ── Section 4: close guards ───────────────────────────────────────────
   console.log('Section 4: unpaid-bills block + stale auto-close');
   const guardOpen = await request(app).post('/api/cash-sessions/open')
@@ -260,6 +355,23 @@ async function main() {
   const unblockedClose = await request(app).post(`/api/cash-sessions/${guardId}/close`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 5000 });
   assert(unblockedClose.status === 200, 'close succeeds once bills are paid (200)');
+
+  const cancelledSession = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(cancelledSession.status === 200, 'cancelled-guard session opens');
+  const cancelledSessionId = cancelledSession.body?.id;
+  const cancelledMoment = past(600_000);
+  db.prepare(`INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, completed_at)
+    VALUES ('ORD-CANCELLED-SESS', 'cashier-sess', 'takeaway', 'cancelled', 50, 50, ?, ?, NULL)`)
+    .run(cancelledMoment, cancelledMoment);
+  const cancelledOrderId = Number((db.prepare(`SELECT id FROM orders WHERE order_number = 'ORD-CANCELLED-SESS'`).get() as any).id);
+  db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, paid_at, created_at, updated_at)
+    VALUES ('CANCELLED-SESS', ?, 50, 50, 0, 0, 'unpaid', '[]', NULL, ?, ?)`)
+    .run(cancelledOrderId, cancelledMoment, cancelledMoment);
+  db.prepare(`UPDATE cash_sessions SET opened_at = ? WHERE id = ?`).run(past(3600_000), cancelledSessionId);
+  const cancelledClose = await request(app).post(`/api/cash-sessions/${cancelledSessionId}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 0 });
+  assert(cancelledClose.status === 200, 'cancelled zero-balance bill does not block shift close');
 
   const activeStaleOpen = await request(app).post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 100 });
@@ -439,6 +551,20 @@ async function main() {
     .set('Authorization', `Bearer ${cashierToken}`)
     .send({ method: 'custom', payment_method_id: customId, amount: 50 });
   assert(ciCustomPay.status === 409, 'enforcement on: custom "Cash" method without a session is 409');
+  const customSession = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(customSession.status === 200, 'custom-cash session opens');
+  const customSessionId = customSession.body?.id;
+  const customBill = seedUnpaidBill('custom-cash');
+  const customPay = await request(app).post(`/api/bills/${customBill}/payments`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ payments: [{ method: 'custom', payment_method_id: customId, amount: 50 }] });
+  assert(customPay.status === 200, 'configured Cash tender settles with an open session');
+  const customCurrent = await request(app).get('/api/cash-sessions/current')
+    .set('Authorization', `Bearer ${cashierToken}`);
+  assert(customCurrent.body?.expected_cash_cents === 5000, 'configured Cash tender is included in session expected cash');
+  const customTidy = await request(app).post(`/api/cash-sessions/${customSessionId}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 5000 });
+  assert(customTidy.status === 200, 'configured Cash fixture closes cleanly');
   db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();
 
   // ── Section 8: float mirror (day/session consistency) ───────────────

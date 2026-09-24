@@ -334,7 +334,8 @@
     "closeStepDone": "بستن",
     "xReportSales": "فروش امروز",
     "refundsCount": "{count} بازپرداخت",
-    "ticketNoPayments": "در این روز پرداختی نشده"
+    "ticketNoPayments": "در این روز پرداختی نشده",
+    "shiftLoadFailed": "بارگیری وضعیت شیفت ممکن نبود."
   },
   "inventory": {
     "tabSupplies": "مواد اولیه",

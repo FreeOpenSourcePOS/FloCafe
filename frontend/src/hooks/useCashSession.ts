@@ -81,19 +81,20 @@ export function useCashSession() {
   // Sequence guard: a slow response settling after a newer refresh (or
   // after unmount-via-stale-callers) must not overwrite fresh state.
   const refreshSeq = useRef(0);
-  // Returns the session plus a failure flag: entry routing must not offer
-  // the open form when the load itself failed (unknown state ≠ no shift).
-  const refresh = useCallback(async (): Promise<{ session: CashSession | null; failed: boolean }> => {
+  // Returns the session plus the fresh load error: entry routing must not
+  // offer the open form when the load itself failed (unknown state ≠ no
+  // shift), and callers can surface the specific load error.
+  const refresh = useCallback(async (): Promise<{ session: CashSession | null; error: string | null }> => {
     const seq = ++refreshSeq.current;
     setLoading(true);
     setError(null);
     const { data, error: loadError } = await fetchState();
     latestData.current = data;
-    if (seq !== refreshSeq.current) return { session: latestData.current, failed: false };
+    if (seq !== refreshSeq.current) return { session: latestData.current, error: null };
     setSession(data);
     setError(loadError);
     setLoading(false);
-    return { session: data, failed: loadError !== null };
+    return { session: data, error: loadError };
   }, []);
 
   // Mount fetch: loading starts true, so state settles only in async
@@ -188,6 +189,7 @@ export function useCashSession() {
   };
 
   const countedCentsOrNull = displayToCents(countedInput);
+  const shiftLoadFailedMessage = t('shiftLoadFailed');
   const variancePreviewCents = session && countedCentsOrNull !== null
     ? countedCentsOrNull - session.expected_cash_cents
     : null;
@@ -198,7 +200,7 @@ export function useCashSession() {
     floatInput, setFloatInput, countedInput, setCountedInput,
     submitting, submitError, setSubmitError, closedResult, setClosedResult,
     printing, variancePreviewCents, minorFactor, fmt, unitAdapter,
-    t, tCommon, openShift, closeShift, printClosure,
+    t, tCommon, openShift, closeShift, printClosure, shiftLoadFailedMessage,
   };
 }
 

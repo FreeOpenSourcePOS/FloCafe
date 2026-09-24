@@ -334,7 +334,8 @@
     "closeStepDone": "إغلاق",
     "xReportSales": "المبيعات اليوم",
     "refundsCount": "{count} عمليات استرداد الأموال",
-    "ticketNoPayments": "لا توجد مدفوعات لهذا اليوم"
+    "ticketNoPayments": "لا توجد مدفوعات لهذا اليوم",
+    "shiftLoadFailed": "تعذر تحميل حالة الوردية."
   },
   "inventory": {
     "tabSupplies": "المستلزمات",

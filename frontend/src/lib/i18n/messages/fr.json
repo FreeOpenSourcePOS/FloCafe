@@ -334,7 +334,8 @@
     "closeStepDone": "Clôturer",
     "xReportSales": "Ventes du jour",
     "refundsCount": "{count} remboursements",
-    "ticketNoPayments": "Aucun paiement ce jour"
+    "ticketNoPayments": "Aucun paiement ce jour",
+    "shiftLoadFailed": "Impossible de charger le statut du poste."
   },
   "inventory": {
     "tabSupplies": "Approvisionnements",

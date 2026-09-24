@@ -334,7 +334,8 @@
     "closeStepDone": "Isara",
     "xReportSales": "Mga benta ngayong araw",
     "refundsCount": "{count} refundo",
-    "ticketNoPayments": "Walang bayad sa araw na ito"
+    "ticketNoPayments": "Walang bayad sa araw na ito",
+    "shiftLoadFailed": "Hindi ma-load ang status ng shift."
   },
   "inventory": {
     "tabSupplies": "Mga Supply",

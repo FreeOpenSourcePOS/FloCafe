@@ -334,7 +334,8 @@
     "closeStepDone": "Abschließen",
     "xReportSales": "Heutiger Umsatz",
     "refundsCount": "{count} Erstattungen",
-    "ticketNoPayments": "Keine Zahlungen an diesem Tag"
+    "ticketNoPayments": "Keine Zahlungen an diesem Tag",
+    "shiftLoadFailed": "Schichtstatus konnte nicht geladen werden."
   },
   "inventory": {
     "tabSupplies": "Vorräte",

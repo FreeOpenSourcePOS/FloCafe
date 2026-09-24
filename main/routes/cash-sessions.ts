@@ -5,8 +5,9 @@
  * rows with scope='session' (the extension door documented in
  * main/routes/cash-closures.ts). Day close is untouched.
  *
- * Session attribution is raw timestamp windows (opened_at → now), so
- * sessions crossing midnight work. The opening float lives on the session
+ * Session expected cash prefers explicit cash_session_id ownership, with
+ * timestamp windows only for legacy rows, so sessions crossing midnight work.
+ * The opening float lives on the session
  * row and is mirrored as the day's opening_float movement (once per day)
  * so day close reconciles the same drawer; session math excludes in-window
  * float movements and cannot double-count.
@@ -22,7 +23,7 @@ import {
   getOpenSession, type CashSessionRow,
 } from '../services/shift-session-gate';
 import {
-  computePeriodAggregates, expectedCashFromAggregates, expectedCashForWindow,
+  computePeriodAggregates, sessionExpectedCash,
   listCashDrawerMovementsInWindow, tenantTimezone,
 } from './cash-closures';
 
@@ -87,9 +88,15 @@ function closeSessionTxn(
   if (!skipUnpaidBlock) {
     // 'partial' counts: a short tender leaves an outstanding balance
     // (bills.ts settles to 'paid' only at zero balance).
-    const unpaid = db.prepare(
-      `SELECT COUNT(*) AS c FROM bills WHERE payment_status NOT IN ('paid', 'refunded', 'partially_refunded') AND created_at >= ? AND created_at < ?`,
-    ).get(session.opened_at, closedAt) as { c: number };
+    const unpaid = db.prepare(`
+      SELECT COUNT(*) AS c
+      FROM bills b
+      JOIN orders o ON o.id = b.order_id
+      WHERE b.payment_status NOT IN ('paid', 'refunded', 'partially_refunded')
+        AND o.status != 'cancelled'
+        AND COALESCE(b.balance, b.total, 0) > 0
+        AND b.created_at >= ? AND b.created_at < ?
+    `).get(session.opened_at, closedAt) as { c: number };
     if (Number(unpaid.c) > 0) {
       throw httpError(`Cannot close: ${unpaid.c} unpaid bill(s) in this shift`, 409);
     }
@@ -99,7 +106,7 @@ function closeSessionTxn(
     listCashDrawerMovementsInWindow(db, session.opened_at, closedAt, false),
     Number(session.opening_float_cents || 0),
   );
-  const expectedCashCents = expectedCashFromAggregates(aggregates);
+  const expectedCashCents = sessionExpectedCash(db, session, closedAt);
   const varianceCents = countedCashCents - expectedCashCents;
   let zNumber: number;
   try {
@@ -173,6 +180,7 @@ router.post('/open', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Requ
         INSERT INTO cash_sessions (opened_by, opened_by_name, opened_at, opening_float_cents, status)
         VALUES (?, ?, ?, ?, 'open')
       `).run(openedBy, openedByRow?.name ?? openedBy, openedAt, openingFloatCents);
+      const sessionId = Number(insert.lastInsertRowid);
       // Keep day close reconciling the same physical drawer: mirror the
       // float as the day's opening_float movement. Session math ignores
       // in-window float movements (openingFloatOverride), so this cannot
@@ -186,12 +194,12 @@ router.post('/open', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Requ
         if (!existingFloat) {
           db.prepare(`
             INSERT INTO cash_drawer_movements (
-              business_date, movement_type, amount_cents, reason, created_by, created_at
-            ) VALUES (?, 'opening_float', ?, 'Shift opening float', ?, ?)
-          `).run(openBusinessDate, openingFloatCents, openedBy, openedAt);
+              business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id
+            ) VALUES (?, 'opening_float', ?, 'Shift opening float', ?, ?, ?)
+          `).run(openBusinessDate, openingFloatCents, openedBy, openedAt, sessionId);
         }
       }
-      return db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(Number(insert.lastInsertRowid));
+      return db.prepare(`SELECT * FROM cash_sessions WHERE id = ?`).get(sessionId);
     });
     res.json(result);
   } catch (error: unknown) {
@@ -210,11 +218,7 @@ router.get('/current', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Re
     // Lightweight path: the snapshot only needs expected cash, none of the
     // display sections (payment breakdown, staff sales, tax hydration).
     const asOf = now();
-    const expectedCashCents = expectedCashForWindow(
-      db, session.opened_at, asOf,
-      listCashDrawerMovementsInWindow(db, session.opened_at, asOf, false),
-      Number(session.opening_float_cents || 0),
-    );
+    const expectedCashCents = sessionExpectedCash(db, session, asOf);
     res.json({ ...session, expected_cash_cents: expectedCashCents });
   } catch (error: unknown) {
     const status = errorStatus(error);

@@ -334,7 +334,8 @@
     "closeStepDone": "Chiudi",
     "xReportSales": "Vendite di oggi",
     "refundsCount": "{count} rimborsi",
-    "ticketNoPayments": "Nessun pagamento per questa giornata"
+    "ticketNoPayments": "Nessun pagamento per questa giornata",
+    "shiftLoadFailed": "Impossibile caricare lo stato del turno."
   },
   "inventory": {
     "tabSupplies": "Scorte",

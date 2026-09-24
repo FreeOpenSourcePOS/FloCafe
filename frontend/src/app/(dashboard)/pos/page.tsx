@@ -1158,8 +1158,11 @@ export default function POSPage() {
         // multi-terminal POS (backend still guards stale operations). On a
         // load failure offer nothing — unknown state is not "no shift".
         onShowShift={async () => {
-          const { session: s, failed } = await shift.refresh();
-          if (failed) return;
+          const { session: s, error: loadError } = await shift.refresh();
+          if (loadError) {
+            toast.error(loadError || shift.shiftLoadFailedMessage);
+            return;
+          }
           if (s) shift.setCloseModalOpen(true); else shift.setOpenModalOpen(true);
         }}
         shiftHasOpenSession={!!shift.session}

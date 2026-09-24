@@ -40,7 +40,7 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
-import { requireOpenSessionForCash } from '../services/shift-session-gate';
+import { getOpenSession, requireOpenSessionForCash } from '../services/shift-session-gate';
 // Type-only: erased at compile, so this adds no runtime require cycle.
 import type { AuthedRequest } from './cash-sessions';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
@@ -478,17 +478,91 @@ export function sumCashMovements(
  * of the display sections (payment breakdown, staff sales, tax hydration).
  * Used by the live session snapshot; closes use the full pipeline.
  */
-export function expectedCashForWindow(
+/**
+ * Session-scoped expected cash: float + drawer movements + cash sales − cash
+ * refunds. Attribution is ownership-first: rows carrying this session's
+ * cash_session_id count regardless of timestamp because they were created
+ * while it was open; NULL-owner rows (pre-v91 data or sessionless events) fall
+ * back to opened_at→end. opening_float movements are not summed here because
+ * the float lives on the session row.
+ *
+ * Sessions intentionally use the effective shift-gate cash classifier
+ * (including a configured method named Cash); day close keeps its narrower
+ * exact-'cash' settlement rule. The JSON scan is correctness-first; use an
+ * event ledger if bill volume makes session polling hot.
+ */
+export function sessionExpectedCash(
   db: ReturnType<typeof getDatabase>,
-  start: string,
+  session: { id: number; opening_float_cents: number; opened_at?: string },
   end: string,
-  movements: CashDrawerMovementRow[],
-  openingFloatCents: number,
 ): number {
+  const start = session.opened_at ?? end;
   const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-  const { salesCents, refundsCents } = cashDrawerSalesAndRefunds(db, start, end, minorFactor);
-  const totals = sumCashMovements(movements, true);
-  return openingFloatCents + salesCents + totals.payInCents - totals.payOutCents - totals.safeDropCents - refundsCents;
+  const movementTotals = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN movement_type = 'pay_in' THEN amount_cents ELSE 0 END), 0) AS pay_in,
+      COALESCE(SUM(CASE WHEN movement_type = 'pay_out' THEN amount_cents ELSE 0 END), 0) AS pay_out,
+      COALESCE(SUM(CASE WHEN movement_type = 'safe_drop' THEN amount_cents ELSE 0 END), 0) AS safe_drop
+    FROM cash_drawer_movements
+    WHERE voided_at IS NULL
+      AND (
+        cash_session_id = ?
+        OR (cash_session_id IS NULL AND created_at >= ? AND created_at < ?)
+      )
+  `).get(session.id, start, end) as { pay_in: number; pay_out: number; safe_drop: number };
+  const eventTotals = db.prepare(`
+    WITH payment_lines AS (
+      SELECT
+        CAST(json_extract(je.value, '$.amount') AS REAL) AS amount,
+        COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), '') AS method,
+        CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER) AS payment_method_id,
+        CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) AS line_session,
+        COALESCE(
+          datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+          datetime(NULLIF(b.paid_at, '')),
+          datetime(NULLIF(b.created_at, ''))
+        ) AS line_time
+      FROM bills b
+      JOIN json_each(
+        CASE
+          WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array'
+            THEN b.payment_details
+          WHEN json_valid(b.payment_details)
+            THEN json_array(b.payment_details)
+          ELSE '[]'
+        END
+      ) je
+      WHERE json_type(je.value) = 'object'
+    ),
+    cash_sales AS (
+      SELECT COALESCE(SUM(pl.amount * ?), 0) AS sales_cents
+      FROM payment_lines pl
+      LEFT JOIN payment_methods pm ON pm.id = pl.payment_method_id AND lower(pm.name) = 'cash'
+      WHERE (
+          pl.line_session = ?
+          OR (pl.line_session IS NULL AND pl.line_time >= datetime(?) AND pl.line_time < datetime(?))
+        )
+        AND (lower(pl.method) = 'cash' OR pm.id IS NOT NULL)
+    ),
+    cash_refunds AS (
+      SELECT COALESCE(SUM(amount_cents), 0) AS refunds_cents
+      FROM refunds
+      WHERE lower(method) = 'cash'
+        AND (
+          cash_session_id = ?
+          OR (cash_session_id IS NULL AND created_at >= ? AND created_at < ?)
+        )
+    )
+    SELECT
+      (SELECT sales_cents FROM cash_sales) AS sales_cents,
+      (SELECT refunds_cents FROM cash_refunds) AS refunds_cents
+  `).get(minorFactor, session.id, start, end, session.id, start, end) as { sales_cents: number; refunds_cents: number };
+  return Number(session.opening_float_cents || 0)
+    + Math.round(Number(eventTotals.sales_cents || 0))
+    + Number(movementTotals.pay_in || 0)
+    - Number(movementTotals.pay_out || 0)
+    - Number(movementTotals.safe_drop || 0)
+    - Number(eventTotals.refunds_cents || 0);
 }
 
 /**
@@ -649,9 +723,9 @@ router.post('/movements', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req:
       try {
         const result = db.prepare(`
           INSERT INTO cash_drawer_movements (
-            business_date, movement_type, amount_cents, reason, created_by, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?)
-        `).run(businessDate, movementType, amountCents, reason, createdBy, now());
+            business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(businessDate, movementType, amountCents, reason, createdBy, now(), getOpenSession(db)?.id ?? null);
         return Number(result.lastInsertRowid);
       } catch (error: any) {
         if (String(error?.message || '').includes('cash_drawer_one_opening_float')

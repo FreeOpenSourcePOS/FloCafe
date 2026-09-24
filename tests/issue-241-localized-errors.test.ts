@@ -120,6 +120,8 @@ function getStyles(): string {
 
 const BUILT_CSS = getStyles();
 
+let screenshotBrowser: any;
+
 function buildHtmlDocument(title: string, bodyContent: string, lang: Lang): string {
   const dir = getLanguageDirection(lang);
   return `<!DOCTYPE html>
@@ -195,21 +197,47 @@ function buildHtmlDocument(title: string, bodyContent: string, lang: Lang): stri
 }
 
 async function renderScreenshotWithPlaywright(html: string, outputPath: string, width = 640, height = 480): Promise<boolean> {
-  let browser: any;
   try {
     const { chromium } = frontendRequire('playwright');
-    browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage({ viewport: { width, height } });
-    await page.setContent(html, { waitUntil: 'load' });
-    await page.screenshot({ path: outputPath, fullPage: true });
-    return true;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!screenshotBrowser?.isConnected()) {
+        screenshotBrowser = await chromium.launch({ headless: true });
+      }
+      const context = await screenshotBrowser.newContext({ viewport: { width, height } });
+      let retryCapture = false;
+      try {
+        const page = await context.newPage();
+        await page.setContent(html, { waitUntil: 'load' });
+        try {
+          await page.screenshot({ path: outputPath, fullPage: true });
+          return true;
+        } catch (err) {
+          if (
+            attempt > 0
+            || !String(err?.message || '').includes('Protocol error (Page.captureScreenshot): Unable to capture screenshot')
+          ) {
+            throw err;
+          }
+          console.warn(`  ! Screenshot capture failed once; restarting Chromium for retry: ${err?.message || err}`);
+          retryCapture = true;
+        }
+      } finally {
+        await context.close().catch(() => undefined);
+      }
+      if (retryCapture) await closeScreenshotBrowser();
+    }
+    return false;
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     console.warn(`  ! Screenshot generation skipped: ${err?.message || err}`);
     return false;
-  } finally {
-    await browser?.close().catch(() => undefined);
   }
+}
+
+async function closeScreenshotBrowser(): Promise<void> {
+  const browser = screenshotBrowser;
+  screenshotBrowser = undefined;
+  await browser?.close().catch(() => undefined);
 }
 
 async function run(): Promise<void> {
@@ -459,10 +487,12 @@ async function run(): Promise<void> {
     }
   }
 
+  await closeScreenshotBrowser();
   console.log(`\n✅ All ${generatedArtifacts.length} visual evidence artifacts generated in ${EVIDENCE_DIR}`);
 }
 
-run().catch((err) => {
+run().catch(async (err) => {
+  await closeScreenshotBrowser();
   console.error(err);
   process.exit(1);
 });

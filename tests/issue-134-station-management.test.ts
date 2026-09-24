@@ -40,6 +40,8 @@ async function main() {
   const { authHeader } = seedOwnerUser(db);
   seedCategory(db, 'cat-bev', 'Beverages');
   seedCategory(db, 'cat-food', 'Food');
+  db.prepare('INSERT INTO categories (id, name, is_active) VALUES (?, ?, 0)').run('cat-inactive', 'Inactive');
+  db.prepare("INSERT INTO categories (id, name, is_active, deleted_at) VALUES (?, ?, 1, datetime('now'))").run('cat-deleted', 'Deleted');
 
   db.prepare(`INSERT INTO printers (id, name, connection_type, ip_address, port) VALUES ('pr-bar', 'Bar Printer', 'network', '192.168.1.70', 9100)`).run();
   db.prepare(`INSERT INTO users (id, name, email, password, role) VALUES ('u-bar-staff', 'Bar Chef', 'bar@test.com', 'x', 'chef')`).run();
@@ -132,6 +134,15 @@ async function main() {
       });
       assertEqual(unknownCreate.status, 400, 'C: rejects an unknown category on create');
 
+      for (const [categoryId, label] of [['cat-inactive', 'inactive'], ['cat-deleted', 'deleted']]) {
+        const invalidCategoryCreate = await api(baseUrl, '/api/kitchen-stations', {
+          method: 'POST', body: { name: `${label} Category`, category_ids: [categoryId], printer_id: 'pr-bar' }, headers: authHeader,
+        });
+        assertEqual(invalidCategoryCreate.status, 400, `C: rejects ${label} category on create`);
+        const createdStation = db.prepare('SELECT id FROM kitchen_stations WHERE name = ?').get(`${label} Category`);
+        assert(!createdStation, `C: rejected ${label} category does not create a station`);
+      }
+
       const unknownUpdate = await api(baseUrl, `/api/kitchen-stations/${stationId!}`, {
         method: 'PUT', body: { category_ids: ['cat-missing'] }, headers: authHeader,
       });
@@ -146,6 +157,16 @@ async function main() {
         method: 'PUT', body: { category_ids: ['cat-bev'] }, headers: authHeader,
       });
       assertEqual(selfUpdate.status, 200, 'C: allows moving a category back during update');
+
+      for (const [categoryId, label] of [['cat-inactive', 'inactive'], ['cat-deleted', 'deleted']]) {
+        const invalidCategoryUpdate = await api(baseUrl, `/api/kitchen-stations/${stationId!}`, {
+          method: 'PUT', body: { category_ids: [categoryId] }, headers: authHeader,
+        });
+        assertEqual(invalidCategoryUpdate.status, 400, `C: rejects ${label} category on update`);
+        const stationAfterRejectedUpdate = db.prepare('SELECT category_ids FROM kitchen_stations WHERE id = ?').get(stationId!) as { category_ids: string };
+        assertEqual(stationAfterRejectedUpdate.category_ids, '["cat-bev"]', `C: rejected ${label} category update preserves current assignment`);
+      }
+
       const secondBarAfterMove = db.prepare('SELECT category_ids FROM kitchen_stations WHERE id = ?').get(secondBar.data.kitchenStation.id) as { category_ids: string };
       assertEqual(secondBarAfterMove.category_ids, '[]', 'C: moving a category back clears it from the other station');
 
@@ -155,6 +176,21 @@ async function main() {
       assertEqual(movingUpdate.status, 200, 'C: update can claim another station\'s category');
       const originalAfterUpdate = db.prepare('SELECT category_ids FROM kitchen_stations WHERE id = ?').get(stationId) as { category_ids: string };
       assertEqual(originalAfterUpdate.category_ids, '[]', 'C: update removes the claimed category from the previous station');
+
+      db.prepare('UPDATE categories SET is_active = 0 WHERE id = ?').run('cat-bev');
+      db.prepare("UPDATE categories SET deleted_at = datetime('now') WHERE id = ?").run('cat-food');
+      const retainedRetiredCategories = await api(baseUrl, `/api/kitchen-stations/${prep.data.kitchenStation.id}`, {
+        method: 'PUT', body: { name: 'Prep Updated', category_ids: ['cat-food', 'cat-bev'] }, headers: authHeader,
+      });
+      assertEqual(retainedRetiredCategories.status, 200, 'C: station edits can retain categories deactivated after assignment');
+      assertEqual(retainedRetiredCategories.data.kitchenStation.name, 'Prep Updated', 'C: unrelated station edits still persist with retired categories assigned');
+
+      const newlyAssignedRetiredCategories = await api(baseUrl, `/api/kitchen-stations/${prep.data.kitchenStation.id}`, {
+        method: 'PUT', body: { category_ids: ['cat-food', 'cat-bev', 'cat-inactive', 'cat-deleted'] }, headers: authHeader,
+      });
+      assertEqual(newlyAssignedRetiredCategories.status, 400, 'C: update rejects newly assigned inactive or deleted categories');
+      const stationAfterRejectedRetiredAssignment = db.prepare('SELECT category_ids FROM kitchen_stations WHERE id = ?').get(prep.data.kitchenStation.id) as { category_ids: string };
+      assertEqual(stationAfterRejectedRetiredAssignment.category_ids, '["cat-food","cat-bev"]', 'C: rejected retired categories preserve existing station assignments');
     }
 
     console.log('\n─── Scenario D: printer updates preserve omitted fields and protect defaults ───');

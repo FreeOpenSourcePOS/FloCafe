@@ -286,7 +286,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             onChange={handlePhoneChange}
             onKeyDown={handlePhoneKeyDown}
             placeholder={dialCode ? `${dialCode} ${t('phone')}` : t('phone')}
-            className="h-10 w-48 shrink-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 dark:border-amber-600 dark:bg-amber-950/40 dark:placeholder:text-amber-400/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 dark:focus:ring-amber-800 dark:focus:border-amber-600 outline-none"
+            className="h-10 w-48 min-w-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 dark:border-amber-600 dark:bg-amber-950/40 dark:placeholder:text-amber-400/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 dark:focus:ring-amber-800 dark:focus:border-amber-600 outline-none"
             dir="ltr"
           />
           <input
@@ -301,7 +301,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             }}
             readOnly={!!matched}
             placeholder={searched ? (matched ? '' : t('enterName')) : t('nameAutoFills')}
-            className={`h-10 w-48 shrink-0 px-3 text-sm border rounded-lg focus:ring-2 outline-none transition-colors duration-150 ${
+            className={`h-10 w-48 min-w-0 px-3 text-sm border rounded-lg focus:ring-2 outline-none transition-colors duration-150 ${
               matched
                 ? 'border-border bg-muted cursor-pointer focus:ring-brand/20 focus:border-brand'
                 : 'border-indigo-200 bg-indigo-50 placeholder:text-indigo-400/80 dark:border-indigo-600 dark:bg-indigo-950/40 dark:placeholder:text-indigo-400/60 focus:ring-indigo-200 focus:border-indigo-400 dark:focus:ring-indigo-800 dark:focus:border-indigo-600'

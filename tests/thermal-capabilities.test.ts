@@ -92,6 +92,27 @@ function run(): void {
   assert.equal(genericCamaronWarnings[0].kind, 'financial');
   assert.equal(genericCamaronBytes.length, 0);
 
+  const hindiOrder = { ...order, items: [{ ...order.items[0], product_name: 'किनारा' }] };
+  const hindiWarnings: any[] = [];
+  const hindiBytes = formatKOT(
+    hindiOrder,
+    hindiOrder.items,
+    'Kitchen',
+    42,
+    false,
+    'full',
+    'hi-IN',
+    { timeZone: 'UTC' },
+    hindiWarnings,
+    false,
+    'hi',
+    generic.capabilities,
+  );
+  assert.equal(isThermalTextRepresentable('किनारा', generic.capabilities), false);
+  assert.equal(generic.capabilities.raster.font, undefined);
+  assert.ok(hindiWarnings.some((warning) => warning.text.includes('किनारा')), 'unsupported Devanagari KOT text keeps an explicit warning');
+  assert.equal(escPosToText(hindiBytes).includes('किनारा'), false);
+
   const epson = resolvePrinterProfile({ profile_id: 'epson-tm-series' });
   const xprinter = resolvePrinterProfile({ profile_id: 'xprinter-xp-v320m-v330m' });
   assert.equal(epson.capabilities.representability.scripts.includes('latin'), true);

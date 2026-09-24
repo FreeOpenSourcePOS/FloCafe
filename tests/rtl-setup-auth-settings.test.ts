@@ -255,6 +255,9 @@ async function run(): Promise<void> {
   withNavigatorLanguage('nl-NL', () => {
     assert(i18nModule.getBrowserLanguage() === 'nl', 'getBrowserLanguage must return "nl" for nl-NL');
   });
+  withNavigatorLanguage('hi-IN', () => {
+    assert(i18nModule.getBrowserLanguage() === 'hi', 'getBrowserLanguage must return "hi" for hi-IN');
+  });
   withNavigatorLanguage('en-US', () => {
     assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must return "en" for en-US');
   });
@@ -273,7 +276,7 @@ async function run(): Promise<void> {
   console.log('  ✓ getBrowserLanguage resolves regional locales before primary-language fallbacks');
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all supported languages.
-  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl'] as const;
+  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi'] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {
@@ -295,7 +298,7 @@ async function run(): Promise<void> {
   assert(tFa('settings.languageFa') === 'فارسی (FA)', 'settings.languageFa in fa must be فارسی (FA)');
   assert(tEn('setup.languagePersian') === 'Persian', 'setup.languagePersian in en must be Persian');
   assert(tEn('settings.languageFa') === 'Persian (FA)', 'settings.languageFa in en must be Persian (FA)');
-  console.log('  ✓ setup.languagePersian and settings.languageFa translate across en, es, fr, pt, fa, it, ja, zh, zh-tw, ko, id, nl');
+  console.log('  ✓ setup.languagePersian and settings.languageFa translate across all registered locales');
 
   console.log('\n✅ All RTL/LTR Setup, Auth, and Settings checks passed.');
 }

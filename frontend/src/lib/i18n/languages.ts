@@ -127,6 +127,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/nl.json'),
   },
+  hi: {
+    locale: 'hi-IN',
+    nativeName: 'हिन्दी',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/hi.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

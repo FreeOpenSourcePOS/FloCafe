@@ -235,13 +235,14 @@ async function runTests() {
     },
   };
 
-  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'fa' | 'ja'; label: string; filePrefix: string }> = [
+  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'fa' | 'ja' | 'hi'; label: string; filePrefix: string }> = [
     { lang: 'en', label: 'English UI', filePrefix: 'receipt-argentina-english-ui' },
     { lang: 'es', label: 'Spanish UI', filePrefix: 'receipt-argentina-spanish-ui' },
     { lang: 'fr', label: 'French UI', filePrefix: 'receipt-argentina-french-ui' },
     { lang: 'pt', label: 'Portuguese UI', filePrefix: 'receipt-argentina-portuguese-ui' },
     { lang: 'fa', label: 'Persian UI', filePrefix: 'receipt-argentina-persian-ui' },
     { lang: 'ja', label: 'Japanese UI', filePrefix: 'receipt-argentina-japanese-ui' },
+    { lang: 'hi', label: 'Hindi UI', filePrefix: 'receipt-argentina-hindi-ui' },
   ];
 
   const receiptResults: Record<string, { html: string; htmlPath: string; pngPath: string }> = {};

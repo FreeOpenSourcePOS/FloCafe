@@ -267,7 +267,7 @@ class PrinterService {
       @page { size: ${mmWidth} auto; margin: 0; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
-        font-family: 'Courier New', monospace;
+        font-family: 'Courier New', 'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', monospace;
         font-size: 12px;
         line-height: 1.2;
         width: ${mmWidth};

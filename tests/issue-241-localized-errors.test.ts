@@ -94,7 +94,7 @@ function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-const LANGUAGES = ['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw'] as const;
+const LANGUAGES = ['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi'] as const;
 type Lang = (typeof LANGUAGES)[number];
 
 const t = (key: string, lang: Lang, params?: Record<string, string | number>): string => {

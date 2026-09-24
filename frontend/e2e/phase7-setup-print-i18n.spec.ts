@@ -20,6 +20,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   ko: { basic: '기본 영수증 (열전사)', web: '웹 인쇄 (브라우저)', whatsapp: 'WhatsApp 공유' },
   id: { basic: 'Struk Dasar (Termal)', web: 'Cetak Web (Browser)', whatsapp: 'Bagikan WhatsApp' },
   nl: { basic: 'Basisbon (thermisch)', web: 'Webafdruk (browser)', whatsapp: 'Delen via WhatsApp' },
+  hi: { basic: 'मूल रसीद (थर्मल)', web: 'वेब प्रिंट (ब्राउज़र)', whatsapp: 'WhatsApp शेयर' },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

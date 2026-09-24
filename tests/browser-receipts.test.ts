@@ -74,7 +74,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -363,6 +363,21 @@ async function run() {
       ptHtml.includes('Total geral') &&
       ptHtml.includes('Obrigado pela sua visita!')
     );
+
+    const hiTenant = {
+      business_name: 'FloCafe Delhi',
+      currency: 'INR',
+      country: 'IN',
+      timezone: 'Asia/Kolkata',
+    };
+    const hiHtml = generateBillHtml(sampleEnBill, hiTenant, { language: 'hi', isReprint: true });
+    assert('HI receipt has lang="hi-IN" and dir="ltr"', hiHtml.includes('<html lang="hi-IN" dir="ltr">'));
+    assert('HI labels are Devanagari',
+      hiHtml.includes('पुनर्मुद्रण') &&
+      hiHtml.includes('बिल #') &&
+      hiHtml.includes('कुल योग') &&
+      hiHtml.includes('धन्यवाद!')
+    );
   }
 
   console.log('\nTest Suite 6: Canonical semantic labels and unknown-language fallback');
@@ -478,6 +493,28 @@ async function run() {
     const ltrSlip = generateOrderSlipHtml(testIranOrder, orderSlipLabels, { direction: 'ltr' });
     assert('LTR order slips retain explicit left-to-right layout',
       ltrSlip.includes('dir="ltr"') && ltrSlip.includes('direction:ltr;text-align:left;'),
+    );
+
+    const hindiSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'ऑर्डर स्लिप',
+      subtotal: 'उप-योग',
+      discount: 'छूट',
+      serviceCharge: 'सेवा शुल्क',
+      deliveryCharge: 'डिलीवरी शुल्क',
+      packagingCharge: 'पैकेजिंग शुल्क',
+      tax: 'कर',
+      total: 'कुल योग',
+    }, {
+      country: 'IN',
+      currency: 'INR',
+      locale: 'hi-IN',
+      direction: 'ltr',
+    });
+    assert('Hindi order slip carries hi-IN LTR metadata and local font fallback',
+      hindiSlip.includes('lang="hi-IN" dir="ltr"') &&
+      hindiSlip.includes('Noto Sans Devanagari') &&
+      hindiSlip.includes('उप-योग') &&
+      hindiSlip.includes('कुल योग'),
     );
   }
 

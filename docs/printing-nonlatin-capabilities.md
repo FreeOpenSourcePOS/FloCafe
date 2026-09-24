@@ -1,13 +1,13 @@
 # Non-Latin thermal receipt printing — capability study and decision record
 
 **Refs:** #446 (research issue) · epic #438
-**Status of this document:** Study and decision record plus Phase 9 implementation boundary. The pure `GS v 0` contract, dedicated Chromium surface, and mixed-mode assembly are implemented behind the additive profile-owned raster capability. Shipped profiles remain disabled until real-printer evidence is recorded. Broad script/font coverage and any dependency adoption still require separate review (see Section 8, *Open decisions*). The current profile-owned text capability contract is documented in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics).
+**Status of this document:** Study and decision record plus Phase 9 implementation boundary. The pure `GS v 0` contract, dedicated Chromium surface, and mixed-mode assembly are implemented behind the additive profile-owned raster capability. Current profiles declare raster capability in code, but broad script/font coverage and hardware fidelity remain evidence-gated (see Section 8, *Open decisions*). The current profile-owned text capability contract is documented in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics).
 
 ---
 
 ## 1. Problem
 
-Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — remains limited by printer firmware and font coverage. The current runtime uses the shared profile-owned text capability contract described in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics): shipped profiles remain conservative, generic profiles are ASCII-only, and unsupported item or financial rows are refused before transport so a receipt is never printed with missing financial content. This document covers the implemented Phase 9 raster boundary and deferred broader script and hardware validation.
+Raw thermal printing of Persian/Arabic — and non-Latin scripts generally — remains limited by printer firmware and font coverage. The current runtime uses the shared profile-owned text capability contract described in [printing-architecture.md §6](printing-architecture.md#6-printer-capability-model--warning-semantics): generic native profiles remain ASCII-only, current profiles declare raster separately, and unsupported item or financial rows are refused before transport so a receipt is never printed with missing financial content. This document covers the implemented Phase 9 raster boundary and deferred broader script and hardware validation.
 
 Why generic ESC/POS printers fail non-Latin text:
 
@@ -77,7 +77,7 @@ Render the receipt (or parts) to a 1-bit bitmap and print it with `GS v 0 m xL x
 | Performance | Payload grows from ~1–2 KB (text receipt) to ≈ 72 B × ~1150 dot rows ≈ 80 KB (80 mm) / ≈ 55 KB (58 mm). Transfer over TCP 9100 / USB bulk is sub-second; head time is unchanged because the same paper area prints either way. Slow MCUs on clones can stutter on very large single images — solved by banding (Section 5). |
 | Paper width / density | Requires dots-per-line knowledge: 384 (58 mm) vs 576 (80 mm) at 203 dpi. Derivable from the existing paper-width profile data. |
 | Transport support | The shared raster assembly produces equivalent bytes for TCP, USB RAW queues, and WebUSB; WebUSB uses a typed document bridge. OS spooler RAW pass-through is proven by Odoo/CUPS. |
-| Package size impact | None at the protocol layer. Phase 9 adds no production rendering dependency; a separately reviewed bundled font remains required before enabling a profile (Section 8). |
+| Package size impact | None at the protocol layer. Phase 9 adds no production rendering dependency; a separately reviewed bundled font or local fallback and hardware probe remain required before claiming specific script coverage. |
 | Maintenance burden | One renderer consuming the semantic print kernel; new scripts become font additions, not logic changes. |
 | Failure/fallback mode | Disabled or failed raster retains native output for eligible content; unsupported non-financial lines warn and unsupported financial units refuse before transport. Never silently loses financial content. |
 
@@ -111,6 +111,12 @@ The browser print path already renders every script correctly (the browser does 
 
 Consensus: host-rendered bitmaps are the universal fallback; code pages are a dead end for Arabic/Persian.
 
+### 3.8 Devanagari (Hindi)
+
+Hindi is LTR, but it has the same class of hardware risk as other non-Latin scripts: printer firmware may lack glyphs, contextual shaping, and conjunct support. Hindi must not use the Arabic shaping capability switch, and a locale selection must not change a profile's raster capability. Browser HTML and the local Chromium raster surface are the full-Unicode paths when a system or bundled font is available. Native ESC/POS remains capability-gated, with unsupported financial units refused before transport. The shared width helper is grapheme-aware so Devanagari combining marks and conjuncts are not split at receipt-width boundaries.
+
+**Verdict:** expose Hindi labels through the normal registry and print-label generator, keep profile capability flags unchanged, document the direct-thermal limitation, and require profile-specific font plus real-printer evidence before claiming native Indic support.
+
 ## 5. Recommended architecture (decision record)
 
 **Primary approach: capability-tiered hybrid with raster as the universal guarantee.**
@@ -140,7 +146,7 @@ Phase 9 implementation boundary:
 
 - The dedicated [`main/printers/raster-renderer.ts`](../main/printers/raster-renderer.ts) surface consumes typed requests derived from semantic `PrintDocument`/`KotDocument` output; it is isolated from the ordinary POS page and accepts bundled local font data URLs only.
 - Backend and WebUSB core receipt/KOT paths group semantic rows or blocks before raster selection, then assemble raster and native output through the shared [`shared/print/raster.ts`](../shared/print/raster.ts) contract.
-- Raster capability flags live on `ThermalPrinterCapabilities.raster` and are supplied by `SupportedPrinterProfile`; shipped profiles remain disabled until profile-specific font and real-printer evidence is recorded.
+- Raster capability flags live on `ThermalPrinterCapabilities.raster` and are supplied by `SupportedPrinterProfile`; current profiles declare the raster path, while profile-specific font and real-printer evidence remains required for a script or hardware claim.
 - No production rendering dependency or remote font source was added.
 
 Risks and mitigations:
@@ -167,6 +173,7 @@ Paper width:              58mm / 80mm      Firmware date (if known):
 [ ] 2. Test page prints; column ruler aligns to paper edges
 [ ] 3. UTF-8 pass-through: paste of "فارسی Hello עברית ไทย हिन्दी"
        prints as…  correct / reversed / boxes / blank / garbage
+       For Hindi, also test a conjunct and a combining matra, not only isolated letters.
 [ ] 4. Code page probe (if the app exposes it): CP1256 result ___
 [ ] 5. Firmware Arabic shaping probe: unshaped-but-reversed Persian
        looks connected?  yes / no
@@ -197,7 +204,7 @@ Implementation note: `buildRasterDiagnosticBands` in [`shared/print/raster.ts`](
 
 ## 8. Open decisions requiring a human call
 
-- **Rendering-engine dependency:** Phase 9 uses option (c), a dedicated renderer process over a narrow typed IPC boundary, with no production dependency added. The surface accepts bundled local font data URLs only; a separately reviewed local font bundle is still required before enabling a profile.
+- **Rendering-engine dependency:** Phase 9 uses option (c), a dedicated renderer process over a narrow typed IPC boundary, with no production dependency added. The surface accepts bundled local font data URLs when configured and otherwise uses local fallback families; a separately reviewed font and hardware probe are still required before claiming a new script profile.
 - Whether Tier 4 whole-receipt raster should ship as a user-facing compatibility toggle from day one or remain internal fallback until telemetry justifies exposure. The Phase 9 default remains mixed mode, with whole-receipt mode internal/tested only.
 
 ## 9. References

@@ -44,7 +44,7 @@ import {
 import type { LanguageRegistryFacts } from '../shared/print';
 
 // Test registry: mirrors what a call site injects from the central registry.
-const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw']);
+const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi']);
 const FACTS: LanguageRegistryFacts = {
   isSelectableLanguage: (code) => SELECTABLE.has(code),
 };
@@ -294,6 +294,10 @@ assert.equal(fullWidthLayout.lines.join(''), fullWidthText, 'semantic layout wra
 const fullWidthHeader = wrapToDisplayCells('商品商品商品商品商品商品商品商品商', 32);
 assert.ok(fullWidthHeader.every((line) => displayCellWidth(line) <= 32), 'full-width header wrapping respects thermal display cells');
 assert.equal(fullWidthHeader.join(''), '商品商品商品商品商品商品商品商品商', 'full-width header wrapping preserves text');
+
+const devanagariGrapheme = 'कि';
+assert.equal(fitThermalLine(devanagariGrapheme, 1), devanagariGrapheme, 'Devanagari combining marks are not split at a narrow width');
+assert.deepEqual(wrapToDisplayCells('किनारा', 1), ['कि', 'ना', 'रा'], 'Devanagari grapheme clusters wrap as complete units');
 
 for (const [label, cluster] of [['Devanagari', 'क्ष'], ['Bengali', 'ক্ষ'], ['Thai', 'กำ']] as const) {
   assert.deepEqual(graphemeSegments(cluster), [cluster], `${label} conjunct stays one grapheme cluster`);

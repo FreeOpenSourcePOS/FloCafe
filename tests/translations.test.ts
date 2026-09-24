@@ -46,6 +46,8 @@
  *      intentional lists excepted).
  *  16. Dutch safeguards: nl.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  17. Hindi safeguards: hi.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -1296,6 +1298,38 @@ function nlFallbackErrors(nlFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Hindi translation safeguards. */
+const HI_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', 'common.appTitle', 'common.brandName', 'common.logoAlt',
+  'dashboard.exportCsv', 'dashboard.exportXlsx', 'dashboard.ticketMethodCount', 'kds.emptyColumn',
+  'nav.kds', 'nav.pos', 'nav.whatsapp', 'pos.addonPrice', 'pos.loadingEllipsis', 'pos.tagCount',
+  'pos.taxLine', 'printTest.escpos', 'printTest.paperWidth58', 'printTest.paperWidth80',
+  'print.hsn', 'print.zReport.paymentCount', 'products.addonSelectionRange', 'products.fieldSku',
+  'products.skuLabel', 'serverApp.emailPlaceholder', 'settings.apiKeyInputPlaceholder',
+  'settings.backupSchemaVersion', 'settings.connectionUsb', 'settings.connectionWebusb',
+  'settings.instagramPlaceholder', 'settings.ipAddressPlaceholder', 'settings.kds',
+  'settings.languageEn', 'settings.languageEs', 'settings.languagePt', 'settings.paperSize58',
+  'settings.paperSize80', 'settings.paperWidth58', 'settings.paperWidth80', 'settings.paperWidth80Safe',
+  'settings.paymentMethodUpi', 'settings.portPlaceholder', 'settings.registrationEmailPlaceholder',
+  'settings.registrationLastError', 'settings.revflo', 'settings.tabOrderflow', 'settings.tabWhatsapp',
+  'settings.whatsapp', 'setup.ownerEmailPlaceholder', 'setup.qsrLabel', 'tax.auditCreateOverride',
+  'tax.auditUpdateOverride', 'update.downloadingBadge', 'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function hiFallbackErrors(hiFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const hiVal = hiFlat[k];
+    if (hiVal === undefined) continue;
+    if (hiVal.startsWith('[HI]') || hiVal.startsWith('[TODO]')) {
+      errors.push(`hi.json ${k} — placeholder prefix found: "${hiVal}"`);
+    } else if (hiVal === enFlat[k] && !HI_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`hi.json ${k} — identical to English value (renders as English for Hindi users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1661,6 +1695,17 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated nl.json values (${NL_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 18. hi.json values must not contain placeholders or fall back to English.
+  const hiMessages = loadedStrings.get('hi');
+  if (!hiMessages) throw new Error('languages registry must include the maintained hi locale');
+  const hiErrors = hiFallbackErrors(hiMessages, loadedStrings.get('en')!);
+  if (hiErrors.length) {
+    console.error(`\nhi.json values with errors (${hiErrors.length}):`);
+    for (const e of hiErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'hi.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated hi.json values (${HI_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1854,6 +1899,14 @@ function runNegativeTests(): void {
   expectDetected(
     'nl: placeholder prefix value',
     nlFallbackErrors({ 'a.b': '[NL] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'hi: English-identical value',
+    hiFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'hi: placeholder prefix value',
+    hiFallbackErrors({ 'a.b': '[HI] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

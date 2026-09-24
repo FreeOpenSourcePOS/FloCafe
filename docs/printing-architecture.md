@@ -233,7 +233,7 @@ both configured languages across mandatory sections.
 
 Four decoupled domains (see also [i18n.md](i18n.md)):
 
-- **UI language** drives the interface and is the `inherit` fallback for printing.
+- **UI language** drives the interface and is the `inherit` fallback for printing. Hindi (`hi`, `hi-IN`) is LTR and uses the same registry, loader, and print-label flow; it does not enable a script-specific printer capability.
 - **Receipt language policy** (`bill_language_policy`): `{ primary: inherit | fixed, additional?: [one] }`.
   Max 2 languages per receipt in v1, enforced at type level
   (`ReceiptLanguagePolicy` tuple) and by the
@@ -292,7 +292,12 @@ backend policy validation accepts only languages present in
 [`main/lib/print-language-settings.ts`](../main/lib/print-language-settings.ts)
 and checked by [`shared/print/policy.ts`](../shared/print/policy.ts). The
 generated backend view follows the frontend registry order; update the frontend
-registry and locale messages, then regenerate the derived file.
+registry and locale messages, then regenerate the derived file. Hindi labels
+therefore reach browser HTML, backend thermal renderers, WebUSB encoders, and Z
+reports without a Hindi-specific label source. Hindi does not change profile
+capability flags: the current raster path uses local fallback fonts unless a
+bundled font is configured, and direct ESC/POS remains profile-owned and must
+warn or refuse unsupported Indic content rather than claiming shaping support.
 
 ### Canonical i18n label flow (kernel C, [#440](https://github.com/FreeOpenSourcePOS/FloCafe/issues/440))
 
@@ -485,11 +490,12 @@ Warnings surface to the user through print results and toast notifications
 `classifyPrintFailure` in [`main/printers/thermal.ts`](../main/printers/thermal.ts) for stable, privacy-safe failure
 classes for fleet telemetry. The end-state contract from [epic #438](https://github.com/FreeOpenSourcePOS/FloCafe/issues/438) for the
 shared paths is native render, explicitly supported fallback, or an explicit
-warning/error for unsupported content or configuration. Raster is now an
-additive, profile-owned capability, but remains disabled for all shipped
-profiles until the diagnostic probe and real-printer evidence are complete.
-When enabled, the dedicated hidden Chromium surface accepts only typed
-requests with bundled local font data URLs; the shared `GS v 0` encoder emits
+warning/error for unsupported content or configuration. Raster is an additive,
+profile-owned capability. The shipped profiles currently declare raster
+support, while script/font coverage and real-printer fidelity remain
+capability- and evidence-gated. The dedicated hidden Chromium surface accepts
+only typed requests with local bundled font data URLs when configured; the
+shared `GS v 0` encoder emits
 bounded bands and preserves the semantic unit boundary. Mixed mode is the
 primary path, while whole-receipt raster is an internal compatibility path that
 requires a profile to opt into that mode and is not a default. Unsupported
@@ -524,7 +530,7 @@ directly and [`main/printers/thermal.ts`](../main/printers/thermal.ts) owns that
 | Suite | Command | What it locks down |
 | --- | --- | --- |
 | Kernel units | `npm run test:print-kernel` | policy resolution/validation, direction, bilingual fit, settings glue ([`tests/print-kernel.test.ts`](../tests/print-kernel.test.ts), [`tests/kernel-purity.test.ts`](../tests/kernel-purity.test.ts), [`tests/print-language-settings.test.ts`](../tests/print-language-settings.test.ts)) |
-| Labels | `npm run test:print-labels` | generated-table selection, English fallback, all eight locale Phase 3 cross-path print regressions, generator drift (`--check`) ([`tests/print-labels.test.ts`](../tests/print-labels.test.ts), [`tests/phase3-print-regressions.test.ts`](../tests/phase3-print-regressions.test.ts), [`scripts/generate-print-labels.cjs`](../scripts/generate-print-labels.cjs)) |
+| Labels | `npm run test:print-labels` | generated-table selection, English fallback, all registered locale Phase 3 cross-path print regressions, generator drift (`--check`) ([`tests/print-labels.test.ts`](../tests/print-labels.test.ts), [`tests/phase3-print-regressions.test.ts`](../tests/phase3-print-regressions.test.ts), [`scripts/generate-print-labels.cjs`](../scripts/generate-print-labels.cjs)) |
 | Locale loading | `npm run test:phase6-locale-loading` | bootstrap policy application plus browser and WebUSB receipt loading for every registered locale ([`tests/phase6-locale-loading.test.ts`](../tests/phase6-locale-loading.test.ts)) |
 | Document model | `npm run test:print-document` | block construction, document builders, bilingual pairs, direction annotations, purity ([`tests/print-document.test.ts`](../tests/print-document.test.ts)) |
 | Parity harness | `npm run test:print-parity` | cross-renderer semantic parity + byte-exact migration oracle ([`tests/print-parity.test.ts`](../tests/print-parity.test.ts)) |
@@ -669,17 +675,19 @@ width, cut mode, profile-owned thermal capabilities, and notes. The capability
 block declares supported code pages and preferred page, Arabic shaping,
 representable scripts, transliteration, warning policies, and the additive
 raster geometry/mode/font fields; use the generic ASCII-only, raster-disabled
-capability block unless the profile has evidence for a narrower hardware
-capability.
+capability block as the conservative default for a new profile unless the
+profile has specific geometry and rendering evidence.
 
 Rules:
 
 - Set `capabilities.shaping.arabic: true` ONLY after a real print on that
   specific hardware proves shaped, correctly ordered Persian output; leave it
   false otherwise. Generic ESC/POS profiles ship with it false (§6).
-- Keep `capabilities.raster.enabled: false` until the profile's bundled font,
-  geometry, selected mode, and diagnostic probe are validated on real hardware;
-  only an enabled mode may be listed in `capabilities.raster.modes`.
+- Keep `capabilities.raster.enabled: false` for a new profile until its geometry,
+  selected mode, local font fallback or bundled font, and diagnostic probe are
+  validated. Existing profiles may expose raster explicitly; this does not by
+  itself claim native Devanagari or other script support. Only an enabled mode
+  may be listed in `capabilities.raster.modes`.
 - Resolution is explicit-id → alias-match → paper-width generic fallback
   (`resolvePrinterProfile`); choose aliases so real-world USB/device names
   match (`matchSupportedPrinterProfile` normalizes case and underscores) in

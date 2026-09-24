@@ -120,6 +120,7 @@ function run(): void {
   assert('fr resolves grand total to French', printLabel('fr', 'print.grandTotal') === 'TOTAL');
   assert('id resolves grand total to Indonesian', printLabel('id', 'print.grandTotal') === 'TOTAL');
   assert('nl resolves grand total to Dutch', printLabel('nl', 'print.grandTotal') === 'TOTAAL');
+  assert('hi resolves grand total to Hindi', printLabel('hi', 'print.grandTotal') === 'कुल योग');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
   assert('unknown language falls back to English', printLabel('xx', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');
@@ -128,6 +129,7 @@ function run(): void {
   assert('fil resolves borrowed pos.subtotal', printLabel('fil', 'pos.subtotal') === 'Subtotal');
   assert('de resolves borrowed pos.subtotal', printLabel('de', 'pos.subtotal') === 'Zwischensumme');
   assert('nl resolves borrowed pos.subtotal', printLabel('nl', 'pos.subtotal') === 'Subtotaal');
+  assert('hi resolves borrowed pos.subtotal', printLabel('hi', 'pos.subtotal') === 'उप-योग');
   const localeCodes = Object.keys(LANGUAGES);
   assert('generated print locales derive from the canonical registry', JSON.stringify(PRINT_LABEL_LANGUAGES) === JSON.stringify(localeCodes));
   for (const locale of localeCodes) {

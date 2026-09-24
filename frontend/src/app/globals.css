@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --font-sans: "Geist", system-ui, sans-serif;
+  --font-sans: "Geist", "Noto Sans Devanagari", "Nirmala UI", "Kohinoor Devanagari", "Devanagari Sangam MN", system-ui, sans-serif;
   --font-mono: "Geist Mono", monospace;
   --radius: 0.625rem;
   --background: oklch(1 0 0);

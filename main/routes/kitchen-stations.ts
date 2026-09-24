@@ -18,7 +18,7 @@ function normalizeCategoryIds(value: unknown): string[] | null {
 function categoryIdsExist(db: ReturnType<typeof getDatabase>, categoryIds: string[]) {
   if (categoryIds.length === 0) return true;
   const placeholders = categoryIds.map(() => '?').join(',');
-  const rows = db.prepare(`SELECT id FROM categories WHERE id IN (${placeholders})`).all(...categoryIds);
+  const rows = db.prepare(`SELECT id FROM categories WHERE deleted_at IS NULL AND is_active = 1 AND id IN (${placeholders})`).all(...categoryIds);
   return rows.length === categoryIds.length;
 }
 

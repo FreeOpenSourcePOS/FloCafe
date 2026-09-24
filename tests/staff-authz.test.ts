@@ -116,6 +116,9 @@ async function main() {
     assertEqual(result.status, 201, `manager can create ${role}`);
     managerCreated[role] = result.body.staff?.id;
     assert(!('pin_hash' in result.body.staff), `create ${role} response does not expose pin_hash`);
+    if (role !== 'chef') {
+      assert(!('station_ids' in result.body.staff), `create ${role} response omits station_ids`);
+    }
   }
 
   result = await request(app).post('/api/staff').set(managerAuth).send({

@@ -177,7 +177,12 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
       `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
     ).get(id);
 
-    res.status(201).json({ staff: { ...(member as object), station_ids: normalizedStationIds } });
+    res.status(201).json({
+      staff: {
+        ...(member as object),
+        ...(role === 'chef' ? { station_ids: normalizedStationIds } : {}),
+      },
+    });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

@@ -5441,7 +5441,6 @@ function createSchema(): void {
       number TEXT NOT NULL UNIQUE,
       capacity INTEGER DEFAULT 4,
       status TEXT DEFAULT 'available',
-      reservation_customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL,
       floor TEXT,
       section TEXT,
       position_x REAL,
@@ -5449,7 +5448,8 @@ function createSchema(): void {
       kitchen_station_id TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      reservation_customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS customers (

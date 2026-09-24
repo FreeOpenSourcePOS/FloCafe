@@ -209,6 +209,21 @@ async function main() {
       method: 'PATCH', headers: authHeader,
       body: { status: 'reserved', reservation_customer_id: 'cust-reservation-2' },
     });
+    const reservationOrderWithMismatch = await api(baseUrl, '/api/orders', {
+      method: 'POST', headers: authHeader,
+      body: {
+        type: 'dine_in', table_id: 'tbl-reservation', customer_id: 'cust-reservation-1',
+        items: [{ product_id: 'prod-reservation', quantity: 1 }],
+      },
+    });
+    assertEqual(reservationOrderWithMismatch.status, 201, 'dine-in order with a mismatched customer can use a reserved table');
+    assertEqual(reservationOrderWithMismatch.data.order.customer_id, 'cust-reservation-2', 'reserved customer takes precedence over a mismatched order customer');
+    db.prepare("UPDATE orders SET status = 'completed' WHERE id = ?").run(reservationOrderWithMismatch.data.order.id);
+
+    await api(baseUrl, '/api/tables/tbl-reservation/status', {
+      method: 'PATCH', headers: authHeader,
+      body: { status: 'reserved', reservation_customer_id: 'cust-reservation-2' },
+    });
     const reservationOrderWithoutCustomer = await api(baseUrl, '/api/orders', {
       method: 'POST', headers: authHeader,
       body: {

@@ -557,11 +557,10 @@ router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: R
         service_charge_tax_category_id: chargeCategories.service_charge?.categoryId || null,
       };
 
-      const orderCustomerId = customer_id || (
-        type === 'dine_in' && table_id
-          ? (db.prepare("SELECT reservation_customer_id FROM tables WHERE id = ? AND status = 'reserved'").get(table_id) as { reservation_customer_id: string | null } | undefined)?.reservation_customer_id || null
-          : null
-      );
+      const reservedCustomerId = type === 'dine_in' && table_id
+        ? (db.prepare("SELECT reservation_customer_id FROM tables WHERE id = ? AND status = 'reserved'").get(table_id) as { reservation_customer_id: string | null } | undefined)?.reservation_customer_id || null
+        : null;
+      const orderCustomerId = reservedCustomerId || customer_id || null;
 
       const orderResult = db.prepare(`
         INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,

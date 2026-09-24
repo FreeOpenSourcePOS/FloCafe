@@ -870,7 +870,7 @@ export default function POSPage() {
       // makes a lost response safe to retry without creating a second order.
       const paymentResponse = await api.post(
         `/bills/${billData.bill.id}/payments`,
-        { payments: paymentLines, customer_id: cart.customerId },
+        { payments: paymentLines, customer_id: billData.bill.customer_id ?? orderData.order.customer_id ?? null },
         { headers: { 'Idempotency-Key': attempt.paymentIdempotencyKey } },
       );
       const paidBill: Bill = paymentResponse.data?.bill || billData.bill;

@@ -24,7 +24,7 @@ function activeOrderForTable(db: ReturnType<typeof getDatabase>, tableId: string
   return { ...order, customer: customer || null };
 }
 
-function reservationCustomerShape(db: ReturnType<typeof getDatabase>, table: any) {
+function reservationCustomerShape(db: ReturnType<typeof getDatabase>, table: { status: string; reservation_customer_id?: string | null }) {
   const reservationCustomer = table.status === 'reserved' && table.reservation_customer_id
     ? db.prepare('SELECT name, phone FROM customers WHERE id = ?').get(table.reservation_customer_id) as { name: string; phone: string | null } | undefined
     : undefined;
@@ -104,7 +104,7 @@ router.get('/', (req: Request, res: Response) => {
     query += ' ORDER BY number';
 
     const rows = db.prepare(query).all(...params);
-    const includeReservationCustomer = hasRole((req as any).user?.role, ROLE_ACCESS.sales);
+    const includeReservationCustomer = hasRole((req as Request & { user?: { role?: string } }).user?.role, ROLE_ACCESS.sales);
     // Normalize: frontend expects `name`, schema column is `number`
     const tables = rows.map((t: any) => tableShape(db, t, activeOrderForTable(db, t.id), includeReservationCustomer));
     res.json({ tables });
@@ -123,7 +123,7 @@ router.get('/:id', (req: Request, res: Response) => {
     }
 
     const activeOrder = activeOrderForTable(db, req.params.id as string);
-    const includeReservationCustomer = hasRole((req as any).user?.role, ROLE_ACCESS.sales);
+    const includeReservationCustomer = hasRole((req as Request & { user?: { role?: string } }).user?.role, ROLE_ACCESS.sales);
 
     // Normalize: frontend expects `name`, schema column is `number`
     res.json({ table: tableShape(db, table as any, activeOrder, includeReservationCustomer) });
@@ -542,7 +542,7 @@ router.patch('/:id/status', requireRole(...ROLE_ACCESS.ownerManager), (req: Requ
         .run(status, now(), req.params.id);
     }
 
-    const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
+    const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as { status: string; reservation_customer_id?: string | null; [key: string]: unknown };
     res.json({ table: { ...updated, ...reservationCustomerShape(db, updated) } });
   } catch (error: any) {
     console.error("[API] Internal error:", error);

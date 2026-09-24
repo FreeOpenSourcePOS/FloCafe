@@ -39,10 +39,12 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  13. Indonesian safeguards: id.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
- *  13. Italian safeguards: it.json values never contain placeholders or silently
+ *  14. Italian safeguards: it.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
- *  14. Japanese and Chinese safeguards: ja.json and zh.json values never contain
+ *  15. Japanese and Chinese safeguards: ja.json and zh.json values never contain
  *      placeholders or silently fall back to English (documented intentional lists excepted).
+ *  16. Dutch safeguards: nl.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -1231,6 +1233,54 @@ function idFallbackErrors(idFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Dutch translation safeguards. */
+const NL_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.countryThailand', 'auth.emailPlaceholder', 'businessType.restaurant',
+  'common.appTitle', 'common.brandName', 'common.logoAlt', 'common.percentage',
+  'common.timeHoursMinutes', 'common.timeMinutes', 'dashboard.minutesValue', 'dashboard.title',
+  'dashboard.exportXlsx', 'dashboard.exportCsv', 'dashboard.ticketMethodCount',
+  'inventory.product', 'kds.addonsLabel', 'kds.connectionLive', 'kds.emptyColumn', 'kds.viewKanban',
+  'nav.dashboard', 'nav.kds', 'nav.pos', 'nav.whatsapp', 'orders.online', 'pos.addonPrice',
+  'pos.loadingEllipsis', 'pos.orderTypeOnline', 'pos.percentage', 'pos.tagBestseller', 'pos.tagCount',
+  'pos.taxLine', 'printTest.downloadBin', 'printTest.escpos', 'print.kot.type', 'print.hsn',
+  'print.zReport.paymentCount', 'products.addonSelectionRange', 'products.colorAmber',
+  'products.colorFuchsia', 'products.colorIndigo', 'products.colorViolet', 'products.columnProduct',
+  'products.columnStatus', 'products.fieldSku', 'products.imageCamera', 'products.saleUnitCl',
+  'products.saleUnitFlOz', 'products.saleUnitG', 'products.saleUnitKg', 'products.saleUnitL',
+  'products.saleUnitLb', 'products.saleUnitMl', 'products.saleUnitOz', 'products.skuLabel',
+  'products.tagBestseller', 'products.taxExclusiveShort', 'products.taxInclusiveShort',
+  'serverApp.emailPlaceholder', 'settings.account', 'settings.googleDriveAccount', 'settings.navGroupAccount', 'settings.appQrAlt', 'settings.backupKindAuto',
+  'settings.backupSchemaVersion', 'settings.billTemplateCompactName', 'settings.browserWebusb',
+  'settings.connectionUsb', 'settings.connectionWebusb', 'settings.paymentMethodUpi',
+  'settings.defaultPrinterTipTitle', 'settings.ipAddressPlaceholder', 'settings.iranCalendarLocale',
+  'settings.iranCurrencyDisplayRial', 'settings.iranCurrencyDisplayToman', 'settings.kds',
+  'settings.languageEs', 'settings.plan', 'settings.portPlaceholder', 'settings.posQrAlt',
+  'settings.printerOffline', 'settings.printerOnline', 'settings.printers', 'settings.privacy',
+  'settings.registrationEmailPlaceholder', 'settings.registrationLastError', 'settings.revflo',
+  'settings.stationPrinter', 'settings.status', 'settings.tabOrderflow', 'settings.tabPrinters',
+  'settings.tabWhatsapp', 'settings.test', 'settings.unicode', 'settings.updateStatusOffline',
+  'settings.errorDetails', 'settings.updates', 'settings.whatsapp', 'setup.demoLabel',
+  'setup.ownerEmailPlaceholder', 'setup.pinLabel', 'setup.qsrLabel', 'staff.roleManager',
+  'staff.roleServer', 'permissionMatrix.areas.menu', 'support.platform', 'support.restaurant',
+  'tables.floorplanAuto', 'tax.auditCreateOverride', 'tax.auditUpdateOverride', 'tax.entityAddon',
+  'tax.entityProduct', 'tax.type', 'update.downloadingBadge', 'whatsapp.inbox.title',
+  'whatsapp.sent.colStatus', 'whatsapp.tabs.inbox',
+]);
+
+function nlFallbackErrors(nlFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const nlVal = nlFlat[k];
+    if (nlVal === undefined) continue;
+    if (nlVal.startsWith('[NL]') || nlVal.startsWith('[TODO]')) {
+      errors.push(`nl.json ${k} — placeholder prefix found: "${nlVal}"`);
+    } else if (nlVal === enFlat[k] && !NL_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`nl.json ${k} — identical to English value (renders as English for Dutch users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1575,6 +1625,17 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated id.json values (${ID_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 17. nl.json values must not contain placeholders or fall back to English.
+  const nlMessages = loadedStrings.get('nl');
+  if (!nlMessages) throw new Error('languages registry must include the maintained nl locale');
+  const nlErrors = nlFallbackErrors(nlMessages, loadedStrings.get('en')!);
+  if (nlErrors.length) {
+    console.error(`\nnl.json values with errors (${nlErrors.length}):`);
+    for (const e of nlErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'nl.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated nl.json values (${NL_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1680,7 +1741,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id).
+  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id, nl).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -1752,6 +1813,14 @@ function runNegativeTests(): void {
   expectDetected(
     'id: placeholder prefix value',
     idFallbackErrors({ 'a.b': '[ID] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'nl: English-identical value',
+    nlFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'nl: placeholder prefix value',
+    nlFallbackErrors({ 'a.b': '[NL] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

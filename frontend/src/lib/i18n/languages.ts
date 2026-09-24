@@ -113,6 +113,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/id.json'),
   },
+  nl: {
+    locale: 'nl-NL',
+    nativeName: 'Nederlands',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/nl.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

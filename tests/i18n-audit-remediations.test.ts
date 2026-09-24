@@ -77,7 +77,7 @@ async function run() {
   console.log('Section 1: Web-print Message Loading & BCP-47 Locale Tags');
 
   // 1.1 ensureReceiptMessagesLoaded loads messages into memory
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko', 'id'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko', 'id', 'nl'] as const) {
     await ensureReceiptMessagesLoaded(lang);
     const cached = getCachedMessages(lang);
     assert(
@@ -147,6 +147,7 @@ async function run() {
     fa: { tag: 'fa-IR', dir: 'rtl' },
     ko: { tag: 'ko-KR', dir: 'ltr' },
     id: { tag: 'id-ID', dir: 'ltr' },
+    nl: { tag: 'nl-NL', dir: 'ltr' },
   };
 
   for (const [lang, { tag, dir }] of Object.entries(expectedLocaleTags)) {
@@ -339,7 +340,7 @@ async function run() {
 
   // 2.2 Translation parity in all message files
   const MESSAGES_DIR = path.resolve(__dirname, '../frontend/src/lib/i18n/messages');
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko', 'id']) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko', 'id', 'nl']) {
     const filePath = path.join(MESSAGES_DIR, `${lang}.json`);
     const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
     const translation = content?.orders?.itemStatusVoidAdjustment;

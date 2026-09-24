@@ -114,6 +114,7 @@ FloCafe includes UI translations for:
 - Simplified Chinese
 - Korean
 - Bahasa Indonesia
+- Dutch
 
 UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/i18n.md).
 

@@ -134,6 +134,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/hi.json'),
   },
+  bn: {
+    locale: 'bn-BD',
+    nativeName: 'বাংলা',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/bn.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

@@ -48,6 +48,8 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  17. Hindi safeguards: hi.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  18. Bengali safeguards: bn.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -1330,6 +1332,31 @@ function hiFallbackErrors(hiFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Bengali translation safeguards. */
+const BN_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', 'dashboard.exportCsv', 'nav.pos', 'pos.addonPrice', 'pos.loadingEllipsis',
+  'printTest.escpos', 'print.hsn', 'print.zReport.paymentCount', 'products.saleUnitCl',
+  'products.saleUnitFlOz', 'products.saleUnitG', 'products.saleUnitL', 'products.saleUnitOz',
+  'serverApp.emailPlaceholder', 'settings.apiKeyInputPlaceholder', 'settings.ipAddressPlaceholder',
+  'settings.languageEs', 'settings.portPlaceholder', 'settings.registrationEmailPlaceholder',
+  'settings.registrationLastError', 'setup.ownerEmailPlaceholder', 'setup.qsrLabel',
+  'tax.auditCreateOverride', 'tax.auditUpdateOverride', 'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function bnFallbackErrors(bnFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const bnVal = bnFlat[k];
+    if (bnVal === undefined) continue;
+    if (bnVal.startsWith('[BN]') || bnVal.startsWith('[TODO]')) {
+      errors.push(`bn.json ${k} — placeholder prefix found: "${bnVal}"`);
+    } else if (bnVal === enFlat[k] && !BN_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`bn.json ${k} — identical to English value (renders as English for Bengali users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1706,6 +1733,17 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated hi.json values (${HI_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 19. bn.json values must not contain placeholders or fall back to English.
+  const bnMessages = loadedStrings.get('bn');
+  if (!bnMessages) throw new Error('languages registry must include the maintained bn locale');
+  const bnErrors = bnFallbackErrors(bnMessages, loadedStrings.get('en')!);
+  if (bnErrors.length) {
+    console.error(`\nbn.json values with errors (${bnErrors.length}):`);
+    for (const e of bnErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'bn.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated bn.json values (${BN_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1811,7 +1849,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id, nl).
+  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id, nl, hi, bn).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -1907,6 +1945,14 @@ function runNegativeTests(): void {
   expectDetected(
     'hi: placeholder prefix value',
     hiFallbackErrors({ 'a.b': '[HI] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'bn: English-identical value',
+    bnFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'bn: placeholder prefix value',
+    bnFallbackErrors({ 'a.b': '[BN] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

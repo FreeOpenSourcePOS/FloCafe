@@ -157,6 +157,22 @@ async function run() {
     assert.equal(hindiRender.unit.complete, true);
     assert.ok(area(hindiRender.unit) > 0);
 
+    const bengaliRender = await renderer.render({
+      version: 1,
+      requestId: 'electron-bengali-system-font',
+      text: 'বাংলা',
+      widthDots: 120,
+      maxBandHeight: 200,
+      direction: 'ltr',
+      align: 'left',
+      style: 'normal',
+      financial: true,
+      maxLines: 4,
+    });
+    assert.equal(bengaliRender.ok, true);
+    assert.equal(bengaliRender.unit.complete, true);
+    assert.ok(area(bengaliRender.unit) > 0);
+
     surface.webContents.emit('render-process-gone');
     const processFailure = await renderer.render({ ...base, requestId: 'electron-process-failure' });
     assert.deepEqual(processFailure, {

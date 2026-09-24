@@ -74,7 +74,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -515,6 +515,28 @@ async function run() {
       hindiSlip.includes('Noto Sans Devanagari') &&
       hindiSlip.includes('उप-योग') &&
       hindiSlip.includes('कुल योग'),
+    );
+
+    const bengaliSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'অর্ডার স্লিপ',
+      subtotal: 'সাবটোটাল',
+      discount: 'ছাড়',
+      serviceCharge: 'সার্ভিস চার্জ',
+      deliveryCharge: 'ডেলিভারি চার্জ',
+      packagingCharge: 'প্যাকেজিং চার্জ',
+      tax: 'কর',
+      total: 'মোট',
+    }, {
+      country: 'BD',
+      currency: 'BDT',
+      locale: 'bn-BD',
+      direction: 'ltr',
+    });
+    assert('Bengali order slip carries bn-BD LTR metadata and local font fallback',
+      bengaliSlip.includes('lang="bn-BD" dir="ltr"') &&
+      bengaliSlip.includes('Noto Sans Bengali') &&
+      bengaliSlip.includes('সাবটোটাল') &&
+      bengaliSlip.includes('মোট'),
     );
   }
 

@@ -4,7 +4,7 @@ import {
   dayBoundsInTimezone, localDateInTimezone, tenantBusinessDayStartTime, recordOrderAudit,
 } from '../db';
 import { invertTaxBreakdown, invertTaxSnapshot } from './tax';
-import { getOpenSession } from './shift-session-gate';
+import { getOpenSession, NO_CASH_SESSION_ID, requireOpenSessionForCashTender } from './shift-session-gate';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot, resolveTenantCurrency } from '../countries';
 
@@ -92,6 +92,8 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
       }
     }
   }
+
+  requireOpenSessionForCashTender(db, [{ method: req.method }]);
 
   const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.billId) as any;
   if (!bill) throw httpError('Bill not found', 404);
@@ -208,7 +210,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
       .run(timestamp, timestamp, item.id);
   }
 
-  const cashSessionId = getOpenSession(db)?.id ?? null;
+  const cashSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;
   const insertResult = db.prepare(`
     INSERT INTO refunds (bill_id, order_item_id, amount_cents, method, reason, shift_id, approved_by, created_by, created_at, cash_session_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

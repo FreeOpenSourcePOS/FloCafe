@@ -74,36 +74,31 @@ export function useCashSession() {
     }
   };
 
-  // Latest settled payload: a superseded refresh returns what the UI shows
-  // instead of its own discarded payload, so entry routing never acts on
-  // data that never made it into `session`.
-  const latestData = useRef<CashSession | null>(null);
-  // Sequence guard: a slow response settling after a newer refresh (or
-  // after unmount-via-stale-callers) must not overwrite fresh state.
+  // Sequence guard: a slow response settling after a newer refresh must not
+  // overwrite fresh state.
   const refreshSeq = useRef(0);
   // Returns the session plus the fresh load error: entry routing must not
   // offer the open form when the load itself failed (unknown state ≠ no
   // shift), and callers can surface the specific load error.
-  const refresh = useCallback(async (): Promise<{ session: CashSession | null; error: string | null }> => {
+  const refresh = useCallback(async (): Promise<{ session: CashSession | null; error: string | null; superseded: boolean }> => {
     const seq = ++refreshSeq.current;
     setLoading(true);
     setError(null);
     const { data, error: loadError } = await fetchState();
-    latestData.current = data;
-    if (seq !== refreshSeq.current) return { session: latestData.current, error: null };
+    if (seq !== refreshSeq.current) return { session: null, error: null, superseded: true };
     setSession(data);
     setError(loadError);
     setLoading(false);
-    return { session: data, error: loadError };
+    return { session: data, error: loadError, superseded: false };
   }, []);
 
   // Mount fetch: loading starts true, so state settles only in async
   // continuations (lint-clean by construction).
   useEffect(() => {
     let cancelled = false;
+    const seq = ++refreshSeq.current;
     fetchState().then(({ data, error: loadError }) => {
-      if (cancelled) return;
-      latestData.current = data;
+      if (cancelled || seq !== refreshSeq.current) return;
       setSession(data);
       setError(loadError);
       setLoading(false);

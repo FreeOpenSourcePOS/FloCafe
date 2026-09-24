@@ -21,6 +21,11 @@ export interface CashSessionRow {
   closure_id: number | null;
 }
 
+// NULL is reserved for rows written before session ownership was recorded.
+// New cash activity outside a shift uses 0 so it cannot enter a later shift
+// through the legacy timestamp fallback.
+export const NO_CASH_SESSION_ID = 0;
+
 export function getOpenSession(db: ReturnType<typeof getDatabase>): CashSessionRow | undefined {
   return db.prepare(`SELECT * FROM cash_sessions WHERE status = 'open' LIMIT 1`).get() as CashSessionRow | undefined;
 }

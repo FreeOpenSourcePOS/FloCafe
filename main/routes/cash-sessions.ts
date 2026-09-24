@@ -23,8 +23,8 @@ import {
   getOpenSession, type CashSessionRow,
 } from '../services/shift-session-gate';
 import {
-  computePeriodAggregates, sessionExpectedCash,
-  listCashDrawerMovementsInWindow, tenantTimezone,
+  computePeriodAggregates, sessionExpectedCash, sessionFinancialTotals,
+  listCashDrawerMovementsForSession, tenantTimezone,
 } from './cash-closures';
 
 const router = Router();
@@ -101,12 +101,14 @@ function closeSessionTxn(
       throw httpError(`Cannot close: ${unpaid.c} unpaid bill(s) in this shift`, 409);
     }
   }
-  const aggregates = computePeriodAggregates(
-    db, session.opened_at, closedAt,
-    listCashDrawerMovementsInWindow(db, session.opened_at, closedAt, false),
-    Number(session.opening_float_cents || 0),
-  );
-  const expectedCashCents = sessionExpectedCash(db, session, closedAt);
+  const sessionMovements = listCashDrawerMovementsForSession(db, session.id, session.opened_at, closedAt, false);
+  const aggregates = {
+    ...computePeriodAggregates(db, session.opened_at, closedAt,
+      sessionMovements, Number(session.opening_float_cents || 0)),
+    // Drawer and tender totals follow ownership; staff/tax remain settlement-based.
+    ...sessionFinancialTotals(db, session, closedAt),
+  };
+  const expectedCashCents = sessionExpectedCash(db, session, closedAt, sessionMovements);
   const varianceCents = countedCashCents - expectedCashCents;
   let zNumber: number;
   try {
@@ -165,10 +167,23 @@ router.post('/open', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Requ
       const cutoff = daysAgoUtc(thresholdDays);
       const stale = db.prepare(`SELECT * FROM cash_sessions WHERE status = 'open' AND opened_at < ?`).all(cutoff) as CashSessionRow[];
       if (stale.length > 0) {
-        const activity = db.prepare(
-          `SELECT (SELECT COUNT(*) FROM bills WHERE paid_at >= ?) + (SELECT COUNT(*) FROM cash_drawer_movements WHERE created_at >= ?) AS c`,
-        ).get(cutoff, cutoff) as { c: number };
-        if (Number(activity.c) === 0) {
+        const activity = db.prepare(`
+          SELECT
+            EXISTS(SELECT 1 FROM bills WHERE paid_at >= ?)
+            OR EXISTS(
+              SELECT 1 FROM bills b
+              JOIN json_each(CASE
+                WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
+                WHEN json_valid(b.payment_details) THEN json_array(b.payment_details)
+                ELSE '[]'
+              END) je
+              WHERE json_type(je.value) = 'object'
+                AND datetime(COALESCE(NULLIF(json_extract(je.value, '$.timestamp'), ''), b.paid_at, b.created_at)) >= datetime(?)
+            )
+            OR EXISTS(SELECT 1 FROM cash_drawer_movements WHERE created_at >= ?)
+            OR EXISTS(SELECT 1 FROM refunds WHERE created_at >= ?) AS active
+        `).get(cutoff, cutoff, cutoff, cutoff) as { active: number };
+        if (!activity.active) {
           for (const s of stale) {
             closeSessionTxn(db, s, 0, openedBy, 'System auto-close: stale session, flagged for manager review', true);
           }

@@ -40,7 +40,7 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
-import { getOpenSession, requireOpenSessionForCash } from '../services/shift-session-gate';
+import { getOpenSession, NO_CASH_SESSION_ID, requireOpenSessionForCash } from '../services/shift-session-gate';
 // Type-only: erased at compile, so this adds no runtime require cycle.
 import type { AuthedRequest } from './cash-sessions';
 import { getCurrencyMinorUnitFactor, resolveRegionalSnapshot } from '../countries';
@@ -180,10 +180,11 @@ function listCashDrawerMovements(
   `).all(businessDate) as CashDrawerMovementRow[];
 }
 
-// Session-window variant (#279): movements attributed by raw timestamp
-// window instead of business_date so sessions crossing midnight work.
-export function listCashDrawerMovementsInWindow(
+// Session movements prefer their recorded owner; only pre-v91 NULL-owner
+// rows use the timestamp window.
+export function listCashDrawerMovementsForSession(
   db: ReturnType<typeof getDatabase>,
+  sessionId: number,
   start: string,
   end: string,
   includeVoided = true,
@@ -193,9 +194,10 @@ export function listCashDrawerMovementsInWindow(
     FROM cash_drawer_movements m
     LEFT JOIN users created_user ON created_user.id = m.created_by
     LEFT JOIN users voided_user ON voided_user.id = m.voided_by
-    WHERE m.created_at >= ? AND m.created_at < ? ${includeVoided ? '' : 'AND m.voided_at IS NULL'}
+    WHERE (m.cash_session_id = ? OR (m.cash_session_id IS NULL AND m.created_at >= ? AND m.created_at < ?))
+      ${includeVoided ? '' : 'AND m.voided_at IS NULL'}
     ORDER BY m.created_at DESC, m.id DESC
-  `).all(start, end) as CashDrawerMovementRow[];
+  `).all(sessionId, start, end) as CashDrawerMovementRow[];
 }
 
 function activeOpeningFloatCents(db: ReturnType<typeof getDatabase>, businessDate: string): number | null {
@@ -482,8 +484,8 @@ export function sumCashMovements(
  * Session-scoped expected cash: float + drawer movements + cash sales − cash
  * refunds. Attribution is ownership-first: rows carrying this session's
  * cash_session_id count regardless of timestamp because they were created
- * while it was open; NULL-owner rows (pre-v91 data or sessionless events) fall
- * back to opened_at→end. opening_float movements are not summed here because
+ * while it was open; pre-v91 NULL-owner rows fall back to opened_at→end.
+ * opening_float movements are not summed here because
  * the float lives on the session row.
  *
  * Sessions intentionally use the effective shift-gate cash classifier
@@ -495,21 +497,13 @@ export function sessionExpectedCash(
   db: ReturnType<typeof getDatabase>,
   session: { id: number; opening_float_cents: number; opened_at?: string },
   end: string,
+  movements?: CashDrawerMovementRow[],
 ): number {
   const start = session.opened_at ?? end;
   const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
-  const movementTotals = db.prepare(`
-    SELECT
-      COALESCE(SUM(CASE WHEN movement_type = 'pay_in' THEN amount_cents ELSE 0 END), 0) AS pay_in,
-      COALESCE(SUM(CASE WHEN movement_type = 'pay_out' THEN amount_cents ELSE 0 END), 0) AS pay_out,
-      COALESCE(SUM(CASE WHEN movement_type = 'safe_drop' THEN amount_cents ELSE 0 END), 0) AS safe_drop
-    FROM cash_drawer_movements
-    WHERE voided_at IS NULL
-      AND (
-        cash_session_id = ?
-        OR (cash_session_id IS NULL AND created_at >= ? AND created_at < ?)
-      )
-  `).get(session.id, start, end) as { pay_in: number; pay_out: number; safe_drop: number };
+  const movementTotals = sumCashMovements(
+    movements ?? listCashDrawerMovementsForSession(db, session.id, start, end, false), true,
+  );
   const eventTotals = db.prepare(`
     WITH payment_lines AS (
       SELECT
@@ -559,10 +553,75 @@ export function sessionExpectedCash(
   `).get(minorFactor, session.id, start, end, session.id, start, end) as { sales_cents: number; refunds_cents: number };
   return Number(session.opening_float_cents || 0)
     + Math.round(Number(eventTotals.sales_cents || 0))
-    + Number(movementTotals.pay_in || 0)
-    - Number(movementTotals.pay_out || 0)
-    - Number(movementTotals.safe_drop || 0)
+    + movementTotals.payInCents
+    - movementTotals.payOutCents
+    - movementTotals.safeDropCents
     - Number(eventTotals.refunds_cents || 0);
+}
+
+/** Sales and refunds attributed to a session for its immutable Z snapshot. */
+export function sessionFinancialTotals(
+  db: ReturnType<typeof getDatabase>,
+  session: { id: number; opened_at: string },
+  end: string,
+): Pick<DayAggregates, 'billCount' | 'refundCount' | 'grossCollectedCents' | 'refundedCents' | 'netCollectedCents' | 'paymentMethods'> {
+  const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
+  const row = db.prepare(`
+    WITH payment_lines AS (
+      SELECT b.id AS bill_id,
+        CAST(ROUND(CAST(json_extract(je.value, '$.amount') AS REAL) * ?) AS INTEGER) AS amount_cents,
+        COALESCE(NULLIF(json_extract(je.value, '$.method'), ''), 'unknown') AS method,
+        CAST(json_extract(je.value, '$.cash_session_id') AS INTEGER) AS line_session,
+        COALESCE(datetime(NULLIF(json_extract(je.value, '$.timestamp'), '')),
+          datetime(NULLIF(b.paid_at, '')), datetime(NULLIF(b.created_at, ''))) AS line_time
+      FROM bills b
+      JOIN json_each(CASE
+        WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
+        WHEN json_valid(b.payment_details) THEN json_array(b.payment_details)
+        ELSE '[]' END) je
+      WHERE json_type(je.value) = 'object'
+    ),
+    owned_payments AS (
+      SELECT bill_id, amount_cents, method FROM payment_lines
+      WHERE line_session = ?
+        OR (line_session IS NULL AND line_time >= datetime(?) AND line_time < datetime(?))
+    ),
+    owned_refunds AS (
+      SELECT amount_cents, method FROM refunds
+      WHERE cash_session_id = ?
+        OR (cash_session_id IS NULL AND created_at >= ? AND created_at < ?)
+    ),
+    method_totals AS (
+      SELECT method, COUNT(*) AS count, SUM(amount_cents) AS total_cents
+      FROM (
+        SELECT method, amount_cents FROM owned_payments
+        UNION ALL
+        SELECT method, -amount_cents FROM owned_refunds
+      ) GROUP BY method
+    )
+    SELECT
+      (SELECT COUNT(DISTINCT bill_id) FROM owned_payments) AS bill_count,
+      (SELECT COUNT(*) FROM owned_refunds) AS refund_count,
+      (SELECT COALESCE(SUM(amount_cents), 0) FROM owned_payments) AS gross_cents,
+      (SELECT COALESCE(SUM(amount_cents), 0) FROM owned_refunds) AS refund_cents,
+      (SELECT COALESCE(json_group_array(json_object(
+        'method', method, 'count', count, 'total_cents', total_cents)), '[]')
+        FROM method_totals) AS methods_json
+  `).get(minorFactor, session.id, session.opened_at, end,
+    session.id, session.opened_at, end) as {
+    bill_count: number; refund_count: number; gross_cents: number;
+    refund_cents: number; methods_json: string;
+  };
+  const grossCollectedCents = Number(row.gross_cents || 0);
+  const refundedCents = Number(row.refund_cents || 0);
+  return {
+    billCount: Number(row.bill_count || 0),
+    refundCount: Number(row.refund_count || 0),
+    grossCollectedCents,
+    refundedCents,
+    netCollectedCents: grossCollectedCents - refundedCents,
+    paymentMethods: JSON.parse(row.methods_json),
+  };
 }
 
 /**
@@ -725,7 +784,7 @@ router.post('/movements', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req:
           INSERT INTO cash_drawer_movements (
             business_date, movement_type, amount_cents, reason, created_by, created_at, cash_session_id
           ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(businessDate, movementType, amountCents, reason, createdBy, now(), getOpenSession(db)?.id ?? null);
+        `).run(businessDate, movementType, amountCents, reason, createdBy, now(), getOpenSession(db)?.id ?? NO_CASH_SESSION_ID);
         return Number(result.lastInsertRowid);
       } catch (error: any) {
         if (String(error?.message || '').includes('cash_drawer_one_opening_float')

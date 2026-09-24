@@ -277,9 +277,36 @@ async function main() {
   assert(ownedMovement.status === 201, 'movement records with an open session');
   const ownedRow = db.prepare('SELECT cash_session_id FROM cash_drawer_movements WHERE id = ?').get(ownedMovement.body?.movement?.id) as any;
   assert(Number(ownedRow?.cash_session_id) === Number(ownedSessionId), 'movement stores the active session owner');
+  // An owned movement must appear in the immutable Z even when its coarse
+  // timestamp lies outside the half-open window used by legacy rows.
+  db.prepare(`UPDATE cash_drawer_movements SET created_at = '9999-12-31 00:00:00' WHERE id = ?`)
+    .run(ownedMovement.body?.movement?.id);
   const ownedTidy = await request(app).post(`/api/cash-sessions/${ownedSessionId}/close`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 1000 });
   assert(ownedTidy.status === 200, 'ownership-test session closes');
+  const ownedZ = db.prepare('SELECT expected_cash_cents, pay_in_cents, cash_movements_json FROM cash_closures WHERE id = ?')
+    .get(ownedTidy.body?.closure_id) as any;
+  assert(ownedZ?.expected_cash_cents === 1000 && ownedZ?.pay_in_cents === 1000,
+    'session Z movement total reconciles with owned expected cash');
+  assert(JSON.parse(ownedZ?.cash_movements_json || '[]').some((movement: any) => movement.id === ownedMovement.body?.movement?.id),
+    'session Z includes its owned movement line');
+
+  const sessionlessMovement = await request(app).post('/api/cash-closures/movements')
+    .set('Authorization', `Bearer ${cashierToken}`)
+    .send({ business_date: todayLocal, movement_type: 'pay_in', amount_cents: 700, reason: 'before shift' });
+  assert(sessionlessMovement.status === 201, 'cash movement is allowed without a shift when enforcement is off');
+  const afterMovementOpen = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(afterMovementOpen.status === 200, 'shift opens after a sessionless movement');
+  db.prepare('UPDATE cash_drawer_movements SET created_at = ? WHERE id = ?')
+    .run(afterMovementOpen.body?.opened_at, sessionlessMovement.body?.movement?.id);
+  const afterMovementCurrent = await request(app).get('/api/cash-sessions/current')
+    .set('Authorization', `Bearer ${cashierToken}`);
+  assert(afterMovementCurrent.body?.expected_cash_cents === 0,
+    'same-second cash movement recorded before a shift does not enter its expected cash');
+  const afterMovementClose = await request(app).post(`/api/cash-sessions/${afterMovementOpen.body?.id}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 0 });
+  assert(afterMovementClose.status === 200, 'sessionless-movement fixture closes');
 
   const { refundRoutes: lineRefundRoutes } = require('../main/routes/refunds');
   app.use('/api/refunds', lineRefundRoutes);
@@ -300,9 +327,11 @@ async function main() {
   const ownedRefundPay = await request(app).post(`/api/bills/${ownedRefundBill}/payment`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'cash', amount: 50 });
   assert(ownedRefundPay.status === 200, 'refund fixture bill settles');
+  const ownedRefundPayload = { bill_id: ownedRefundBill, amount: 10, method: 'cash', approver_id: 'owner-sess', override_pin: '1234' };
   const ownedRefund = await request(app).post('/api/refunds')
     .set('Authorization', `Bearer ${ownedOwnerToken}`)
-    .send({ bill_id: ownedRefundBill, amount: 10, method: 'cash', approver_id: 'owner-sess', override_pin: '1234' });
+    .set('Idempotency-Key', 'cash-session-refund-replay')
+    .send(ownedRefundPayload);
   assert(ownedRefund.status === 201, 'cash refund is created');
   const ownedRefundRow = db.prepare('SELECT cash_session_id FROM refunds WHERE id = ?').get(ownedRefund.body?.refund?.id) as any;
   assert(Number(ownedRefundRow?.cash_session_id) === Number(lineSessionId), 'new refund stores the active session owner');
@@ -312,6 +341,22 @@ async function main() {
   const lineTidy = await request(app).post(`/api/cash-sessions/${lineSessionId}/close`)
     .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 90 });
   assert(lineTidy.status === 200, 'line-ownership fixtures close cleanly');
+  db.prepare(`UPDATE settings SET value = 'true' WHERE key = 'require_open_shift'`).run();
+  const refundReplay = await request(app).post('/api/refunds')
+    .set('Authorization', `Bearer ${ownedOwnerToken}`)
+    .set('Idempotency-Key', 'cash-session-refund-replay')
+    .send(ownedRefundPayload);
+  assert(refundReplay.status === 201, 'recorded cash refund replays after its shift closes');
+  const refundRows = db.prepare('SELECT COUNT(*) AS c FROM refunds WHERE bill_id = ?').get(ownedRefundBill) as { c: number };
+  assert(refundRows.c === 1, 'refund replay does not create a second refund');
+  db.prepare(`UPDATE settings SET value = 'false' WHERE key = 'require_open_shift'`).run();
+  const ownedLineZ = db.prepare('SELECT gross_collected_cents, refunded_cents, net_collected_cents, payment_methods_json FROM cash_closures WHERE id = ?')
+    .get(lineTidy.body?.closure_id) as any;
+  assert(ownedLineZ?.gross_collected_cents === 10000 && ownedLineZ?.refunded_cents === 1000
+    && ownedLineZ?.net_collected_cents === 9000,
+  'session Z sales and refunds match the cash events recorded during the shift');
+  assert(JSON.parse(ownedLineZ?.payment_methods_json || '[]').some((method: any) => method.method.toLowerCase() === 'cash' && method.total_cents === 9000),
+    'session Z payment method breakdown includes partial cash and its refund');
 
   const { sessionExpectedCash } = require('../main/routes/cash-closures');
   assert(typeof sessionExpectedCash === 'function', 'session expected-cash helper exists');
@@ -408,15 +453,68 @@ async function main() {
     .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 5000 });
   assert(paidBillStaleClose.status === 200, 'paid-bill stale candidate closes normally after the guard test');
 
+  const oldActivity = past(8 * 86400_000);
+  const backdateStoreActivity = () => {
+    db.prepare('UPDATE bills SET paid_at = ? WHERE paid_at IS NOT NULL').run(oldActivity);
+    db.prepare('UPDATE cash_drawer_movements SET created_at = ?').run(oldActivity);
+    db.prepare('UPDATE refunds SET created_at = ?').run(oldActivity);
+    const rows = db.prepare('SELECT id, payment_details FROM bills WHERE payment_details IS NOT NULL').all() as { id: number; payment_details: string }[];
+    for (const row of rows) {
+      const parsed = JSON.parse(row.payment_details);
+      const lines = Array.isArray(parsed) ? parsed : [parsed];
+      for (const line of lines) if (line && typeof line === 'object') line.timestamp = oldActivity;
+      db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?')
+        .run(JSON.stringify(Array.isArray(parsed) ? lines : lines[0]), row.id);
+    }
+  };
+
+  backdateStoreActivity();
+  const partialStaleOpen = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(partialStaleOpen.status === 200, 'partial-payment stale candidate opens');
+  db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(partialStaleOpen.body?.id);
+  const partialStaleBill = seedUnpaidBill('stale-partial');
+  const partialStalePay = await request(app).post(`/api/bills/${partialStaleBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'cash', amount: 20 });
+  assert(partialStalePay.status === 200, 'stale candidate receives a recent partial cash payment');
+  const partialStaleBlocked = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(partialStaleBlocked.status === 409, 'recent partial cash payment prevents stale auto-close');
+  const partialStaleSettle = await request(app).post(`/api/bills/${partialStaleBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'cash', amount: 30 });
+  assert(partialStaleSettle.status === 200, 'partial stale fixture settles before closing');
+  const partialStaleClose = await request(app).post(`/api/cash-sessions/${partialStaleOpen.body?.id}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 5000 });
+  assert(partialStaleClose.status === 200, 'partial stale fixture closes normally');
+
+  backdateStoreActivity();
+  const refundStaleOpen = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(refundStaleOpen.status === 200, 'refund stale candidate opens');
+  db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(refundStaleOpen.body?.id);
+  const refundStaleBill = seedUnpaidBill('stale-refund');
+  const refundStalePay = await request(app).post(`/api/bills/${refundStaleBill}/payment`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ method: 'card', amount: 50 });
+  assert(refundStalePay.status === 200, 'refund stale fixture settles');
+  backdateStoreActivity();
+  const recentStaleRefund = await request(app).post('/api/refunds')
+    .set('Authorization', `Bearer ${ownedOwnerToken}`)
+    .send({ bill_id: refundStaleBill, amount: 10, method: 'cash', approver_id: 'owner-sess', override_pin: '1234' });
+  assert(recentStaleRefund.status === 201, 'stale candidate receives a recent cash refund');
+  const refundStaleBlocked = await request(app).post('/api/cash-sessions/open')
+    .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 0 });
+  assert(refundStaleBlocked.status === 409, 'recent cash refund prevents stale auto-close');
+  const refundStaleClose = await request(app).post(`/api/cash-sessions/${refundStaleOpen.body?.id}/close`)
+    .set('Authorization', `Bearer ${cashierToken}`).send({ counted_cash_cents: 0 });
+  assert(refundStaleClose.status === 200, 'refund stale fixture closes normally');
+
   const staleOpen = await request(app).post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 100 });
   assert(staleOpen.status === 200, 'stale-candidate session opens (200)');
   const staleId = staleOpen.body?.id;
   db.prepare(`UPDATE cash_sessions SET opened_at = datetime('now', '-8 days') WHERE id = ?`).run(staleId);
-  // Store-wide inactivity is part of the stale rule: backdate this run's
-  // paid bills and movements beyond the cutoff so the store reads inactive.
-  db.prepare(`UPDATE bills SET paid_at = datetime('now', '-8 days') WHERE paid_at IS NOT NULL`).run();
-  db.prepare(`UPDATE cash_drawer_movements SET created_at = datetime('now', '-8 days')`).run();
+  // Store-wide inactivity is part of the stale rule.
+  backdateStoreActivity();
   const freshOpen = await request(app).post('/api/cash-sessions/open')
     .set('Authorization', `Bearer ${cashierToken}`).send({ opening_float_cents: 200 });
   assert(freshOpen.status === 200, 'new open auto-closes the stale session (200)');

@@ -5,7 +5,6 @@ import { requireRole } from '../middleware/security';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { checkPinRateLimit } from './orders';
 import { createRefund, getTenantCurrency, RefundRequest } from '../services/refund';
-import { requireOpenSessionForCashTender } from '../services/shift-session-gate';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 
 const router = Router();
@@ -110,10 +109,6 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
       idempotencyKey,
       requestHash,
     };
-
-    // Shift enforcement (#279): cash leaving the drawer needs an open
-    // session when opted in — fail-closed like cash payments.
-    requireOpenSessionForCashTender(db, [{ method: body.method }]);
 
     const result = withTxn(() => createRefund(db, refundRequest));
     res.status(201).json(result);

@@ -18,7 +18,7 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
 import { requireRole } from '../middleware/security';
-import { getOpenSession, isCashTender, requireOpenSessionForCashTender } from '../services/shift-session-gate';
+import { getOpenSession, isCashTender, NO_CASH_SESSION_ID, requireOpenSessionForCashTender } from '../services/shift-session-gate';
 import { ROLE_ACCESS } from '../../shared/role-permissions';
 import {
   calculateConfiguredChargeTaxes,
@@ -1979,7 +1979,7 @@ function applyPaymentBatch(
   // Shift enforcement (#279) runs after replay detection: retrying an already
   // recorded payment must succeed even if its shift has since closed.
   requireOpenSessionForCashTender(db, payments);
-  const activeSessionId = getOpenSession(db)?.id ?? null;
+  const activeSessionId = getOpenSession(db)?.id ?? NO_CASH_SESSION_ID;
   const currency = getTenantCurrency();
   const minorFactor = getCurrencyMinorUnitFactor(currency);
   const totalAppliedCents = prepared.reduce((sum, line) => sum + line.amountCents, 0);

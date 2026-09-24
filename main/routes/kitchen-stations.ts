@@ -22,6 +22,15 @@ function categoryIdsExist(db: ReturnType<typeof getDatabase>, categoryIds: strin
   return rows.length === categoryIds.length;
 }
 
+function parseStoredCategoryIds(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  try {
+    return normalizeCategoryIds(JSON.parse(value)) || [];
+  } catch {
+    return [];
+  }
+}
+
 function removeCategoriesFromOtherStations(db: ReturnType<typeof getDatabase>, categoryIds: string[], excludedStationId: string) {
   if (categoryIds.length === 0) return [];
 
@@ -151,8 +160,12 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     if (normalizedCategoryIds === null) {
       return res.status(400).json({ error: 'category_ids must be an array of valid category IDs' });
     }
-    if (normalizedCategoryIds !== undefined && !categoryIdsExist(db, normalizedCategoryIds)) {
-      return res.status(400).json({ error: 'One or more category_ids do not match an existing category' });
+    if (normalizedCategoryIds !== undefined) {
+      const previouslyAssignedIds = new Set(parseStoredCategoryIds((station as any).category_ids));
+      const newlyAssignedIds = normalizedCategoryIds.filter((id) => !previouslyAssignedIds.has(id));
+      if (!categoryIdsExist(db, newlyAssignedIds)) {
+        return res.status(400).json({ error: 'One or more category_ids do not match an existing category' });
+      }
     }
     if (printer_id !== undefined && printer_id !== null) {
       if (typeof printer_id !== 'string' || printer_id.trim().length === 0) {

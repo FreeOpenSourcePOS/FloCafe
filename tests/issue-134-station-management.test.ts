@@ -176,6 +176,21 @@ async function main() {
       assertEqual(movingUpdate.status, 200, 'C: update can claim another station\'s category');
       const originalAfterUpdate = db.prepare('SELECT category_ids FROM kitchen_stations WHERE id = ?').get(stationId) as { category_ids: string };
       assertEqual(originalAfterUpdate.category_ids, '[]', 'C: update removes the claimed category from the previous station');
+
+      db.prepare('UPDATE categories SET is_active = 0 WHERE id = ?').run('cat-bev');
+      db.prepare("UPDATE categories SET deleted_at = datetime('now') WHERE id = ?").run('cat-food');
+      const retainedRetiredCategories = await api(baseUrl, `/api/kitchen-stations/${prep.data.kitchenStation.id}`, {
+        method: 'PUT', body: { name: 'Prep Updated', category_ids: ['cat-food', 'cat-bev'] }, headers: authHeader,
+      });
+      assertEqual(retainedRetiredCategories.status, 200, 'C: station edits can retain categories deactivated after assignment');
+      assertEqual(retainedRetiredCategories.data.kitchenStation.name, 'Prep Updated', 'C: unrelated station edits still persist with retired categories assigned');
+
+      const newlyAssignedRetiredCategories = await api(baseUrl, `/api/kitchen-stations/${prep.data.kitchenStation.id}`, {
+        method: 'PUT', body: { category_ids: ['cat-food', 'cat-bev', 'cat-inactive', 'cat-deleted'] }, headers: authHeader,
+      });
+      assertEqual(newlyAssignedRetiredCategories.status, 400, 'C: update rejects newly assigned inactive or deleted categories');
+      const stationAfterRejectedRetiredAssignment = db.prepare('SELECT category_ids FROM kitchen_stations WHERE id = ?').get(prep.data.kitchenStation.id) as { category_ids: string };
+      assertEqual(stationAfterRejectedRetiredAssignment.category_ids, '["cat-food","cat-bev"]', 'C: rejected retired categories preserve existing station assignments');
     }
 
     console.log('\n─── Scenario D: printer updates preserve omitted fields and protect defaults ───');

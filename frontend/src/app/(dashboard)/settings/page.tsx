@@ -3241,7 +3241,7 @@ export default function SettingsPage() {
                                 <div className="flex flex-wrap gap-2">
                                   {selectedStationCategories.map((cat) => (
                                     <label key={cat.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-brand/50 bg-brand/5 rounded-full text-xs cursor-pointer hover:bg-brand/10">
-                                      <input type="checkbox" checked
+                                      <input type="checkbox" checked={stationForm.category_ids.includes(cat.id)}
                                         onChange={() => toggleStationFormValue('category_ids', cat.id)}
                                         className="rounded border-gray-300 dark:border-border text-brand focus:ring-brand" />
                                       {cat.name}

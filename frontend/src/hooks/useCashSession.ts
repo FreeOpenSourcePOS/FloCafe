@@ -30,6 +30,12 @@ export interface ShiftCloseResult {
   counted_cash_cents: number;
 }
 
+/** Result of a shift refresh. Superseded calls carry no session and must not
+ *  trigger routing because a newer refresh owns the current UI state. */
+export type CashSessionRefreshResult =
+  | { status: 'ok'; session: CashSession | null; error: string | null }
+  | { status: 'superseded' };
+
 /** Shift (cash session) controller for the POS terminal: owns the
  *  open/close modal state, current-session fetch, submit, and print.
  *  Mirrors useCashClose but without the date picker, prior-close prefill,
@@ -59,6 +65,7 @@ export function useCashSession() {
   // effect calls it directly rather than refresh() because the
   // cascading-renders lint rule forbids effects from calling
   // setter-containing functions, even behind awaits.)
+  /** Fetches the current shift without mutating hook state. */
   const fetchState = async (): Promise<{ data: CashSession | null; error: string | null }> => {
     try {
       const res = await api.get('/cash-sessions/current');
@@ -74,26 +81,25 @@ export function useCashSession() {
     }
   };
 
-  // Sequence guard: a slow response settling after a newer refresh must not
-  // overwrite fresh state.
+  // Sequence guard and explicit superseded result: a stale response must not
+  // write state or route shift entry when a newer request owns the UI.
   const refreshSeq = useRef(0);
-  // Returns the session plus the fresh load error: entry routing must not
-  // offer the open form when the load itself failed (unknown state ≠ no
-  // shift), and callers can surface the specific load error.
-  const refresh = useCallback(async (): Promise<{ session: CashSession | null; error: string | null; superseded: boolean }> => {
+  /** Refreshes the current shift and commits state only for the latest request. */
+  const refresh = useCallback(async (): Promise<CashSessionRefreshResult> => {
     const seq = ++refreshSeq.current;
     setLoading(true);
     setError(null);
     const { data, error: loadError } = await fetchState();
-    if (seq !== refreshSeq.current) return { session: null, error: null, superseded: true };
+    if (seq !== refreshSeq.current) return { status: 'superseded' };
     setSession(data);
     setError(loadError);
     setLoading(false);
-    return { session: data, error: loadError, superseded: false };
+    return { status: 'ok', session: data, error: loadError };
   }, []);
 
   // Mount fetch: loading starts true, so state settles only in async
-  // continuations (lint-clean by construction).
+  // continuations (lint-clean by construction). It participates in the same
+  // generation sequence as refresh so late mount data cannot win.
   useEffect(() => {
     let cancelled = false;
     const seq = ++refreshSeq.current;
@@ -112,6 +118,7 @@ export function useCashSession() {
   const displayToCents = (raw: string): number | null =>
     displayAmountToCents(raw, unitAdapter, minorFactor);
 
+  /** Opens a shift with the entered float and refreshes the current state. */
   const openShift = async () => {
     const floatCents = displayToCents(floatInput);
     if (floatCents === null) {
@@ -133,6 +140,8 @@ export function useCashSession() {
     }
   };
 
+  /** Closes the open shift with the entered count, refreshes state, and
+   *  retains the closure result for Z printing. */
   const closeShift = async () => {
     if (!session) return;
     const countedCents = displayToCents(countedInput);
@@ -158,6 +167,7 @@ export function useCashSession() {
   // Session closures persist as cash_closures rows, so the Z print path is
   // the existing POST /cash-closures/:id/print (same webusb/server split
   // as useCashClose.printZ).
+  /** Prints or reprints the session Z and reports whether dispatch succeeded. */
   const printClosure = async (closureId: number, isReprint = false): Promise<boolean> => {
     setPrinting(true);
     try {

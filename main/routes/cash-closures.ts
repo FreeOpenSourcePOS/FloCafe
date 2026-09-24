@@ -476,11 +476,6 @@ export function sumCashMovements(
 }
 
 /**
- * Lightweight live-expected path (#279): drawer-reality inputs only, none
- * of the display sections (payment breakdown, staff sales, tax hydration).
- * Used by the live session snapshot; closes use the full pipeline.
- */
-/**
  * Session-scoped expected cash: float + drawer movements + cash sales − cash
  * refunds. Attribution is ownership-first: rows carrying this session's
  * cash_session_id count regardless of timestamp because they were created

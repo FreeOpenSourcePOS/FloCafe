@@ -99,6 +99,11 @@ async function run(): Promise<void> {
       assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'खाना', 'Hindi express category is localized');
       assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'भोजन', 'Hindi express product is localized');
     }
+    if (language === 'sq') {
+      assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'Ushqim', 'Albanian express category is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'Vakt', 'Albanian express product is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-snack'")[0].name, 'Ushqim i lehtë', 'Albanian express snack is localized');
+    }
 
     seedSetupProfile(db, 'demo', 'finedine', language, 'IN');
     const seededCustomers = rows('customers', 'phone, phone_digits, country_code', 'is_active = 1');
@@ -149,6 +154,18 @@ async function run(): Promise<void> {
         rows('customers', 'phone', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => customer.phone),
         ['+8801712345678', '+8801712345679', '+8801712345680'],
         'Bengali demo customers use Bangladesh E.164 numbers',
+      );
+    }
+    if (language === 'sq') {
+      assert.equal(snapshot.category, 'Aperitive', 'Albanian demo category is localized');
+      assert.equal(snapshot.product, 'Sata me pulë', 'Albanian demo product is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-burrek'")[0].name, 'Byrek me djathë', 'Albanian demo byrek is labeled correctly');
+      assert.equal(snapshot.manager, 'Menaxher Demo', 'Albanian demo manager is localized');
+      assert.equal(snapshot.customer, 'Arben Krasni', 'Albanian demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => customer.phone),
+        ['+355671234567', '+355691234567', '+355681234567'],
+        'Albanian demo customers use Albania E.164 numbers',
       );
     }
     assert.equal(rows('customers', 'id', 'is_active = 1').length, 3, `${language}: demo setup seeds customers`);

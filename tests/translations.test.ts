@@ -50,6 +50,8 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  18. Bengali safeguards: bn.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  19. Albanian safeguards: sq.json values never contain placeholders or silently
+ *      fall back to the English value (documented intentional identical list excepted).
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -1357,6 +1359,39 @@ function bnFallbackErrors(bnFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Albanian translation safeguards. */
+const SQ_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.countryIndia', 'auth.email', 'auth.emailPlaceholder', 'common.appTitle', 'common.brandName', 'common.logoAlt',
+  'customer.email', 'dashboard.exportCsv', 'dashboard.exportXlsx', 'dashboard.ticketMethodCount',
+  'kds.viewKanban', 'nav.kds', 'nav.pos', 'nav.whatsapp', 'orders.online',
+  'pos.addonPrice', 'pos.loadingEllipsis', 'pos.methodCash', 'pos.orderTypeOnline', 'pos.tagVegan', 'pos.taxLine',
+  'printTest.escpos', 'print.hsn', 'print.zReport.paymentCount',
+  'products.colorIndigo', 'products.fieldSku', 'products.saleUnitCl', 'products.saleUnitFlOz', 'products.saleUnitG',
+  'products.saleUnitKg', 'products.saleUnitL', 'products.saleUnitMl', 'products.saleUnitOz', 'products.skuLabel', 'products.tagVegan',
+  'serverApp.emailPlaceholder', 'serverApp.title', 'settings.apiKeyInputPlaceholder', 'settings.connectionUsb',
+  'settings.email', 'settings.instagramPlaceholder', 'settings.ipAddressPlaceholder',
+  'settings.iranCalendarGregorian', 'settings.iranCalendarLocale', 'settings.iranCurrencyDisplayRial', 'settings.iranCurrencyDisplayToman', 'settings.kds',
+  'settings.languageEs', 'settings.portPlaceholder', 'settings.registrationEmailPlaceholder',
+  'settings.registrationLastError', 'settings.revflo', 'settings.serverApp', 'settings.tabOrderflow', 'settings.tabWhatsapp',
+  'settings.unicode', 'settings.whatsapp', 'setup.demoLabel', 'setup.expressLabel', 'setup.finedineLabel',
+  'setup.ownerEmailPlaceholder', 'setup.pinLabel', 'setup.qsrLabel', 'settings.paymentMethodUpi',
+  'support.email', 'tax.auditCreateOverride', 'tax.auditUpdateOverride', 'update.downloadingBadge',
+]);
+
+function sqFallbackErrors(sqFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const sqVal = sqFlat[k];
+    if (sqVal === undefined) continue;
+    if (sqVal.startsWith('[SQ]') || sqVal.startsWith('[TODO]')) {
+      errors.push(`sq.json ${k} — placeholder prefix found: "${sqVal}"`);
+    } else if (sqVal === enFlat[k] && !SQ_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`sq.json ${k} — identical to English value (renders as English for Albanian users)`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -1744,6 +1779,27 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated bn.json values (${BN_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  // 20. sq.json values must not contain placeholders or fall back to English.
+  const sqMessages = loadedStrings.get('sq');
+  if (!sqMessages) throw new Error('languages registry must include the maintained sq locale');
+  const sqErrors = sqFallbackErrors(sqMessages, loadedStrings.get('en')!);
+  if (sqErrors.length) {
+    console.error(`\nsq.json values with errors (${sqErrors.length}):`);
+    for (const e of sqErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'sq.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated sq.json values (${SQ_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+  for (const [key, technicalLiteral] of [
+    ['products.csvCategoriesHelp', 'sort_order'],
+    ['products.csvProductsHelp', 'tax_category'],
+    ['products.csvProductsHelp', 'tax_behavior'],
+    ['products.csvProductsHelp', 'cashback_percent'],
+    ['products.csvProductsHelp', 'is_active'],
+  ] as const) {
+    assert(sqMessages[key]?.includes(technicalLiteral), `sq.json ${key} must preserve the CSV field ${technicalLiteral}`);
+  }
+  console.log('  ✓ Albanian CSV guidance preserves machine-readable field names');
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -1849,7 +1905,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id, nl, hi, bn).
+  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id, nl, hi, bn, sq).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -1953,6 +2009,14 @@ function runNegativeTests(): void {
   expectDetected(
     'bn: placeholder prefix value',
     bnFallbackErrors({ 'a.b': '[BN] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'sq: English-identical value',
+    sqFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'sq: placeholder prefix value',
+    sqFallbackErrors({ 'a.b': '[SQ] Placeholder value' }, { 'a.b': 'Different value' }),
   );
 
   // 8. TypeScript key safety.

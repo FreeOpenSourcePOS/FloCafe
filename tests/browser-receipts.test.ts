@@ -74,7 +74,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -378,6 +378,21 @@ async function run() {
       hiHtml.includes('कुल योग') &&
       hiHtml.includes('धन्यवाद!')
     );
+
+    const sqTenant = {
+      business_name: 'FloCafe Tiranë',
+      currency: 'ALL',
+      country: 'AL',
+      timezone: 'Europe/Tirane',
+    };
+    const sqHtml = generateBillHtml(sampleEnBill, sqTenant, { language: 'sq', isReprint: true });
+    assert('SQ receipt has lang="sq-AL" and dir="ltr"', sqHtml.includes('<html lang="sq-AL" dir="ltr">'));
+    assert('SQ labels are Albanian',
+      sqHtml.includes('PRINTIM PËRSËRI') &&
+      sqHtml.includes('Dëftesë nr.') &&
+      sqHtml.includes('Totali i përgjithshëm') &&
+      sqHtml.includes('Faleminderit për vizitën!')
+    );
   }
 
   console.log('\nTest Suite 6: Canonical semantic labels and unknown-language fallback');
@@ -537,6 +552,29 @@ async function run() {
       bengaliSlip.includes('Noto Sans Bengali') &&
       bengaliSlip.includes('সাবটোটাল') &&
       bengaliSlip.includes('মোট'),
+    );
+
+    const albanianSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'Fletë porosie',
+      subtotal: 'Nëntotali',
+      discount: 'Zbritje',
+      serviceCharge: 'Tarifa e shërbimit',
+      deliveryCharge: 'Tarifa e dorëzimit',
+      packagingCharge: 'Tarifa e paketimit',
+      tax: 'Taksa',
+      total: 'Totali',
+    }, {
+      country: 'AL',
+      currency: 'ALL',
+      locale: 'sq-AL',
+      direction: 'ltr',
+    });
+    assert('Albanian order slip carries sq-AL LTR metadata and diacritics',
+      albanianSlip.includes('lang="sq-AL" dir="ltr"') &&
+      albanianSlip.includes('direction:ltr;text-align:left;') &&
+      albanianSlip.includes('Fletë porosie') &&
+      albanianSlip.includes('Nëntotali') &&
+      albanianSlip.includes('Totali'),
     );
   }
 

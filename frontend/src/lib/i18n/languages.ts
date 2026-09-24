@@ -141,6 +141,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/bn.json'),
   },
+  sq: {
+    locale: 'sq-AL',
+    nativeName: 'Shqip',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/sq.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

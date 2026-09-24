@@ -62,10 +62,11 @@ export const LATIN_THERMAL_CAPABILITIES: ThermalPrinterCapabilities = {
   transliteration: { enabled: true },
 };
 
-// The shipped fallback preserves the established German thermal transliteration
-// without claiming quality coverage for every accented locale.
+// The shipped fallback preserves established German and Albanian thermal
+// transliteration without claiming quality coverage for every accented locale.
 const LATIN_ASCII_MAP: Record<string, string> = {
   Ä: 'AE', Ö: 'OE', Ü: 'UE', ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss',
+  Ç: 'C', ç: 'c', Ë: 'E', ë: 'e',
 };
 
 const CODE_PAGE_CHARACTERS: Record<Exclude<ThermalCodePage, 'ascii'>, string> = {

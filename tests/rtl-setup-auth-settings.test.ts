@@ -270,6 +270,12 @@ async function run(): Promise<void> {
   withNavigatorLanguage('fr-FR', () => {
     assert(i18nModule.getBrowserLanguage() === 'fr', 'getBrowserLanguage must return "fr" for fr-FR');
   });
+  withNavigatorLanguage('sq-AL', () => {
+    assert(i18nModule.getBrowserLanguage() === 'sq', 'getBrowserLanguage must return "sq" for sq-AL');
+  });
+  withNavigatorLanguage('sq', () => {
+    assert(i18nModule.getBrowserLanguage() === 'sq', 'getBrowserLanguage must return "sq" for sq');
+  });
   withNavigatorLanguage('en-US', () => {
     assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must honor the first supported navigator.languages preference');
   }, ['es-ES', 'en-US']);
@@ -282,7 +288,7 @@ async function run(): Promise<void> {
   console.log('  ✓ getBrowserLanguage resolves regional locales before primary-language fallbacks');
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all supported languages.
-  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn'] as const;
+  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq'] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {

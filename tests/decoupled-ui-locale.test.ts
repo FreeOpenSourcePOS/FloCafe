@@ -7,7 +7,7 @@
  * 2. Tenant timezone (e.g. America/Argentina/Buenos_Aires), calendar system, and digit
  *    preferences remain backend-authoritative and respected regardless of UI locale.
  * 3. Browser thermal receipts (web-print.ts / generateBillHtml) format receipt dates
- *    in the active UI language (en, es, fr, pt, fa, ja) for an Argentina tenant.
+ *    in the active UI language (including Albanian) for an Argentina tenant.
  * 4. WhatsApp share messages (whatsapp-share.ts) respect the active UI locale for date/amounts.
  * 5. React useFormatDate hook correctly provides localized formatting based on useLocale().
  * 6. Reviewer-visible visual evidence artifacts (HTML & PNG screenshots) are generated
@@ -87,6 +87,22 @@ async function runTests() {
   console.log('='.repeat(70));
   console.log('Testing: Decouple Date & Time Presentation Language from Tenant Country');
   console.log('='.repeat(70));
+
+  const sqDecimal = new Intl.NumberFormat('sq-AL').format(1234567.89);
+  const sqCurrency = new Intl.NumberFormat('sq-AL', { style: 'currency', currency: 'ALL' }).format(1234.56);
+  const sqDate = new Intl.DateTimeFormat('sq-AL', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date('2026-09-25T12:00:00Z'));
+  const albania = getCountryByCode('AL');
+  assert.ok(sqDecimal.includes(',') && /[\u00a0\u202f]/.test(sqDecimal), `sq-AL must use comma decimals and space grouping, got: ${sqDecimal}`);
+  assert.ok(sqCurrency.includes('Lekë'), `sq-AL ALL formatting must retain the Lekë label, got: ${sqCurrency}`);
+  assert.ok(sqDate.includes('shtator'), `sq-AL must format Albanian month names, got: ${sqDate}`);
+  assert.deepEqual(
+    albania && { locale: albania.locale, currency: albania.currency, timezone: albania.timezone },
+    { locale: 'sq-AL', currency: 'ALL', timezone: 'Europe/Tirane' },
+    'Albania country profile must remain independent from UI-language selection',
+  );
+
+  const { loadLocaleMessages } = require('../frontend/src/lib/i18n/loader') as typeof import('../frontend/src/lib/i18n/loader');
+  await Promise.all(Object.keys(LANGUAGES).map((language) => loadLocaleMessages(language as any)));
 
   const testDateUtc = new Date(Date.UTC(2026, 7, 20, 15, 30, 0)); // 2026-08-20 15:30:00 UTC = 12:30:00 in America/Argentina/Buenos_Aires (UTC-3)
   const argentinaTimezone = 'America/Argentina/Buenos_Aires';
@@ -235,7 +251,7 @@ async function runTests() {
     },
   };
 
-  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'fa' | 'ja' | 'hi'; label: string; filePrefix: string }> = [
+  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'fa' | 'ja' | 'hi' | 'sq'; label: string; filePrefix: string }> = [
     { lang: 'en', label: 'English UI', filePrefix: 'receipt-argentina-english-ui' },
     { lang: 'es', label: 'Spanish UI', filePrefix: 'receipt-argentina-spanish-ui' },
     { lang: 'fr', label: 'French UI', filePrefix: 'receipt-argentina-french-ui' },
@@ -243,6 +259,7 @@ async function runTests() {
     { lang: 'fa', label: 'Persian UI', filePrefix: 'receipt-argentina-persian-ui' },
     { lang: 'ja', label: 'Japanese UI', filePrefix: 'receipt-argentina-japanese-ui' },
     { lang: 'hi', label: 'Hindi UI', filePrefix: 'receipt-argentina-hindi-ui' },
+    { lang: 'sq', label: 'Albanian UI', filePrefix: 'receipt-argentina-albanian-ui' },
   ];
 
   const receiptResults: Record<string, { html: string; htmlPath: string; pngPath: string }> = {};
@@ -278,6 +295,11 @@ async function runTests() {
       assert.ok(
         receiptHtml.includes('ago') || receiptHtml.includes('Factura'),
         `Receipt in Spanish UI must contain Spanish labels and date`,
+      );
+    } else if (lang === 'sq') {
+      assert.ok(
+        receiptHtml.includes('Dëftesë nr.') || receiptHtml.includes('Nëntotali'),
+        `Receipt in Albanian UI must contain Albanian labels and date`,
       );
     }
 

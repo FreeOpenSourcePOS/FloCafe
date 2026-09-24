@@ -29,6 +29,12 @@ import {
   PRINT_LABEL_LANGUAGES,
 } from '../main/print/print-labels.generated';
 import { LANGUAGES } from '../frontend/src/lib/i18n/languages';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  isThermalTextRepresentable,
+  normalizeThermalText,
+} from '../shared/print/thermal-capabilities';
+import { displayCellWidth, truncateToDisplayCells, wrapToDisplayCells } from '../shared/print/width';
 import { renderCompactReceiptViaDocument } from '../main/printers/document-compact';
 import { renderClassicReceiptViaDocument } from '../main/printers/document-classic';
 
@@ -122,6 +128,8 @@ function run(): void {
   assert('nl resolves grand total to Dutch', printLabel('nl', 'print.grandTotal') === 'TOTAAL');
   assert('hi resolves grand total to Hindi', printLabel('hi', 'print.grandTotal') === 'कुल योग');
   assert('bn resolves grand total to Bengali', printLabel('bn', 'print.grandTotal') === 'মোট');
+  assert('sq resolves grand total to Albanian', printLabel('sq', 'print.grandTotal') === 'TOTALI');
+  assert('sq resolves invoice and KOT labels', printLabel('sq', 'print.invoiceNumber') === 'Fatura nr.:' && printLabel('sq', 'print.kot.banner') === 'POROSI E KUZHINËS');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
   assert('unknown language falls back to English', printLabel('xx', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');
@@ -132,6 +140,7 @@ function run(): void {
   assert('nl resolves borrowed pos.subtotal', printLabel('nl', 'pos.subtotal') === 'Subtotaal');
   assert('hi resolves borrowed pos.subtotal', printLabel('hi', 'pos.subtotal') === 'उप-योग');
   assert('bn resolves borrowed pos.subtotal', printLabel('bn', 'pos.subtotal') === 'সাবটোটাল');
+  assert('sq resolves borrowed pos.subtotal', printLabel('sq', 'pos.subtotal') === 'Nëntotali');
   const localeCodes = Object.keys(LANGUAGES);
   assert('generated print locales derive from the canonical registry', JSON.stringify(PRINT_LABEL_LANGUAGES) === JSON.stringify(localeCodes));
   for (const locale of localeCodes) {
@@ -209,6 +218,14 @@ function run(): void {
     const deText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'de-DE', undefined, deWarnings, false, 'de'));
     assert('de KOT banner survives generic thermal output', deText.includes('KUECHENBESTELLSCHEIN'));
     assert('de KOT umlaut fallback emits no warning', deWarnings.length === 0);
+    const sqWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const sqText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'sq-AL', undefined, sqWarnings, false, 'sq'));
+    assert('sq KOT banner survives generic thermal fallback', sqText.includes('POROSI E KUZHINES'));
+    assert('sq KOT fallback emits no warning for Albanian diacritics', sqWarnings.length === 0);
+    assert('Albanian Ë/ë and Ç/ç normalize for ASCII thermal output', normalizeThermalText('Ëmbëlsirë Çaj', GENERIC_THERMAL_CAPABILITIES) === 'Embelsire Caj');
+    assert('Albanian fallback remains representable', isThermalTextRepresentable('Embelsire Caj', GENERIC_THERMAL_CAPABILITIES));
+    assert('precomposed Albanian diacritics occupy one thermal display cell', displayCellWidth('Ë') === 1 && displayCellWidth('ë') === 1 && displayCellWidth('Ç') === 1 && displayCellWidth('ç') === 1);
+    assert('Albanian truncation and wrapping keep grapheme clusters intact', truncateToDisplayCells('Ëmbëlsirë', 1) === 'Ë' && wrapToDisplayCells('Ëmbëlsirë', 3).join('') === 'Ëmbëlsirë');
   }
 
   console.log('\n✅ Test 5: test page honors language');

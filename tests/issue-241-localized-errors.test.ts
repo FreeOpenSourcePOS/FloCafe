@@ -94,7 +94,7 @@ function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-const LANGUAGES = ['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi'] as const;
+const LANGUAGES = ['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi', 'sq'] as const;
 type Lang = (typeof LANGUAGES)[number];
 
 const t = (key: string, lang: Lang, params?: Record<string, string | number>): string => {
@@ -247,7 +247,7 @@ async function run(): Promise<void> {
   const generatedArtifacts: Array<{ kind: string; label: string; path: string }> = [];
 
   // =========================================================================
-  // 1. Check all required translation keys across en, es, fr, pt, fa
+  // 1. Check all required translation keys across the focused locale matrix
   // =========================================================================
   const REQUIRED_KEYS = [
     'pos.printingFailed',

@@ -22,6 +22,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   nl: { basic: 'Basisbon (thermisch)', web: 'Webafdruk (browser)', whatsapp: 'Delen via WhatsApp' },
   hi: { basic: 'मूल रसीद (थर्मल)', web: 'वेब प्रिंट (ब्राउज़र)', whatsapp: 'WhatsApp शेयर' },
   bn: { basic: 'মৌলিক রসিদ (থার্মাল)', web: 'ওয়েব প্রিন্ট (ব্রাউজার)', whatsapp: 'হোয়াটসঅ্যাপ শেয়ার করুন' },
+  sq: { basic: 'Dëftesë bazë (termike)', web: 'Printim në web (shfletues)', whatsapp: 'Ndarje përmes WhatsApp' },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

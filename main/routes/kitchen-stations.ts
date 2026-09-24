@@ -18,8 +18,17 @@ function normalizeCategoryIds(value: unknown): string[] | null {
 function categoryIdsExist(db: ReturnType<typeof getDatabase>, categoryIds: string[]) {
   if (categoryIds.length === 0) return true;
   const placeholders = categoryIds.map(() => '?').join(',');
-  const rows = db.prepare(`SELECT id FROM categories WHERE id IN (${placeholders})`).all(...categoryIds);
+  const rows = db.prepare(`SELECT id FROM categories WHERE deleted_at IS NULL AND is_active = 1 AND id IN (${placeholders})`).all(...categoryIds);
   return rows.length === categoryIds.length;
+}
+
+function parseStoredCategoryIds(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  try {
+    return normalizeCategoryIds(JSON.parse(value)) || [];
+  } catch {
+    return [];
+  }
 }
 
 function removeCategoriesFromOtherStations(db: ReturnType<typeof getDatabase>, categoryIds: string[], excludedStationId: string) {
@@ -142,7 +151,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const { name, description, category_ids, printer_id, printer_ip, printer_port, printer_name, sort_order, is_active } = req.body;
     const db = getDatabase();
 
-    const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(req.params.id);
+    const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(req.params.id) as { category_ids: string | null } | undefined;
     if (!station) {
       return res.status(404).json({ error: 'Kitchen station not found' });
     }
@@ -151,8 +160,13 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     if (normalizedCategoryIds === null) {
       return res.status(400).json({ error: 'category_ids must be an array of valid category IDs' });
     }
-    if (normalizedCategoryIds !== undefined && !categoryIdsExist(db, normalizedCategoryIds)) {
-      return res.status(400).json({ error: 'One or more category_ids do not match an existing category' });
+    if (normalizedCategoryIds !== undefined) {
+      const previouslyAssignedIds = new Set(parseStoredCategoryIds(station.category_ids));
+      const newlyAssignedIds = normalizedCategoryIds.filter((id) => !previouslyAssignedIds.has(id));
+      // Retain historical assignments, but require newly routed categories to be active.
+      if (!categoryIdsExist(db, newlyAssignedIds)) {
+        return res.status(400).json({ error: 'One or more category_ids do not match an existing category' });
+      }
     }
     if (printer_id !== undefined && printer_id !== null) {
       if (typeof printer_id !== 'string' || printer_id.trim().length === 0) {

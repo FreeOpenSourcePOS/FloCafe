@@ -42,6 +42,7 @@ jobs:
       kds: ${{ steps.filter.outputs.kds }}
       db: ${{ steps.filter.outputs.db }}
       uninstaller: ${{ steps.filter.outputs.uninstaller }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -53,6 +54,7 @@ jobs:
             kds: ['main/kds-server.ts', 'main/services/kds.ts', 'main/routes/kds.ts', 'tests/kds-*.test.ts']
             db: ['main/db.ts', 'main/migrations/**', 'tests/fixtures/upgrade-snapshots/**', 'tests/upgrade-path.test.ts']
             uninstaller: ['scripts/uninstallers/**', 'tests/windows-uninstaller.Tests.ps1', 'tests/run-windows-uninstaller-tests.cjs', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']
+            docs: ['docs/**', '*.md', 'DOCUMENTATION.md', '.markdownlint-cli2.jsonc', 'scripts/docs/**', '.github/pull_request_template.md']
 
   # 3. Tax Safety Net
   # This deliberately runs independently of path filtering so every push to
@@ -324,7 +326,35 @@ jobs:
       - name: Run Windows uninstaller Pester tests
         run: node tests/run-windows-uninstaller-tests.cjs
 
-  # 7. Required Checks Gate
+  # 7. Documentation Checks
+  # Structural checks (Markdown lint, relative links, index completeness) gate.
+  # The policy half is a ratchet: it reports development-process material and
+  # only warns until the corpus is clean.
+  docs-checks:
+    name: Documentation Checks
+    needs: changes
+    if: ${{ needs.changes.outputs.docs == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint Markdown and validate relative links and index
+        run: npm run docs:check:structure
+
+      - name: Report documentation policy findings
+        run: npm run docs:check:policy
+
+  # 8. Required Checks Gate
   # Always report a conclusion so path-filtered skips can satisfy the ruleset's
   # required check without hiding actual job failures.
   required-checks-gate:

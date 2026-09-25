@@ -66,9 +66,8 @@ try {
 }
 
 const db = getDatabase();
-// Regional settings are no longer auto-seeded (docs/business-decisions.md,
-// "Regional settings come from signup, never from a fallback") — seed a
-// resolvable country explicitly so resolveRegionalSnapshot() doesn't throw.
+// Regional settings come from signup, never a fallback; seed one
+// explicitly so resolveRegionalSnapshot() resolves.
 db.exec("INSERT OR IGNORE INTO settings (key, value) VALUES ('country', 'IN')");
 
 // Create prerequisite rows for foreign keys

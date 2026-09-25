@@ -47,6 +47,22 @@ Results:
 | Timezone | |
 | Permissions | |
 
+## Developer documentation
+
+<!--
+docs/ describes the current system: architecture, contracts, invariants, and
+developer/maintainer workflows. Implementation plans, research notes, audits,
+PR handoffs, verification records, and future proposals do not belong there.
+If this change alters something a page already documents, update that page in
+this PR and remove the text it supersedes. Create a new page only when no
+current page owns the subject. See docs/README.md and DOCUMENTATION.md.
+-->
+
+- [ ] No developer documentation change needed
+- [ ] Existing developer documentation updated: <!-- which page, and what changed -->
+- [ ] New page justified: <!-- only if no current page owned the subject -->
+- [ ] Not applicable (docs-only or code-only change)
+
 ## Contributor checklist
 
 - [ ] This is a small isolated fix/doc update OR follows an approved issue/direction.

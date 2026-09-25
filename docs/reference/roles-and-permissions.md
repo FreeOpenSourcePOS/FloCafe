@@ -4,7 +4,7 @@
 
 FloCafe currently has five fixed staff roles: owner, manager, cashier, server, and chef. This document describes the default role boundaries in the application. It is a read-only reference - it does not configure access.
 
-The same read-only matrix is available in the Staff page for owners and managers. The runtime source of truth is [`shared/role-permissions.ts`](../shared/role-permissions.ts): backend route gates use its `ROLE_ACCESS` groups, and the in-app table is generated from its `PERMISSION_CAPABILITIES` list. This means the displayed matrix stays accurate when a route changes **if the route and capability are updated to use the shared constants**; it is not a separate database or IAM policy.
+The same read-only matrix is available in the Staff page for owners and managers. The runtime source of truth is [`shared/role-permissions.ts`](../../shared/role-permissions.ts): backend route gates use its `ROLE_ACCESS` groups, and the in-app table is generated from its `PERMISSION_CAPABILITIES` list. This means the displayed matrix stays accurate when a route changes **if the route and capability are updated to use the shared constants**; it is not a separate database or IAM policy.
 
 ## Permission matrix
 

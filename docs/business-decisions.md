@@ -16,7 +16,7 @@ Each decision states: the rule, why it exists, where it's enforced in code, how 
 
 ## Orders are never ownership-gated
 
-**Rule:** Any staff role with order access (owner, manager, cashier, server — see `docs/roles-and-permissions.md`) can view and act on **every** order, regardless of who created it. There is no "this is my order" restriction anywhere in the system.
+**Rule:** Any staff role with order access (owner, manager, cashier, server — see `docs/reference/roles-and-permissions.md`) can view and act on **every** order, regardless of who created it. There is no "this is my order" restriction anywhere in the system.
 
 **Why:** FloCafe is an open system by design. Restricting staff to only the orders they personally created adds friction (a waiter covering a colleague's table, a manager checking in on any order) without a real security benefit for this product — accountability comes from knowing who did what, not from hiding data between staff who already share a till and a kitchen.
 
@@ -47,7 +47,7 @@ Each decision states: the rule, why it exists, where it's enforced in code, how 
 5. **Refund payment method is independent of the original payment method(s)** — a card payment can be refunded in cash, or vice versa. This is deliberate (per the product decision behind this feature), not a validation gap.
 6. **Store credit** (`method: 'wallet'`) requires loyalty to be enabled and the bill to have a customer attached. It's recorded as a plain `credit` row in `loyalty_ledger` (the same mechanism cashback uses), so it's immediately spendable — no separate "refund credit" ledger type exists. This does **not** double-count as cashback on respend: `calculateCashback()` in `main/routes/bills.ts` already excludes wallet-funded spend from the cashback base.
 7. **Accepted limitation:** refunding an item/order does **not** claw back cashback that was already credited on that sale at payment time. Given FloCafe's current install-base scale (see `AGENTS.md` "Lessons from past mistakes"), building proportional cashback clawback was judged not worth the complexity for a v1. Revisit if this is observed to be abused.
-8. **No per-role permission grant exists yet.** Refund initiation is gated the same way it already was (`ROLE_ACCESS.ownerManager` at the route), not by a configurable owner-editable grant — `docs/roles-and-permissions.md` already documents that role configuration/IAM isn't available. Letting an owner grant refund access to other roles (e.g. cashier) is deferred to that future IAM work, not built here.
+8. **No per-role permission grant exists yet.** Refund initiation is gated the same way it already was (`ROLE_ACCESS.ownerManager` at the route), not by a configurable owner-editable grant — `docs/reference/roles-and-permissions.md` already documents that role configuration/IAM isn't available. Letting an owner grant refund access to other roles (e.g. cashier) is deferred to that future IAM work, not built here.
 9. Inventory is never restored by a refund (item-level or whole-bill) — consistent with how item voids/cancellations already behave.
 
 **Why:** Requested as a controlled way to reverse completed sales without reopening the order-editing surface, while keeping the two things most exposed to misuse — how far back a refund can reach, and who can approve one — deliberately tight (same-business-day cutoff, owner-only once the in-progress window has passed).

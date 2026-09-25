@@ -235,7 +235,7 @@ async function run(): Promise<void> {
         ],
         'Russian demo customers use Russia E.164 numbers independent of the selected store country',
       );
-      assert.equal(rows('tables', 'name', "id = 'tbl-demo-1'")[0].name, 'С1', 'Russian demo table label is localized');
+      assert.equal(rows('tables', 'number', "id = 'tbl-demo-1'")[0].number, 'С1', 'Russian demo table label is localized');
     }
     if (englishIdenticalSeeds.has(language)) {
       assert.deepEqual(snapshot, snapshots.get('en') ?? snapshot, `${language}: seed data follows the documented English-identical allowlist`);

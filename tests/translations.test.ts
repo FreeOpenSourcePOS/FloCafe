@@ -1884,6 +1884,35 @@ async function run(): Promise<void> {
   assert(ruMessages['tables.markCleaning'] === 'Отметить как убираемый', 'Russian table-cleaning action must describe setting a cleaning status');
   assert(ruMessages['tax.fixed'] === 'Фиксированная', 'Russian fixed tax label must describe a fixed amount');
   assert(ruMessages['tax.actionRollback'] === 'Пакет откатан', 'Russian tax-pack rollback must describe an operator action');
+  for (const [key, technicalLiteral] of [
+    ['products.csvAddonsHelp', 'group_name'],
+    ['products.csvAddonsHelp', 'addon_name'],
+    ['products.csvAddonsHelp', 'price'],
+    ['products.csvAddonsHelp', 'group_required'],
+    ['products.csvAddonsHelp', 'group_min_select'],
+    ['products.csvAddonsHelp', 'group_max_select'],
+    ['products.csvCategoriesHelp', 'name'],
+    ['products.csvCategoriesHelp', 'description'],
+    ['products.csvCategoriesHelp', 'color'],
+    ['products.csvCategoriesHelp', 'icon'],
+    ['products.csvCategoriesHelp', 'sort_order'],
+    ['products.csvProductsHelp', 'id'],
+    ['products.csvProductsHelp', 'sku'],
+    ['products.csvProductsHelp', 'name'],
+    ['products.csvProductsHelp', 'category'],
+    ['products.csvProductsHelp', 'price'],
+    ['products.csvProductsHelp', 'description'],
+    ['products.csvProductsHelp', 'cost'],
+    ['products.csvProductsHelp', 'tax_category'],
+    ['products.csvProductsHelp', 'tax_behavior'],
+    ['products.csvProductsHelp', 'cashback_percent'],
+    ['products.csvProductsHelp', 'tags'],
+    ['products.csvProductsHelp', 'non_veg'],
+    ['products.csvProductsHelp', 'is_active'],
+  ] as const) {
+    assert(ruMessages[key]?.includes(technicalLiteral), `ru.json ${key} must preserve the machine-readable CSV field ${technicalLiteral}`);
+  }
+  console.log('  ✓ Russian CSV guidance preserves machine-readable field names');
   console.log(`  ✓ no untranslated ru.json values (${RU_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
 
   const urMessages = loadedStrings.get('ur');

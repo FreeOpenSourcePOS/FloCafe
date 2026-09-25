@@ -1116,7 +1116,7 @@ const RU_INTENTIONAL_IDENTICAL = new Set<string>([
   'print.hsn', 'print.zReport.paymentCount', 'printTest.escpos',
   'products.addonSelectionRange', 'products.saleUnitCl',
   'serverApp.emailPlaceholder', 'settings.connectionUsb', 'settings.instagramPlaceholder', 'settings.ipAddressPlaceholder',
-  'settings.kds', 'settings.portPlaceholder', 'settings.registrationEmailPlaceholder',
+  'settings.kds', 'settings.portPlaceholder', 'settings.revflo', 'settings.registrationEmailPlaceholder',
   'settings.registrationLastError', 'settings.tabWhatsapp', 'settings.whatsapp',
   'setup.finedineLabel', 'setup.ownerEmailPlaceholder', 'setup.qsrLabel',
   'tax.auditCreateOverride', 'tax.auditUpdateOverride', 'update.downloadingBadge',
@@ -1881,9 +1881,12 @@ async function run(): Promise<void> {
   assert(ruMessages['pos.tagVeg'] === 'Вегетарианское' && ruMessages['products.tagVeg'] === 'Вегетарианское', 'Russian vegetarian tags must use the reviewed term');
   assert(ruMessages['pos.tagNonVeg'] === 'Не вегетарианское' && ruMessages['products.tagNonVeg'] === 'Не вегетарианское', 'Russian non-vegetarian tags must use the reviewed term');
   assert(ruMessages['settings.discountModeFlat'] === 'Только фиксированная сумма', 'Russian flat discount mode must mean a fixed amount');
-  assert(ruMessages['tables.markCleaning'] === 'Отметить как убираемый', 'Russian table-cleaning action must describe setting a cleaning status');
+  assert(ruMessages['tables.markCleaning'] === 'Отметить как требующий уборки', 'Russian table-cleaning action must describe setting a cleaning status');
   assert(ruMessages['tax.fixed'] === 'Фиксированная', 'Russian fixed tax label must describe a fixed amount');
   assert(ruMessages['tax.actionRollback'] === 'Пакет откатан', 'Russian tax-pack rollback must describe an operator action');
+  assert(ruMessages['products.fieldAddonGroups'] === 'Группы дополнений', 'Russian addon-group label must name the entity being configured');
+  assert(ruMessages['products.taxBehaviorLabel'] === 'Способ начисления налога', 'Russian tax behavior label must describe the calculation method');
+  assert(ruMessages['tax.behaviorExclusive'] === 'Налог сверх цены' && ruMessages['tax.behaviorInclusive'] === 'Налог в цене' && ruMessages['tax.behaviorExempt'] === 'Освобождено от налога', 'Russian tax behavior options must distinguish tax-exclusive, tax-inclusive, and exempt products');
   for (const [key, technicalLiteral] of [
     ['products.csvAddonsHelp', 'group_name'],
     ['products.csvAddonsHelp', 'addon_name'],

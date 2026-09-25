@@ -43,7 +43,7 @@ import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippP
 import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled } from '../../shared/print/raster';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
-import { columnsForPaperWidth as columnsForConfiguredPaperWidth } from '../../shared/print/width';
+import { columnsForPaperWidth as columnsForConfiguredPaperWidth, displayCellWidth, padToDisplayCells, truncateToDisplayCells } from '../../shared/print/width';
 import {
   bilingualLabelLines,
   buildZReportDocument,
@@ -1831,7 +1831,7 @@ function pluginSummaryRow(label: string, amount: string, layout: any, cols: numb
     ], Math.max(0, cols - labelWidth - amountWidth), cols);
   }
   const safeLabel = truncate(normalizedLabel, cols - 12, lang, capabilities);
-  return safeLabel + rightAlign(amount, cols - safeLabel.length);
+  return safeLabel + rightAlign(amount, cols - displayCellWidth(safeLabel));
 }
 
 function composePluginColumns(columns: Array<PluginLineColumn & { value: string }>, gap: number, cols: number): string {
@@ -1841,25 +1841,19 @@ function composePluginColumns(columns: Array<PluginLineColumn & { value: string 
     Number(column.width),
     column.align || 'left',
   )).join(separator);
-  return truncateCell(line, cols, false).padEnd(Math.min(cols, line.length));
+  return padToDisplayCells(truncateCell(line, cols, false), cols);
 }
 
 function alignCell(value: string, width: number, align: PluginColumnAlign): string {
-  const text = truncateCell(value, width, true);
-  if (align === 'right') return text.padStart(width);
-  if (align === 'center') {
-    const left = Math.floor((width - text.length) / 2);
-    return ' '.repeat(Math.max(0, left)) + text.padEnd(Math.max(0, width - left));
-  }
-  return text.padEnd(width);
+  return padToDisplayCells(truncateCell(value, width, true), width, align);
 }
 
 function truncateCell(text: string, length: number, ellipsis: boolean): string {
   const value = String(text || '');
   if (length <= 0) return '';
-  if (value.length <= length) return value;
-  if (!ellipsis || length <= 2) return value.slice(0, length);
-  return value.slice(0, length - 2) + '..';
+  if (displayCellWidth(value) <= length) return value;
+  if (!ellipsis || length <= 2) return truncateToDisplayCells(value, length);
+  return truncateToDisplayCells(value, length - 2) + '..';
 }
 
 

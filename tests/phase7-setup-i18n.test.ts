@@ -39,6 +39,7 @@ const {
 } = require('../main/routes/auth') as typeof import('../main/routes/auth');
 const { LANGUAGES } = require('../frontend/src/lib/i18n/languages') as typeof import('../frontend/src/lib/i18n/languages');
 const { loadLocaleMessages } = require('../frontend/src/lib/i18n/loader') as typeof import('../frontend/src/lib/i18n/loader');
+const { parsePhoneE164 } = require('../main/lib/phone') as typeof import('../main/lib/phone');
 const { createTranslator } = require('use-intl/core') as typeof import('use-intl/core');
 const { printLabel } = require('../main/print/print-labels.generated') as typeof import('../main/print/print-labels.generated');
 
@@ -89,6 +90,13 @@ async function run(): Promise<void> {
     }
 
     seedSetupProfile(db, 'demo', 'finedine', language, 'IN');
+    const seededCustomers = rows('customers', 'phone, phone_digits, country_code', 'is_active = 1');
+    for (const customer of seededCustomers) {
+      const parsed = parsePhoneE164(customer.phone, 'IN');
+      assert.ok(parsed, `${language}: demo customer phone ${customer.phone} must be valid E.164`);
+      assert.equal(customer.phone, `+${customer.phone_digits}`, `${language}: demo customer phone and digits must agree`);
+      assert.equal(customer.country_code, parsed.countryCode, `${language}: demo customer country code must follow the phone number`);
+    }
     const snapshot = {
       category: rows('categories', 'name', "id = 'cat-demo-starters'")[0].name,
       product: rows('products', 'name', "id LIKE 'prod-demo-%'")[0].name,
@@ -113,26 +121,15 @@ async function run(): Promise<void> {
 
   resetDatabase();
   seedSetupProfile(getDatabase(), 'demo', 'qsr', 'es', 'TR');
-  const selectedCountryCustomer = rows('customers', 'country_code', "id = 'cust-demo-1'")[0];
-  assert.equal(selectedCountryCustomer.country_code, '+90', 'country selection supplies customer country code independently of Spanish UI language');
+  const selectedCountryCustomer = rows('customers', 'phone, country_code', "id = 'cust-demo-1'")[0];
+  assert.equal(selectedCountryCustomer.country_code, '+54', 'E.164 demo phone country remains independent of the selected Turkish store country');
+  assert.equal(selectedCountryCustomer.phone, '+541145678901', 'Spanish demo phone remains E.164 in a non-Argentina store');
 
   resetDatabase();
   seedSetupProfile(getDatabase(), 'demo', 'qsr', 'es', 'IN');
-  const explicitCountryCustomer = rows('customers', 'country_code', "id = 'cust-demo-1'")[0];
-  assert.equal(explicitCountryCustomer.country_code, '+91', 'explicit country selection is used, not derived from the Spanish UI language');
-
-  resetDatabase();
-  seedSetupProfile(getDatabase(), 'demo', 'qsr', 'nl', 'IN');
-  const dutchCustomers = rows('customers', 'id, phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id");
-  assert.deepEqual(
-    dutchCustomers.map((customer: { id: string; phone: string; country_code: string }) => customer),
-    [
-      { id: 'cust-demo-1', phone: '+31612345678', country_code: '+31' },
-      { id: 'cust-demo-2', phone: '+31612345679', country_code: '+31' },
-      { id: 'cust-demo-3', phone: '+31612345680', country_code: '+31' },
-    ],
-    'Dutch demo phones remain valid E.164 when the selected store country differs',
-  );
+  const explicitCountryCustomer = rows('customers', 'phone, country_code', "id = 'cust-demo-1'")[0];
+  assert.equal(explicitCountryCustomer.country_code, '+54', 'E.164 demo phone country is not derived from the selected Indian store country');
+  assert.equal(explicitCountryCustomer.phone, '+541145678901', 'Spanish demo phone remains E.164 in a non-Argentina store');
 
   const filipinoArabicWarning = translate('fil', 'printWarnings.arabicShapingHint');
   assert.equal(filipinoArabicWarning.includes('Your printer'), false, 'Filipino Arabic warning is not mixed English/Filipino');

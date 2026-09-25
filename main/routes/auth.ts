@@ -535,61 +535,61 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   const demoCountry = country;
   const dialCode = dialCodeFor(demoCountry);
   if (lang === 'es') {
-    insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'María González', '1145678902', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '1145678903', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '+541145678901', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'María González', '+541145678902', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '+541145678903', dialCode, demoCountry);
   } else if (lang === 'fr') {
     insertCustomer(db, 'cust-demo-1', 'Camille Martin', '+33145678901', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Julien Bernard', '+33145678902', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-3', 'Sophie Dubois', '+33145678903', dialCode, demoCountry);
   } else if (lang === 'pt') {
-    insertCustomer(db, 'cust-demo-1', 'João Silva', '1198765432', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Maria Santos', '1198765433', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '1198765434', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'João Silva', '+551198765432', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Maria Santos', '+551198765433', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '+551198765434', dialCode, demoCountry);
   } else if (lang === 'de') {
-    insertCustomer(db, 'cust-demo-1', 'Anna Müller', '15123456789', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Lukas Schneider', '15123456790', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Sophie Weber', '15123456791', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Anna Müller', '+4915123456789', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Lukas Schneider', '+4915123456790', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Sophie Weber', '+4915123456791', dialCode, demoCountry);
   } else if (lang === 'tr') {
-    insertCustomer(db, 'cust-demo-1', 'Ayşe Yılmaz', '5321234567', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Mehmet Kaya', '5321234568', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Elif Demir', '5321234569', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Ayşe Yılmaz', '+905321234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Mehmet Kaya', '+905321234568', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Elif Demir', '+905321234569', dialCode, demoCountry);
   } else if (lang === 'fa') {
-    insertCustomer(db, 'cust-demo-1', 'علی رضایی', '9121234567', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'سارا محمدی', '9121234568', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'مریم کریمی', '9121234569', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'علی رضایی', '+989121234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'سارا محمدی', '+989121234568', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'مریم کریمی', '+989121234569', dialCode, demoCountry);
   } else if (lang === 'it') {
-    insertCustomer(db, 'cust-demo-1', 'Giulia Rossi', '3331234567', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Marco Bianchi', '3331234568', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Anna Ferrari', '3331234569', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Giulia Rossi', '+393331234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Marco Bianchi', '+393331234568', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Anna Ferrari', '+393331234569', dialCode, demoCountry);
   } else if (lang === 'ja') {
-    insertCustomer(db, 'cust-demo-1', '佐藤 花子', '9012345671', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', '鈴木 太郎', '9012345672', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', '田中 美咲', '9012345673', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', '佐藤 花子', '+819012345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', '鈴木 太郎', '+819012345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', '田中 美咲', '+819012345670', dialCode, demoCountry);
   } else if (lang === 'zh') {
-    insertCustomer(db, 'cust-demo-1', '李娜', '13800138071', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', '王伟', '13800138072', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', '张敏', '13800138073', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', '李娜', '+8613800138071', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', '王伟', '+8613800138072', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', '张敏', '+8613800138073', dialCode, demoCountry);
   } else if (lang === 'ko') {
-    insertCustomer(db, 'cust-demo-1', '김민수', '01012345678', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', '이지은', '01012345679', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', '박서연', '01012345680', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', '김민수', '+821012345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', '이지은', '+821012345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', '박서연', '+821012345670', dialCode, demoCountry);
   } else if (lang === 'id') {
-    insertCustomer(db, 'cust-demo-1', 'Budi Santoso', '81234567801', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Siti Rahayu', '81234567802', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Andi Wijaya', '81234567803', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Budi Santoso', '+6281234567801', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Siti Rahayu', '+6281234567802', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Andi Wijaya', '+6281234567803', dialCode, demoCountry);
   } else if (lang === 'ar') {
-    insertCustomer(db, 'cust-demo-1', 'علي حسن', '9876543210', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'سارة أحمد', '9876543211', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'مريم خالد', '9876543212', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'علي حسن', '+966512345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'سارة أحمد', '+966512345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'مريم خالد', '+966512345670', dialCode, demoCountry);
   } else if (lang === 'nl') {
     insertCustomer(db, 'cust-demo-1', 'Sanne de Jong', '+31612345678', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Bram Jansen', '+31612345679', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-3', 'Fleur Visser', '+31612345680', dialCode, demoCountry);
   } else {
-    insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '9876543210', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '9876543211', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '9876543212', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '+919876543210', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '+919876543211', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '+919876543212', dialCode, demoCountry);
   }
 
   const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'fr' ? 'Gérant Démo' : lang === 'pt' ? 'Gerente Demo'

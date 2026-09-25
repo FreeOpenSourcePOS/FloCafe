@@ -225,6 +225,21 @@ async function run(): Promise<void> {
   withNavigatorLanguage('pt-BR', () => {
     assert(i18nModule.getBrowserLanguage() === 'pt', 'getBrowserLanguage must return "pt" for pt-BR');
   });
+  withNavigatorLanguage('pt-PT', () => {
+    assert(i18nModule.getBrowserLanguage() === 'pt', 'getBrowserLanguage must preserve same-script regional fallback for pt-PT');
+  });
+  withNavigatorLanguage('de-CH', () => {
+    assert(i18nModule.getBrowserLanguage() === 'de', 'getBrowserLanguage must preserve same-script regional fallback for de-CH');
+  });
+  withNavigatorLanguage('zh-TW-u-nu-latn', () => {
+    assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must not fall back across zh-Hant to zh-Hans');
+  });
+  withNavigatorLanguage('zh-Hans-CN-u-nu-latn', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh', 'getBrowserLanguage must match a Unicode-extension tag to the registered zh-CN bundle');
+  });
+  withNavigatorLanguage('zh', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh', 'bare zh must preserve the registered Simplified Chinese fallback');
+  });
   withNavigatorLanguage('nl-NL', () => {
     assert(i18nModule.getBrowserLanguage() === 'nl', 'getBrowserLanguage must return "nl" for nl-NL');
   });

@@ -35,6 +35,7 @@ function loadFrontendModules() {
   try {
     return {
       webPrint: require('../frontend/src/lib/printer/web-print'),
+      orderSlipWebPrint: require('../frontend/src/lib/printer/order-slip-web-print'),
       i18n: require('../frontend/src/lib/i18n'),
       countries: require('../frontend/src/lib/countries'),
     };
@@ -43,8 +44,9 @@ function loadFrontendModules() {
   }
 }
 
-const { webPrint, i18n, countries } = loadFrontendModules();
+const { webPrint, orderSlipWebPrint, i18n, countries } = loadFrontendModules();
 const { generateBillHtml } = webPrint;
+const { generateOrderSlipHtml } = orderSlipWebPrint;
 
 let passed = 0;
 let failed = 0;
@@ -408,6 +410,74 @@ async function run() {
       unknownHtml.includes('<strong>Grand Total</strong>') &&
       unknownHtml.includes('<p>Thank you for your visit!</p>') &&
       !unknownHtml.includes('receipt.grandTotal'),
+    );
+  }
+
+  console.log('\nTest Suite 7: Tableside order-slip locale and direction contract');
+  {
+    const orderSlipLabels = {
+      title: 'فاتورة الطلب',
+      subtotal: 'المجموع الفرعي',
+      discount: 'الخصم',
+      serviceCharge: 'رسوم الخدمة',
+      deliveryCharge: 'رسوم التوصيل',
+      packagingCharge: 'رسوم التغليف',
+      tax: 'الضريبة',
+      total: 'الإجمالي',
+    };
+    const arabicSlip = generateOrderSlipHtml(testIranOrder, orderSlipLabels, {
+      paperWidth: 80,
+      country: 'SA',
+      currency: 'SAR',
+      locale: 'ar-SA',
+      direction: 'rtl',
+    });
+    assert('Arabic order slip carries its locale and RTL direction',
+      arabicSlip.includes('class="order-slip" lang="ar-SA" dir="rtl"') &&
+      arabicSlip.includes('direction:rtl;text-align:right;') &&
+      arabicSlip.includes('المجموع الفرعي') &&
+      arabicSlip.includes('الإجمالي'),
+    );
+
+    const urduSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'آرڈر سلپ',
+      subtotal: 'ذیلی میزان',
+      discount: 'رعایت',
+      serviceCharge: 'خدمت فیس',
+      deliveryCharge: 'ترسیل فیس',
+      packagingCharge: 'پیکنگ فیس',
+      tax: 'ٹیکس',
+      total: 'کل',
+    }, {
+      paperWidth: 80,
+      country: 'PK',
+      currency: 'PKR',
+      locale: 'ur-PK',
+      direction: 'rtl',
+    });
+    assert('Urdu order slip keeps explicit RTL layout and escaped labels',
+      urduSlip.includes('lang="ur-PK" dir="rtl"') &&
+      urduSlip.includes('direction:rtl;text-align:right;') &&
+      urduSlip.includes('آرڈر سلپ') &&
+      urduSlip.includes('کل') &&
+      !urduSlip.includes('<script>'),
+    );
+
+    const escapedLocaleSlip = generateOrderSlipHtml(testIranOrder, {
+      ...orderSlipLabels,
+      title: '<script>alert(1)</script>',
+    }, {
+      locale: 'ur-PK" data-test="unsafe',
+      direction: 'rtl',
+    });
+    assert('Order-slip locale attribute is escaped',
+      escapedLocaleSlip.includes('lang="ur-PK&quot; data-test=&quot;unsafe"') &&
+      !escapedLocaleSlip.includes('<script>alert(1)</script>'),
+    );
+
+    const ltrSlip = generateOrderSlipHtml(testIranOrder, orderSlipLabels, { direction: 'ltr' });
+    assert('LTR order slips retain explicit left-to-right layout',
+      ltrSlip.includes('dir="ltr"') && ltrSlip.includes('direction:ltr;text-align:left;'),
     );
   }
 

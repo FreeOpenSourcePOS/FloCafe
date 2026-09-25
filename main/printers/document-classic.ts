@@ -11,6 +11,7 @@ import type { PrintConceptId } from '../../shared/print/concepts';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
+import { displayCellWidth, padToDisplayCells, truncateToDisplayCells } from '../../shared/print/width';
 import {
   addonRows,
   appendPoweredByFooter,
@@ -251,11 +252,11 @@ function classicItemHeader(block: ItemTableBlock, nameLen: number, amtLen: numbe
   const amountLabel = normalizeThermalText(labelOf(block.header.amount), capabilities);
   const fit = (value: string, length: number): string => capabilities?.raster.enabled === true && !isThermalTextRepresentable(value, capabilities)
     ? value
-    : value.slice(0, length);
-  const item = fit(itemLabel, nameLen).padEnd(nameLen);
-  const qty = fit(qtyLabel, qtyW).padEnd(qtyW);
+    : truncateToDisplayCells(value, length);
+  const item = padToDisplayCells(fit(itemLabel, nameLen), nameLen);
+  const qty = padToDisplayCells(fit(qtyLabel, qtyW), qtyW);
   const amount = fit(amountLabel, Math.max(1, amtLen - 1));
-  return item + qty + ' '.repeat(Math.max(0, amtLen - amount.length)) + amount;
+  return item + qty + ' '.repeat(Math.max(0, amtLen - displayCellWidth(amount))) + amount;
 }
 
 /** Map a PrintDocument onto classic token-line layout. */

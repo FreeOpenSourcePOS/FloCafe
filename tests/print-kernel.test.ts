@@ -33,7 +33,11 @@ import {
   buildZReportDocument,
   displayCellWidth,
   fitThermalLine,
+  graphemeSegments,
   layoutStyledUnit,
+  padToDisplayCells,
+  truncateToDisplayCells,
+  truncateToDisplayCellsFromEnd,
   wrapToDisplayCells,
   type ThermalLayoutContext,
 } from '../shared/print';
@@ -284,6 +288,49 @@ assert.equal(fullWidthLayout.lines.join(''), fullWidthText, 'semantic layout wra
 const fullWidthHeader = wrapToDisplayCells('商品商品商品商品商品商品商品商品商', 32);
 assert.ok(fullWidthHeader.every((line) => displayCellWidth(line) <= 32), 'full-width header wrapping respects thermal display cells');
 assert.equal(fullWidthHeader.join(''), '商品商品商品商品商品商品商品商品商', 'full-width header wrapping preserves text');
+
+for (const [label, cluster] of [['Devanagari', 'क्ष'], ['Bengali', 'ক্ষ'], ['Thai', 'กำ']] as const) {
+  assert.deepEqual(graphemeSegments(cluster), [cluster], `${label} conjunct stays one grapheme cluster`);
+  assert.equal(displayCellWidth(cluster), 1, `${label} conjunct consumes one thermal display cell`);
+  assert.equal(truncateToDisplayCells(cluster, 0), '', `${label} conjunct is not partially emitted at zero cells`);
+  assert.equal(truncateToDisplayCells(`A${cluster}B`, 1), 'A', `${label} conjunct is not split when the budget ends inside it`);
+  assert.equal(truncateToDisplayCells(`A${cluster}B`, 2), `A${cluster}`, `${label} conjunct is retained when it fits whole`);
+  assert.equal(padToDisplayCells(cluster, 2), `${cluster} `, `${label} padding is measured in display cells`);
+  assert.equal(truncateToDisplayCellsFromEnd(`A${cluster}B`, 1), 'B', `${label} suffix truncation is grapheme-safe`);
+}
+
+assert.deepEqual(
+  wrapToDisplayCells(
+    `${String.fromCodePoint(0x0915, 0x094d, 0x0937)} ${String.fromCodePoint(0x0995, 0x09cd, 0x09b7)}`,
+    1,
+  ),
+  [String.fromCodePoint(0x0915, 0x094d, 0x0937), String.fromCodePoint(0x0995, 0x09cd, 0x09b7)],
+  'Indic wrapping never splits conjuncts',
+);
+
+const widthModulePath = require.resolve('../shared/print/width');
+const originalWidthModule = require.cache[widthModulePath];
+const segmenterDescriptor = Object.getOwnPropertyDescriptor(Intl, 'Segmenter');
+try {
+  Object.defineProperty(Intl, 'Segmenter', { value: undefined, writable: true, configurable: true });
+  delete require.cache[widthModulePath];
+  const fallbackWidth = require(widthModulePath) as typeof import('../shared/print/width');
+  const fallbackClusters = [
+    String.fromCodePoint(0x0915, 0x094d, 0x0937),
+    String.fromCodePoint(0x0995, 0x09cd, 0x09b7),
+    String.fromCodePoint(0x0e01, 0x0e33),
+  ];
+  assert.deepEqual(
+    fallbackClusters.map((cluster) => fallbackWidth.graphemeSegments(cluster)),
+    fallbackClusters.map((cluster) => [cluster]),
+    'fallback segmentation keeps Indic and Thai clusters together without Intl.Segmenter',
+  );
+  assert.equal(fallbackWidth.truncateToDisplayCells(`A${fallbackClusters[0]}B`, 1), 'A', 'fallback truncation never splits Indic clusters');
+} finally {
+  if (originalWidthModule) require.cache[widthModulePath] = originalWidthModule;
+  else delete require.cache[widthModulePath];
+  if (segmenterDescriptor) Object.defineProperty(Intl, 'Segmenter', segmenterDescriptor);
+}
 
 const zDocument = buildZReportDocument({
   zNumber: 7,

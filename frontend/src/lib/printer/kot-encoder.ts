@@ -2,7 +2,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
-import { columnsForReceiptPaperSize } from '@print/width';
+import { columnsForReceiptPaperSize, displayCellWidth, truncateToDisplayCells } from '@print/width';
 import { formatTime } from './format-date';
 import { normalizeThermalText } from './unicode';
 import {
@@ -73,7 +73,7 @@ export function buildKotBytes(
 
   // KOT Banner
   const bannerText = thermalSafeHeaderText(label('print.kot.banner'), 'KITCHEN ORDER TICKET', language, arabicShaping, opts.capabilities);
-  const bannerWidth = bannerText.length * 2 <= cols ? 2 : 1;
+  const bannerWidth = displayCellWidth(bannerText) * 2 <= cols ? 2 : 1;
   enc.align('center').bold(true).width(bannerWidth).height(2);
   safePrinterText(enc, bannerText, warnings, false, arabicShaping, undefined, cols, language).width(1).height(1).bold(false).newline();
 
@@ -136,7 +136,7 @@ export function buildKotBytes(
         if (addon.name) {
           const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
           const quantitySuffix = qty > 1 ? ` x${qty}` : '';
-          const addonName = truncateText(addon.name, Math.max(1, cols - 5 - quantitySuffix.length));
+          const addonName = truncateText(addon.name, Math.max(1, cols - 5 - displayCellWidth(quantitySuffix)));
           safePrinterText(enc, `   + ${addonName}${quantitySuffix}`, warnings, false, arabicShaping, undefined, undefined, language).newline();
         }
       }
@@ -182,7 +182,7 @@ function thermalRule(
 // Helpers
 function truncate(str: string, max: number, capabilities?: ThermalPrinterCapabilities): string {
   const normalized = normalizeThermalText(str, capabilities);
-  return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
+  return displayCellWidth(normalized) > max ? truncateToDisplayCells(normalized, Math.max(1, max - 1)) + '…' : normalized;
 }
 
 // Fallback label when thermal capabilities cannot represent metadata.

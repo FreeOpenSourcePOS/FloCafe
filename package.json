@@ -219,7 +219,7 @@
     "test:community-tax-packs": "node tests/run-electron-node-test.cjs tests/community-tax-packs.test.ts",
     "test:support-ticket": "node tests/run-electron-node-test.cjs tests/support-ticket.test.ts",
     "test:receipt-column-width": "ts-node --transpile-only -P tests/tsconfig.json tests/receipt-column-width.test.ts",
-    "test:phone-validation": "node tests/run-electron-node-test.cjs tests/phone-validation.test.ts",
+    "test:phone-validation": "node tests/run-electron-node-test.cjs tests/phone-validation.test.ts && node tests/run-electron-node-test.cjs tests/issue-263-phone-normalization.test.ts",
     "test:phone-migration": "node tests/run-electron-node-test.cjs tests/phone-migration.test.ts",
     "test:whatsapp-schema": "node tests/run-electron-node-test.cjs tests/whatsapp-schema.test.ts",
     "test:whatsapp-service": "ts-node --transpile-only -P tests/tsconfig.json tests/whatsapp-service.test.ts",

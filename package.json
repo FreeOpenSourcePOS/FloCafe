@@ -122,7 +122,7 @@
     "test:reports-daily-stats-table-turn": "node tests/run-electron-node-test.cjs tests/reports-daily-stats-table-turn.test.ts",
     "test:timezone-report-boundaries": "node tests/run-electron-node-test.cjs tests/timezone-report-boundaries.test.ts",
     "test:integration-happy": "node tests/run-electron-node-test.cjs tests/integration-happy-path.test.ts",
-    "test:integration-tax": "node tests/run-electron-node-test.cjs tests/integration-tax.test.ts",
+    "test:integration-tax": "node tests/run-electron-node-test.cjs tests/integration-tax.test.ts && node tests/run-electron-node-test.cjs tests/integration-inclusive-tax.test.ts",
     "test:integration-payments": "node tests/run-electron-node-test.cjs tests/integration-payments.test.ts && node tests/run-electron-node-test.cjs tests/issue-689-cashier-payments.test.ts",
     "test:issue-214": "node tests/run-electron-node-test.cjs tests/issue-214-payment-integrity.test.ts",
     "test:issue-214-auth": "node tests/run-electron-node-test.cjs tests/issue-214-auth-migration.test.ts",

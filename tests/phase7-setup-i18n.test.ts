@@ -111,6 +111,7 @@ async function run(): Promise<void> {
     if (language === 'zh-tw') {
       assert.equal(snapshot.category, '前菜', 'Taiwan Traditional Chinese demo category is localized');
       assert.equal(snapshot.product, '春捲', 'Taiwan Traditional Chinese demo product is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-sweet-sour'")[0].name, '糖醋里肌', 'Taiwan Traditional Chinese demo product uses Taiwan terminology');
       assert.equal(snapshot.manager, '示範經理', 'Taiwan Traditional Chinese demo manager is localized');
       assert.equal(snapshot.customer, '李娜', 'Taiwan Traditional Chinese demo customer is localized');
     }

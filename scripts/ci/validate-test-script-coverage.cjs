@@ -89,8 +89,10 @@ function collectReachableScripts(scripts) {
 // `node tests/run-electron-node-test.cjs tests/held-orders.test.ts`.
 function extractReferencedTestFiles(command) {
   const pattern = /(?:^|[\s'"])(tests\/[\w.\/-]+\.test\.(?:ts|cjs|js|mjs))/g;
-  const found = command.match(pattern) || [];
-  return [...new Set(found.map((match) => match.slice(1)))];
+  // match[1], not match.slice(1): the boundary alternates a real character with
+  // the zero-width `^`, so slicing by one drops the leading `t` on a match that
+  // anchors at the start of the command.
+  return [...new Set([...command.matchAll(pattern)].map((match) => match[1]))];
 }
 
 function listTestFiles() {

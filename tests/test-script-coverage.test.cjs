@@ -44,6 +44,16 @@ assert.deepEqual(
   'a file named twice is reported once',
 );
 assert.deepEqual(
+  extractReferencedTestFiles('tests/held-orders.test.ts'),
+  ['tests/held-orders.test.ts'],
+  'a command beginning directly with a suite path keeps the path intact',
+);
+assert.deepEqual(
+  extractReferencedTestFiles('ts-node tests/tables-string-ids.test.ts && tests/db.test.cjs'),
+  ['tests/tables-string-ids.test.ts', 'tests/db.test.cjs'],
+  'the `^` boundary never truncates the following path',
+);
+assert.deepEqual(
   collectReachableScripts({
     pretest: 'npm run test:outer',
     test: 'npm run test:inner && npm run lint',

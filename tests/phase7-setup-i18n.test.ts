@@ -114,6 +114,11 @@ async function run(): Promise<void> {
       assert.equal(rows('products', 'name', "id = 'prod-demo-sweet-sour'")[0].name, '糖醋里肌', 'Taiwan Traditional Chinese demo product uses Taiwan terminology');
       assert.equal(snapshot.manager, '示範經理', 'Taiwan Traditional Chinese demo manager is localized');
       assert.equal(snapshot.customer, '李娜', 'Taiwan Traditional Chinese demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => customer.phone),
+        ['+886912345678', '+886912345679', '+886912345670'],
+        'Taiwan Traditional Chinese demo customers use Taiwan E.164 numbers',
+      );
     }
     assert.equal(rows('customers', 'id', 'is_active = 1').length, 3, `${language}: demo setup seeds customers`);
     assert.equal(rows('tables', 'id', "id LIKE 'tbl-demo-%'").length, 4, `${language}: demo FineDine setup seeds tables`);

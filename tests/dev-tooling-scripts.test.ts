@@ -56,6 +56,13 @@ function runTest() {
   });
   assert.strictEqual(invalidLanguage.status, 1, 'i18n:add must reject non-canonical language codes');
   assert.match(invalidLanguage.stderr, /Invalid language code/);
+
+  const extensionLanguage = spawnSync(process.execPath, [i18nAddScript, 'en-u-nu-latn'], {
+    encoding: 'utf8',
+    cwd: rootDir,
+  });
+  assert.strictEqual(extensionLanguage.status, 1, 'i18n:add must reject Unicode-extension locale keys');
+  assert.match(extensionLanguage.stderr, /Invalid language code/);
   console.log('✓ i18n:add validation, regional keys, and no-overwrite guard verified');
 
   console.log('Testing kill-ports.js process identity matching...');

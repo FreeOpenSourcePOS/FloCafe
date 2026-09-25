@@ -22,8 +22,9 @@ if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(code)) {
 }
 
 try {
-  const canonical = new Intl.Locale(code).toString().toLowerCase();
-  if (canonical !== code) throw new Error('not a canonical locale identifier');
+  const parsed = new Intl.Locale(code);
+  const canonical = parsed.toString().toLowerCase();
+  if (canonical !== code || parsed.baseName.toLowerCase() !== code) throw new Error('not a canonical locale identifier');
 } catch {
   console.error(`Invalid language code "${code}". It must be a valid canonical BCP-47 identifier.`);
   process.exit(1);

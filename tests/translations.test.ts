@@ -1160,6 +1160,20 @@ function zhFallbackErrors(zhFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+function zhTwFallbackErrors(zhTwFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const zhTwVal = zhTwFlat[k];
+    if (zhTwVal === undefined) continue;
+    if (zhTwVal.startsWith('[ZH-TW]') || zhTwVal.startsWith('[TODO]')) {
+      errors.push(`zh-tw.json ${k} — placeholder prefix found: "${zhTwVal}"`);
+    } else if (zhTwVal === enFlat[k] && !ZH_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`zh-tw.json ${k} — identical to English value (renders as English for Taiwan users)`);
+    }
+  }
+  return errors;
+}
+
 /** Korean translation safeguards. */
 const KO_INTENTIONAL_IDENTICAL = new Set<string>([
   'auth.emailPlaceholder', 'common.appTitle', 'common.brandName', 'common.logoAlt',
@@ -1604,6 +1618,16 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated zh.json values (${ZH_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  const zhTwMessages = loadedStrings.get('zh-tw');
+  if (!zhTwMessages) throw new Error('languages registry must include the maintained zh-tw locale');
+  const zhTwErrors = zhTwFallbackErrors(zhTwMessages, loadedStrings.get('en')!);
+  if (zhTwErrors.length) {
+    console.error(`\nzh-tw.json values with errors (${zhTwErrors.length}):`);
+    for (const e of zhTwErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'zh-tw.json contains untranslated (English-identical) or placeholder values');
+  }
+  console.log(`  ✓ no untranslated zh-tw.json values (${ZH_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
+
   // 15. Korean values must not contain placeholders or fall back to English.
   const koMessages = loadedStrings.get('ko');
   if (!koMessages) throw new Error('languages registry must include the maintained ko locale');
@@ -1798,6 +1822,14 @@ function runNegativeTests(): void {
   expectDetected(
     'zh: placeholder prefix value',
     zhFallbackErrors({ 'a.b': '[ZH] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'zh-tw: English-identical value',
+    zhTwFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'zh-tw: placeholder prefix value',
+    zhTwFallbackErrors({ 'a.b': '[ZH-TW] Placeholder value' }, { 'a.b': 'Different value' }),
   );
   expectDetected(
     'ko: English-identical value',

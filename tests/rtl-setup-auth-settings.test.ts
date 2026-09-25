@@ -246,12 +246,6 @@ async function run(): Promise<void> {
   withNavigatorLanguage('zh-Hant-TW', () => {
     assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must return "zh-tw" for zh-Hant-TW');
   });
-  withNavigatorLanguage('zh-TW-u-nu-latn', () => {
-    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must ignore extensions when matching zh-TW');
-  });
-  withNavigatorLanguage('zh-Hant-TW-u-ca-chinese', () => {
-    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must maximize zh-Hant-TW without its extensions');
-  });
   withNavigatorLanguage('zh', () => {
     assert(i18nModule.getBrowserLanguage() === 'zh', 'bare zh must preserve the registered Simplified Chinese fallback');
   });

@@ -87,6 +87,13 @@ async function run(): Promise<void> {
     if (language === 'ar') {
       assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'الأطعمة', 'Arabic express category is localized');
       assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'وجبة', 'Arabic express product is localized');
+    } else if (language === 'ur') {
+      assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'کھانے', 'Urdu express food category is localized');
+      assert.equal(rows('categories', 'name', "id = 'cat-express-beverages'")[0].name, 'مشروبات', 'Urdu express beverages category is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'کھانا', 'Urdu express meal is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-tea'")[0].name, 'چائے', 'Urdu express tea is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-coffee'")[0].name, 'کافی', 'Urdu express coffee is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-snack'")[0].name, 'اسنیک', 'Urdu express snack is localized');
     } else if (language === 'bn') {
       assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'খাবার', 'Bengali express category is localized');
       assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'খাবার', 'Bengali express product is localized');
@@ -186,6 +193,21 @@ async function run(): Promise<void> {
       for (const phone of ['+84912345678', '+84912345679', '+84912345680']) {
         assert.equal(parsePhoneE164(phone, 'IN')?.e164, phone, `${language}: ${phone} remains valid E.164 with a non-Vietnam default country`);
       }
+    }
+    if (language === 'ur') {
+      assert.equal(snapshot.category, 'اسٹارٹرز', 'Urdu demo category is localized');
+      assert.equal(snapshot.product, 'پنیر ٹکّا', 'Urdu demo product is localized');
+      assert.equal(snapshot.manager, 'ڈیمو منیجر', 'Urdu demo manager is localized');
+      assert.equal(snapshot.customer, 'عمر احمد', 'Urdu demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => [customer.phone, customer.country_code]),
+        [
+          ['+923001234567', '+92'],
+          ['+923001234568', '+92'],
+          ['+923001234569', '+92'],
+        ],
+        'Urdu demo customers use Pakistan E.164 numbers independent of the selected store country',
+      );
     }
     assert.equal(rows('customers', 'id', 'is_active = 1').length, 3, `${language}: demo setup seeds customers`);
     assert.equal(rows('tables', 'id', "id LIKE 'tbl-demo-%'").length, 4, `${language}: demo FineDine setup seeds tables`);

@@ -198,6 +198,18 @@ function run(): void {
   assert.equal(shapedPair.backendWarnings.some((warning) => warning.text.includes('چای')), false);
   assert.equal(shapedPair.webusbWarnings.some((warning) => warning.text.includes('چای')), false);
 
+  const urduOrder = { ...order, items: [{ ...order.items[0], product_name: 'پنیر ٹکّا' }] };
+  const urduGenericPair = outputPair(GENERIC_THERMAL_CAPABILITIES, false, urduOrder);
+  assert.doesNotMatch(urduGenericPair.backend, /پنیر ٹکّا/);
+  assert.doesNotMatch(urduGenericPair.webusb, /پنیر ٹکّا/);
+  assert.ok(urduGenericPair.backendWarnings.some((warning) => warning.text.includes('پنیر ٹکّا')));
+  assert.ok(urduGenericPair.webusbWarnings.some((warning) => warning.text.includes('پنیر ٹکّا')));
+  const urduShapedPair = outputPair(shapingCapabilities, true, urduOrder);
+  assert.match(urduShapedPair.backend, /پنیر ٹکّا/);
+  assert.match(urduShapedPair.webusb, /پنیر ٹکّا/);
+  assert.equal(urduShapedPair.backendWarnings.some((warning) => warning.text.includes('پنیر ٹکّا')), false);
+  assert.equal(urduShapedPair.webusbWarnings.some((warning) => warning.text.includes('پنیر ٹکّا')), false);
+
   console.log('Thermal capability parity: backend and WebUSB fixtures passed.');
 }
 

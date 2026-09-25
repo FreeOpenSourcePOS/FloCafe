@@ -487,13 +487,13 @@ async function run() {
 
     const urduSlip = generateOrderSlipHtml(testIranOrder, {
       title: 'آرڈر سلپ',
-      subtotal: 'ذیلی میزان',
+      subtotal: 'ذیلی رقم',
       discount: 'رعایت',
-      serviceCharge: 'خدمت فیس',
-      deliveryCharge: 'ترسیل فیس',
-      packagingCharge: 'پیکنگ فیس',
+      serviceCharge: 'سروس چارج',
+      deliveryCharge: 'ڈیلیوری چارج',
+      packagingCharge: 'پیکنگ چارج',
       tax: 'ٹیکس',
-      total: 'کل',
+      total: 'کل رقم',
     }, {
       paperWidth: 80,
       country: 'PK',
@@ -505,7 +505,8 @@ async function run() {
       urduSlip.includes('lang="ur-PK" dir="rtl"') &&
       urduSlip.includes('direction:rtl;text-align:right;') &&
       urduSlip.includes('آرڈر سلپ') &&
-      urduSlip.includes('کل') &&
+      urduSlip.includes('ذیلی رقم') &&
+      urduSlip.includes('کل رقم') &&
       !urduSlip.includes('<script>'),
     );
 

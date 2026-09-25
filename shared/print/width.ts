@@ -69,7 +69,8 @@ function fallbackGraphemeSegments(value: string): string[] {
     const codePoint = character.codePointAt(0) ?? 0;
     const isMark = COMBINING_MARK_RE.test(character);
     const isVirama = INDIC_VIRAMA_CODE_POINTS.has(codePoint);
-    const isJoiner = codePoint === 0x200d;
+    const isZwj = codePoint === 0x200d;
+    const isZwnj = codePoint === 0x200c;
     const isVariationSelector = (codePoint >= 0xfe00 && codePoint <= 0xfe0f)
       || (codePoint >= 0xe0100 && codePoint <= 0xe01ef);
     const isThaiSaraAm = codePoint === THAI_SARA_AM_CODE_POINT;
@@ -77,7 +78,8 @@ function fallbackGraphemeSegments(value: string): string[] {
     const continuesCurrent = !current
       || isMark
       || isVirama
-      || isJoiner
+      || isZwj
+      || isZwnj
       || isVariationSelector
       || isThaiSaraAm
       || (isRegionalIndicator(codePoint) && trailingRegionalIndicatorCount(current) % 2 === 1)
@@ -88,7 +90,7 @@ function fallbackGraphemeSegments(value: string): string[] {
 
     if (continuesCurrent) {
       current += character;
-      pendingIndicConjunct = isVirama || (pendingIndicConjunct && (isJoiner || isMark));
+      pendingIndicConjunct = isVirama || (pendingIndicConjunct && (isZwj || isMark));
     } else {
       segments.push(current);
       current = character;

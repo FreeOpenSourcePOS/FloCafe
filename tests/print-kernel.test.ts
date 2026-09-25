@@ -307,8 +307,16 @@ assert.equal(fullWidthHeader.join(''), '商品商品商品商品商品商品商�
 const devanagariGrapheme = 'कि';
 assert.equal(fitThermalLine(devanagariGrapheme, 1), devanagariGrapheme, 'Devanagari combining marks are not split at a narrow width');
 assert.deepEqual(wrapToDisplayCells('किनारा', 1), ['कि', 'ना', 'रा'], 'Devanagari grapheme clusters wrap as complete units');
+const urduZwnjCluster = 'ک\u200c';
+assert.deepEqual(graphemeSegments(urduZwnjCluster), [urduZwnjCluster], 'Urdu ZWNJ stays attached to its grapheme cluster');
+assert.deepEqual(
+  graphemeSegments('خ\u200cود'),
+  ['خ\u200c', 'و', 'د'],
+  'Urdu ZWNJ stays attached to the preceding grapheme without joining the following letter',
+);
+assert.equal(displayCellWidth(urduZwnjCluster), 1, 'Urdu ZWNJ consumes no extra thermal display cell');
 
-for (const [label, cluster] of [['Devanagari', 'क्ष'], ['Bengali', 'ক্ষ'], ['Thai', 'กำ']] as const) {
+for (const [label, cluster] of [['Devanagari', 'क्ष'], ['Bengali', 'ক্ষ'], ['Thai', 'กำ'], ['Urdu', 'کّ']] as const) {
   assert.deepEqual(graphemeSegments(cluster), [cluster], `${label} conjunct stays one grapheme cluster`);
   assert.equal(displayCellWidth(cluster), 1, `${label} conjunct consumes one thermal display cell`);
   assert.equal(truncateToDisplayCells(cluster, 0), '', `${label} conjunct is not partially emitted at zero cells`);
@@ -338,6 +346,8 @@ try {
     String.fromCodePoint(0x0915, 0x094d, 0x0937),
     String.fromCodePoint(0x0995, 0x09cd, 0x09b7),
     String.fromCodePoint(0x0e01, 0x0e33),
+    'کّ',
+    'ک\u200c',
   ];
   const fallbackEmoji = String.fromCodePoint(0x1f44d, 0x1f3fd);
   const adjacentEmojiBase = String.fromCodePoint(0x1f44d);
@@ -346,7 +356,12 @@ try {
   assert.deepEqual(
     fallbackClusters.map((cluster) => fallbackWidth.graphemeSegments(cluster)),
     fallbackClusters.map((cluster) => [cluster]),
-    'fallback segmentation keeps Indic and Thai clusters together without Intl.Segmenter',
+    'fallback segmentation keeps Indic, Thai, and Urdu clusters together without Intl.Segmenter',
+  );
+  assert.deepEqual(
+    fallbackWidth.graphemeSegments('خ\u200cود'),
+    ['خ\u200c', 'و', 'د'],
+    'fallback keeps Urdu ZWNJ with the preceding grapheme without joining the following letter',
   );
   assert.deepEqual(fallbackWidth.graphemeSegments(fallbackEmoji), [fallbackEmoji], 'fallback keeps emoji modifiers attached');
   assert.deepEqual(fallbackWidth.graphemeSegments(adjacentEmoji), [fallbackEmoji, adjacentEmojiBase], 'fallback starts a new cluster after an emoji modifier');

@@ -141,6 +141,22 @@ async function run() {
     assert.equal(arabicRender.unit.complete, true);
     assert.ok(area(arabicRender.unit) > 0);
 
+    const urduRender = await renderer.render({
+      version: 1,
+      requestId: 'electron-urdu-system-font',
+      text: 'آرڈر سلپ',
+      widthDots: 120,
+      maxBandHeight: 200,
+      direction: 'rtl',
+      align: 'left',
+      style: 'normal',
+      financial: true,
+      maxLines: 4,
+    });
+    assert.equal(urduRender.ok, true, JSON.stringify(urduRender));
+    assert.equal(urduRender.unit.complete, true);
+    assert.ok(area(urduRender.unit) > 0);
+
     const hindiRender = await renderer.render({
       version: 1,
       requestId: 'electron-hindi-system-font',

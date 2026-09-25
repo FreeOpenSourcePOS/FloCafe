@@ -88,7 +88,7 @@ Repository-owned validation is offline and deterministic:
 
 ### 2.7 Language-addition inventory from recent additions
 
-The recent Italian, Japanese, Simplified Chinese, Korean, Bahasa Indonesia, and Arabic additions establish the current minimum inventory:
+The recent Dutch, Taiwan Traditional Chinese, Hindi, Bengali/Bangla, Albanian, and Vietnamese additions establish the current minimum inventory:
 
 1. canonical locale JSON with exact English parity;
 2. registry entry and lazy loader;
@@ -99,7 +99,7 @@ The recent Italian, Japanese, Simplified Chinese, Korean, Bahasa Indonesia, and 
 7. i18n guide, contributor guide, and supported-language documentation;
 8. regenerated print labels after message edits.
 
-Recent follow-up commits corrected Italian Server App wording, Korean add-on-group terminology, and Chinese KOT terminology after integration. This is evidence that terminology and print semantics need explicit review even when structural tests pass. The Arabic follow-up also demonstrated why setup hydration must remain deterministic and why generated assets must replace, rather than sit beside, source locale files.
+Recent follow-up commits corrected Italian Server App wording, Korean add-on-group terminology, and Chinese KOT terminology after integration. The Arabic follow-up corrected E.164 demo phones and stabilized RTL setup hydration. This is evidence that terminology, regional data, print semantics, and hydration need explicit review even when structural tests pass. The current-main review also found that the no-`Intl.Segmenter` width fallback detached Urdu ZWNJ from its preceding grapheme; the shared fallback now retains ZWNJ without treating it as a joining control, with native and fallback regression tests.
 
 ## 3. Urdu-specific research
 
@@ -321,23 +321,23 @@ The change is acceptable only when:
 - No database migration or stored-data rewrite.
 - No changes to unrelated RTL behavior.
 
-## 9. Validation record
+## 8. Validation record
 
 The implementation was verified on the task branch against the current `main` base.
 
-- Base commit: `a42eb51d3ee660e259d713ad87b0ee3691feabed`
+- Base commit: `2e6c82d62b4be68408cf7945129fe0dad06bc2de`
 - Branch: `fm/flocafe-urdu-language-support-r1`
 - Worktree: `/Users/gurkiratkhaira/.treehouse/FloCafe-f5cc04/3/FloCafe`
 
-- `npm run i18n:check` passed, including 15-locale registry/file consistency, 2,639-leaf parity for Urdu, ICU argument/tag parity, Urdu fallback guards, generated print-label drift, and frontend TypeScript checks.
-- `npm run test:print-labels` passed (99 print-label assertions, phase 3 regression coverage, and generator drift check).
-- `npm run test:phase6-locale-loading`, `npm run test:phase7-setup-i18n`, RTL foundation/setup/dashboard/KDS suites, browser receipts, and i18n audit remediation tests passed.
-- `npm run build:frontend` passed, and `npm run test:locale-chunks` proved Urdu is one lazy packaged chunk with no external URL reference and no eager page reference.
-- Manual Chromium verification through `chrome-devtools-axi` confirmed the Urdu option in Setup, `<html lang="ur-PK" dir="rtl">`, localized Setup copy, Pakistan currency selection (`PKR`), no horizontal overflow, Urdu `Intl` grouping/currency output, and no console errors beyond a pre-existing form-field accessibility warning.
+- `npm run i18n:check` passed with 21-locale registry/file consistency, 2,639-leaf parity for Urdu, ICU argument/tag parity, Urdu fallback guards, generated print-label drift, and frontend TypeScript checks.
+- `npm run test:print-labels` passed with 133 print-label assertions, 20-locale phase 3 coverage, and generator drift checking. `npm run test:print-kernel` and `npm run test:print-document` also passed.
+- `npm run test:phase6-locale-loading`, `npm run test:phase7-setup-i18n`, `npm run test:decoupled-ui-locale`, `npm run test:thermal-capabilities`, `npm run test:raster`, browser receipts, and all four RTL foundation/setup/dashboard/KDS suites passed. The raster suite includes a real Urdu system-font render; the thermal suite proves Urdu generic warning and shaping-capability parity.
+- `npm run lint` passed with existing warnings and no errors. `npm run build` and `npm run build:frontend` passed. `npm run test:locale-chunks` proved Urdu is one lazy packaged chunk with no external URL reference and no eager page reference.
+- Manual verification through `chrome-devtools-axi` against the production static export confirmed the Urdu option in Setup, `<html lang="ur-PK" dir="rtl">`, localized Setup copy, Pakistan country and `PKR` currency selection, no horizontal overflow, and Urdu `Intl` grouping/currency output. A fresh English control profile reproduced the existing static-export hydration diagnostic and API 404s caused by serving the export without the local API; no new Urdu-specific console error was observed. The browser also reported the existing form-field accessibility warning.
 
 Physical Urdu receipt/KOT output remains subject to the documented printer-profile and hardware test matrix. Automated checks cannot substitute for a fluent Urdu linguistic review or a physical shaping-capability test.
 
-## 10. References
+## 9. References
 
 - [IANA Language Subtag Registry](https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry) - `ur` Urdu, `PK` Pakistan.
 - [Unicode Arabic Shaping Data](https://www.unicode.org/Public/UNIDATA/ArabicShaping.txt) - contextual joining properties.

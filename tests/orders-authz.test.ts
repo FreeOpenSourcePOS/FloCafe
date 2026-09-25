@@ -100,7 +100,7 @@ async function main() {
     });
     assertEqual(cashierPin.status, 403, 'cashier PIN cannot authorize an in-progress item void');
 
-    // Orders are never ownership-gated (docs/business-decisions.md).
+    // Orders are never ownership-gated (docs/reference/product-invariants.md).
     const waiterOwnOrder = seedOrderWithItem(db, 'WAITER-OWN', 'server-authz');
     const waiterCanAdvance = await api(baseUrl, `/api/orders/${waiterOwnOrder.orderId}/status`, {
       method: 'PATCH', body: { status: 'preparing' }, headers: waiterAuth,

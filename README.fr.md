@@ -68,7 +68,7 @@ Les fonctions principales du point de vente et les données locales fonctionnent
 
 ## Langues et support régional
 
-FloCafe propose des traductions de l’interface en anglais, espagnol, français, portugais brésilien, filipino, turc, persan (farsi) avec prise en charge RTL, allemand, italien, japonais, chinois simplifié, coréen et bahasa indonésien. La langue de l’interface est indépendante du pays et des paramètres régionaux du magasin. Les règles de calcul des taxes constituent un domaine séparé. Pour contribuer aux traductions ou ajouter une langue, consultez le [guide d’internationalisation et de traduction](docs/i18n.md).
+FloCafe propose des traductions de l’interface en anglais, espagnol, français, portugais brésilien, filipino, turc, persan (farsi) avec prise en charge RTL, allemand, italien, japonais, chinois simplifié, coréen et bahasa indonésien. La langue de l’interface est indépendante du pays et des paramètres régionaux du magasin. Les règles de calcul des taxes constituent un domaine séparé. Pour contribuer aux traductions ou ajouter une langue, consultez le [guide d’internationalisation et de traduction](docs/architecture/internationalization.md).
 
 FloCafe inclut des profils pour 131 pays et 109 devises. Chaque profil définit une devise, une région et un fuseau horaire par défaut ; le propriétaire peut modifier le fuseau horaire lors de la configuration ou plus tard dans les paramètres.
 
@@ -78,7 +78,7 @@ FloCafe comprend un moteur de calcul générique ainsi que des packs fiscaux ré
 
 > **Avertissement :** FloCafe est un logiciel, et non un conseil juridique ou fiscal. Les packs fiscaux et les outils de configuration ne certifient pas à eux seuls la conformité aux réglementations locales ; chaque opérateur doit vérifier les exigences applicables à son activité.
 
-Pour les détails sur la création, la validation et le schéma des packs, consultez le [guide développeur des packs fiscaux](docs/tax-packs.md).
+Pour les détails sur la création, la validation et le schéma des packs, consultez le [guide développeur des packs fiscaux](docs/reference/tax-packs.md).
 
 ## Développement
 
@@ -122,8 +122,8 @@ Si FloCafe vous est utile, pensez à ajouter une étoile au dépôt.
 - [Index de la documentation](docs/README.md)
 - [Guide des imprimantes](docs/printers.md)
 - [Configuration et assistance Linux](docs/linux.md)
-- [Internationalisation et traductions](docs/i18n.md)
-- [Guide développeur des packs fiscaux](docs/tax-packs.md)
+- [Internationalisation et traductions](docs/architecture/internationalization.md)
+- [Guide développeur des packs fiscaux](docs/reference/tax-packs.md)
 - [Configuration des sauvegardes Google Drive](docs/google-drive-setup.md)
 - [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)

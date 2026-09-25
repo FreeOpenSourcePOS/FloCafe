@@ -189,7 +189,7 @@ async function main() {
 
     // ── Business-day eligibility window (rejected before PIN budget) ───────
     // A prior business day is fully closed to refunds regardless of who approves
-    // (see docs/business-decisions.md: completed-order refunds stay open only
+    // (see docs/reference/product-invariants.md: completed-order refunds stay open only
     // through the end of the order's own business day). A same-day, past-the-
     // 1-hour-window refund is covered separately in refund-completed-orders.test.ts,
     // since verifying it needs to reach PIN approval and would perturb this file's

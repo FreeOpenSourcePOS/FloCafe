@@ -33,7 +33,7 @@ export interface Tenant {
   currency_display?: CurrencyDisplay;
   number_digits?: DigitMode;
   calendar?: CalendarMode;
-  // Regional snapshot fields (docs/regional-snapshot.md) — derived from
+  // Regional snapshot fields (docs/architecture/regional-settings.md) — derived from
   // country + currency by resolveRegionalSnapshot(), not independent state.
   currency_symbol?: string;
   currency_position?: 'prefix' | 'suffix';

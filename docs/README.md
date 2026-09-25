@@ -1,69 +1,105 @@
-# FloCafe documentation index
+# FloCafe documentation
 
-This index classifies documentation in `docs/` so contributors and AI agents know which documents describe current runtime behavior, which describe planned designs, and which are historical records.
+`docs/` describes the current supported system: how it is put together, what contracts it holds,
+and how to perform a recurring task against it. It does not preserve development history. Plans,
+research notes, audits, verification transcripts, and future proposals live in issues, pull
+requests, and git history.
 
-## Document authority
+**Current code and tests define what FloCafe does.** Existing documentation is research material,
+not authority. When code and documentation disagree, the code wins and the documentation is wrong.
+Before writing a behavioral claim, verify it against the code, the tests, or the configuration.
 
-- **CURRENT**: Primary documentation for current supported behavior, setup, and developer workflows.
-- **ACTIVE DESIGN**: Approved architecture currently being implemented. These describe target states that may be partially ahead of current code.
-- **FORWARD-LOOKING**: Architecture proposals and plans that do not yet represent runtime contracts.
-- **HISTORICAL**: Point-in-time audits, design records, or superseded specifications retained for context. Do not use these to drive new implementation unless an approved task or issue explicitly directs it.
+**Update the page that owns the subject.** Create a new page only when no current page owns it.
+Replace stale text in place; do not append corrections, date sections, or phase notes. The authoring
+rules are in [`DOCUMENTATION.md`](../DOCUMENTATION.md), and `npm run docs:check` validates the
+tree.
 
-> **Source of truth principle**: Current code and automated tests define what FloCafe does now. Approved task descriptions and GitHub issues define what a specific change is intended to accomplish. Cross-project invariants in `AGENTS.md` and `CURRENT` documentation govern broader constraints.
+## Start here
 
----
+| Page | Read it when |
+| --- | --- |
+| [architecture/overview.md](architecture/overview.md) | You need the map: one process, three ports, three windows, and how they connect. |
+| [reference/product-invariants.md](reference/product-invariants.md) | You are about to change authorization, access control, defaults, refunds, or stock. Read this first. |
+| [AGENTS.md](../AGENTS.md) | You are an agent working in this repository. |
 
-## Documentation catalog
+## Architecture
 
-### Current documentation
+How the system is put together and why its boundaries sit where they do.
 
-| Document | Description | Scope |
-| --- | --- | --- |
-| [API.md](API.md) | Endpoint and WebSocket reference for the local Express, KDS, and Server App servers (`:3001`, `:3002`, and `:3003`). | CURRENT |
-| [linux.md](linux.md) | Linux package formats (AppImage, deb, rpm, Snap), FUSE setup, CUPS printing, and system tray behavior. | CURRENT |
-| [printers.md](printers.md) | ESC/POS printer configuration, network/USB/OS-queue/WebUSB connection types, kitchen stations, and troubleshooting. | CURRENT |
-| [printer-hardware-testing-protocol.md](printer-hardware-testing-protocol.md) | Physical hardware validation matrix, testing protocols across platforms, and test report template. | CURRENT |
-| [printing-architecture.md](printing-architecture.md) | Multilingual print pipeline architecture (epic #438): shared print kernel, PrintDocument v1 model, renderer/transport map, language policy and canonical label flow, template trust models, capability/warning semantics, testing guide, and contributor recipes. | CURRENT |
-| [google-drive-setup.md](google-drive-setup.md) | Maintainer setup for the optional Google Drive backup OAuth client. | CURRENT |
-| [mac-app-store-publishing.md](mac-app-store-publishing.md) | Fastlane, Transporter, and GitHub Actions publishing workflow for the Mac App Store build. | CURRENT |
-| [release-process.md](release-process.md) | Desktop release channels, draft verification gates, artifact naming, and explicit stable promotion. | CURRENT |
-| [upgrade-support-matrix.md](upgrade-support-matrix.md) | Evidence matrix for real installed-artifact N → N+1 upgrade coverage and explicit NOT-RUN platform cells. | CURRENT |
-| [release-evidence-index.md](release-evidence-index.md) | Permanent sanitized release-summary contract, 90-day evidence retention, manual boundaries, and #512 integration boundary. | CURRENT |
-| [tax-packs.md](tax-packs.md) | Tax pack schema, authoring guide, cryptographic signing, and catalog distribution workflow. | CURRENT |
-| [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
-| [russian-language-support.md](russian-language-support.md) | Russian locale research, terminology and printer constraints, implementation specification, and release plan. | CURRENT |
-| [hindi-language-support.md](hindi-language-support.md) | Hindi research, specification, implementation plan, challenge reviews, and print/evidence boundaries. | CURRENT |
-| [bengali-language-support.md](bengali-language-support.md) | Bengali/Bangla research, terminology, shaping and printer constraints, implementation specification, and release plan. | CURRENT |
-| [albanian-language-support.md](albanian-language-support.md) | Albanian (`sq`) locale research, terminology and printer constraints, implementation specification, and release plan. | CURRENT |
-| [vietnamese-language-support.md](vietnamese-language-support.md) | Vietnamese locale research, terminology, implementation contract, verification record, and native-printing limitations. | CURRENT |
-| [thai-language-support.md](thai-language-support.md) | Thai (`th` / `th-TH`) research report, concrete specification, implementation plan, challenge reviews, and implementation record. | CURRENT |
-| [merchant-print-templates.md](merchant-print-templates.md) | Merchant print template schema (v1), validation/compatibility policy, provenance and trust model, and bill-template selection identity. Cross-links the compliance `escpos-line-template-v1` contract (#445). | CURRENT |
-| [title-bar-phase1.md](title-bar-phase1.md) | Native-controls title-bar implementation note for the main POS Electron window, including Phase 2 Linux verification and HTML fallback controls (#457). | CURRENT |
-| [title-bar-platform-matrix.md](title-bar-platform-matrix.md) | Cross-platform verification matrix for the custom title bar, runner/local evidence, and findings (#457/#462). | CURRENT |
-| [roles-and-permissions.md](roles-and-permissions.md) | Fixed staff roles, the read-only in-app permission matrix, and its code source of truth. | CURRENT |
-| [business-decisions.md](business-decisions.md) | Running, verifiable log of explicit product/business decisions (e.g. orders are never ownership-gated) that code must not silently contradict. | CURRENT |
-| [floadmin-support-ticket-log-handoff.md](floadmin-support-ticket-log-handoff.md) | Handoff for the external cloud/floadmin service: the optional `log_tail` field now included in support ticket submissions, its size cap, and storage/retention recommendations. | CURRENT |
-| [daily-sales-export.md](daily-sales-export.md) | Owner-only daily sales export contract (XLSX Summary+Items and two-file CSV): accounting rules, reconciliation identities, file formats, and test coverage. | CURRENT |
+| Page | Subject |
+| --- | --- |
+| [overview.md](architecture/overview.md) | Processes, ports, the window set, the KDS WebSocket, and the Server App proxy. |
+| [runtime-and-lifecycle.md](architecture/runtime-and-lifecycle.md) | Startup and shutdown order, the relaunch gate, and the `dev-server.js` divergence. |
+| [desktop-build.md](architecture/desktop-build.md) | The static-export boundary, the IPC surface, and native title-bar behaviour. |
+| [data-and-migrations.md](architecture/data-and-migrations.md) | Database path, the migration array, the two fail-closed rules, and backups. |
+| [business-time.md](architecture/business-time.md) | UTC storage, business-local presentation, and day and shift boundaries. |
+| [authentication-and-authorization.md](architecture/authentication-and-authorization.md) | Roles, JWT lifecycle, the route-level authorization surface, and the boundaries the product does not harden. |
+| [printing.md](architecture/printing.md) | The print kernel, document model, language domains, renderers, transports, and printer profiles. |
+| [internationalization.md](architecture/internationalization.md) | The message catalogue, the language registry, the loader, and the derived print-label table. |
+| [regional-settings.md](architecture/regional-settings.md) | How country and currency become a regional snapshot, and who consumes it. |
+| [taxation.md](architecture/taxation.md) | The single tax calculation path, category resolution, rounding, and pack activation. |
+| [cloud-integrations.md](architecture/cloud-integrations.md) | The optional network features, what each talks to, and how each degrades offline. |
 
-### Active design & forward-looking plans
+## Reference
 
-| Document | Description | Status |
-| --- | --- | --- |
-| [tax-engine-v2-spec.md](tax-engine-v2-spec.md) | Architectural specification for Tax Engine v2, data-only country packs, and future capability plugin boundaries. *(Note: 2026-07-31 amendment establishes that country packs are catalog-only and not auto-bundled).* | ACTIVE DESIGN |
-| [cloud-v2-plan.md](cloud-v2-plan.md) | Client integration plan for FloAdmin v2 cloud coordination. Phase 1 client work is implemented in code; forward-looking multi-device sync and FloAdmin contracts remain in design/specs. | ACTIVE DESIGN / FORWARD-LOOKING |
-| [regional-snapshot.md](regional-snapshot.md) | One backend `resolveRegionalSnapshot(settings)` resolver for country, currency symbol/position/fraction digits, locale separators, and business timezone, derived from the signup country/currency via `Intl`/ISO/IANA conventions with no default country and no per-store overrides; adopted by exactly two surfaces (server app, currency input/display) with contract tests per currency archetype. Prerequisite for the #693 reimplementation; supersedes PR #697. | ACTIVE DESIGN |
-| [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md) | Capability study and decision record for non-Latin scripts (Arabic/Persian/Urdu, Hebrew, CJK, Indic) on ESC/POS hardware: approach comparison, Phase 9 capability-gated raster contract, community hardware-test matrix, and diagnostic test-page probe. Broad coverage remains hardware/font-evidence gated. | CURRENT / FORWARD-LOOKING |
-| [urdu-language-support.md](urdu-language-support.md) | Urdu locale research, terminology/specification, implementation plan, and challenge reviews. | CURRENT |
+Contracts a caller must satisfy. Looked up, not read through.
 
-### Historical records
+| Page | Subject |
+| --- | --- |
+| [api.md](reference/api.md) | Endpoint reference for the three servers, and the KDS WebSocket contract. |
+| [product-invariants.md](reference/product-invariants.md) | The deliberate product rules, each with where it is enforced and how to verify it. |
+| [roles-and-permissions.md](reference/roles-and-permissions.md) | The in-app UI capability matrix. Not the authorization reference; see the architecture page. |
+| [tax-packs.md](reference/tax-packs.md) | The `CountryPack` schema, the trust model, and the install path. |
+| [merchant-print-templates.md](reference/merchant-print-templates.md) | The merchant receipt-template wire contract, validation, and trust model. |
+| [print-templates-compliance.md](reference/print-templates-compliance.md) | The `escpos-line-template-v1` authoring contract used by signed tax packs. |
+| [daily-sales-export.md](reference/daily-sales-export.md) | The owner-only accounting export, its reconciliation identities, and file formats. |
+| [translation-terminology.md](reference/translation-terminology.md) | Script-level contracts a translation must not violate, and POS terminology. |
 
-| Document | Description | Status |
-| --- | --- | --- |
-| [security-audit-2.7.0.md](security-audit-2.7.0.md) | Security audit report for FloCafe v2.7.0 dated 2026-08-04. | HISTORICAL |
+## Guides
 
----
+Recurring procedures with an outcome.
+
+| Page | Subject |
+| --- | --- |
+| [adding-a-language.md](guides/adding-a-language.md) | Adding a locale, from scaffolding to the verification commands. |
+| [adding-a-tax-pack.md](guides/adding-a-tax-pack.md) | Authoring and shipping a country tax pack. |
+| [testing-printers.md](guides/testing-printers.md) | Validating a physical printer against the print pipeline. |
+
+## Maintainers
+
+Procedures for people with release credentials.
+
+| Page | Subject |
+| --- | --- |
+| [releases.md](maintainers/releases.md) | Channels, promotion, artifact naming, and the manual pre-release checks. |
+| [mac-app-store.md](maintainers/mac-app-store.md) | The Mac App Store workflow, its secrets, and its release notes. |
+| [upgrade-testing.md](maintainers/upgrade-testing.md) | What an upgrade test proves, and the platforms CI cannot cover. |
+
+## Architecture decisions
+
+Choices made once, with consequences that outlive the change. Each records the alternative that
+was rejected, so a future reader does not re-open a settled question.
+
+| Decision | Subject |
+| --- | --- |
+| [0001-offline-first-core.md](decisions/0001-offline-first-core.md) | Core POS operation is offline-first; network features are optional and fail gracefully. |
+| [0002-backend-authoritative-security-and-tax.md](decisions/0002-backend-authoritative-security-and-tax.md) | The renderer never decides authorization, payment, or tax. |
+| [0003-desktop-static-export.md](decisions/0003-desktop-static-export.md) | The desktop build is a static export served by Express, with no Next.js server runtime. |
+| [0004-data-only-tax-packs.md](decisions/0004-data-only-tax-packs.md) | Country tax packs are data, never executable plugins. |
+
+## Operator guides
+
+These sit at flat paths under `docs/` because they are referenced from outside this tree: the
+top-level READMEs, a merchant-visible string in the translation files, and the Linux packaging
+metadata. Do not move them without a coordinated change to those references.
+
+| Page | Audience |
+| --- | --- |
+| [printers.md](printers.md) | Merchants and support: connecting a printer and diagnosing the queue. |
+| [linux.md](linux.md) | Merchants and support: Linux packages, printing permissions, and the tray. |
+| [google-drive-setup.md](google-drive-setup.md) | Maintainers: provisioning the optional Drive backup OAuth client. |
 
 ## Other repository assets
 
-- [social-preview.html](social-preview.html): HTML template used to render Open Graph preview card graphics.
-- `images/flo-cafe-pos.webp`: Screenshot of the FloCafe point-of-sale interface used in `README.md`.
+- [`images/flo-cafe-pos.webp`](images/flo-cafe-pos.webp): the POS screenshot used in `README.md`
+  and in the Linux AppStream metadata. Do not move it.

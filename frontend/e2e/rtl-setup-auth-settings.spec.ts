@@ -164,7 +164,7 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   await captureScreenshot(page, 'setup-step1-rtl-fa.png');
 
   // A country must be selected before continuing — there is no default
-  // (docs/business-decisions.md, "Regional settings come from signup, never
+  // (docs/reference/product-invariants.md, "Regional settings come from signup, never
   // from a fallback"). Pick the first listed country.
   await page.locator('.max-h-72 button').first().click();
 

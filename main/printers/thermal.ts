@@ -1425,7 +1425,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   const lang = normalizePrintLanguage(language);
   // No business info supplied at all (e.g. a synthetic preview) — a neutral
   // explicit country + currency, never a default country or INR
-  // (docs/business-decisions.md). resolveTenantCurrency validates the
+  // (docs/reference/product-invariants.md). resolveTenantCurrency validates the
   // country before it ever looks at currency, so both must be present.
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', country: 'US', currency: 'USD' };
   // Merchant templates resolve through document pipeline; pack templates use compliance renderer.
@@ -1536,7 +1536,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   // CLDR-derived only — a stored currency_symbol setting is not an input
-  // (docs/business-decisions.md: no per-store override of a snapshot value).
+  // (docs/reference/product-invariants.md: no per-store override of a snapshot value).
   const prefix = resolveCurrencyPrefix(getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
   const normalize = (text: string): string => normalizeThermalText(text, capabilities);
   const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));

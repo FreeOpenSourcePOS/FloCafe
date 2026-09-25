@@ -68,7 +68,7 @@ Gumagana offline ang pangunahing POS operation at lokal na data. Hindi nakadepen
 
 ## Mga wika at regional support
 
-May UI translation ang FloCafe para sa English, Spanish, French, Brazilian Portuguese, Filipino, Turkish, Persian (Farsi) na may RTL support, German, Italian, Japanese, Simplified Chinese, Korean, at Bahasa Indonesia. Hiwalay ang UI language sa country at regional setting ng store, at hiwalay din ang tax calculation rules. Para sa pag-aambag ng translation o pagdaragdag ng wika, tingnan ang [Internationalization and translation guide](docs/i18n.md).
+May UI translation ang FloCafe para sa English, Spanish, French, Brazilian Portuguese, Filipino, Turkish, Persian (Farsi) na may RTL support, German, Italian, Japanese, Simplified Chinese, Korean, at Bahasa Indonesia. Hiwalay ang UI language sa country at regional setting ng store, at hiwalay din ang tax calculation rules. Para sa pag-aambag ng translation o pagdaragdag ng wika, tingnan ang [Internationalization and translation guide](docs/architecture/internationalization.md).
 
 May profile ang FloCafe para sa 131 bansa at 109 currency. Tinutukoy ng bawat profile ang default currency, locale, at timezone; maaaring baguhin ng may-ari ang timezone sa setup o sa Settings.
 
@@ -78,7 +78,7 @@ May generic calculation engine at signed, versioned regional tax pack ang FloCaf
 
 > **Paalala:** Software ang FloCafe, hindi legal o tax advice. Hindi awtomatikong nagpapatunay ng pagsunod sa lokal na regulasyon ang tax pack at configuration tool; responsibilidad ng operator na beripikahin ang mga requirement para sa negosyo nito.
 
-Para sa detalye tungkol sa pag-author, validation, at schema ng pack, tingnan ang [tax pack developer guide](docs/tax-packs.md).
+Para sa detalye tungkol sa pag-author, validation, at schema ng pack, tingnan ang [tax pack developer guide](docs/reference/tax-packs.md).
 
 ## Development
 
@@ -122,8 +122,8 @@ Kung kapaki-pakinabang sa iyo ang FloCafe, pag-isipang i-star ang repository.
 - [Documentation index](docs/README.md)
 - [Printer guide](docs/printers.md)
 - [Linux setup and support](docs/linux.md)
-- [Internationalization and translations](docs/i18n.md)
-- [Tax pack developer guide](docs/tax-packs.md)
+- [Internationalization and translations](docs/architecture/internationalization.md)
+- [Tax pack developer guide](docs/reference/tax-packs.md)
 - [Google Drive backup setup](docs/google-drive-setup.md)
 - [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)

@@ -81,7 +81,7 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
 
   // Login must never fail on a missing/unresolvable regional snapshot
   // (unreachable for an authenticated, post-setup store per
-  // docs/business-decisions.md) — degrade to a neutral en-US-shaped format
+  // docs/reference/product-invariants.md) — degrade to a neutral en-US-shaped format
   // rather than throw, and never silently claim India.
   let snapshot: RegionalSnapshot | null = null;
   try {
@@ -1303,7 +1303,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     } = req.body;
     const email = normalizeEmail(req.body.email);
     // Regional settings come from signup, never from a fallback — see
-    // docs/business-decisions.md. There is no default country.
+    // docs/reference/product-invariants.md. There is no default country.
     const resolvedCountry = typeof country === 'string' ? getCountryByCode(country) : undefined;
     if (!resolvedCountry) {
       return res.status(400).json({ error: 'A valid country is required' });

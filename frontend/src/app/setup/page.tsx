@@ -84,7 +84,7 @@ export default function SetupPage() {
   const setStoreLanguage = usePosSettingsStore((s) => s.setLanguage);
   const [browserLanguage, setBrowserLanguage] = useState<Language>('en');
   // No default country: regional settings come only from what the owner
-  // selects here (docs/business-decisions.md, "Regional settings come from
+  // selects here (docs/reference/product-invariants.md, "Regional settings come from
   // signup, never from a fallback").
   const [country, setCountry] = useState<string>('');
   const [currency, setCurrency] = useState<string>('');

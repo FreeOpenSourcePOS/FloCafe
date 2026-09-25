@@ -1,6 +1,6 @@
 /**
  * Coverage for order_audit_log: every order/item mutation records who did it
- * (docs/business-decisions.md — orders are never ownership-gated, so the
+ * (docs/reference/product-invariants.md — orders are never ownership-gated, so the
  * audit trail is what makes each action traceable).
  * Run: npm run test:order-audit-log
  */

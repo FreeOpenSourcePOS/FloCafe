@@ -926,7 +926,7 @@ documents only the two routes.
 | Daily sales export accounting and reconciliation contract | [Daily sales export](daily-sales-export.md) |
 | Merchant print template payload and offline transfer format | [Merchant print templates](merchant-print-templates.md) |
 | Business dates, day boundaries, and timestamp storage | [Business time](../architecture/business-time.md) |
-| Printer drivers, ESC/POS, and print routing | [Printing architecture](../printing-architecture.md) |
+| Printer drivers, ESC/POS, and print routing | [Printing architecture](../architecture/printing.md) |
 | Device Master PIN second factor | [`main/middleware/master-pin.ts`](../../main/middleware/master-pin.ts) |
 
 ## Coverage

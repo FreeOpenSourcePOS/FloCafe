@@ -7,7 +7,7 @@ run-name: Runtime upgrade matrix ${{ inputs.matrix_dispatch_id }}
 # it via the same Master-PIN-gated IPC the UI uses, and verifies version and
 # data persistence after relaunch.
 #
-# macOS rows run locally (see docs/upgrade-support-matrix.md); this workflow
+# macOS rows run locally (see docs/maintainers/upgrade-testing.md); this workflow
 # covers the GitHub-hosted-runner platforms.
 
 on:

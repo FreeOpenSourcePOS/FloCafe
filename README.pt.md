@@ -68,7 +68,7 @@ A operação principal do PDV e os dados locais funcionam offline. A criação d
 
 ## Idiomas e suporte regional
 
-O FloCafe inclui traduções da interface em inglês, espanhol, francês, português brasileiro, filipino, turco, persa (farsi) com suporte RTL, alemão, italiano, japonês, chinês simplificado, coreano e bahasa indonésio. O idioma da interface é independente do país e das configurações regionais da loja. As regras de cálculo de impostos são uma área separada. Para contribuir com traduções ou adicionar idiomas, consulte o [guia de internacionalização e traduções](docs/i18n.md).
+O FloCafe inclui traduções da interface em inglês, espanhol, francês, português brasileiro, filipino, turco, persa (farsi) com suporte RTL, alemão, italiano, japonês, chinês simplificado, coreano e bahasa indonésio. O idioma da interface é independente do país e das configurações regionais da loja. As regras de cálculo de impostos são uma área separada. Para contribuir com traduções ou adicionar idiomas, consulte o [guia de internacionalização e traduções](docs/architecture/internationalization.md).
 
 O FloCafe inclui perfis para 131 países e 109 moedas. Cada perfil define moeda, localidade e fuso horário padrão; o proprietário pode alterar o fuso durante a configuração ou depois em Configurações.
 
@@ -78,7 +78,7 @@ O FloCafe inclui um mecanismo genérico de cálculo e pacotes fiscais regionais 
 
 > **Aviso:** FloCafe é software, não aconselhamento jurídico ou fiscal. Pacotes fiscais e ferramentas de configuração não certificam, por si só, conformidade com as normas locais; cada operador é responsável por verificar os requisitos aplicáveis ao seu negócio.
 
-Para detalhes sobre autoria, validação e esquema dos pacotes, consulte o [guia de desenvolvimento de pacotes fiscais](docs/tax-packs.md).
+Para detalhes sobre autoria, validação e esquema dos pacotes, consulte o [guia de desenvolvimento de pacotes fiscais](docs/reference/tax-packs.md).
 
 ## Desenvolvimento
 
@@ -122,8 +122,8 @@ Se o FloCafe for útil para você, considere deixar uma estrela no repositório.
 - [Índice da documentação](docs/README.md)
 - [Guia de impressoras](docs/printers.md)
 - [Configuração e suporte do Linux](docs/linux.md)
-- [Internacionalização e traduções](docs/i18n.md)
-- [Guia de desenvolvimento de pacotes fiscais](docs/tax-packs.md)
+- [Internacionalização e traduções](docs/architecture/internationalization.md)
+- [Guia de desenvolvimento de pacotes fiscais](docs/reference/tax-packs.md)
 - [Configuração de backup no Google Drive](docs/google-drive-setup.md)
 - [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)

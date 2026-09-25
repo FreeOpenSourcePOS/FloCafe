@@ -141,7 +141,7 @@ function businessShape(s: Record<string, string>) {
     business_name: s.business_name || '',
     // Regional fields degrade to empty rather than throw — Settings must
     // never fail to load for an authenticated user (should be unreachable
-    // post-setup; see docs/business-decisions.md).
+    // post-setup; see docs/reference/product-invariants.md).
     timezone: s.timezone || '',
     business_day_start_time: s.business_day_start_time || '00:00',
     currency: s.currency || '',

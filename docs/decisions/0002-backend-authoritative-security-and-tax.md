@@ -23,8 +23,9 @@ renderer-side check reads as correct in review, so it survives long enough to be
 Security-critical, payment, and tax calculations are decided in the backend. The renderer never
 decides.
 
-- Authorization is enforced at the route, by role, in the backend. The authorization surface is
-  roughly 225 `requireRole(` call sites across `main/routes/*.ts`, plus checks inside transaction
+- Authorization is enforced at the route, in the backend, by resolving each request's effective
+  permissions from the database. The authorization surface is roughly 240 `requirePermission(`/
+  `requireAnyPermission(` call sites across `main/routes/*.ts`, plus checks inside transaction
   bodies on the endpoints registered inline on `app`, which no middleware can see. See
   [authentication and authorization](../architecture/authentication-and-authorization.md).
 - Tax calculation has exactly one path: `TaxEngine.calculate()` in

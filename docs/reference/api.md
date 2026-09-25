@@ -681,25 +681,26 @@ Router: declared inline in `main/routes/index.ts`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/tax/preview` | any authenticated role | body: `items`, `customer_id`, `packaging_charge`, `delivery_charge`, `service_charge`, `discount_type`, `discount_value` | `400` when `items` is missing or empty. Returns the tax rollup for a hypothetical basket without persisting anything. This endpoint carries **no** `requireRole` gate: any authenticated role may price a basket. |
+| `POST` | `/api/tax/preview` | `ROLE_ACCESS.ownerManager` | body: `items`, `customer_id`, `packaging_charge`, `delivery_charge`, `service_charge`, `discount_type`, `discount_value` | `400` when `items` is missing or empty. Returns the tax rollup for a hypothetical basket without persisting anything. |
 | `GET` | `/api/tax/categories` | `ROLE_ACCESS.ownerManager` | none | `{ pack_id, country, categories, default_category_id, configuration_ready, unclassified_category_id }`. `categories` is empty until the pack's configuration is complete. |
 | `GET` | `/api/mobile/pairing-code` | `ROLE_ACCESS.owner` | none | `{ pairing_code, expires_at, qr_data_url }`. Returns the cached code when one is live, otherwise generates one. `409` when the store is not yet claimed in FloAdmin; `502` for any other cloud failure. |
 | `POST` | `/api/mobile/rotate-code` | `ROLE_ACCESS.owner` | none | Same shape as the read, and every already paired RevFlo device is disconnected. |
 | `GET` | `/api/mobile/devices` | `ROLE_ACCESS.owner` | none | `{ devices: [ ... ] }`. `502` when FloAdmin is unreachable. |
 | `GET` | `/api/customers-search` | `ROLE_ACCESS.sales` | query: `q` | Flat array of at most 20 active customers, each with a `wallet_balance`. `q` shorter than 2 characters returns `[]`. A query with no letters is treated as phone-like and matched against stored phone digits. |
 | `GET` | `/api/crm/lookup` | `ROLE_ACCESS.sales` | query: `phone`, `country_code` | `{ found, customer }`. `400` when `phone` is missing. The number is normalized to E.164 against the tenant country before lookup. |
-| `PATCH` | `/api/orders/:orderId/items/:itemId/cancel` | any authenticated role, then an in-handler role check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
+| `PATCH` | `/api/orders/:orderId/items/:itemId/cancel` | any authenticated role, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
 | `PATCH` | `/api/orders/:orderId/items/:itemId/restore` | in-handler `ROLE_ACCESS.ownerManager` | path: `orderId`, `itemId` | Returns `{ order: { ...order, items } }`. `400` on a completed or cancelled order or a paid one. Re-deducts inventory and recipe components, and rescales an order-level percentage discount. |
 
-Both item endpoints read the caller's role from the database inside an IMMEDIATE transaction rather
-than from the JWT claim, and re-run every policy check there.
+Both item endpoints resolve the caller's effective permissions from the database inside an
+IMMEDIATE transaction rather than from the JWT claim, and re-run every policy check there.
 
 `PATCH .../cancel` is a policy switch, not a plain status write:
 
-- `403` for a role outside `ownerManager` and `cashierServer`. `cashierServer` is accepted only when
-  the item is in `preparing` or `ready`, and only with `override_pin`. An owner or manager can
-  cancel a terminal item without a PIN, in which case the call is a no-op that returns the current
-  state.
+- `403` without `orders.item.cancel` (shipped to `ROLE_ACCESS.ownerManager`) for a terminal item,
+  or without `orders.item.void` (shipped to `ROLE_ACCESS.sales`) for an item already in
+  `preparing` or `ready`. Voiding an in-progress item additionally requires `override_pin`. An
+  owner or manager can cancel a terminal item without a PIN, in which case the call is a no-op
+  that returns the current state.
 - `409` when any bill for the order is paid, partially paid, or carries payment details.
 - `400` when the order is `completed` or `cancelled`.
 - Voiding an item in preparation writes a mirrored negative `order_items` row with status

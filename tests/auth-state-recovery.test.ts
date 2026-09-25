@@ -4,7 +4,7 @@
  * is handled safely during loadFromStorage without crashing application startup.
  */
 
-const { assertEqual, assert } = require('./helpers/test-setup');
+const { assertEqualOrThrow, assertOrThrow } = require('./helpers/test-setup');
 
 // Mock localStorage
 class MockLocalStorage {
@@ -59,40 +59,40 @@ async function run() {
   // Case 1: Missing tenant data
   storage.clear();
   const case1 = parseStoredTenant(storage.getItem('tenant'));
-  assertEqual(case1.tenant, null, 'Missing tenant returns null');
-  assertEqual(case1.cleaned, false, 'No cleanup needed for missing key');
+  assertEqualOrThrow(case1.tenant, null, 'Missing tenant returns null');
+  assertEqualOrThrow(case1.cleaned, false, 'No cleanup needed for missing key');
 
   // Case 2: Malformed JSON string
   storage.clear();
   storage.setItem('tenant', 'undefined');
   const case2 = parseStoredTenant(storage.getItem('tenant'));
-  assertEqual(case2.tenant, null, 'Malformed JSON returns null tenant');
-  assertEqual(case2.cleaned, true, 'Malformed JSON removes tenant key from storage');
-  assertEqual(storage.getItem('tenant'), null, 'localStorage tenant key is now null');
+  assertEqualOrThrow(case2.tenant, null, 'Malformed JSON returns null tenant');
+  assertEqualOrThrow(case2.cleaned, true, 'Malformed JSON removes tenant key from storage');
+  assertEqualOrThrow(storage.getItem('tenant'), null, 'localStorage tenant key is now null');
 
   // Case 3: Invalid JSON object (missing numeric id property)
   storage.clear();
   storage.setItem('tenant', JSON.stringify({ name: 'Invalid Tenant' }));
   const case3 = parseStoredTenant(storage.getItem('tenant'));
-  assertEqual(case3.tenant, null, 'Object missing numeric id returns null tenant');
-  assertEqual(case3.cleaned, true, 'Invalid tenant object removes key from storage');
+  assertEqualOrThrow(case3.tenant, null, 'Object missing numeric id returns null tenant');
+  assertEqualOrThrow(case3.cleaned, true, 'Invalid tenant object removes key from storage');
 
   // Case 4: Non-object JSON (primitive string/number/boolean)
   storage.clear();
   storage.setItem('tenant', JSON.stringify(12345));
   const case4 = parseStoredTenant(storage.getItem('tenant'));
-  assertEqual(case4.tenant, null, 'Primitive JSON value returns null tenant');
-  assertEqual(case4.cleaned, true, 'Primitive JSON value removes key from storage');
+  assertEqualOrThrow(case4.tenant, null, 'Primitive JSON value returns null tenant');
+  assertEqualOrThrow(case4.cleaned, true, 'Primitive JSON value removes key from storage');
 
   // Case 5: Valid tenant object
   storage.clear();
   const validTenant = { id: 1, business_name: 'Flo Cafe', country: 'IN', currency: 'INR' };
   storage.setItem('tenant', JSON.stringify(validTenant));
   const case5 = parseStoredTenant(storage.getItem('tenant'));
-  assert(case5.tenant !== null, 'Valid tenant parsed successfully');
-  assertEqual(case5.tenant.id, 1, 'Valid tenant id matches');
-  assertEqual(case5.tenant.business_name, 'Flo Cafe', 'Valid tenant business_name matches');
-  assertEqual(case5.cleaned, false, 'Valid tenant data is preserved in storage');
+  assertOrThrow(case5.tenant !== null, 'Valid tenant parsed successfully');
+  assertEqualOrThrow(case5.tenant.id, 1, 'Valid tenant id matches');
+  assertEqualOrThrow(case5.tenant.business_name, 'Flo Cafe', 'Valid tenant business_name matches');
+  assertEqualOrThrow(case5.cleaned, false, 'Valid tenant data is preserved in storage');
 
   console.log('\n✅ Frontend Auth State Recovery tests passed!');
 }

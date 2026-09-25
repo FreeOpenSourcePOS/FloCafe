@@ -1,7 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, registerDatabaseMaintenanceStartListener, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
-import { getJWTSecret, parseCategoryIds } from '../routes/auth';
+import { getJWTSecret } from '../security/jwt-secret';
+import { parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { hasPermission } from './authorization';

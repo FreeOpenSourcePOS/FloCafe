@@ -6,7 +6,7 @@ import { requireMasterPin } from '../middleware/master-pin';
 import { asyncHandler } from '../middleware/async-handler';
 import { runHealthCheck, applySafeFixes } from '../services/schema-health';
 import { isMasterPinAvailable, isMasterPinSet, resetMasterPin } from '../services/master-pin';
-import { clearJWTSecretCache } from './auth';
+import { clearJWTSecretCache } from '../security/jwt-secret';
 import { getHttpRequestSignal } from '../shutdown';
 import { googleDrive } from '../services/google-drive';
 import { isSupportedCurrencyCode } from '../../shared/currencies';

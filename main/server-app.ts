@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import { randomUUID } from 'node:crypto';
 import { closeServerResources, createShutdownCancellationError, getHttpRequestSignal, installHttpShutdownTracking, trackHttpRequestWork } from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, isServerAppEnabled } from './db';
-import { getJWTSecret } from './routes/auth';
+import { getJWTSecret } from './security/jwt-secret';
 import { authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, rateLimit, revokeToken } from './middleware/security';
 import { getServerPort } from './server';
 import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, setServerAppPort } from './server-app-state';

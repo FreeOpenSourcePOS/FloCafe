@@ -8,7 +8,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
-import { getJWTSecret } from './routes/auth';
+import { getJWTSecret } from './security/jwt-secret';
 import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
 import expressRateLimit from 'express-rate-limit';

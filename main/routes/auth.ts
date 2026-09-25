@@ -4,6 +4,7 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import { randomBytes, randomUUID } from 'crypto';
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
+import { getJWTSecret } from '../security/jwt-secret';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode, isValidTimeZone, RegionalNotConfiguredError, resolveRegionalSnapshot, type RegionalSnapshot } from '../countries';
@@ -36,44 +37,11 @@ const VALID_SETUP_PROFILES = new Set(['empty', 'express', 'demo']);
 const VALID_SERVICE_MODELS = new Set(['qsr', 'finedine']);
 const LOCAL_SETUP_HOSTS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
-/** Lazy-loaded JWT secret stored in settings table, generated on first launch. */
-let _jwtSecret: string | null = null;
-
-export function clearJWTSecretCache(): void {
-  _jwtSecret = null;
-}
-
-export function getJWTSecret(): string {
-  if (_jwtSecret) return _jwtSecret;
-
-  // Environment variable always wins (for CI/testing)
-  if (process.env.JWT_SECRET) {
-    _jwtSecret = process.env.JWT_SECRET;
-    return _jwtSecret;
-  }
-
-  try {
-    const db = getDatabase();
-    const row = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
-
-    if (row?.value) {
-      _jwtSecret = row.value;
-    } else {
-      // First launch: generate and persist a random secret
-      _jwtSecret = randomBytes(32).toString('hex');
-      db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('jwt_secret', ?, ?)")
-        .run(_jwtSecret, now());
-      console.log('[Auth] Generated new JWT secret for this install');
-    }
-  } catch (err) {
-    // Database not ready — refuse to operate with a static secret.
-    // JWT operations will fail until the database is accessible.
-    console.error('[Auth] Database not ready — JWT secret unavailable:', err);
-    throw new Error('Database not ready — authentication unavailable');
-  }
-
-  return _jwtSecret;
-}
+// The secret itself now lives in main/security/jwt-secret.ts, which is the only
+// module allowed to hold its cache. Re-exported here for one release so the
+// ~45 test files that resolve the secret through this router do not become a
+// mechanical 45-file diff; main/ importers already point at the security module.
+export { getJWTSecret, clearJWTSecretCache } from '../security/jwt-secret';
 
 /** Build synthetic tenant object from local settings for frontend routing. */
 function buildLocalTenant(db: ReturnType<typeof getDatabase>, userId: string, userRole: string) {

@@ -4,7 +4,7 @@ import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRe
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from '../middleware/security';
 import { requirePermission } from '../services/authorization';
 import { requireMasterPin } from '../middleware/master-pin';
-import { clearJWTSecretCache } from './auth';
+import { clearJWTSecretCache } from '../security/jwt-secret';
 import * as fs from 'fs';
 import * as path from 'path';
 import { asyncHandler } from '../middleware/async-handler';

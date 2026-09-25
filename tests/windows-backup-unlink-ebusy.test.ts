@@ -163,6 +163,21 @@ async function runTests() {
       setPlatform('darwin');
       const customTarget = path.join(testDir, 'custom-backup-darwin-ebusy.db');
 
+      // createBackup only reaches the temp-file unlink after it durably syncs
+      // the staged target's directory. Windows cannot open a directory for
+      // fsync, so on a Windows host that sync fails and the non-win32 platform
+      // aborts the backup ("Could not durably stage backup target") before the
+      // unlink under test runs. Hand directory opens a real descriptor so the
+      // emulated platform also has the POSIX capability being asserted.
+      const originalOpenSync = fs.openSync;
+      const directoryFdStandIn = path.join(testDir, 'directory-fsync-stand-in');
+      fs.writeFileSync(directoryFdStandIn, '');
+      fs.openSync = function (targetFile: fs.PathLike, flags: string, mode?: any) {
+        let isDirectory = false;
+        try { isDirectory = fs.statSync(String(targetFile)).isDirectory(); } catch { }
+        return originalOpenSync.call(fs, isDirectory ? directoryFdStandIn : targetFile, flags, mode);
+      };
+
       fs.unlinkSync = function (targetFile: fs.PathLike) {
         const filePath = String(targetFile);
         if (filePath.includes('flo-backup-')) {
@@ -178,7 +193,9 @@ async function runTests() {
         await createBackup(customTarget);
       } catch (err: any) {
         threw = true;
-        check(err?.code === 'EBUSY', `re-threw EBUSY on non-Windows platform (got code: ${err?.code})`);
+        check(err?.code === 'EBUSY', `re-threw EBUSY on non-Windows platform (got code: ${err?.code}, message: ${err?.message})`);
+      } finally {
+        fs.openSync = originalOpenSync;
       }
       check(threw, 'createBackup threw on non-Windows platform when tempPath unlink failed');
     }

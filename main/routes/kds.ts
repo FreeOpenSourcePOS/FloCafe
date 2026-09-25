@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
-import { requireRole, requireKdsEnabled, requireKdsEnabledOr404, isTokenRevoked, isTokenStale } from '../middleware/security';
+import { requireKdsEnabled, requireKdsEnabledOr404, isTokenRevoked, isTokenStale } from '../middleware/security';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { parseCategoryIds } from './auth';
 import { notifyKdsUpdate } from '../services/kds';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
@@ -31,14 +32,14 @@ function getKdsUserCategoryIds(db: ReturnType<typeof getDatabase>, req: Request)
     category_ids: string | null;
     is_active: number;
   } | undefined;
-  if (!user?.is_active || !hasRole(user.role, ROLE_ACCESS.kitchen)) return null;
+  if (!user?.is_active || !hasPermission(userId, 'kitchen.use')) return null;
   return hasRole(user.role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(user.category_ids);
 }
 
 // Return 404 on pairing endpoints when KDS is disabled before checking roles.
 router.use('/pairing', requireKdsEnabledOr404);
 
-router.use(requireRole(...ROLE_ACCESS.kitchen));
+router.use(requirePermission('kitchen.use'));
 
 router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
   try {
@@ -201,7 +202,7 @@ router.get('/pairing', (req: Request, res: Response) => {
   }
 });
 
-router.post('/pairing', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/pairing', requirePermission('kitchen.pair'), (req: Request, res: Response) => {
   try {
     const { station_id } = req.body;
 
@@ -350,7 +351,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
   }
 });
 
-router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Response) => {
+router.patch('/items/:id/status', requirePermission('kitchen.status.update'), requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const { status, expected_status: expectedStatus } = req.body;
 

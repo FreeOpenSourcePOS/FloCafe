@@ -12,8 +12,7 @@ import {
   isKotItemPending,
 } from '../../shared/print';
 import { getSupportedPrinterProfiles, resolvePrinterProfile, capabilitiesForPrinter } from '../printers/profiles';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
@@ -95,7 +94,7 @@ export function getEffectiveOrderItems(db: any, orderId: string): any[] {
 }
 
 // GET /api/printers — list all
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', requirePermission('printers.manage'), (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all().map(printerShape);
@@ -107,7 +106,7 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 // GET /api/printers/detect — detect connected USB/network printers
-router.get('/detect', asyncHandler(async (req: Request, res: Response) => {
+router.get('/detect', requirePermission('printers.manage'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const printers = await detectConnectedPrinters(getHttpRequestSignal(req));
     console.log('[Printer] Detected printers:', printers);
@@ -125,12 +124,12 @@ router.get('/detect', asyncHandler(async (req: Request, res: Response) => {
 }));
 
 // GET /api/printers/supported — list known printer profiles
-router.get('/supported', (_req: Request, res: Response) => {
+router.get('/supported', requirePermission('printers.manage'), (_req: Request, res: Response) => {
   res.json({ printers: getSupportedPrinterProfiles() });
 });
 
 // GET /api/printers/:id
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', requirePermission('printers.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
@@ -143,7 +142,7 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // POST /api/printers — create
-router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/', requirePermission('printers.manage'), (req: Request, res: Response) => {
   try {
     const { connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled } = req.body;
     // Trim accidental whitespace so the name matches the OS print queue exactly.
@@ -198,7 +197,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
 });
 
 // PUT /api/printers/:id — update
-router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.put('/:id', requirePermission('printers.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const existing = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
@@ -248,7 +247,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
 });
 
 // DELETE /api/printers/:id
-router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.delete('/:id', requirePermission('printers.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
@@ -274,7 +273,7 @@ router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
 });
 
 // POST /api/printers/:id/set-default
-router.post('/:id/set-default', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/set-default', requirePermission('printers.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
@@ -293,7 +292,7 @@ router.post('/:id/set-default', requireRole(...ROLE_ACCESS.ownerManager), (req: 
 });
 
 // POST /api/printers/:id/test — send a test print job
-router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
+router.post('/:id/test', requirePermission('printers.manage'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
@@ -343,7 +342,7 @@ router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(
 
 // POST /api/printers/print-bill — print bill via backend (desktop app).
 // `sales` gets the server role past this gate; the setting check below decides if it's actually allowed.
-router.post('/print-bill', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
+router.post('/print-bill', requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
   const authUser = (req as any).user;
   if (authUser?.role === 'server' && !isServerBillPrintingEnabled()) {
     return res.status(403).json({ error: 'Bill printing is disabled for the server role. An owner or manager can enable it in Settings.' });
@@ -603,7 +602,7 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
 
 // POST /api/printers/print-kot — print KOT via backend (desktop app).
 // Uses `sales` so the waiter terminal's "server" role can print its own orders.
-router.post('/print-kot', requireRole(...ROLE_ACCESS.sales), asyncHandler(async (req: Request, res: Response) => {
+router.post('/print-kot', requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
   // Enforce master KOT printing toggle for all automatic and manual print requests.
   if (!isKotPrintingEnabled()) {
     return res.status(403).json({ error: 'KOT printing is disabled for this business' });

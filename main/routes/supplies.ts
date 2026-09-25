@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import {
   SupplyMovementType,
   createSupply,
@@ -32,7 +31,7 @@ function queryString(value: unknown, field: string): string | undefined {
   return value.trim();
 }
 
-router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const includeInactive = req.query.include_inactive === 'true' || req.query.include_inactive === '1';
@@ -45,7 +44,7 @@ router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Re
   }
 });
 
-router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
@@ -64,7 +63,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
   }
 });
 
-router.get('/movements', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/movements', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const supplyId = queryString(req.query.supply_id, 'supply_id');
     const movementType = queryString(req.query.movement_type, 'movement_type') as SupplyMovementType | undefined;
@@ -94,7 +93,7 @@ router.get('/movements', requireRole(...ROLE_ACCESS.ownerManager), (req: Request
   }
 });
 
-router.get('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/:id', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const supply = getSupply(getDatabase(), String(req.params.id));
     res.json({ supply });
@@ -103,7 +102,7 @@ router.get('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
   }
 });
 
-router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.put('/:id', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const supply = updateSupply(getDatabase(), String(req.params.id), {
@@ -117,7 +116,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
   }
 });
 
-router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.delete('/:id', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     softDeleteSupply(getDatabase(), String(req.params.id));
     res.json({ success: true });
@@ -126,7 +125,7 @@ router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
   }
 });
 
-router.post('/:id/movements', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/movements', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const actorId = String((req as Request & { user?: { userId?: string } }).user?.userId || '');
     if (!actorId) return res.status(403).json({ error: 'Authentication required' });

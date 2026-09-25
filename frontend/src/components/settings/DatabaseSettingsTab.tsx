@@ -229,6 +229,15 @@ export function DatabaseSettingsTab({
     setTimeout(() => setCopiedFolder(false), 2000);
   };
 
+  if (!isOwner) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <h1 className="text-xl font-bold text-foreground mb-2">{t('tabBackupData')}</h1>
+        <p className="text-muted-foreground">{t('noAccessDatabase')}</p>
+      </div>
+    );
+  }
+
   return (
     <SettingsTabShell title={t('tabBackupData')}>
         {/* Database Export */}

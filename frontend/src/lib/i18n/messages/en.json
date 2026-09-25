@@ -1698,6 +1698,8 @@
     "navGroupOperations": "Operations",
     "newPin": "New PIN",
     "no": "No",
+    "noAccessDatabase": "You do not have access to backup and database tools.",
+    "noAccessMobileAccess": "You do not have access to mobile access settings.",
     "noAppsToShow": "No apps to show yet.",
     "noCategoriesYet": "No categories yet. Add categories under Products first.",
     "noChefsYet": "No active chef accounts yet. Add a chef under Staff first.",
@@ -2210,7 +2212,32 @@
       "serverApp": "Use the standalone Server App",
       "support": "Contact support and view diagnostics",
       "inventoryManage": "Manage supplies and recipes"
-    }
+    },
+    "editorSubtitle": "Configure role defaults or make an exception for one staff member. Changes apply to their next action.",
+    "roleDefaultsTab": "Role defaults",
+    "staffExceptionTab": "Staff exception",
+    "selectStaffPlaceholder": "Select a staff member",
+    "selectStaffEmptyState": "Select a staff member to edit their permissions.",
+    "effectiveHeader": "Effective",
+    "overrideHeader": "Override",
+    "inherit": "Inherit",
+    "allow": "Allow",
+    "deny": "Deny",
+    "protected": "Protected",
+    "editorFooterNote": "Sensitive business rules such as approval PINs, the last active owner, refund cutoffs, and kitchen station assignments still apply."
+  },
+  "permissionAudit": {
+    "title": "Permission change history",
+    "subtitle": "Every change made from Role permissions above, most recent first.",
+    "columnTime": "Time",
+    "columnActor": "Actor",
+    "columnTarget": "Target",
+    "columnPermission": "Permission",
+    "columnChange": "Change",
+    "targetTypeRole": "Role",
+    "targetTypeUser": "Staff",
+    "empty": "No permission changes yet.",
+    "loadMore": "Load more"
   },
   "support": {
     "askAi": "Ask AI",

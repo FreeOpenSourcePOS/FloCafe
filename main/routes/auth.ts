@@ -12,6 +12,7 @@ import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '..
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
+import { effectivePermissionRevision, resolveEffectivePermissions } from '../services/authorization';
 
 const router = Router();
 
@@ -75,7 +76,7 @@ export function getJWTSecret(): string {
 }
 
 /** Build synthetic tenant object from local settings for frontend routing. */
-function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) {
+function buildLocalTenant(db: ReturnType<typeof getDatabase>, userId: string, userRole: string) {
   const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
   const s: Record<string, string> = Object.fromEntries(rows.map(r => [r.key, r.value]));
 
@@ -116,6 +117,8 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
     plan: 'desktop',
     status: 'active',
     role: userRole,  // user's role — AuthGuard uses this for routing
+    permission_ids: [...(resolveEffectivePermissions(userId)?.permissionIds ?? [])],
+    authorization_revision: effectivePermissionRevision(userId),
   };
 }
 
@@ -719,7 +722,7 @@ router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Re
       { expiresIn: expiresInFor(remember) }
     );
 
-    const tenant = buildLocalTenant(db, user.role);
+    const tenant = buildLocalTenant(db, user.id, user.role);
 
     res.json({
       access_token: token,
@@ -765,7 +768,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    const tenant = buildLocalTenant(db, user.role);
+    const tenant = buildLocalTenant(db, user.id, user.role);
 
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const remember = !!decoded.remember;
@@ -864,7 +867,7 @@ router.get('/me', (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
-    const tenant = buildLocalTenant(db, user.role);
+    const tenant = buildLocalTenant(db, user.id, user.role);
 
     res.json({
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
@@ -1261,7 +1264,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       { expiresIn: JWT_EXPIRES_IN }
     );
 
-    const tenant = buildLocalTenant(db, INITIAL_ADMIN_ROLE);
+    const tenant = buildLocalTenant(db, userId, INITIAL_ADMIN_ROLE);
 
     res.json({
       access_token: token,

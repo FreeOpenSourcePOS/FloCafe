@@ -1923,9 +1923,24 @@ Each item in an order has its own status, allowing:
 
 ---
 
-## Role-Based Access
+## Configurable authorization
 
-See [Roles and permissions](roles-and-permissions.md) for the complete current role matrix. The database accepts `owner`, `manager`, `cashier`, `server`, and `chef`; the historical `waiter` label is no longer a valid role.
+Authenticated tenant payloads include `permission_ids` and `authorization_revision`. The server resolves permissions from current SQLite state for every protected action; clients must not treat JWT role claims or a cached permission list as authoritative.
+
+The database accepts the fixed identities `owner`, `manager`, `cashier`, `server`, and `chef`; the historical `waiter` label is invalid. Owners manage role defaults and user exceptions through these owner-only endpoints:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/authorization/catalog` | Stable definitions and roles |
+| GET | `/api/authorization/roles` | Role overrides, effective values, sources, and revisions |
+| PUT | `/api/authorization/roles/:role` | Atomically replace one role's override set |
+| GET | `/api/authorization/users/:userId` | User overrides and effective values |
+| GET | `/api/authorization/users` | Safe staff list for the permission editor |
+| PUT | `/api/authorization/users/:userId` | Atomically replace one user's override set |
+| DELETE | `/api/authorization/users/:userId/overrides` | Clear user exceptions and restore inheritance |
+| GET | `/api/authorization/audit` | Paginated newest-first change history |
+
+PUT and DELETE bodies require the last-seen `revision`; a stale revision returns HTTP 409. Override entries use `{ "permission_id": "reports.view", "effect": "allow" | "deny" }`. Unknown, duplicate, or protected IDs reject the entire request. See [Roles and permissions](roles-and-permissions.md) for precedence and protected rules.
 
 ---
 
@@ -1933,8 +1948,8 @@ See [Roles and permissions](roles-and-permissions.md) for the complete current r
 
 Users with `chef` role have `category_ids` array. When accessing KDS:
 1. Server validates JWT token
-2. Server checks role is `chef`, `manager`, or `owner`
-3. Server filters order items to only show products in user's categories
+2. Server checks the current `kitchen.use` or `kitchen.status.update` permission
+3. Server applies role/station/category scope and filters order items accordingly
 4. One user can have multiple categories
 
 Example: Chef1 (cat-1, cat-2) only sees Food and Beverages items.

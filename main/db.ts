@@ -5196,6 +5196,54 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.exec(`CREATE INDEX IF NOT EXISTS idx_refunds_session ON refunds(cash_session_id)`);
     },
   },
+  {
+    version: 92,
+    name: 'add_configurable_permissions',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS role_permission_overrides (
+          role TEXT NOT NULL ${USER_ROLE_SQL_CHECK},
+          permission_id TEXT NOT NULL,
+          effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),
+          updated_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (role, permission_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_role_permission_overrides_role
+          ON role_permission_overrides(role);
+
+        CREATE TABLE IF NOT EXISTS user_permission_overrides (
+          user_id TEXT NOT NULL REFERENCES users(id),
+          permission_id TEXT NOT NULL,
+          effect TEXT NOT NULL CHECK (effect IN ('allow', 'deny')),
+          updated_by TEXT NOT NULL REFERENCES users(id),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, permission_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_permission_overrides_user
+          ON user_permission_overrides(user_id);
+
+        CREATE TABLE IF NOT EXISTS authorization_audit_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          batch_id TEXT NOT NULL,
+          actor_user_id TEXT NOT NULL REFERENCES users(id),
+          target_type TEXT NOT NULL CHECK (target_type IN ('role', 'user')),
+          target_id TEXT NOT NULL,
+          permission_id TEXT NOT NULL,
+          previous_effect TEXT CHECK (previous_effect IS NULL OR previous_effect IN ('allow', 'deny')),
+          next_effect TEXT CHECK (next_effect IS NULL OR next_effect IN ('allow', 'deny')),
+          details_json TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_authorization_audit_created
+          ON authorization_audit_log(created_at, id);
+        CREATE INDEX IF NOT EXISTS idx_authorization_audit_target
+          ON authorization_audit_log(target_type, target_id, id);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

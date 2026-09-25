@@ -1698,6 +1698,8 @@
     "navGroupOperations": "Betrieb",
     "newPin": "Neue PIN",
     "no": "Nein",
+    "noAccessDatabase": "Sie haben keinen Zugriff auf Backup- und Datenbanktools.",
+    "noAccessMobileAccess": "Sie haben keinen Zugriff auf die Einstellungen für den mobilen Zugriff.",
     "noAppsToShow": "Noch keine Apps anzuzeigen.",
     "noCategoriesYet": "Noch keine Kategorien. Fügen Sie zuerst unter Produkte Kategorien hinzu.",
     "noChefsYet": "Noch keine aktiven Kochkonten. Fügen Sie zuerst unter Personal einen Koch hinzu.",
@@ -2210,7 +2212,32 @@
       "serverApp": "Eigenständige Bedienungs-App verwenden",
       "support": "Support kontaktieren und Diagnosedaten einsehen",
       "inventoryManage": "Vorräte und Rezepte verwalten"
-    }
+    },
+    "editorSubtitle": "Konfigurieren Sie Rollenvorgaben oder legen Sie eine Ausnahme für ein Teammitglied fest. Änderungen gelten ab der nächsten Aktion.",
+    "roleDefaultsTab": "Rollenvorgaben",
+    "staffExceptionTab": "Mitarbeiterausnahme",
+    "selectStaffPlaceholder": "Mitarbeiter auswählen",
+    "selectStaffEmptyState": "Wählen Sie einen Mitarbeiter aus, um dessen Berechtigungen zu bearbeiten.",
+    "effectiveHeader": "Wirksam",
+    "overrideHeader": "Überschreibung",
+    "inherit": "Erben",
+    "allow": "Erlauben",
+    "deny": "Verweigern",
+    "protected": "Geschützt",
+    "editorFooterNote": "Sensible Geschäftsregeln wie Freigabe-PINs, der letzte aktive Eigentümer, Rückerstattungsfristen und Küchenstationszuweisungen gelten weiterhin."
+  },
+  "permissionAudit": {
+    "title": "Verlauf der Berechtigungsänderungen",
+    "subtitle": "Jede Änderung an den obigen Rollenberechtigungen, neueste zuerst.",
+    "columnTime": "Zeit",
+    "columnActor": "Ausgeführt von",
+    "columnTarget": "Ziel",
+    "columnPermission": "Berechtigung",
+    "columnChange": "Änderung",
+    "targetTypeRole": "Rolle",
+    "targetTypeUser": "Mitarbeiter",
+    "empty": "Noch keine Berechtigungsänderungen.",
+    "loadMore": "Mehr laden"
   },
   "support": {
     "askAi": "KI fragen",

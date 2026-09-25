@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
-import { requireRole, isBlockedSsrfTarget } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { isBlockedSsrfTarget } from '../middleware/security';
+import { requirePermission } from '../services/authorization';
 import { getHttpRequestSignal } from '../shutdown';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import { adjustProductStock } from '../services/inventory';
@@ -513,7 +513,7 @@ function validateAddonGroupIds(db: any, rawIds: unknown): { ids?: string[]; erro
 }
 
 // Bulk product list; computes has_image in SQL to avoid loading Base64 blobs into memory.
-router.get('/', (req: Request, res: Response) => {
+router.get('/', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = `SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
@@ -631,7 +631,7 @@ router.get('/:id/image', asyncHandler(async (req: Request, res: Response) => {
   }
 }));
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
@@ -651,7 +651,7 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // Fetches external https image URL and returns Base64 data URI.
-router.post('/fetch-url', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
+router.post('/fetch-url', requirePermission('catalog.manage'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { url } = req.body;
 
@@ -778,7 +778,7 @@ router.post('/fetch-url', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler
   }
 }));
 
-router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/', requirePermission('catalog.manage'), (req: Request, res: Response) => {
   try {
     const {
       category_id, name, sku, barcode, description, price, cost_price,
@@ -902,7 +902,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
   }
 });
 
-router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.put('/:id', requirePermission('catalog.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id) as {
@@ -1118,7 +1118,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
   }
 });
 
-router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.delete('/:id', requirePermission('catalog.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
@@ -1141,7 +1141,7 @@ router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
   }
 });
 
-router.post('/:id/stock', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/stock', requirePermission('inventory.manage'), (req: Request, res: Response) => {
   try {
     const { action, quantity } = req.body;
 
@@ -1193,7 +1193,7 @@ router.post('/:id/stock', requireRole(...ROLE_ACCESS.ownerManager), (req: Reques
 });
 
 // Exposes zero-rate products so the merchant can review and opt into global loyalty.
-router.get('/loyalty/global-rate-candidates', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
+router.get('/loyalty/global-rate-candidates', requirePermission('catalog.manage'), (_req: Request, res: Response) => {
   try {
     const row = getDatabase().prepare(
       'SELECT COUNT(*) AS count FROM products WHERE cb_percent = 0 AND deleted_at IS NULL'
@@ -1205,7 +1205,7 @@ router.get('/loyalty/global-rate-candidates', requireRole(...ROLE_ACCESS.ownerMa
   }
 });
 
-router.post('/loyalty/apply-global-rate', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
+router.post('/loyalty/apply-global-rate', requirePermission('catalog.manage'), (_req: Request, res: Response) => {
   try {
     const result = getDatabase().prepare(
       'UPDATE products SET cb_percent = NULL, updated_at = ? WHERE cb_percent = 0 AND deleted_at IS NULL'

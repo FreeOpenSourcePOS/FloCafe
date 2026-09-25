@@ -60,7 +60,21 @@ async function main() {
      VALUES (?, ?, ?, 1, ?, ?)`
   ).run(custId, 'Auth Test Customer', '5550000001', now(), now());
 
-  // Seed users for role checks
+  // Seed users for role checks — requirePermission() resolves effective
+  // permissions from a real users row keyed by the JWT's userId; the token
+  // alone is not authoritative, so each id below must exist in the DB.
+  function seedRoleUser(id: string, role: string, email: string) {
+    db.prepare(
+      `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+       VALUES (?, ?, ?, 'unused', ?, 1, ?, ?)`
+    ).run(id, id, email, role, now(), now());
+  }
+  seedRoleUser('owner-auth-001', 'owner', 'owner@auth.test');
+  seedRoleUser('mgr-auth-001', 'manager', 'manager@auth.test');
+  seedRoleUser('cashier-auth-001', 'cashier', 'cashier@auth.test');
+  seedRoleUser('server-auth-001', 'server', 'server@auth.test');
+  seedRoleUser('chef-auth-001', 'chef', 'chef@auth.test');
+
   const ownerAuth   = makeToken('owner-auth-001',   'owner',   'owner@auth.test');
   const managerAuth = makeToken('mgr-auth-001',     'manager', 'manager@auth.test');
   const cashierAuth = makeToken('cashier-auth-001', 'cashier', 'cashier@auth.test');

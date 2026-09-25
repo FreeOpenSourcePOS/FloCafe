@@ -2,76 +2,68 @@
 
 **Status: CURRENT**
 
-FloCafe currently has five fixed staff roles: owner, manager, cashier, server, and chef. This document describes the default role boundaries in the application. It is a read-only reference - it does not configure access.
+FloCafe keeps five staff identities—owner, manager, cashier, server, and chef—but access is now resolved from configurable permissions. Owners edit role defaults and individual staff exceptions from **Staff > Role permissions**. The backend remains authoritative; frontend visibility is only a convenience.
 
-The same read-only matrix is available in the Staff page for owners and managers. The runtime source of truth is [`shared/role-permissions.ts`](../shared/role-permissions.ts): backend route gates use its `ROLE_ACCESS` groups, and the in-app table is generated from its `PERMISSION_CAPABILITIES` list. This means the displayed matrix stays accurate when a route changes **if the route and capability are updated to use the shared constants**; it is not a separate database or IAM policy.
+## Resolution model
 
-## Permission matrix
+For each permission, FloCafe evaluates these layers in order:
 
-A check means the role is allowed to use the capability. A dash means it is not allowed. The table groups capabilities by area and uses the same capabilities shown in Staff > Role permissions.
+1. Protected owner rule.
+2. Explicit user override (`allow` or `deny`).
+3. Explicit role override (`allow` or `deny`).
+4. The shipped role default in [`shared/permissions.ts`](../shared/permissions.ts).
 
-| Area | Capability | Owner | Manager | Cashier | Server | Chef |
-| --- | --- | :---: | :---: | :---: | :---: | :---: |
-| Orders | Use the POS terminal | ✓ | ✓ | ✓ | — | — |
-| Reports | View the owner dashboard | ✓ | — | — | — | — |
-| Orders | View and create orders | ✓ | ✓ | ✓ | ✓ | — |
-| Orders | Update order status | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Orders | Change order customers and discounts | ✓ | ✓ | — | — | — |
-| Orders | Cancel pending order items | ✓ | ✓ | — | — | — |
-| Orders | Void in-progress order items (manager PIN may be required) | ✓ | ✓ | — | — | — |
-| Orders | Restore cancelled order items | ✓ | ✓ | — | — | — |
-| Orders | Create and manage held orders | ✓ | ✓ | ✓ | ✓ | — |
-| Payments | View bills, take payments, and print receipts | ✓ | ✓ | ✓ | — | — |
-| Payments | Apply bill discounts and mark bills printed | ✓ | ✓ | — | — | — |
-| Payments | View payment methods | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Payments | Manage payment methods | ✓ | ✓ | — | — | — |
-| Payments | Print bills and kitchen tickets | ✓ | ✓ | ✓ | — | — |
-| Payments | Open a cash shift | ✓ | ✓ | ✓ | — | — |
-| Payments | Close own cash shift (force-close others: owner/manager) | ✓ | ✓ | ✓ | — | — |
-| Customers | View, search, and create customers | ✓ | ✓ | ✓ | ✓ | — |
-| Customers | Edit customers | ✓ | ✓ | ✓ | — | — |
-| Customers | Repair customer phone records | ✓ | ✓ | — | — | — |
-| Customers | Clean up customer records | ✓ | — | — | — | — |
-| Menu | Manage products, categories, and addons | ✓ | ✓ | — | — | — |
-| Menu | Import and export menu data | ✓ | ✓ | — | — | — |
-| Menu | Manage supplies and recipes | ✓ | ✓ | — | — | — |
-| Orders | Manage tables | ✓ | ✓ | — | — | — |
-| Orders | Move orders between tables | ✓ | ✓ | ✓ | ✓ | — |
-| Kitchen | Use the kitchen display system | ✓ | ✓ | — | — | ✓ |
-| Kitchen | Pair a kitchen display | ✓ | ✓ | — | — | — |
-| Kitchen | Manage kitchen stations and assignments | ✓ | ✓ | — | — | — |
-| Reports | View sales and operations reports | ✓ | ✓ | — | — | — |
-| Staff | View and manage staff accounts | ✓ | ✓ | — | — | — |
-| Staff | Manage owner and manager accounts and roles | ✓ | — | — | — | — |
-| Staff | Manage cashier, server, and chef accounts | ✓ | ✓ | — | — | — |
-| Settings | View store and operational settings | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Settings | Change store and operational settings | ✓ | ✓ | — | — | — |
-| Settings | View and test tax packs | ✓ | ✓ | — | — | — |
-| Settings | Install, activate, and manage tax packs | ✓ | — | — | — | — |
-| Settings | Change tax configuration | ✓ | ✓ | — | — | — |
-| Settings | View print templates | ✓ | ✓ | — | — | — |
-| Settings | Manage print templates | ✓ | — | — | — | — |
-| Settings | Manage printers | ✓ | ✓ | — | — | — |
-| Integrations | Use WhatsApp messaging | ✓ | ✓ | ✓ | — | — |
-| Integrations | Configure WhatsApp | ✓ | ✓ | — | — | — |
-| Integrations | Manage cloud settings | ✓ | ✓ | — | — | — |
-| Integrations | Manage Google Drive backups | ✓ | — | — | — | — |
-| Integrations | Manage cloud account and data controls | ✓ | — | — | — | — |
-| System | Use database tools and backups | ✓ | — | — | — | — |
-| Orders | Use the standalone Server App | ✓ | ✓ | — | ✓ | — |
-| Support | Contact support and view diagnostics | ✓ | ✓ | ✓ | ✓ | ✓ |
+An override is sparse. “Inherit” deletes the override rather than copying the current value, so new permissions introduced by upgrades receive their reviewed shipped default. Changes are read from local SQLite on every protected action and take effect without signing out.
 
-## Important scope notes
+`authorization.manage` and `staff.privileged.manage` are protected: active owners always have them and no other role can receive them. This prevents an override from removing the last administration path or granting owner/manager account control to another role.
 
-- **Read-only display:** The in-app table does not offer role editing, permission toggles, or IAM configuration. These permissions are currently fixed by role. Role configuration/IAM is not available yet.
-- **Order cancellation:** Cashiers can cancel a whole order while it is pending. If the order or any item has advanced to `preparing` or later, an owner or manager approval PIN is required. This rule is based on the stored order and item status, not on whether a KDS screen is open; printing a kitchen ticket alone does not advance the status.
-- **Owner and manager visibility:** The matrix is rendered only for an authenticated owner or manager on the Staff page. The API continues to enforce authorization independently; hiding a UI control is not a security boundary.
-- **KDS scope:** Chef access is further narrowed by assigned `category_ids` and kitchen stations. Owner and manager KDS access is unrestricted by category, subject to the KDS being enabled.
-- **Orders are never ownership-gated:** any role with order access (this table's "View and create orders" row) can view and act on every order, including ones other staff created — there is no per-order `user_id` check anywhere in the authorization model. Restriction is by role and, for kitchen operations, by KDS stage/station (previous bullet) — never by who took the order. Accountability comes from audit attribution (every write records the authenticated actor), not from hiding orders between staff.
-- **Server App:** The standalone Server App is intentionally restricted to `server`, `manager`, and `owner` roles. It is separate from the dashboard navigation.
-- **Staff management:** Managers can manage operational staff, but cannot modify or deactivate owner/manager accounts. Only owners can change roles for an existing account, and the last active owner cannot be demoted.
-- **Conditional surfaces:** Business type, feature settings (such as KDS or WhatsApp), and account state can hide or disable a surface without changing the fixed role boundary.
+## Management API and storage
 
-## Research-backed presentation choice
+The owner-only `/api/authorization` API exposes:
 
-The in-app version uses roles as columns and capabilities as rows, with grouped areas, a semantic HTML table, explicit Allowed/Not allowed text paired with check/dash icons, and horizontal overflow with a sticky capability column. This keeps cross-role comparison fast while preserving table semantics and context at narrow desktop widths. The pattern follows [W3C table guidance](https://www.w3.org/WAI/tutorials/tables/), [GOV.UK table guidance](https://design-system.service.gov.uk/components/table/), and [WCAG guidance on non-color state indicators](https://www.w3.org/WAI/WCAG22/Understanding/use-of-color.html).
+- `GET /catalog` — stable permission definitions and role identities.
+- `GET /roles` and `PUT /roles/:role` — effective role templates and sparse overrides.
+- `GET /users/:userId`, `PUT /users/:userId`, and `DELETE /users/:userId/overrides` — per-user effective values and exceptions.
+- `GET /audit` — permission change history.
+
+Writes replace the complete desired override set in one SQLite transaction, require a last-seen revision, and return `409` for stale editors. Tables `role_permission_overrides`, `user_permission_overrides`, and `authorization_audit_log` were added in schema migration v92. Permission IDs are code-defined persistence keys and are never accepted from outside the registry.
+
+## Shipped defaults
+
+The complete, executable default matrix lives in [`shared/permissions.ts`](../shared/permissions.ts). With no override rows, it preserves the previous behavior:
+
+- Owner: all permissions, including protected authorization and privileged staff management.
+- Manager: operational administration, catalog, reports, KDS, settings, and ordinary integrations; no protected owner controls.
+- Cashier: POS, orders, payments, customers, cash-shift operations, printing, and WhatsApp use.
+- Server: order/table/customer workflows, held orders, printing where the Server App setting permits it, and Server App access.
+- Chef: KDS access and kitchen stage updates.
+
+The Staff editor shows the effective value and lets an owner choose Inherit, Allow, or Deny for every configurable permission. Role changes retain user exceptions; the editor makes their source visible so they can be reviewed or cleared. Below the editor, **Staff > Permission change history** lists every role and user override change from `GET /audit` (actor, target, permission, before/after), newest first.
+
+## Context policies that are not permissions
+
+Permissions answer whether a staff member may attempt an operation. These independent rules still apply afterward:
+
+- Orders are never ownership-gated. Anyone with the relevant order permission can act on every order; audit attribution records the actor.
+- KDS category and station assignments continue to narrow kitchen access. KDS enablement is also required.
+- Refund approver identity, approval PIN tiers, one-hour window, and business-day cutoff remain role-based business policy as documented in [`business-decisions.md`](business-decisions.md).
+- Approval PINs, the device Master PIN, order/payment state machines, cash-session ownership, feature settings, and the last-active-owner rule remain enforced.
+- Managers can manage operational accounts by default. Only the protected owner permission can modify owner/manager accounts or change roles.
+
+## Runtime boundaries
+
+The same resolver protects the main Express API, the KDS HTTP and WebSocket servers, and the standalone Server App. Auth responses include `permission_ids` and an `authorization_revision`; the frontend refreshes this snapshot on focus, periodically, after an owner saves changes, and following a permission denial. The server always resolves current database state again before an action.
+
+## Verification
+
+Run:
+
+```sh
+npm run test:authorization-permissions
+npm run test:staff-authz
+npm run test:orders-authz
+npm run test:kds-integration
+npm run test:server-app-server-role
+```
+
+The static authorization audit rejects new `requireRole(...)` runtime gates. Direct role checks are allowed only in reviewed context-policy files such as refund approval, last-owner/staff target policy, and KDS station/category scope.

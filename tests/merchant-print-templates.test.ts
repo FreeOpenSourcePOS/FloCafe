@@ -279,7 +279,7 @@ console.log('\n▶ Ordered block composition in renderBillDocumentToClassicLines
 // 3. Migration v72 (fresh install + legacy upgrade paths)
 // ---------------------------------------------------------------------------
 
-const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 try {
   initDatabase();
 } catch (error: any) {
@@ -433,6 +433,16 @@ app.use('/api/print-templates', printTemplateRoutes);
 function authHeaderFor(role: string): string {
   return `Bearer ${jwt.sign({ userId: `actor-${role}`, role }, getJWTSecret(), { expiresIn: '1h' })}`;
 }
+
+// requirePermission() resolves effective permissions from a real users row
+// keyed by the JWT's userId — the token alone is not authoritative.
+for (const role of ['owner', 'cashier']) {
+  getDatabase().prepare(
+    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, 'unused', ?, 1, ?, ?)`
+  ).run(`actor-${role}`, `actor-${role}`, `actor-${role}@test.local`, role, now(), now());
+}
+
 const OWNER = authHeaderFor('owner');
 const CASHIER = authHeaderFor('cashier');
 

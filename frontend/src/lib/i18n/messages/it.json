@@ -1698,6 +1698,8 @@
     "navGroupOperations": "Operazioni",
     "newPin": "Nuovo PIN",
     "no": "No",
+    "noAccessDatabase": "Non hai accesso agli strumenti di backup e database.",
+    "noAccessMobileAccess": "Non hai accesso alle impostazioni di accesso mobile.",
     "noAppsToShow": "Nessuna app da mostrare ancora.",
     "noCategoriesYet": "Nessuna categoria ancora. Aggiungi prima le categorie sotto Prodotti.",
     "noChefsYet": "Nessun account cuoco attivo ancora. Aggiungi prima un cuoco sotto Personale.",
@@ -2210,7 +2212,32 @@
       "databaseTools": "Usa strumenti database e backup",
       "serverApp": "Usa l'Server App indipendente",
       "support": "Contatta l'assistenza e visualizza le diagnostiche"
-    }
+    },
+    "editorSubtitle": "Configura le impostazioni predefinite del ruolo o crea un'eccezione per un membro dello staff. Le modifiche si applicano alla prossima azione.",
+    "roleDefaultsTab": "Impostazioni ruolo",
+    "staffExceptionTab": "Eccezione staff",
+    "selectStaffPlaceholder": "Seleziona un membro dello staff",
+    "selectStaffEmptyState": "Seleziona un membro dello staff per modificarne i permessi.",
+    "effectiveHeader": "Effettivo",
+    "overrideHeader": "Sovrascrittura",
+    "inherit": "Eredita",
+    "allow": "Consenti",
+    "deny": "Nega",
+    "protected": "Protetto",
+    "editorFooterNote": "Le regole aziendali sensibili, come i PIN di approvazione, l'ultimo proprietario attivo, le scadenze dei rimborsi e le assegnazioni delle postazioni cucina, continuano ad applicarsi."
+  },
+  "permissionAudit": {
+    "title": "Cronologia delle modifiche ai permessi",
+    "subtitle": "Ogni modifica apportata ai permessi di ruolo sopra, dalla più recente.",
+    "columnTime": "Ora",
+    "columnActor": "Autore",
+    "columnTarget": "Destinatario",
+    "columnPermission": "Permesso",
+    "columnChange": "Modifica",
+    "targetTypeRole": "Ruolo",
+    "targetTypeUser": "Personale",
+    "empty": "Nessuna modifica ai permessi finora.",
+    "loadMore": "Carica altro"
   },
   "support": {
     "askAi": "Chiedi all'AI",

@@ -27,7 +27,7 @@ import PosTopbar from '@/components/pos/PosTopbar';
 import { ShiftOpenModal } from '@/components/dashboard/ShiftOpenModal';
 import { ShiftCloseModal } from '@/components/dashboard/ShiftCloseModal';
 import { useCashSession } from '@/hooks/useCashSession';
-import { hasRole, ROLE_ACCESS } from '@shared/role-permissions';
+import { tenantCan } from '@/lib/permissions';
 import { CashDrawerMovementModal } from '@/components/dashboard/CashDrawerMovementModal';
 import { useCashDrawerMovements } from '@/hooks/useCashDrawerMovements';
 import { usePrinterStore } from '@/hooks/usePrinter';
@@ -110,7 +110,7 @@ export default function POSPage() {
   const shift = useCashSession();
   // Shift actions follow the same owner/manager/cashier group as the
   // backend route gates (backend still enforces; this only hides the entry).
-  const canUseShift = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManagerCashier);
+  const canUseShift = tenantCan(currentTenant, 'cash.shifts.view');
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);

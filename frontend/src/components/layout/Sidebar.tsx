@@ -31,7 +31,8 @@ import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
 import { useConfirm } from '@/hooks/use-confirm';
 import { useThemeModeToggle } from '@/hooks/useThemeModeToggle';
-import { ROLE_ACCESS, hasRole, type Role } from '@shared/role-permissions';
+import type { PermissionId } from '@shared/permissions';
+import { tenantCan } from '@/lib/permissions';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,23 +62,23 @@ interface NavItem {
   href: string;
   labelKey: NavKey;
   icon: LucideIcon;
-  roles: readonly Role[];
+  permission: PermissionId;
   businessTypes: string[] | null;
 }
 
 // null = show for all business types
 const ALL_NAV_ITEMS: NavItem[] = [
-  { href: '/pos', labelKey: 'pos', icon: ShoppingCart, roles: ROLE_ACCESS.ownerManagerCashier, businessTypes: null },
-  { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard, roles: ROLE_ACCESS.owner, businessTypes: null },
-  { href: '/orders', labelKey: 'orders', icon: ClipboardList, roles: ROLE_ACCESS.ownerManagerCashier, businessTypes: null },
-  { href: '/whatsapp', labelKey: 'whatsapp', icon: MessageCircle, roles: ROLE_ACCESS.ownerManagerCashier, businessTypes: null },
-  { href: '/products', labelKey: 'products', icon: Package, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
-  { href: '/inventory', labelKey: 'inventory', icon: Boxes, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
-  { href: '/tables', labelKey: 'tables', icon: Grid3X3, roles: ROLE_ACCESS.ownerManager, businessTypes: ['restaurant'] },
-  { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, roles: ROLE_ACCESS.ownerManager, businessTypes: ['restaurant'] },
-  { href: '/customers', labelKey: 'customers', icon: Users, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
-  { href: '/staff', labelKey: 'staff', icon: UserCog, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
-  { href: '/settings', labelKey: 'settings', icon: Settings, roles: ROLE_ACCESS.ownerManager, businessTypes: null },
+  { href: '/pos', labelKey: 'pos', icon: ShoppingCart, permission: 'pos.use', businessTypes: null },
+  { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard, permission: 'dashboard.view', businessTypes: null },
+  { href: '/orders', labelKey: 'orders', icon: ClipboardList, permission: 'orders.read', businessTypes: null },
+  { href: '/whatsapp', labelKey: 'whatsapp', icon: MessageCircle, permission: 'whatsapp.use', businessTypes: null },
+  { href: '/products', labelKey: 'products', icon: Package, permission: 'catalog.manage', businessTypes: null },
+  { href: '/inventory', labelKey: 'inventory', icon: Boxes, permission: 'inventory.view', businessTypes: null },
+  { href: '/tables', labelKey: 'tables', icon: Grid3X3, permission: 'tables.manage', businessTypes: ['restaurant'] },
+  { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, permission: 'kitchen.stations.manage', businessTypes: ['restaurant'] },
+  { href: '/customers', labelKey: 'customers', icon: Users, permission: 'customers.view', businessTypes: null },
+  { href: '/staff', labelKey: 'staff', icon: UserCog, permission: 'staff.view', businessTypes: null },
+  { href: '/settings', labelKey: 'settings', icon: Settings, permission: 'settings.view', businessTypes: null },
 ];
 
 export default function AppSidebar() {
@@ -100,7 +101,6 @@ export default function AppSidebar() {
       : tSettings('themeSystem');
   const ThemeModeIcon = themeModeIcon;
 
-  const role = currentTenant?.role || 'cashier';
   const businessType = currentTenant?.business_type || 'restaurant';
   const navItems = ALL_NAV_ITEMS.filter((item) => {
     if (item.href === '/tables' && !tablesRequired) return false;
@@ -108,10 +108,20 @@ export default function AppSidebar() {
     if (item.href === '/settings?tab=kds' && !kdsEnabled) return false;
     // WhatsApp integration not enabled on this tenant → hide the nav entry.
     if (item.href === '/whatsapp' && !whatsappEnabled) return false;
-    return hasRole(role, item.roles)
+    const permitted = item.href === '/staff'
+      ? tenantCan(currentTenant, 'staff.view') || tenantCan(currentTenant, 'authorization.manage')
+      : item.href === '/settings'
+        ? [
+            'settings.view', 'settings.manage', 'tax-packs.view-test', 'tax-configuration.manage',
+            'tax-packs.manage', 'printers.manage', 'print-templates.view', 'print-templates.manage',
+            'payment-methods.manage', 'cloud.manage', 'cloud.account.manage', 'google-drive.manage',
+            'database.manage', 'mobile-access.manage', 'kitchen.stations.manage', 'whatsapp.manage',
+          ].some((permission) => tenantCan(currentTenant, permission as PermissionId))
+        : tenantCan(currentTenant, item.permission);
+    return permitted
       && (item.businessTypes === null || item.businessTypes.includes(businessType));
   });
-  const homeHref = getLandingPage();
+  const homeHref = getLandingPage(currentTenant);
 
   useEffect(() => {
     if (!currentTenant) return;
@@ -131,7 +141,7 @@ export default function AppSidebar() {
   }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled]);
 
   useEffect(() => {
-    if (!hasRole(role, ROLE_ACCESS.owner)) return;
+    if (!tenantCan(currentTenant, 'cloud.account.manage')) return;
     let active = true;
     const refreshCloudAttention = async () => {
       try {
@@ -155,7 +165,7 @@ export default function AppSidebar() {
       active = false;
       window.removeEventListener('flo:cloud-account-status-changed', refreshCloudAttention);
     };
-  }, [role]);
+  }, [currentTenant]);
 
   return (
     <Sidebar collapsible="icon">

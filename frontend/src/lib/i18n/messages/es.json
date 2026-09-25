@@ -1698,6 +1698,8 @@
     "navGroupOperations": "Operaciones",
     "newPin": "Nuevo PIN",
     "no": "No",
+    "noAccessDatabase": "No tienes acceso a las herramientas de copia de seguridad y base de datos.",
+    "noAccessMobileAccess": "No tienes acceso a la configuración de acceso móvil.",
     "noAppsToShow": "Todavía no hay aplicaciones para mostrar.",
     "noCategoriesYet": "Todavía no hay categorías. Agregá categorías en Productos primero.",
     "noChefsYet": "Todavía no hay cuentas de chef activas. Agregá primero un chef en Personal.",
@@ -2210,7 +2212,32 @@
       "serverApp": "Usar la aplicación independiente para servidores",
       "support": "Contactar con soporte y ver diagnósticos",
       "inventoryManage": "Gestionar insumos y recetas"
-    }
+    },
+    "editorSubtitle": "Configura los valores predeterminados de los roles o crea una excepción para un miembro del personal. Los cambios se aplican en su próxima acción.",
+    "roleDefaultsTab": "Valores del rol",
+    "staffExceptionTab": "Excepción de personal",
+    "selectStaffPlaceholder": "Selecciona un miembro del personal",
+    "selectStaffEmptyState": "Selecciona un miembro del personal para editar sus permisos.",
+    "effectiveHeader": "Efectivo",
+    "overrideHeader": "Anulación",
+    "inherit": "Heredar",
+    "allow": "Permitir",
+    "deny": "Denegar",
+    "protected": "Protegido",
+    "editorFooterNote": "Las reglas de negocio sensibles, como los PIN de aprobación, el último propietario activo, los plazos de reembolso y las asignaciones de estaciones de cocina, siguen aplicándose."
+  },
+  "permissionAudit": {
+    "title": "Historial de cambios de permisos",
+    "subtitle": "Cada cambio realizado desde los permisos de rol anteriores, el más reciente primero.",
+    "columnTime": "Hora",
+    "columnActor": "Autor",
+    "columnTarget": "Destino",
+    "columnPermission": "Permiso",
+    "columnChange": "Cambio",
+    "targetTypeRole": "Rol",
+    "targetTypeUser": "Personal",
+    "empty": "Aún no hay cambios de permisos.",
+    "loadMore": "Cargar más"
   },
   "support": {
     "askAi": "Preguntar a la IA",

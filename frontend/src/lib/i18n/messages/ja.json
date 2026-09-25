@@ -1698,6 +1698,8 @@
     "navGroupOperations": "操作",
     "newPin": "新しいPIN",
     "no": "いいえ",
+    "noAccessDatabase": "バックアップおよびデータベースツールへのアクセス権がありません。",
+    "noAccessMobileAccess": "モバイルアクセス設定へのアクセス権がありません。",
     "noAppsToShow": "表示できるアプリはまだありません。",
     "noCategoriesYet": "カテゴリはまだありません。先に商品でカテゴリを追加してください。",
     "noChefsYet": "有効なシェフアカウントはまだありません。先にスタッフでシェフを追加してください。",
@@ -2210,7 +2212,32 @@
       "databaseTools": "データベースツールとバックアップを使用",
       "serverApp": "スタンドアロンのサーバーアプリを使用",
       "support": "サポートに連絡し診断情報を表示"
-    }
+    },
+    "editorSubtitle": "役割の既定値を設定するか、特定のスタッフの例外を作成します。変更は次の操作から適用されます。",
+    "roleDefaultsTab": "役割の既定値",
+    "staffExceptionTab": "スタッフ例外",
+    "selectStaffPlaceholder": "スタッフを選択",
+    "selectStaffEmptyState": "権限を編集するスタッフを選択してください。",
+    "effectiveHeader": "有効",
+    "overrideHeader": "上書き",
+    "inherit": "継承",
+    "allow": "許可",
+    "deny": "拒否",
+    "protected": "保護済み",
+    "editorFooterNote": "承認PIN、最後のアクティブなオーナー、返金期限、キッチンステーションの割り当てなどの機密性の高い業務ルールは引き続き適用されます。"
+  },
+  "permissionAudit": {
+    "title": "権限変更履歴",
+    "subtitle": "上記の役割権限に対するすべての変更（新しい順）。",
+    "columnTime": "日時",
+    "columnActor": "実行者",
+    "columnTarget": "対象",
+    "columnPermission": "権限",
+    "columnChange": "変更内容",
+    "targetTypeRole": "役割",
+    "targetTypeUser": "スタッフ",
+    "empty": "権限の変更履歴はまだありません。",
+    "loadMore": "もっと読み込む"
   },
   "support": {
     "askAi": "AIに質問",

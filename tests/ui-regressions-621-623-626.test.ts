@@ -10,7 +10,7 @@ import { resolve } from 'node:path';
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
 const tables = source('frontend/src/app/(dashboard)/tables/page.tsx');
-assert.match(tables, /currentTenant\?\.role === 'owner'.*currentTenant\?\.role === 'manager'/, 'table management controls stay role-gated');
+assert.match(tables, /tenantCan\(currentTenant, 'tables\.manage'\)/, 'table management controls stay permission-gated');
 assert.match(tables, /api\.put\(`\/tables\/\$\{editingTable\.id\}`/, 'table editor persists through PUT');
 assert.match(tables, /TABLE_NAME_DUPLICATE: tTables\('tableNameDuplicate'\)/, 'backend table errors map to localized UI messages');
 assert.match(tables, /TABLE_LOCATION_INVALID: tTables\('tableLocationInvalid'\)/, 'backend location errors map to localized UI messages');

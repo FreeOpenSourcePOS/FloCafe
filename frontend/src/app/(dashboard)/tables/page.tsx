@@ -9,6 +9,7 @@ import type { Table, Customer, Order, OrderItem } from '@/lib/types';
 import FloorplanEditor from '@/components/tables/FloorplanEditor';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
+import { tenantCan } from '@/lib/permissions';
 import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
 import { useTranslations, type AppConfig } from 'use-intl';
@@ -204,7 +205,7 @@ export default function TablesPage() {
   const router = useRouter();
   const tOrders = useTranslations('orders');
   const { currentTenant } = useAuthStore();
-  const canManageTables = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
+  const canManageTables = tenantCan(currentTenant, 'tables.manage');
   const [tables, setTables] = useState<Table[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);

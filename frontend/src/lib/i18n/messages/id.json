@@ -1698,6 +1698,8 @@
     "navGroupOperations": "Operasional",
     "newPin": "PIN Baru",
     "no": "Tidak",
+    "noAccessDatabase": "Anda tidak memiliki akses ke alat cadangan dan basis data.",
+    "noAccessMobileAccess": "Anda tidak memiliki akses ke pengaturan akses seluler.",
     "noAppsToShow": "Belum ada aplikasi untuk ditampilkan.",
     "noCategoriesYet": "Belum ada kategori. Tambahkan kategori di Produk terlebih dahulu.",
     "noChefsYet": "Belum ada akun koki aktif. Tambahkan koki di Staf terlebih dahulu.",
@@ -2210,7 +2212,32 @@
       "databaseTools": "Menggunakan alat basis data dan pencadangan",
       "serverApp": "Menggunakan Aplikasi Server mandiri",
       "support": "Menghubungi dukungan dan melihat diagnostik"
-    }
+    },
+    "editorSubtitle": "Konfigurasikan default peran atau buat pengecualian untuk satu staf. Perubahan berlaku pada tindakan berikutnya.",
+    "roleDefaultsTab": "Default peran",
+    "staffExceptionTab": "Pengecualian staf",
+    "selectStaffPlaceholder": "Pilih staf",
+    "selectStaffEmptyState": "Pilih staf untuk mengedit izinnya.",
+    "effectiveHeader": "Efektif",
+    "overrideHeader": "Penggantian",
+    "inherit": "Warisi",
+    "allow": "Izinkan",
+    "deny": "Tolak",
+    "protected": "Dilindungi",
+    "editorFooterNote": "Aturan bisnis sensitif seperti PIN persetujuan, pemilik aktif terakhir, batas waktu pengembalian dana, dan penugasan stasiun dapur tetap berlaku."
+  },
+  "permissionAudit": {
+    "title": "Riwayat perubahan izin",
+    "subtitle": "Setiap perubahan yang dibuat dari izin peran di atas, terbaru lebih dulu.",
+    "columnTime": "Waktu",
+    "columnActor": "Pelaku",
+    "columnTarget": "Sasaran",
+    "columnPermission": "Izin",
+    "columnChange": "Perubahan",
+    "targetTypeRole": "Peran",
+    "targetTypeUser": "Staf",
+    "empty": "Belum ada perubahan izin.",
+    "loadMore": "Muat lagi"
   },
   "support": {
     "askAi": "Tanya AI",

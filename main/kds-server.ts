@@ -15,6 +15,7 @@ import { rateLimit, authRateLimit, staticRouteRateLimit, corsOptions, isTokenRev
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
 import { ROLE_ACCESS, hasRole } from '../shared/role-permissions';
+import { effectivePermissionRevision, hasPermission, resolveEffectivePermissions } from './services/authorization';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -119,8 +120,8 @@ export function startKdsServer(): Promise<void> {
         if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
           return res.status(401).json({ error: 'Invalid token' });
         }
-        if (!hasRole(user.role, ROLE_ACCESS.kitchen)) {
-          return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
+        if (!hasPermission(user.id, 'kitchen.use')) {
+          return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.', code: 'permission_denied' });
         }
         const stationIds = getUserKdsStationIds(db, user.id);
         const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, user.id);
@@ -197,8 +198,8 @@ export function startKdsServer(): Promise<void> {
         }
 
         // Only allow chef, manager, owner roles
-        if (!hasRole(user.role, ROLE_ACCESS.kitchen)) {
-          return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
+        if (!hasPermission(user.id, 'kitchen.use')) {
+          return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.', code: 'permission_denied' });
         }
 
         const stationIds = getUserKdsStationIds(db, user.id);
@@ -224,6 +225,8 @@ export function startKdsServer(): Promise<void> {
             category_ids: categoryIdsForRole(user.role, user.category_ids),
             station_ids: stationIds,
             station_assignments_configured: stationAssignmentsConfigured,
+            permission_ids: [...(resolveEffectivePermissions(user.id)?.permissionIds ?? [])],
+            authorization_revision: effectivePermissionRevision(user.id),
           },
         });
       } catch (error: any) {
@@ -256,7 +259,13 @@ export function startKdsServer(): Promise<void> {
         if (!row) {
           return res.status(404).json({ error: 'User not found' });
         }
-        res.json({ user: row });
+        res.json({
+          user: {
+            ...row,
+            permission_ids: [...(resolveEffectivePermissions(row.id)?.permissionIds ?? [])],
+          authorization_revision: effectivePermissionRevision(row.id),
+          },
+        });
       } catch (error: any) {
         res.status(500).json({ error: 'Internal server error' });
       }
@@ -408,7 +417,7 @@ export function startKdsServer(): Promise<void> {
           const currentUser = db.prepare('SELECT role, category_ids, is_active, tokens_valid_after FROM users WHERE id = ?').get(kdsUser.userId) as { role: string; category_ids: string | null; is_active: number; tokens_valid_after: string | null } | undefined;
           const currentToken = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
           if (!currentUser?.is_active || isTokenRevoked(currentToken) || isTokenStale(kdsUser.iat, currentUser?.tokens_valid_after)) return { statusCode: 403, error: 'User account is not active' };
-          if (!hasRole(currentUser.role, ROLE_ACCESS.kitchen)) return { statusCode: 403, error: 'Not authorized to update KDS items' };
+          if (!hasPermission(kdsUser.userId, 'kitchen.status.update')) return { statusCode: 403, error: 'Not authorized to update KDS items' };
           const currentCategoryIds = categoryIdsForRole(currentUser.role, currentUser.category_ids);
           const currentStationIds = getUserKdsStationIds(db, kdsUser.userId);
           const currentAssignmentsConfigured = hasUserKdsStationAssignments(db, kdsUser.userId);

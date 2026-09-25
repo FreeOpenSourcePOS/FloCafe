@@ -1698,6 +1698,8 @@
     "navGroupOperations": "运营",
     "newPin": "新 PIN",
     "no": "否",
+    "noAccessDatabase": "您无权使用备份和数据库工具。",
+    "noAccessMobileAccess": "您无权访问移动访问设置。",
     "noAppsToShow": "暂无可显示的应用。",
     "noCategoriesYet": "还没有分类。请先在商品下添加分类。",
     "noChefsYet": "还没有启用中的厨师账户。请先在员工中添加厨师。",
@@ -2210,7 +2212,32 @@
       "databaseTools": "使用数据库工具和备份",
       "serverApp": "使用独立服务员应用",
       "support": "联系支持并查看诊断"
-    }
+    },
+    "editorSubtitle": "配置角色默认权限，或为某位员工设置例外。更改将在其下次操作时生效。",
+    "roleDefaultsTab": "角色默认值",
+    "staffExceptionTab": "员工例外",
+    "selectStaffPlaceholder": "选择一名员工",
+    "selectStaffEmptyState": "选择一名员工以编辑其权限。",
+    "effectiveHeader": "有效",
+    "overrideHeader": "覆盖",
+    "inherit": "继承",
+    "allow": "允许",
+    "deny": "拒绝",
+    "protected": "受保护",
+    "editorFooterNote": "审批 PIN、最后一位在职店主、退款截止时间和厨房工作站分配等敏感业务规则仍然适用。"
+  },
+  "permissionAudit": {
+    "title": "权限变更历史",
+    "subtitle": "对上方角色权限所做的每一次更改，按时间倒序排列。",
+    "columnTime": "时间",
+    "columnActor": "操作人",
+    "columnTarget": "对象",
+    "columnPermission": "权限",
+    "columnChange": "变更",
+    "targetTypeRole": "角色",
+    "targetTypeUser": "员工",
+    "empty": "暂无权限变更记录。",
+    "loadMore": "加载更多"
   },
   "support": {
     "askAi": "询问 AI",

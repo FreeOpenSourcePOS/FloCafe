@@ -21,8 +21,8 @@ Each decision states: the rule, why it exists, where it's enforced in code, how 
 **Why:** FloCafe is an open system by design. Restricting staff to only the orders they personally created adds friction (a waiter covering a colleague's table, a manager checking in on any order) without a real security benefit for this product — accountability comes from knowing who did what, not from hiding data between staff who already share a till and a kitchen.
 
 **What restriction remains instead:**
-1. **Role-based page/feature access** — e.g. chef cannot open the Orders page at all; cashier cannot access owner/manager-only settings.
-2. **Role-based restriction on a specific action** — e.g. KDS stage transitions (marking an item "preparing"/"ready"/"served") are chef/manager/owner-only (`ROLE_ACCESS.kitchen`), further narrowed by the chef's assigned kitchen station and category (see `main/routes/order-items.ts`). A server can place an order but cannot do the kitchen's job on it.
+1. **Permission-based page/feature access** — e.g. shipped defaults do not let a chef open Orders or a cashier change settings, while an owner may configure those permissions.
+2. **Permission-based restriction on a specific action** — e.g. `kitchen.status.update` controls KDS stage transitions, further narrowed by kitchen station and category assignments (see `main/routes/order-items.ts`).
 3. **Audit attribution** — every order and write is still recorded against the authenticated actor (`user_id`, `created_by`, etc.). This is for the audit trail (who did what), not for gating access.
 
 **Enforced by (i.e., where this would be violated if reintroduced):** `main/routes/orders.ts` (order list, `GET /:id`, `POST /:id/items`, `PATCH /:id/status`), `main/routes/index.ts` (item cancel/void), `main/routes/printers.ts` (`print-kot`). None of these compare `order.user_id` (or an item's creator) against the requesting user to decide access.
@@ -47,7 +47,7 @@ Each decision states: the rule, why it exists, where it's enforced in code, how 
 5. **Refund payment method is independent of the original payment method(s)** — a card payment can be refunded in cash, or vice versa. This is deliberate (per the product decision behind this feature), not a validation gap.
 6. **Store credit** (`method: 'wallet'`) requires loyalty to be enabled and the bill to have a customer attached. It's recorded as a plain `credit` row in `loyalty_ledger` (the same mechanism cashback uses), so it's immediately spendable — no separate "refund credit" ledger type exists. This does **not** double-count as cashback on respend: `calculateCashback()` in `main/routes/bills.ts` already excludes wallet-funded spend from the cashback base.
 7. **Accepted limitation:** refunding an item/order does **not** claw back cashback that was already credited on that sale at payment time. Given FloCafe's current install-base scale (see `AGENTS.md` "Lessons from past mistakes"), building proportional cashback clawback was judged not worth the complexity for a v1. Revisit if this is observed to be abused.
-8. **No per-role permission grant exists yet.** Refund initiation is gated the same way it already was (`ROLE_ACCESS.ownerManager` at the route), not by a configurable owner-editable grant — `docs/roles-and-permissions.md` already documents that role configuration/IAM isn't available. Letting an owner grant refund access to other roles (e.g. cashier) is deferred to that future IAM work, not built here.
+8. **Refund initiation is configurable; approval eligibility is not.** `refunds.initiate` controls who may start the workflow. The selected approver must still satisfy the owner/manager and time-tier rules above, independently of the initiator's permissions.
 9. Inventory is never restored by a refund (item-level or whole-bill) — consistent with how item voids/cancellations already behave.
 
 **Why:** Requested as a controlled way to reverse completed sales without reopening the order-editing surface, while keeping the two things most exposed to misuse — how far back a refund can reach, and who can approve one — deliberately tight (same-business-day cutoff, owner-only once the in-progress window has passed).
@@ -57,6 +57,22 @@ Each decision states: the rule, why it exists, where it's enforced in code, how 
 **How to verify:** `npm run test:refunds` (original in-progress-refund behavior, budget-sensitive — see that file's header) and `npm run test:refund-completed-orders` (business-day tiers, expanded item eligibility, store credit, and the audit-log entry).
 
 **Decided:** 2026-09-17.
+
+---
+
+## Role templates and user permissions are owner-configurable
+
+**Rule:** FloCafe keeps the five fixed role identities, but their ordinary feature permissions are configurable by an owner. A user may also receive explicit allow/deny exceptions. Effective access resolves protected rule, user override, role override, then shipped default. `authorization.manage` and `staff.privileged.manage` remain active-owner-only and cannot be configured.
+
+Permissions never replace context policy: order/payment states, approval PINs, refund approver tiers, KDS station/category assignments, cash-session rules, Master PIN checks, feature enablement, and last-owner protection still apply after authorization. Orders remain open to every user who has the relevant order permission and are never filtered by creator.
+
+**Why:** Stores need to delegate real operational responsibilities without inventing more role names, while preserving a recoverable owner administration path and backend authority in an offline-first install.
+
+**Enforced by:** `shared/permissions.ts`, `main/services/authorization.ts`, migration v92 in `main/db.ts`, `/api/authorization`, permission middleware across the main API, KDS and Server App checks, and the Staff permission editor.
+
+**How to verify:** `npm run test:authorization-permissions`; the included static audit also rejects newly introduced `requireRole(...)` runtime gates outside the legacy middleware definition.
+
+**Decided:** 2026-09-25.
 
 ---
 

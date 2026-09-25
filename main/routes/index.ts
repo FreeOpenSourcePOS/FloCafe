@@ -1,6 +1,6 @@
 import { Express } from 'express';
 import { authRoutes } from './auth';
-import { requireRole } from '../middleware/security';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { categoryRoutes } from './categories';
 import { productRoutes } from './products';
@@ -38,11 +38,11 @@ import { printTemplateRoutes } from './print-templates';
 import { whatsappRoutes } from './whatsapp';
 import { supportTicketRoutes } from './support-ticket';
 import { diagnosticsRoutes } from './diagnostics';
+import { authorizationRoutes } from './authorization';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin, recordOrderAudit } from '../db';
 import { checkPinRateLimit } from './orders';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
 
-const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 import {
   calculateConfiguredChargeTaxes,
   combineItemAndChargeTaxes,
@@ -119,15 +119,16 @@ export function registerRoutes(app: Express): void {
   app.use('/api/whatsapp', whatsappRoutes);
   app.use('/api/support-ticket', supportTicketRoutes);
   app.use('/api/diagnostics', diagnosticsRoutes);
+  app.use('/api/authorization', authorizationRoutes);
 
   // Tax preview
-  app.post('/api/tax/preview', asyncHandler(async (req, res) => {
+  app.post('/api/tax/preview', requirePermission('tax-packs.view-test'), asyncHandler(async (req, res) => {
     const { calculateTaxPreview } = await import('../services/tax');
     calculateTaxPreview(req, res);
   }));
 
   // Returns active tax categories for product configuration.
-  app.get('/api/tax/categories', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req, res) => {
+  app.get('/api/tax/categories', requirePermission('tax-packs.view-test'), asyncHandler(async (req, res) => {
     try {
       const { getActiveCountryPack, hasConfiguredTaxCategories, previewCategoryRate } = await import('../services/tax');
       const country = getSettingValue('country') || '';
@@ -160,7 +161,7 @@ export function registerRoutes(app: Express): void {
   }));
 
   // Returns cached mobile pairing code or generates fresh code if missing or expired.
-  app.get('/api/mobile/pairing-code', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req, res) => {
+  app.get('/api/mobile/pairing-code', requirePermission('mobile-access.manage'), asyncHandler(async (req, res) => {
     try {
       const cached = getCachedPairingCode();
       if (cached) {
@@ -183,7 +184,7 @@ export function registerRoutes(app: Express): void {
   }));
 
   // Explicit rotate — disconnects every currently-paired RevFlo device.
-  app.post('/api/mobile/rotate-code', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req, res) => {
+  app.post('/api/mobile/rotate-code', requirePermission('mobile-access.manage'), asyncHandler(async (req, res) => {
     try {
       const { code, expires_at } = await cloudSync.generatePairingCode(true);
       setCachedPairingCode(code, expires_at);
@@ -198,7 +199,7 @@ export function registerRoutes(app: Express): void {
   }));
 
   // Paired RevFlo devices for this store — Settings > Mobile App session list.
-  app.get('/api/mobile/devices', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req, res) => {
+  app.get('/api/mobile/devices', requirePermission('mobile-access.manage'), asyncHandler(async (req, res) => {
     try {
       const devices = await cloudSync.listPairedDevices();
       res.json({ devices });
@@ -209,7 +210,7 @@ export function registerRoutes(app: Express): void {
   }));
 
   // Legacy/flat customer search endpoint (frontend uses this)
-  app.get('/api/customers-search', inlineCustomerLookupRateLimit, requireRole(...ROLE_ACCESS.sales), (req, res) => {
+  app.get('/api/customers-search', inlineCustomerLookupRateLimit, requirePermission('customers.view'), (req, res) => {
     try {
       const { q } = req.query;
       const rawSearch = String(q || '').trim();
@@ -252,7 +253,7 @@ export function registerRoutes(app: Express): void {
   });
 
   // CRM lookup endpoint (frontend uses this)
-  app.get('/api/crm/lookup', inlineCustomerLookupRateLimit, requireRole(...ROLE_ACCESS.sales), (req, res) => {
+  app.get('/api/crm/lookup', inlineCustomerLookupRateLimit, requirePermission('customers.view'), (req, res) => {
     try {
       const { phone, country_code } = req.query;
       if (!phone) {
@@ -308,15 +309,14 @@ export function registerRoutes(app: Express): void {
         if (!currentItem || !currentOrder) {
           throw Object.assign(new Error('Item or order not found'), { statusCode: 404 });
         }
-        const actor = db.prepare('SELECT role FROM users WHERE id = ? AND is_active = 1').get(actorId) as { role: string } | undefined;
+        const actor = db.prepare('SELECT id FROM users WHERE id = ? AND is_active = 1').get(actorId) as { id: string } | undefined;
         if (!actor) {
           throw Object.assign(new Error('Authentication required'), { statusCode: 403 });
         }
-        const userRole = actor.role;
-
         // Idempotent no-op for already-terminal items.
         if (['cancelled', 'voided', 'void_adjustment', 'refunded'].includes(currentItem.status)) {
-          if (!hasRole(userRole, ROLE_ACCESS.ownerManager)) {
+          const terminalPermission = currentItem.status === 'cancelled' ? 'orders.item.cancel' : 'orders.item.void';
+          if (!hasPermission(actorId, terminalPermission)) {
             throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
           }
           const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
@@ -350,9 +350,8 @@ export function registerRoutes(app: Express): void {
 
         // Voiding items in preparation requires manager PIN and records a void adjustment line.
         const isItemVoid = ['preparing', 'ready'].includes(currentItem.status);
-        const isPrivilegedRole = hasRole(userRole, ROLE_ACCESS.ownerManager);
-        const canUseOverride = hasRole(userRole, ROLE_ACCESS.cashierServer) && isItemVoid;
-        if (!isPrivilegedRole && !canUseOverride) {
+        const requiredPermission = isItemVoid ? 'orders.item.void' : 'orders.item.cancel';
+        if (!hasPermission(actorId, requiredPermission)) {
           throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
         }
         let approvedByUserId: string | undefined;
@@ -371,15 +370,15 @@ export function registerRoutes(app: Express): void {
           const managerId = req.body.manager_id || req.body.user_id;
           let pinUser: any = null;
           if (managerId) {
-            const candidate = db.prepare(`SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS}) AND is_active = 1`).get(managerId, ...ROLE_ACCESS.ownerManager) as any;
-            if (candidate && verifyPin(candidate.pin_hash, override_pin)) {
+            const candidate = db.prepare('SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1').get(managerId) as any;
+            if (candidate && hasRole(candidate.role, ROLE_ACCESS.ownerManager) && hasPermission(candidate.id, 'orders.item.void') && verifyPin(candidate.pin_hash, override_pin)) {
               pinUser = candidate;
             }
           }
           if (!pinUser) {
-            const managers = db.prepare(`SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS}) AND is_active = 1`).all(...ROLE_ACCESS.ownerManager) as any[];
+            const managers = db.prepare('SELECT * FROM users WHERE pin_hash IS NOT NULL AND is_active = 1').all() as any[];
             for (const u of managers) {
-              if (verifyPin(u.pin_hash, override_pin)) {
+              if (hasRole(u.role, ROLE_ACCESS.ownerManager) && hasPermission(u.id, 'orders.item.void') && verifyPin(u.pin_hash, override_pin)) {
                 pinUser = u;
                 break;
               }
@@ -579,8 +578,8 @@ export function registerRoutes(app: Express): void {
         if (!currentItem || !currentOrder) {
           throw Object.assign(new Error('Item or order not found'), { statusCode: 404 });
         }
-        const actor = db.prepare('SELECT role FROM users WHERE id = ? AND is_active = 1').get(actorId) as { role: string } | undefined;
-        if (!actor || !hasRole(actor.role, ROLE_ACCESS.ownerManager)) {
+        const actor = db.prepare('SELECT id FROM users WHERE id = ? AND is_active = 1').get(actorId) as { id: string } | undefined;
+        if (!actor || !hasPermission(actorId, 'orders.item.restore')) {
           throw Object.assign(new Error('Only owner or manager can restore items'), { statusCode: 403 });
         }
 

@@ -45,3 +45,6 @@ code-review/
 # Private shared docs repo — cloned in by hand, never tracked here (see AGENTS.md)
 specs/
 test-results/
+
+# Unrelated scratch planning notes — not part of any tracked feature
+/0-5phases.md

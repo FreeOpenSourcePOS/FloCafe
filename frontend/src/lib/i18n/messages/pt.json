@@ -1698,6 +1698,8 @@
     "navGroupOperations": "Operações",
     "newPin": "Novo PIN",
     "no": "Não",
+    "noAccessDatabase": "Você não tem acesso às ferramentas de backup e banco de dados.",
+    "noAccessMobileAccess": "Você não tem acesso às configurações de acesso móvel.",
     "noAppsToShow": "Nenhum app para mostrar ainda.",
     "noCategoriesYet": "Nenhuma categoria ainda. Adicione categorias em Produtos primeiro.",
     "noChefsYet": "Ainda não há contas de chef ativas. Adicione primeiro um chef em Equipe.",
@@ -2210,7 +2212,32 @@
       "serverApp": "Usar o aplicativo independente do servidor",
       "support": "Contatar o suporte e ver diagnósticos",
       "inventoryManage": "Gerenciar insumos e receitas"
-    }
+    },
+    "editorSubtitle": "Configure os padrões da função ou crie uma exceção para um funcionário. As alterações se aplicam na próxima ação dele.",
+    "roleDefaultsTab": "Padrões da função",
+    "staffExceptionTab": "Exceção de funcionário",
+    "selectStaffPlaceholder": "Selecione um funcionário",
+    "selectStaffEmptyState": "Selecione um funcionário para editar as permissões.",
+    "effectiveHeader": "Efetivo",
+    "overrideHeader": "Substituição",
+    "inherit": "Herdar",
+    "allow": "Permitir",
+    "deny": "Negar",
+    "protected": "Protegido",
+    "editorFooterNote": "Regras de negócio sensíveis, como PINs de aprovação, o último proprietário ativo, prazos de reembolso e atribuições de estações da cozinha, continuam se aplicando."
+  },
+  "permissionAudit": {
+    "title": "Histórico de alterações de permissões",
+    "subtitle": "Cada alteração feita nas permissões de função acima, mais recentes primeiro.",
+    "columnTime": "Hora",
+    "columnActor": "Autor",
+    "columnTarget": "Alvo",
+    "columnPermission": "Permissão",
+    "columnChange": "Alteração",
+    "targetTypeRole": "Função",
+    "targetTypeUser": "Funcionário",
+    "empty": "Ainda não há alterações de permissões.",
+    "loadMore": "Carregar mais"
   },
   "support": {
     "askAi": "Perguntar à IA",

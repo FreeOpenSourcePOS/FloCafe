@@ -1698,6 +1698,8 @@
     "navGroupOperations": "운영",
     "newPin": "새 PIN",
     "no": "아니오",
+    "noAccessDatabase": "백업 및 데이터베이스 도구에 액세스할 수 없습니다.",
+    "noAccessMobileAccess": "모바일 액세스 설정에 액세스할 수 없습니다.",
     "noAppsToShow": "표시할 앱이 아직 없습니다.",
     "noCategoriesYet": "아직 카테고리가 없습니다. 먼저 상품 아래에 카테고리를 추가하세요.",
     "noChefsYet": "활성 셰프 계정이 아직 없습니다. 먼저 직원 아래에 셰프를 추가하세요.",
@@ -2210,7 +2212,32 @@
       "databaseTools": "데이터베이스 도구 및 백업 사용",
       "serverApp": "독립형 서버 앱(Server App) 사용",
       "support": "지원팀 문의 및 진단 정보 보기"
-    }
+    },
+    "editorSubtitle": "역할 기본값을 구성하거나 특정 직원에 대한 예외를 만드세요. 변경 사항은 다음 작업부터 적용됩니다.",
+    "roleDefaultsTab": "역할 기본값",
+    "staffExceptionTab": "직원 예외",
+    "selectStaffPlaceholder": "직원 선택",
+    "selectStaffEmptyState": "권한을 편집할 직원을 선택하세요.",
+    "effectiveHeader": "적용됨",
+    "overrideHeader": "재정의",
+    "inherit": "상속",
+    "allow": "허용",
+    "deny": "거부",
+    "protected": "보호됨",
+    "editorFooterNote": "승인 PIN, 마지막 활성 소유자, 환불 마감 시간, 주방 스테이션 배정과 같은 민감한 비즈니스 규칙은 계속 적용됩니다."
+  },
+  "permissionAudit": {
+    "title": "권한 변경 기록",
+    "subtitle": "위 역할 권한에 대해 이루어진 모든 변경 사항(최신순).",
+    "columnTime": "시간",
+    "columnActor": "실행자",
+    "columnTarget": "대상",
+    "columnPermission": "권한",
+    "columnChange": "변경 내용",
+    "targetTypeRole": "역할",
+    "targetTypeUser": "직원",
+    "empty": "아직 권한 변경 내역이 없습니다.",
+    "loadMore": "더 보기"
   },
   "support": {
     "askAi": "AI에게 질문",

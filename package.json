@@ -227,7 +227,7 @@
     "test:printer-width-refresh": "node tests/run-electron-node-test.cjs tests/printer-width-refresh.test.ts",
     "test:printer-migrations": "node tests/run-electron-node-test.cjs tests/printer-usb-device-path-migration.test.ts",
     "test:issue-252": "node tests/run-electron-node-test.cjs tests/issue-252-order-lifecycle-inventory.test.ts",
-    "test:inventory-ledger": "node tests/run-electron-node-test.cjs tests/inventory-ledger.test.ts",
+    "test:inventory-ledger": "node tests/run-electron-node-test.cjs tests/inventory-ledger.test.ts && node tests/run-electron-node-test.cjs tests/volume-units-inventory-links.test.ts",
     "test:issue-printing-and-kds-resilience": "node tests/run-electron-node-test.cjs tests/issue-printing-and-kds-resilience.test.ts",
     "test:diagnostics-event": "node tests/run-electron-node-test.cjs tests/diagnostics-event.test.ts",
     "test:units": "ts-node --transpile-only -P tests/tsconfig.json tests/units.test.ts",

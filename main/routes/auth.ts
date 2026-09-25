@@ -639,7 +639,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['prod-demo-chicken-wings', 'cat-demo-starters', 'Куриные крылышки', 280, 2],
         ['prod-demo-butter-chicken', 'cat-demo-main', 'Курица в сливочном соусе', 320, 1],
         ['prod-demo-dal-makhani', 'cat-demo-main', 'Дал-махани', 220, 2],
-        ['prod-demo-jeera-rice', 'cat-demo-main', 'Рис с кумизой', 150, 3],
+        ['prod-demo-jeera-rice', 'cat-demo-main', 'Рис с кумином', 150, 3],
         ['prod-demo-cola', 'cat-demo-beverages', 'Кола', 60, 1],
         ['prod-demo-lemon-soda', 'cat-demo-beverages', 'Лимонад', 70, 2],
         ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'Гулаб джамун', 80, 1],

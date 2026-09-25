@@ -224,6 +224,7 @@ async function run(): Promise<void> {
       assert.equal(snapshot.category, 'Закуски', 'Russian demo category is localized');
       assert.equal(snapshot.product, 'Шашлык из панира', 'Russian demo product is localized');
       assert.equal(rows('products', 'name', "id = 'prod-demo-butter-chicken'")[0].name, 'Курица в сливочном соусе', 'Russian butter chicken uses restaurant terminology');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-jeera-rice'")[0].name, 'Рис с кумином', 'Russian jeera rice uses the correct cumin terminology');
       assert.equal(snapshot.manager, 'Демо-менеджер', 'Russian demo manager is localized');
       assert.equal(snapshot.customer, 'Иван Петров', 'Russian demo customer is localized');
       assert.deepEqual(

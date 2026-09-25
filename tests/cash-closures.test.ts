@@ -108,9 +108,8 @@ async function main() {
   if ((db.prepare("SELECT COUNT(*) as c FROM settings WHERE key = 'timezone'").get() as any).c === 0) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('timezone', 'UTC')").run();
   }
-  // Regional settings are no longer auto-seeded (docs/business-decisions.md,
-  // "Regional settings come from signup, never from a fallback") — seed a
-  // resolvable country explicitly so resolveRegionalSnapshot() doesn't throw.
+  // Regional settings come from signup, never a fallback; seed one
+  // explicitly so resolveRegionalSnapshot() resolves.
   db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?) ON CONFLICT(key) DO UPDATE SET value='IN', updated_at=excluded.updated_at`).run(now());
   // Seed a known default currency so the F6 (KWD factor 1000) regression has
   // something to mutate. The default seed (`INR`) has factor 100; KWD has

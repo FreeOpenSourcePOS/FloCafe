@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "Montant",
     "billNumber": "N° de facture",
+    "cashReceived": "Montant reçu",
     "customerNo": "N° client",
     "date": "Date",
     "deliveryCharge": "Frais de livraison",

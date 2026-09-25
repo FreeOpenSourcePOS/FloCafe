@@ -1,6 +1,6 @@
 <div align="center">
   <h1>FloCafe</h1>
-  <p><a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a> · <a href="README.fr.md">Français</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.fil.md">Filipino</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ar.md">العربية</a></p>
+  <p><a href="README.es.md">Español</a> · <a href="README.pt.md">Português</a> · <a href="README.fr.md">Français</a> · <a href="README.tr.md">Türkçe</a> · <a href="README.fil.md">Filipino</a> · <a href="README.de.md">Deutsch</a> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ar.md">العربية</a> · <a href="README.ur.md">اردو</a></p>
   <p><strong>Free, open-source, offline-first point of sale for cafés, restaurants, and small kitchens.</strong></p>
   <p>
     <a href="https://flopos.com">Website</a> ·
@@ -105,17 +105,27 @@ FloCafe includes UI translations for:
 - Spanish
 - French
 - Brazilian Portuguese
+- Russian
 - Filipino
 - Turkish
 - Persian (Farsi), including RTL support
+- Arabic, including RTL support
+- Urdu, including RTL support
 - German
 - Italian
 - Japanese
 - Simplified Chinese
+- Traditional Chinese (Taiwan)
 - Korean
 - Bahasa Indonesia
+- Dutch
+- Hindi
+- Bengali/Bangla
+- Albanian
+- Vietnamese
+- Thai
 
-UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/i18n.md).
+UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/architecture/internationalization.md).
 
 FloCafe ships with 131 country profiles covering 109 currencies. Each profile sets a default currency, locale, and setup timezone; store owners can override the timezone during setup or later in Settings.
 
@@ -264,7 +274,7 @@ FloCafe includes a generic calculation engine and supports signed, versioned cou
 
 > **Notice:** FloCafe is software, not legal or tax advice. Tax packs and configuration tools do not by themselves certify compliance with local regulations. Operators remain responsible for verifying the requirements that apply to their business.
 
-For pack authoring, validation, and schema details, see the [Tax packs developer guide](docs/tax-packs.md).
+For pack authoring, validation, and schema details, see the [Tax packs developer guide](docs/reference/tax-packs.md).
 
 ## Development
 
@@ -308,7 +318,7 @@ If FloCafe is useful to you, consider starring the repository.
 - **Documentation index:** [docs/README.md](docs/README.md)
 - **Printer guide & troubleshooting:** [docs/printers.md](docs/printers.md)
 - **Linux setup & support:** [docs/linux.md](docs/linux.md)
-- **Internationalization & translations:** [docs/i18n.md](docs/i18n.md)
+- **Internationalization & translations:** [docs/architecture/internationalization.md](docs/architecture/internationalization.md)
 - **Google Drive backup setup:** [docs/google-drive-setup.md](docs/google-drive-setup.md)
 - **Bug reports & feature proposals:** [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - **General questions & ideas:** [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)

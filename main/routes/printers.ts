@@ -482,7 +482,7 @@ router.post('/print-bill', requirePermission('printing.execute'), asyncHandler(a
       taxRegistrationNumber: settings.tax_registration_number || '',
       currency,
       // CLDR-derived only — a stored currency_symbol setting is not an input
-      // (docs/business-decisions.md: no per-store override of a snapshot value).
+      // (docs/reference/product-invariants.md: no per-store override of a snapshot value).
       currency_symbol: getCurrencySymbol(currency, getCountryByCode(country)?.locale) || currency,
       country,
       instagram_handle: settings.instagram_handle || '',

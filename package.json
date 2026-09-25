@@ -17,6 +17,9 @@
     "lint:backend": "eslint main/ shared/",
     "lint": "npm run lint:backend && npm --prefix frontend run lint",
     "lint:budget": "node scripts/ci/check-lint-budget.cjs",
+    "docs:check": "npm run docs:check:structure && npm run docs:check:policy",
+    "docs:check:structure": "markdownlint-cli2 && node scripts/docs/check-docs.cjs --links --index",
+    "docs:check:policy": "node scripts/docs/check-docs.cjs --policy",
     "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop npm run build",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",
@@ -273,6 +276,7 @@
     "electron-builder": "^26.15.3",
     "eslint": "^10.11.0",
     "js-yaml": "^5.4.2",
+    "markdownlint-cli2": "^0.18.1",
     "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"

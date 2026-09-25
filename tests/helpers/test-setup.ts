@@ -107,7 +107,7 @@ function isNativeAbiMismatch(error: any): boolean {
 // ── Database Init ────────────────────────────────────────────────────────────
 
 // Production installs no longer seed a default country/currency/timezone
-// (docs/business-decisions.md, "Regional settings come from signup, never
+// (docs/reference/product-invariants.md, "Regional settings come from signup, never
 // from a fallback") — the signup wizard is the only source now. Most tests
 // call initTestDb() and seedOwnerUser() directly, bypassing that wizard, and
 // are not testing regional resolution at all; they just need a deterministic,

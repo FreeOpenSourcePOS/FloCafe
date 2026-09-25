@@ -35,6 +35,7 @@ function loadFrontendModules() {
   try {
     return {
       webPrint: require('../frontend/src/lib/printer/web-print'),
+      orderSlipWebPrint: require('../frontend/src/lib/printer/order-slip-web-print'),
       i18n: require('../frontend/src/lib/i18n'),
       countries: require('../frontend/src/lib/countries'),
     };
@@ -43,8 +44,9 @@ function loadFrontendModules() {
   }
 }
 
-const { webPrint, i18n, countries } = loadFrontendModules();
+const { webPrint, orderSlipWebPrint, i18n, countries } = loadFrontendModules();
 const { generateBillHtml } = webPrint;
+const { generateOrderSlipHtml } = orderSlipWebPrint;
 
 let passed = 0;
 let failed = 0;
@@ -72,7 +74,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko', 'id'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -361,6 +363,52 @@ async function run() {
       ptHtml.includes('Total geral') &&
       ptHtml.includes('Obrigado pela sua visita!')
     );
+
+    // Urdu
+    const urTenant = {
+      business_name: 'Flo Cafe Lahore',
+      currency: 'PKR',
+      country: 'PK',
+      timezone: 'Asia/Karachi',
+    };
+    const urHtml = generateBillHtml(sampleEnBill, urTenant, { language: 'ur', isReprint: true });
+    assert('UR receipt has lang="ur-PK" and dir="rtl"', urHtml.includes('<html lang="ur-PK" dir="rtl">'));
+    assert('UR labels are Urdu',
+      urHtml.includes('دوبارہ پرنٹ') &&
+      urHtml.includes('بل #') &&
+      urHtml.includes('کل رقم') &&
+      urHtml.includes('آپ کے تشریف لانے کا شکریہ!')
+    );
+
+    const hiTenant = {
+      business_name: 'FloCafe Delhi',
+      currency: 'INR',
+      country: 'IN',
+      timezone: 'Asia/Kolkata',
+    };
+    const hiHtml = generateBillHtml(sampleEnBill, hiTenant, { language: 'hi', isReprint: true });
+    assert('HI receipt has lang="hi-IN" and dir="ltr"', hiHtml.includes('<html lang="hi-IN" dir="ltr">'));
+    assert('HI labels are Devanagari',
+      hiHtml.includes('पुनर्मुद्रण') &&
+      hiHtml.includes('बिल #') &&
+      hiHtml.includes('कुल योग') &&
+      hiHtml.includes('धन्यवाद!')
+    );
+
+    const sqTenant = {
+      business_name: 'FloCafe Tiranë',
+      currency: 'ALL',
+      country: 'AL',
+      timezone: 'Europe/Tirane',
+    };
+    const sqHtml = generateBillHtml(sampleEnBill, sqTenant, { language: 'sq', isReprint: true });
+    assert('SQ receipt has lang="sq-AL" and dir="ltr"', sqHtml.includes('<html lang="sq-AL" dir="ltr">'));
+    assert('SQ labels are Albanian',
+      sqHtml.includes('PRINTIM PËRSËRI') &&
+      sqHtml.includes('Dëftesë nr.') &&
+      sqHtml.includes('Totali i përgjithshëm') &&
+      sqHtml.includes('Faleminderit për vizitën!')
+    );
   }
 
   console.log('\nTest Suite 6: Canonical semantic labels and unknown-language fallback');
@@ -408,6 +456,189 @@ async function run() {
       unknownHtml.includes('<strong>Grand Total</strong>') &&
       unknownHtml.includes('<p>Thank you for your visit!</p>') &&
       !unknownHtml.includes('receipt.grandTotal'),
+    );
+  }
+
+  console.log('\nTest Suite 7: Tableside order-slip locale and direction contract');
+  {
+    const orderSlipLabels = {
+      title: 'فاتورة الطلب',
+      subtotal: 'المجموع الفرعي',
+      discount: 'الخصم',
+      serviceCharge: 'رسوم الخدمة',
+      deliveryCharge: 'رسوم التوصيل',
+      packagingCharge: 'رسوم التغليف',
+      tax: 'الضريبة',
+      total: 'الإجمالي',
+    };
+    const arabicSlip = generateOrderSlipHtml(testIranOrder, orderSlipLabels, {
+      paperWidth: 80,
+      country: 'SA',
+      currency: 'SAR',
+      locale: 'ar-SA',
+      direction: 'rtl',
+    });
+    assert('Arabic order slip carries its locale and RTL direction',
+      arabicSlip.includes('class="order-slip" lang="ar-SA" dir="rtl"') &&
+      arabicSlip.includes('direction:rtl;text-align:right;') &&
+      arabicSlip.includes('المجموع الفرعي') &&
+      arabicSlip.includes('الإجمالي'),
+    );
+
+    const urduSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'آرڈر سلپ',
+      subtotal: 'ذیلی رقم',
+      discount: 'رعایت',
+      serviceCharge: 'سروس چارج',
+      deliveryCharge: 'ڈیلیوری چارج',
+      packagingCharge: 'پیکنگ چارج',
+      tax: 'ٹیکس',
+      total: 'کل رقم',
+    }, {
+      paperWidth: 80,
+      country: 'PK',
+      currency: 'PKR',
+      locale: 'ur-PK',
+      direction: 'rtl',
+    });
+    assert('Urdu order slip keeps explicit RTL layout and escaped labels',
+      urduSlip.includes('lang="ur-PK" dir="rtl"') &&
+      urduSlip.includes('direction:rtl;text-align:right;') &&
+      urduSlip.includes('آرڈر سلپ') &&
+      urduSlip.includes('ذیلی رقم') &&
+      urduSlip.includes('کل رقم') &&
+      !urduSlip.includes('<script>'),
+    );
+
+    const escapedLocaleSlip = generateOrderSlipHtml(testIranOrder, {
+      ...orderSlipLabels,
+      title: '<script>alert(1)</script>',
+    }, {
+      locale: 'ur-PK" data-test="unsafe',
+      direction: 'rtl',
+    });
+    assert('Order-slip locale attribute is escaped',
+      escapedLocaleSlip.includes('lang="ur-PK&quot; data-test=&quot;unsafe"') &&
+      !escapedLocaleSlip.includes('<script>alert(1)</script>'),
+    );
+
+    const ltrSlip = generateOrderSlipHtml(testIranOrder, orderSlipLabels, { direction: 'ltr' });
+    assert('LTR order slips retain explicit left-to-right layout',
+      ltrSlip.includes('dir="ltr"') && ltrSlip.includes('direction:ltr;text-align:left;'),
+    );
+
+    const russianSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'Чек заказа',
+      subtotal: 'Промежуточный итог',
+      discount: 'Скидка',
+      serviceCharge: 'Стоимость обслуживания',
+      deliveryCharge: 'Стоимость доставки',
+      packagingCharge: 'Стоимость упаковки',
+      tax: 'Налог',
+      total: 'Итого',
+    }, {
+      paperWidth: 80,
+      country: 'RU',
+      currency: 'RUB',
+      locale: 'ru-RU',
+      direction: 'ltr',
+    });
+    assert('Russian order slip carries ru-RU LTR metadata and localized labels',
+      russianSlip.includes('lang="ru-RU" dir="ltr"') &&
+      russianSlip.includes('direction:ltr;text-align:left;') &&
+      russianSlip.includes('Чек заказа') &&
+      russianSlip.includes('Промежуточный итог') &&
+      russianSlip.includes('Итого'),
+    );
+
+    const hindiSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'ऑर्डर स्लिप',
+      subtotal: 'उप-योग',
+      discount: 'छूट',
+      serviceCharge: 'सेवा शुल्क',
+      deliveryCharge: 'डिलीवरी शुल्क',
+      packagingCharge: 'पैकेजिंग शुल्क',
+      tax: 'कर',
+      total: 'कुल योग',
+    }, {
+      country: 'IN',
+      currency: 'INR',
+      locale: 'hi-IN',
+      direction: 'ltr',
+    });
+    assert('Hindi order slip carries hi-IN LTR metadata and local font fallback',
+      hindiSlip.includes('lang="hi-IN" dir="ltr"') &&
+      hindiSlip.includes('Noto Sans Devanagari') &&
+      hindiSlip.includes('उप-योग') &&
+      hindiSlip.includes('कुल योग'),
+    );
+
+    const bengaliSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'অর্ডার স্লিপ',
+      subtotal: 'সাবটোটাল',
+      discount: 'ছাড়',
+      serviceCharge: 'সার্ভিস চার্জ',
+      deliveryCharge: 'ডেলিভারি চার্জ',
+      packagingCharge: 'প্যাকেজিং চার্জ',
+      tax: 'কর',
+      total: 'মোট',
+    }, {
+      country: 'BD',
+      currency: 'BDT',
+      locale: 'bn-BD',
+      direction: 'ltr',
+    });
+    assert('Bengali order slip carries bn-BD LTR metadata and local font fallback',
+      bengaliSlip.includes('lang="bn-BD" dir="ltr"') &&
+      bengaliSlip.includes('Noto Sans Bengali') &&
+      bengaliSlip.includes('সাবটোটাল') &&
+      bengaliSlip.includes('মোট'),
+    );
+
+    const albanianSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'Fletë porosie',
+      subtotal: 'Nëntotali',
+      discount: 'Zbritje',
+      serviceCharge: 'Tarifa e shërbimit',
+      deliveryCharge: 'Tarifa e dorëzimit',
+      packagingCharge: 'Tarifa e paketimit',
+      tax: 'Taksa',
+      total: 'Totali',
+    }, {
+      country: 'AL',
+      currency: 'ALL',
+      locale: 'sq-AL',
+      direction: 'ltr',
+    });
+    assert('Albanian order slip carries sq-AL LTR metadata and diacritics',
+      albanianSlip.includes('lang="sq-AL" dir="ltr"') &&
+      albanianSlip.includes('direction:ltr;text-align:left;') &&
+      albanianSlip.includes('Fletë porosie') &&
+      albanianSlip.includes('Nëntotali') &&
+      albanianSlip.includes('Totali'),
+    );
+
+    const vietnameseSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'Phiếu đơn hàng',
+      subtotal: 'Tạm tính',
+      discount: 'Giảm giá',
+      serviceCharge: 'Phí dịch vụ',
+      deliveryCharge: 'Phí giao hàng',
+      packagingCharge: 'Phí đóng gói',
+      tax: 'Thuế',
+      total: 'Tổng cộng',
+    }, {
+      country: 'VN',
+      currency: 'VND',
+      locale: 'vi-VN',
+      direction: 'ltr',
+    });
+    assert('Vietnamese order slip carries vi-VN LTR metadata and stacked diacritics',
+      vietnameseSlip.includes('lang="vi-VN" dir="ltr"') &&
+      vietnameseSlip.includes('direction:ltr;text-align:left;') &&
+      vietnameseSlip.includes('Phiếu đơn hàng') &&
+      vietnameseSlip.includes('Tạm tính') &&
+      vietnameseSlip.includes('Tổng cộng'),
     );
   }
 

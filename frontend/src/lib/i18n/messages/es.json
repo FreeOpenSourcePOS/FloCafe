@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "Monto",
     "billNumber": "Comprobante #",
+    "cashReceived": "Efectivo recibido",
     "customerNo": "Cliente N.º",
     "date": "Fecha",
     "deliveryCharge": "Costo de envío",

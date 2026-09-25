@@ -57,7 +57,7 @@ Node.js مطلوب فقط لتطوير FloCafe وليس لتشغيل النسخ�
 
 يدعم FloCafe واجهة مستخدم باللغة العربية والإنجليزية والإسبانية والفرنسية والبرتغالية البرازيلية والفلبينية والتركية والفارسية (Farsi)، مع دعم RTL للعربية والفارسية، والألمانية والإيطالية واليابانية والصينية المبسطة والكورية وBahasa Indonesia.
 
-لغة الواجهة مستقلة عن بلد المتجر والإعدادات الإقليمية، بينما تبقى قواعد حساب الضرائب مجالًا منفصلًا. لمزيد من التفاصيل حول المساهمة في الترجمات أو إضافة لغات جديدة، راجع [دليل التدويل والترجمة](docs/i18n.md).
+لغة الواجهة مستقلة عن بلد المتجر والإعدادات الإقليمية، بينما تبقى قواعد حساب الضرائب مجالًا منفصلًا. لمزيد من التفاصيل حول المساهمة في الترجمات أو إضافة لغات جديدة، راجع [دليل التدويل والترجمة](docs/architecture/internationalization.md).
 
 ## التطوير
 
@@ -84,7 +84,7 @@ npm run dev
 ## المساعدة والتوثيق
 
 - [docs/README.md](docs/README.md)
-- [docs/i18n.md](docs/i18n.md)
-- [docs/tax-packs.md](docs/tax-packs.md)
+- [docs/architecture/internationalization.md](docs/architecture/internationalization.md)
+- [docs/reference/tax-packs.md](docs/reference/tax-packs.md)
 - [docs/linux.md](docs/linux.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)

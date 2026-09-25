@@ -54,7 +54,7 @@ function main(): void {
   initDatabase();
   const db = getDatabase();
 
-  assert.equal(getCurrentSchemaVersion(), 92, 'permission schema is migration v92');
+  assert.equal(getCurrentSchemaVersion(), 93, 'permission schema is migration v93');
   for (const table of ['role_permission_overrides', 'user_permission_overrides', 'authorization_audit_log']) {
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table), `${table} exists`);
   }

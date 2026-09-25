@@ -129,6 +129,10 @@ export interface OrderSnapshot {
 export interface PaymentSnapshot {
   readonly method: string;
   readonly amount: number;
+  /** Cash handed over, when the persisted payment carries it (cash tenders only). */
+  readonly tendered?: number;
+  /** Change handed back, when the persisted payment carries it (cash tenders only). */
+  readonly change?: number;
 }
 
 /** One display tax component (already reconciled by the caller). */
@@ -368,6 +372,10 @@ export interface PaymentsBlock {
     readonly method: string;
     readonly label: SemanticLabel;
     readonly amount: number;
+    /** Cash received row, present only when the payment was over-tendered. */
+    readonly tendered?: { readonly label: SemanticLabel; readonly amount: number };
+    /** Change row, present only when the persisted change is positive. */
+    readonly change?: { readonly label: SemanticLabel; readonly amount: number };
   }[];
 }
 
@@ -480,6 +488,58 @@ function optionalDirectional(text: string | undefined | null, base: TextDirectio
 function toFiniteNumber(value: unknown): number {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
+}
+
+/** Coerce a persisted optional payment amount; absent or invalid values stay undefined. */
+export function optionalPaymentAmount(value: unknown): number | undefined {
+  if ((typeof value !== 'number' && typeof value !== 'string') || String(value).trim() === '') return undefined;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+/** Cash receipt rows beyond the applied payment amount. */
+export interface CashTenderProjection {
+  /** Cash received: the persisted tendered amount, falling back to the applied amount. */
+  readonly tendered: number;
+  /** Change handed back; zero keeps the change row off the receipt. */
+  readonly change: number;
+}
+
+/**
+ * Project the optional tender fields of one cash payment. Rows print only when
+ * the tender exceeded the applied amount or the persisted change is positive,
+ * so exact payments and legacy records without the optional fields keep their
+ * existing output and never show derived change.
+ */
+export function projectCashTender(payment: {
+  readonly method: string;
+  readonly amount: number;
+  readonly tendered?: number;
+  readonly change?: number;
+}): CashTenderProjection | null {
+  if (payment.method.toLowerCase() !== 'cash') return null;
+  const tendered = optionalPaymentAmount(payment.tendered);
+  const change = optionalPaymentAmount(payment.change);
+  const overTendered = tendered !== undefined && tendered > payment.amount;
+  const positiveChange = change !== undefined && change > 0 ? change : 0;
+  if (!overTendered && positiveChange === 0) return null;
+  return { tendered: tendered ?? payment.amount, change: positiveChange };
+}
+
+/**
+ * Rows to print for one payment line: the applied amount first, then the
+ * cash-received and change rows when the payment projects them. Every
+ * renderer walks this list so the row order stays identical across surfaces.
+ */
+export function paymentDisplayRows(line: PaymentsBlock['lines'][number]): readonly {
+  readonly label: SemanticLabel;
+  readonly amount: number;
+}[] {
+  return [
+    { label: line.label, amount: line.amount },
+    ...(line.tendered ? [line.tendered] : []),
+    ...(line.change ? [line.change] : []),
+  ];
 }
 
 /**
@@ -657,11 +717,30 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
     heading: resolveSemanticLabel(labels, 'receipt.payments'),
     lines: Object.freeze(bill.payments
       .filter((payment) => payment.method.length > 0)
-      .map((payment) => Object.freeze({
-        method: payment.method,
-        label: paymentLabel(labels, payment.method),
-        amount: payment.amount,
-      }))),
+      .map((payment): PaymentsBlock['lines'][number] => {
+        const line = {
+          method: payment.method,
+          label: paymentLabel(labels, payment.method),
+          amount: payment.amount,
+        };
+        const tender = projectCashTender(payment);
+        if (tender === null) return Object.freeze(line);
+        return Object.freeze({
+          ...line,
+          tendered: Object.freeze({
+            label: resolveSemanticLabel(labels, 'receipt.cashReceived'),
+            amount: tender.tendered,
+          }),
+          ...(tender.change > 0
+            ? {
+              change: Object.freeze({
+                label: resolveSemanticLabel(labels, 'pos.changeReturned'),
+                amount: tender.change,
+              }),
+            }
+            : {}),
+        });
+      })),
   });
 
   const hasOnlineOrderInfo = order.onlinePlatform.length > 0 || order.externalOrderId.length > 0;
@@ -893,7 +972,13 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
         && value.lines.every((line) => isRecord(line)
           && typeof line.method === 'string'
           && isSemanticLabel(line.label)
-          && isFiniteNumber(line.amount));
+          && isFiniteNumber(line.amount)
+          && (line.tendered === undefined || (isRecord(line.tendered)
+            && isSemanticLabel(line.tendered.label)
+            && isFiniteNumber(line.tendered.amount)))
+          && (line.change === undefined || (isRecord(line.change)
+            && isSemanticLabel(line.change.label)
+            && isFiniteNumber(line.change.amount))));
     case 'message':
       return (value.reprintBanner === null || isSemanticLabel(value.reprintBanner))
         && (value.onlineOrderBanner === null || (isRecord(value.onlineOrderBanner)

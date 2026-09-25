@@ -26,7 +26,7 @@
  * Note: issue #445's `escpos-line-template-v1` payloads are the LEGACY
  * compliance-oriented line-template format for country packs. This model is
  * a different contract on purpose; do not converge them. See
- * docs/merchant-print-templates.md.
+ * docs/reference/merchant-print-templates.md.
  *
  * OFFLINE TRANSFER (#448): templates travel as `.json` envelopes carrying the
  * validated payload plus integrity checksum and informational origin metadata.
@@ -69,7 +69,7 @@ export const MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES = 256 * 1024;
  * The envelope is a self-describing portable wrapper around one validated
  * merchant template payload: `{ format, schemaVersion, exportedAt,
  * appVersion?, origin?, checksum, template }`. It is a PUBLIC CONTRACT
- * (documented in docs/merchant-print-templates.md): stable field names,
+ * (documented in docs/reference/merchant-print-templates.md): stable field names,
  * fail-closed on unknown majors, unknown fields rejected on import.
  */
 export const MERCHANT_TEMPLATE_EXPORT_FORMAT = 'flocafe-merchant-template';

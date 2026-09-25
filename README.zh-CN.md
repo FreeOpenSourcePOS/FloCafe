@@ -68,7 +68,7 @@ FloCafe 正在积极开发中，并已用于实际部署。项目通过明确的
 
 ## 语言和区域支持
 
-FloCafe 提供英语、西班牙语、法语、巴西葡萄牙语、菲律宾语、土耳其语、波斯语（支持 RTL）、德语、意大利语、日语、简体中文、韩语和印度尼西亚语界面。界面语言独立于商店所在国家和区域设置，税费计算规则则属于独立领域。有关贡献翻译或添加语言的信息，请参阅[国际化与翻译指南](docs/i18n.md)。
+FloCafe 提供英语、西班牙语、法语、巴西葡萄牙语、菲律宾语、土耳其语、波斯语（支持 RTL）、德语、意大利语、日语、简体中文、韩语和印度尼西亚语界面。界面语言独立于商店所在国家和区域设置，税费计算规则则属于独立领域。有关贡献翻译或添加语言的信息，请参阅[国际化与翻译指南](docs/architecture/internationalization.md)。
 
 FloCafe 包含 131 个国家/地区配置和 109 种货币。每个配置提供默认货币、区域设置和时区；商家可以在初始化时或之后的设置中修改时区。
 
@@ -78,7 +78,7 @@ FloCafe 提供通用计算引擎，以及针对区域规则、税务类别和舍
 
 > **提示：** FloCafe 是软件，不构成法律或税务建议。税务包和配置工具本身不代表符合当地法规；运营者仍需核实适用于其业务的要求。
 
-有关税务包编写、验证和架构的详细信息，请参阅[税务包开发指南](docs/tax-packs.md)。
+有关税务包编写、验证和架构的详细信息，请参阅[税务包开发指南](docs/reference/tax-packs.md)。
 
 ## 开发
 
@@ -122,8 +122,8 @@ Next.js 渲染器
 - [文档索引](docs/README.md)
 - [打印机指南](docs/printers.md)
 - [Linux 设置与支持](docs/linux.md)
-- [国际化与翻译](docs/i18n.md)
-- [税务包开发指南](docs/tax-packs.md)
+- [国际化与翻译](docs/architecture/internationalization.md)
+- [税务包开发指南](docs/reference/tax-packs.md)
 - [Google Drive 备份设置](docs/google-drive-setup.md)
 - [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)

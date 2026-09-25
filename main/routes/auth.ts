@@ -82,7 +82,7 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userId: string, us
 
   // Login must never fail on a missing/unresolvable regional snapshot
   // (unreachable for an authenticated, post-setup store per
-  // docs/business-decisions.md) — degrade to a neutral en-US-shaped format
+  // docs/reference/product-invariants.md) — degrade to a neutral en-US-shaped format
   // rather than throw, and never silently claim India.
   let snapshot: RegionalSnapshot | null = null;
   try {
@@ -211,15 +211,16 @@ function insertStaffUser(db: ReturnType<typeof getDatabase>, id: string, name: s
   `).run(id, name, email, bcrypt.hashSync(password, 10), role, isActive, now(), now());
 }
 
-type SeedLanguage = 'en' | 'es' | 'fr' | 'pt' | 'de' | 'tr' | 'fil' | 'fa' | 'ar' | 'it' | 'ja' | 'zh' | 'ko' | 'id';
+type SeedLanguage = 'en' | 'es' | 'fr' | 'pt' | 'ru' | 'de' | 'tr' | 'fil' | 'fa' | 'ar' | 'ur' | 'it' | 'ja' | 'zh' | 'zh-tw' | 'ko' | 'id' | 'nl' | 'hi' | 'bn' | 'sq' | 'vi' | 'th';
 
 /** Filipino intentionally uses the English sample data as its reviewed exception. */
 export const ENGLISH_IDENTICAL_SEED_LANGUAGES = ['fil'] as const;
 
 function resolveSeedLanguage(language?: string): SeedLanguage {
-  return language === 'es' || language === 'fr' || language === 'pt' || language === 'de'
-    || language === 'tr' || language === 'fil' || language === 'fa' || language === 'ar' || language === 'it'
-    || language === 'ja' || language === 'zh' || language === 'ko' || language === 'id'
+  return language === 'es' || language === 'fr' || language === 'pt' || language === 'ru' || language === 'de'
+    || language === 'tr' || language === 'fil' || language === 'fa' || language === 'ar' || language === 'ur' || language === 'it'
+    || language === 'ja' || language === 'zh' || language === 'zh-tw' || language === 'ko' || language === 'id' || language === 'nl'
+    || language === 'hi' || language === 'bn' || language === 'sq' || language === 'vi' || language === 'th'
     ? language
     : 'en';
 }
@@ -231,26 +232,39 @@ function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel:
     es: ['Comida', 'Bebidas', 'Comida', 'Té'],
     fr: ['Plats', 'Boissons', 'Plat', 'Thé'],
     pt: ['Comidas', 'Bebidas', 'Refeição', 'Chá'],
+    ru: ['Еда', 'Напитки', 'Блюдо', 'Чай'],
     de: ['Speisen', 'Getränke', 'Mahlzeit', 'Tee'],
     tr: ['Yiyecekler', 'İçecekler', 'Yemek', 'Çay'],
     fil: ['Food', 'Beverages', 'Meal', 'Tea'],
     fa: ['غذاها', 'نوشیدنی‌ها', 'غذا', 'چای'],
     ar: ['الأطعمة', 'المشروبات', 'وجبة', 'شاي'],
+    ur: ['کھانے', 'مشروبات', 'کھانا', 'چائے'],
     it: ['Cibo', 'Bevande', 'Pasto', 'Tè'],
     ja: ['料理', '飲み物', '食事', 'お茶'],
     zh: ['食物', '饮料', '餐点', '茶'],
+    'zh-tw': ['餐點', '飲品', '餐點', '茶'],
     ko: ['식사', '음료', '세트 메뉴', '차'],
     id: ['Makanan', 'Minuman', 'Paket', 'Teh'],
+    nl: ['Eten', 'Drankjes', 'Maaltijd', 'Thee'],
+    hi: ['खाना', 'पेय पदार्थ', 'भोजन', 'चाय'],
+    bn: ['খাবার', 'পানীয়', 'খাবার', 'চা'],
+    sq: ['Ushqim', 'Pije', 'Vakt', 'Çaj'],
+    vi: ['Món ăn', 'Đồ uống', 'Bữa ăn', 'Trà'],
+    th: ['อาหาร', 'เครื่องดื่ม', 'มื้ออาหาร', 'ชา'],
   };
   const [food, beverages, meal, tea] = labels[lang];
   const coffee = lang === 'es' ? 'Café' : lang === 'fr' ? 'Café' : lang === 'pt' ? 'Café'
-    : lang === 'de' ? 'Kaffee' : lang === 'tr' ? 'Kahve' : lang === 'fa' ? 'قهوه' : lang === 'ar' ? 'قهوة'
-    : lang === 'it' ? 'Caffè' : lang === 'ja' ? 'コーヒー' : lang === 'zh' ? '咖啡'
-    : lang === 'ko' ? '커피' : lang === 'id' ? 'Kopi' : 'Coffee';
+    : lang === 'de' ? 'Kaffee' : lang === 'tr' ? 'Kahve' : lang === 'fa' ? 'قهوه' : lang === 'ar' ? 'قهوة' : lang === 'ur' ? 'کافی'
+    : lang === 'it' ? 'Caffè' : lang === 'ja' ? 'コーヒー' : lang === 'zh' || lang === 'zh-tw' ? '咖啡'
+    : lang === 'ko' ? '커피' : lang === 'id' ? 'Kopi' : lang === 'nl' ? 'Koffie' : lang === 'hi' ? 'कॉफ़ी'
+    : lang === 'bn' ? 'কফি' : lang === 'sq' ? 'Kafe' : lang === 'vi' ? 'Cà phê' : lang === 'ru' ? 'Кофе'
+    : lang === 'th' ? 'กาแฟ' : 'Coffee';
   const snack = lang === 'es' ? 'Bocadillo' : lang === 'fr' ? 'Snack' : lang === 'pt' ? 'Lanche'
-    : lang === 'de' ? 'Snack' : lang === 'tr' ? 'Atıştırmalık' : lang === 'fa' ? 'میان‌وعده' : lang === 'ar' ? 'وجبة خفيفة'
-    : lang === 'it' ? 'Spuntino' : lang === 'ja' ? '軽食' : lang === 'zh' ? '小吃'
-    : lang === 'ko' ? '간식' : lang === 'id' ? 'Camilan' : 'Snack';
+    : lang === 'de' ? 'Snack' : lang === 'tr' ? 'Atıştırmalık' : lang === 'fa' ? 'میان‌وعده' : lang === 'ar' ? 'وجبة خفيفة' : lang === 'ur' ? 'اسنیک'
+    : lang === 'it' ? 'Spuntino' : lang === 'ja' ? '軽食' : lang === 'zh' ? '小吃' : lang === 'zh-tw' ? '小點'
+    : lang === 'ko' ? '간식' : lang === 'id' ? 'Camilan' : lang === 'nl' ? 'Snack' : lang === 'hi' ? 'नाश्ता'
+    : lang === 'bn' ? 'নাস্তา' : lang === 'sq' ? 'Ushqim i lehtë' : lang === 'vi' ? 'Đồ ăn vặt' : lang === 'ru' ? 'Закуска'
+    : lang === 'th' ? 'ขนม' : 'Snack';
   insertCategory(db, 'cat-express-food', food, '#F97316', '🍽️', 1);
   insertCategory(db, 'cat-express-beverages', beverages, '#0EA5E9', '🥤', 2);
   insertProduct(db, 'prod-express-meal', 'cat-express-food', meal, 150, 1);
@@ -331,6 +345,13 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['cat-demo-beverages', '饮品', '#45B7D1', '🥤', 3],
         ['cat-demo-desserts', '甜点', '#96CEB4', '🍰', 4],
       ] as const
+    : lang === 'zh-tw'
+    ? [
+        ['cat-demo-starters', '前菜', '#FF6B6B', '🍔', 1],
+        ['cat-demo-main', '主餐', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', '飲品', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', '甜點', '#96CEB4', '🍰', 4],
+      ] as const
     : lang === 'ko'
     ? [
         ['cat-demo-starters', '에피타이저', '#FF6B6B', '🍟', 1],
@@ -351,6 +372,62 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['cat-demo-main', 'الأطباق الرئيسية', '#4ECDC4', '🍛', 2],
         ['cat-demo-beverages', 'المشروبات', '#45B7D1', '🥤', 3],
         ['cat-demo-desserts', 'الحلويات', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'ur'
+    ? [
+        ['cat-demo-starters', 'اسٹارٹرز', '#FF6B6B', '🍔', 1],
+        ['cat-demo-main', 'بنیادی کھانے', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', 'مشروبات', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'مٹھائیاں', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'nl'
+    ? [
+        ['cat-demo-starters', 'Voorgerechten', '#FF6B6B', '🍟', 1],
+        ['cat-demo-main', 'Hoofdgerechten', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', 'Drankjes', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'Desserts', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'hi'
+    ? [
+        ['cat-demo-starters', 'स्टार्टर', '#FF6B6B', '🍔', 1],
+        ['cat-demo-main', 'मुख्य व्यंजन', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', 'पेय पदार्थ', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'मिठाइयाँ', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'bn'
+    ? [
+        ['cat-demo-starters', 'স্টার্টার', '#FF6B6B', '🍟', 1],
+        ['cat-demo-main', 'প্রধান খাবার', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', 'পানীয়', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'ডেজার্ট', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'sq'
+    ? [
+        ['cat-demo-starters', 'Aperitive', '#FF6B6B', '🍔', 1],
+        ['cat-demo-main', 'Kurse kryesore', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', 'Pije', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'Ëmbëlsira', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'vi'
+    ? [
+        ['cat-demo-starters', 'Khai vị', '#FF6B6B', '🍔', 1],
+        ['cat-demo-main', 'Món chính', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', 'Đồ uống', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'Tráng miệng', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'ru'
+    ? [
+        ['cat-demo-starters', 'Закуски', '#FF6B6B', '🍟', 1],
+        ['cat-demo-main', 'Основные блюда', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', 'Напитки', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'Десерты', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'th'
+    ? [
+        ['cat-demo-starters', 'อาหารเริ่มต้น', '#FF6B6B', '🍟', 1],
+        ['cat-demo-main', 'อาหารหลัก', '#4ECDC4', '🍛', 2],
+        ['cat-demo-beverages', 'เครื่องดื่ม', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'ของหวาน', '#96CEB4', '🍰', 4],
       ] as const
     : [
         ['cat-demo-starters', 'Starters', '#FF6B6B', '🍔', 1],
@@ -459,6 +536,17 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['prod-demo-water', 'cat-demo-beverages', '矿泉水', 200, 2],
         ['prod-demo-mango', 'cat-demo-desserts', '芒果布丁', 400, 1],
       ] as const
+    : lang === 'zh-tw'
+    ? [
+        ['prod-demo-spring-rolls', 'cat-demo-starters', '春捲', 280, 1],
+        ['prod-demo-dumplings', 'cat-demo-starters', '餃子', 250, 2],
+        ['prod-demo-noodles', 'cat-demo-main', '牛肉麵', 800, 1],
+        ['prod-demo-fried-rice', 'cat-demo-main', '蛋炒飯', 1100, 2],
+        ['prod-demo-sweet-sour', 'cat-demo-main', '糖醋里肌', 1200, 3],
+        ['prod-demo-tea', 'cat-demo-beverages', '綠茶', 350, 1],
+        ['prod-demo-water', 'cat-demo-beverages', '礦泉水', 200, 2],
+        ['prod-demo-mango', 'cat-demo-desserts', '芒果布丁', 400, 1],
+      ] as const
     : lang === 'ko'
     ? [
         ['prod-demo-paneer-tikka', 'cat-demo-starters', '치즈 꼬치', 250, 1],
@@ -492,6 +580,94 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['prod-demo-lemon-soda', 'cat-demo-beverages', 'صودا الليمون', 70, 2],
         ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'جولاب جامون', 80, 1],
       ] as const
+    : lang === 'ur'
+    ? [
+        ['prod-demo-paneer-tikka', 'cat-demo-starters', 'پنیر ٹکّا', 250, 1],
+        ['prod-demo-chicken-wings', 'cat-demo-starters', 'چکن ونگز', 280, 2],
+        ['prod-demo-butter-chicken', 'cat-demo-main', 'مکھنی چکن', 320, 1],
+        ['prod-demo-dal-makhani', 'cat-demo-main', 'دال مکھنی', 220, 2],
+        ['prod-demo-jeera-rice', 'cat-demo-main', 'ذیرہ چاول', 150, 3],
+        ['prod-demo-cola', 'cat-demo-beverages', 'کولا', 60, 1],
+        ['prod-demo-lemon-soda', 'cat-demo-beverages', 'لیمون سوڈا', 70, 2],
+        ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'گلاب جامن', 80, 1],
+      ] as const
+    : lang === 'nl'
+    ? [
+        ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Paneer tikka', 250, 1],
+        ['prod-demo-chicken-wings', 'cat-demo-starters', 'Kippenvleugels', 280, 2],
+        ['prod-demo-butter-chicken', 'cat-demo-main', 'Kip in botersaus', 320, 1],
+        ['prod-demo-dal-makhani', 'cat-demo-main', 'Dhal Makhani', 220, 2],
+        ['prod-demo-jeera-rice', 'cat-demo-main', 'Jeerarijs', 150, 3],
+        ['prod-demo-cola', 'cat-demo-beverages', 'Cola', 60, 1],
+        ['prod-demo-lemon-soda', 'cat-demo-beverages', 'Limonade', 70, 2],
+        ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'Gulab jamun', 80, 1],
+      ] as const
+    : lang === 'hi'
+    ? [
+        ['prod-demo-paneer-tikka', 'cat-demo-starters', 'पनीर टिक्का', 250, 1],
+        ['prod-demo-chicken-wings', 'cat-demo-starters', 'चिकन विंग्स', 280, 2],
+        ['prod-demo-butter-chicken', 'cat-demo-main', 'बटर चिकन', 320, 1],
+        ['prod-demo-dal-makhani', 'cat-demo-main', 'दाल मखनी', 220, 2],
+        ['prod-demo-jeera-rice', 'cat-demo-main', 'जीरा चावल', 150, 3],
+        ['prod-demo-cola', 'cat-demo-beverages', 'कोला', 60, 1],
+        ['prod-demo-lemon-soda', 'cat-demo-beverages', 'नींबू सोडा', 70, 2],
+        ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'गुलाब जामुन', 80, 1],
+      ] as const
+    : lang === 'bn'
+    ? [
+        ['prod-demo-fuchka', 'cat-demo-starters', 'ফুচকা', 280, 1],
+        ['prod-demo-singara', 'cat-demo-starters', 'সিঙ্গারা', 250, 2],
+        ['prod-demo-bhuna-khichuri', 'cat-demo-main', 'ভুনা খিচুড়ি', 800, 1],
+        ['prod-demo-ilish-bhaja', 'cat-demo-main', 'ইলিশ ভাজা', 1100, 2],
+        ['prod-demo-mug-dal-rice', 'cat-demo-main', 'মুগ ডাল ভাত', 1200, 3],
+        ['prod-demo-tea', 'cat-demo-beverages', 'চা', 350, 1],
+        ['prod-demo-water', 'cat-demo-beverages', 'পানি', 200, 2],
+        ['prod-demo-rosogolla', 'cat-demo-desserts', 'রসগোলা', 400, 1],
+      ] as const
+    : lang === 'sq'
+    ? [
+        ['prod-demo-skewers', 'cat-demo-starters', 'Sata me pulë', 280, 1],
+        ['prod-demo-pita', 'cat-demo-starters', 'Pita me djathë', 250, 2],
+        ['prod-demo-burrek', 'cat-demo-main', 'Byrek me djathë', 800, 1],
+        ['prod-demo-hamburger', 'cat-demo-main', 'Hamburger', 1100, 2],
+        ['prod-demo-kulec', 'cat-demo-main', 'Kuleç me kripë', 1200, 3],
+        ['prod-demo-kafe', 'cat-demo-beverages', 'Kafe', 60, 1],
+        ['prod-demo-uje', 'cat-demo-beverages', 'Ujë mineral', 70, 2],
+        ['prod-demo-bakllavan', 'cat-demo-desserts', 'Bakllavan', 80, 1],
+      ] as const
+    : lang === 'vi'
+    ? [
+        ['prod-demo-nem-ran', 'cat-demo-starters', 'Nem rán', 280, 1],
+        ['prod-demo-khoai-tay-chien', 'cat-demo-starters', 'Khoai tây chiên', 250, 2],
+        ['prod-demo-pho-bo', 'cat-demo-main', 'Phở bò', 800, 1],
+        ['prod-demo-pho-bo-dac-biet', 'cat-demo-main', 'Phở bò đặc biệt', 1100, 2],
+        ['prod-demo-bun-bo-hue', 'cat-demo-main', 'Bún bò Huế', 1200, 3],
+        ['prod-demo-coca-cola', 'cat-demo-beverages', 'Coca-Cola', 350, 1],
+        ['prod-demo-nuoc-khoang', 'cat-demo-beverages', 'Nước khoáng', 200, 2],
+        ['prod-demo-banh-flan', 'cat-demo-desserts', 'Bánh flan', 400, 1],
+      ] as const
+    : lang === 'ru'
+    ? [
+        ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Шашлык из панира', 250, 1],
+        ['prod-demo-chicken-wings', 'cat-demo-starters', 'Куриные крылышки', 280, 2],
+        ['prod-demo-butter-chicken', 'cat-demo-main', 'Курица в сливочном соусе', 320, 1],
+        ['prod-demo-dal-makhani', 'cat-demo-main', 'Дал-махани', 220, 2],
+        ['prod-demo-jeera-rice', 'cat-demo-main', 'Рис с кумином', 150, 3],
+        ['prod-demo-cola', 'cat-demo-beverages', 'Кола', 60, 1],
+        ['prod-demo-lemon-soda', 'cat-demo-beverages', 'Лимонад', 70, 2],
+        ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'Гулаб джамун', 80, 1],
+      ] as const
+    : lang === 'th'
+    ? [
+        ['prod-demo-satay', 'cat-demo-starters', 'สะเต๊ะไก่', 280, 1],
+        ['prod-demo-tempeh', 'cat-demo-starters', 'เต้าหู้ทอดกรอบ', 250, 2],
+        ['prod-demo-pad-krapow', 'cat-demo-main', 'ผัดกะเพราไก่', 800, 1],
+        ['prod-demo-ayam-goreng', 'cat-demo-main', 'ไก่ทอดแกง', 1100, 2],
+        ['prod-demo-khao-soi', 'cat-demo-main', 'ข้าวซอย', 1200, 3],
+        ['prod-demo-teh-tarik', 'cat-demo-beverages', 'ชาเย็น', 350, 1],
+        ['prod-demo-mineral-water', 'cat-demo-beverages', 'น้ำแร่', 200, 2],
+        ['prod-demo-mango-sticky-rice', 'cat-demo-desserts', 'ข้าวเหนียวมะม่วง', 400, 1],
+      ] as const
     : [
         ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Paneer Tikka', 250, 1],
         ['prod-demo-chicken-wings', 'cat-demo-starters', 'Chicken Wings', 280, 2],
@@ -505,7 +681,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   for (const [id, categoryId, name, price, sort] of products) insertProduct(db, id, categoryId, name, price, sort);
 
   if (serviceModel === 'finedine') {
-    const tableLabel = lang === 'es' ? 'M' : lang === 'pt' ? 'M' : 'T';
+    const tableLabel = lang === 'es' ? 'M' : lang === 'pt' ? 'M' : lang === 'vi' ? 'B' : lang === 'ru' ? 'С' : 'T';
     insertTable(db, 'tbl-demo-1', `${tableLabel}1`, 4);
     insertTable(db, 'tbl-demo-2', `${tableLabel}2`, 4);
     insertTable(db, 'tbl-demo-3', `${tableLabel}3`, 6);
@@ -519,71 +695,110 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   const demoCountry = country;
   const dialCode = dialCodeFor(demoCountry);
   if (lang === 'es') {
-    insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'María González', '1145678902', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '1145678903', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '+541145678901', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'María González', '+541145678902', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '+541145678903', dialCode, demoCountry);
   } else if (lang === 'fr') {
     insertCustomer(db, 'cust-demo-1', 'Camille Martin', '+33145678901', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-2', 'Julien Bernard', '+33145678902', dialCode, demoCountry);
     insertCustomer(db, 'cust-demo-3', 'Sophie Dubois', '+33145678903', dialCode, demoCountry);
   } else if (lang === 'pt') {
-    insertCustomer(db, 'cust-demo-1', 'João Silva', '1198765432', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Maria Santos', '1198765433', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '1198765434', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'João Silva', '+5511987654321', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Maria Santos', '+5511987654322', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '+5511987654323', dialCode, demoCountry);
   } else if (lang === 'de') {
-    insertCustomer(db, 'cust-demo-1', 'Anna Müller', '15123456789', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Lukas Schneider', '15123456790', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Sophie Weber', '15123456791', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Anna Müller', '+4915123456789', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Lukas Schneider', '+4915123456790', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Sophie Weber', '+4915123456791', dialCode, demoCountry);
   } else if (lang === 'tr') {
-    insertCustomer(db, 'cust-demo-1', 'Ayşe Yılmaz', '5321234567', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Mehmet Kaya', '5321234568', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Elif Demir', '5321234569', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Ayşe Yılmaz', '+905321234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Mehmet Kaya', '+905321234568', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Elif Demir', '+905321234569', dialCode, demoCountry);
   } else if (lang === 'fa') {
-    insertCustomer(db, 'cust-demo-1', 'علی رضایی', '9121234567', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'سارا محمدی', '9121234568', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'مریم کریمی', '9121234569', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'علی رضایی', '+989121234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'سارا محمدی', '+989121234568', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'مریم کریمی', '+989121234569', dialCode, demoCountry);
   } else if (lang === 'it') {
-    insertCustomer(db, 'cust-demo-1', 'Giulia Rossi', '3331234567', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Marco Bianchi', '3331234568', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Anna Ferrari', '3331234569', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Giulia Rossi', '+393331234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Marco Bianchi', '+393331234568', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Anna Ferrari', '+393331234569', dialCode, demoCountry);
   } else if (lang === 'ja') {
-    insertCustomer(db, 'cust-demo-1', '佐藤 花子', '9012345671', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', '鈴木 太郎', '9012345672', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', '田中 美咲', '9012345673', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', '佐藤 花子', '+819012345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', '鈴木 太郎', '+819012345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', '田中 美咲', '+819012345670', dialCode, demoCountry);
   } else if (lang === 'zh') {
-    insertCustomer(db, 'cust-demo-1', '李娜', '13800138071', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', '王伟', '13800138072', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', '张敏', '13800138073', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', '李娜', '+8613800138071', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', '王伟', '+8613800138072', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', '张敏', '+8613800138073', dialCode, demoCountry);
+  } else if (lang === 'zh-tw') {
+    insertCustomer(db, 'cust-demo-1', '李娜', '+886912345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', '王偉', '+886912345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', '張敏', '+886912345670', dialCode, demoCountry);
   } else if (lang === 'ko') {
-    insertCustomer(db, 'cust-demo-1', '김민수', '01012345678', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', '이지은', '01012345679', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', '박서연', '01012345680', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', '김민수', '+821012345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', '이지은', '+821012345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', '박서연', '+821012345670', dialCode, demoCountry);
   } else if (lang === 'id') {
-    insertCustomer(db, 'cust-demo-1', 'Budi Santoso', '81234567801', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Siti Rahayu', '81234567802', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Andi Wijaya', '81234567803', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Budi Santoso', '+6281234567801', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Siti Rahayu', '+6281234567802', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Andi Wijaya', '+6281234567803', dialCode, demoCountry);
   } else if (lang === 'ar') {
-    insertCustomer(db, 'cust-demo-1', 'علي حسن', '9876543210', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'سارة أحمد', '9876543211', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'مريم خالد', '9876543212', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'علي حسن', '+966512345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'سارة أحمد', '+966512345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'مريم خالد', '+966512345670', dialCode, demoCountry);
+  } else if (lang === 'ur') {
+    insertCustomer(db, 'cust-demo-1', 'عمر احمد', '+923001234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'عائشہ خان', '+923001234568', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'زینب علی', '+923001234569', dialCode, demoCountry);
+  } else if (lang === 'nl') {
+    insertCustomer(db, 'cust-demo-1', 'Sanne de Jong', '+31612345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Bram Jansen', '+31612345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Fleur Visser', '+31612345680', dialCode, demoCountry);
+  } else if (lang === 'hi') {
+    insertCustomer(db, 'cust-demo-1', 'आरव शर्मा', '+919876543210', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'माया अयर', '+919876543211', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'कबीर खान', '+919876543212', dialCode, demoCountry);
+  } else if (lang === 'bn') {
+    insertCustomer(db, 'cust-demo-1', 'রাফেকুল ইসলাম', '+8801712345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'সাদিয়া আফরিন', '+8801712345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'তানভীর আহমেদ', '+8801712345680', dialCode, demoCountry);
+  } else if (lang === 'sq') {
+    insertCustomer(db, 'cust-demo-1', 'Arben Krasni', '+355671234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Elira Gjoni', '+355691234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Murat Hoxha', '+355681234567', dialCode, demoCountry);
+  } else if (lang === 'vi') {
+    insertCustomer(db, 'cust-demo-1', 'Nguyễn Minh Anh', '+84912345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Trần Quốc Bảo', '+84912345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Lê Thu Hà', '+84912345680', dialCode, demoCountry);
+  } else if (lang === 'ru') {
+    insertCustomer(db, 'cust-demo-1', 'Иван Петров', '+79161234567', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Ольга Смирнова', '+79161234568', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Дмитрий Козлов', '+79161234569', dialCode, demoCountry);
+  } else if (lang === 'th') {
+    insertCustomer(db, 'cust-demo-1', 'สมชาย รักดี', '+66812345678', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'สุดา วงศ์ทอง', '+66812345679', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'ประเสริฐ ทองดี', '+66812345680', dialCode, demoCountry);
   } else {
-    insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '9876543210', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '9876543211', dialCode, demoCountry);
-    insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '9876543212', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '+919876543210', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '+919876543211', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '+919876543212', dialCode, demoCountry);
   }
 
   const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'fr' ? 'Gérant Démo' : lang === 'pt' ? 'Gerente Demo'
-    : lang === 'de' ? 'Demo-Manager' : lang === 'tr' ? 'Demo Müdürü' : lang === 'fa' ? 'مدیر نمایشی' : lang === 'ar' ? 'مدير تجريبي'
-    : lang === 'it' ? 'Responsabile Demo' : lang === 'ja' ? 'デモマネージャー' : lang === 'zh' ? '演示经理'
-    : lang === 'ko' ? '예시 매니저' : lang === 'id' ? 'Manajer Demo' : 'Demo Manager';
+    : lang === 'de' ? 'Demo-Manager' : lang === 'tr' ? 'Demo Müdürü' : lang === 'fa' ? 'مدیر نمایشی' : lang === 'ar' ? 'مدير تجريبي' : lang === 'ur' ? 'ڈیمو منیجر'
+    : lang === 'it' ? 'Responsabile Demo' : lang === 'ja' ? 'デモマネージャー' : lang === 'zh' ? '演示经理' : lang === 'zh-tw' ? '示範經理'
+    : lang === 'ko' ? '예시 매니저' : lang === 'id' ? 'Manajer Demo' : lang === 'nl' ? 'Demomanager' : lang === 'hi' ? 'डेमो मैनेजर'
+    : lang === 'bn' ? 'ম্যানেজার ডেমো' : lang === 'sq' ? 'Menaxher Demo' : lang === 'vi' ? 'Quản lý Demo' : lang === 'ru' ? 'Демо-менеджер' : lang === 'th' ? 'ผู้จัดการสาธิต' : 'Demo Manager';
   const cashierName = lang === 'es' ? 'Cajero Demo' : lang === 'fr' ? 'Caissier Démo' : lang === 'pt' ? 'Caixa Demo'
-    : lang === 'de' ? 'Demo-Kassierer' : lang === 'tr' ? 'Demo Kasiyer' : lang === 'fa' ? 'صندوقدار نمایشی' : lang === 'ar' ? 'أمين صندوق تجريبي'
-    : lang === 'it' ? 'Cassiere Demo' : lang === 'ja' ? 'デモキャッシャー' : lang === 'zh' ? '演示收银员'
-    : lang === 'ko' ? '예시 계산원' : lang === 'id' ? 'Kasir Demo' : 'Demo Cashier';
+    : lang === 'de' ? 'Demo-Kassierer' : lang === 'tr' ? 'Demo Kasiyer' : lang === 'fa' ? 'صندوقدار نمایشی' : lang === 'ar' ? 'أمين صندوق تجريبي' : lang === 'ur' ? 'ڈیمو کیشیئر'
+    : lang === 'it' ? 'Cassiere Demo' : lang === 'ja' ? 'デモキャッシャー' : lang === 'zh' ? '演示收银员' : lang === 'zh-tw' ? '示範收銀員'
+    : lang === 'ko' ? '예시 계산원' : lang === 'id' ? 'Kasir Demo' : lang === 'nl' ? 'Demo-kassier' : lang === 'hi' ? 'डेमो कैशियर'
+    : lang === 'bn' ? 'ক্যাশিয়ার ডেমো' : lang === 'sq' ? 'Arkëtar Demo' : lang === 'vi' ? 'Thu ngân Demo' : lang === 'ru' ? 'Демо-кассир' : lang === 'th' ? 'แคชเชียร์สาธิต' : 'Demo Cashier';
   const chefName = lang === 'es' ? 'Cocinero Demo' : lang === 'fr' ? 'Chef Démo' : lang === 'pt' ? 'Cozinheiro Demo'
-    : lang === 'de' ? 'Demo-Koch' : lang === 'tr' ? 'Demo Aşçı' : lang === 'fa' ? 'آشپز نمایشی' : lang === 'ar' ? 'طاهٍ تجريبي'
-    : lang === 'it' ? 'Cuoco Demo' : lang === 'ja' ? 'デモシェフ' : lang === 'zh' ? '演示厨师'
-    : lang === 'ko' ? '예시 셰프' : lang === 'id' ? 'Koki Demo' : 'Demo Chef';
+    : lang === 'de' ? 'Demo-Koch' : lang === 'tr' ? 'Demo Aşçı' : lang === 'fa' ? 'آشپز نمایشی' : lang === 'ar' ? 'طاهٍ تجريبي' : lang === 'ur' ? 'ڈیمو شیف'
+    : lang === 'it' ? 'Cuoco Demo' : lang === 'ja' ? 'デモシェフ' : lang === 'zh' ? '演示厨师' : lang === 'zh-tw' ? '示範廚師'
+    : lang === 'ko' ? '예시 셰프' : lang === 'id' ? 'Koki Demo' : lang === 'nl' ? 'Demo-kok' : lang === 'hi' ? 'डेमो शेफ'
+    : lang === 'bn' ? 'শেফ ডেমো' : lang === 'sq' ? 'Shef Demo' : lang === 'vi' ? 'Đầu bếp Demo' : lang === 'ru' ? 'Демо-повар' : lang === 'th' ? 'เชฟสาธิต' : 'Demo Chef';
   // Demo staff accounts are inactive with random passwords to prevent usable default credentials.
   insertStaffUser(db, 'user-demo-manager', managerName, 'manager@flo.local', 'manager', randomBytes(32).toString('hex'), 0);
   insertStaffUser(db, 'user-demo-cashier', cashierName, 'cashier@flo.local', 'cashier', randomBytes(32).toString('hex'), 0);
@@ -1091,7 +1306,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     } = req.body;
     const email = normalizeEmail(req.body.email);
     // Regional settings come from signup, never from a fallback — see
-    // docs/business-decisions.md. There is no default country.
+    // docs/reference/product-invariants.md. There is no default country.
     const resolvedCountry = typeof country === 'string' ? getCountryByCode(country) : undefined;
     if (!resolvedCountry) {
       return res.status(400).json({ error: 'A valid country is required' });

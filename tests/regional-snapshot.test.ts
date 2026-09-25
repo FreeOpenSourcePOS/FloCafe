@@ -1,5 +1,5 @@
 /**
- * Contract tests for resolveRegionalSnapshot() (docs/regional-snapshot.md).
+ * Contract tests for resolveRegionalSnapshot() (docs/architecture/regional-settings.md).
  * Pure module — no Electron/DB dependency, matches currency.test.ts style.
  */
 import { test } from 'node:test';

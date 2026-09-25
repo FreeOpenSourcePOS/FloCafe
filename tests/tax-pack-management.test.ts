@@ -853,42 +853,45 @@ async function main() {
     });
     assertEqual(acceptPluginTemplate.status, 200, 'settings accepts installed plugin template ids');
 
+    const pluginOrder = {
+      order_number: 'ORD-GST-1',
+      created_at: '2026-08-01T10:30:00.000Z',
+      table: { name: 'T1' },
+      items: [{
+        product_name: 'Masala Chai',
+        quantity: 2,
+        total: 210,
+        tax_breakdown: [
+          { title: 'CGST', rate: 2.5, amount: 5 },
+          { title: 'SGST', rate: 2.5, amount: 5 },
+        ],
+      }],
+    };
+    const pluginBusiness = {
+      name: 'Flo Test Cafe',
+      address: 'Mumbai',
+      phone: '9999999999',
+      country: 'IN',
+      currency_symbol: '₹',
+      taxRegistrationNumber: '27ABCDE1234F1Z5',
+      show_tax_id: true,
+      show_tax_breakdown: true,
+    };
+    const pluginBill = {
+      bill_number: 'BILL-GST-1',
+      subtotal: 200,
+      discount_amount: 0,
+      tax_amount: 10,
+      service_charge: 20,
+      delivery_charge: 30,
+      packaging_charge: 5,
+      total: 265,
+      payment_details: [{ method: 'cash', amount: 265 }],
+    };
     const pluginReceipt = escPosToText(formatReceipt(
-      {
-        order_number: 'ORD-GST-1',
-        created_at: '2026-08-01T10:30:00.000Z',
-        table: { name: 'T1' },
-        items: [{
-          product_name: 'Masala Chai',
-          quantity: 2,
-          total: 210,
-          tax_breakdown: [
-            { title: 'CGST', rate: 2.5, amount: 5 },
-            { title: 'SGST', rate: 2.5, amount: 5 },
-          ],
-        }],
-      },
-      {
-        bill_number: 'BILL-GST-1',
-        subtotal: 200,
-        discount_amount: 0,
-        tax_amount: 10,
-        service_charge: 20,
-        delivery_charge: 30,
-        packaging_charge: 5,
-        total: 265,
-        payment_details: [{ method: 'cash', amount: 265 }],
-      },
-      {
-        name: 'Flo Test Cafe',
-        address: 'Mumbai',
-        phone: '9999999999',
-        country: 'IN',
-        currency_symbol: '₹',
-        taxRegistrationNumber: '27ABCDE1234F1Z5',
-        show_tax_id: true,
-        show_tax_breakdown: true,
-      },
+      pluginOrder,
+      pluginBill,
+      pluginBusiness,
       'in.gst.tax-invoice.v1',
       48,
       true,
@@ -911,6 +914,44 @@ async function main() {
       'declared plugin charge rows keep service, delivery, packaging, total order',
     );
     assert(pluginReceipt.includes('GRAND TOTAL'), 'installed GST plugin template renders plugin grand total label');
+
+    const renderPluginPayments = (paymentDetails: Array<Record<string, unknown>>, billNumber: string): string => escPosToText(formatReceipt(
+      pluginOrder,
+      { ...pluginBill, bill_number: billNumber, payment_details: paymentDetails },
+      pluginBusiness,
+      'in.gst.tax-invoice.v1',
+      48,
+      true,
+    ));
+    const overpaidPluginReceipt = renderPluginPayments(
+      [{ method: 'cash', amount: 265, tendered_amount: 300, change_amount: 35 }],
+      'BILL-GST-OVERPAID',
+    );
+    const overpaidPluginRows = overpaidPluginReceipt.split(/\r?\n/);
+    const appliedCashRow = overpaidPluginRows.find((row) => /\bcash\b/i.test(row) && !row.includes('Cash Received'));
+    const cashReceivedRow = overpaidPluginRows.find((row) => row.includes('Cash Received'));
+    const changeRow = overpaidPluginRows.find((row) => row.includes('Change Returned'));
+    assert(appliedCashRow?.includes('₹265.00'), 'country-pack receipt keeps the applied cash amount');
+    assert(cashReceivedRow?.includes('₹300.00'), 'country-pack receipt renders persisted cash received');
+    assert(changeRow?.includes('₹35.00'), 'country-pack receipt renders persisted change');
+    assert(
+      overpaidPluginRows.indexOf(appliedCashRow!) < overpaidPluginRows.indexOf(cashReceivedRow!)
+        && overpaidPluginRows.indexOf(cashReceivedRow!) < overpaidPluginRows.indexOf(changeRow!),
+      'country-pack receipt keeps applied, cash-received, and change row order',
+    );
+    const exactPluginReceipt = renderPluginPayments(
+      [{ method: 'cash', amount: 265, tendered_amount: 265, change_amount: 0 }],
+      pluginBill.bill_number,
+    );
+    assertEqual(exactPluginReceipt, pluginReceipt, 'exact country-pack cash output stays byte-identical to legacy output');
+    const nonCashPluginReceipt = renderPluginPayments(
+      [{ method: 'card', amount: 265, tendered_amount: 300, change_amount: 35 }],
+      'BILL-GST-NON-CASH',
+    );
+    assert(
+      !nonCashPluginReceipt.includes('Cash Received') && !nonCashPluginReceipt.includes('Change Returned'),
+      'country-pack non-cash payments never expose cash tender rows',
+    );
 
     const zeroPluginReceipt = escPosToText(formatReceipt(
       {

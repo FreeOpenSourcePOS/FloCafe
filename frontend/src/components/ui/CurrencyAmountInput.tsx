@@ -20,7 +20,7 @@ type CurrencyAmountInputProps = Omit<ComponentProps<'input'>, 'value' | 'onChang
 /**
  * A price input that groups digits with the store's own separators as
  * typed, and blocks decimal entry entirely when the currency has no
- * fraction digits (e.g. COP, JPY). docs/regional-snapshot.md, "Currency
+ * fraction digits (e.g. COP, JPY). docs/architecture/regional-settings.md, "Currency
  * input and display path".
  */
 export default function CurrencyAmountInput({ value, onValueChange, format, ...rest }: CurrencyAmountInputProps) {

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, parseRowJson, withTxn } from '../db';
 import { randomUUID } from 'crypto';
-import { requirePermission } from '../services/authorization';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { notifyKdsUpdate } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 
@@ -23,14 +23,31 @@ function activeOrderForTable(db: ReturnType<typeof getDatabase>, tableId: string
   return { ...order, customer: customer || null };
 }
 
-function tableShape(table: any, activeOrder?: any) {
+function reservationCustomerShape(db: ReturnType<typeof getDatabase>, table: { status: string; reservation_customer_id?: string | null }) {
+  const reservationCustomer = table.status === 'reserved' && table.reservation_customer_id
+    ? db.prepare('SELECT name, phone FROM customers WHERE id = ?').get(table.reservation_customer_id) as { name: string; phone: string | null } | undefined
+    : undefined;
+  return {
+    reservation_customer_id: table.status === 'reserved' ? table.reservation_customer_id ?? null : null,
+    reservation_customer_name: reservationCustomer?.name ?? null,
+    reservation_customer_phone: reservationCustomer?.phone ?? null,
+  };
+}
+
+function tableShape(db: ReturnType<typeof getDatabase>, table: any, activeOrder?: any, includeReservationCustomer = true) {
   const currentOrder = activeOrder || null;
+  const visibleCurrentOrder = currentOrder && !includeReservationCustomer
+    ? { ...currentOrder, customer_id: null, customer: null }
+    : currentOrder;
   return {
     ...table,
     name: table.number,
-    activeOrder: currentOrder,
-    current_order: currentOrder,
-    seated_at: currentOrder?.created_at ?? null,
+    ...(includeReservationCustomer
+      ? reservationCustomerShape(db, table)
+      : { reservation_customer_id: null, reservation_customer_name: null, reservation_customer_phone: null }),
+    activeOrder: visibleCurrentOrder,
+    current_order: visibleCurrentOrder,
+    seated_at: visibleCurrentOrder?.created_at ?? null,
   };
 }
 
@@ -86,8 +103,9 @@ router.get('/', requirePermission('tables.view'), (req: Request, res: Response) 
     query += ' ORDER BY number';
 
     const rows = db.prepare(query).all(...params);
+    const includeReservationCustomer = hasPermission((req as Request & { user?: { userId?: string } }).user?.userId || '', 'customers.view');
     // Normalize: frontend expects `name`, schema column is `number`
-    const tables = rows.map((t: any) => tableShape(t, activeOrderForTable(db, t.id)));
+    const tables = rows.map((t: any) => tableShape(db, t, activeOrderForTable(db, t.id), includeReservationCustomer));
     res.json({ tables });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -104,9 +122,10 @@ router.get('/:id', requirePermission('tables.view'), (req: Request, res: Respons
     }
 
     const activeOrder = activeOrderForTable(db, req.params.id as string);
+    const includeReservationCustomer = hasPermission((req as Request & { user?: { userId?: string } }).user?.userId || '', 'customers.view');
 
     // Normalize: frontend expects `name`, schema column is `number`
-    res.json({ table: tableShape(table as any, activeOrder) });
+    res.json({ table: tableShape(db, table as any, activeOrder, includeReservationCustomer) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -341,7 +360,7 @@ router.put('/:id', requirePermission('tables.manage'), (req: Request, res: Respo
     );
 
     const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
-    res.json({ table: tableShape(updated as any, activeOrderForTable(db, req.params.id as string)) });
+    res.json({ table: tableShape(db, updated as any, activeOrderForTable(db, req.params.id as string)) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -368,7 +387,7 @@ router.post('/:id/deactivate', requirePermission('tables.manage'), (req: Request
 
     db.prepare('UPDATE tables SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
-    res.json({ table: tableShape(updated as any) });
+    res.json({ table: tableShape(db, updated as any) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -388,7 +407,7 @@ router.post('/:id/reactivate', requirePermission('tables.manage'), (req: Request
 
     db.prepare('UPDATE tables SET is_active = 1, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
-    res.json({ table: tableShape(updated as any) });
+    res.json({ table: tableShape(db, updated as any) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -456,8 +475,8 @@ router.post('/:id/move-order', requirePermission('tables.orders.move'), (req: Re
           items,
           table: { ...updatedTarget, name: updatedTarget.number },
         },
-        sourceTable: tableShape(updatedSource, activeOrderForTable(db, sourceTableId)),
-        targetTable: tableShape(updatedTarget, activeOrderForTable(db, target_table_id)),
+        sourceTable: tableShape(db, updatedSource, activeOrderForTable(db, sourceTableId)),
+        targetTable: tableShape(db, updatedTarget, activeOrderForTable(db, target_table_id)),
       };
     });
 
@@ -479,6 +498,7 @@ router.post('/:id/move-order', requirePermission('tables.orders.move'), (req: Re
 router.patch('/:id/status', requirePermission('tables.manage'), (req: Request, res: Response) => {
   try {
     const { status } = req.body;
+    const reservationCustomerId = req.body.reservation_customer_id;
 
     if (!status) {
       return res.status(400).json({ error: 'Status is required' });
@@ -488,6 +508,17 @@ router.patch('/:id/status', requirePermission('tables.manage'), (req: Request, r
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Use: ${validStatuses.join(', ')}` });
     }
+    if (status !== 'reserved' && reservationCustomerId != null) {
+      return res.status(400).json({ error: 'A reservation customer can only be set for a reserved table' });
+    }
+
+    let normalizedReservationCustomerId: string | null = null;
+    if (status === 'reserved' && reservationCustomerId != null) {
+      if (typeof reservationCustomerId !== 'string' || !reservationCustomerId.trim()) {
+        return res.status(400).json({ error: 'Reservation customer ID must be a non-empty string' });
+      }
+      normalizedReservationCustomerId = reservationCustomerId.trim();
+    }
 
     const db = getDatabase();
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
@@ -495,11 +526,23 @@ router.patch('/:id/status', requirePermission('tables.manage'), (req: Request, r
       return res.status(404).json({ error: 'Table not found' });
     }
 
-    db.prepare('UPDATE tables SET status = ?, updated_at = ? WHERE id = ?')
-      .run(status, now(), req.params.id);
+    if (normalizedReservationCustomerId) {
+      const customer = db.prepare('SELECT id FROM customers WHERE id = ? AND is_active = 1').get(normalizedReservationCustomerId);
+      if (!customer) {
+        return res.status(400).json({ error: 'Reservation customer was not found or is inactive' });
+      }
+    }
 
-    const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
-    res.json({ table: updated });
+    if (status === 'reserved') {
+      db.prepare('UPDATE tables SET status = ?, reservation_customer_id = ?, updated_at = ? WHERE id = ?')
+        .run(status, normalizedReservationCustomerId, now(), req.params.id);
+    } else {
+      db.prepare('UPDATE tables SET status = ?, updated_at = ? WHERE id = ?')
+        .run(status, now(), req.params.id);
+    }
+
+    const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as { status: string; reservation_customer_id?: string | null; [key: string]: unknown };
+    res.json({ table: { ...updated, ...reservationCustomerShape(db, updated) } });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

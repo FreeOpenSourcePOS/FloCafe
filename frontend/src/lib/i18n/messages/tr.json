@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "Tutar",
     "billNumber": "Fiş #",
+    "cashReceived": "Alınan Nakit",
     "customerNo": "Müşteri No",
     "date": "Tarih",
     "deliveryCharge": "Teslimat Ücreti",

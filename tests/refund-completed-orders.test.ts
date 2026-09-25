@@ -1,6 +1,6 @@
 /**
  * Refunds on already-completed orders: business-day approval tiers, expanded
- * item eligibility, and store-credit refunds (docs/business-decisions.md).
+ * item eligibility, and store-credit refunds (docs/reference/product-invariants.md).
  *
  * Kept separate from tests/refunds.test.ts because that file's PIN
  * rate-limit budget is deliberately tuned to exactly 5 attempts; adding more

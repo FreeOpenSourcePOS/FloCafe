@@ -1,5 +1,13 @@
 /** Canonical configured thermal layout widths shared by every renderer. */
 
+const COMBINING_MARK_RE = /\p{Mark}/u;
+const GRAPHEME_SEGMENTER = typeof Intl !== 'undefined' && typeof Intl.Segmenter === 'function'
+  ? new Intl.Segmenter('und', { granularity: 'grapheme' })
+  : null;
+const THAI_SARA_AM_CODE_POINT = 0x0e33;
+const INDIC_VIRAMA_CODE_POINTS = new Set([0x094d, 0x09cd]);
+const EMOJI_BASE_RE = /\p{Extended_Pictographic}/u;
+
 export type PrintPaperWidth =
   | '58mm'
   | '58mm-36'
@@ -8,6 +16,33 @@ export type PrintPaperWidth =
   | `cols-${32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44 | 45 | 46 | 47 | 48}`;
 
 export type ReceiptPaperSize = 58 | 80;
+
+function codePointBefore(value: string): number | undefined {
+  if (!value) return undefined;
+  const last = value.charCodeAt(value.length - 1);
+  if (last >= 0xdc00 && last <= 0xdfff && value.length >= 2) {
+    return value.codePointAt(value.length - 2);
+  }
+  return last;
+}
+
+function isEmojiModifier(codePoint: number): boolean {
+  return codePoint >= 0x1f3fb && codePoint <= 0x1f3ff;
+}
+
+function isRegionalIndicator(codePoint: number): boolean {
+  return codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff;
+}
+
+function trailingRegionalIndicatorCount(value: string): number {
+  let count = 0;
+  for (const character of Array.from(value).reverse()) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined || !isRegionalIndicator(codePoint)) break;
+    count += 1;
+  }
+  return count;
+}
 
 function isZeroWidthCodePoint(codePoint: number): boolean {
   return codePoint <= 0x1f
@@ -22,7 +57,55 @@ function isZeroWidthCodePoint(codePoint: number): boolean {
     || (codePoint >= 0x2060 && codePoint <= 0x206f)
     || codePoint === 0xfeff
     || (codePoint >= 0xfe00 && codePoint <= 0xfe0f)
-    || (codePoint >= 0xe0100 && codePoint <= 0xe01ef);
+    || (codePoint >= 0xe0100 && codePoint <= 0xe01ef)
+    || COMBINING_MARK_RE.test(String.fromCodePoint(codePoint));
+}
+
+function fallbackGraphemeSegments(value: string): string[] {
+  const segments: string[] = [];
+  let current = '';
+  let pendingIndicConjunct = false;
+  for (const character of Array.from(value)) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    const isMark = COMBINING_MARK_RE.test(character);
+    const isVirama = INDIC_VIRAMA_CODE_POINTS.has(codePoint);
+    const isZwj = codePoint === 0x200d;
+    const isZwnj = codePoint === 0x200c;
+    const isVariationSelector = (codePoint >= 0xfe00 && codePoint <= 0xfe0f)
+      || (codePoint >= 0xe0100 && codePoint <= 0xe01ef);
+    const isThaiSaraAm = codePoint === THAI_SARA_AM_CODE_POINT;
+    const previousCodePoint = current ? codePointBefore(current) : undefined;
+    const continuesCurrent = !current
+      || isMark
+      || isVirama
+      || isZwj
+      || isZwnj
+      || isVariationSelector
+      || isThaiSaraAm
+      || (isRegionalIndicator(codePoint) && trailingRegionalIndicatorCount(current) % 2 === 1)
+      || (isEmojiModifier(codePoint) && previousCodePoint !== undefined
+        && EMOJI_BASE_RE.test(String.fromCodePoint(previousCodePoint)))
+      || current.endsWith('\u200d')
+      || pendingIndicConjunct;
+
+    if (continuesCurrent) {
+      current += character;
+      pendingIndicConjunct = isVirama || (pendingIndicConjunct && (isZwj || isMark));
+    } else {
+      segments.push(current);
+      current = character;
+      pendingIndicConjunct = isVirama;
+    }
+  }
+  if (current) segments.push(current);
+  return segments;
+}
+
+/** Keep script clusters together when the runtime supports Unicode segmentation. */
+export function graphemeSegments(text: string): string[] {
+  const value = String(text ?? '');
+  if (GRAPHEME_SEGMENTER) return Array.from(GRAPHEME_SEGMENTER.segment(value), (part) => part.segment);
+  return fallbackGraphemeSegments(value);
 }
 
 function isFullWidthCodePoint(codePoint: number): boolean {
@@ -43,27 +126,66 @@ function isFullWidthCodePoint(codePoint: number): boolean {
   );
 }
 
+function graphemeDisplayWidth(grapheme: string): number {
+  let hasVisibleCharacter = false;
+  let hasFullWidthCharacter = false;
+  for (const character of Array.from(grapheme)) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (isZeroWidthCodePoint(codePoint)) continue;
+    hasVisibleCharacter = true;
+    hasFullWidthCharacter ||= isFullWidthCodePoint(codePoint);
+  }
+  return hasVisibleCharacter ? (hasFullWidthCharacter ? 2 : 1) : 0;
+}
+
 /** Measure text in monospaced thermal-printer display cells. */
 export function displayCellWidth(text: string): number {
   let width = 0;
-  for (const character of Array.from(String(text))) {
-    const codePoint = character.codePointAt(0) ?? 0;
-    if (isZeroWidthCodePoint(codePoint)) continue;
-    width += isFullWidthCodePoint(codePoint) ? 2 : 1;
-  }
+  for (const grapheme of graphemeSegments(text)) width += graphemeDisplayWidth(grapheme);
   return width;
 }
 
-/** Keep complete code points that fit in a thermal display-cell budget. */
+/** Pad text to a display-cell budget without splitting grapheme clusters. */
+export function padToDisplayCells(
+  text: string,
+  columns: number,
+  alignment: 'left' | 'right' | 'center' = 'left',
+): string {
+  const value = String(text ?? '');
+  const target = Math.max(0, Math.floor(columns));
+  const padding = Math.max(0, target - displayCellWidth(value));
+  if (alignment === 'right') return ' '.repeat(padding) + value;
+  if (alignment === 'center') {
+    const left = Math.floor(padding / 2);
+    return ' '.repeat(left) + value + ' '.repeat(padding - left);
+  }
+  return value + ' '.repeat(padding);
+}
+
+/** Keep complete grapheme clusters that fit in a thermal display-cell budget. */
 export function truncateToDisplayCells(text: string, columns: number): string {
   const maxColumns = Math.max(0, Math.floor(columns));
   let width = 0;
   let result = '';
-  for (const character of Array.from(String(text))) {
-    const characterWidth = displayCellWidth(character);
-    if (characterWidth > 0 && width + characterWidth > maxColumns) break;
-    result += character;
-    width += characterWidth;
+  for (const grapheme of graphemeSegments(text)) {
+    const graphemeWidth = displayCellWidth(grapheme);
+    if (graphemeWidth > 0 && width + graphemeWidth > maxColumns) break;
+    result += grapheme;
+    width += graphemeWidth;
+  }
+  return result;
+}
+
+/** Keep the suffix that fits in a thermal display-cell budget. */
+export function truncateToDisplayCellsFromEnd(text: string, columns: number): string {
+  const maxColumns = Math.max(0, Math.floor(columns));
+  let width = 0;
+  let result = '';
+  for (const grapheme of graphemeSegments(text).reverse()) {
+    const graphemeWidth = displayCellWidth(grapheme);
+    if (graphemeWidth > 0 && width + graphemeWidth > maxColumns) break;
+    result = grapheme + result;
+    width += graphemeWidth;
   }
   return result;
 }
@@ -81,12 +203,12 @@ export function wrapToDisplayCells(text: string, columns: number): string[] {
         lines.push(current);
         current = '';
       }
-      for (const character of Array.from(word)) {
-        if (current && displayCellWidth(current + character) > maxColumns) {
+      for (const grapheme of graphemeSegments(word)) {
+        if (current && displayCellWidth(current + grapheme) > maxColumns) {
           lines.push(current);
           current = '';
         }
-        current += character;
+        current += grapheme;
       }
       continue;
     }

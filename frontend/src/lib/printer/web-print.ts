@@ -31,6 +31,7 @@ import {
   type ItemTableBlock,
   type MessageBlock,
   type PaymentsBlock,
+  paymentDisplayRows,
   type TaxBreakdownBlock,
   type TotalsBlock,
 } from '@print/document';
@@ -396,9 +397,9 @@ export function generateBillHtml(
         <tr><th colspan="2">${escapeHtml(L.paymentsHeader)}</th></tr>
       </thead>
       <tbody>
-        ${payments.lines.map((line) => `
-          <tr><td>${escapeHtml(paymentLineLabel(line.label))}</td><td class="text-end num">${fmtAmount(line.amount)}</td></tr>
-        `).join('')}
+        ${payments.lines.map((line) => paymentDisplayRows(line).map((row) => `
+          <tr><td>${escapeHtml(paymentLineLabel(row.label))}</td><td class="text-end num">${fmtAmount(row.amount)}</td></tr>
+        `).join('')).join('')}
       </tbody>
     </table>
     ` : ''}
@@ -462,7 +463,8 @@ function paymentLineLabel(label: { conceptId?: string; primary: string }): strin
 function getPaperStyles(size: PaperSize): string {
   const baseStyles = `
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, 'Segoe UI', Tahoma, 'Noto Naskh Arabic', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'Noto Sans CJK JP', 'Noto Sans JP', 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.4; color: #333; }
+    body { font-family: -apple-system, 'Segoe UI', Tahoma, 'Noto Naskh Arabic', 'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Noto Sans Thai', 'Leelawadee UI', Thonburi, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'Noto Sans CJK JP', 'Noto Sans JP', 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.4; color: #333; }
+    body:lang(zh-TW) { font-family: -apple-system, 'Segoe UI', Tahoma, 'Noto Naskh Arabic', 'PingFang TC', 'Microsoft JhengHei', 'Noto Sans CJK TC', 'Noto Sans TC', 'Helvetica Neue', Arial, sans-serif; }
     .bill-container { max-width: 100%; margin: 0 auto; }
     .reprint-banner { text-align: center; font-size: 22px; font-weight: bold; letter-spacing: 2px; color: #c00; border: 3px solid #c00; padding: 6px; margin-bottom: 15px; }
     .online-order-banner { text-align: center; font-size: 18px; font-weight: bold; letter-spacing: 1px; border: 2px solid #333; padding: 6px; margin-bottom: 15px; }

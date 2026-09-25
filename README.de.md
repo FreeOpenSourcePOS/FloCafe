@@ -68,7 +68,7 @@ Der grundlegende Kassenbetrieb und lokale Daten funktionieren offline. Auftragse
 
 ## Sprachen und regionale Unterstützung
 
-FloCafe bietet Benutzeroberflächen auf Englisch, Spanisch, Französisch, brasilianischem Portugiesisch, Filipino, Türkisch, Persisch (Farsi) mit RTL-Unterstützung, Deutsch, Italienisch, Japanisch, vereinfachtem Chinesisch, Koreanisch und Bahasa Indonesia. Die UI-Sprache ist unabhängig von Land und regionalen Einstellungen des Geschäfts. Steuerberechnungsregeln sind ein getrenntes Thema. Informationen zum Mitwirken an Übersetzungen oder zum Hinzufügen von Sprachen finden Sie im [Leitfaden für Internationalisierung und Übersetzungen](docs/i18n.md).
+FloCafe bietet Benutzeroberflächen auf Englisch, Spanisch, Französisch, brasilianischem Portugiesisch, Filipino, Türkisch, Persisch (Farsi) mit RTL-Unterstützung, Deutsch, Italienisch, Japanisch, vereinfachtem Chinesisch, Koreanisch und Bahasa Indonesia. Die UI-Sprache ist unabhängig von Land und regionalen Einstellungen des Geschäfts. Steuerberechnungsregeln sind ein getrenntes Thema. Informationen zum Mitwirken an Übersetzungen oder zum Hinzufügen von Sprachen finden Sie im [Leitfaden für Internationalisierung und Übersetzungen](docs/architecture/internationalization.md).
 
 FloCafe enthält Profile für 131 Länder und 109 Währungen. Jedes Profil legt Währung, Region und Standardzeitzone fest; der Betriebsinhaber kann die Zeitzone während der Einrichtung oder später in den Einstellungen ändern.
 
@@ -78,7 +78,7 @@ FloCafe enthält eine allgemeine Berechnungs-Engine sowie signierte und versioni
 
 > **Hinweis:** FloCafe ist Software und keine Rechts- oder Steuerberatung. Steuerpakete und Konfigurationswerkzeuge bescheinigen allein keine Einhaltung lokaler Vorschriften; der Betreiber muss die für seinen Betrieb geltenden Anforderungen prüfen.
 
-Informationen zur Erstellung, Validierung und zum Schema der Pakete finden Sie im [Entwicklerleitfaden für Steuerpakete](docs/tax-packs.md).
+Informationen zur Erstellung, Validierung und zum Schema der Pakete finden Sie im [Entwicklerleitfaden für Steuerpakete](docs/reference/tax-packs.md).
 
 ## Entwicklung
 
@@ -122,8 +122,8 @@ Wenn FloCafe für Sie nützlich ist, können Sie das Repository mit einem Stern 
 - [Dokumentationsindex](docs/README.md)
 - [Druckerleitfaden](docs/printers.md)
 - [Linux-Einrichtung und Support](docs/linux.md)
-- [Internationalisierung und Übersetzungen](docs/i18n.md)
-- [Entwicklerleitfaden für Steuerpakete](docs/tax-packs.md)
+- [Internationalisierung und Übersetzungen](docs/architecture/internationalization.md)
+- [Entwicklerleitfaden für Steuerpakete](docs/reference/tax-packs.md)
 - [Einrichtung der Google-Drive-Sicherung](docs/google-drive-setup.md)
 - [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)

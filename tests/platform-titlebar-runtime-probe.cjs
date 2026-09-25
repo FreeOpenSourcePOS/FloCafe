@@ -4,7 +4,7 @@
  *
  * Runs inside a real Electron main process (`npx electron tests/platform-titlebar-runtime-probe.cjs`)
  * on any desktop platform and produces assertion/log-based evidence for the
- * title-bar platform matrix (docs/title-bar-platform-matrix.md). No screenshots:
+ * title-bar platform matrix (docs/architecture/desktop-build.md). No screenshots:
  * every check prints a structured PASS/FAIL line and the process exits non-zero
  * if any assertion fails.
  *

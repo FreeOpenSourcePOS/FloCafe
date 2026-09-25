@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "금액",
     "billNumber": "청구서 #",
+    "cashReceived": "받은 현금",
     "customerNo": "고객 번호",
     "date": "날짜",
     "deliveryCharge": "배달 요금",

@@ -165,7 +165,7 @@ async function run(): Promise<void> {
 
   console.log('  ✓ Ltr polymorphic rendering (as="a", as="code") verified through React interface');
 
-  // 4. getBrowserLanguage returns 'fa' for fa locales, 'es' for es, 'pt' for pt, 'en' otherwise.
+  // 4. getBrowserLanguage resolves registered browser locales and falls back to English.
   const i18nModule = (() => {
     const moduleApi = require('module') as {
       _resolveFilename: (...args: any[]) => string;
@@ -219,17 +219,86 @@ async function run(): Promise<void> {
   withNavigatorLanguage('fa-AF', () => {
     assert(i18nModule.getBrowserLanguage() === 'fa', 'getBrowserLanguage must return "fa" for fa-AF');
   });
+  withNavigatorLanguage('ur-PK', () => {
+    assert(i18nModule.getBrowserLanguage() === 'ur', 'getBrowserLanguage must return "ur" for ur-PK');
+  });
+  withNavigatorLanguage('ur', () => {
+    assert(i18nModule.getBrowserLanguage() === 'ur', 'getBrowserLanguage must return "ur" for ur');
+  });
+  withNavigatorLanguage('ur-IN', () => {
+    assert(i18nModule.getBrowserLanguage() === 'ur', 'getBrowserLanguage must return "ur" for ur-IN');
+  });
   withNavigatorLanguage('es-ES', () => {
     assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must return "es" for es-ES');
   });
   withNavigatorLanguage('pt-BR', () => {
     assert(i18nModule.getBrowserLanguage() === 'pt', 'getBrowserLanguage must return "pt" for pt-BR');
   });
+  withNavigatorLanguage('ru-RU', () => {
+    assert(i18nModule.getBrowserLanguage() === 'ru', 'getBrowserLanguage must return "ru" for ru-RU');
+  });
+  withNavigatorLanguage('pt-PT', () => {
+    assert(i18nModule.getBrowserLanguage() === 'pt', 'getBrowserLanguage must preserve same-script regional fallback for pt-PT');
+  });
+  withNavigatorLanguage('de-CH', () => {
+    assert(i18nModule.getBrowserLanguage() === 'de', 'getBrowserLanguage must preserve same-script regional fallback for de-CH');
+  });
+  withNavigatorLanguage('zh-TW-u-nu-latn', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must ignore extensions when matching zh-TW');
+  });
+  withNavigatorLanguage('zh-Hant-TW-u-ca-chinese', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must maximize zh-Hant-TW without its extensions');
+  });
+  withNavigatorLanguage('zh-Hans-CN-u-nu-latn', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh', 'getBrowserLanguage must match a Unicode-extension tag to the registered zh-CN bundle');
+  });
+  withNavigatorLanguage('zh-TW', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must return "zh-tw" for zh-TW');
+  });
+  withNavigatorLanguage('zh-Hant-TW', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh-tw', 'getBrowserLanguage must return "zh-tw" for zh-Hant-TW');
+  });
+  withNavigatorLanguage('zh', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh', 'bare zh must preserve the registered Simplified Chinese fallback');
+  });
+  withNavigatorLanguage('zh-CN', () => {
+    assert(i18nModule.getBrowserLanguage() === 'zh', 'zh-CN must preserve the Simplified Chinese bundle');
+  });
+  withNavigatorLanguage('nl-NL', () => {
+    assert(i18nModule.getBrowserLanguage() === 'nl', 'getBrowserLanguage must return "nl" for nl-NL');
+  });
+  withNavigatorLanguage('hi-IN', () => {
+    assert(i18nModule.getBrowserLanguage() === 'hi', 'getBrowserLanguage must return "hi" for hi-IN');
+  });
+  withNavigatorLanguage('bn-BD', () => {
+    assert(i18nModule.getBrowserLanguage() === 'bn', 'getBrowserLanguage must return "bn" for bn-BD');
+  });
+  withNavigatorLanguage('bn-IN', () => {
+    assert(i18nModule.getBrowserLanguage() === 'bn', 'getBrowserLanguage must return "bn" for bn-IN');
+  });
   withNavigatorLanguage('en-US', () => {
     assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must return "en" for en-US');
   });
   withNavigatorLanguage('fr-FR', () => {
     assert(i18nModule.getBrowserLanguage() === 'fr', 'getBrowserLanguage must return "fr" for fr-FR');
+  });
+  withNavigatorLanguage('sq-AL', () => {
+    assert(i18nModule.getBrowserLanguage() === 'sq', 'getBrowserLanguage must return "sq" for sq-AL');
+  });
+  withNavigatorLanguage('sq', () => {
+    assert(i18nModule.getBrowserLanguage() === 'sq', 'getBrowserLanguage must return "sq" for sq');
+  });
+  withNavigatorLanguage('vi-VN', () => {
+    assert(i18nModule.getBrowserLanguage() === 'vi', 'getBrowserLanguage must return "vi" for vi-VN');
+  }, ['vi-VN', 'en-US']);
+  withNavigatorLanguage('vi', () => {
+    assert(i18nModule.getBrowserLanguage() === 'vi', 'getBrowserLanguage must return "vi" for bare vi');
+  });
+  withNavigatorLanguage('th-TH', () => {
+    assert(i18nModule.getBrowserLanguage() === 'th', 'getBrowserLanguage must return "th" for th-TH');
+  });
+  withNavigatorLanguage('th', () => {
+    assert(i18nModule.getBrowserLanguage() === 'th', 'getBrowserLanguage must return "th" for bare th');
   });
   withNavigatorLanguage('en-US', () => {
     assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must honor the first supported navigator.languages preference');
@@ -240,10 +309,10 @@ async function run(): Promise<void> {
   withNavigatorLanguage(undefined, () => {
     assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must fallback to "en" when navigator is undefined');
   });
-  console.log('  ✓ getBrowserLanguage resolves fa for fa* locales and defaults correctly');
+  console.log('  ✓ getBrowserLanguage resolves regional locales before primary-language fallbacks');
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all supported languages.
-  const languages = ['en', 'es', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko', 'id'] as const;
+  const languages = ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th'] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {
@@ -260,12 +329,14 @@ async function run(): Promise<void> {
     assert(settingsLabel && settingsLabel !== 'settings.languageFa', `settings.languageFa must be translated in ${lang}, got: ${settingsLabel}`);
   }
   const tFa = createTranslator({ locale: 'fa-IR', messages: i18nModule.getCachedMessages('fa') });
+  const tUr = createTranslator({ locale: 'ur-PK', messages: i18nModule.getCachedMessages('ur') });
   const tEn = createTranslator({ locale: 'en', messages: i18nModule.getCachedMessages('en') });
+  assert(tUr('setup.welcome') === 'FloCafe میں خوش آمدید', 'Urdu setup welcome message is localized');
   assert(tFa('setup.languagePersian') === 'فارسی', 'setup.languagePersian in fa must be فارسی');
   assert(tFa('settings.languageFa') === 'فارسی (FA)', 'settings.languageFa in fa must be فارسی (FA)');
   assert(tEn('setup.languagePersian') === 'Persian', 'setup.languagePersian in en must be Persian');
   assert(tEn('settings.languageFa') === 'Persian (FA)', 'settings.languageFa in en must be Persian (FA)');
-  console.log('  ✓ setup.languagePersian and settings.languageFa translate across en, es, fr, pt, fa, it, ja, zh, ko, id');
+  console.log('  ✓ setup.languagePersian and settings.languageFa translate across all registered locales');
 
   console.log('\n✅ All RTL/LTR Setup, Auth, and Settings checks passed.');
 }

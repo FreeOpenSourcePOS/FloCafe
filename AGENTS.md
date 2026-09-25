@@ -4,23 +4,35 @@ FloCafe is an open-source, offline-first Electron desktop POS.
 
 ## Orientation & layout
 
-- **Main process (`main/`):** Electron lifecycle and IPC (`main/index.ts`), Express API on `:3001` (`main/server.ts`), standalone KDS server on `:3002` (`main/kds.ts`), Server App on `:3003` (`main/server-app.ts`), SQLite database access via `better-sqlite3`, ESC/POS printing, and background services.
+- **Main process (`main/`):** Electron lifecycle and IPC (`main/index.ts`), Express API on `:3001` (`main/server.ts`), standalone KDS server on `:3002` (`main/kds-server.ts`), Server App on `:3003` (`main/server-app.ts`), SQLite database access via `better-sqlite3`, ESC/POS printing, and background services.
 - **Frontend (`frontend/src/`):** Next.js 16 and React 19 application (statically exported via `output: 'export'` when `NEXT_BUILD_MODE=desktop`, or standard server runtime when unset), Zustand state, UI components, and translations.
 - **Tests (`tests/`):** Backend unit, integration, and release test suites.
-- **Documentation (`docs/`):** Design specs and audits (see [docs/README.md](docs/README.md)).
+- **Documentation (`docs/`):** Current-system architecture, contracts, and developer/maintainer procedures (see [docs/README.md](docs/README.md)).
 - **Workflows (`.github/`):** Issue/PR templates, CODEOWNERS, and CI/CD workflows.
 
-## Progressive disclosure & source of truth
+## Documentation
 
-Before starting non-trivial work:
-1. **Understand task scope:** Read the task and any linked issue/PR, then identify scope and acceptance criteria. For minor typos or isolated one-line edits, formal planning is not required.
-2. **Consult documentation index:** Check [docs/README.md](docs/README.md) to locate relevant `CURRENT` or `ACTIVE DESIGN` documents. Documents marked `ACTIVE DESIGN` or `FORWARD-LOOKING` describe target architecture and may be ahead of current code; `HISTORICAL` docs provide context only.
-3. **Check business decisions:** If the task touches authorization, access control, defaults, or other product-behavior rules, check [docs/business-decisions.md](docs/business-decisions.md) — it is a verifiable log of deliberate product decisions that a plausible-looking implementation can easily contradict. If a task seems to require deviating from an entry there, stop and confirm with the user rather than assuming the decision is stale.
-4. **Inspect current code:** Active runtime code and automated tests define current behavior. If a task or design doc contradicts current code or references non-existent files, report the discrepancy rather than inventing unapproved architecture.
-5. **Identify tests:** Locate existing coverage in `tests/`, `frontend/`, and any subsystem-local test directories relevant to the change.
-6. **Plan and execute:** Keep changes focused on the approved task.
+`docs/` describes the current supported system: architecture, contracts, invariants, developer
+workflows, and maintainer workflows. It does not preserve development history. Plans, research
+notes, audits, PR handoffs, verification transcripts, and future proposals belong in issues, specs,
+or PRs.
 
-**Conflict precedence:** The approved task defines the intended change. Current code and tests define existing behavior. `AGENTS.md` and business decisions define boundaries the implementation must not violate.
+- Update the existing canonical page. Create a new page only when no current page owns the subject.
+- Replace stale text; do not append corrections, date sections, or phase notes. Remove superseded
+  material in the same change.
+- Verify every behavioral claim against current code, tests, or configuration before writing it.
+  When code and documentation disagree, investigate and fix the documentation.
+- Keep the detailed documentation-authoring rules in [DOCUMENTATION.md](DOCUMENTATION.md). They
+  apply to agents and human contributors alike.
+
+Source-of-truth order: current runtime code; current tests and executable contracts; explicit
+product decisions ([`docs/reference/product-invariants.md`](docs/reference/product-invariants.md));
+repository configuration and workflows; existing documentation, as research material only.
+
+**Conflict precedence:** the approved task defines the intended change; current code and tests
+define existing behavior; the core invariants below and
+[`docs/reference/product-invariants.md`](docs/reference/product-invariants.md) define boundaries the
+implementation must not violate.
 
 ## Core invariants
 
@@ -29,7 +41,7 @@ Before starting non-trivial work:
 3. **Architecture boundaries:** UI language, tenant regional settings, and tax/compliance behavior are separate, decoupled domains.
 4. **Business timestamps:** Persisted timestamps follow FloCafe's canonical storage conventions; configured store timezone applies to business-local presentation, day/shift boundaries, and reporting intervals.
 5. **Backend authority:** Security-critical, payment, and tax calculations remain backend-authoritative.
-6. **Orders are never ownership-gated:** FloCafe is an open system for order visibility — any staff role with order access can see and act on any order, regardless of who created it. Authorization is restricted by role (page/feature access) and by specific action (e.g. KDS stage transitions are chef/manager/owner-only, narrowed further by station/category assignment), never by comparing `order.user_id`/item creator against the current user. Accountability comes from audit attribution (every write is recorded against the authenticated actor), not from hiding orders between staff. Do not add or reintroduce a `role === 'server' && order.user_id !== user.userId`-style check anywhere in the backend; see `docs/business-decisions.md` and `docs/roles-and-permissions.md`.
+6. **Orders are never ownership-gated:** FloCafe is an open system for order visibility — any staff role with order access can see and act on any order, regardless of who created it. Authorization is restricted by role (page/feature access) and by specific action (e.g. KDS stage transitions are chef/manager/owner-only, narrowed further by station/category assignment), never by comparing `order.user_id`/item creator against the current user. Accountability comes from audit attribution (every write is recorded against the authenticated actor), not from hiding orders between staff. Do not add or reintroduce a `role === 'server' && order.user_id !== user.userId`-style check anywhere in the backend; see `docs/reference/product-invariants.md` and [`docs/reference/roles-and-permissions.md`](docs/reference/roles-and-permissions.md).
 7. **Reuse before adding:** Reuse existing helpers, utilities, and dependencies before introducing new packages.
 8. **Scope discipline:** Implement only the approved task. Do not make opportunistic refactors across unrelated files.
 
@@ -66,6 +78,7 @@ npm test                 # Run standard test suite
 npm run test:url-allowlist
 npm run audit:db
 npm run i18n:check
+npm run docs:check      # Markdown lint, relative links, index completeness, doc policy
 npm run test:e2e:browser # E2E tests (runs Playwright from frontend/)
 npm run i18n:add -- de   # scaffold an approved new language locally
 ```
@@ -76,7 +89,7 @@ Before reporting completion, run every applicable minimum check below for implem
 
 | Change type | Minimum verification |
 | --- | --- |
-| Documentation / templates | `git diff --check` and relative markdown link verification |
+| Documentation / templates | `npm run docs:check` and `git diff --check` |
 | Frontend | `npm run lint` and `npm run build:frontend` |
 | Translations / i18n | `npm run i18n:check` |
 | Backend / API | `npm run lint`, `npm run build`, and focused test suites |
@@ -86,3 +99,10 @@ Before reporting completion, run every applicable minimum check below for implem
 | Packaging / Releases | Target platform build commands and release checks |
 
 Run `npm test` when a full validation pass is requested, before releases, or when changes touch multiple core subsystems.
+
+## Maintaining this file
+
+Keep this file for knowledge useful to almost every future agent session in this project.
+Do not repeat what the codebase already shows; point to the authoritative file or command instead.
+Prefer rewriting or pruning existing entries over appending new ones.
+When updating this file, preserve this bar for all agents and keep entries concise.

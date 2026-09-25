@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "Importo",
     "billNumber": "Conto n.",
+    "cashReceived": "Contanti ricevuti",
     "customerNo": "N. cliente",
     "date": "Data",
     "deliveryCharge": "Spese di consegna",

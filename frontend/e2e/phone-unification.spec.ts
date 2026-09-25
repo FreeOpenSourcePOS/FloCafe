@@ -19,6 +19,14 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
   await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 15000 });
   await setLanguage(page, 'en');
 
+  // A retry reuses the E2E server, so keep the customer row unique per attempt.
+  const attemptId = Date.now();
+  const customerName = `Somchai Prasert ${attemptId}`;
+  const localPhone = `0812${String(attemptId).slice(-6)}`;
+  const normalizedLocalPhone = `+66812${String(attemptId).slice(-6)}`;
+  const internationalPhone = `+1 650 253 ${String(attemptId).slice(-4)}`;
+  const normalizedInternationalPhone = `+1650253${String(attemptId).slice(-4)}`;
+
   // ── 1. Customer Management: validates, normalizes, clears, and updates phone numbers ──
     await page.goto(`${BASE}/customers`);
     await expect(page.locator('table')).toBeVisible();
@@ -31,17 +39,17 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
     const modal = page.locator('.fixed.inset-0 form');
     await expect(modal).toBeVisible();
 
-    await modal.locator('input[type="text"]').first().fill('Somchai Prasert');
-    await modal.locator('input[type="tel"]').fill('0812345678');
+    await modal.locator('input[type="text"]').first().fill(customerName);
+    await modal.locator('input[type="tel"]').fill(localPhone);
 
     const addModalScreenshot = path.join(EVIDENCE_DIR, '01-customers-add-modal.png');
     await page.screenshot({ path: addModalScreenshot });
 
     await modal.locator('button[type="submit"]').click();
     await expect(modal).not.toBeVisible();
-    await expect(page.locator('table')).toContainText('Somchai Prasert');
-    // For TH tenant (+66), 0812345678 normalizes to +66812345678
-    await expect(page.locator('table')).toContainText('+66812345678');
+    await expect(page.locator('table')).toContainText(customerName);
+    // For TH tenant (+66), the local number normalizes to E.164.
+    await expect(page.locator('table')).toContainText(normalizedLocalPhone);
 
     const tableNormalizedScreenshot = path.join(EVIDENCE_DIR, '02-customers-table-normalized.png');
     await page.screenshot({ path: tableNormalizedScreenshot });
@@ -64,7 +72,7 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
     await closeBtn.click();
 
     // 3. Clear phone number on existing customer edit
-    const row = page.locator('tr:has-text("Somchai Prasert")');
+    const row = page.locator('tr').filter({ hasText: customerName });
     await row.locator('button').first().click(); // edit button
     await expect(modal).toBeVisible();
 
@@ -76,35 +84,46 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
     await expect(modal).not.toBeVisible();
 
     // Verify phone is cleared in the customer table
-    await expect(page.locator('tr:has-text("Somchai Prasert")')).not.toContainText('+66812345678');
+    await expect(row).not.toContainText(normalizedLocalPhone);
     const tableClearedScreenshot = path.join(EVIDENCE_DIR, '05-customers-table-phone-cleared.png');
     await page.screenshot({ path: tableClearedScreenshot });
 
     // 4. Update customer with international phone format
     await row.locator('button').first().click();
     await expect(modal).toBeVisible();
-    await modal.locator('input[type="tel"]').fill('+1 650 253 0000');
+    await modal.locator('input[type="tel"]').fill(internationalPhone);
     await modal.locator('button[type="submit"]').click();
     await expect(modal).not.toBeVisible();
 
-    await expect(page.locator('tr:has-text("Somchai Prasert")')).toContainText('+16502530000');
+    await expect(row).toContainText(normalizedInternationalPhone);
     const tableIntlScreenshot = path.join(EVIDENCE_DIR, '06-customers-table-intl-phone.png');
     await page.screenshot({ path: tableIntlScreenshot });
 
     // ── 2. Business Settings: normalizes and validates business contact phone ──
+    const businessHydration = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/settings/business' && response.request().method() === 'GET';
+    });
     await page.goto(`${BASE}/settings`);
-    await page.waitForLoadState('networkidle');
+    const business = await (await businessHydration).json();
 
-    // Locate the phone input in business information section
+    // Locate the phone input in business information section after its store hydration.
     const phoneInput = page.locator('div:has(> label:has-text("Phone")) input').first();
     await expect(phoneInput).toBeVisible();
+    await expect(phoneInput).toHaveValue(business.business_phone || '');
 
     // 1. Enter local national phone format
     await phoneInput.fill('0898765432');
     const saveBtn = page.getByRole('button', { name: /Save Changes/i });
+    const businessSave = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/settings/business' && response.request().method() === 'PUT';
+    });
     await saveBtn.click();
+    const savedBusiness = await (await businessSave).json();
 
-    // Verify normalization in input
+    // Verify normalization in input and in the persisted response.
+    expect(savedBusiness.business_phone).toBe('+66898765432');
     await expect(phoneInput).toHaveValue('+66898765432');
     const settingsNormalizedScreenshot = path.join(EVIDENCE_DIR, '07-settings-business-phone-normalized.png');
     await page.screenshot({ path: settingsNormalizedScreenshot });

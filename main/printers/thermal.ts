@@ -43,12 +43,14 @@ import { ippGetPrinters, ippGetDefaultPrinterName, ippGetPrinterAttributes, ippP
 import { buildRasterDiagnosticBands, encodeRasterFeedAndCut, encodeRasterUnits, rasterCapabilityEnabled } from '../../shared/print/raster';
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import type { PrintDocument } from '../../shared/print/document';
-import { columnsForPaperWidth as columnsForConfiguredPaperWidth } from '../../shared/print/width';
+import { columnsForPaperWidth as columnsForConfiguredPaperWidth, displayCellWidth, padToDisplayCells, truncateToDisplayCells } from '../../shared/print/width';
 import {
   bilingualLabelLines,
   buildZReportDocument,
   containsRtlScript,
   layoutStyledUnit,
+  optionalPaymentAmount,
+  projectCashTender,
   selectBilingualFit,
   thermalDisplayWidth,
   type SemanticLabel,
@@ -1423,7 +1425,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   const lang = normalizePrintLanguage(language);
   // No business info supplied at all (e.g. a synthetic preview) — a neutral
   // explicit country + currency, never a default country or INR
-  // (docs/business-decisions.md). resolveTenantCurrency validates the
+  // (docs/reference/product-invariants.md). resolveTenantCurrency validates the
   // country before it ever looks at currency, so both must be present.
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '', country: 'US', currency: 'USD' };
   // Merchant templates resolve through document pipeline; pack templates use compliance renderer.
@@ -1534,7 +1536,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   // CLDR-derived only — a stored currency_symbol setting is not an input
-  // (docs/business-decisions.md: no per-store override of a snapshot value).
+  // (docs/reference/product-invariants.md: no per-store override of a snapshot value).
   const prefix = resolveCurrencyPrefix(getCurrencySymbol(currency, locale) || currency, useUnicode, capabilities, false, currency);
   const normalize = (text: string): string => normalizeThermalText(text, capabilities);
   const configuredTaxLabel = normalize(sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID')));
@@ -1630,8 +1632,23 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
+            const amount = Number(payment.amount) || 0;
             const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12, lang, capabilities);
-            pushFinancialLines(financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+            pushFinancialLines(financialRows(methodLabel, formatCurrency(amount, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+            const tender = projectCashTender({
+              method: String(payment.method),
+              amount,
+              tendered: optionalPaymentAmount(payment.tendered_amount),
+              change: optionalPaymentAmount(payment.change_amount),
+            });
+            if (tender) {
+              const tenderedLabel = truncate(printLabel(lang, 'receipt.cashReceived'), cols - 12, lang, capabilities);
+              pushFinancialLines(financialRows(tenderedLabel, formatCurrency(tender.tendered, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+              if (tender.change > 0) {
+                const changeLabel = truncate(printLabel(lang, 'pos.changeReturned'), cols - 12, lang, capabilities);
+                pushFinancialLines(financialRows(changeLabel, formatCurrency(tender.change, prefix, locale, trimDecimals, fractionDigits), cols, lang, capabilities));
+              }
+            }
           }
         }
       }
@@ -1814,7 +1831,7 @@ function pluginSummaryRow(label: string, amount: string, layout: any, cols: numb
     ], Math.max(0, cols - labelWidth - amountWidth), cols);
   }
   const safeLabel = truncate(normalizedLabel, cols - 12, lang, capabilities);
-  return safeLabel + rightAlign(amount, cols - safeLabel.length);
+  return safeLabel + rightAlign(amount, cols - displayCellWidth(safeLabel));
 }
 
 function composePluginColumns(columns: Array<PluginLineColumn & { value: string }>, gap: number, cols: number): string {
@@ -1824,25 +1841,19 @@ function composePluginColumns(columns: Array<PluginLineColumn & { value: string 
     Number(column.width),
     column.align || 'left',
   )).join(separator);
-  return truncateCell(line, cols, false).padEnd(Math.min(cols, line.length));
+  return padToDisplayCells(truncateCell(line, cols, false), cols);
 }
 
 function alignCell(value: string, width: number, align: PluginColumnAlign): string {
-  const text = truncateCell(value, width, true);
-  if (align === 'right') return text.padStart(width);
-  if (align === 'center') {
-    const left = Math.floor((width - text.length) / 2);
-    return ' '.repeat(Math.max(0, left)) + text.padEnd(Math.max(0, width - left));
-  }
-  return text.padEnd(width);
+  return padToDisplayCells(truncateCell(value, width, true), width, align);
 }
 
 function truncateCell(text: string, length: number, ellipsis: boolean): string {
   const value = String(text || '');
   if (length <= 0) return '';
-  if (value.length <= length) return value;
-  if (!ellipsis || length <= 2) return value.slice(0, length);
-  return value.slice(0, length - 2) + '..';
+  if (displayCellWidth(value) <= length) return value;
+  if (!ellipsis || length <= 2) return truncateToDisplayCells(value, length);
+  return truncateToDisplayCells(value, length - 2) + '..';
 }
 
 

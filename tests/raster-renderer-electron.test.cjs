@@ -141,6 +141,70 @@ async function run() {
     assert.equal(arabicRender.unit.complete, true);
     assert.ok(area(arabicRender.unit) > 0);
 
+    const urduRender = await renderer.render({
+      version: 1,
+      requestId: 'electron-urdu-system-font',
+      text: 'آرڈر سلپ',
+      widthDots: 120,
+      maxBandHeight: 200,
+      direction: 'rtl',
+      align: 'left',
+      style: 'normal',
+      financial: true,
+      maxLines: 4,
+    });
+    assert.equal(urduRender.ok, true, JSON.stringify(urduRender));
+    assert.equal(urduRender.unit.complete, true);
+    assert.ok(area(urduRender.unit) > 0);
+
+    const hindiRender = await renderer.render({
+      version: 1,
+      requestId: 'electron-hindi-system-font',
+      text: 'किनारा',
+      widthDots: 120,
+      maxBandHeight: 200,
+      direction: 'ltr',
+      align: 'left',
+      style: 'normal',
+      financial: true,
+      maxLines: 4,
+    });
+    assert.equal(hindiRender.ok, true);
+    assert.equal(hindiRender.unit.complete, true);
+    assert.ok(area(hindiRender.unit) > 0);
+
+    const bengaliRender = await renderer.render({
+      version: 1,
+      requestId: 'electron-bengali-system-font',
+      text: 'বাংলা',
+      widthDots: 120,
+      maxBandHeight: 200,
+      direction: 'ltr',
+      align: 'left',
+      style: 'normal',
+      financial: true,
+      maxLines: 4,
+    });
+    assert.equal(bengaliRender.ok, true);
+    assert.equal(bengaliRender.unit.complete, true);
+    assert.ok(area(bengaliRender.unit) > 0);
+
+    const thaiRender = await renderer.render({
+      version: 1,
+      requestId: 'electron-thai-system-font',
+      text: 'อาหารไทย',
+      widthDots: 120,
+      maxBandHeight: 200,
+      direction: 'ltr',
+      align: 'left',
+      style: 'normal',
+      financial: true,
+      maxLines: 4,
+    });
+    assert.equal(thaiRender.ok, true);
+    assert.equal(thaiRender.unit.complete, true);
+    assert.ok(area(thaiRender.unit) > 0);
+
     surface.webContents.emit('render-process-gone');
     const processFailure = await renderer.render({ ...base, requestId: 'electron-process-failure' });
     assert.deepEqual(processFailure, {

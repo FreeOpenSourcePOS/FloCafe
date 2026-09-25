@@ -14,7 +14,7 @@ import { injectElectronFixture, readFixtureActions } from './helpers/electron-fi
  *    desktop capability flag offsets it below the 40px title bar (row 5).
  *
  * These rows run in plain Chromium against the static export; the Electron
- * presentation rows live in docs/title-bar-platform-matrix.md with their own
+ * presentation rows live in docs/architecture/desktop-build.md with their own
  * evidence (unit suites + runtime probes). A single login per test keeps the
  * shared e2e server's login rate limit (10 POSTs / 15 min) safe.
  */

@@ -1,0 +1,13 @@
+{
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD024": { "siblings_only": true },
+    "MD033": false,
+    "MD041": false,
+    "MD046": { "style": "fenced" },
+    "MD060": { "style": "fenced" }
+  },
+  "globs": ["docs/**/*.md", "*.md"],
+  "ignores": ["CHANGELOG.md", "node_modules/**", "frontend/.next/**", "frontend/out/**", "dist/**"]
+}

@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "Betrag",
     "billNumber": "Rechnung Nr.",
+    "cashReceived": "Bar erhalten",
     "customerNo": "Kunde Nr.",
     "date": "Datum",
     "deliveryCharge": "Liefergebühr",

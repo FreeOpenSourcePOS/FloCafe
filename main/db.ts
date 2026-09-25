@@ -3288,7 +3288,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
 
       const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
-      // Deliberate exception to "no India default" (docs/business-decisions.md):
+      // Deliberate exception to "no India default" (docs/reference/product-invariants.md):
       // this is a one-time best-effort cleanup of pre-existing customer phone
       // records on an upgrading install, most of which predate multi-country
       // support and were Indian. Not a live store's regional identity.
@@ -4839,7 +4839,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 82,
     name: 'add_order_audit_log',
     up: () => {
-      // Append-only actor log for order/item mutations (docs/business-decisions.md).
+      // Append-only actor log for order/item mutations (docs/reference/product-invariants.md).
       db.exec(`
         CREATE TABLE IF NOT EXISTS order_audit_log (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5198,6 +5198,23 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   },
   {
     version: 92,
+    name: 'add_table_reservation_customer',
+    up: () => {
+      if (!getColumns(db, 'tables').includes('reservation_customer_id')) {
+        db.exec('ALTER TABLE tables ADD COLUMN reservation_customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL');
+      }
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS clear_table_reservation_customer_on_status_change
+        AFTER UPDATE OF status ON tables
+        WHEN NEW.status != 'reserved' AND NEW.reservation_customer_id IS NOT NULL
+        BEGIN
+          UPDATE tables SET reservation_customer_id = NULL WHERE id = NEW.id;
+        END;
+      `);
+    },
+  },
+  {
+    version: 93,
     name: 'add_configurable_permissions',
     up: () => {
       db.exec(`
@@ -5479,7 +5496,8 @@ function createSchema(): void {
       kitchen_station_id TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      reservation_customer_id TEXT REFERENCES customers(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS customers (
@@ -5971,7 +5989,7 @@ function seedInstallDefaults(): void {
   insert('business_name', '');
   insert('business_type', 'restaurant');
   // country/currency/currency_symbol/timezone are deliberately not seeded here:
-  // they come only from the signup wizard (docs/business-decisions.md,
+  // they come only from the signup wizard (docs/reference/product-invariants.md,
   // "Regional settings come from signup, never from a fallback"). Until setup
   // completes, resolveRegionalSnapshot() throws RegionalNotConfiguredError
   // rather than a caller substituting a default country.
@@ -6210,7 +6228,7 @@ export function now(): string {
   return new Date().toISOString().replace('T', ' ').replace(/\..*$/, '');
 }
 
-/** Records who performed an order/item mutation (docs/business-decisions.md). */
+/** Records who performed an order/item mutation (docs/reference/product-invariants.md). */
 export function recordOrderAudit(
   db: ReturnType<typeof getDatabase>,
   params: { orderId: number | string; orderItemId?: number | string | null; actorUserId: string; action: string; details?: Record<string, unknown> },

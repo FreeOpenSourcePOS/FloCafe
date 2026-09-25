@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { formatKOT, escPosToText } from '../main/printers/thermal';
 import { printLabel } from '../main/print/print-labels.generated';
 
-const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'fa', 'it', 'ja', 'zh', 'ko', 'id'] as const;
+const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th'] as const;
 const order = {
   order_number: 'KOT-PHASE3-001',
   type: 'dine_in',
@@ -62,6 +62,9 @@ async function run(): Promise<void> {
     }));
     const browserHtml = frontend.kotWebPrint.generateKotHtml(order as any, { language, stationName: 'Main Kitchen', timezone: 'UTC' });
     assert.match(browserHtml, new RegExp(`>${printLabel(language, 'print.kot.banner').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<`), `${language}: browser banner`);
+    if (language === 'th') {
+      assert.match(browserHtml, /Noto Sans Thai/, `${language}: browser KOT keeps Thai font fallback available`);
+    }
     assert.match(browserHtml, /KOT-PHASE3-001/, `${language}: browser order number`);
     assert.match(browserHtml, /Pending coffee/, `${language}: browser pending item`);
     assert.match(browserHtml, /Oat milk.*x3/, `${language}: browser preserves addon quantity`);
@@ -89,8 +92,11 @@ async function run(): Promise<void> {
     ));
     assert.match(thermalText, /KOT-PHASE3-001/, `${language}: thermal order number remains visible`);
     assert.match(thermalText, /Main Kitchen/, `${language}: thermal station remains visible`);
-    assert.match(thermalText, /(?:Time|Hora|Uhrzeit|Saat|Oras|Heure|Ora|時刻|时间|시간|Waktu)/, `${language}: thermal time remains visible`);
-    assert.match(thermalText, /KITCHEN ORDER TICKET|COMANDA DE COCINA|KUECHENBESTELLSCHEIN|BON DE COMMANDE CUISINE|COMANDA DE COZINHA|BIGLIETTO ORDINE DI CUCINA|キッチン伝票|厨房订单|주방 주문지|TIKET PESANAN DAPUR/, `${language}: thermal banner remains visible`);
+    assert.match(thermalText, /(?:Time|Hora|Uhrzeit|Saat|Oras|Heure|Ora|時刻|时间|시간|Waktu|Tijd|সময়|Thời gian)/, `${language}: thermal time remains visible`);
+    assert.match(thermalText, /KITCHEN ORDER TICKET|COMANDA DE COCINA|KUECHENBESTELLSCHEIN|BON DE COMMANDE CUISINE|COMANDA DE COZINHA|BIGLIETTO ORDINE DI CUCINA|キッチン伝票|厨房订单|廚房訂單|주방 주문지|TIKET PESANAN DAPUR|KEUKENBESTELBON|রান্নাঘরের অর্ডার টিকিট|POROSI E KUZHINES|PHIẾU BẾP/, `${language}: thermal banner remains visible`);
+    if (language !== 'sq') {
+      assert.doesNotMatch(thermalText, /POROSI E KUZHINES/, `${language}: thermal banner is not Albanian`);
+    }
     assert.match(thermalText, /Pending coffee/, `${language}: thermal pending item`);
     assert.match(thermalText, /\+ Oat milk x3/, `${language}: thermal preserves addon quantity`);
     assert.match(thermalText, />> Less sugar/, `${language}: thermal preserves special-instruction marker`);
@@ -151,6 +157,46 @@ async function run(): Promise<void> {
       }, [])).toString('utf8');
       assert.ok(typeWebUsbText.includes(webUsbTypeLine), `${language}: WebUSB order type ${webUsbTypeLine}`);
     }
+  }
+
+  {
+    const thaiOrder = {
+      ...order,
+      items: [{
+        quantity: 1,
+        product_name: 'กาแฟไทย',
+        status: 'pending',
+        addons: [{ name: 'นม', quantity: 1 }],
+        special_instructions: 'หวานน้อย',
+      }],
+    };
+    const thermalWarnings: any[] = [];
+    const thermalText = escPosToText(formatKOT(
+      thaiOrder,
+      thaiOrder.items,
+      'Main Kitchen',
+      42,
+      false,
+      'full',
+      'en-US',
+      { timeZone: 'UTC' },
+      thermalWarnings,
+      false,
+      'th',
+    ));
+    assert.equal(thermalWarnings.some((warning) => warning.kind === 'line'), true, 'Thai unsupported KOT lines warn before native output');
+    assert.doesNotMatch(thermalText, /กาแฟไทย|นม|หวานน้อย/, 'Thai native KOT does not emit unsupported glyphs');
+
+    const webUsbWarnings: any[] = [];
+    const webUsbText = Buffer.from(frontend.kotEncoder.buildKotBytes(thaiOrder as any, {
+      paperWidth: 58,
+      language: 'th',
+      stationName: 'Main Kitchen',
+      locale: 'th-TH',
+      timezone: 'UTC',
+    }, webUsbWarnings)).toString('utf8');
+    assert.equal(webUsbWarnings.some((warning) => warning.kind === 'line'), true, 'Thai unsupported WebUSB KOT lines warn before output');
+    assert.doesNotMatch(webUsbText, /กาแฟไทย|นม|หวานน้อย/, 'Thai WebUSB KOT does not emit unsupported glyphs');
   }
 
   const longKotHtml = frontend.kotWebPrint.generateKotHtml({
@@ -319,6 +365,10 @@ async function run(): Promise<void> {
   const faShapedText = escPosToText(formatKOT(order, order.items, 'Main Kitchen', 42, false, 'full', 'fa-IR', { timeZone: 'UTC' }, faShapedWarnings, true, 'fa'));
   assert.match(faShapedText, /برگ سفارش آشپزخانه/, 'fa shaping path keeps localized KOT banner');
   assert.match(faShapedText, /نوع: خوردن در محل/, 'fa shaping path keeps localized order type');
+  const urShapedWarnings: any[] = [];
+  const urShapedText = escPosToText(formatKOT(order, order.items, 'Main Kitchen', 42, false, 'full', 'ur-PK', { timeZone: 'UTC' }, urShapedWarnings, true, 'ur'));
+  assert.match(urShapedText, /کچن آرڈر ٹکٹ/, 'ur shaping path keeps localized KOT banner');
+  assert.match(urShapedText, /قسم: ٹیبل سروس/, 'ur shaping path keeps localized order type');
 
   console.log(`Phase 3 print regressions: ${languages.length} locales covered across browser, backend thermal-safe, and WebUSB KOT paths.`);
 }

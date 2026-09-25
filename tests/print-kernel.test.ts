@@ -33,14 +33,18 @@ import {
   buildZReportDocument,
   displayCellWidth,
   fitThermalLine,
+  graphemeSegments,
   layoutStyledUnit,
+  padToDisplayCells,
+  truncateToDisplayCells,
+  truncateToDisplayCellsFromEnd,
   wrapToDisplayCells,
   type ThermalLayoutContext,
 } from '../shared/print';
 import type { LanguageRegistryFacts } from '../shared/print';
 
 // Test registry: mirrors what a call site injects from the central registry.
-const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja']);
+const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi', 'th']);
 const FACTS: LanguageRegistryFacts = {
   isSelectableLanguage: (code) => SELECTABLE.has(code),
 };
@@ -107,6 +111,12 @@ const fixedWithAdditional = parsePrintLanguagePolicy(
   FACTS,
 );
 assert.ok(fixedWithAdditional.ok);
+const fixedTaiwan = parsePrintLanguagePolicy(
+  { primary: { mode: 'fixed', language: 'zh-tw' }, additional: [] },
+  FACTS,
+);
+assert.ok(fixedTaiwan.ok);
+assert.equal(fixedTaiwan.ok ? fixedTaiwan.policy.primary.mode : '', 'fixed');
 if (fixedWithAdditional.ok) {
   assert.deepEqual(resolveReceiptLanguages(fixedWithAdditional.policy, 'en'), ['fa', 'es']);
 }
@@ -275,6 +285,15 @@ assert.equal(financial.lines.join(' '), 'Credit Card (Mastercard) 1234567890', '
 const bidiControlled = `\u200f${'A'.repeat(32)}`;
 assert.equal(displayCellWidth(bidiControlled), 32, 'RTL formatting controls consume no display cells');
 assert.equal(fitThermalLine(bidiControlled, 32), bidiControlled, 'final fitting preserves 32 visible cells plus an RTL control');
+const vietnameseNfc = 'Tiếng Việt';
+const vietnameseNfd = vietnameseNfc.normalize('NFD');
+assert.equal(displayCellWidth(vietnameseNfc), 10, 'composed Vietnamese text measures by grapheme');
+assert.equal(displayCellWidth(vietnameseNfd), 10, 'decomposed Vietnamese combining marks consume no extra cells');
+assert.deepEqual(
+  wrapToDisplayCells(vietnameseNfd, 8).map((line) => line.normalize('NFC')),
+  wrapToDisplayCells(vietnameseNfc, 8).map((line) => line.normalize('NFC')),
+  'Vietnamese wrapping keeps NFC and NFD grapheme sequences equivalent',
+);
 const fullWidthText = '商品商品';
 assert.equal(displayCellWidth(fullWidthText), 8, 'full-width glyphs consume two display cells');
 assert.equal(fitThermalLine(fullWidthText, 6), '商品商', 'final fitting truncates full-width glyphs by display cells');
@@ -284,6 +303,79 @@ assert.equal(fullWidthLayout.lines.join(''), fullWidthText, 'semantic layout wra
 const fullWidthHeader = wrapToDisplayCells('商品商品商品商品商品商品商品商品商', 32);
 assert.ok(fullWidthHeader.every((line) => displayCellWidth(line) <= 32), 'full-width header wrapping respects thermal display cells');
 assert.equal(fullWidthHeader.join(''), '商品商品商品商品商品商品商品商品商', 'full-width header wrapping preserves text');
+
+const devanagariGrapheme = 'कि';
+assert.equal(fitThermalLine(devanagariGrapheme, 1), devanagariGrapheme, 'Devanagari combining marks are not split at a narrow width');
+assert.deepEqual(wrapToDisplayCells('किनारा', 1), ['कि', 'ना', 'रा'], 'Devanagari grapheme clusters wrap as complete units');
+const urduZwnjCluster = 'ک\u200c';
+assert.deepEqual(graphemeSegments(urduZwnjCluster), [urduZwnjCluster], 'Urdu ZWNJ stays attached to its grapheme cluster');
+assert.deepEqual(
+  graphemeSegments('خ\u200cود'),
+  ['خ\u200c', 'و', 'د'],
+  'Urdu ZWNJ stays attached to the preceding grapheme without joining the following letter',
+);
+assert.equal(displayCellWidth(urduZwnjCluster), 1, 'Urdu ZWNJ consumes no extra thermal display cell');
+
+for (const [label, cluster] of [['Devanagari', 'क्ष'], ['Bengali', 'ক্ষ'], ['Thai', 'กำ'], ['Urdu', 'کّ']] as const) {
+  assert.deepEqual(graphemeSegments(cluster), [cluster], `${label} conjunct stays one grapheme cluster`);
+  assert.equal(displayCellWidth(cluster), 1, `${label} conjunct consumes one thermal display cell`);
+  assert.equal(truncateToDisplayCells(cluster, 0), '', `${label} conjunct is not partially emitted at zero cells`);
+  assert.equal(truncateToDisplayCells(`A${cluster}B`, 1), 'A', `${label} conjunct is not split when the budget ends inside it`);
+  assert.equal(truncateToDisplayCells(`A${cluster}B`, 2), `A${cluster}`, `${label} conjunct is retained when it fits whole`);
+  assert.equal(padToDisplayCells(cluster, 2), `${cluster} `, `${label} padding is measured in display cells`);
+  assert.equal(truncateToDisplayCellsFromEnd(`A${cluster}B`, 1), 'B', `${label} suffix truncation is grapheme-safe`);
+}
+
+assert.deepEqual(
+  wrapToDisplayCells(
+    `${String.fromCodePoint(0x0915, 0x094d, 0x0937)} ${String.fromCodePoint(0x0995, 0x09cd, 0x09b7)}`,
+    1,
+  ),
+  [String.fromCodePoint(0x0915, 0x094d, 0x0937), String.fromCodePoint(0x0995, 0x09cd, 0x09b7)],
+  'Indic wrapping never splits conjuncts',
+);
+
+const widthModulePath = require.resolve('../shared/print/width');
+const originalWidthModule = require.cache[widthModulePath];
+const segmenterDescriptor = Object.getOwnPropertyDescriptor(Intl, 'Segmenter');
+try {
+  Object.defineProperty(Intl, 'Segmenter', { value: undefined, writable: true, configurable: true });
+  delete require.cache[widthModulePath];
+  const fallbackWidth = require(widthModulePath) as typeof import('../shared/print/width');
+  const fallbackClusters = [
+    String.fromCodePoint(0x0915, 0x094d, 0x0937),
+    String.fromCodePoint(0x0995, 0x09cd, 0x09b7),
+    String.fromCodePoint(0x0e01, 0x0e33),
+    'کّ',
+    'ک\u200c',
+  ];
+  const fallbackEmoji = String.fromCodePoint(0x1f44d, 0x1f3fd);
+  const adjacentEmojiBase = String.fromCodePoint(0x1f44d);
+  const adjacentEmoji = `${fallbackEmoji}${adjacentEmojiBase}`;
+  const fallbackFlag = String.fromCodePoint(0x1f1f3, 0x1f1f1);
+  assert.deepEqual(
+    fallbackClusters.map((cluster) => fallbackWidth.graphemeSegments(cluster)),
+    fallbackClusters.map((cluster) => [cluster]),
+    'fallback segmentation keeps Indic, Thai, and Urdu clusters together without Intl.Segmenter',
+  );
+  assert.deepEqual(
+    fallbackWidth.graphemeSegments('خ\u200cود'),
+    ['خ\u200c', 'و', 'د'],
+    'fallback keeps Urdu ZWNJ with the preceding grapheme without joining the following letter',
+  );
+  assert.deepEqual(fallbackWidth.graphemeSegments(fallbackEmoji), [fallbackEmoji], 'fallback keeps emoji modifiers attached');
+  assert.deepEqual(fallbackWidth.graphemeSegments(adjacentEmoji), [fallbackEmoji, adjacentEmojiBase], 'fallback starts a new cluster after an emoji modifier');
+  assert.equal(fallbackWidth.displayCellWidth(adjacentEmoji), 4, 'fallback measures adjacent emoji clusters separately');
+  assert.deepEqual(fallbackWidth.graphemeSegments(fallbackFlag), [fallbackFlag], 'fallback keeps regional indicators paired');
+  assert.equal(fallbackWidth.truncateToDisplayCells(fallbackEmoji, 2), fallbackEmoji, 'fallback truncation keeps the complete emoji modifier sequence');
+  assert.equal(fallbackWidth.truncateToDisplayCells(adjacentEmoji, 3), fallbackEmoji, 'fallback truncation does not merge adjacent emoji clusters');
+  assert.equal(fallbackWidth.truncateToDisplayCells(fallbackFlag, 1), fallbackFlag, 'fallback truncation never splits a regional-indicator pair');
+  assert.equal(fallbackWidth.truncateToDisplayCells(`A${fallbackClusters[0]}B`, 1), 'A', 'fallback truncation never splits Indic clusters');
+} finally {
+  if (originalWidthModule) require.cache[widthModulePath] = originalWidthModule;
+  else delete require.cache[widthModulePath];
+  if (segmenterDescriptor) Object.defineProperty(Intl, 'Segmenter', segmenterDescriptor);
+}
 
 const zDocument = buildZReportDocument({
   zNumber: 7,

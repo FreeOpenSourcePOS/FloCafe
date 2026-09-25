@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "مبلغ",
     "billNumber": "رسید #",
+    "cashReceived": "مبلغ دریافتی",
     "customerNo": "شماره مشتری",
     "date": "تاریخ",
     "deliveryCharge": "هزینه ارسال",

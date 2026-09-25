@@ -29,6 +29,14 @@ import {
   PRINT_LABEL_LANGUAGES,
 } from '../main/print/print-labels.generated';
 import { LANGUAGES } from '../frontend/src/lib/i18n/languages';
+import {
+  GENERIC_THERMAL_CAPABILITIES,
+  LATIN_THERMAL_CAPABILITIES,
+  isThermalTextRepresentable,
+  normalizeThermalText,
+  thermalTextFallback,
+} from '../shared/print/thermal-capabilities';
+import { displayCellWidth, truncateToDisplayCells, wrapToDisplayCells } from '../shared/print/width';
 import { renderCompactReceiptViaDocument } from '../main/printers/document-compact';
 import { renderClassicReceiptViaDocument } from '../main/printers/document-classic';
 
@@ -108,16 +116,32 @@ function run(): void {
   console.log('\n✅ Test 1: printLabel language selection and fallback');
   assert('en resolves grand total to TOTAL', printLabel('en', 'print.grandTotal') === 'TOTAL');
   assert('fa resolves grand total to Persian', printLabel('fa', 'print.grandTotal') === 'جمع کل');
+  assert('ur resolves grand total to Urdu', printLabel('ur', 'print.grandTotal') === 'کل رقم');
   assert('it resolves grand total to Italian', printLabel('it', 'print.grandTotal') === 'TOTALE');
   assert('ja resolves grand total to Japanese', printLabel('ja', 'print.grandTotal') === '合計');
-  assert('zh resolves grand total to Chinese', printLabel('zh', 'print.grandTotal') === '合计');
+  assert('zh resolves grand total to Simplified Chinese', printLabel('zh', 'print.grandTotal') === '合计');
+  assert('zh-tw resolves grand total to Traditional Chinese', printLabel('zh-tw', 'print.grandTotal') === '合計');
   assert('ko resolves grand total to Korean', printLabel('ko', 'print.grandTotal') === '합계');
   assert('tr resolves grand total to Turkish', printLabel('tr', 'print.grandTotal') === 'GENEL TOPLAM');
   assert('fil resolves grand total to Filipino', printLabel('fil', 'print.grandTotal') === 'KABUUAN');
   assert('de resolves grand total to German', printLabel('de', 'print.grandTotal') === 'GESAMTSUMME');
+  assert('ru resolves grand total to Russian', printLabel('ru', 'print.grandTotal') === 'ИТОГО');
+  assert('ru resolves subtotal to Russian', printLabel('ru', 'print.subtotalExclTax') === 'Подытог (без налога)');
+  assert('ru resolves cash received from the canonical receipt key', printLabel('ru', 'receipt.cashReceived') === 'Получено наличными');
   assert('es resolves grand total', typeof printLabel('es', 'print.grandTotal') === 'string' && printLabel('es', 'print.grandTotal').length > 0);
   assert('fr resolves grand total to French', printLabel('fr', 'print.grandTotal') === 'TOTAL');
   assert('id resolves grand total to Indonesian', printLabel('id', 'print.grandTotal') === 'TOTAL');
+  assert('nl resolves grand total to Dutch', printLabel('nl', 'print.grandTotal') === 'TOTAAL');
+  assert('hi resolves grand total to Hindi', printLabel('hi', 'print.grandTotal') === 'कुल योग');
+  assert('bn resolves grand total to Bengali', printLabel('bn', 'print.grandTotal') === 'মোট');
+  assert('sq resolves grand total to Albanian', printLabel('sq', 'print.grandTotal') === 'TOTALI');
+  assert('sq resolves invoice and KOT labels', printLabel('sq', 'print.invoiceNumber') === 'Fatura nr.:' && printLabel('sq', 'print.kot.banner') === 'POROSI E KUZHINËS');
+  assert('vi resolves grand total to Vietnamese', printLabel('vi', 'print.grandTotal') === 'TỔNG CỘNG');
+  assert('vi resolves kitchen ticket to Vietnamese', printLabel('vi', 'print.kot.banner') === 'PHIẾU BẾP');
+  assert('vi resolves cash received from the canonical receipt key', printLabel('vi', 'receipt.cashReceived') === 'Tiền mặt đã nhận');
+  assert('th resolves grand total to Thai', printLabel('th', 'print.grandTotal') === 'ยอดรวมทั้งสิ้น');
+  assert('th resolves kitchen ticket to Thai', printLabel('th', 'print.kot.banner') === 'ใบสั่งอาหาร');
+  assert('th resolves cash received from the canonical receipt key', printLabel('th', 'receipt.cashReceived') === 'เงินสดที่ได้รับ');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
   assert('unknown language falls back to English', printLabel('xx', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');
@@ -125,6 +149,10 @@ function run(): void {
   assert('tr resolves borrowed pos.subtotal', printLabel('tr', 'pos.subtotal') === 'Ara Toplam');
   assert('fil resolves borrowed pos.subtotal', printLabel('fil', 'pos.subtotal') === 'Subtotal');
   assert('de resolves borrowed pos.subtotal', printLabel('de', 'pos.subtotal') === 'Zwischensumme');
+  assert('nl resolves borrowed pos.subtotal', printLabel('nl', 'pos.subtotal') === 'Subtotaal');
+  assert('hi resolves borrowed pos.subtotal', printLabel('hi', 'pos.subtotal') === 'उप-योग');
+  assert('bn resolves borrowed pos.subtotal', printLabel('bn', 'pos.subtotal') === 'সাবটোটাল');
+  assert('sq resolves borrowed pos.subtotal', printLabel('sq', 'pos.subtotal') === 'Nëntotali');
   const localeCodes = Object.keys(LANGUAGES);
   assert('generated print locales derive from the canonical registry', JSON.stringify(PRINT_LABEL_LANGUAGES) === JSON.stringify(localeCodes));
   for (const locale of localeCodes) {
@@ -136,6 +164,10 @@ function run(): void {
   assert('Arabic receipt rate is translated as price', printLabel('ar', 'receipt.rate') === 'السعر');
   assert('Arabic print-test amount is localized', printLabel('ar', 'printTest.amt') === 'المبلغ');
   assert('Arabic takeaway is distinct from delivery', printLabel('ar', 'pos.orderTypeTakeaway') === 'سفري' && printLabel('ar', 'pos.orderTypeDelivery') === 'توصيل');
+  assert('Urdu bill number label is localized', printLabel('ur', 'receipt.billNumber') === 'بل #');
+  assert('Urdu amount label is localized', printLabel('ur', 'printTest.amt') === 'رقم');
+  assert('Urdu takeaway is distinct from delivery', printLabel('ur', 'pos.orderTypeTakeaway') === 'ٹیک اوے' && printLabel('ur', 'pos.orderTypeDelivery') === 'ڈیلیوری');
+  assert('Russian takeaway is distinct from delivery', printLabel('ru', 'pos.orderTypeTakeaway') === 'С собой' && printLabel('ru', 'pos.orderTypeDelivery') === 'Доставка');
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {
@@ -149,6 +181,11 @@ function run(): void {
     assert('fa classic renders Persian subtotal (borrowed pos.subtotal)', faText.includes('جمع جزء'));
     assert('fa classic localizes cash payment method', faText.includes('نقدی'));
     assert('fa classic translates table prefix', faText.includes('میز:'));
+    const urText = escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'classic', 48, false, false, undefined, [], true, 'ur'));
+    assert('ur classic renders Urdu invoice title label', urText.includes('انوائس نمبر:'));
+    assert('ur classic renders Urdu grand total', urText.includes('کل رقم'));
+    assert('ur classic renders Urdu subtotal', urText.includes('ذیلی رقم'));
+    assert('ur classic localizes cash payment method', urText.includes('نقد'));
     const deText = escPosToText(formatReceipt(buildOrder(), buildBill(), buildBusiness(), 'classic', 48, false, false, undefined, [], false, 'de'));
     assert('de classic renders German invoice title label', deText.includes('Rechnungsnr.:') || deText.includes('Rechnung'));
     assert('de classic renders German grand total', deText.includes('GESAMTSUMME'));
@@ -160,7 +197,7 @@ function run(): void {
         language: locale,
         isReprint: false,
         useUnicode: false,
-        arabicShaping: locale === 'fa',
+        arabicShaping: locale === 'fa' || locale === 'ur',
         cutMode: 'full',
       }).lines.join('\n');
       assert(`${locale} classic runtime matrix resolves grand total`, localized.includes(printLabel(locale, 'print.grandTotal')));
@@ -198,10 +235,26 @@ function run(): void {
     assert('fa KOT station label translated', faText.includes('ایستگاه:'));
     assert('fa KOT type label translated', faText.includes('نوع: خوردن در محل'));
     assert('fa KOT time label translated', faText.includes('ساعت:'));
+    const urText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'ur-PK', undefined, [], true, 'ur'));
+    assert('ur KOT banner translated', urText.includes('کچن آرڈر ٹکٹ'));
+    assert('ur KOT station label translated', urText.includes('اسٹیشن:'));
+    assert('ur KOT type label translated', urText.includes('قسم:'));
+    assert('ur KOT time label translated', urText.includes('وقت:'));
     const deWarnings: Array<{ field: string; text: string; message: string }> = [];
     const deText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'de-DE', undefined, deWarnings, false, 'de'));
     assert('de KOT banner survives generic thermal output', deText.includes('KUECHENBESTELLSCHEIN'));
     assert('de KOT umlaut fallback emits no warning', deWarnings.length === 0);
+    const sqWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const sqText = escPosToText(formatKOT(order, order.items, 'Grill', 48, false, 'full', 'sq-AL', undefined, sqWarnings, false, 'sq'));
+    assert('sq KOT banner survives generic thermal fallback', sqText.includes('POROSI E KUZHINES'));
+    assert('sq KOT fallback emits no warning for Albanian diacritics', sqWarnings.length === 0);
+    assert('Albanian Ë/ë and Ç/ç normalize for ASCII thermal output', normalizeThermalText('Ëmbëlsirë Çaj', GENERIC_THERMAL_CAPABILITIES) === 'Embelsire Caj');
+    assert('Albanian fallback remains representable', isThermalTextRepresentable('Embelsire Caj', GENERIC_THERMAL_CAPABILITIES));
+    assert('precomposed Albanian diacritics occupy one thermal display cell', displayCellWidth('Ë') === 1 && displayCellWidth('ë') === 1 && displayCellWidth('Ç') === 1 && displayCellWidth('ç') === 1);
+    assert('Albanian truncation and wrapping keep grapheme clusters intact', truncateToDisplayCells('Ëmbëlsirë', 1) === 'Ë' && wrapToDisplayCells('Ëmbëlsirë', 3).join('') === 'Ëmbëlsirë');
+    assert('Vietnamese stacked diacritics are not falsely marked representable on generic thermal output', !isThermalTextRepresentable('Tổng cộng', GENERIC_THERMAL_CAPABILITIES));
+    assert('Vietnamese stacked diacritics are not falsely marked representable on the Latin profile', !isThermalTextRepresentable('Tổng cộng', LATIN_THERMAL_CAPABILITIES));
+    assert('Vietnamese native fallback preserves the explicit ASCII financial fallback', thermalTextFallback('Tổng cộng', 'TOTAL', LATIN_THERMAL_CAPABILITIES) === 'TOTAL');
   }
 
   console.log('\n✅ Test 5: test page honors language');

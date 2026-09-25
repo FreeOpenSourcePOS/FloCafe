@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "المبلغ",
     "billNumber": "رقم الفاتورة",
+    "cashReceived": "المبلغ المستلم",
     "customerNo": "رقم العميل",
     "date": "التاريخ",
     "deliveryCharge": "رسوم التوصيل",

@@ -5,6 +5,7 @@ import { getCurrencyFractionDigits } from '../countries';
 import type { PrinterCutMode } from './profiles';
 import { isThermalTextRepresentable, type ThermalPrinterCapabilities } from '../../shared/print/thermal-capabilities';
 import type { RasterSemanticLineGroup, RasterTextLayout } from '../../shared/print/raster';
+import { displayCellWidth, padToDisplayCells, truncateToDisplayCells } from '../../shared/print/width';
 import {
   addonRows,
   appendPoweredByFooter,
@@ -38,6 +39,7 @@ import {
   type TaxBreakdownBlock,
   type TotalsBlock,
   layoutStyledUnit,
+  paymentDisplayRows,
   type ThermalLayoutContext,
 } from '../../shared/print';
 
@@ -98,11 +100,11 @@ function compactItemHeader(block: ItemTableBlock, nameLen: number, amtLen: numbe
   const amountLabel = normalizeThermalText(labelOf(block.header.amount), capabilities);
   const fit = (value: string, length: number): string => capabilities?.raster.enabled === true && !isThermalTextRepresentable(value, capabilities)
     ? value
-    : value.slice(0, length);
-  const item = fit(itemLabel, nameLen).padEnd(nameLen);
-  const qty = fit(qtyLabel, qtyW).padEnd(qtyW);
+    : truncateToDisplayCells(value, length);
+  const item = padToDisplayCells(fit(itemLabel, nameLen), nameLen);
+  const qty = padToDisplayCells(fit(qtyLabel, qtyW), qtyW);
   const amount = fit(amountLabel, Math.max(1, amtLen - 1));
-  return item + qty + ' '.repeat(Math.max(0, amtLen - amount.length)) + amount;
+  return item + qty + ' '.repeat(Math.max(0, amtLen - displayCellWidth(amount))) + amount;
 }
 
 /** Map a PrintDocument onto compact token-line layout. */
@@ -366,22 +368,26 @@ export function renderBillDocumentToCompactLines(
     paymentSourceLines.push(dash);
     paymentSourceControlLines.push(dash);
     paymentSourceLayouts.push(undefined);
-    for (const line of payments.lines) {
-      const rawMethodLabel = paymentLabel(line.label);
-      const methodLabel = truncate(rawMethodLabel, cols - 12, options.language, options.capabilities);
-      const value = formatCurrency(line.amount, prefix, options.locale, trimDecimals, fractionDigits);
+    const pushPaymentRow = (rawLabel: string, amount: number): void => {
+      const methodLabel = truncate(rawLabel, cols - 12, options.language, options.capabilities);
+      const value = formatCurrency(amount, prefix, options.locale, trimDecimals, fractionDigits);
       const rendered = financialRows(methodLabel, value, cols, options.language, options.capabilities);
       recordFinancialLines(lines.length, rendered);
       lines.push(...rendered);
-      paymentSourceLines.push(`${rawMethodLabel} ${value.trimStart()}`);
+      paymentSourceLines.push(`${rawLabel} ${value.trimStart()}`);
       paymentSourceControlLines.push(rendered[0] ?? '');
       paymentSourceLayouts.push({
         kind: 'financial-summary',
         columns: [
-          { text: rawMethodLabel, align: 'left', widthRatio: Math.max(0.1, (cols - 12) / cols) },
+          { text: rawLabel, align: 'left', widthRatio: Math.max(0.1, (cols - 12) / cols) },
           { text: value.trimStart(), align: 'right', widthRatio: Math.min(0.9, 12 / cols) },
         ],
       });
+    };
+    for (const line of payments.lines) {
+      for (const row of paymentDisplayRows(line)) {
+        pushPaymentRow(paymentLabel(row.label), row.amount);
+      }
     }
   }
   markGroup('payments', paymentsStart, paymentSourceLines, paymentSourceControlLines, true, paymentSourceLayouts);

@@ -9,7 +9,7 @@ import { TableTurnoverBadge } from '@/components/tables/TableTurnoverBadge';
 interface Props {
   tables: Table[];
   selectedTableId: string | null;
-  onSelectAvailable: (tableId: string, customer?: { id: number; name: string; phone: string } | null) => void;
+  onSelectAvailable: (tableId: string, customer?: { id: string; name: string; phone: string } | null) => void;
   onSelectOccupied: (table: Table) => void;
   onSelectHeld: (tableId: string) => void;
   onPlaceOrder: () => void;

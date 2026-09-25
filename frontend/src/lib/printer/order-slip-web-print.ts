@@ -9,6 +9,10 @@ export interface OrderSlipWebPrintOptions {
   paperWidth?: 58 | 80;
   country?: string;
   currency?: string;
+  /** BCP-47 locale used by the print fragment. */
+  locale?: string;
+  /** Text direction used by the print fragment. */
+  direction?: 'ltr' | 'rtl';
 }
 
 export interface OrderSlipLabels {
@@ -29,6 +33,9 @@ export function generateOrderSlipHtml(order: Order, labels: OrderSlipLabels, opt
   const padding = paperWidth === 58 ? '4px' : '6px';
   const paperWidthCss = paperWidth === 58 ? '58mm' : '80mm';
   const money = (value: unknown) => formatCurrencyForTenant(Number(value || 0), opts.country || '', opts.currency || '');
+  const locale = opts.locale || 'en';
+  const direction = opts.direction === 'rtl' ? 'rtl' : 'ltr';
+  const textAlign = direction === 'rtl' ? 'right' : 'left';
 
   const items = order.items ?? [];
   const itemRows = items.map((item) => `
@@ -46,7 +53,7 @@ export function generateOrderSlipHtml(order: Order, labels: OrderSlipLabels, opt
   `).join('');
 
   return `
-    <div style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
+    <div class="order-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Thai','Leelawadee UI',Thonburi,monospace;font-size:${fontSize};direction:${direction};text-align:${textAlign};">
       <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(labels.title)}</h2>
       <p style="margin:2px 0;font-weight:bold;">#${escapeHtml(order.order_number)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(order.table.name)}</p>` : ''}

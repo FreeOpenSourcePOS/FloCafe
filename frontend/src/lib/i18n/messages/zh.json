@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "金额",
     "billNumber": "账单 #",
+    "cashReceived": "实收现金",
     "customerNo": "顾客编号",
     "date": "日期",
     "deliveryCharge": "外送费",

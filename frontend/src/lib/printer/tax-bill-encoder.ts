@@ -2,7 +2,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } from './unicode';
-import { columnsForReceiptPaperSize, displayCellWidth, fitThermalLine } from '@print/width';
+import { columnsForReceiptPaperSize, displayCellWidth, fitThermalLine, graphemeSegments, truncateToDisplayCells, truncateToDisplayCellsFromEnd } from '@print/width';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
@@ -335,21 +335,24 @@ export function buildTaxBillBytes(
 function padRowForLanguage(left: string, right: string, cols: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {
   const normalizedLeft = normalizeThermalText(left, capabilities);
   const normalizedRight = normalizeThermalText(right, capabilities);
-  const safeRight = normalizedRight.length > cols ? normalizedRight.slice(-cols) : normalizedRight;
-  const leftWidth = Math.max(0, cols - safeRight.length - 1);
-  return normalizedLeft.slice(0, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
+  const safeRight = displayCellWidth(normalizedRight) > cols
+    ? truncateToDisplayCellsFromEnd(normalizedRight, cols)
+    : normalizedRight;
+  const rightWidth = displayCellWidth(safeRight);
+  const leftWidth = Math.max(0, cols - rightWidth - 1);
+  return truncateToDisplayCells(normalizedLeft, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
 }
 
 function wrapFinancialTextToDisplayCells(text: string, columns: number): string[] {
   const width = Math.max(1, Math.floor(columns));
   const lines: string[] = [];
   let current = '';
-  for (const character of Array.from(text)) {
-    if (current && displayCellWidth(current + character) > width) {
+  for (const grapheme of graphemeSegments(text)) {
+    if (current && displayCellWidth(current + grapheme) > width) {
       lines.push(current);
       current = '';
     }
-    current += character;
+    current += grapheme;
   }
   if (current || lines.length === 0) lines.push(current);
   return lines;
@@ -371,7 +374,7 @@ function padRowsForLanguage(left: string, right: string, cols: number, capabilit
 
 function truncateForLanguage(str: string, max: number, language?: string, capabilities?: ThermalPrinterCapabilities): string {
   const normalized = normalizeThermalText(str, capabilities);
-  return normalized.length > max ? normalized.slice(0, max - 1) + '…' : normalized;
+  return displayCellWidth(normalized) > max ? truncateToDisplayCells(normalized, Math.max(1, max - 1)) + '…' : normalized;
 }
 
 function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false, rawEscPos: boolean = true): string {

@@ -40,6 +40,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/tr.json'),
   },
+  th: {
+    locale: 'th-TH',
+    nativeName: 'ไทย',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/th.json'),
+  },
   fil: {
     locale: 'fil-PH',
     nativeName: 'Filipino',
@@ -69,6 +76,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/pt.json'),
   },
+  ru: {
+    locale: 'ru-RU',
+    nativeName: 'Русский',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ru.json'),
+  },
   fa: {
     locale: 'fa-IR',
     nativeName: 'فارسی',
@@ -85,6 +99,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/ar.json'),
   },
+  ur: {
+    locale: 'ur-PK',
+    nativeName: 'اردو',
+    direction: 'rtl',
+    selectable: true,
+    load: () => import('./messages/ur.json'),
+  },
   ja: {
     locale: 'ja-JP',
     nativeName: '日本語',
@@ -99,6 +120,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/zh.json'),
   },
+  'zh-tw': {
+    locale: 'zh-TW',
+    nativeName: '繁體中文',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/zh-tw.json'),
+  },
   ko: {
     locale: 'ko-KR',
     nativeName: '한국어',
@@ -112,6 +140,41 @@ export const LANGUAGES = {
     direction: 'ltr',
     selectable: true,
     load: () => import('./messages/id.json'),
+  },
+  nl: {
+    locale: 'nl-NL',
+    nativeName: 'Nederlands',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/nl.json'),
+  },
+  hi: {
+    locale: 'hi-IN',
+    nativeName: 'हिन्दी',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/hi.json'),
+  },
+  bn: {
+    locale: 'bn-BD',
+    nativeName: 'বাংলা',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/bn.json'),
+  },
+  sq: {
+    locale: 'sq-AL',
+    nativeName: 'Shqip',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/sq.json'),
+  },
+  vi: {
+    locale: 'vi-VN',
+    nativeName: 'Tiếng Việt',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/vi.json'),
   },
 } as const satisfies Record<string, LanguageConfig>;
 

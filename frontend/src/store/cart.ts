@@ -11,6 +11,7 @@ interface CartState {
   heldOrderId: string | null;
   customerId: number | string | null;
   customer: Customer | null;
+  customerSource: 'explicit' | 'reservation' | null;
   guestCount: number;
   deliveryAddress: string;
   onlinePlatform: string;
@@ -27,6 +28,7 @@ interface CartState {
   setTableId: (id: string | null) => void;
   setCustomerId: (id: number | string | null) => void;
   setCustomer: (customer: Customer | null) => void;
+  setReservationCustomer: (customer: Customer | null) => void;
   setGuestCount: (count: number) => void;
   setDeliveryAddress: (address: string) => void;
   setOnlinePlatform: (platform: string) => void;
@@ -44,6 +46,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   heldOrderId: null,
   customerId: null,
   customer: null,
+  customerSource: null,
   guestCount: 1,
   deliveryAddress: '',
   onlinePlatform: '',
@@ -117,11 +120,11 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   clearCart: () => {
-    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', onlinePlatform: '', externalOrderId: '', orderNotes: '' });
+    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, customerSource: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', onlinePlatform: '', externalOrderId: '', orderNotes: '' });
   },
 
   loadItems: (items, tableId, customerId, guestCount, orderNotes, heldOrderId) => {
-    set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, guestCount, orderNotes: orderNotes || '' });
+    set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, customerSource: customerId == null ? null : 'explicit', guestCount, orderNotes: orderNotes || '' });
   },
 
   setOrderType: (type) => set((state) => ({
@@ -131,8 +134,9 @@ export const useCartStore = create<CartState>((set, get) => ({
     externalOrderId: type !== 'online' ? '' : state.externalOrderId,
   })),
   setTableId: (id) => set({ tableId: id, heldOrderId: null }),
-  setCustomerId: (id) => set({ customerId: id }),
-  setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null }),
+  setCustomerId: (id) => set({ customerId: id, customerSource: id == null ? null : 'explicit' }),
+  setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null, customerSource: customer ? 'explicit' : null }),
+  setReservationCustomer: (customer) => set({ customer, customerId: customer?.id ?? null, customerSource: customer ? 'reservation' : null }),
   setGuestCount: (count) => set({ guestCount: count }),
   setDeliveryAddress: (address) => set({ deliveryAddress: address }),
   setOnlinePlatform: (platform) => set({ onlinePlatform: platform }),

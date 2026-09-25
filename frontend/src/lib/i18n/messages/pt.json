@@ -1168,6 +1168,7 @@
   "receipt": {
     "amount": "Valor",
     "billNumber": "Conta #",
+    "cashReceived": "Dinheiro recebido",
     "customerNo": "Cliente Nº",
     "date": "Data",
     "deliveryCharge": "Taxa de entrega",

@@ -811,7 +811,7 @@ console.log('\n✅ Test 3d: Trim decimals hides only trailing .00');
   assert('trim decimals keeps non-zero decimals', fractionalText.includes('₹78.75') && fractionalText.includes('₹3.75'));
 }
 
-console.log('\n✅ Test 3e: Thermal receipt ignores a stale stored currency symbol (docs/regional-snapshot.md, third surface)');
+console.log('\n✅ Test 3e: Thermal receipt ignores a stale stored currency symbol (docs/architecture/regional-settings.md, third surface)');
 {
   // country/currency say MAD, but a stale stored symbol from a prior INR
   // configuration is still passed on the business object — the resolver's

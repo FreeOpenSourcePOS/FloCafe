@@ -102,7 +102,7 @@ export function createRefund(db: Database, req: RefundRequest): RefundResult {
   const orderCreatedAt = parseDbTimestamp(order.created_at).getTime();
   if (!Number.isFinite(orderCreatedAt)) throw httpError('Order creation time is invalid', 500);
   const nowMs = Date.now();
-  // Past the short window, an owner-only PIN is required for the rest of the business day (docs/business-decisions.md).
+  // Past the short window, an owner-only PIN is required for the rest of the business day (docs/reference/product-invariants.md).
   let lateRefund = false;
   if (nowMs - orderCreatedAt > REFUND_WINDOW_MS) {
     // Resolves through the country profile when the stored timezone is

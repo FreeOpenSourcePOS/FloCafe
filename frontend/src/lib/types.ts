@@ -36,7 +36,7 @@ export interface Tenant {
   currency_display?: CurrencyDisplay;
   number_digits?: DigitMode;
   calendar?: CalendarMode;
-  // Regional snapshot fields (docs/regional-snapshot.md) — derived from
+  // Regional snapshot fields (docs/architecture/regional-settings.md) — derived from
   // country + currency by resolveRegionalSnapshot(), not independent state.
   currency_symbol?: string;
   currency_position?: 'prefix' | 'suffix';
@@ -141,7 +141,7 @@ export interface Table {
   activeOrder?: Order | null;
   current_order?: Order | null;
   seated_at?: string | null;
-  reservation_customer_id?: number | null;
+  reservation_customer_id?: string | null;
   reservation_customer_name?: string | null;
   reservation_customer_phone?: string | null;
 }
@@ -235,7 +235,7 @@ export interface Bill {
   paid_amount: number;
   balance: number;
   payment_status: 'unpaid' | 'partial' | 'paid' | 'refunded' | 'partially_refunded';
-  payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string }[] | null;
+  payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string; tendered_amount?: number; change_amount?: number }[] | null;
   split_group_id?: string | null;
   split_label?: string | null;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;

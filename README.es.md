@@ -68,7 +68,7 @@ Las funciones principales del TPV y los datos locales funcionan sin conexión. L
 
 ## Idiomas y soporte regional
 
-FloCafe incluye traducciones de la interfaz en inglés, español, francés, portugués brasileño, filipino, turco, persa (farsi) con soporte RTL, alemán, italiano, japonés, chino simplificado, coreano y bahasa indonesio. El idioma de la interfaz es independiente del país de la tienda y de la configuración regional. Las reglas de cálculo de impuestos son un aspecto separado. Para contribuir traducciones o añadir idiomas, consulta la [guía de internacionalización y traducciones](docs/i18n.md).
+FloCafe incluye traducciones de la interfaz en inglés, español, francés, portugués brasileño, filipino, turco, persa (farsi) con soporte RTL, alemán, italiano, japonés, chino simplificado, coreano y bahasa indonesio. El idioma de la interfaz es independiente del país de la tienda y de la configuración regional. Las reglas de cálculo de impuestos son un aspecto separado. Para contribuir traducciones o añadir idiomas, consulta la [guía de internacionalización y traducciones](docs/architecture/internationalization.md).
 
 FloCafe incluye perfiles para 131 países y 109 monedas. Cada perfil establece una moneda, configuración regional y zona horaria predeterminadas; el propietario puede cambiar la zona horaria durante la configuración o más adelante en Ajustes.
 
@@ -78,7 +78,7 @@ FloCafe incluye un motor de cálculo genérico y paquetes fiscales regionales fi
 
 > **Aviso:** FloCafe es software, no asesoramiento legal ni fiscal. Los paquetes fiscales y las herramientas de configuración no certifican por sí mismos el cumplimiento de las normativas locales; cada operador debe verificar los requisitos aplicables a su negocio.
 
-Para obtener información sobre la creación, validación y el esquema de los paquetes, consulta la [guía para desarrolladores de paquetes fiscales](docs/tax-packs.md).
+Para obtener información sobre la creación, validación y el esquema de los paquetes, consulta la [guía para desarrolladores de paquetes fiscales](docs/reference/tax-packs.md).
 
 ## Desarrollo
 
@@ -122,8 +122,8 @@ Si FloCafe te resulta útil, considera marcar el repositorio con una estrella.
 - [Índice de documentación](docs/README.md)
 - [Guía de impresoras](docs/printers.md)
 - [Configuración y soporte de Linux](docs/linux.md)
-- [Internacionalización y traducciones](docs/i18n.md)
-- [Guía para desarrolladores de paquetes fiscales](docs/tax-packs.md)
+- [Internacionalización y traducciones](docs/architecture/internationalization.md)
+- [Guía para desarrolladores de paquetes fiscales](docs/reference/tax-packs.md)
 - [Configuración de copias en Google Drive](docs/google-drive-setup.md)
 - [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)

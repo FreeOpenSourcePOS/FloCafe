@@ -6,6 +6,8 @@ import {
   type LabelResolver,
   type KotDocument,
   type KotPrintData,
+  optionalPaymentAmount,
+  type PaymentSnapshot,
   type PrintContext,
   type PrintData,
   type PrintDocument,
@@ -112,12 +114,18 @@ function baseDirectionFor(languages: ResolvedPrintLanguages): ReturnType<typeof 
   }
 }
 
-function parsePaymentDetails(raw: Bill['payment_details']): Array<{ method: string; amount: number }> {
+function parsePaymentDetails(raw: Bill['payment_details']): PaymentSnapshot[] {
   if (!Array.isArray(raw)) return [];
-  return raw.map((entry) => ({
-    method: String(entry?.method ?? ''),
-    amount: Number(entry?.amount) || 0,
-  }));
+  return raw.map((entry) => {
+    const tendered = optionalPaymentAmount(entry?.tendered_amount);
+    const change = optionalPaymentAmount(entry?.change_amount);
+    return {
+      method: String(entry?.method ?? ''),
+      amount: Number(entry?.amount) || 0,
+      ...(tendered !== undefined ? { tendered } : {}),
+      ...(change !== undefined ? { change } : {}),
+    };
+  });
 }
 
 /** Normalize a Bill and nested Order into authoritative PrintData. */

@@ -146,6 +146,8 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   const allButtonsText = await page.locator('button').allInnerTexts();
   const hasPersianOption = allButtonsText.some((text) => text.includes('فارسی') || text.includes('FA'));
   expect(hasPersianOption, 'Persian (fa) must be available as a selectable UI language').toBeTruthy();
+  const hasRussianOption = allButtonsText.some((text) => text.includes('Русский') || text.includes('RU'));
+  expect(hasRussianOption, 'Russian (ru) must be available as a selectable UI language').toBeTruthy();
 
   // Forward arrow has rtl-flip class
   const continueArrow = page.locator('button svg.rtl-flip').first();
@@ -162,7 +164,7 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   await captureScreenshot(page, 'setup-step1-rtl-fa.png');
 
   // A country must be selected before continuing — there is no default
-  // (docs/business-decisions.md, "Regional settings come from signup, never
+  // (docs/reference/product-invariants.md, "Regional settings come from signup, never
   // from a fallback"). Pick the first listed country.
   await page.locator('.max-h-72 button').first().click();
 
@@ -263,6 +265,8 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     expect(optionValues).toContain('pt');
     expect(optionValues).toContain('fa');
     expect(optionValues).toContain('ja');
+    expect(optionValues).toContain('hi');
+    expect(optionValues).toContain('th');
 
     // Check document does not overflow horizontally in RTL
     const storeOverflow = await page.evaluate(() => ({

@@ -68,7 +68,7 @@ Temel satış noktası işlemleri ve yerel veriler çevrimdışı çalışır. S
 
 ## Diller ve bölgesel destek
 
-FloCafe arayüzü İngilizce, İspanyolca, Fransızca, Brezilya Portekizcesi, Filipince, Türkçe, Farsça (RTL desteğiyle), Almanca, İtalyanca, Japonca, Basitleştirilmiş Çince, Korece ve Bahasa Indonesia dillerinde kullanılabilir. Arayüz dili, mağazanın ülke ve bölgesel ayarlarından bağımsızdır. Vergi hesaplama kuralları ayrı bir konudur. Çevirilere katkıda bulunmak veya dil eklemek için [uluslararasılaştırma ve çeviri kılavuzuna](docs/i18n.md) bakın.
+FloCafe arayüzü İngilizce, İspanyolca, Fransızca, Brezilya Portekizcesi, Filipince, Türkçe, Farsça (RTL desteğiyle), Almanca, İtalyanca, Japonca, Basitleştirilmiş Çince, Korece ve Bahasa Indonesia dillerinde kullanılabilir. Arayüz dili, mağazanın ülke ve bölgesel ayarlarından bağımsızdır. Vergi hesaplama kuralları ayrı bir konudur. Çevirilere katkıda bulunmak veya dil eklemek için [uluslararasılaştırma ve çeviri kılavuzuna](docs/architecture/internationalization.md) bakın.
 
 FloCafe 131 ülke ve 109 para birimi için profiller içerir. Her profil varsayılan para birimi, yerel ayar ve saat dilini belirler; işletme sahibi saat dilini kurulum sırasında veya daha sonra Ayarlar bölümünden değiştirebilir.
 
@@ -78,7 +78,7 @@ FloCafe bölgesel kurallar, vergi kategorileri ve yuvarlama politikaları için 
 
 > **Uyarı:** FloCafe yazılımdır; hukuki veya vergisel danışmanlık değildir. Vergi paketleri ve yapılandırma araçları tek başına yerel mevzuata uyumluluğu belgelemez; işletmeciler kendi işletmeleri için geçerli gereklilikleri doğrulamakla sorumludur.
 
-Paketlerin yazımı, doğrulanması ve şeması hakkında ayrıntılar için [vergi paketi geliştirici kılavuzuna](docs/tax-packs.md) bakın.
+Paketlerin yazımı, doğrulanması ve şeması hakkında ayrıntılar için [vergi paketi geliştirici kılavuzuna](docs/reference/tax-packs.md) bakın.
 
 ## Geliştirme
 
@@ -122,8 +122,8 @@ FloCafe sizin için yararlıysa depoya yıldız vermeyi düşünün.
 - [Belge dizini](docs/README.md)
 - [Yazıcı kılavuzu](docs/printers.md)
 - [Linux kurulumu ve desteği](docs/linux.md)
-- [Uluslararasılaştırma ve çeviriler](docs/i18n.md)
-- [Vergi paketi geliştirici kılavuzu](docs/tax-packs.md)
+- [Uluslararasılaştırma ve çeviriler](docs/architecture/internationalization.md)
+- [Vergi paketi geliştirici kılavuzu](docs/reference/tax-packs.md)
 - [Google Drive yedekleme kurulumu](docs/google-drive-setup.md)
 - [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
 - [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)

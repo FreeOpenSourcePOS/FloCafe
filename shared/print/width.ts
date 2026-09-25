@@ -83,8 +83,6 @@ function fallbackGraphemeSegments(value: string): string[] {
       || (isRegionalIndicator(codePoint) && trailingRegionalIndicatorCount(current) % 2 === 1)
       || (isEmojiModifier(codePoint) && previousCodePoint !== undefined
         && EMOJI_BASE_RE.test(String.fromCodePoint(previousCodePoint)))
-      || (EMOJI_BASE_RE.test(character) && previousCodePoint !== undefined
-        && isEmojiModifier(previousCodePoint))
       || current.endsWith('\u200d')
       || pendingIndicConjunct;
 

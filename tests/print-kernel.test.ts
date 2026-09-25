@@ -321,6 +321,8 @@ try {
     String.fromCodePoint(0x0e01, 0x0e33),
   ];
   const fallbackEmoji = String.fromCodePoint(0x1f44d, 0x1f3fd);
+  const adjacentEmojiBase = String.fromCodePoint(0x1f44d);
+  const adjacentEmoji = `${fallbackEmoji}${adjacentEmojiBase}`;
   const fallbackFlag = String.fromCodePoint(0x1f1f3, 0x1f1f1);
   assert.deepEqual(
     fallbackClusters.map((cluster) => fallbackWidth.graphemeSegments(cluster)),
@@ -328,8 +330,11 @@ try {
     'fallback segmentation keeps Indic and Thai clusters together without Intl.Segmenter',
   );
   assert.deepEqual(fallbackWidth.graphemeSegments(fallbackEmoji), [fallbackEmoji], 'fallback keeps emoji modifiers attached');
+  assert.deepEqual(fallbackWidth.graphemeSegments(adjacentEmoji), [fallbackEmoji, adjacentEmojiBase], 'fallback starts a new cluster after an emoji modifier');
+  assert.equal(fallbackWidth.displayCellWidth(adjacentEmoji), 4, 'fallback measures adjacent emoji clusters separately');
   assert.deepEqual(fallbackWidth.graphemeSegments(fallbackFlag), [fallbackFlag], 'fallback keeps regional indicators paired');
   assert.equal(fallbackWidth.truncateToDisplayCells(fallbackEmoji, 2), fallbackEmoji, 'fallback truncation keeps the complete emoji modifier sequence');
+  assert.equal(fallbackWidth.truncateToDisplayCells(adjacentEmoji, 3), fallbackEmoji, 'fallback truncation does not merge adjacent emoji clusters');
   assert.equal(fallbackWidth.truncateToDisplayCells(fallbackFlag, 1), fallbackFlag, 'fallback truncation never splits a regional-indicator pair');
   assert.equal(fallbackWidth.truncateToDisplayCells(`A${fallbackClusters[0]}B`, 1), 'A', 'fallback truncation never splits Indic clusters');
 } finally {

@@ -683,7 +683,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['prod-demo-tarkari', 'cat-demo-main', 'तरकारी', 1200, 3],
         ['prod-demo-chai', 'cat-demo-beverages', 'चिया', 60, 1],
         ['prod-demo-water', 'cat-demo-beverages', 'पानी', 70, 2],
-        ['prod-demo-apple', 'cat-demo-desserts', 'स्याउ', 80, 1],
+        ['prod-demo-soup', 'cat-demo-desserts', 'स्याउ', 80, 1],
       ] as const
     : [
         ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Paneer Tikka', 250, 1],

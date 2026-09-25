@@ -115,7 +115,7 @@
     "test:cash-closures": "node tests/run-electron-node-test.cjs tests/cash-closures.test.ts",
     "test:cash-sessions": "node tests/run-electron-node-test.cjs tests/cash-sessions.test.ts",
     "test:kitchen-addons": "node tests/run-electron-node-test.cjs tests/kitchen-addons-parsing.test.ts",
-    "test:order-item-addons": "node tests/run-electron-node-test.cjs tests/order-item-addons.test.ts && node tests/run-electron-node-test.cjs tests/addon-price-integrity.test.ts",
+    "test:order-item-addons": "node tests/run-electron-node-test.cjs tests/order-item-addons.test.ts && node tests/run-electron-node-test.cjs tests/addon-price-integrity.test.ts && node tests/run-electron-node-test.cjs tests/issue-122-addon-quantities.test.ts",
     "test:issue-125-addon-reads": "node tests/run-electron-node-test.cjs tests/issue-125-addon-read-paths.test.ts",
     "test:windows-country-code-crash": "node tests/run-electron-node-test.cjs tests/issue-windows-country-code-crash.test.ts",
     "test:reports-insights": "node tests/run-electron-node-test.cjs tests/reports-insights.test.ts",

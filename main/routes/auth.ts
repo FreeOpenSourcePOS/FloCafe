@@ -262,7 +262,7 @@ function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel:
     : lang === 'de' ? 'Snack' : lang === 'tr' ? 'Atıştırmalık' : lang === 'fa' ? 'میان‌وعده' : lang === 'ar' ? 'وجبة خفيفة' : lang === 'ur' ? 'اسنیک'
     : lang === 'it' ? 'Spuntino' : lang === 'ja' ? '軽食' : lang === 'zh' ? '小吃' : lang === 'zh-tw' ? '小點'
     : lang === 'ko' ? '간식' : lang === 'id' ? 'Camilan' : lang === 'nl' ? 'Snack' : lang === 'hi' ? 'नाश्ता'
-    : lang === 'bn' ? 'নাস্তา' : lang === 'sq' ? 'Ushqim i lehtë' : lang === 'vi' ? 'Đồ ăn vặt' : lang === 'ru' ? 'Закуска'
+    : lang === 'bn' ? 'নাস্তা' : lang === 'sq' ? 'Ushqim i lehtë' : lang === 'vi' ? 'Đồ ăn vặt' : lang === 'ru' ? 'Закуска'
     : lang === 'th' ? 'ขนม' : lang === 'ne' ? 'नमकीन' : 'Snack';
   insertCategory(db, 'cat-express-food', food, '#F97316', '🍽️', 1);
   insertCategory(db, 'cat-express-beverages', beverages, '#0EA5E9', '🥤', 2);

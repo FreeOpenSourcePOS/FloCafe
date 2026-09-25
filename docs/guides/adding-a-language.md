@@ -93,6 +93,12 @@ express-restaurant sample. Add the new key to all three, with real translated sa
 `ENGLISH_IDENTICAL_SEED_LANGUAGES` in the same file lists languages that intentionally use the
 English sample data. Filipino is the only entry. A new language is not added there.
 
+`tests/phase7-setup-i18n.test.ts` checks every seeded merchant-visible string for script integrity.
+The letters of a localized seed string must come from the scripts its locale uses, so a code point
+copied from another script fails the run rather than shipping as a plausible-looking broken word.
+The expected scripts are derived from the registry through `Intl.Locale`, so a new language is
+covered without an edit here.
+
 ## 6. Regenerate the print labels
 
 ```sh

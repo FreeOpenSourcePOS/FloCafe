@@ -1661,17 +1661,23 @@ function orderNumberPlaceholderErrors(flatByLang: Record<string, Record<string, 
         errors.push(`${lang}.json is missing ${key}`);
         continue;
       }
-      const index = value.indexOf('{number}');
-      if (index < 0) {
+      // Every occurrence is checked: a message may legally carry {number} more
+      // than once, and checking only the first would let a later welded one
+      // through. Argument-name parity does not catch this, because it compares
+      // names rather than occurrence counts.
+      const matches = [...value.matchAll(/\{number\}/g)];
+      if (matches.length === 0) {
         errors.push(`${lang}.json ${key} must contain the {number} placeholder, got "${value}"`);
         continue;
       }
-      const preceding = value[index - 1] ?? '';
-      if (WORD_CHARACTER_RE.test(preceding)) {
-        errors.push(
-          `${lang}.json ${key} — {number} is welded to the preceding letter/mark `
-          + `(…${preceding}{number}); the order number must be introduced by punctuation or a space, got "${value}"`,
-        );
+      for (const match of matches) {
+        const preceding = value[match.index - 1] ?? '';
+        if (WORD_CHARACTER_RE.test(preceding)) {
+          errors.push(
+            `${lang}.json ${key} — {number} at position ${match.index} is welded to the preceding letter/mark `
+            + `(…${preceding}{number}); the order number must be introduced by punctuation or a space, got "${value}"`,
+          );
+        }
       }
     }
   }
@@ -2516,6 +2522,30 @@ function runNegativeTests(): void {
       ne: {
         'pos.addingItemsToOrder': 'अर्डर # मा वस्तुहरू थप्दै{number}',
         'pos.itemsAddedToOrder': 'अर्डर # मा वस्तुहरू थपियो{number}',
+      },
+    }),
+  );
+  expectDetected(
+    'order number: weld reported against the key that owns it',
+    // One healthy key and one welded key, so the validator must identify the
+    // welded one rather than merely reporting that some weld exists.
+    orderNumberPlaceholderErrors({
+      en: {
+        'pos.addingItemsToOrder': 'Adding items to order #{number}',
+        'pos.itemsAddedToOrder': 'Items added to order{number}',
+      },
+    }).filter((error) => error.includes('pos.itemsAddedToOrder')),
+  );
+  expectDetected(
+    'order number: every occurrence is checked, not only the first',
+    // Both keys carry a correctly introduced occurrence, so the only error the
+    // validator can report is the weld on the second {number}. Checking only
+    // the first occurrence finds nothing and this fixture fails. Argument-name
+    // parity cannot catch it, because both are named {number}.
+    orderNumberPlaceholderErrors({
+      en: {
+        'pos.addingItemsToOrder': 'Adding items to order #{number} and again{number}',
+        'pos.itemsAddedToOrder': 'Items added to order #{number}',
       },
     }),
   );

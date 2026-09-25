@@ -159,6 +159,12 @@ async function main() {
     const reloadRes = await api(baseUrl, '/api/tables/tbl-reservation', { headers: authHeader });
     assertEqual(reloadRes.data.table.reservation_customer_name, 'Reserved Guest', 'GET after reload returns reservation customer name');
     assertEqual(reloadRes.data.table.reservation_customer_phone, '+1 555 123 4567', 'GET after reload returns reservation customer phone');
+    // requirePermission() resolves effective permissions from a real users row
+    // keyed by the JWT's userId — the token alone is not authoritative.
+    db.prepare(
+      `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+       VALUES ('reservation-chef', 'Reservation Chef', 'reservation-chef@test.local', 'unused', 'chef', 1, ?, ?)`
+    ).run(now(), now());
     const reservationChefToken = require('jsonwebtoken').sign(
       { userId: 'reservation-chef', email: 'reservation-chef@test.local', role: 'chef' },
       getReservationJwtSecret(),

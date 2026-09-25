@@ -6,6 +6,7 @@ const GRAPHEME_SEGMENTER = typeof Intl !== 'undefined' && typeof Intl.Segmenter 
   : null;
 const THAI_SARA_AM_CODE_POINT = 0x0e33;
 const INDIC_VIRAMA_CODE_POINTS = new Set([0x094d, 0x09cd]);
+const EMOJI_BASE_RE = /\p{Extended_Pictographic}/u;
 
 export type PrintPaperWidth =
   | '58mm'
@@ -15,6 +16,33 @@ export type PrintPaperWidth =
   | `cols-${32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 | 44 | 45 | 46 | 47 | 48}`;
 
 export type ReceiptPaperSize = 58 | 80;
+
+function codePointBefore(value: string): number | undefined {
+  if (!value) return undefined;
+  const last = value.charCodeAt(value.length - 1);
+  if (last >= 0xdc00 && last <= 0xdfff && value.length >= 2) {
+    return value.codePointAt(value.length - 2);
+  }
+  return last;
+}
+
+function isEmojiModifier(codePoint: number): boolean {
+  return codePoint >= 0x1f3fb && codePoint <= 0x1f3ff;
+}
+
+function isRegionalIndicator(codePoint: number): boolean {
+  return codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff;
+}
+
+function trailingRegionalIndicatorCount(value: string): number {
+  let count = 0;
+  for (const character of Array.from(value).reverse()) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined || !isRegionalIndicator(codePoint)) break;
+    count += 1;
+  }
+  return count;
+}
 
 function isZeroWidthCodePoint(codePoint: number): boolean {
   return codePoint <= 0x1f
@@ -45,12 +73,18 @@ function fallbackGraphemeSegments(value: string): string[] {
     const isVariationSelector = (codePoint >= 0xfe00 && codePoint <= 0xfe0f)
       || (codePoint >= 0xe0100 && codePoint <= 0xe01ef);
     const isThaiSaraAm = codePoint === THAI_SARA_AM_CODE_POINT;
+    const previousCodePoint = current ? codePointBefore(current) : undefined;
     const continuesCurrent = !current
       || isMark
       || isVirama
       || isJoiner
       || isVariationSelector
       || isThaiSaraAm
+      || (isRegionalIndicator(codePoint) && trailingRegionalIndicatorCount(current) % 2 === 1)
+      || (isEmojiModifier(codePoint) && previousCodePoint !== undefined
+        && EMOJI_BASE_RE.test(String.fromCodePoint(previousCodePoint)))
+      || (EMOJI_BASE_RE.test(character) && previousCodePoint !== undefined
+        && isEmojiModifier(previousCodePoint))
       || current.endsWith('\u200d')
       || pendingIndicConjunct;
 

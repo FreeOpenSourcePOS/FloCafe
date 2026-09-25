@@ -320,11 +320,17 @@ try {
     String.fromCodePoint(0x0995, 0x09cd, 0x09b7),
     String.fromCodePoint(0x0e01, 0x0e33),
   ];
+  const fallbackEmoji = String.fromCodePoint(0x1f44d, 0x1f3fd);
+  const fallbackFlag = String.fromCodePoint(0x1f1f3, 0x1f1f1);
   assert.deepEqual(
     fallbackClusters.map((cluster) => fallbackWidth.graphemeSegments(cluster)),
     fallbackClusters.map((cluster) => [cluster]),
     'fallback segmentation keeps Indic and Thai clusters together without Intl.Segmenter',
   );
+  assert.deepEqual(fallbackWidth.graphemeSegments(fallbackEmoji), [fallbackEmoji], 'fallback keeps emoji modifiers attached');
+  assert.deepEqual(fallbackWidth.graphemeSegments(fallbackFlag), [fallbackFlag], 'fallback keeps regional indicators paired');
+  assert.equal(fallbackWidth.truncateToDisplayCells(fallbackEmoji, 2), fallbackEmoji, 'fallback truncation keeps the complete emoji modifier sequence');
+  assert.equal(fallbackWidth.truncateToDisplayCells(fallbackFlag, 1), fallbackFlag, 'fallback truncation never splits a regional-indicator pair');
   assert.equal(fallbackWidth.truncateToDisplayCells(`A${fallbackClusters[0]}B`, 1), 'A', 'fallback truncation never splits Indic clusters');
 } finally {
   if (originalWidthModule) require.cache[widthModulePath] = originalWidthModule;

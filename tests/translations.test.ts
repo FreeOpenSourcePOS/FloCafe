@@ -62,6 +62,9 @@
  *  23. Thai safeguards: th.json values never contain placeholders, malformed
  *      replacement characters, or non-NFC text, and only documented shared
  *      values may remain identical to English.
+ *  24. Nepali safeguards: ne.json values never contain placeholders, malformed
+ *      replacement characters, or non-NFC text, and only documented shared
+ *      values may remain identical to English.
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -1606,6 +1609,81 @@ function thFallbackErrors(thFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Nepali translation safeguards. */
+const NE_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', 'dashboard.exportCsv', 'dashboard.ticketMethodCount',
+  'kds.emptyColumn', 'nav.kds', 'nav.pos', 'pos.addonPrice', 'pos.loadingEllipsis',
+  'pos.tagCount', 'pos.taxLine', 'printTest.escpos', 'print.hsn',
+  'print.zReport.paymentCount', 'products.addonSelectionRange', 'products.fieldSku',
+  'products.saleUnitCl', 'products.saleUnitFlOz', 'products.saleUnitG',
+  'products.saleUnitKg', 'products.saleUnitL', 'products.saleUnitLb',
+  'products.saleUnitMl', 'products.saleUnitOz', 'products.skuLabel',
+  'serverApp.emailPlaceholder', 'settings.apiKeyInputPlaceholder', 'settings.connectionUsb',
+  'settings.ipAddressPlaceholder', 'settings.kds', 'settings.languageEs',
+  'settings.paperWidth58', 'settings.paymentMethodUpi', 'settings.portPlaceholder',
+  'settings.registrationLastError', 'settings.revflo', 'setup.finedineLabel',
+  'setup.pinLabel', 'setup.qsrLabel', 'tax.auditCreateOverride',
+  'tax.auditUpdateOverride', 'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function neFallbackErrors(neFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const neVal = neFlat[k];
+    if (neVal === undefined) continue;
+    if (neVal.startsWith('[NE]') || neVal.startsWith('[TODO]')) {
+      errors.push(`ne.json ${k} — placeholder prefix found: "${neVal}"`);
+    } else if (neVal === enFlat[k] && !NE_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`ne.json ${k} — identical to English value (renders as English for Nepali users)`);
+    } else if (neVal !== neVal.normalize('NFC')) {
+      errors.push(`ne.json ${k} — value must use Unicode NFC`);
+    } else if (neVal.includes('\uFFFD')) {
+      errors.push(`ne.json ${k} — value contains a Unicode replacement character`);
+    }
+  }
+  return errors;
+}
+
+/** Keys whose `{number}` placeholder names an order number that must stay
+ * introduced by punctuation (for example `#` or `№`) or a space, never welded
+ * onto the end of a verb-final clause. */
+const ORDER_NUMBER_PLACEHOLDER_KEYS = ['pos.addingItemsToOrder', 'pos.itemsAddedToOrder'] as const;
+const WORD_CHARACTER_RE = /[\p{L}\p{M}]/u;
+
+/** Order numbers must not be glued to a word, in any locale or script. */
+function orderNumberPlaceholderErrors(flatByLang: Record<string, Record<string, string>>): string[] {
+  const errors: string[] = [];
+  for (const [lang, messages] of Object.entries(flatByLang)) {
+    for (const key of ORDER_NUMBER_PLACEHOLDER_KEYS) {
+      const value = messages[key];
+      if (value === undefined) {
+        errors.push(`${lang}.json is missing ${key}`);
+        continue;
+      }
+      // Every occurrence is checked: a message may legally carry {number} more
+      // than once, and checking only the first would let a later welded one
+      // through. Argument-name parity does not catch this, because it compares
+      // names rather than occurrence counts.
+      const matches = [...value.matchAll(/\{number\}/g)];
+      if (matches.length === 0) {
+        errors.push(`${lang}.json ${key} must contain the {number} placeholder, got "${value}"`);
+        continue;
+      }
+      for (const match of matches) {
+        const preceding = value[match.index - 1] ?? '';
+        if (WORD_CHARACTER_RE.test(preceding)) {
+          errors.push(
+            `${lang}.json ${key} — {number} at position ${match.index} is welded to the preceding letter/mark `
+            + `(…${preceding}{number}); the order number must be introduced by punctuation or a space, got "${value}"`,
+          );
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -2118,6 +2196,46 @@ async function run(): Promise<void> {
   assert(!thMessages['setup.emailCommunicationDescription'].includes('ปิดได้ในขั้นตอนนี้'), 'th.json must not tell Thai users that essential notices can be disabled at setup');
   console.log(`  ✓ no untranslated th.json values (${TH_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
 
+  // 23. ne.json values must be complete, NFC text without malformed characters.
+  const neMessages = loadedStrings.get('ne');
+  if (!neMessages) throw new Error('languages registry must include the maintained ne locale');
+  const neErrors = neFallbackErrors(neMessages, loadedStrings.get('en')!);
+  if (neErrors.length) {
+    console.error(`\nne.json values with errors (${neErrors.length}):`);
+    for (const e of neErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'ne.json contains untranslated, placeholder, non-NFC, or replacement-character values');
+  }
+  assert(neMessages['receipt.cashReceived'] === 'नगद प्राप्त भयो', 'ne.json receipt.cashReceived must preserve the canonical cash-received label');
+  assert(neMessages['pos.tagVeg'] === 'शाकाहारी' && neMessages['products.tagVeg'] === 'शाकाहारी', 'ne.json vegetarian product tags must use the vegetarian Nepali term');
+  assert(neMessages['pos.tagNonVeg'] === 'मासाहारी' && neMessages['products.tagNonVeg'] === 'मासाहारी', 'ne.json non-vegetarian product tags must use the Nepali non-vegetarian term, not an unrelated homograph');
+  assert(neMessages['orders.takeaway'] === neMessages['pos.orderTypeTakeaway'], 'ne.json takeaway labels must match the reviewed Nepali pickup term');
+  assert(neMessages['dashboard.payIn'] === 'नगद जम्मा' && neMessages['dashboard.payOut'] === 'नगद निकासी', 'ne.json cash-movement labels must match the Z-report terminology');
+  assert(neMessages['print.zReport.payIn'] === neMessages['dashboard.payIn'] && neMessages['print.zReport.payOut'] === neMessages['dashboard.payOut'], 'ne.json cash-movement labels must be identical on the dashboard and the Z-report');
+  // Nepali spells "again" with the Devanagari visarga; a plain ASCII colon there
+  // would render as a visibly wrong glyph on a thermal receipt.
+  assert(!Object.entries(neMessages).some(([, v]) => v.includes('पुन:')), 'ne.json must use the visarga in पुनः rather than a plain colon');
+  assert(Object.values(neMessages).some((v) => v.includes('पुनः')), 'ne.json must contain the visarga spelling of पुनः');
+  console.log(`  ✓ no untranslated ne.json values (${NE_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
+
+  // 25. No locale may weld an order number onto a word. Devanagari, Arabic, and
+  // Cyrillic are all verb-final, so a trailing "{number}" reads as part of the
+  // word. This covers every registered locale, not only Nepali.
+  const orderNumberErrors = orderNumberPlaceholderErrors(Object.fromEntries(loadedStrings));
+  if (orderNumberErrors.length) {
+    console.error(`\norder-number placeholder errors (${orderNumberErrors.length}):`);
+    for (const e of orderNumberErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'an order-number placeholder is glued to a preceding word');
+  }
+  assert(
+    neMessages['pos.addingItemsToOrder'] === 'अर्डर #{number} मा वस्तुहरू थप्दैछन्',
+    'ne.json addingItemsToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    neMessages['pos.itemsAddedToOrder'] === 'अर्डर #{number} मा वस्तुहरू थपियो',
+    'ne.json itemsAddedToOrder must place the order number directly after the # marker',
+  );
+  console.log(`  ✓ no locale welds an order number onto a word (${Object.keys(Object.fromEntries(loadedStrings)).length} locales checked)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -2383,6 +2501,86 @@ function runNegativeTests(): void {
   expectDetected(
     'th: Unicode replacement character',
     thFallbackErrors({ 'a.b': 'กา�แฟ' }, { 'a.b': 'กาแฟ' }),
+  );
+  expectDetected(
+    'ne: English-identical value',
+    neFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'ne: placeholder prefix value',
+    neFallbackErrors({ 'a.b': '[NE] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ne: Unicode replacement character',
+    neFallbackErrors({ 'a.b': 'क��ा' }, { 'a.b': 'काफी' }),
+  );
+  expectDetected(
+    'order number: placeholder welded to a preceding word',
+    // Both keys are supplied so the only errors the validator can report are the
+    // welds; a missing key would otherwise mask whether the weld was detected.
+    orderNumberPlaceholderErrors({
+      ne: {
+        'pos.addingItemsToOrder': 'अर्डर # मा वस्तुहरू थप्दै{number}',
+        'pos.itemsAddedToOrder': 'अर्डर # मा वस्तुहरू थपियो{number}',
+      },
+    }),
+  );
+  expectDetected(
+    'order number: weld reported against the key that owns it',
+    // One healthy key and one welded key, so the validator must identify the
+    // welded one rather than merely reporting that some weld exists.
+    orderNumberPlaceholderErrors({
+      en: {
+        'pos.addingItemsToOrder': 'Adding items to order #{number}',
+        'pos.itemsAddedToOrder': 'Items added to order{number}',
+      },
+    }).filter((error) => error.includes('pos.itemsAddedToOrder')),
+  );
+  expectDetected(
+    'order number: every occurrence is checked, not only the first',
+    // Both keys carry a correctly introduced occurrence, so the only error the
+    // validator can report is the weld on the second {number}. Checking only
+    // the first occurrence finds nothing and this fixture fails. Argument-name
+    // parity cannot catch it, because both are named {number}.
+    orderNumberPlaceholderErrors({
+      en: {
+        'pos.addingItemsToOrder': 'Adding items to order #{number} and again{number}',
+        'pos.itemsAddedToOrder': 'Items added to order #{number}',
+      },
+    }),
+  );
+  // A space before {number} is legitimate (Persian and Arabic use
+  // "شماره {number}"), so only a letter or combining mark is a violation.
+  // There is deliberately no "missing separator" fixture: that case is healthy
+  // and asserting it would contradict the validator's actual contract.
+  expectDetected(
+    'order number: key missing from a locale',
+    orderNumberPlaceholderErrors({ en: { 'pos.addingItemsToOrder': 'Adding items to order #{number}' } }),
+  );
+  expectDetected(
+    'order number: placeholder entirely absent',
+    orderNumberPlaceholderErrors({ en: { 'pos.addingItemsToOrder': 'Adding items to order', 'pos.itemsAddedToOrder': 'Added' } }),
+  );
+  assert(
+    orderNumberPlaceholderErrors({
+      en: {
+        'pos.addingItemsToOrder': 'Adding items to order #{number}',
+        'pos.itemsAddedToOrder': 'Items added to order #{number}',
+      },
+      ne: {
+        'pos.addingItemsToOrder': 'अर्डर #{number} मा वस्तुहरू थप्दैछन्',
+        'pos.itemsAddedToOrder': 'अर्डर #{number} मा वस्तुहरू थपियो',
+      },
+      ru: {
+        'pos.addingItemsToOrder': 'Добавление товаров в заказ №{number}',
+        'pos.itemsAddedToOrder': 'Товары добавлены в заказ №{number}',
+      },
+      fa: {
+        'pos.addingItemsToOrder': 'در حال افزودن کالاها به سفارش شماره {number}',
+        'pos.itemsAddedToOrder': 'کالاها به سفارش شماره {number} افزوده شدند',
+      },
+    }).length === 0,
+    'order-number validator must not flag healthy English, Nepali, Russian, or Persian values',
   );
 
   // 8. TypeScript key safety.

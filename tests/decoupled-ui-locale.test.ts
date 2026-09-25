@@ -58,7 +58,7 @@ React.useSyncExternalStore = function (subscribe: any, getSnapshot: any, getServ
 };
 
 const { IntlProvider, useLocale } = frontendRequire('use-intl');
-const { formatDateForTenant, getCountryByCode } = require('../main/countries');
+const { formatCurrencyForTenant, formatDateForTenant, formatNumberForTenant, getCountryByCode } = require('../main/countries');
 const { generateBillHtml } = require('../frontend/src/lib/printer/web-print');
 const { getWhatsAppMessage, getWhatsAppShareUrl, sendBillViaFlo, shareBillViaWhatsApp } = require('../frontend/src/lib/whatsapp-share');
 const whatsappApi = frontendRequire('./src/lib/api').default;
@@ -136,6 +136,20 @@ async function runTests() {
   assert.ok(arEnDate.includes('Aug') || arEnDate.includes('August'), `Expected English month in en-US output, got: ${arEnDate}`);
   assert.ok(arEnDate.includes('PM') || arEnDate.includes('pm'), `Expected English 12-hour period in en-US output, got: ${arEnDate}`);
   assert.ok(!arEnDate.includes('de ago'), `Unexpected Spanish 'de ago' preposition in en-US output: ${arEnDate}`);
+
+  const neNumber = formatNumberForTenant(1234567.89, 'NP');
+  const neCurrency = formatCurrencyForTenant(1234567.89, 'NP', 'NPR');
+  const neDate = formatDateForTenant(
+    testDateUtc,
+    'NP',
+    'Asia/Kathmandu',
+    {},
+    { year: 'numeric', month: 'short', day: 'numeric' },
+    'ne-NP',
+  );
+  assert.equal(neNumber, '१२,३४,५६७.८९', 'Nepal tenant uses its Intl digit and grouping profile');
+  assert.ok(neCurrency.includes('रू') && neCurrency.includes('१२,३४,५६७.८९'), 'Nepal tenant currency remains tenant-authoritative');
+  assert.ok(neDate.includes('२०२६') && neDate.includes('अगस्ट'), 'Nepali UI locale supplies date language without changing tenant timezone');
 
   // Argentina store + Spanish UI
   const arEsDate = formatDateForTenant(
@@ -262,7 +276,7 @@ async function runTests() {
     },
   };
 
-  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'ru' | 'fa' | 'ur' | 'ja' | 'hi' | 'sq' | 'th'; label: string; filePrefix: string }> = [
+  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'ru' | 'fa' | 'ur' | 'ja' | 'hi' | 'ne' | 'sq' | 'th'; label: string; filePrefix: string }> = [
     { lang: 'en', label: 'English UI', filePrefix: 'receipt-argentina-english-ui' },
     { lang: 'es', label: 'Spanish UI', filePrefix: 'receipt-argentina-spanish-ui' },
     { lang: 'fr', label: 'French UI', filePrefix: 'receipt-argentina-french-ui' },
@@ -272,6 +286,7 @@ async function runTests() {
     { lang: 'ur', label: 'Urdu UI', filePrefix: 'receipt-argentina-urdu-ui' },
     { lang: 'ja', label: 'Japanese UI', filePrefix: 'receipt-argentina-japanese-ui' },
     { lang: 'hi', label: 'Hindi UI', filePrefix: 'receipt-argentina-hindi-ui' },
+    { lang: 'ne', label: 'Nepali UI', filePrefix: 'receipt-argentina-nepali-ui' },
     { lang: 'sq', label: 'Albanian UI', filePrefix: 'receipt-argentina-albanian-ui' },
     { lang: 'th', label: 'Thai UI', filePrefix: 'receipt-argentina-thai-ui' },
   ];
@@ -323,6 +338,15 @@ async function runTests() {
       assert.ok(
         receiptHtml.includes('اگست') || receiptHtml.includes('ستمبر'),
         `Receipt in Urdu UI must contain an Urdu month name`,
+      );
+    } else if (lang === 'ne') {
+      assert.ok(
+        receiptHtml.includes('बिल #') && receiptHtml.includes('कुल जम्मा'),
+        `Receipt in Nepali UI must contain Devanagari labels`,
+      );
+      assert.ok(
+        receiptHtml.includes('अगस्ट'),
+        `Receipt in Nepali UI must contain a Nepali month name, got: ${receiptHtml}`,
       );
     }
 

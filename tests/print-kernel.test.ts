@@ -44,7 +44,7 @@ import {
 import type { LanguageRegistryFacts } from '../shared/print';
 
 // Test registry: mirrors what a call site injects from the central registry.
-const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi', 'th']);
+const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi', 'th', 'ne']);
 const FACTS: LanguageRegistryFacts = {
   isSelectableLanguage: (code) => SELECTABLE.has(code),
 };
@@ -333,6 +333,65 @@ assert.deepEqual(
   ),
   [String.fromCodePoint(0x0915, 0x094d, 0x0937), String.fromCodePoint(0x0995, 0x09cd, 0x09b7)],
   'Indic wrapping never splits conjuncts',
+);
+
+// Nepali POS terminology leans on virama conjuncts (rakar/repha like र्म,
+// प्र, न्ध) plus stacked matras, so each conjunct must measure as one cell and
+// survive narrow-width layout intact.
+for (const [term, segments, cells] of [
+  ['छूट', ['छू', 'ट'], 2],
+  ['कर्मचारी', ['क', 'र्म', 'चा', 'री'], 4],
+  ['भुक्तानी', ['भु', 'क्ता', 'नी'], 3],
+  ['क्रिम', ['क्रि', 'म'], 2],
+  ['प्रबन्धक', ['प्र', 'ब', 'न्ध', 'क'], 4],
+  ['तरकारी', ['त', 'र', 'का', 'री'], 4],
+] as const) {
+  assert.deepEqual(graphemeSegments(term), [...segments], `Nepali term ${term} segments without splitting a virama conjunct`);
+  assert.equal(displayCellWidth(term), cells, `Nepali term ${term} consumes ${cells} thermal display cells, not its code-point count`);
+  for (let width = 1; width < cells; width += 1) {
+    const wrapped = wrapToDisplayCells(term, width);
+    assert.deepEqual(
+      graphemeSegments(wrapped.join('')),
+      [...segments],
+      `Nepali term ${term} keeps every cluster after a ${width}-cell wrap`,
+    );
+    // Re-joining cannot detect a split, so check every line boundary directly:
+    // the clusters of two adjacent lines must not merge into fewer clusters
+    // when concatenated. This catches both a matra stranded at a line start
+    // and a virama stranded at a line end before a base consonant.
+    for (let index = 0; index < wrapped.length - 1; index += 1) {
+      const left = graphemeSegments(wrapped[index]);
+      const right = graphemeSegments(wrapped[index + 1]);
+      assert.equal(
+        graphemeSegments(wrapped[index] + wrapped[index + 1]).length,
+        left.length + right.length,
+        `Nepali term ${term} must break between complete clusters at the ${width}-cell boundary `
+        + `${JSON.stringify(wrapped[index])} | ${JSON.stringify(wrapped[index + 1])}`,
+      );
+    }
+  }
+}
+
+const neNarrowReceiptProduct = 'कागजी चिया';
+assert.deepEqual(
+  graphemeSegments(neNarrowReceiptProduct),
+  ['का', 'ग', 'जी', ' ', 'चि', 'या'],
+  'Nepali receipt product segments into base consonants with attached matras',
+);
+assert.equal(
+  displayCellWidth(neNarrowReceiptProduct),
+  6,
+  'Nepali receipt product measures six thermal display cells, not its ten code points',
+);
+assert.equal(
+  truncateToDisplayCells(neNarrowReceiptProduct, 3),
+  'कागजी',
+  'Nepali matras are dropped with their base rather than emitted as orphan marks',
+);
+assert.deepEqual(
+  wrapToDisplayCells(neNarrowReceiptProduct, 3),
+  ['कागजी', 'चिया'],
+  'Nepali wrapping breaks on the word boundary rather than stranding a matra at a 3-cell width',
 );
 
 const widthModulePath = require.resolve('../shared/print/width');

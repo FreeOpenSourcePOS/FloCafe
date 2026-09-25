@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 import { formatKOT, escPosToText } from '../main/printers/thermal';
 import { printLabel } from '../main/print/print-labels.generated';
 
-const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th'] as const;
+const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const;
+// Any Devanagari codepoint: the native paths must emit none, not merely none of
+// the specific phrases this fixture happens to use.
+const DEVANAGARI_RE = /[ऀ-ॿ]/;
 const order = {
   order_number: 'KOT-PHASE3-001',
   type: 'dine_in',
@@ -64,6 +67,15 @@ async function run(): Promise<void> {
     assert.match(browserHtml, new RegExp(`>${printLabel(language, 'print.kot.banner').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}<`), `${language}: browser banner`);
     if (language === 'th') {
       assert.match(browserHtml, /Noto Sans Thai/, `${language}: browser KOT keeps Thai font fallback available`);
+    }
+    if (language === 'hi' || language === 'ne') {
+      // The KOT font stack and the document locale are both selected per
+      // language, so this proves the Devanagari branch resolves for the locale
+      // under test rather than inheriting a sibling Devanagari bundle. The
+      // locale is matched exactly: a Nepali ticket tagged hi-IN must fail.
+      const expectedLocale = language === 'hi' ? 'hi-IN' : 'ne-NP';
+      assert.match(browserHtml, /font-family:'Noto Sans Devanagari'/, `${language}: browser KOT selects the Devanagari font stack`);
+      assert.match(browserHtml, new RegExp(`lang="${expectedLocale}" dir="ltr"`), `${language}: browser KOT must carry its own locale ${expectedLocale}, not another Devanagari bundle`);
     }
     assert.match(browserHtml, /KOT-PHASE3-001/, `${language}: browser order number`);
     assert.match(browserHtml, /Pending coffee/, `${language}: browser pending item`);
@@ -197,6 +209,48 @@ async function run(): Promise<void> {
     }, webUsbWarnings)).toString('utf8');
     assert.equal(webUsbWarnings.some((warning) => warning.kind === 'line'), true, 'Thai unsupported WebUSB KOT lines warn before output');
     assert.doesNotMatch(webUsbText, /กาแฟไทย|นม|หวานน้อย/, 'Thai WebUSB KOT does not emit unsupported glyphs');
+  }
+
+  {
+    const nepaliOrder = {
+      ...order,
+      items: [{
+        quantity: 1,
+        product_name: 'कागजी चिया',
+        status: 'pending',
+        addons: [{ name: 'चिनी', quantity: 1 }],
+        special_instructions: 'कम चिनी',
+      }],
+    };
+    const thermalWarnings: any[] = [];
+    const thermalText = escPosToText(formatKOT(
+      nepaliOrder,
+      nepaliOrder.items,
+      'Main Kitchen',
+      42,
+      false,
+      'full',
+      'en-US',
+      { timeZone: 'UTC' },
+      thermalWarnings,
+      false,
+      'ne',
+    ));
+    assert.equal(thermalWarnings.some((warning) => warning.kind === 'line'), true, 'Nepali unsupported KOT lines warn before native output');
+    // Reject any Devanagari codepoint, not just the three source phrases: a
+    // partially-transliterated name would still pass a whole-word alternation.
+    assert.doesNotMatch(thermalText, DEVANAGARI_RE, 'Nepali native KOT emits no Devanagari codepoints at all');
+
+    const webUsbWarnings: any[] = [];
+    const webUsbText = Buffer.from(frontend.kotEncoder.buildKotBytes(nepaliOrder as any, {
+      paperWidth: 58,
+      language: 'ne',
+      stationName: 'Main Kitchen',
+      locale: 'ne-NP',
+      timezone: 'UTC',
+    }, webUsbWarnings)).toString('utf8');
+    assert.equal(webUsbWarnings.some((warning) => warning.kind === 'line'), true, 'Nepali unsupported WebUSB KOT lines warn before output');
+    assert.doesNotMatch(webUsbText, DEVANAGARI_RE, 'Nepali WebUSB KOT emits no Devanagari codepoints at all');
   }
 
   const longKotHtml = frontend.kotWebPrint.generateKotHtml({

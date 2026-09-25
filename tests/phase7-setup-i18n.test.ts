@@ -119,6 +119,12 @@ async function run(): Promise<void> {
       assert.equal(rows('products', 'name', "id = 'prod-express-coffee'")[0].name, 'Кофе', 'Russian express coffee is localized');
       assert.equal(rows('products', 'name', "id = 'prod-express-snack'")[0].name, 'Закуска', 'Russian express snack is localized');
     }
+    if (language === 'ne') {
+      assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'खाना', 'Nepali express category is localized');
+      assert.equal(rows('categories', 'name', "id = 'cat-express-beverages'")[0].name, 'पेय पदार्थ', 'Nepali express beverages category is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'भोजन', 'Nepali express product is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-snack'")[0].name, 'नमकीन', 'Nepali express snack is localized');
+    }
 
     seedSetupProfile(db, 'demo', 'finedine', language, 'IN');
     const seededCustomers = rows('customers', 'phone, phone_digits, country_code', 'is_active = 1');
@@ -161,6 +167,36 @@ async function run(): Promise<void> {
           ['+66812345680', '+66'],
         ],
         'Thai demo customers use Thailand E.164 numbers independent of the selected store country',
+      );
+    }
+    if (language === 'ne') {
+      assert.equal(snapshot.category, 'स्टार्टर', 'Nepali demo category is localized');
+      assert.equal(snapshot.product, 'समोसे', 'Nepali demo product is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-dal-bhat'")[0].name, 'दाल भात', 'Nepali demo dal bhat uses Nepali restaurant terminology');
+      assert.equal(snapshot.manager, 'डेमो प्रबन्धक', 'Nepali demo manager is localized');
+      assert.equal(snapshot.customer, 'अनिश अधिकारी', 'Nepali demo customer is localized');
+      // The seeded dessert is स्याउ, which is Nepali for "apple", so the product
+      // id and the merchant-visible label must name the same product. Pinning
+      // the pairing in both directions means a future rename of either side
+      // fails loudly instead of silently shipping an id/label mismatch.
+      assert.equal(
+        rows('products', 'name', "id = 'prod-demo-apple'")[0].name,
+        'स्याउ',
+        'Nepali demo apple id must still carry the स्याउ (apple) label',
+      );
+      assert.equal(
+        rows('products', 'id', "name = 'स्याउ'")[0].id,
+        'prod-demo-apple',
+        'Nepali demo dessert id must still name the product its स्याउ (apple) label shows',
+      );
+      assert.deepEqual(
+        rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => [customer.phone, customer.country_code]),
+        [
+          ['+9779812345678', '+977'],
+          ['+9779812345679', '+977'],
+          ['+9779812345680', '+977'],
+        ],
+        'Nepali demo customers use Nepal E.164 numbers independent of the selected store country',
       );
     }
     if (language === 'hi') {

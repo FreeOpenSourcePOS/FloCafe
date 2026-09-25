@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { formatKOT, escPosToText } from '../main/printers/thermal';
 import { printLabel } from '../main/print/print-labels.generated';
+import { LANGUAGES as LANGUAGE_REGISTRY } from '../frontend/src/lib/i18n/languages';
 
 const languages = ['en', 'es', 'de', 'tr', 'fil', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const;
 // Any Devanagari codepoint: the native paths must emit none, not merely none of
@@ -57,6 +58,20 @@ function loadFrontendModules(): {
 async function run(): Promise<void> {
   const frontend = loadFrontendModules();
   await Promise.all(languages.map((language) => frontend.loadLocaleMessages(language)));
+
+  // The KOT font stack is keyed on the CLDR script of the registered locale,
+  // so every registered locale must resolve one. A new language that falls
+  // through to the Latin stack would print Arabic, Bengali, CJK or Cyrillic
+  // text in a font that has none of those glyphs.
+  const latinStack = frontend.kotWebPrint.kotFontStackForLanguage('en');
+  for (const code of Object.keys(LANGUAGE_REGISTRY) as Array<keyof typeof LANGUAGE_REGISTRY>) {
+    const script = new Intl.Locale(LANGUAGE_REGISTRY[code].locale).maximize().script ?? 'Latn';
+    const stack = frontend.kotWebPrint.kotFontStackForLanguage(code);
+    assert.ok(
+      script === 'Latn' || stack !== latinStack,
+      `${code}: browser KOT must resolve a ${script} font stack, not the Latin one`,
+    );
+  }
 
   for (const language of languages) {
     const expectedTypes = ['dine_in', 'delivery', 'online', 'takeaway'].map((type) => ({

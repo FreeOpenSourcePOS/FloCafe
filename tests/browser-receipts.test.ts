@@ -424,6 +424,15 @@ async function run() {
       neHtml.includes('कुल जम्मा') &&
       neHtml.includes('तपाईंको भ्रमणको लागि धन्यवाद!')
     );
+
+    // The browser receipt is the primary print path, and its body stack was
+    // extended per language by hand, so Bengali was the one merged locale left
+    // without a declared family here. Assert the families the order-slip and
+    // raster stacks already carry.
+    const bnHtml = generateBillHtml(sampleEnBill, { ...neTenant, currency: 'BDT', country: 'BD' }, { language: 'bn', isReprint: true });
+    assert('BN receipt declares the Bengali font families in the order-slip position',
+      bnHtml.includes("'Noto Naskh Arabic', 'Noto Sans Bengali', 'Vrinda', 'Bangla Sangam MN', 'Noto Sans Devanagari'")
+    );
   }
 
   console.log('\nTest Suite 6: Canonical semantic labels and unknown-language fallback');

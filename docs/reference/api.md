@@ -39,8 +39,13 @@ Master PIN second factor, and audit attribution are described in
 also explains why the three servers each write their own token-verification middleware and what
 diverges between them.
 
-Role groups in the **Authorization** column below are the `ROLE_ACCESS` keys from
-[`shared/role-permissions.ts`](../../shared/role-permissions.ts), not a separate permission system:
+Almost every protected endpoint is gated by `requirePermission(id)`, resolved live from SQLite —
+see [Configurable permissions](../architecture/authentication-and-authorization.md#configurable-permissions).
+For brevity, the **Authorization** column below names the endpoint's permission by its **shipped
+default** role group instead of its permission id, using the same `ROLE_ACCESS` keys from
+[`shared/role-permissions.ts`](../../shared/role-permissions.ts) that
+[`shared/permissions.ts`](../../shared/permissions.ts) assigns as each permission's
+`defaultRoles`:
 
 | Group | Roles |
 | --- | --- |
@@ -54,13 +59,40 @@ Role groups in the **Authorization** column below are the `ROLE_ACCESS` keys fro
 | `allStaff` | owner, manager, cashier, server, chef |
 | `serverApp` | server, manager, owner |
 
-The [roles and permissions](roles-and-permissions.md) page holds the in-app capability matrix. It
-is a UI view, not the backend gate list.
+**This is the default, not a fixed gate.** An owner can grant or deny any of these per role or per
+user from **Staff > Role permissions**, without a code change, and the endpoint enforces whatever
+is currently configured — not the table below. To find the exact permission id an endpoint checks,
+read the route source or `shared/permissions.ts`; to see the current effective configuration for
+an install, use `GET /api/authorization/roles`. `authorization.manage` and
+`staff.privileged.manage` are the two permissions marked `configurable: false` in the catalog:
+those two rows are not owner-configurable, unlike every other row in this reference.
 
-A row reading `any authenticated role` means the endpoint has no `requireRole` gate beyond
+The [roles and permissions](roles-and-permissions.md) page holds the in-app permission editor and
+capability matrix — a UI view and its owner-only management API, not this backend gate list.
+
+A row reading `any authenticated role` means the endpoint has no permission or role gate beyond
 `requireAuth`. A row reading `+ KDS-enabled` also passes through `requireKdsEnabled`, which returns
 `403` when `kds_enabled` is off. `+ Master PIN` adds `requireMasterPin`, which reads `master_pin`
 from the body.
+
+### Configurable authorization management
+
+Router: `main/routes/authorization.ts`. Full path: `/api/authorization`. Every route below
+requires `authorization.manage` — active owner only, protected, not configurable.
+
+| Method | Path | Parameters | Response |
+| --- | --- | --- | --- |
+| `GET` | `/catalog` | none | `{ permissions: PERMISSION_DEFINITIONS, roles: ROLE_KEYS }` — the stable permission catalog and role identities. |
+| `GET` | `/roles` | none | `{ roles: [{ role, revision, overrides, permissions }, ...] }` for every role. |
+| `PUT` | `/roles/:role` | body: `revision`, `overrides: [{ permission_id, effect }]` | Atomically replaces that role's override set. `409` with the current role payload on a stale `revision`; `400` on an unknown, duplicate, or protected permission id. |
+| `GET` | `/users` | none | `{ users: [...] }` — the safe staff list this editor's per-user picker uses. |
+| `GET` | `/users/:userId` | path: `userId` | `{ user, revision, overrides, permissions }` — one user's effective values and exceptions. `404` if absent. |
+| `PUT` | `/users/:userId` | body: `revision`, `overrides: [{ permission_id, effect }]` | Atomically replaces that user's override set. Same `409`/`400` behavior as the role route. |
+| `DELETE` | `/users/:userId/overrides` | body: `revision` | Clears every override for that user, restoring inheritance. `409` on a stale `revision`. |
+| `GET` | `/audit` | query: `?limit` (max 200), `?before_id` | `{ audit: [...] }`, newest first: actor, target type/id, permission id, previous/next effect, timestamp. |
+
+Every write is one SQLite transaction and appends rows to `authorization_audit_log`, keyed under a
+shared `batch_id` per save so a multi-permission change reads as one event.
 
 ## Rate limiting
 
@@ -649,25 +681,26 @@ Router: declared inline in `main/routes/index.ts`.
 
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
-| `POST` | `/api/tax/preview` | any authenticated role | body: `items`, `customer_id`, `packaging_charge`, `delivery_charge`, `service_charge`, `discount_type`, `discount_value` | `400` when `items` is missing or empty. Returns the tax rollup for a hypothetical basket without persisting anything. This endpoint carries **no** `requireRole` gate: any authenticated role may price a basket. |
+| `POST` | `/api/tax/preview` | `ROLE_ACCESS.ownerManager` | body: `items`, `customer_id`, `packaging_charge`, `delivery_charge`, `service_charge`, `discount_type`, `discount_value` | `400` when `items` is missing or empty. Returns the tax rollup for a hypothetical basket without persisting anything. |
 | `GET` | `/api/tax/categories` | `ROLE_ACCESS.ownerManager` | none | `{ pack_id, country, categories, default_category_id, configuration_ready, unclassified_category_id }`. `categories` is empty until the pack's configuration is complete. |
 | `GET` | `/api/mobile/pairing-code` | `ROLE_ACCESS.owner` | none | `{ pairing_code, expires_at, qr_data_url }`. Returns the cached code when one is live, otherwise generates one. `409` when the store is not yet claimed in FloAdmin; `502` for any other cloud failure. |
 | `POST` | `/api/mobile/rotate-code` | `ROLE_ACCESS.owner` | none | Same shape as the read, and every already paired RevFlo device is disconnected. |
 | `GET` | `/api/mobile/devices` | `ROLE_ACCESS.owner` | none | `{ devices: [ ... ] }`. `502` when FloAdmin is unreachable. |
 | `GET` | `/api/customers-search` | `ROLE_ACCESS.sales` | query: `q` | Flat array of at most 20 active customers, each with a `wallet_balance`. `q` shorter than 2 characters returns `[]`. A query with no letters is treated as phone-like and matched against stored phone digits. |
 | `GET` | `/api/crm/lookup` | `ROLE_ACCESS.sales` | query: `phone`, `country_code` | `{ found, customer }`. `400` when `phone` is missing. The number is normalized to E.164 against the tenant country before lookup. |
-| `PATCH` | `/api/orders/:orderId/items/:itemId/cancel` | any authenticated role, then an in-handler role check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
+| `PATCH` | `/api/orders/:orderId/items/:itemId/cancel` | any authenticated role, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
 | `PATCH` | `/api/orders/:orderId/items/:itemId/restore` | in-handler `ROLE_ACCESS.ownerManager` | path: `orderId`, `itemId` | Returns `{ order: { ...order, items } }`. `400` on a completed or cancelled order or a paid one. Re-deducts inventory and recipe components, and rescales an order-level percentage discount. |
 
-Both item endpoints read the caller's role from the database inside an IMMEDIATE transaction rather
-than from the JWT claim, and re-run every policy check there.
+Both item endpoints resolve the caller's effective permissions from the database inside an
+IMMEDIATE transaction rather than from the JWT claim, and re-run every policy check there.
 
 `PATCH .../cancel` is a policy switch, not a plain status write:
 
-- `403` for a role outside `ownerManager` and `cashierServer`. `cashierServer` is accepted only when
-  the item is in `preparing` or `ready`, and only with `override_pin`. An owner or manager can
-  cancel a terminal item without a PIN, in which case the call is a no-op that returns the current
-  state.
+- `403` without `orders.item.cancel` (shipped to `ROLE_ACCESS.ownerManager`) for a terminal item,
+  or without `orders.item.void` (shipped to `ROLE_ACCESS.sales`) for an item already in
+  `preparing` or `ready`. Voiding an in-progress item additionally requires `override_pin`. An
+  owner or manager can cancel a terminal item without a PIN, in which case the call is a no-op
+  that returns the current state.
 - `409` when any bill for the order is paid, partially paid, or carries payment details.
 - `400` when the order is `completed` or `cancelled`.
 - Voiding an item in preparation writes a mirrored negative `order_items` row with status

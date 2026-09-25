@@ -2,14 +2,23 @@
  * PARKED - not run by any script, deliberately excluded in
  * scripts/ci/validate-test-script-coverage.cjs.
  *
- * Blocking production bug: waitForWhatsAppWork() drains with
- * `Promise.allSettled([...inFlightWhatsAppWork])` over a Map, so the spread
- * yields [key, value, key, value...] rather than promises. The loop then
- * re-awaits an already-settled array forever, starves the event loop, and
- * neither SHUTDOWN_TIMEOUT_MS nor FATAL_SHUTDOWN_TIMEOUT_MS can fire: the run
- * hangs instead of failing. The fix belongs in main/services/whatsapp.ts
- * ([...map.values()]) and is filed as its own change; the bug is behaviour, so
- * it must not ride along in a test-harness change.
+ * Blocking production bug: inFlightWhatsAppWork is a
+ * Map<Promise, WhatsAppWorkCancellation> - the in-flight operation is the KEY
+ * and its cancellation callback is the VALUE. waitForWhatsAppWork drains it with
+ * `Promise.allSettled([...inFlightWhatsAppWork])`, and spreading a Map yields the
+ * flat [operation, cancel, operation, cancel, ...] array, so every cancellation
+ * callback is handed to allSettled as if it were something to await. These
+ * assertions hang: the run never completes and neither SHUTDOWN_TIMEOUT_MS nor
+ * the fatal timeout fires.
+ *
+ * The exact reason the drain cannot make progress is not established - the
+ * timeout is a timer and the loop's exit condition depends on the map emptying,
+ * which `operation.finally` does. Establishing that belongs with the fix, not
+ * with this parked file. What is verified is the symptom: the suite does not
+ * finish, and nothing times out.
+ *
+ * The fix belongs in main/services/whatsapp.ts and is filed as its own change;
+ * the bug is behaviour, so it must not ride along in a test-harness change.
  *
  * These assertions are the contract for that fix. Do not delete this file - it
  * is parked, not obsolete.

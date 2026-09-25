@@ -172,7 +172,7 @@
     "test:migration-v81-cash-closures": "node tests/run-electron-node-test.cjs tests/migration-v81-cash-closures.test.ts",
     "test:master-pin": "node tests/run-electron-node-test.cjs tests/master-pin.test.ts",
     "test:google-drive": "node tests/run-electron-node-test.cjs tests/google-drive.test.ts",
-    "test:database-tools-api": "node tests/run-electron-node-test.cjs tests/database-tools-api.test.ts && node tests/run-electron-node-test.cjs tests/database-maintenance-lock.test.ts",
+    "test:database-tools-api": "node tests/run-electron-node-test.cjs tests/database-tools-api.test.ts && node tests/run-electron-node-test.cjs tests/database-maintenance-lock.test.ts && node tests/run-electron-node-test.cjs tests/database-maintenance-allowlist.test.ts",
     "test:issue-127-password-recovery": "node tests/run-electron-node-test.cjs tests/issue-127-password-recovery.test.ts",
     "test:server-app-server-role": "node tests/run-electron-node-test.cjs tests/server-app-server-role.test.ts",
     "test:customer-soft-reactivate-bindings": "ts-node --transpile-only -P tests/tsconfig.json tests/customer-soft-reactivate-bindings.test.ts",

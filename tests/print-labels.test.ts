@@ -31,8 +31,10 @@ import {
 import { LANGUAGES } from '../frontend/src/lib/i18n/languages';
 import {
   GENERIC_THERMAL_CAPABILITIES,
+  LATIN_THERMAL_CAPABILITIES,
   isThermalTextRepresentable,
   normalizeThermalText,
+  thermalTextFallback,
 } from '../shared/print/thermal-capabilities';
 import { displayCellWidth, truncateToDisplayCells, wrapToDisplayCells } from '../shared/print/width';
 import { renderCompactReceiptViaDocument } from '../main/printers/document-compact';
@@ -132,6 +134,7 @@ function run(): void {
   assert('sq resolves invoice and KOT labels', printLabel('sq', 'print.invoiceNumber') === 'Fatura nr.:' && printLabel('sq', 'print.kot.banner') === 'POROSI E KUZHINËS');
   assert('vi resolves grand total to Vietnamese', printLabel('vi', 'print.grandTotal') === 'TỔNG CỘNG');
   assert('vi resolves kitchen ticket to Vietnamese', printLabel('vi', 'print.kot.banner') === 'PHIẾU BẾP');
+  assert('vi resolves cash received from the canonical receipt key', printLabel('vi', 'receipt.cashReceived') === 'Tiền mặt đã nhận');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
   assert('unknown language falls back to English', printLabel('xx', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');
@@ -228,6 +231,9 @@ function run(): void {
     assert('Albanian fallback remains representable', isThermalTextRepresentable('Embelsire Caj', GENERIC_THERMAL_CAPABILITIES));
     assert('precomposed Albanian diacritics occupy one thermal display cell', displayCellWidth('Ë') === 1 && displayCellWidth('ë') === 1 && displayCellWidth('Ç') === 1 && displayCellWidth('ç') === 1);
     assert('Albanian truncation and wrapping keep grapheme clusters intact', truncateToDisplayCells('Ëmbëlsirë', 1) === 'Ë' && wrapToDisplayCells('Ëmbëlsirë', 3).join('') === 'Ëmbëlsirë');
+    assert('Vietnamese stacked diacritics are not falsely marked representable on generic thermal output', !isThermalTextRepresentable('Tổng cộng', GENERIC_THERMAL_CAPABILITIES));
+    assert('Vietnamese stacked diacritics are not falsely marked representable on the Latin profile', !isThermalTextRepresentable('Tổng cộng', LATIN_THERMAL_CAPABILITIES));
+    assert('Vietnamese native fallback preserves the explicit ASCII financial fallback', thermalTextFallback('Tổng cộng', 'TOTAL', LATIN_THERMAL_CAPABILITIES) === 'TOTAL');
   }
 
   console.log('\n✅ Test 5: test page honors language');

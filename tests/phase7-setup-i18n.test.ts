@@ -168,6 +168,25 @@ async function run(): Promise<void> {
         'Albanian demo customers use Albania E.164 numbers',
       );
     }
+    if (language === 'vi') {
+      assert.equal(snapshot.category, 'Khai vị', 'Vietnamese demo category is localized');
+      assert.equal(snapshot.product, 'Nem rán', 'Vietnamese demo product is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-pho-bo'")[0].name, 'Phở bò', 'Vietnamese demo phở bò is labeled correctly');
+      assert.equal(snapshot.manager, 'Quản lý Demo', 'Vietnamese demo manager is localized');
+      assert.equal(snapshot.customer, 'Nguyễn Minh Anh', 'Vietnamese demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => [customer.phone, customer.country_code]),
+        [
+          ['+84912345678', '+84'],
+          ['+84912345679', '+84'],
+          ['+84912345680', '+84'],
+        ],
+        'Vietnamese demo customers use Vietnam E.164 numbers independent of the selected store country',
+      );
+      for (const phone of ['+84912345678', '+84912345679', '+84912345680']) {
+        assert.equal(parsePhoneE164(phone, 'IN')?.e164, phone, `${language}: ${phone} remains valid E.164 with a non-Vietnam default country`);
+      }
+    }
     assert.equal(rows('customers', 'id', 'is_active = 1').length, 3, `${language}: demo setup seeds customers`);
     assert.equal(rows('tables', 'id', "id LIKE 'tbl-demo-%'").length, 4, `${language}: demo FineDine setup seeds tables`);
 

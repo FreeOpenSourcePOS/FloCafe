@@ -1,6 +1,6 @@
 # Vietnamese language support research, specification, and implementation plan
 
-**Status:** CURRENT - investigated against `main` at `a42eb51d3ee660e259d713ad87b0ee3691feabed` on 2026-09-24 and implemented through the existing localization and print-generation paths. No unresolved product, architecture, security, or credential decision remains.
+**Status:** CURRENT - investigated against `main` at `3ad0dd54e3d4e9ff42ef8350b579eeaea2851d05` on 2026-09-25 and implemented through the existing localization and print-generation paths. No unresolved product, architecture, security, or credential decision remains.
 
 ## Research report
 
@@ -63,7 +63,7 @@ Vietnamese must therefore receive one terminology pass across setup, products/ad
 - Vietnamese is a left-to-right Latin-script language. It needs no bidi or RTL code change.
 - Vietnamese syllables can contain stacked tone and vowel marks. The committed translation must use NFC so common values such as `Tiếng Việt` and `Hóa đơn` are composed.
 - Unicode UAX #29 defines extended grapheme clusters as user-perceived characters and states that boundaries do not occur within a combining sequence. UAX #15 defines NFC as canonical decomposition followed by canonical composition. See the references below.
-- The shared native width helper already iterates Unicode code points, treats combining marks as zero-width, and preserves marks when truncating. A local baseline probe showed NFC and NFD `Tiếng Việt` both measure as 10 thermal display cells and wrap identically at 8 columns. Raster rendering uses `Intl.Segmenter` with grapheme granularity and canvas measurement.
+- The shared native width helper segments extended grapheme clusters with `Intl.Segmenter` (and a conservative fallback), measures visible code points within each cluster, treats combining marks as zero-width, and preserves marks when truncating. A local baseline probe showed NFC and NFD `Tiếng Việt` both measure as 10 thermal display cells and wrap identically at 8 columns. Raster rendering uses grapheme granularity and canvas measurement.
 - Vietnamese normally uses spaces between words, so the existing whitespace-first thermal wrapper is suitable. No locale-specific line-breaking dependency or print redesign is justified.
 
 ### Fonts and printing
@@ -257,20 +257,21 @@ Explicitly out of scope: locale README translation, app-store metadata language 
 
 ### Baseline evidence
 
-Before production edits, `npm run i18n:check`, `npm run test:print-labels`, `npm run test:phase6-locale-loading`, and `npm run test:phase7-setup-i18n` all passed on the 14-locale baseline. `npm ci` also completed in both root and frontend workspaces.
+Before production edits, `npm run i18n:check`, `npm run test:print-labels`, `npm run test:phase6-locale-loading`, and `npm run test:phase7-setup-i18n` all passed on the 19-locale baseline. `npm ci` also completed in both root and frontend workspaces.
 
 The implementation adds the `vi` / `vi-VN` registry entry, all 2,639 Vietnamese message leaves, localized Express/demo seed data, Vietnamese maintained-language safeguards, the registry-derived print table, focused UI/print/standalone assertions, and the current documentation inventory.
 
 ## Final verification record
 
-- `npm run i18n:check` - passed; 15 registered locales, exact 2,639-leaf parity, ICU/selector/tag checks, Vietnamese NFC and fallback safeguards, generated print-label drift check, and frontend type-check all passed.
-- `npm run test:print-labels` - passed; 89 print-label assertions and 14-locale phase 3 print regression matrix.
-- `npm run test:phase6-locale-loading` and `npm run test:phase7-setup-i18n` - passed across all 15 locales, including Vietnamese seed data and browser/WebUSB locale loading.
+- `npm run i18n:check` - passed; 20 registered locales, exact 2,639-leaf parity, ICU/selector/tag checks, Vietnamese NFC and fallback safeguards, generated print-label drift check, and frontend type-check all passed.
+- `npm run test:print-labels` - passed; 119 print-label assertions and 19-locale phase 3 print regression matrix.
+- `npm run test:phase6-locale-loading` and `npm run test:phase7-setup-i18n` - passed across all 20 locales, including Vietnamese seed data and browser/WebUSB locale loading.
 - `npm run test:print-kernel` - passed, including NFC/NFD Vietnamese grapheme measurement and wrapping.
 - `npm run test:browser-receipts`, `npm run test:i18n-audit-remediations`, and the three RTL/standalone focused suites - passed.
 - `npm run test:locale-chunks` - passed; Vietnamese is a distinct lazy chunk with no external URLs and is not eagerly referenced by pages.
 - `npm run lint` - passed with zero errors; the existing 1,000 backend warnings and five frontend warnings remain.
 - `npm run build` and `npm run build:frontend` - passed.
+- `npm test` - passed.
 - `npm run test:e2e:browser` - passed, 76/76 tests.
 - `git diff --check` - passed.
 - Manual `chrome-devtools-axi` verification against the static export selected Vietnamese on Setup, rendered `Chào mừng đến với FloCafe` with real stacked diacritics, set `html lang="vi-VN" dir="ltr"`, and persisted `language: "vi"` in `pos-settings`. No native physical thermal-printer test was run; native printer capability behavior remains the documented fail-closed boundary.

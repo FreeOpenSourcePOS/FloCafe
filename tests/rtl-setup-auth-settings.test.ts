@@ -279,6 +279,9 @@ async function run(): Promise<void> {
   withNavigatorLanguage('vi-VN', () => {
     assert(i18nModule.getBrowserLanguage() === 'vi', 'getBrowserLanguage must return "vi" for vi-VN');
   }, ['vi-VN', 'en-US']);
+  withNavigatorLanguage('vi', () => {
+    assert(i18nModule.getBrowserLanguage() === 'vi', 'getBrowserLanguage must return "vi" for bare vi');
+  });
   withNavigatorLanguage('en-US', () => {
     assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must honor the first supported navigator.languages preference');
   }, ['es-ES', 'en-US']);

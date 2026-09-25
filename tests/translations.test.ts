@@ -52,6 +52,9 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  19. Albanian safeguards: sq.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
+ *  21. Vietnamese safeguards: vi.json values never contain placeholders,
+ *      malformed replacement characters, or non-NFC text, and only documented
+ *      shared values may remain identical to English.
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -1909,6 +1912,9 @@ async function run(): Promise<void> {
     for (const e of viErrors.slice(0, 100)) console.error(`  - ${e}`);
     assert(false, 'vi.json contains untranslated, placeholder, non-NFC, or replacement-character values');
   }
+  assert(viMessages['receipt.cashReceived'] === 'Tiền mặt đã nhận', 'vi.json receipt.cashReceived must preserve the canonical cash-received label');
+  assert(viMessages['pos.tagVeg'] === 'Ăn chay' && viMessages['products.tagVeg'] === 'Ăn chay', 'vi.json vegetarian product tags must use the reviewed Vietnamese term');
+  assert(!viMessages['orders.voidItemConfirm'].includes('đã đang'), 'vi.json void confirmation must not contain duplicated progressive grammar');
   console.log(`  ✓ no untranslated vi.json values (${VI_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
 
   console.log('\n✅ All translation integrity checks passed.');

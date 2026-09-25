@@ -37,7 +37,7 @@ const {
   now,
 } = require('./helpers/test-setup');
 
-const { billRoutes } = require('../main/routes/bills');
+const { billRoutes, resetPinRateLimitForTests } = require('../main/routes/bills');
 const { getJWTSecret } = require('../main/routes/auth');
 
 function makeToken(id: string, role: string, email: string) {
@@ -50,6 +50,11 @@ async function run() {
   console.log('='.repeat(60));
 
   const db = initTestDb();
+
+  // The bill-discount PIN limiter is module-level state keyed by client IP, and
+  // every request here comes from 127.0.0.1. Reset it so this suite cannot be
+  // rate-limited (or rate-limit a later one) by PIN attempts made elsewhere.
+  resetPinRateLimitForTests();
 
   // Turn on discount approval in settings
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('discount_requires_approval', 'true', ?)").run(now());
@@ -132,11 +137,13 @@ async function run() {
 
 run()
   .then(() => {
+    resetPinRateLimitForTests();
     closeDatabase();
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
   })
   .catch((err) => {
+    try { resetPinRateLimitForTests(); } catch { }
     try { closeDatabase(); } catch { }
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });

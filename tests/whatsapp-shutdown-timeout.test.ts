@@ -1,3 +1,32 @@
+/**
+ * PARKED - not run by any script, deliberately excluded in
+ * scripts/ci/validate-test-script-coverage.cjs.
+ *
+ * Blocking production bug. `inFlightWhatsAppWork` is a
+ * `Map<Promise<unknown>, WhatsAppWorkCancellation>`: the in-flight operation is
+ * the KEY and its cancellation callback is the VALUE (`abortable` calls
+ * `trackWhatsAppWork(operation, cancel)`). `waitForWhatsAppWork()` drains it with
+ * `Promise.allSettled([...inFlightWhatsAppWork])`.
+ *
+ * Spreading a Map iterates its default entry sequence, so that expression is an
+ * array of `[operation, cancel]` ENTRY ARRAYS, not a flat list of keys and
+ * values. An entry array is not a thenable, so `allSettled` resolves on the next
+ * microtask without awaiting a single operation. The `while (size > 0)` loop then
+ * re-checks a map that only empties when the operations actually settle, so it
+ * spins, awaiting an already-settled promise each pass. That is microtask work
+ * only: the macrotask queue never runs, so neither the `SHUTDOWN_TIMEOUT_MS`
+ * timer in `waitForWhatsAppWork` nor the fatal step timeout in
+ * `runShutdownSteps` can ever fire. The suite hangs instead of failing.
+ *
+ * The fix is `[...inFlightWhatsAppWork.keys()]`, which yields the operations so
+ * `allSettled` waits for them. Not `values()`: those are the cancellation
+ * callbacks, equally non-thenable. That fix is in `main/services/whatsapp.ts` and
+ * is filed as its own change; the bug is behaviour, so it must not ride along in
+ * a test-harness change.
+ *
+ * These assertions are the contract for that fix. Do not delete this file - it
+ * is parked, not obsolete.
+ */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';

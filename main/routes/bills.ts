@@ -387,6 +387,10 @@ function checkPinRateLimit(key: string): boolean {
   return true;
 }
 
+export function resetPinRateLimitForTests(): void {
+  pinAttempts.clear();
+}
+
 function parsePaginationInteger(value: unknown, defaultValue: number): number | null {
   if (value === undefined || value === null || value === '') return defaultValue;
   if (Array.isArray(value)) return null;

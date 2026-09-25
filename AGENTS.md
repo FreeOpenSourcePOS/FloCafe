@@ -4,7 +4,7 @@ FloCafe is an open-source, offline-first Electron desktop POS.
 
 ## Orientation & layout
 
-- **Main process (`main/`):** Electron lifecycle and IPC (`main/index.ts`), Express API on `:3001` (`main/server.ts`), standalone KDS server on `:3002` (`main/kds.ts`), Server App on `:3003` (`main/server-app.ts`), SQLite database access via `better-sqlite3`, ESC/POS printing, and background services.
+- **Main process (`main/`):** Electron lifecycle and IPC (`main/index.ts`), Express API on `:3001` (`main/server.ts`), standalone KDS server on `:3002` (`main/kds-server.ts`), Server App on `:3003` (`main/server-app.ts`), SQLite database access via `better-sqlite3`, ESC/POS printing, and background services.
 - **Frontend (`frontend/src/`):** Next.js 16 and React 19 application (statically exported via `output: 'export'` when `NEXT_BUILD_MODE=desktop`, or standard server runtime when unset), Zustand state, UI components, and translations.
 - **Tests (`tests/`):** Backend unit, integration, and release test suites.
 - **Documentation (`docs/`):** Current-system architecture, contracts, and developer/maintainer procedures (see [docs/README.md](docs/README.md)).

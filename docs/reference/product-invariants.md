@@ -109,6 +109,17 @@ refund can be paid back in a different method than the customer used, or issued 
 9. **Inventory is never restored by a refund**, item-level or whole-bill, matching how item voids
    and cancellations behave.
 
+**Amount storage.** `refunds.amount_cents` stores integer minor units for every currency, using
+the factor returned by `getCurrencyMinorUnitFactor()` in `main/countries.ts`, which is ten to the
+power of the currency's fraction digits. A zero-decimal currency such as JPY or KRW uses a factor
+of 1 and stores whole currency units; a two-decimal currency such as USD, EUR, or INR uses 100;
+a three-decimal currency such as KWD, BHD, or OMR uses 1000. The column name is historical; the
+rule is minor units, not cents.
+
+The tenant's business currency is chosen at setup and governs store-wide order, billing, and
+settlement records. It is not changed on an active store; see
+[regional settings](#regional-settings-come-from-signup-never-from-a-fallback).
+
 **Reason:** A controlled way to reverse completed sales without reopening the order-editing
 surface, while keeping the two things most exposed to misuse deliberately tight: how far back a
 refund reaches, and who can approve one.

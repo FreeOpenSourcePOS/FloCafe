@@ -185,7 +185,7 @@ For the pack schema, trust model, and catalog mechanics, see the [tax pack refer
 1. Fill out the [.github/pull_request_template.md](.github/pull_request_template.md). Substantive PRs should reference their approved issue or discussion; trivial isolated fixes do not require an issue.
 2. State the exact verification commands executed and summarize results.
 3. If your change touches something [docs/](docs/README.md) already describes, update that page in the same pull request and remove the text it supersedes. The authoring rules are in [DOCUMENTATION.md](DOCUMENTATION.md); run `npm run docs:check` before submitting.
-3. Note any data migration, offline/network impact, or UI changes (include screenshots for visual adjustments).
+4. Note any data migration, offline/network impact, or UI changes (include screenshots for visual adjustments).
 
 ---
 

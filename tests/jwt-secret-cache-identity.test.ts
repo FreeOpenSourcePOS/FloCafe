@@ -29,14 +29,25 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const {
-  assert, assertEqual, getResults, resetCounters,
+  assertOrThrow, assertEqualOrThrow, getResults, resetCounters,
 } = require('./helpers/test-setup');
 const { getJWTSecret, clearJWTSecretCache } = require('../main/security/jwt-secret');
 const authReExport = require('../main/routes/auth');
 
 const SECRET_EXPORTS = ['getJWTSecret', 'clearJWTSecretCache'];
-const OWNER_MODULE = path.join('main', 'security', 'jwt-secret');
-const LEGACY_SHIM_MODULE = path.join('main', 'routes', 'auth');
+// Forward-slash literals, not path.join: every path this suite compares is
+// normalised to posix form first, and mixing platforms must not decide whether
+// an assertion runs at all.
+const OWNER_MODULE = 'main/security/jwt-secret';
+const LEGACY_SHIM_MODULE = 'main/routes/auth';
+const PRODUCTION_PREFIX = 'main/';
+
+/** Normalise a repo-relative path to forward slashes on every platform. */
+function toPosix(p: string): string {
+  return p.split(/[\\/]/).join('/');
+}
+
+const isProductionFile = (file: string): boolean => toPosix(file).startsWith(PRODUCTION_PREFIX);
 
 /** Recursively collect .ts/.tsx source files under a directory. */
 function collectSourceFiles(dir: string): string[] {
@@ -53,31 +64,39 @@ function collectSourceFiles(dir: string): string[] {
 /**
  * Every module specifier a file pulls `getJWTSecret`/`clearJWTSecretCache` from,
  * covering both the ESM (`import { ... } from '...'`) and the CommonJS
- * (`const { ... } = require('...')`) forms the test suites use.
+ * (`const { ... } = require('...')`) forms the test suites use, in either quote
+ * style. A single-quote-only pattern would let a double-quoted importer bypass
+ * this audit entirely, which is the exact false negative it exists to catch.
  */
-function secretImportSpecifiers(file: string): string[] {
-  const source = fs.readFileSync(file, 'utf8');
+function secretImportSpecifiersIn(source: string): string[] {
   const specifiers = new Set<string>();
 
-  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*'([^']+)'/g)) {
+  for (const match of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g)) {
     if (SECRET_EXPORTS.some((name) => new RegExp(`\\b${name}\\b`).test(match[1]))) specifiers.add(match[2]);
   }
-  for (const match of source.matchAll(/(?:const|let|var)\s*\{([^}]*)\}\s*=\s*require\('([^']+)'\)/g)) {
+  for (const match of source.matchAll(/(?:const|let|var)\s*\{([^}]*)\}\s*=\s*require\(\s*['"]([^'"]+)['"]\s*\)/g)) {
     if (SECRET_EXPORTS.some((name) => new RegExp(`\\b${name}\\b`).test(match[1]))) specifiers.add(match[2]);
   }
   return [...specifiers];
 }
 
+function secretImportSpecifiers(file: string): string[] {
+  return secretImportSpecifiersIn(fs.readFileSync(file, 'utf8'));
+}
+
 function relativeToRepo(file: string): string {
-  return path.relative(path.resolve(__dirname, '..'), file);
+  // path.relative() emits platform-native separators, so a win32 host would
+  // hand back 'main\ipc.ts' and every startsWith('main/') below would silently
+  // skip. Normalise here so the comparison below is platform-independent.
+  return toPosix(path.relative(path.resolve(__dirname, '..'), file));
 }
 
 function main() {
   resetCounters();
 
   // ── 1. The re-export shim is the same function object, not a copy ──────────
-  assert(authReExport.getJWTSecret === getJWTSecret, 'auth.ts re-exports the very same getJWTSecret function');
-  assert(authReExport.clearJWTSecretCache === clearJWTSecretCache, 'auth.ts re-exports the very same clearJWTSecretCache function');
+  assertOrThrow(authReExport.getJWTSecret === getJWTSecret, 'auth.ts re-exports the very same getJWTSecret function');
+  assertOrThrow(authReExport.clearJWTSecretCache === clearJWTSecretCache, 'auth.ts re-exports the very same clearJWTSecretCache function');
 
   // ── 2. Cache identity across clearJWTSecretCache ───────────────────────────
   // The env override short-circuits before the database, so it has to be out
@@ -92,18 +111,18 @@ function main() {
       .run(now());
 
     clearJWTSecretCache();
-    assertEqual(getJWTSecret(), 'secret-one', 'first read populates the cache from settings.jwt_secret');
-    assertEqual(getJWTSecret(), 'secret-one', 'second read is served by the cache');
+    assertEqualOrThrow(getJWTSecret(), 'secret-one', 'first read populates the cache from settings.jwt_secret');
+    assertEqualOrThrow(getJWTSecret(), 'secret-one', 'second read is served by the cache');
 
     // Rotate the stored secret the way a restore or a forced re-key would.
     db.prepare("UPDATE settings SET value = 'secret-two', updated_at = ? WHERE key = 'jwt_secret'").run(now());
-    assertEqual(getJWTSecret(), 'secret-one', 'a cached secret survives a database rotation until the cache is cleared');
+    assertEqualOrThrow(getJWTSecret(), 'secret-one', 'a cached secret survives a database rotation until the cache is cleared');
 
     // The failure this pins: if clearJWTSecretCache() nulled a different
     // module's copy than getJWTSecret() reads, this read would still return
     // 'secret-one' and pre-rotation tokens would keep validating.
     clearJWTSecretCache();
-    assertEqual(getJWTSecret(), 'secret-two', 'clearJWTSecretCache() invalidates the same cache getJWTSecret() reads');
+    assertEqualOrThrow(getJWTSecret(), 'secret-two', 'clearJWTSecretCache() invalidates the same cache getJWTSecret() reads');
 
     closeDatabase();
   } finally {
@@ -112,7 +131,56 @@ function main() {
     fs.rmSync(activeTestDir, { recursive: true, force: true });
   }
 
-  // ── 3. Static import audit: one owner, no split sources ────────────────────
+  // ── 3. Cross-platform guard: the audit must not be decided by path separators ──
+  // A win32 host runs path.relative() with backslashes, which is exactly how
+  // this suite was caught making the production check a no-op there. These
+  // cases are pure string operations, so they are exercisable on any host
+  // rather than only on the platform that surfaced the bug.
+  for (const separator of ['/', '\\']) {
+    const winStyleFile = `main${separator}ipc.ts`;
+    const winStyleOwner = `main${separator}security${separator}jwt-secret`;
+    assertOrThrow(
+      toPosix(winStyleFile) === 'main/ipc.ts',
+      `toPosix normalises a ${separator === '\\' ? 'backslash' : 'posix'} path`,
+    );
+    assertOrThrow(
+      isProductionFile(winStyleFile),
+      `a ${separator === '\\' ? 'backslash' : 'posix'}-separated main/ path is classified as production`,
+    );
+    assertOrThrow(
+      toPosix(winStyleOwner) === OWNER_MODULE,
+      `a ${separator === '\\' ? 'backslash' : 'posix'}-separated owner path equals the owner constant`,
+    );
+  }
+  assertOrThrow(!isProductionFile('tests/security-hardening.test.ts'), 'a tests/ path is not classified as production');
+  assertOrThrow(!isProductionFile('shared/role-permissions.ts'), 'a shared/ path is not classified as production');
+
+  // ── 4. Both quote styles are audited ────────────────────────────────────────
+  // A single-quote-only pattern let a double-quoted importer slip through the
+  // one guard that exists to catch a second source for the secret.
+  const quoteCases: Array<[string, string]> = [
+    ['import { getJWTSecret } from "../security/jwt-secret";', '../security/jwt-secret'],
+    ['const { clearJWTSecretCache } = require("../routes/auth");', '../routes/auth'],
+    ["import { getJWTSecret } from '../security/jwt-secret';", '../security/jwt-secret'],
+    ["const { clearJWTSecretCache } = require('../routes/auth');", '../routes/auth'],
+    ['import { getJWTSecret, parseCategoryIds } from "../routes/auth";', '../routes/auth'],
+  ];
+  for (const [source, expected] of quoteCases) {
+    const found = secretImportSpecifiersIn(source);
+    assertEqualOrThrow(
+      found.length,
+      1,
+      `quote audit finds exactly one source in: ${source.slice(0, 46)}...`,
+    );
+    assertEqualOrThrow(found[0], expected, `quote audit resolves the right specifier in: ${source.slice(0, 46)}...`);
+  }
+  assertEqualOrThrow(
+    secretImportSpecifiersIn('const { isValidEmail } from "./auth";').length,
+    0,
+    'quote audit ignores destructurings that do not pull the secret',
+  );
+
+  // ── 5. Static import audit: one owner, no split sources ────────────────────
   const repoRoot = path.resolve(__dirname, '..');
   const files = [
     ...collectSourceFiles(path.join(repoRoot, 'main')),
@@ -122,35 +190,41 @@ function main() {
 
   const resolvedImporters: Array<{ file: string; resolved: string[] }> = [];
   for (const file of files) {
+    // This file embeds the import patterns it searches for as quote fixtures, so
+    // it necessarily "imports" the secret from several modules as text. Auditing
+    // it would be a false positive, not a finding; it is the audit.
+    if (path.resolve(file) === __filename) continue;
     const specifiers = secretImportSpecifiers(file);
     if (specifiers.length === 0) continue;
-    const resolved = specifiers.map((specifier) => relativeToRepo(path.resolve(path.dirname(file), specifier)));    resolvedImporters.push({ file: relativeToRepo(file), resolved });
+    const resolved = specifiers.map((specifier) => relativeToRepo(path.resolve(path.dirname(file), specifier)));
+    resolvedImporters.push({ file: relativeToRepo(file), resolved });
   }
 
-  assert(resolvedImporters.length > 0, 'the audit found files importing the JWT secret');
+  assertOrThrow(resolvedImporters.length > 0, 'the audit found files importing the JWT secret');
 
   for (const { file, resolved } of resolvedImporters) {
-    assert(resolved.length === 1, `${file} imports the JWT secret from a single module (found ${resolved.join(', ')})`);
+    assertEqualOrThrow(resolved.length, 1, `${file} imports the JWT secret from a single module (found ${resolved.join(', ')})`);
     const [owner] = resolved;
     if (owner === OWNER_MODULE || owner === LEGACY_SHIM_MODULE) continue;
-    assert(false, `${file} imports the JWT secret from unknown module "${owner}"`);
+    assertOrThrow(false, `${file} imports the JWT secret from unknown module "${owner}"`);
   }
 
   // Production code must not reach the secret through the router shim; only
   // tests may, and only until the follow-on removes it.
   for (const { file, resolved } of resolvedImporters) {
-    if (file.startsWith('main/')) {
-      assert(
-        resolved[0] === OWNER_MODULE,
+    if (isProductionFile(file)) {
+      assertEqualOrThrow(
+        resolved[0],
+        OWNER_MODULE,
         `${file} imports the JWT secret from ${OWNER_MODULE}, not from the router (found ${resolved[0]})`,
       );
     }
   }
 
-  const productionImporters = resolvedImporters.filter(({ file }) => file.startsWith('main/'));
-  assert(productionImporters.length > 0, 'production modules import the secret from the security module');
+  const productionImporters = resolvedImporters.filter(({ file }) => isProductionFile(file));
+  assertOrThrow(productionImporters.length > 0, 'production modules import the secret from the security module');
 
-  const legacyTestImporters = resolvedImporters.filter(({ file, resolved }) => !file.startsWith('main/') && resolved[0] === LEGACY_SHIM_MODULE);
+  const legacyTestImporters = resolvedImporters.filter(({ file, resolved }) => !isProductionFile(file) && resolved[0] === LEGACY_SHIM_MODULE);
   console.log(`  · ${resolvedImporters.length} importers audited; ${productionImporters.length} production, ${legacyTestImporters.length} tests still on the auth.ts shim`);
 
   const results = getResults();

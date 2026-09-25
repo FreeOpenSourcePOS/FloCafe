@@ -86,7 +86,7 @@ means a value is still English, and for most keys the fix is to translate it.
 
 ## 5. Add the seed data
 
-`main/routes/auth.ts` holds a `SeedLanguage` union type, a `resolveSeedLanguage()` function, and a
+`main/setup/seed-data.ts` holds a `SeedLanguage` union type, a `resolveSeedLanguage()` function, and a
 `labels` map of four sample strings (food, beverage, meal, tea) per language, used by the
 express-restaurant sample. Add the new key to all three, with real translated sample strings.
 

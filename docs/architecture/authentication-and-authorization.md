@@ -67,10 +67,12 @@ itself, the full permission catalog rendered as a matrix, and the owner-only man
 ## JWT lifecycle
 
 **Secret.** `getJWTSecret()` in
-[`main/routes/auth.ts`](../../main/routes/auth.ts) reads `process.env.JWT_SECRET` when set and
+[`main/security/jwt-secret.ts`](../../main/security/jwt-secret.ts) reads `process.env.JWT_SECRET` when set and
 otherwise reads the `jwt_secret` row in the `settings` table, generating one on first launch. The
 value is cached in a module-level variable, so each install has its own secret and a token from
-one install does not validate against another.
+one install does not validate against another. That module owns the only copy of the cache;
+`clearJWTSecretCache()` in the same module invalidates it, and a restore that restored a rotated
+secret must go through it or pre-rotation tokens would keep validating.
 
 **Issuance.** `jwt.sign` runs on login and on the token-refresh paths. A token without the remember
 option expires in 24 hours; with it, in 10 days.

@@ -37,7 +37,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const { initDatabase, getDatabase, getCurrentSchemaVersion, closeDatabase } = require('../main/db');
 const {
-  assert, assertEqual, assertGreaterThan, getResults, resetCounters,
+  assertOrThrow, assertEqualOrThrow, assertGreaterThanOrThrow, getResults, resetCounters,
 } = require('./helpers/test-setup');
 
 // Pristine module-load snapshot: the shape runMigrations() reads, captured
@@ -47,20 +47,20 @@ const PRISTINE_REGISTRY = require('../main/db').MIGRATIONS.map((m: any) => ({ ve
 function main() {
   resetCounters();
 
-  assert(PRISTINE_REGISTRY.length > 0, 'the migration registry is non-empty');
+  assertOrThrow(PRISTINE_REGISTRY.length > 0, 'the migration registry is non-empty');
 
-  assertEqual(PRISTINE_REGISTRY[0].version, 1, 'the registry starts at version 1');
+  assertEqualOrThrow(PRISTINE_REGISTRY[0].version, 1, 'the registry starts at version 1');
 
   const seen = new Map<number, string>();
   let previous = 0;
   for (const { version, name } of PRISTINE_REGISTRY) {
-    assert(
+    assertOrThrow(
       Number.isInteger(version),
       `migration ${name} declares an integer version (got ${JSON.stringify(version)})`,
     );
-    assertGreaterThan(version, previous, `migration v${version} (${name}) sorts after v${previous}`);
+    assertGreaterThanOrThrow(version, previous, `migration v${version} (${name}) sorts after v${previous}`);
     const firstSeenAt = seen.get(version);
-    assert(
+    assertOrThrow(
       firstSeenAt === undefined,
       firstSeenAt === undefined
         ? `version ${version} (${name}) is unique`
@@ -70,7 +70,7 @@ function main() {
     previous = version;
   }
 
-  assert(
+  assertOrThrow(
     previous === PRISTINE_REGISTRY[PRISTINE_REGISTRY.length - 1].version,
     'the tail entry carries the highest version, so the array tail is a valid migration target',
   );
@@ -79,13 +79,13 @@ function main() {
   // so a migrated store and a fresh install must agree on the same number.
   initDatabase();
   try {
-    assertEqual(
+    assertEqualOrThrow(
       getCurrentSchemaVersion(),
       PRISTINE_REGISTRY[PRISTINE_REGISTRY.length - 1].version,
       'a freshly initialized database reaches the last registry version',
     );
     const userVersion = getDatabase().pragma('user_version', { simple: true });
-    assertEqual(
+    assertEqualOrThrow(
       userVersion,
       PRISTINE_REGISTRY[PRISTINE_REGISTRY.length - 1].version,
       'user_version matches the registry tail',

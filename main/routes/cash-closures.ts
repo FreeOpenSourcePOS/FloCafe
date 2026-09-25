@@ -36,8 +36,7 @@ import {
   dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, now, withTxn,
   tenantBusinessDayStartTime,
 } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import { nextZNumber } from '../db';
 import { getTenantCurrency } from '../services/refund';
 import { getOpenSession, NO_CASH_SESSION_ID, requireOpenSessionForCash } from '../services/shift-session-gate';
@@ -749,7 +748,7 @@ export function computePeriodAggregates(
   };
 }
 
-router.get('/movements', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.get('/movements', requirePermission('cash.movements.manage'), (req: Request, res: Response) => {
   try {
     const businessDate = validateBusinessDate(req.query.business_date);
     res.json({ businessDate, movements: listCashDrawerMovements(getDatabase(), businessDate) });
@@ -760,7 +759,7 @@ router.get('/movements', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: 
   }
 });
 
-router.post('/movements', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.post('/movements', requirePermission('cash.movements.manage'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const businessDate = validateBusinessDate(body.business_date);
@@ -804,7 +803,7 @@ router.post('/movements', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req:
   }
 });
 
-router.post('/movements/:id/void', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/movements/:id/void', requirePermission('cash.movements.void'), (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) throw httpError('id must be a positive integer', 400);
@@ -838,7 +837,7 @@ router.post('/movements/:id/void', requireRole(...ROLE_ACCESS.ownerManager), (re
   }
 });
 
-router.post('/', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/', requirePermission('cash.day-close'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const businessDate = validateBusinessDate(body.business_date);
@@ -983,7 +982,7 @@ export { router as cashClosureRoutes };
 // (bypassing bill-bound `shouldPulseForPayment`, spec #649). WebUSB printers
 // return `{ bytes: number[] }` for the frontend to dispatch; network/usb
 // printers go through the backend socket. The Z row is never mutated.
-router.post('/:id/print', requireRole(...ROLE_ACCESS.ownerManagerCashier), async (req: Request, res: Response) => {
+router.post('/:id/print', requirePermission('printing.execute'), async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const id = Number(req.params.id);

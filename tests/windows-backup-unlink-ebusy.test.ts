@@ -37,6 +37,7 @@ const {
   closeDatabase,
   createBackup,
   getCurrentSchemaVersion,
+  now,
 } = require('../main/db');
 const { authRoutes, getJWTSecret } = require('../main/routes/auth');
 const { databaseRoutes } = require('../main/routes/database');
@@ -225,6 +226,12 @@ async function runTests() {
 
       const app = express();
       app.use(express.json());
+      // requirePermission() resolves effective permissions from a real users row
+      // keyed by the JWT's userId — the token alone is not authoritative.
+      getDatabase().prepare(
+        `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+         VALUES ('owner-1', 'Owner', 'owner@flo.local', 'unused', 'owner', 1, ?, ?)`
+      ).run(now(), now());
       const ownerToken = jwt.sign({ userId: 'owner-1', email: 'owner@flo.local', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
       app.use((req: any, res: any, next: any) => {
         const auth = req.headers.authorization;

@@ -4,8 +4,7 @@ import {
   dayBoundsInTimezone, getDatabase, getSettingValue, localDateInTimezone, parseDbTimestamp,
   tenantBusinessDayStartTime,
 } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 import { getTenantCurrency } from '../services/refund';
@@ -96,7 +95,7 @@ function pickExtreme(counts: number[], mode: 'max' | 'min', include: (count: num
   return best;
 }
 
-router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/daily-stats', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
@@ -155,7 +154,7 @@ router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
   }
 });
 
-router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/summary', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
@@ -201,7 +200,7 @@ router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, 
   }
 });
 
-router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.get('/financial-summary', requirePermission('reports.financial.view'), (req: Request, res: Response) => {
   try {
     const today = reportToday();
     const startDate = reportDate(req.query.start_date, today);
@@ -265,7 +264,7 @@ router.get('/financial-summary', requireRole(...ROLE_ACCESS.owner), (req: Reques
 // Dynamic tax-component report for receipt/report consumers. Components are
 // derived item by item so mixed legacy + categorized bills cannot double-count
 // the categorized portion already present in the bill-level tax_breakdown.
-router.get('/tax-components', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/tax-components', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const today = reportToday();
@@ -313,7 +312,7 @@ router.get('/tax-components', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
   }
 });
 
-router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/sales', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const today = reportToday();
@@ -372,7 +371,7 @@ router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
   }
 });
 
-router.get('/topProducts', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/topProducts', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const today = reportToday();
@@ -406,7 +405,7 @@ router.get('/topProducts', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
   }
 });
 
-router.get('/recentOrders', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/recentOrders', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const requestedLimit = Number(req.query.limit);
@@ -480,7 +479,7 @@ router.get('/recentOrders', requireRole(...ROLE_ACCESS.ownerManager), (req: Requ
   }
 });
 
-router.get('/tables', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/tables', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const [start, end] = reportDayBounds(reportToday());
@@ -520,7 +519,7 @@ router.get('/tables', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
 // AOV, top staff, top categories, busiest/idlest hour & day-of-week, and
 // average kitchen prep time, aggregated over a trailing window (default 30
 // days) so hour/day patterns reflect a consistent trend rather than one day.
-router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/insights', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const minorFactor = getCurrencyMinorUnitFactor(getTenantCurrency(db));
@@ -644,7 +643,7 @@ router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 //   opening_float_cents. Consumers must not compare them directly; X is the
 //   live drawer expectation, Z is the point-in-time snapshot that bakes in the
 //   float.
-router.get('/x-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/x-report', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const today = reportToday();
     const date = reportDate(req.query.date, today);
@@ -719,7 +718,7 @@ router.get('/x-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 // Reads the immutable `cash_closures` row for the requested business date.
 // 404 with `{ alreadyClosed: false }` when no day-close row exists yet.
 // Same role gate as /x-report.
-router.get('/z-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/z-report', requirePermission('reports.view'), (req: Request, res: Response) => {
   try {
     const today = reportToday();
     const date = reportDate(req.query.date, today);
@@ -771,7 +770,7 @@ router.get('/z-report', requireRole(...ROLE_ACCESS.ownerManager), (req: Request,
 
 // Owner-only daily sales export (xlsx workbook or summary/items CSV pair).
 // Accounting lives in buildDailySalesExportDataset; serializers only encode.
-router.get('/daily-sales/export', requireRole(...ROLE_ACCESS.owner), async (req: Request, res: Response) => {
+router.get('/daily-sales/export', requirePermission('reports.daily-sales.export'), async (req: Request, res: Response) => {
   try {
     const date = reportDate(req.query.date, reportToday());
     const format = req.query.format === 'csv' ? 'csv' : req.query.format === 'xlsx' ? 'xlsx' : null;

@@ -2,8 +2,7 @@ import { Router, Request, Response } from 'express';
 import { randomUUID, createHash, type KeyLike } from 'crypto';
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue, now, upsertSettings, withTxn } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import { applyPayableRounding, TaxEngine } from '../services/tax-engine';
 import { resolveTaxIdFormat } from '../services/tax';
 import type { CountryPack, PluginPrintTemplate, TaxBehavior, TaxCategory, TaxRule } from '../tax-packs/types';
@@ -776,7 +775,7 @@ export async function reinstallPackVersion(
   };
 }
 
-router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
+router.get('/', requirePermission('tax-packs.view-test'), (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const storeCountry = getSettingValue('country') || '';
@@ -809,7 +808,7 @@ router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: R
   }
 });
 
-router.get('/audit', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/audit', requirePermission('tax-packs.view-test'), (req: Request, res: Response) => {
   try {
     const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
     const rows = getDatabase().prepare(`
@@ -830,7 +829,7 @@ router.get('/audit', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
   }
 });
 
-router.get('/catalog', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
+router.get('/catalog', requirePermission('tax-packs.view-test'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const remote = await fetchRemoteTaxPackCatalog(fetch, getHttpRequestSignal(req));
     const installedRows = getDatabase().prepare(
@@ -849,7 +848,7 @@ router.get('/catalog', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(as
   }
 }));
 
-router.get('/updates', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
+router.get('/updates', requirePermission('tax-packs.view-test'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const remote = await fetchRemoteTaxPackCatalog(fetch, getHttpRequestSignal(req));
     const installedRows = getDatabase().prepare(`
@@ -873,7 +872,7 @@ router.get('/updates', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(as
 
 // Merchant-facing path: resolve the selected country without exposing the
 // catalog or allowing manual selection of a different country's plugin.
-router.post('/ensure-country', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
+router.post('/ensure-country', requirePermission('tax-configuration.manage'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const country = String(req.body?.country || getSettingValue('country') || '').toUpperCase();
     if (!/^[A-Z]{2}$/.test(country)) return res.status(400).json({ error: 'Invalid country' });
@@ -1067,7 +1066,7 @@ function buildManualPack(body: any, country: string, currency: string): CountryP
   };
 }
 
-router.post('/manual-config', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/manual-config', requirePermission('tax-packs.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const country = String(getSettingValue('country') || '').toUpperCase();
@@ -1195,7 +1194,7 @@ router.post('/manual-config', requireRole(...ROLE_ACCESS.owner), (req: Request, 
   }
 });
 
-router.post('/catalog/install', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
+router.post('/catalog/install', requirePermission('tax-packs.manage'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const packId = typeof req.body.pack_id === 'string' ? req.body.pack_id : '';
     const version = typeof req.body.version === 'string' ? req.body.version : '';
@@ -1219,7 +1218,7 @@ router.post('/catalog/install', requireRole(...ROLE_ACCESS.owner), asyncHandler(
   }
 }));
 
-router.post('/test-calculation', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/test-calculation', requirePermission('tax-packs.view-test'), (req: Request, res: Response) => {
   try {
     const { category_id, amount, tax_behavior } = req.body;
     const amountDecimal = new Decimal(String(amount));
@@ -1276,7 +1275,7 @@ router.post('/test-calculation', requireRole(...ROLE_ACCESS.ownerManager), (req:
   }
 });
 
-router.post('/overrides', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/overrides', requirePermission('tax-packs.manage'), (req: Request, res: Response) => {
   try {
     const country = getSettingValue('country') || '';
     const active = activePackForCountry(country);
@@ -1320,7 +1319,7 @@ router.post('/overrides', requireRole(...ROLE_ACCESS.owner), (req: Request, res:
   }
 });
 
-router.put('/overrides/:overrideId', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.put('/overrides/:overrideId', requirePermission('tax-packs.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const existing = db.prepare('SELECT * FROM tax_overrides WHERE id = ?').get(req.params.overrideId) as any;
@@ -1377,7 +1376,7 @@ router.put('/overrides/:overrideId', requireRole(...ROLE_ACCESS.owner), (req: Re
   }
 });
 
-router.delete('/overrides/:overrideId', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.delete('/overrides/:overrideId', requirePermission('tax-packs.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const existing = db.prepare(`
@@ -1403,7 +1402,7 @@ router.delete('/overrides/:overrideId', requireRole(...ROLE_ACCESS.owner), (req:
   }
 });
 
-router.post('/:packId/versions/:versionId/activate', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/:packId/versions/:versionId/activate', requirePermission('tax-packs.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const pack = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(req.params.packId) as PackRow | undefined;
@@ -1442,7 +1441,7 @@ router.post('/:packId/versions/:versionId/activate', requireRole(...ROLE_ACCESS.
 });
 
 // Re-downloads and repairs dependent rows (categories, rules, print templates) in place.
-router.post('/:packId/versions/:versionId/reinstall', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
+router.post('/:packId/versions/:versionId/reinstall', requirePermission('tax-packs.manage'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const requestSignal = getHttpRequestSignal(req);
     const result = await reinstallPackVersion(String(req.params.packId), String(req.params.versionId), {
@@ -1459,7 +1458,7 @@ router.post('/:packId/versions/:versionId/reinstall', requireRole(...ROLE_ACCESS
   }
 }));
 
-router.post('/:packId/rollback', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/:packId/rollback', requirePermission('tax-packs.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const pack = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(req.params.packId) as PackRow | undefined;
@@ -1500,7 +1499,7 @@ router.post('/:packId/rollback', requireRole(...ROLE_ACCESS.owner), (req: Reques
   }
 });
 
-router.get('/:packId', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/:packId', requirePermission('tax-packs.view-test'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const pack = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(req.params.packId) as PackRow | undefined;

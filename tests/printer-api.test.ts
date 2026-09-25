@@ -64,6 +64,13 @@ try {
   throw error;
 }
 
+// requirePermission() resolves effective permissions from a real users row
+// keyed by req.user.userId — the token/claim alone is not authoritative.
+getDatabase().prepare(
+  `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+   VALUES ('owner-1', 'Owner', 'owner@flo.local', 'unused', 'owner', 1, ?, ?)`
+).run(now(), now());
+
 const app = express();
 app.use(express.json());
 app.use((req: any, _res: any, next: any) => {

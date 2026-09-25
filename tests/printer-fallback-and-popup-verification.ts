@@ -155,10 +155,18 @@ async function run() {
     db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('currency', 'INR', ?) ON CONFLICT(key) DO UPDATE SET value='INR', updated_at=excluded.updated_at`).run(now());
     db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('timezone', 'Asia/Kolkata', ?) ON CONFLICT(key) DO UPDATE SET value='Asia/Kolkata', updated_at=excluded.updated_at`).run(now());
 
+    // requirePermission() resolves effective permissions from a real users row
+    // keyed by req.user.userId — seed an active owner so printing.execute checks pass.
+    db.prepare(`
+      INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES ('printer-fallback-owner', 'Admin', 'printer-fallback-owner@test.local', 'test-password', 'owner', 1, ?, ?)
+      ON CONFLICT(id) DO NOTHING
+    `).run(now(), now());
+
     const app = express();
     app.use(express.json());
     app.use((req: any, _res: any, next: any) => {
-      req.user = { id: 1, name: 'Admin', role: 'owner' };
+      req.user = { userId: 'printer-fallback-owner', name: 'Admin', role: 'owner' };
       next();
     });
     app.use('/api/printers', printerRoutes);

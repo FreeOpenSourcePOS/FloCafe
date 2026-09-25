@@ -36,12 +36,13 @@ did what, not from hiding data between staff who already share a till and a kitc
 
 **What restricts access instead:**
 
-1. **Role-based page and feature access.** A chef cannot open the Orders page; a cashier cannot
-   reach owner- or manager-only settings.
-2. **Role-based restriction on a specific action.** KDS stage transitions (marking an item
-   preparing, ready, or served) are chef/manager/owner-only (`ROLE_ACCESS.kitchen`), narrowed
-   further by the chef's assigned kitchen station and category. A server can place an order but
-   cannot do the kitchen's work on it.
+1. **Permission-based page and feature access.** Shipped defaults do not let a chef open the
+   Orders page or a cashier reach owner/manager-only settings; an owner may reconfigure either
+   (see [role templates and user permissions](#role-templates-and-user-permissions-are-owner-configurable)).
+2. **Permission-based restriction on a specific action.** KDS stage transitions (marking an item
+   preparing, ready, or served) require `kitchen.status.update`, shipped chef/manager/owner-only,
+   narrowed further by the chef's assigned kitchen station and category. A server can place an
+   order but cannot do the kitchen's work on it.
 3. **Audit attribution.** Every order and every write is recorded against the authenticated actor
    (`user_id`, `created_by`). This serves the audit trail, not access gating.
 
@@ -62,6 +63,51 @@ user before keeping it.
 **Change policy:** changing this needs an explicit product decision, because it is a deliberate
 opening of the system rather than an oversight. Any new endpoint that filters a list by the
 authenticated user is subject to the same review as a change to this entry.
+
+---
+
+## Role templates and user permissions are owner-configurable
+
+**Rule:** FloCafe keeps its five fixed staff identities (owner, manager, cashier, server, chef),
+but their ordinary feature permissions are configurable by an owner: role defaults can be
+overridden, and a single user can additionally receive explicit allow/deny exceptions. For each
+permission, the effective value resolves protected-owner rule, then user override, then role
+override, then shipped default. `authorization.manage` (who can reach the permission editor) and
+`staff.privileged.manage` (who can modify an owner or manager account) are the two exceptions:
+both are protected, always resolve true for an active owner, and cannot be configured to anyone
+else.
+
+**Reason:** Stores need to delegate real operational responsibilities — letting a trusted cashier
+take on a manager's reporting view, for example — without inventing more role identities, while an
+offline-first, backend-authoritative install still needs a recoverable owner administration path
+that no override can remove.
+
+**Enforced by:** [`shared/permissions.ts`](../../shared/permissions.ts) (the permission catalog and
+shipped defaults), [`main/services/authorization.ts`](../../main/services/authorization.ts) (the
+resolver), schema migration v93 in `main/db.ts` (`role_permission_overrides`,
+`user_permission_overrides`, `authorization_audit_log`), the owner-only `/api/authorization` API,
+and `requirePermission`/`requireAnyPermission` middleware across the main API, KDS, and Server App.
+See [authentication and authorization](../architecture/authentication-and-authorization.md#configurable-permissions)
+for the resolution model and [roles and permissions](roles-and-permissions.md) for the editor and
+the shipped-default matrix.
+
+**How to verify:**
+
+```sh
+npm run test:authorization-permissions
+```
+
+A static audit test in the same suite rejects any newly introduced `requireRole(...)` runtime gate
+under `main/routes/`; the remaining direct role checks in the codebase are reviewed context policy
+(refund approver identity, the override-PIN holder for item cancel/void, the last-active-owner and
+staff-target rule, and KDS station/category scope), each documented where it lives.
+
+**Change policy:** the two protected permissions, and the precedence order overrides resolve in,
+are structural — changing either needs an explicit product decision, because either one can create
+an unrecoverable install (no owner able to manage authorization) or a privilege-escalation path
+(a non-owner able to modify owner/manager accounts). Adding a new permission id to the catalog, or
+changing a shipped default, does not need this entry updated, but does need
+[roles and permissions](roles-and-permissions.md) updated in the same change.
 
 ---
 
@@ -103,9 +149,11 @@ refund can be paid back in a different method than the customer used, or issued 
 7. **Accepted limitation.** A refund does not claw back cashback already credited on that sale at
    payment time. Proportional cashback clawback was judged not worth the complexity at the product's
    install-base scale.
-8. **No per-role permission grant exists.** Refund initiation is gated by `ROLE_ACCESS.ownerManager`
-   at the route, not by a configurable owner-editable grant. There is no role configuration or IAM
-   in the product; see [roles and permissions](roles-and-permissions.md).
+8. **Refund initiation is configurable; approval eligibility is not.** `refunds.initiate` (shipped
+   owner/manager) controls who may start the workflow and is owner-editable per role or per user,
+   see [role templates and user permissions](#role-templates-and-user-permissions-are-owner-configurable).
+   The selected approver must still independently satisfy the owner/manager and time-tier rules
+   above — those are fixed context policy, not a permission, regardless of the initiator's grant.
 9. **Inventory is never restored by a refund**, item-level or whole-bill, matching how item voids
    and cancellations behave.
 

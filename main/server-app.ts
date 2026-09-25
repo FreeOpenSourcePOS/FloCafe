@@ -15,15 +15,14 @@ import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, se
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
-import { ROLE_ACCESS } from '../shared/role-permissions';
 import { RegionalNotConfiguredError, resolveRegionalSnapshot } from './countries';
+import { effectivePermissionRevision, hasPermission, resolveEffectivePermissions } from './services/authorization';
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
 let startReject: ((error: Error) => void) | null = null;
 let stopping = false;
 const SERVER_APP_PORT = getDefaultServerAppPort();
-const SERVER_APP_ALLOWED_ROLES = new Set(ROLE_ACCESS.serverApp);
 
 type ServerAppUser = {
   userId: string;
@@ -82,8 +81,8 @@ function requireServerAppAuth(req: Request, res: Response, next: NextFunction) {
     if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
-    if (!SERVER_APP_ALLOWED_ROLES.has(user.role)) {
-      return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.' });
+    if (!hasPermission(user.id, 'server-app.use')) {
+      return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.', code: 'permission_denied' });
     }
 
     (req as any).user = {
@@ -221,8 +220,8 @@ export function startServerApp(): Promise<void> {
         if (!user || !passwordMatches) {
           return res.status(401).json({ error: 'Invalid credentials' });
         }
-        if (!SERVER_APP_ALLOWED_ROLES.has(user.role)) {
-          return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.' });
+        if (!hasPermission(user.id, 'server-app.use')) {
+          return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.', code: 'permission_denied' });
         }
 
         const token = jwt.sign(
@@ -233,7 +232,14 @@ export function startServerApp(): Promise<void> {
 
         res.json({
           access_token: token,
-          user: { id: user.id, name: user.name, email: user.email, role: user.role },
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            permission_ids: [...(resolveEffectivePermissions(user.id)?.permissionIds ?? [])],
+            authorization_revision: effectivePermissionRevision(user.id),
+          },
         });
       } catch (error: any) {
         console.error('[Server App] Login error:', error);
@@ -245,7 +251,13 @@ export function startServerApp(): Promise<void> {
       const user = (req as any).user as ServerAppUser;
       const row = getDatabase().prepare('SELECT id, name, email, role FROM users WHERE id = ? AND is_active = 1').get(user.userId) as any;
       if (!row) return res.status(401).json({ error: 'Invalid token' });
-      res.json({ user: row });
+      res.json({
+        user: {
+          ...row,
+          permission_ids: [...(resolveEffectivePermissions(row.id)?.permissionIds ?? [])],
+          authorization_revision: effectivePermissionRevision(row.id),
+        },
+      });
     });
 
     app.post('/api/auth/logout', requireServerAppAuth, (req: Request, res: Response) => {

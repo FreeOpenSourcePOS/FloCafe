@@ -17,8 +17,7 @@ import {
   getDatabase, getSettingValue, localDateInTimezone, now, withTxn,
   tenantBusinessDayStartTime, nextZNumber,
 } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import {
   getOpenSession, type CashSessionRow,
 } from '../services/shift-session-gate';
@@ -153,7 +152,7 @@ function closeSessionTxn(
   return { closure_id: closureId, variance_cents: varianceCents, expected_cash_cents: expectedCashCents, counted_cash_cents: countedCashCents };
 }
 
-router.post('/open', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.post('/open', requirePermission('cash.shifts.open'), (req: Request, res: Response) => {
   try {
     const openingFloatCents = validateCents((req.body || {}).opening_float_cents ?? 0, 'opening_float_cents');
     const db = getDatabase();
@@ -223,7 +222,7 @@ router.post('/open', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Requ
   }
 });
 
-router.get('/current', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.get('/current', requirePermission('cash.shifts.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const session = getOpenSession(db);
@@ -241,7 +240,7 @@ router.get('/current', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Re
   }
 });
 
-router.post('/:id/close', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.post('/:id/close', requirePermission('cash.shifts.close'), (req: Request, res: Response) => {
   try {
     const sessionId = Number(req.params.id);
     if (!Number.isInteger(sessionId)) throw httpError('Invalid session id', 400);

@@ -30,18 +30,21 @@ Module._load = function (requestName: string, parent: unknown, isMain: boolean) 
 };
 
 const {
-  initTestDb, closeDatabase, assertEqual, getResults,
+  initTestDb, closeDatabase, assertEqual, getResults, seedOwnerUser,
 } = require('./helpers/test-setup');
 
 async function main() {
   console.log('Test: Order and invoice numbering settings');
   console.log('='.repeat(50));
 
-  initTestDb();
+  const db = initTestDb();
+  // requirePermission() resolves effective permissions from a real users row
+  // keyed by req.user.userId — seed an active owner so settings checks pass.
+  const owner = seedOwnerUser(db);
   const app = express();
   app.use(express.json());
   app.use((req: any, _res: any, next: any) => {
-    req.user = { id: 1, userId: 1, role: 'owner', name: 'Test Owner' };
+    req.user = { userId: owner.userId, role: 'owner', name: 'Test Owner' };
     next();
   });
   const { settingsRoutes } = require('../main/routes/settings');

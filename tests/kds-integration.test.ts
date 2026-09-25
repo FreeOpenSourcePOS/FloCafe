@@ -244,6 +244,15 @@ async function run() {
     ws.close();
     await once(ws, 'close');
 
+    db.prepare(`INSERT INTO user_permission_overrides
+      (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES ('user-chef-1', 'kitchen.use', 'deny', 'user-chef-1', ?, ?)`)
+      .run(now(), now());
+    const permissionRevoked = await request(`http://127.0.0.1:${port}`)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    assert(permissionRevoked.status === 403, 'KDS permission denial applies to an existing session immediately');
+
     // 8. Public KDS info endpoint responds
     const infoRes = await request(`http://127.0.0.1:${port}`).get('/api/kds/info');
     assert(infoRes.status === 200, 'Public info endpoint returns 200');

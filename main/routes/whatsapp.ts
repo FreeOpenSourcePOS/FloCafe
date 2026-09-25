@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import { asyncHandler } from '../middleware/async-handler';
 import { getDatabase, getSettingValue, upsertSettings } from '../db';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
@@ -17,7 +16,7 @@ function parsePaginationParam(value: unknown, fallback: number, max?: number): n
   return parsed;
 }
 
-router.get('/status', requireRole(...ROLE_ACCESS.ownerManagerCashier), (_req: Request, res: Response) => {
+router.get('/status', requirePermission('whatsapp.use'), (_req: Request, res: Response) => {
   const s = whatsapp.getStatus();
   // Don't expose the raw QR string via /status; the QR endpoint returns a rendered image.
   res.json({
@@ -30,7 +29,7 @@ router.get('/status', requireRole(...ROLE_ACCESS.ownerManagerCashier), (_req: Re
   });
 });
 
-router.post('/settings', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/settings', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
   const next = (req.body as { filterGroups?: boolean } | undefined)?.filterGroups;
   if (typeof next !== 'boolean') {
     res.status(400).json({ error: 'filterGroups must be a boolean' });
@@ -40,7 +39,7 @@ router.post('/settings', requireRole(...ROLE_ACCESS.ownerManager), (req: Request
   res.json({ ok: true, filterGroups: next });
 });
 
-router.get('/qr', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (_req, res) => {
+router.get('/qr', requirePermission('whatsapp.manage'), asyncHandler(async (_req, res) => {
   const status = whatsapp.getStatus();
   if (!status.qr) {
     res.status(404).json({ error: 'no QR available', reason: 'no_qr' });
@@ -50,7 +49,7 @@ router.get('/qr', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (
   res.json({ dataUrl });
 }));
 
-router.get('/pairing-code', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
+router.get('/pairing-code', requirePermission('whatsapp.manage'), (_req: Request, res: Response) => {
   const status = whatsapp.getStatus();
   if (!status.pairingCode) {
     res.status(404).json({ error: 'no pairing code available', reason: 'no_pairing_code' });
@@ -59,18 +58,18 @@ router.get('/pairing-code', requireRole(...ROLE_ACCESS.ownerManager), (_req: Req
   res.json({ code: status.pairingCode });
 });
 
-router.post('/enable', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req, res) => {
+router.post('/enable', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
   const userId = (req as any).user?.userId ?? null;
   const result = await whatsapp.enable(userId ?? 'unknown');
   res.json(result);
 }));
 
-router.post('/disable', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
+router.post('/disable', requirePermission('whatsapp.manage'), (_req: Request, res: Response) => {
   whatsapp.disable();
   res.json({ ok: true });
 });
 
-router.post('/connect', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req, res) => {
+router.post('/connect', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
   const { method, phone } = req.body ?? {};
   if (method === 'qr') {
     res.json(await trackHttpRequestWork(req, whatsapp.connectWithQr(getHttpRequestSignal(req))));
@@ -91,12 +90,12 @@ router.post('/connect', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(a
   }
 }));
 
-router.post('/disconnect', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
+router.post('/disconnect', requirePermission('whatsapp.manage'), (_req: Request, res: Response) => {
   whatsapp.disconnect();
   res.json({ ok: true });
 });
 
-router.post('/send', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req, res) => {
+router.post('/send', requirePermission('whatsapp.use'), asyncHandler(async (req, res) => {
   const { bill_id, phone_e164, body, kind } = req.body ?? {};
   if (!phone_e164) {
     res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
@@ -130,7 +129,7 @@ router.post('/send', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandl
   res.json({ ok: true, messageId: result.messageId });
 }));
 
-router.get('/messages', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.get('/messages', requirePermission('whatsapp.use'), (req: Request, res: Response) => {
   const limitValue = parsePaginationParam(req.query.limit, 50, 200);
   const offset = parsePaginationParam(req.query.offset, 0);
   if (limitValue === null || limitValue < 1) {
@@ -150,7 +149,7 @@ router.get('/messages', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: R
   res.json({ messages: whatsapp.listMessages({ direction, status, phone, billId, limit, offset }) });
 });
 
-router.get('/inbox', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/inbox', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
   const limitValue = parsePaginationParam(req.query.limit, 50, 200);
   const offset = parsePaginationParam(req.query.offset, 0);
   if (limitValue === null || limitValue < 1) {
@@ -163,7 +162,7 @@ router.get('/inbox', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, re
   res.json({ messages: whatsapp.listInbox(limit, offset) });
 });
 
-router.post('/inbox/:messageId/reply', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req, res) => {
+router.post('/inbox/:messageId/reply', requirePermission('whatsapp.manage'), asyncHandler(async (req, res) => {
   const { body } = req.body ?? {};
   if (!body || typeof body !== 'string') {
     res.status(400).json({ error: 'body required', reason: 'body_required' });
@@ -194,11 +193,11 @@ router.post('/inbox/:messageId/reply', requireRole(...ROLE_ACCESS.ownerManager),
   res.json({ ok: true, messageId: result.messageId });
 }));
 
-router.get('/blocklist', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
+router.get('/blocklist', requirePermission('whatsapp.manage'), (_req: Request, res: Response) => {
   res.json({ blocklist: whatsapp.listBlocklist() });
 });
 
-router.post('/blocklist', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/blocklist', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
   const { phone_e164, reason } = req.body ?? {};
   const tenantCountry = getSettingValue('country') || '';
   const parsed = parsePhoneE164(String(phone_e164 || ''), tenantCountry);
@@ -211,7 +210,7 @@ router.post('/blocklist', requireRole(...ROLE_ACCESS.ownerManager), (req: Reques
   res.json({ ok: true });
 });
 
-router.delete('/blocklist/:phone', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.delete('/blocklist/:phone', requirePermission('whatsapp.manage'), (req: Request, res: Response) => {
   const removed = whatsapp.removeFromBlocklist(String(req.params.phone));
   if (!removed) {
     res.status(404).json({ error: 'phone not in blocklist', reason: 'phone_not_in_blocklist' });

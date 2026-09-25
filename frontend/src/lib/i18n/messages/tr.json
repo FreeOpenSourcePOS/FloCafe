@@ -1699,6 +1699,8 @@
     "navGroupOperations": "Operasyon",
     "newPin": "Yeni PIN Kodu",
     "no": "Hayır",
+    "noAccessDatabase": "Yedekleme ve veritabanı araçlarına erişiminiz yok.",
+    "noAccessMobileAccess": "Mobil erişim ayarlarına erişiminiz yok.",
     "noAppsToShow": "Gösterilecek ek modül yok",
     "noCategoriesYet": "Henüz kategori eklenmedi",
     "noChefsYet": "Henüz etkin şef hesabı yok. Önce Personel altında bir şef ekleyin.",
@@ -2211,7 +2213,32 @@
       "serverApp": "Bağımsız Garson Uygulamasını kullanma",
       "support": "Destek ekibiyle iletişime geçme ve sistem tanılamayı görme",
       "inventoryManage": "Sarf malzemelerini ve tarifleri yönetme"
-    }
+    },
+    "editorSubtitle": "Rol varsayılanlarını yapılandırın veya tek bir personel için istisna oluşturun. Değişiklikler bir sonraki işlemlerinde geçerli olur.",
+    "roleDefaultsTab": "Rol varsayılanları",
+    "staffExceptionTab": "Personel istisnası",
+    "selectStaffPlaceholder": "Bir personel seçin",
+    "selectStaffEmptyState": "İzinlerini düzenlemek için bir personel seçin.",
+    "effectiveHeader": "Geçerli",
+    "overrideHeader": "Geçersiz kılma",
+    "inherit": "Devral",
+    "allow": "İzin ver",
+    "deny": "Reddet",
+    "protected": "Korumalı",
+    "editorFooterNote": "Onay PIN'leri, son aktif sahip, iade son tarihleri ve mutfak istasyonu atamaları gibi hassas iş kuralları geçerliliğini korur."
+  },
+  "permissionAudit": {
+    "title": "İzin değişikliği geçmişi",
+    "subtitle": "Yukarıdaki rol izinlerinde yapılan her değişiklik, en yeniden başlayarak.",
+    "columnTime": "Zaman",
+    "columnActor": "İşlemi yapan",
+    "columnTarget": "Hedef",
+    "columnPermission": "İzin",
+    "columnChange": "Değişiklik",
+    "targetTypeRole": "Rol",
+    "targetTypeUser": "Personel",
+    "empty": "Henüz izin değişikliği yok.",
+    "loadMore": "Daha fazla yükle"
   },
   "support": {
     "askAi": "Yapay Zekaya Sor",

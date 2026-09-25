@@ -28,7 +28,7 @@ import { notifyKdsUpdate } from '../main/services/kds';
 import { getJWTSecret } from '../main/routes/auth';
 import { WebSocket } from 'ws';
 import * as jwt from 'jsonwebtoken';
-const { assert, assertEqual } = require('./helpers/test-setup');
+const { assertOrThrow, assertEqualOrThrow } = require('./helpers/test-setup');
 
 function createMessageQueue(ws: WebSocket) {
   const messages: any[] = [];
@@ -93,7 +93,7 @@ async function run() {
     const idleQueue = createMessageQueue(idleWs);
     await once(idleWs, 'open');
     const idleAuthError = await idleQueue('auth_error');
-    assert(idleAuthError.type === 'auth_error', 'Idle unauthenticated socket receives an auth error');
+    assertOrThrow(idleAuthError.type === 'auth_error', 'Idle unauthenticated socket receives an auth error');
     await once(idleWs, 'close');
 
     // Test 1: Revoked token fails WebSocket auth
@@ -105,7 +105,7 @@ async function run() {
     await once(wsRev, 'open');
     wsRev.send(JSON.stringify({ type: 'auth', token: revokedToken }));
     const revAuthMsg = await qRev('auth_error');
-    assert(revAuthMsg.type === 'auth_error', 'Revoked token rejected at WS auth');
+    assertOrThrow(revAuthMsg.type === 'auth_error', 'Revoked token rejected at WS auth');
     wsRev.close();
     await once(wsRev, 'close');
 
@@ -143,7 +143,7 @@ async function run() {
 
     ws2.send(JSON.stringify({ type: 'status_update', order_item_id: itemId, status: 'preparing' }));
     const errRes2 = await q2('auth_error');
-    assert(errRes2.message.includes('revoked') || errRes2.message.includes('expired'), 'Deactivated user status update blocked');
+    assertOrThrow(errRes2.message.includes('revoked') || errRes2.message.includes('expired'), 'Deactivated user status update blocked');
     await once(ws2, 'close');
 
     console.log('✅ KDS WebSocket session revalidation tests passed!');

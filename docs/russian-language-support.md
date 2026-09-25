@@ -4,6 +4,8 @@
 
 **Base:** `a42eb51d3ee660e259d713ad87b0ee3691feabed` (`origin/main`, 2026-09-24 inspection)
 
+**Current-main rebase:** `1df7cfbd2cfbc410c07744ffed67a5e14a569ef1` (2026-09-25, after the Dutch through Urdu locale additions and shared print-direction/width fixes)
+
 **Working branch:** `fm/flocafe-russian-language-support-r1`
 
 **Scope decision:** add Russian (`ru`, `ru-RU`, LTR) to the existing offline locale
@@ -25,6 +27,8 @@ remote translation service, font download, or new print architecture.
   language keys, BCP-47 tags, native names, direction, selectability, and
   dynamic import loaders. Region/script metadata belongs in `locale`; the
   message filename and registry key remain the lowercase primary identifier.
+  The original inspection had 14 registered locales; the current-main rebase
+  has 21, and Russian becomes the 22nd.
 - `scripts/i18n-add.cjs` accepts only a lowercase two- or three-letter
   canonical language identifier. Therefore the smallest identifier consistent
   with the current architecture is `ru`, not `ru-RU` or `russian`.
@@ -76,9 +80,11 @@ remote translation service, font download, or new print architecture.
 language-specific seed branches. The existing Phase 7 test exercises express
 and demo seed data for every registry entry and explicitly allows Filipino as
 the only English-identical seed language. Russian therefore needs Russian
-express/demo categories, products, customer names, and inactive staff names,
-while country selection and phone normalization remain independent of UI
-language.
+express/demo categories, products, customer names, and inactive staff names.
+Its demo customers use syntactically valid Russia E.164 numbers while the
+selected store country and phone normalization remain independent of UI
+language. The focused setup test pins the terminology, country-code
+independence, and exact sample numbers.
 
 The setup route already accepts a registered language string and persists it;
 there is no schema change or data migration required.
@@ -99,12 +105,13 @@ there is no schema change or data migration required.
   and syntax.
 - Russian is LTR. Cyrillic has no contextual letter shaping comparable to
   Arabic, so the existing Arabic shaping flag must not be enabled for `ru`.
-- The ordinary Russian translation is expected to use NFC Cyrillic code
-  points. Raster rendering already uses `Intl.Segmenter` for grapheme-safe
-  wrapping. The shared native thermal width helper is code-point/display-cell
-  based, which is sufficient for standard Russian letters but remains a known
-  limitation for arbitrary user-entered combining marks. Changing all native
-  width code would be a separate printing redesign and is outside this task.
+- The ordinary Russian translation uses NFC Cyrillic code points. Raster
+  rendering already uses `Intl.Segmenter` for grapheme-safe wrapping. The
+  current-main shared native thermal width helper also measures and wraps
+  complete grapheme clusters, with a fallback for environments without
+  `Intl.Segmenter`; the print-kernel suite covers CJK, Arabic-script ZWNJ,
+  Devanagari, fallback segmentation, and mixed-width wrapping. Russian reuses
+  this path without changing capability policy or print architecture.
 - The current profile table enables raster output for the listed generic,
   Xprinter, and Epson profiles, while the printing study still requires
   real-printer evidence before claiming broad Cyrillic hardware support. This
@@ -153,7 +160,10 @@ Russian to the English-identical seed allowlist.
 - Regenerate `main/print/print-labels.generated.ts` from the edited message
   file and registry.
 - Russian must resolve all generated print concepts, including receipt/KOT,
-  payment-method, Z-report, and print-test labels.
+  payment-method, Z-report, and print-test labels. The borrowed
+  `receipt.cashReceived` key must resolve from the canonical receipt
+  namespace. Browser order slips must emit `lang="ru-RU" dir="ltr"` and
+  preserve localized labels.
 - Do not alter capability profiles, Arabic shaping, native text
   normalization, or financial warning behavior as part of locale addition.
 - Browser HTML is expected to render Russian Unicode. Thermal validation must

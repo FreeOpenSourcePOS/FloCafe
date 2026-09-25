@@ -113,7 +113,11 @@ async function run(): Promise<void> {
     }
     if (language === 'ru') {
       assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'Еда', 'Russian express category is localized');
-      assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'Блюдо', 'Russian express product is localized');
+      assert.equal(rows('categories', 'name', "id = 'cat-express-beverages'")[0].name, 'Напитки', 'Russian express beverages category is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'Блюдо', 'Russian express meal is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-tea'")[0].name, 'Чай', 'Russian express tea is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-coffee'")[0].name, 'Кофе', 'Russian express coffee is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-snack'")[0].name, 'Закуска', 'Russian express snack is localized');
     }
 
     seedSetupProfile(db, 'demo', 'finedine', language, 'IN');
@@ -217,7 +221,21 @@ async function run(): Promise<void> {
     assert.equal(rows('tables', 'id', "id LIKE 'tbl-demo-%'").length, 4, `${language}: demo FineDine setup seeds tables`);
 
     if (language === 'ru') {
-      assert.equal(rows('customers', 'name', "id = 'cust-demo-1'")[0].name, 'Иван Петров', 'Russian demo customer is localized');
+      assert.equal(snapshot.category, 'Закуски', 'Russian demo category is localized');
+      assert.equal(snapshot.product, 'Шашлык из панира', 'Russian demo product is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-butter-chicken'")[0].name, 'Курица в сливочном соусе', 'Russian butter chicken uses restaurant terminology');
+      assert.equal(snapshot.manager, 'Демо-менеджер', 'Russian demo manager is localized');
+      assert.equal(snapshot.customer, 'Иван Петров', 'Russian demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => [customer.phone, customer.country_code]),
+        [
+          ['+79161234567', '+7'],
+          ['+79161234568', '+7'],
+          ['+79161234569', '+7'],
+        ],
+        'Russian demo customers use Russia E.164 numbers independent of the selected store country',
+      );
+      assert.equal(rows('tables', 'name', "id = 'tbl-demo-1'")[0].name, 'С1', 'Russian demo table label is localized');
     }
     if (englishIdenticalSeeds.has(language)) {
       assert.deepEqual(snapshot, snapshots.get('en') ?? snapshot, `${language}: seed data follows the documented English-identical allowlist`);

@@ -527,6 +527,30 @@ async function run() {
       ltrSlip.includes('dir="ltr"') && ltrSlip.includes('direction:ltr;text-align:left;'),
     );
 
+    const russianSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'Чек заказа',
+      subtotal: 'Промежуточный итог',
+      discount: 'Скидка',
+      serviceCharge: 'Стоимость обслуживания',
+      deliveryCharge: 'Стоимость доставки',
+      packagingCharge: 'Стоимость упаковки',
+      tax: 'Налог',
+      total: 'Итого',
+    }, {
+      paperWidth: 80,
+      country: 'RU',
+      currency: 'RUB',
+      locale: 'ru-RU',
+      direction: 'ltr',
+    });
+    assert('Russian order slip carries ru-RU LTR metadata and localized labels',
+      russianSlip.includes('lang="ru-RU" dir="ltr"') &&
+      russianSlip.includes('direction:ltr;text-align:left;') &&
+      russianSlip.includes('Чек заказа') &&
+      russianSlip.includes('Промежуточный итог') &&
+      russianSlip.includes('Итого'),
+    );
+
     const hindiSlip = generateOrderSlipHtml(testIranOrder, {
       title: 'ऑर्डर स्लिप',
       subtotal: 'उप-योग',

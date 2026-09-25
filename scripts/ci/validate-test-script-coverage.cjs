@@ -19,7 +19,7 @@ const TEST_EXCLUSIONS = {
 // test:release-regressions - must be absent from this list.
 const TEST_FILE_EXCLUSIONS = {
   'tests/db-audit.test.ts': 'Run by the dedicated `npm run audit:db` command, not by the default suite.',
-  'tests/whatsapp-shutdown-timeout.test.ts': 'Parked on a production bug: inFlightWhatsAppWork is a Map whose keys are the in-flight operations and whose values are their cancellation callbacks, and waitForWhatsAppWork() drains it with Promise.allSettled([...map]), handing every cancellation callback to allSettled as if it were awaitable. The suite hangs and neither shutdown timeout fires. Restored and parked pending the fix task for that behaviour; do not delete.',
+  'tests/whatsapp-shutdown-timeout.test.ts': 'Parked on a production bug: inFlightWhatsAppWork is a Map whose keys are the in-flight operations and whose values are their cancellation callbacks, and waitForWhatsAppWork() drains it with Promise.allSettled([...map]). Spreading a Map yields [operation, cancel] entry arrays, which are not thenables, so allSettled resolves without awaiting any operation; the drain loop then spins on microtasks and starves the macrotask queue, so neither shutdown timeout can fire. Fix is [...map.keys()] in main/services/whatsapp.ts, filed separately. Restored and parked; do not delete.',
 };
 
 // Splits on top-level `&&`, `||`, and `;`, leaving text inside '...' or "..."

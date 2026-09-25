@@ -2,23 +2,27 @@
  * PARKED - not run by any script, deliberately excluded in
  * scripts/ci/validate-test-script-coverage.cjs.
  *
- * Blocking production bug: inFlightWhatsAppWork is a
- * Map<Promise, WhatsAppWorkCancellation> - the in-flight operation is the KEY
- * and its cancellation callback is the VALUE. waitForWhatsAppWork drains it with
- * `Promise.allSettled([...inFlightWhatsAppWork])`, and spreading a Map yields the
- * flat [operation, cancel, operation, cancel, ...] array, so every cancellation
- * callback is handed to allSettled as if it were something to await. These
- * assertions hang: the run never completes and neither SHUTDOWN_TIMEOUT_MS nor
- * the fatal timeout fires.
+ * Blocking production bug. `inFlightWhatsAppWork` is a
+ * `Map<Promise<unknown>, WhatsAppWorkCancellation>`: the in-flight operation is
+ * the KEY and its cancellation callback is the VALUE (`abortable` calls
+ * `trackWhatsAppWork(operation, cancel)`). `waitForWhatsAppWork()` drains it with
+ * `Promise.allSettled([...inFlightWhatsAppWork])`.
  *
- * The exact reason the drain cannot make progress is not established - the
- * timeout is a timer and the loop's exit condition depends on the map emptying,
- * which `operation.finally` does. Establishing that belongs with the fix, not
- * with this parked file. What is verified is the symptom: the suite does not
- * finish, and nothing times out.
+ * Spreading a Map iterates its default entry sequence, so that expression is an
+ * array of `[operation, cancel]` ENTRY ARRAYS, not a flat list of keys and
+ * values. An entry array is not a thenable, so `allSettled` resolves on the next
+ * microtask without awaiting a single operation. The `while (size > 0)` loop then
+ * re-checks a map that only empties when the operations actually settle, so it
+ * spins, awaiting an already-settled promise each pass. That is microtask work
+ * only: the macrotask queue never runs, so neither the `SHUTDOWN_TIMEOUT_MS`
+ * timer in `waitForWhatsAppWork` nor the fatal step timeout in
+ * `runShutdownSteps` can ever fire. The suite hangs instead of failing.
  *
- * The fix belongs in main/services/whatsapp.ts and is filed as its own change;
- * the bug is behaviour, so it must not ride along in a test-harness change.
+ * The fix is `[...inFlightWhatsAppWork.keys()]`, which yields the operations so
+ * `allSettled` waits for them. Not `values()`: those are the cancellation
+ * callbacks, equally non-thenable. That fix is in `main/services/whatsapp.ts` and
+ * is filed as its own change; the bug is behaviour, so it must not ride along in
+ * a test-harness change.
  *
  * These assertions are the contract for that fix. Do not delete this file - it
  * is parked, not obsolete.

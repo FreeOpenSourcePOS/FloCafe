@@ -48,6 +48,17 @@ const { printLabel } = require('../main/print/print-labels.generated') as typeof
 const languages = Object.keys(LANGUAGES) as Array<keyof typeof LANGUAGES>;
 const englishIdenticalSeeds = new Set<string>(ENGLISH_IDENTICAL_SEED_LANGUAGES);
 
+/**
+ * A store country that is no seeded sample's home country. A sample still
+ * written in national format resolves against the selected store country, so
+ * the 'IN' pass below re-normalizes a non-Indian regression into a valid
+ * Indian number and cannot see it. Re-seeding under a country that owns no
+ * sample is the only pass that observes the failure the E.164 seed repair
+ * prevents. All 66 samples are invalid in this country's numbering plan when
+ * reduced to national format, so no national-format regression survives it.
+ */
+const FOREIGN_SEED_COUNTRY = 'AU';
+
 function resetDatabase(): void {
   try { closeDatabase(); } catch { /* first iteration */ }
   for (const suffix of ['', '-wal', '-shm']) {
@@ -371,6 +382,19 @@ async function run(): Promise<void> {
       assert.notEqual(snapshot.product, english.product, `${language}: demo product is localized`);
       assert.notEqual(snapshot.manager, english.manager, `${language}: demo staff name is localized`);
       assert.notEqual(snapshot.customer, english.customer, `${language}: demo customer name is localized`);
+    }
+
+    // The seed inserts are INSERT OR IGNORE, so the country-independent pass
+    // needs its own database rather than a second call on the seeded one.
+    resetDatabase();
+    seedSetupProfile(getDatabase(), 'demo', 'finedine', language, FOREIGN_SEED_COUNTRY);
+    const foreignCustomers = rows('customers', 'phone, phone_digits, country_code', 'is_active = 1');
+    assert.equal(foreignCustomers.length, 3, `${language}: demo setup seeds customers in a ${FOREIGN_SEED_COUNTRY} store`);
+    for (const customer of foreignCustomers) {
+      const parsed = parsePhoneE164(customer.phone, FOREIGN_SEED_COUNTRY);
+      assert.ok(parsed, `${language}: demo customer phone ${customer.phone} must be valid E.164 in a ${FOREIGN_SEED_COUNTRY} store`);
+      assert.equal(customer.phone, `+${customer.phone_digits}`, `${language}: demo customer phone and digits must agree in a ${FOREIGN_SEED_COUNTRY} store`);
+      assert.equal(customer.country_code, parsed.countryCode, `${language}: demo customer country code must follow the phone number in a ${FOREIGN_SEED_COUNTRY} store`);
     }
   }
 

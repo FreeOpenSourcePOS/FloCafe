@@ -9,6 +9,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   es: { basic: 'Recibo básico (térmica)', web: 'Impresión web (navegador)', whatsapp: 'Compartir por WhatsApp' },
   fr: { basic: 'Reçu simple (thermique)', web: 'Impression web (navigateur)', whatsapp: 'Partage WhatsApp' },
   pt: { basic: 'Comprovante Básico (Térmico)', web: 'Impressão web (navegador)', whatsapp: 'Compartilhamento via WhatsApp' },
+  ru: { basic: 'Базовый чек (термопринтер)', web: 'Веб-печать (браузер)', whatsapp: 'Поделиться в WhatsApp' },
   de: { basic: 'Einfacher Kassenbon (Thermodruck)', web: 'Webdruck (Browser)', whatsapp: 'Über WhatsApp teilen' },
   tr: { basic: 'Temel Fiş (Termal)', web: 'Web Yazdırma (Tarayıcı)', whatsapp: 'WhatsApp Paylaşımı' },
   fil: { basic: 'Basic Resibo (Thermal)', web: 'Web Print (Browser)', whatsapp: 'Ibahagi sa WhatsApp' },

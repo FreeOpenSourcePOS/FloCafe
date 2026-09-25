@@ -125,6 +125,9 @@ function run(): void {
   assert('tr resolves grand total to Turkish', printLabel('tr', 'print.grandTotal') === 'GENEL TOPLAM');
   assert('fil resolves grand total to Filipino', printLabel('fil', 'print.grandTotal') === 'KABUUAN');
   assert('de resolves grand total to German', printLabel('de', 'print.grandTotal') === 'GESAMTSUMME');
+  assert('ru resolves grand total to Russian', printLabel('ru', 'print.grandTotal') === 'ИТОГО');
+  assert('ru resolves subtotal to Russian', printLabel('ru', 'print.subtotalExclTax') === 'Подытог (без налога)');
+  assert('ru resolves cash received from the canonical receipt key', printLabel('ru', 'receipt.cashReceived') === 'Получено наличными');
   assert('es resolves grand total', typeof printLabel('es', 'print.grandTotal') === 'string' && printLabel('es', 'print.grandTotal').length > 0);
   assert('fr resolves grand total to French', printLabel('fr', 'print.grandTotal') === 'TOTAL');
   assert('id resolves grand total to Indonesian', printLabel('id', 'print.grandTotal') === 'TOTAL');
@@ -161,6 +164,7 @@ function run(): void {
   assert('Urdu bill number label is localized', printLabel('ur', 'receipt.billNumber') === 'بل #');
   assert('Urdu amount label is localized', printLabel('ur', 'printTest.amt') === 'رقم');
   assert('Urdu takeaway is distinct from delivery', printLabel('ur', 'pos.orderTypeTakeaway') === 'ٹیک اوے' && printLabel('ur', 'pos.orderTypeDelivery') === 'ڈیلیوری');
+  assert('Russian takeaway is distinct from delivery', printLabel('ru', 'pos.orderTypeTakeaway') === 'С собой' && printLabel('ru', 'pos.orderTypeDelivery') === 'Доставка');
 
   console.log('\n✅ Test 2: classic receipt honors language');
   {

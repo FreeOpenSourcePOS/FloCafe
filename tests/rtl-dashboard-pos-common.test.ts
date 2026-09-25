@@ -230,7 +230,7 @@ function run(): void {
   assert(renderedUr.position === 'top-left', `DirectionalToaster must set position="top-left" for Urdu (ur), got: ${renderedUr.position}`);
   assert(renderedUr.key === 'rtl', `DirectionalToaster must key its Toaster "rtl" for Urdu (ur), got: ${renderedUr.key}`);
 
-  for (const ltrLang of ['en', 'es', 'fr', 'pt', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const) {
+  for (const ltrLang of ['en', 'es', 'fr', 'pt', 'ru', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const) {
     usePosSettingsStore.getState().setLanguage(ltrLang);
     const renderedLtr = renderDirectionalToaster(getLanguageLocale(ltrLang));
     assert(
@@ -308,7 +308,7 @@ function run(): void {
   for (const rtlLang of ['fa', 'ur'] as const) {
     assert(getLanguageDirection(rtlLang) === 'rtl', `${rtlLang} must resolve to rtl`);
   }
-  for (const ltrLang of ['en', 'es', 'fr', 'pt', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const) {
+  for (const ltrLang of ['en', 'es', 'fr', 'pt', 'ru', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const) {
     assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
   }
   console.log('  ✓ getLanguageDirection resolves direction from shared language metadata');

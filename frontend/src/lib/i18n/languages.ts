@@ -69,6 +69,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/pt.json'),
   },
+  ru: {
+    locale: 'ru-RU',
+    nativeName: 'Русский',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ru.json'),
+  },
   fa: {
     locale: 'fa-IR',
     nativeName: 'فارسی',

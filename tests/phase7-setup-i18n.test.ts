@@ -111,6 +111,10 @@ async function run(): Promise<void> {
       assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'Vakt', 'Albanian express product is localized');
       assert.equal(rows('products', 'name', "id = 'prod-express-snack'")[0].name, 'Ushqim i lehtë', 'Albanian express snack is localized');
     }
+    if (language === 'ru') {
+      assert.equal(rows('categories', 'name', "id = 'cat-express-food'")[0].name, 'Еда', 'Russian express category is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-express-meal'")[0].name, 'Блюдо', 'Russian express product is localized');
+    }
 
     seedSetupProfile(db, 'demo', 'finedine', language, 'IN');
     const seededCustomers = rows('customers', 'phone, phone_digits, country_code', 'is_active = 1');
@@ -212,6 +216,9 @@ async function run(): Promise<void> {
     assert.equal(rows('customers', 'id', 'is_active = 1').length, 3, `${language}: demo setup seeds customers`);
     assert.equal(rows('tables', 'id', "id LIKE 'tbl-demo-%'").length, 4, `${language}: demo FineDine setup seeds tables`);
 
+    if (language === 'ru') {
+      assert.equal(rows('customers', 'name', "id = 'cust-demo-1'")[0].name, 'Иван Петров', 'Russian demo customer is localized');
+    }
     if (englishIdenticalSeeds.has(language)) {
       assert.deepEqual(snapshot, snapshots.get('en') ?? snapshot, `${language}: seed data follows the documented English-identical allowlist`);
     } else if (language !== 'en') {
@@ -247,6 +254,21 @@ async function run(): Promise<void> {
   // Portuguese fallback coverage independently of country defaults.
   assert.equal(printLabel('es', 'print.taxInvoiceTitle'), 'FACTURA CON IMPUESTOS');
   assert.equal(printLabel('pt', 'print.thankYouShort'), 'Obrigado!');
+
+  // Russian cardinal plural branches must render the one/few/many forms, not
+  // merely pass structural ICU parsing.
+  assert.equal(translate('ru', 'pos.addToOrder', { count: 1 }), 'Добавить 1 товар в заказ');
+  assert.equal(translate('ru', 'pos.addToOrder', { count: 2 }), 'Добавить 2 товара в заказ');
+  assert.equal(translate('ru', 'pos.addToOrder', { count: 5 }), 'Добавить 5 товаров в заказ');
+  assert.equal(translate('ru', 'kds.itemsUpdateFailed', { count: 1 }), 'Не удалось обновить 1 элемент. Доска обновлена.');
+  assert.equal(translate('ru', 'kds.itemsUpdateFailed', { count: 2 }), 'Не удалось обновить 2 элемента. Доска обновлена.');
+  assert.equal(translate('ru', 'kds.itemsUpdateFailed', { count: 5 }), 'Не удалось обновить 5 элементов. Доска обновлена.');
+  assert.equal(translate('ru', 'auth.attemptsRemaining', { count: 1 }), 'До блокировки осталось попыток: 1');
+  assert.equal(translate('ru', 'dashboard.ordersCount', { count: 1 }), 'Заказов: 1');
+  assert.equal(translate('ru', 'pos.tableSeats', { count: 1 }), 'Мест: 1');
+  assert.equal(translate('ru', 'settings.printColumnsShort', { cols: 32 }), 'Столбцов: 32');
+  assert.equal(translate('ru', 'settings.fixesAppliedPartial', { applied: 1, failed: 0 }), 'Исправлений применено: 1; ошибок: 0');
+
   for (const language of languages) {
     assert.notEqual(translate(language, 'printTest.optionBasicReceipt'), 'printTest.optionBasicReceipt', `${language}: basic receipt label resolves`);
     assert.notEqual(translate(language, 'printTest.optionWebPrint'), 'printTest.optionWebPrint', `${language}: web print label resolves`);

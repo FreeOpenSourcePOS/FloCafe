@@ -31,6 +31,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [release-evidence-index.md](release-evidence-index.md) | Permanent sanitized release-summary contract, 90-day evidence retention, manual boundaries, and #512 integration boundary. | CURRENT |
 | [tax-packs.md](tax-packs.md) | Tax pack schema, authoring guide, cryptographic signing, and catalog distribution workflow. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
+| [russian-language-support.md](russian-language-support.md) | Russian locale research, terminology and printer constraints, implementation specification, and release plan. | CURRENT |
 | [hindi-language-support.md](hindi-language-support.md) | Hindi research, specification, implementation plan, challenge reviews, and print/evidence boundaries. | CURRENT |
 | [bengali-language-support.md](bengali-language-support.md) | Bengali/Bangla research, terminology, shaping and printer constraints, implementation specification, and release plan. | CURRENT |
 | [albanian-language-support.md](albanian-language-support.md) | Albanian (`sq`) locale research, terminology and printer constraints, implementation specification, and release plan. | CURRENT |

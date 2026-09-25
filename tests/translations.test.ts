@@ -54,7 +54,9 @@
  *      fall back to the English value (documented intentional identical list excepted).
  *  20. Urdu safeguards: ur.json values never contain placeholders or silently
  *      fall back to the English value (documented intentional identical list excepted).
- *  21. Vietnamese safeguards: vi.json values never contain placeholders,
+ *  21. Russian safeguards: ru.json values never contain placeholders, malformed
+ *      Unicode, or silently fall back to the English value.
+ *  22. Vietnamese safeguards: vi.json values never contain placeholders,
  *      malformed replacement characters, or non-NFC text, and only documented
  *      shared values may remain identical to English.
  *
@@ -1105,6 +1107,42 @@ function itFallbackErrors(itFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Russian translation safeguards. */
+const RU_INTENTIONAL_IDENTICAL = new Set<string>([
+  'common.appTitle', 'common.brandName',
+  'dashboard.exportCsv', 'dashboard.exportXlsx', 'dashboard.ticketMethodCount',
+  'kds.emptyColumn', 'nav.kds', 'nav.pos', 'nav.whatsapp',
+  'pos.addonPrice', 'pos.loadingEllipsis', 'pos.tagCount', 'pos.taxLine',
+  'print.hsn', 'print.zReport.paymentCount', 'printTest.escpos',
+  'products.addonSelectionRange', 'products.saleUnitCl',
+  'serverApp.emailPlaceholder', 'settings.connectionUsb', 'settings.instagramPlaceholder', 'settings.ipAddressPlaceholder',
+  'settings.kds', 'settings.portPlaceholder', 'settings.registrationEmailPlaceholder',
+  'settings.registrationLastError', 'settings.tabWhatsapp', 'settings.whatsapp',
+  'setup.finedineLabel', 'setup.ownerEmailPlaceholder', 'setup.qsrLabel',
+  'tax.auditCreateOverride', 'tax.auditUpdateOverride', 'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function ruFallbackErrors(ruFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const ruVal = ruFlat[k];
+    if (ruVal === undefined) continue;
+    if (ruVal.startsWith('[RU]') || ruVal.startsWith('[TODO]')) {
+      errors.push(`ru.json ${k} — placeholder prefix found: "${ruVal}"`);
+    } else if (ruVal === enFlat[k] && !RU_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`ru.json ${k} — identical to English value (renders as English for Russian users)`);
+    } else if (ruVal !== ruVal.normalize('NFC')) {
+      errors.push(`ru.json ${k} — value must use Unicode NFC`);
+    } else if (ruVal.includes('\uFFFD')) {
+      errors.push(`ru.json ${k} — value contains a Unicode replacement character`);
+    } else if (/[\u200B\u200C\u200D\u00AD\uFEFF]/u.test(ruVal)) {
+      errors.push(`ru.json ${k} — invisible formatting character found`);
+    }
+  }
+  return errors;
+}
+
 /** Urdu translation safeguards. */
 const UR_INTENTIONAL_IDENTICAL = new Set<string>([
   'auth.emailPlaceholder', 'common.appTitle', 'common.brandName', 'common.logoAlt',
@@ -1828,6 +1866,26 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated it.json values (${IT_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
+  const ruMessages = loadedStrings.get('ru');
+  if (!ruMessages) throw new Error('languages registry must include the maintained ru locale');
+  const ruErrors = ruFallbackErrors(ruMessages, loadedStrings.get('en')!);
+  if (ruErrors.length) {
+    console.error(`\nru.json values with errors (${ruErrors.length}):`);
+    for (const e of ruErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'ru.json contains untranslated, placeholder, malformed, or invisible Unicode values');
+  }
+  assert(ruMessages['receipt.cashReceived'] === 'Получено наличными', 'Russian cash-received label must use the canonical receipt key');
+  assert(ruMessages['auth.attemptsRemaining'] === 'До блокировки осталось попыток: {count}', 'Russian attempt counter must use count-safe label wording');
+  assert(ruMessages['pos.tableSeats'] === 'Мест: {count}', 'Russian seat counter must use count-safe label wording');
+  assert(ruMessages['settings.printColumnsShort'] === 'Столбцов: {cols}', 'Russian print-column counter must use count-safe label wording');
+  assert(ruMessages['pos.tagVeg'] === 'Вегетарианское' && ruMessages['products.tagVeg'] === 'Вегетарианское', 'Russian vegetarian tags must use the reviewed term');
+  assert(ruMessages['pos.tagNonVeg'] === 'Не вегетарианское' && ruMessages['products.tagNonVeg'] === 'Не вегетарианское', 'Russian non-vegetarian tags must use the reviewed term');
+  assert(ruMessages['settings.discountModeFlat'] === 'Только фиксированная сумма', 'Russian flat discount mode must mean a fixed amount');
+  assert(ruMessages['tables.markCleaning'] === 'Отметить как убираемый', 'Russian table-cleaning action must describe setting a cleaning status');
+  assert(ruMessages['tax.fixed'] === 'Фиксированная', 'Russian fixed tax label must describe a fixed amount');
+  assert(ruMessages['tax.actionRollback'] === 'Пакет откатан', 'Russian tax-pack rollback must describe an operator action');
+  console.log(`  ✓ no untranslated ru.json values (${RU_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
+
   const urMessages = loadedStrings.get('ur');
   if (!urMessages) throw new Error('languages registry must include the maintained ur locale');
   const urErrors = urFallbackErrors(urMessages, loadedStrings.get('en')!);
@@ -2071,7 +2129,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil, de, it, ja, zh, ko, id, nl, hi, bn, sq, vi).
+  // 7. Language safeguards (fa, fr, tr, fil, de, it, ru, ur, ja, zh, ko, id, nl, hi, bn, sq, vi).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -2111,6 +2169,18 @@ function runNegativeTests(): void {
   expectDetected(
     'it: placeholder prefix value',
     itFallbackErrors({ 'a.b': '[IT] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ru: English-identical value',
+    ruFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'ru: placeholder prefix value',
+    ruFallbackErrors({ 'a.b': '[RU] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ru: invisible formatting character',
+    ruFallbackErrors({ 'a.b': 'Скрытый\u200bтекст' }, { 'a.b': 'Different value' }),
   );
   expectDetected(
     'ur: English-identical value',

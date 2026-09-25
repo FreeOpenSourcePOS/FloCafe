@@ -1676,7 +1676,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'receipt.thankYou': "Bedankt voor uw bezoek!",
     'receipt.taxIncluded': "Belasting inbegrepen indien van toepassing",
     'receipt.reprint': "HERDRUK",
-    'receipt.onlineOrder': "ONLINE BESTELLING",
+    'receipt.onlineOrder': "ONLINEBESTELLING",
     'pos.orderNumber': "Bestelling #{number}",
     'pos.orderTypeDineIn': "Dineren",
     'pos.orderTypeDelivery': "Bezorging",

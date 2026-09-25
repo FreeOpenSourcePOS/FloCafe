@@ -121,6 +121,19 @@ async function run(): Promise<void> {
   const explicitCountryCustomer = rows('customers', 'country_code', "id = 'cust-demo-1'")[0];
   assert.equal(explicitCountryCustomer.country_code, '+91', 'explicit country selection is used, not derived from the Spanish UI language');
 
+  resetDatabase();
+  seedSetupProfile(getDatabase(), 'demo', 'qsr', 'nl', 'IN');
+  const dutchCustomers = rows('customers', 'id, phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id");
+  assert.deepEqual(
+    dutchCustomers.map((customer: { id: string; phone: string; country_code: string }) => customer),
+    [
+      { id: 'cust-demo-1', phone: '+31612345678', country_code: '+31' },
+      { id: 'cust-demo-2', phone: '+31612345679', country_code: '+31' },
+      { id: 'cust-demo-3', phone: '+31612345680', country_code: '+31' },
+    ],
+    'Dutch demo phones remain valid E.164 when the selected store country differs',
+  );
+
   const filipinoArabicWarning = translate('fil', 'printWarnings.arabicShapingHint');
   assert.equal(filipinoArabicWarning.includes('Your printer'), false, 'Filipino Arabic warning is not mixed English/Filipino');
   assert.equal(filipinoArabicWarning.includes('I-enable'), false, 'Filipino Arabic warning uses localized imperative wording');

@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, parseRowJson, withTxn } from '../db';
 import { randomUUID } from 'crypto';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { notifyKdsUpdate } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 
@@ -75,7 +74,7 @@ function normalizeTableCapacity(value: unknown): number | null {
   return Number.isInteger(normalized) && normalized > 0 ? normalized : null;
 }
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', requirePermission('tables.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = 'SELECT * FROM tables WHERE 1=1';
@@ -104,7 +103,7 @@ router.get('/', (req: Request, res: Response) => {
     query += ' ORDER BY number';
 
     const rows = db.prepare(query).all(...params);
-    const includeReservationCustomer = hasRole((req as Request & { user?: { role?: string } }).user?.role, ROLE_ACCESS.sales);
+    const includeReservationCustomer = hasPermission((req as Request & { user?: { userId?: string } }).user?.userId || '', 'customers.view');
     // Normalize: frontend expects `name`, schema column is `number`
     const tables = rows.map((t: any) => tableShape(db, t, activeOrderForTable(db, t.id), includeReservationCustomer));
     res.json({ tables });
@@ -114,7 +113,7 @@ router.get('/', (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', requirePermission('tables.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
@@ -123,7 +122,7 @@ router.get('/:id', (req: Request, res: Response) => {
     }
 
     const activeOrder = activeOrderForTable(db, req.params.id as string);
-    const includeReservationCustomer = hasRole((req as Request & { user?: { role?: string } }).user?.role, ROLE_ACCESS.sales);
+    const includeReservationCustomer = hasPermission((req as Request & { user?: { userId?: string } }).user?.userId || '', 'customers.view');
 
     // Normalize: frontend expects `name`, schema column is `number`
     res.json({ table: tableShape(db, table as any, activeOrder, includeReservationCustomer) });
@@ -135,7 +134,7 @@ router.get('/:id', (req: Request, res: Response) => {
 
 // Rename a floor across every table. Renaming to an existing floor name merges
 // every row from `:name` into the target in one UPDATE. Issue #646.
-router.patch('/floors/:name', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.patch('/floors/:name', requirePermission('tables.manage'), (req: Request, res: Response) => {
   try {
     const oldName = String(req.params.name || '');
     if (!oldName) {
@@ -164,7 +163,7 @@ router.patch('/floors/:name', requireRole(...ROLE_ACCESS.ownerManager), (req: Re
 
 // Remove a floor label from every table that uses it; tables stay and fall
 // back into the Unassigned bucket. Issue #646.
-router.delete('/floors/:name', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.delete('/floors/:name', requirePermission('tables.manage'), (req: Request, res: Response) => {
   try {
     const name = String(req.params.name || '');
     if (!name) {
@@ -184,7 +183,7 @@ router.delete('/floors/:name', requireRole(...ROLE_ACCESS.ownerManager), (req: R
   }
 });
 
-router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/', requirePermission('tables.manage'), (req: Request, res: Response) => {
   try {
     // Accept `number` (schema column) or `name` (legacy frontend field)
     const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
@@ -245,7 +244,7 @@ function normalizePositionCoord(value: unknown): number | null | undefined {
   return Number.isFinite(n) && n >= 0 && n <= 100 ? n : undefined;
 }
 
-router.patch('/positions', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.patch('/positions', requirePermission('tables.manage'), (req: Request, res: Response) => {
   try {
     const raw = req.body?.positions;
     if (!Array.isArray(raw)) {
@@ -297,7 +296,7 @@ router.patch('/positions', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
   }
 });
 
-router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.put('/:id', requirePermission('tables.manage'), (req: Request, res: Response) => {
   try {
     const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
     const has = (key: string) => Object.prototype.hasOwnProperty.call(req.body, key);
@@ -368,7 +367,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
   }
 });
 
-router.post('/:id/deactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/deactivate', requirePermission('tables.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
@@ -395,7 +394,7 @@ router.post('/:id/deactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: R
   }
 });
 
-router.post('/:id/reactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/reactivate', requirePermission('tables.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
@@ -415,7 +414,7 @@ router.post('/:id/reactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: R
   }
 });
 
-router.post('/:id/move-order', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
+router.post('/:id/move-order', requirePermission('tables.orders.move'), (req: Request, res: Response) => {
   try {
     const sourceTableId = req.params.id as string;
     const { target_table_id, order_id } = req.body;
@@ -496,7 +495,7 @@ router.post('/:id/move-order', requireRole(...ROLE_ACCESS.sales), (req: Request,
   }
 });
 
-router.patch('/:id/status', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.patch('/:id/status', requirePermission('tables.manage'), (req: Request, res: Response) => {
   try {
     const { status } = req.body;
     const reservationCustomerId = req.body.reservation_customer_id;

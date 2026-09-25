@@ -1,12 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder } from '../db';
-import { requireRole, requireKdsEnabled } from '../middleware/security';
+import { requireKdsEnabled } from '../middleware/security';
+import { requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { parseCategoryIds } from './auth';
 
 const router = Router();
 
-router.use(requireRole(...ROLE_ACCESS.kitchen));
+router.use(requirePermission('kitchen.use'));
 router.use(requireKdsEnabled);
 
 // Query active kitchen orders using indexed UNION query across order and item statuses.

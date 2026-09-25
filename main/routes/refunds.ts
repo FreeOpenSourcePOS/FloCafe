@@ -1,8 +1,7 @@
 import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, withTxn } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import { checkPinRateLimit } from './orders';
 import { createRefund, getTenantCurrency, RefundRequest } from '../services/refund';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
@@ -52,7 +51,7 @@ function refundAmountMinorUnits(value: unknown, currency: string): number {
   return minorUnits;
 }
 
-router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/', requirePermission('refunds.initiate'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const billId = body.bill_id;
@@ -117,7 +116,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
   }
 });
 
-router.get('/', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.get('/', requirePermission('refunds.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = 'SELECT * FROM refunds WHERE 1=1';

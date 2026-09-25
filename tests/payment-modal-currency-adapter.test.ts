@@ -438,7 +438,8 @@ async function runCatalogSaveBoundaryTests() {
     '@/hooks/useFormatCurrency': { useFormatCurrency: () => (amount: number) => String(amount) },
     'react-hot-toast': { __esModule: true, default: { success: () => undefined, error: () => undefined } },
     'use-intl': { useTranslations: (namespace: string) => translate(namespace) },
-    '@shared/role-permissions': { ROLE_ACCESS: { ownerManager: ['owner', 'manager'] }, hasRole: () => true },
+    '@shared/role-permissions': { ROLE_ACCESS: { ownerManager: ['owner', 'manager'] }, hasRole: () => true, isRole: () => true },
+    '@shared/permissions': { permissionDefaultAllows: () => true },
     'lucide-react': { Plus: Icon, Pencil: Icon, Trash2: Icon, X: Icon, Package: Icon, Folder: Icon, Puzzle: Icon, FileSpreadsheet: Icon, Download: Icon, Upload: Icon, CheckCircle: Icon, AlertCircle: Icon, AlertTriangle: Icon, ChevronDown: Icon, ChevronRight: Icon },
   };
   const originalLoad = moduleApi._load;

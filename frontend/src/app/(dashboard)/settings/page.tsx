@@ -54,7 +54,7 @@ import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
-import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { tenantCan } from '@/lib/permissions';
 
 
 const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
@@ -260,9 +260,12 @@ export default function SettingsPage() {
   const tRestore = useTranslations('restore');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
-  const isAdmin = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
-  const isOwner = hasRole(currentTenant?.role, ROLE_ACCESS.owner);
-  const canViewTaxConfiguration = isAdmin;
+  const isAdmin = tenantCan(currentTenant, 'settings.manage');
+  const isOwner = tenantCan(currentTenant, 'cloud.account.manage');
+  const canManageDatabase = tenantCan(currentTenant, 'database.manage');
+  const canManageTaxPacks = tenantCan(currentTenant, 'tax-packs.manage');
+  const canViewTaxConfiguration = tenantCan(currentTenant, 'tax-packs.view-test');
+  const canManageMobileAccess = tenantCan(currentTenant, 'mobile-access.manage');
   const { confirm, ConfirmDialog } = useConfirm();
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -2893,8 +2896,12 @@ export default function SettingsPage() {
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-border">
               <p className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t('navGroupData')}</p>
             </div>
-            <SettingsNavItem label={t('tabMobileAccess')} value="mobile-access" active={activeTab} onClick={handleSettingsTabChange} />
-            <SettingsNavItem label={t('tabBackupData')} value="data" active={activeTab} onClick={handleSettingsTabChange} />
+            {canManageMobileAccess && (
+              <SettingsNavItem label={t('tabMobileAccess')} value="mobile-access" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
+            {canManageDatabase && (
+              <SettingsNavItem label={t('tabBackupData')} value="data" active={activeTab} onClick={handleSettingsTabChange} />
+            )}
             <SettingsNavItem label={t('tabOrderflow')} value="orderflow" active={activeTab} onClick={handleSettingsTabChange} />
 
             {/* Account group */}
@@ -2914,7 +2921,7 @@ export default function SettingsPage() {
         <TabsContent value="store">
           <GeneralSettingsTab
             isAdmin={isAdmin}
-            isOwner={isOwner}
+            isOwner={canManageDatabase}
             form={form}
             setForm={setForm}
             taxIdFormat={taxIdFormat}
@@ -2982,7 +2989,7 @@ export default function SettingsPage() {
 
         {canViewTaxConfiguration && (
           <TabsContent value="tax">
-            <TaxConfigurationPanel isOwner={isOwner} />
+            <TaxConfigurationPanel isOwner={canManageTaxPacks} />
           </TabsContent>
         )}
 
@@ -3958,7 +3965,7 @@ export default function SettingsPage() {
         {/* Backup & Data tab - database tools only */}
         <TabsContent value="data">
           <DatabaseSettingsTab
-            isOwner={isOwner}
+            isOwner={canManageDatabase}
             masterPinStatus={masterPinStatus}
             backups={backups}
             backupsLoading={backupsLoading}
@@ -4014,6 +4021,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="mobile-access">
+          {canManageMobileAccess ? (
           <SettingsTabShell title={t('tabMobileAccess')}>
 
             {/* FloAdmin — reporting sync */}
@@ -4244,6 +4252,12 @@ export default function SettingsPage() {
               )}
             </div>
           </SettingsTabShell>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-24 text-center">
+              <h1 className="text-xl font-bold text-foreground mb-2">{t('tabMobileAccess')}</h1>
+              <p className="text-muted-foreground">{t('noAccessMobileAccess')}</p>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="orderflow">

@@ -59,6 +59,13 @@ async function main() {
     ).run(`cust-pag-${i}`, `Pagination Customer ${i}`, `+91900000000${i}`, now(), now());
   }
 
+  // requirePermission() resolves effective permissions from a real users row
+  // keyed by the JWT's userId — the token alone is not authoritative.
+  db.prepare(
+    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES ('owner-pag-001', 'owner-pag-001', 'owner@pag.test', 'unused', 'owner', 1, ?, ?)`
+  ).run(now(), now());
+
   const ownerAuth = makeToken('owner-pag-001', 'owner', 'owner@pag.test');
   const app = createApp({ '/api/customers': customerRoutes });
 

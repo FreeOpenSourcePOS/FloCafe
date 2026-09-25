@@ -86,7 +86,7 @@ function LoginContent() {
   useEffect(() => {
     // Navigate to landing page once user and tenant are selected (auto-selection handled in auth store).
     if (user && currentTenant) {
-      router.push(getLandingPage());
+      router.push(getLandingPage(currentTenant));
     }
   }, [user, currentTenant, router]);
 

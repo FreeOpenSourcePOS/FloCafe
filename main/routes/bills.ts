@@ -17,9 +17,9 @@ import { asyncHandler } from '../middleware/async-handler';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { cloudSync } from '../services/cloud-sync';
-import { requireRole } from '../middleware/security';
+import { hasPermission, requirePermission } from '../services/authorization';
+import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getOpenSession, isCashTender, NO_CASH_SESSION_ID, requireOpenSessionForCashTender } from '../services/shift-session-gate';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
 import {
   calculateConfiguredChargeTaxes,
   combineItemAndChargeTaxes,
@@ -36,7 +36,6 @@ import {
 } from '../countries';
 
 const router = Router();
-const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 
 export function getTenantCurrency(): string {
   // '' rather than a default country code: resolveTenantCurrency throws
@@ -400,7 +399,7 @@ function parsePaginationInteger(value: unknown, defaultValue: number): number | 
   return parsed;
 }
 
-router.get('/', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.get('/', requirePermission('bills.read'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = 'SELECT * FROM bills WHERE 1=1';
@@ -463,7 +462,7 @@ router.get('/', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, 
   }
 });
 
-router.get('/:id', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.get('/:id', requirePermission('bills.read'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const bill = addBillLoyaltyFields(db, parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id)));
@@ -482,7 +481,7 @@ router.get('/:id', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Reques
 });
 
 // Get bill by order ID
-router.get('/order/:orderId', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.get('/order/:orderId', requirePermission('bills.read'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const bill = addBillLoyaltyFields(db, parseRowJson(db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY created_at DESC LIMIT 1').get(req.params.orderId)));
@@ -500,7 +499,7 @@ router.get('/order/:orderId', requireRole(...ROLE_ACCESS.ownerManagerCashier), (
   }
 });
 
-router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.post('/generate', requirePermission('bills.generate'), (req: Request, res: Response) => {
   try {
     const { order_id } = req.body;
 
@@ -1507,7 +1506,7 @@ export function syncUnpaidBillsForOrder(
 }
 
 // Split unpaid dine-in bill into independently payable guest checks.
-router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.post('/:id/split-check', requirePermission('bills.generate'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     if (getSettingValue('split_checks_enabled') !== 'true') return res.status(403).json({ error: 'Split checks are not enabled' });
@@ -2051,7 +2050,7 @@ function applyPaymentBatch(
   return result;
 }
 
-router.post('/:id/payment', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.post('/:id/payment', requirePermission('payments.take'), (req: Request, res: Response) => {
   try {
     const payment = req.body;
     if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
@@ -2077,7 +2076,7 @@ router.post('/:id/payment', requireRole(...ROLE_ACCESS.ownerManagerCashier), (re
 });
 
 // Atomic split-payment batch endpoint applying payment lines in a single transaction.
-router.post('/:id/payments', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.post('/:id/payments', requirePermission('payments.take'), (req: Request, res: Response) => {
   try {
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -2121,7 +2120,7 @@ router.post('/:id/payments', requireRole(...ROLE_ACCESS.ownerManagerCashier), (r
   }
 });
 
-router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (req: Request, res: Response) => {
   try {
     const { type, value, reason } = req.body;
 
@@ -2168,15 +2167,15 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
       const managerId = req.body.manager_id || req.body.user_id;
       let user: any = null;
       if (managerId) {
-        const candidate = db.prepare(`SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS}) AND is_active = 1`).get(managerId, ...ROLE_ACCESS.ownerManager) as any;
-        if (candidate && verifyPin(candidate.pin_hash, override_pin)) {
+        const candidate = db.prepare('SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND is_active = 1').get(managerId) as any;
+        if (candidate && hasRole(candidate.role, ROLE_ACCESS.ownerManager) && hasPermission(candidate.id, 'bills.discount.apply') && verifyPin(candidate.pin_hash, override_pin)) {
           user = candidate;
         }
       }
       if (!user) {
-        const managers = db.prepare(`SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS}) AND is_active = 1`).all(...ROLE_ACCESS.ownerManager) as any[];
+        const managers = db.prepare('SELECT * FROM users WHERE pin_hash IS NOT NULL AND is_active = 1').all() as any[];
         for (const u of managers) {
-          if (verifyPin(u.pin_hash, override_pin)) {
+          if (hasRole(u.role, ROLE_ACCESS.ownerManager) && hasPermission(u.id, 'bills.discount.apply') && verifyPin(u.pin_hash, override_pin)) {
             user = u;
             break;
           }
@@ -2305,7 +2304,7 @@ router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req
   }
 });
 
-router.post('/:id/markPrinted', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/markPrinted', requirePermission('bills.discount.apply'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id);
@@ -2325,7 +2324,7 @@ router.post('/:id/markPrinted', requireRole(...ROLE_ACCESS.ownerManager), (req: 
 });
 
 // POST /api/bills/:id/print - Print or reprint bill
-router.post('/:id/print', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
+router.post('/:id/print', requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { print_type } = req.body;
 
@@ -2347,7 +2346,7 @@ router.post('/:id/print', requireRole(...ROLE_ACCESS.ownerManagerCashier), async
 }));
 
 // GET /api/bills/:id/print-history - Get print history for bill
-router.get('/:id/print-history', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.get('/:id/print-history', requirePermission('bills.read'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const prints = db.prepare(`

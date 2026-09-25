@@ -1699,6 +1699,8 @@
     "navGroupOperations": "Mga Operasyon",
     "newPin": "Bagong PIN",
     "no": "Hindi",
+    "noAccessDatabase": "Wala kang access sa mga tool sa backup at database.",
+    "noAccessMobileAccess": "Wala kang access sa mga setting ng mobile access.",
     "noAppsToShow": "Wala pang mga apps to show.",
     "noCategoriesYet": "Wala pang mga categories. Magdagdag categories under Mga Produkto first.",
     "noChefsYet": "Wala pang aktibong chef account. Magdagdag muna ng chef sa Staff.",
@@ -2211,7 +2213,32 @@
       "serverApp": "Gamitin ang standalone Server App",
       "support": "Makipag-ugnayan sa suporta at tingnan ang diagnostics",
       "inventoryManage": "Pamahalaan ang mga supply at recipe"
-    }
+    },
+    "editorSubtitle": "I-configure ang mga default ng tungkulin o gumawa ng eksepsiyon para sa isang miyembro ng staff. Magkakabisa ang mga pagbabago sa susunod nilang aksyon.",
+    "roleDefaultsTab": "Mga default ng tungkulin",
+    "staffExceptionTab": "Eksepsiyon ng staff",
+    "selectStaffPlaceholder": "Pumili ng miyembro ng staff",
+    "selectStaffEmptyState": "Pumili ng miyembro ng staff para i-edit ang kanilang mga pahintulot.",
+    "effectiveHeader": "Epektibo",
+    "overrideHeader": "Pag-override",
+    "inherit": "Magmana",
+    "allow": "Payagan",
+    "deny": "Tanggihan",
+    "protected": "Protektado",
+    "editorFooterNote": "Patuloy na ipinapatupad ang mga sensitibong panuntunan sa negosyo tulad ng approval PIN, ang huling aktibong may-ari, mga deadline sa refund, at pagtatalaga sa mga istasyon ng kusina."
+  },
+  "permissionAudit": {
+    "title": "Kasaysayan ng pagbabago sa pahintulot",
+    "subtitle": "Bawat pagbabagong ginawa mula sa mga pahintulot ng tungkulin sa itaas, ang pinakabago muna.",
+    "columnTime": "Oras",
+    "columnActor": "Gumawa",
+    "columnTarget": "Paksa",
+    "columnPermission": "Pahintulot",
+    "columnChange": "Pagbabago",
+    "targetTypeRole": "Tungkulin",
+    "targetTypeUser": "Kawani",
+    "empty": "Wala pang pagbabago sa pahintulot.",
+    "loadMore": "Mag-load pa"
   },
   "support": {
     "askAi": "Magtanong sa AI",

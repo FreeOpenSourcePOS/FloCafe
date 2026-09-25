@@ -206,20 +206,20 @@ async function main() {
   const lastOwner = db.prepare('SELECT role FROM users WHERE id = ?').get('owner-145') as any;
   assertEqual(lastOwner.role, 'owner', 'last active owner keeps the owner role after a rejected demotion');
 
-  seedUser(db, 'owner-145-second', 'owner');
+  const secondOwnerAuth = seedUser(db, 'owner-145-second', 'owner');
   result = await request(app).put('/api/staff/owner-145').set(ownerAuth).send({ role: 'cashier' });
   assertEqual(result.status, 200, 'owner can demote after another active owner exists');
 
   console.log('\n── Owner full access ───────────────────────────────────────────');
-  result = await request(app).post('/api/staff').set(ownerAuth).send({
+  result = await request(app).post('/api/staff').set(secondOwnerAuth).send({
     name: 'Owner-created manager', email: 'owner-created-manager@test.local', password: 'StrongPass1', role: 'manager', pin: '9876',
   });
   assertEqual(result.status, 201, 'owner can create a manager with a valid PIN');
   assertEqual(result.body.staff.has_pin, 1, 'staff responses expose has_pin for configured PINs');
 
-  result = await request(app).post('/api/staff/cashier-target-145/deactivate').set(ownerAuth);
+  result = await request(app).post('/api/staff/cashier-target-145/deactivate').set(secondOwnerAuth);
   assertEqual(result.status, 200, 'owner can deactivate operational staff');
-  result = await request(app).post('/api/staff/cashier-target-145/reactivate').set(ownerAuth);
+  result = await request(app).post('/api/staff/cashier-target-145/reactivate').set(secondOwnerAuth);
   assertEqual(result.status, 200, 'owner can reactivate operational staff');
 
   const results = getResults();

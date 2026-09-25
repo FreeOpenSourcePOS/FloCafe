@@ -8,6 +8,7 @@ import { readCountryProvenance } from './country-provenance';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
 import { getTenantCurrency } from './refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
+import { getActiveCountryPack, isTaxModuleActiveForCountry } from './tax';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
@@ -544,6 +545,10 @@ export class CloudSyncService {
     ).get() as { name?: string } | undefined;
     // Use country provenance to avoid reporting seeded default country values.
     const provenance = readCountryProvenance();
+    // Tax plugin is only meaningful alongside a confirmed country and an actually active pack.
+    const taxPack = provenance.country && isTaxModuleActiveForCountry(provenance.country)
+      ? (() => { const pack = getActiveCountryPack(provenance.country as string); return { id: pack.id, publisher: pack.publisher }; })()
+      : null;
     const body = {
       pos_hash: posHash,
       device_secret_hash: sha256Hex(deviceSecret),
@@ -564,6 +569,8 @@ export class CloudSyncService {
         os_timezone: provenance.osTimezone,
         timezone: settings.timezone || '',
         currency: settings.currency || '',
+        language: settings.language || '',
+        tax_pack: taxPack,
         address: settings.business_address || '',
       },
       requested_at: new Date().toISOString(),

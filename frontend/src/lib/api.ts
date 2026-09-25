@@ -38,6 +38,9 @@ api.interceptors.response.use(
         window.location.href = '/auth/login';
       }
     }
+    if (error.response?.status === 403 && error.response?.data?.code === 'permission_denied' && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('flo:authorization-denied'));
+    }
     return Promise.reject(error);
   }
 );

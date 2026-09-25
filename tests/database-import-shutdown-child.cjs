@@ -48,6 +48,12 @@ const mode = process.argv[2] || 'import';
 async function run() {
   dbModule.initDatabase();
   const db = dbModule.getDatabase();
+  // requirePermission() resolves effective permissions from a real users row
+  // keyed by req.user.userId — the claim alone is not authoritative.
+  db.prepare(
+    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES ('owner', 'Owner', 'owner@test.local', 'unused', 'owner', 1, ?, ?)`
+  ).run(dbModule.now(), dbModule.now());
   const { databaseRoutes } = require('../main/routes/database');
   const app = express();
   app.use(express.json());

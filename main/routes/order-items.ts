@@ -3,6 +3,7 @@ import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUs
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
 import { requireKdsEnabled, isTokenRevoked, isTokenStale } from '../middleware/security';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 
 const router = Router();
@@ -15,10 +16,10 @@ interface OrderItemRow {
 }
 
 // PATCH /api/order-items/:id/status — update a single item's kitchen status
-router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => {
+router.patch('/:id/status', requirePermission('kitchen.status.update'), requireKdsEnabled, (req: Request, res: Response) => {
   try {
-    const role = (req as any).user?.role;
-    if (!hasRole(role, ROLE_ACCESS.kitchen)) {
+    const requestUserId = (req as any).user?.userId;
+    if (!requestUserId || !hasPermission(requestUserId, 'kitchen.status.update')) {
       return res.status(403).json({ error: 'Only chef, manager, or owner can update item status' });
     }
 
@@ -61,7 +62,7 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
     const orderData = withTxn(() => {
       const liveUser = db.prepare('SELECT role, category_ids, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null; tokens_valid_after: string | null } | undefined;
       const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
-      if (!liveUser || isTokenRevoked(token) || isTokenStale((req as any).user?.iat, liveUser.tokens_valid_after) || !hasRole(liveUser.role, ROLE_ACCESS.kitchen)) throw new Error('USER_FORBIDDEN');
+      if (!liveUser || isTokenRevoked(token) || isTokenStale((req as any).user?.iat, liveUser.tokens_valid_after) || !hasPermission(userId, 'kitchen.status.update')) throw new Error('USER_FORBIDDEN');
       categoryIds = hasRole(liveUser.role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(liveUser.category_ids);
       const liveStationIds = getUserKdsStationIds(db, userId);
       const liveAssignments = hasUserKdsStationAssignments(db, userId);

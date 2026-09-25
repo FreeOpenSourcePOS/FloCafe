@@ -131,7 +131,7 @@ async function main() {
   console.log('  theme_mode Write-Path Tests (gh-513)');
   console.log('═══════════════════════════════════════════════════════════\n');
 
-  const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
+  const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
   const { settingsRoutes } = require('../main/routes/settings');
   const { registerIpcHandlers } = require('../main/ipc');
 
@@ -145,15 +145,22 @@ async function main() {
     throw e;
   }
 
+  // requirePermission() resolves effective permissions from a real users row
+  // keyed by req.user.userId — seed an active owner so settings checks pass.
+  getDatabase().prepare(`
+    INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    VALUES ('theme-mode-owner', 'Test Owner', 'theme-mode-owner@test.local', 'unused', 'owner', 1, ?, ?)
+    ON CONFLICT(id) DO NOTHING
+  `).run(now(), now());
+
   // Register IPC handlers against the mocked ipcMain (printer-ipc pattern).
   registerIpcHandlers();
 
   // Mount a minimal Express app with the real settings router + auth-mock
-  // (owner role satisfies requireRole(...ROLE_ACCESS.ownerManager)).
   const app = express();
   app.use(express.json());
   app.use((req: any, _res: any, next: any) => {
-    req.user = { id: 1, role: 'owner', name: 'Test Owner' };
+    req.user = { userId: 'theme-mode-owner', role: 'owner', name: 'Test Owner' };
     next();
   });
   app.use('/api/settings', settingsRoutes);

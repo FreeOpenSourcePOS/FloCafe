@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import { InventoryMovementType, listInventoryMovements } from '../services/inventory';
 
 const router = Router();
@@ -15,7 +14,7 @@ function queryString(value: unknown, field: string): string | undefined {
   return value.trim();
 }
 
-router.get('/movements', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/movements', requirePermission('inventory.view'), (req: Request, res: Response) => {
   try {
     const productId = queryString(req.query.product_id, 'product_id');
     const referenceType = queryString(req.query.reference_type, 'reference_type');

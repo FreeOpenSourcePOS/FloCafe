@@ -154,6 +154,17 @@ async function main() {
       assert.equal(me.body.user.role, role, `/api/auth/me returns ${role} role`);
     }
 
+    const liveServerLogin = await postJson(baseUrl, '/api/auth/login', {
+      email: 'server@server-app.test', password: 'ServerPass123!',
+    });
+    db.prepare(`INSERT INTO user_permission_overrides
+      (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES ('server-app-server', 'server-app.use', 'deny', 'server-app-owner', ?, ?)`)
+      .run(now(), now());
+    const deniedLiveSession = await getJson(baseUrl, '/api/auth/me', liveServerLogin.body.access_token);
+    assert.equal(deniedLiveSession.status, 403, 'Server App permission denial applies to an existing session immediately');
+    db.prepare("DELETE FROM user_permission_overrides WHERE user_id = 'server-app-server'").run();
+
     // Protected forwarded routes must rate-limit LAN clients before auth or downstream work.
     const customerResponses = await Promise.all(
       Array.from({ length: 151 }, () => postJson(baseUrl, '/api/customers', {})),

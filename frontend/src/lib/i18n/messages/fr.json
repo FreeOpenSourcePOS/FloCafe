@@ -1699,6 +1699,8 @@
     "navGroupOperations": "Opérations",
     "newPin": "Nouveau code PIN",
     "no": "Non",
+    "noAccessDatabase": "Vous n'avez pas accès aux outils de sauvegarde et de base de données.",
+    "noAccessMobileAccess": "Vous n'avez pas accès aux paramètres d'accès mobile.",
     "noAppsToShow": "Aucune application à afficher pour le moment.",
     "noCategoriesYet": "Aucune catégorie pour le moment. Ajoutez d’abord des catégories dans Produits.",
     "noChefsYet": "Aucun compte chef actif. Ajoutez d’abord un chef dans Personnel.",
@@ -2211,7 +2213,32 @@
       "serverApp": "Utiliser l’application serveur autonome",
       "support": "Contacter l’assistance et afficher les diagnostics",
       "inventoryManage": "Gérer les approvisionnements et les recettes"
-    }
+    },
+    "editorSubtitle": "Configurez les permissions par défaut d'un rôle ou créez une exception pour un membre du personnel. Les modifications s'appliquent à sa prochaine action.",
+    "roleDefaultsTab": "Permissions du rôle",
+    "staffExceptionTab": "Exception du personnel",
+    "selectStaffPlaceholder": "Sélectionner un membre du personnel",
+    "selectStaffEmptyState": "Sélectionnez un membre du personnel pour modifier ses permissions.",
+    "effectiveHeader": "Effectif",
+    "overrideHeader": "Substitution",
+    "inherit": "Hériter",
+    "allow": "Autoriser",
+    "deny": "Refuser",
+    "protected": "Protégé",
+    "editorFooterNote": "Les règles métier sensibles, comme les codes PIN d'approbation, le dernier propriétaire actif, les délais de remboursement et les affectations de postes de cuisine, continuent de s'appliquer."
+  },
+  "permissionAudit": {
+    "title": "Historique des modifications de permissions",
+    "subtitle": "Chaque modification effectuée depuis les permissions de rôle ci-dessus, la plus récente en premier.",
+    "columnTime": "Heure",
+    "columnActor": "Auteur",
+    "columnTarget": "Cible",
+    "columnPermission": "Autorisation",
+    "columnChange": "Modification",
+    "targetTypeRole": "Rôle",
+    "targetTypeUser": "Personnel",
+    "empty": "Aucune modification de permission pour le moment.",
+    "loadMore": "Charger plus"
   },
   "support": {
     "askAi": "Demander à l’IA",

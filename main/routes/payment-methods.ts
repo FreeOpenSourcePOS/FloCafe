@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, withTxn } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
+import { requirePermission, hasPermission } from '../services/authorization';
 import { sendEvent } from '../services/telemetry';
 
 const router = Router();
@@ -32,16 +31,16 @@ function list(includeInactive = false) {
   return rows.map((row) => ({ ...row, is_active: Boolean(row.is_active), ...(includeInactive ? { usage_count: countUsage(row.id) } : {}) }));
 }
 
-router.get('/merge-history', requireRole(...ROLE_ACCESS.ownerManager), (_req, res) => {
+router.get('/merge-history', requirePermission('payment-methods.manage'), (_req, res) => {
   res.json({ merges: getDatabase().prepare('SELECT * FROM payment_method_merges ORDER BY merged_at DESC, id DESC LIMIT 30').all() });
 });
 
-router.get('/', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
-  const includeInactive = req.query.include_inactive === 'true' && hasRole((req as any).user.role, ROLE_ACCESS.ownerManager);
+router.get('/', requirePermission('payment-methods.view'), (req: Request, res: Response) => {
+  const includeInactive = req.query.include_inactive === 'true' && hasPermission((req as any).user.userId, 'payment-methods.manage');
   res.json({ payment_methods: list(includeInactive) });
 });
 
-router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/', requirePermission('payment-methods.manage'), (req: Request, res: Response) => {
   try {
     const name = normalizeName(req.body?.name);
     const db = getDatabase();
@@ -56,7 +55,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
   }
 });
 
-router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.put('/:id', requirePermission('payment-methods.manage'), (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     const db = getDatabase();
@@ -76,7 +75,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
   }
 });
 
-router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.delete('/:id', requirePermission('payment-methods.manage'), (req: Request, res: Response) => {
   const id = Number(req.params.id);
   const db = getDatabase();
   if (!db.prepare('SELECT 1 FROM payment_methods WHERE id = ?').get(id)) return res.status(404).json({ error: 'Payment method not found' });
@@ -86,7 +85,7 @@ router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, r
   res.json({ success: true });
 });
 
-router.post('/:id/merge', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/merge', requirePermission('payment-methods.manage'), (req: Request, res: Response) => {
   try {
     const sourceId = Number(req.params.id);
     const targetType = req.body?.target_type === 'card' ? 'card' : 'custom';

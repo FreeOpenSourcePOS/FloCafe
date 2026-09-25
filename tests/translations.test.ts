@@ -62,6 +62,9 @@
  *  23. Thai safeguards: th.json values never contain placeholders, malformed
  *      replacement characters, or non-NFC text, and only documented shared
  *      values may remain identical to English.
+ *  24. Nepali safeguards: ne.json values never contain placeholders, malformed
+ *      replacement characters, or non-NFC text, and only documented shared
+ *      values may remain identical to English.
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -1606,6 +1609,42 @@ function thFallbackErrors(thFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Nepali translation safeguards. */
+const NE_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', 'dashboard.exportCsv', 'dashboard.ticketMethodCount',
+  'kds.emptyColumn', 'nav.kds', 'nav.pos', 'pos.addonPrice', 'pos.loadingEllipsis',
+  'pos.tagCount', 'pos.taxLine', 'printTest.escpos', 'print.hsn',
+  'print.zReport.paymentCount', 'products.addonSelectionRange', 'products.fieldSku',
+  'products.saleUnitCl', 'products.saleUnitFlOz', 'products.saleUnitG',
+  'products.saleUnitKg', 'products.saleUnitL', 'products.saleUnitLb',
+  'products.saleUnitMl', 'products.saleUnitOz', 'products.skuLabel',
+  'serverApp.emailPlaceholder', 'settings.apiKeyInputPlaceholder', 'settings.connectionUsb',
+  'settings.ipAddressPlaceholder', 'settings.kds', 'settings.languageEs',
+  'settings.paperWidth58', 'settings.paymentMethodUpi', 'settings.portPlaceholder',
+  'settings.registrationLastError', 'settings.revflo', 'setup.finedineLabel',
+  'setup.pinLabel', 'setup.qsrLabel', 'tax.auditCreateOverride',
+  'tax.auditUpdateOverride', 'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function neFallbackErrors(neFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const neVal = neFlat[k];
+    if (neVal === undefined) continue;
+    if (neVal.startsWith('[NE]') || neVal.startsWith('[TODO]')) {
+      errors.push(`ne.json ${k} — placeholder prefix found: "${neVal}"`);
+    } else if (neVal === enFlat[k] && !NE_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`ne.json ${k} — identical to English value (renders as English for Nepali users)`);
+    } else if (neVal !== neVal.normalize('NFC')) {
+      errors.push(`ne.json ${k} — value must use Unicode NFC`);
+    } else if (neVal.includes('\uFFFD')) {
+      errors.push(`ne.json ${k} — value contains a Unicode replacement character`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -2118,6 +2157,27 @@ async function run(): Promise<void> {
   assert(!thMessages['setup.emailCommunicationDescription'].includes('ปิดได้ในขั้นตอนนี้'), 'th.json must not tell Thai users that essential notices can be disabled at setup');
   console.log(`  ✓ no untranslated th.json values (${TH_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
 
+  // 23. ne.json values must be complete, NFC text without malformed characters.
+  const neMessages = loadedStrings.get('ne');
+  if (!neMessages) throw new Error('languages registry must include the maintained ne locale');
+  const neErrors = neFallbackErrors(neMessages, loadedStrings.get('en')!);
+  if (neErrors.length) {
+    console.error(`\nne.json values with errors (${neErrors.length}):`);
+    for (const e of neErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'ne.json contains untranslated, placeholder, non-NFC, or replacement-character values');
+  }
+  assert(neMessages['receipt.cashReceived'] === 'नगद प्राप्त भयो', 'ne.json receipt.cashReceived must preserve the canonical cash-received label');
+  assert(neMessages['pos.tagVeg'] === 'शाकाहारी' && neMessages['products.tagVeg'] === 'शाकाहारी', 'ne.json vegetarian product tags must use the vegetarian Nepali term');
+  assert(neMessages['pos.tagNonVeg'] === 'मासाहारी' && neMessages['products.tagNonVeg'] === 'मासाहारी', 'ne.json non-vegetarian product tags must use the Nepali non-vegetarian term, not an unrelated homograph');
+  assert(neMessages['orders.takeaway'] === neMessages['pos.orderTypeTakeaway'], 'ne.json takeaway labels must match the reviewed Nepali pickup term');
+  assert(neMessages['dashboard.payIn'] === 'नगद जम्मा' && neMessages['dashboard.payOut'] === 'नगद निकासी', 'ne.json cash-movement labels must match the Z-report terminology');
+  assert(neMessages['print.zReport.payIn'] === neMessages['dashboard.payIn'] && neMessages['print.zReport.payOut'] === neMessages['dashboard.payOut'], 'ne.json cash-movement labels must be identical on the dashboard and the Z-report');
+  // Nepali spells "again" with the Devanagari visarga; a plain ASCII colon there
+  // would render as a visibly wrong glyph on a thermal receipt.
+  assert(!Object.entries(neMessages).some(([, v]) => v.includes('पुन:')), 'ne.json must use the visarga in पुनः rather than a plain colon');
+  assert(Object.values(neMessages).some((v) => v.includes('पुनः')), 'ne.json must contain the visarga spelling of पुनः');
+  console.log(`  ✓ no untranslated ne.json values (${NE_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -2383,6 +2443,18 @@ function runNegativeTests(): void {
   expectDetected(
     'th: Unicode replacement character',
     thFallbackErrors({ 'a.b': 'กา�แฟ' }, { 'a.b': 'กาแฟ' }),
+  );
+  expectDetected(
+    'ne: English-identical value',
+    neFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'ne: placeholder prefix value',
+    neFallbackErrors({ 'a.b': '[NE] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'ne: Unicode replacement character',
+    neFallbackErrors({ 'a.b': 'क��ा' }, { 'a.b': 'काफी' }),
   );
 
   // 8. TypeScript key safety.

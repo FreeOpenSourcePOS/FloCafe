@@ -176,6 +176,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/vi.json'),
   },
+  ne: {
+    locale: 'ne-NP',
+    nativeName: 'नेपाली',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/ne.json'),
+  },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;

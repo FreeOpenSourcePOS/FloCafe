@@ -124,6 +124,7 @@ FloCafe includes UI translations for:
 - Albanian
 - Vietnamese
 - Thai
+- Nepali
 
 UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/architecture/internationalization.md).
 

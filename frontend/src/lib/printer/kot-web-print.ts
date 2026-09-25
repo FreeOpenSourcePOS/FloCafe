@@ -107,7 +107,7 @@ export function generateKotHtml(
   const padding = paperWidth === 58 ? '4px' : '6px';
   const paperWidthCss = paperWidth === 58 ? '58mm' : '80mm';
   const locale = LANGUAGES[lang]?.locale ?? 'en-US';
-  const fontFamily = lang === 'hi'
+  const fontFamily = lang === 'hi' || lang === 'ne'
     ? "'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Courier New', monospace"
     : lang === 'th'
     ? "'Noto Sans Thai', 'Leelawadee UI', Thonburi, 'Courier New', monospace"

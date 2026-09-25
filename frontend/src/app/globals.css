@@ -179,6 +179,37 @@ body:has(.flo-title-bar__fallback-controls) .flo-title-bar__safe-area {
   color: #ffffff;
 }
 
+/* Windows/Linux application menu: Electron never draws a menu bar for a
+ * frameless window, so the title bar renders the top-level labels and each
+ * click pops that entry's real submenu from the main-process menu. macOS
+ * renders nothing here and keeps its native menu bar. Logical properties keep
+ * the row on the inline-start edge for RTL locales; the buttons are already
+ * no-drag through the shared `.flo-title-bar button` rule above. */
+.flo-title-bar__menu {
+  gap: 0.125rem;
+}
+
+.flo-title-bar__menu-button {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  white-space: nowrap;
+}
+
+.flo-title-bar__menu-button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* Keep the centered business identity clear of the menu row. */
+.flo-title-bar:has(.flo-title-bar__menu) .flo-title-bar__identity {
+  max-inline-size: min(38vw, 20rem);
+}
+
 .flo-title-bar--root-drag {
   position: fixed;
   inset-block-start: 0;

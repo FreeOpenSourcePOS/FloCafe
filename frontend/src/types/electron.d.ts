@@ -3,6 +3,10 @@
 export interface ElectronAPI {
   // Menu
   onMenuAction: (callback: (action: string) => void) => (() => void);
+  // Windows/Linux title-bar menu row; macOS keeps its native menu bar and the
+  // main process answers with an empty entry list there.
+  getApplicationMenu: () => Promise<{ entries: ApplicationMenuEntry[] } | ElectronIpcError>;
+  openApplicationMenu: (key: string, x: number, y: number) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // Window controls
   windowAction: (action: WindowControlAction) => Promise<ElectronActionResult | ElectronIpcError>;
@@ -88,6 +92,12 @@ export interface ElectronIpcError {
 export interface ElectronActionResult {
   success: boolean;
   error?: string;
+}
+
+/** A top-level application-menu label rendered in the Windows/Linux title bar. */
+export interface ApplicationMenuEntry {
+  key: string;
+  label: string;
 }
 
 export interface ElectronDbSafeFixesResult {

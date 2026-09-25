@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import type {
+  ApplicationMenuEntry,
   DailySummary,
   ElectronAPI,
   ElectronActionResult,
@@ -22,6 +23,9 @@ export interface ElectronFixtureOptions {
   titleBarDocumentNonce?: string;
   focused?: boolean;
   api?: boolean;
+  /** Top-level entries the main-process menu would return; defaults to the
+   *  real non-macOS menu, empty on darwin. */
+  applicationMenuEntries?: ApplicationMenuEntry[];
 }
 
 interface SerializedElectronFixtureOptions {
@@ -31,21 +35,40 @@ interface SerializedElectronFixtureOptions {
   titleBarDocumentNonce: string;
   focused: boolean;
   api: boolean;
+  applicationMenuEntries: ApplicationMenuEntry[];
 }
 
 const DEFAULT_DOCUMENT_NONCE = '00000000-0000-4000-8000-000000000000';
+
+// Mirrors main/index.ts createMenu()'s non-macOS top-level set (plus the
+// dev-only Developer entry the desktop build shows in development).
+const DEFAULT_APPLICATION_MENU_ENTRIES: ApplicationMenuEntry[] = [
+  { key: '0', label: 'File' },
+  { key: '1', label: 'Edit' },
+  { key: '2', label: 'Orders' },
+  { key: '3', label: 'Reports' },
+  { key: '4', label: 'Settings' },
+  { key: '5', label: 'Window' },
+  { key: '6', label: 'Help' },
+  { key: '7', label: 'Developer' },
+];
 
 export async function injectElectronFixture(
   page: Page,
   options: ElectronFixtureOptions = {},
 ): Promise<void> {
+  const platform = options.platform ?? 'darwin';
   const fixture: SerializedElectronFixtureOptions = {
-    platform: options.platform ?? 'darwin',
+    platform,
     titleBarMode: options.titleBarMode ?? 'native-overlay',
     titleBarEpoch: options.titleBarEpoch ?? 1,
     titleBarDocumentNonce: options.titleBarDocumentNonce ?? DEFAULT_DOCUMENT_NONCE,
     focused: options.focused ?? true,
     api: options.api ?? true,
+    applicationMenuEntries:
+      options.applicationMenuEntries
+      // macOS keeps its authoritative native menu bar; main answers with none.
+      ?? (platform === 'darwin' ? [] : DEFAULT_APPLICATION_MENU_ENTRIES),
   };
 
   await page.addInitScript((config: SerializedElectronFixtureOptions) => {
@@ -95,10 +118,16 @@ export async function injectElectronFixture(
     };
     const masterPinStatus: ElectronMasterPinStatus = { available: false, isSet: false };
     const safeFixes: ElectronDbSafeFixesResult = { applied: [], skipped: [], errors: [] };
+    const openedMenuEntries: { key: string; x: number; y: number }[] = [];
 
     const api: ElectronAPI = {
       platform: config.platform ?? 'darwin',
       onMenuAction: () => () => {},
+      getApplicationMenu: async () => ({ entries: config.applicationMenuEntries }),
+      openApplicationMenu: async (key, x, y) => {
+        openedMenuEntries.push({ key, x, y });
+        return result;
+      },
       windowAction: async (action) => {
         actions.push(action);
         return result;
@@ -140,7 +169,7 @@ export async function injectElectronFixture(
     Object.defineProperty(window, 'electronAPI', { configurable: true, value: api });
     Object.defineProperty(window, '__floElectronFixture', {
       configurable: true,
-      value: { actions, status, ipcError },
+      value: { actions, status, ipcError, openedMenuEntries },
     });
     // Initial focus is explicit before application scripts execute. TitleBar
     // owns later focus/blur transitions on dashboard routes.
@@ -161,12 +190,22 @@ export async function readFixtureActions(page: Page): Promise<WindowControlActio
   });
 }
 
+export async function readOpenedMenuEntries(
+  page: Page,
+): Promise<{ key: string; x: number; y: number }[]> {
+  return page.evaluate(() => {
+    const state = window.__floElectronFixture;
+    return state ? [...state.openedMenuEntries] : [];
+  });
+}
+
 declare global {
   interface Window {
     __floElectronFixture?: {
       actions: WindowControlAction[];
       status: ElectronStatus;
       ipcError: ElectronIpcError;
+      openedMenuEntries: { key: string; x: number; y: number }[];
     };
   }
 }

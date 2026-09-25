@@ -31,6 +31,7 @@ import {
   escPosToText,
   buildEscPos,
 } from '../main/printers/thermal';
+import { loadFrontendPrintModules, measureEscPos } from './helpers/receipt-column-measure';
 import { renderClassicReceiptViaDocument } from '../main/printers/document-classic';
 import {
   formatClassicReceiptLegacy,
@@ -51,44 +52,19 @@ import {
 } from '../shared/print';
 
 // ---------------------------------------------------------------------------
-// Frontend module loading (same technique as tests/printer.test.ts: the
-// production path aliases cannot be applied by plain ts-node, so requests
-// are remapped for the duration of each require).
+// Shared width ladder
+//
+// Both render paths are driven off one ladder so their output can be compared
+// at the same column budget. The backend takes an explicit column count; the
+// frontend encoder is addressed by paper size and its only entry point for
+// width is the paper->column map, so a rung is comparable only where a paper
+// size actually reaches it. The rungs the two sides share are what section 2a
+// measures; the ones they do not share are reported rather than skipped
+// silently.
 // ---------------------------------------------------------------------------
 
-function loadFrontendPrintModules(): {
-  receiptEncoder: typeof import('../frontend/src/lib/printer/receipt-encoder');
-  webPrint: typeof import('../frontend/src/lib/printer/web-print');
-  printDocument: typeof import('../frontend/src/lib/printer/print-document');
-  warnings: typeof import('../frontend/src/lib/printer/warnings');
-} {
-  const path = require('path') as typeof import('path');
-  const moduleApi = require('module') as {
-    _resolveFilename: (...args: any[]) => string;
-  };
-  const originalResolveFilename = moduleApi._resolveFilename;
-  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
-    let resolvedRequest = request;
-    if (request === '@countries') {
-      resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
-    } else if (request.startsWith('@/')) {
-      resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
-    } else if (request.startsWith('@print/')) {
-      resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
-    }
-    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
-  };
-  try {
-    return {
-      receiptEncoder: require('../frontend/src/lib/printer/receipt-encoder'),
-      webPrint: require('../frontend/src/lib/printer/web-print'),
-      printDocument: require('../frontend/src/lib/printer/print-document'),
-      warnings: require('../frontend/src/lib/printer/warnings'),
-    };
-  } finally {
-    moduleApi._resolveFilename = originalResolveFilename;
-  }
-}
+const WIDTH_LADDER = [32, 42, 48] as const;
+const FRONTEND_PAPER_BY_COLUMNS: ReadonlyMap<number, 58 | 80> = new Map([[32, 58], [48, 80]]);
 
 // ---------------------------------------------------------------------------
 // Shared fixtures (exported so later print-architecture issues reuse them)
@@ -357,7 +333,7 @@ function run(): void {
     warn(refusalWarnings.some((warning) => warning.kind === 'financial'), 'backend refusal identifies the unsupported paid row as financial');
   }
   for (const template of ['classic', 'compact'] as const) {
-    for (const cols of [32, 42, 48]) {
+    for (const cols of WIDTH_LADDER) {
       section(`Backend ${template} @ ${cols} cols`);
       const text = escPosToText(
         formatReceipt(order, bill, business, template, cols, false, false, undefined, [])
@@ -374,11 +350,11 @@ function run(): void {
   }
 
   // ------------------------------------------------------------------
-  // 2. Frontend WebUSB ESC/POS — classic + compact at 58mm(32c)/80mm(48c)
+  // 2. Frontend WebUSB ESC/POS — classic + compact, on the shared ladder
   // ------------------------------------------------------------------
   for (const variant of ['classic', 'compact'] as const) {
-    for (const paperWidth of [58, 80] as const) {
-      section(`WebUSB ${variant} @ ${paperWidth}mm`);
+    for (const [columns, paperWidth] of FRONTEND_PAPER_BY_COLUMNS) {
+      section(`WebUSB ${variant} @ ${columns} cols (${paperWidth}mm)`);
       const warnings: Warnings = [];
       const bytes = variant === 'classic'
         ? fe.receiptEncoder.buildClassicReceiptBytes(fullBill as any, tenant as any, { paperWidth }, warnings as any)
@@ -417,6 +393,53 @@ function run(): void {
       truncationMarker: true,
       reprint: true,
     }, warn);
+  }
+
+  // ------------------------------------------------------------------
+  // 2a. Column parity at the same width — the comparison this harness
+  // previously could not make. Sections 1 and 2 ran each path at its own
+  // widths, so the two were never rendered at the same column budget and
+  // nothing compared their geometry. Each rung the paths share is now
+  // rendered through both and measured from the emitted bytes: the
+  // full-width rule in the output states the budget the path actually laid
+  // out for. Rungs only one path can reach are reported, not skipped.
+  // ------------------------------------------------------------------
+  section('Column parity at the same width');
+  for (const template of ['classic', 'compact'] as const) {
+    for (const cols of WIDTH_LADDER) {
+      const backend = measureEscPos(formatReceipt(order, bill, business, template, cols, false, false, undefined, []));
+      const paperWidth = FRONTEND_PAPER_BY_COLUMNS.get(cols);
+      if (paperWidth === undefined) {
+        console.log(`  ladder ${template} @ ${cols} cols: frontend has no paper size that reaches this width`);
+        warn(true, `column-parity/${template}/${cols}: frontend-only rung reported`);
+        continue;
+      }
+      const frontend = measureEscPos(
+        (template === 'classic'
+          ? fe.receiptEncoder.buildClassicReceiptBytes(fullBill as any, tenant as any, { paperWidth }, [] as any)
+          : fe.receiptEncoder.buildCompactReceiptBytes(fullBill as any, tenant as any, { paperWidth }, [] as any)),
+      );
+      console.log(
+        `  ladder ${template} @ ${cols} cols: backend rendered ${backend.measuredRuleWidths.join('/')} cells, `
+        + `frontend rendered ${frontend.measuredRuleWidths.join('/')} cells`,
+      );
+      warn(
+        backend.measuredRuleWidths.join(',') === String(cols),
+        `column-parity/${template}/${cols}: backend renders the width it was driven at`,
+      );
+      warn(
+        frontend.measuredRuleWidths.join(',') === String(cols),
+        `column-parity/${template}/${cols}: frontend renders the width its ${paperWidth}mm paper size maps to`,
+      );
+      warn(
+        backend.measuredRuleWidths.join(',') === frontend.measuredRuleWidths.join(','),
+        `column-parity/${template}/${cols}: both paths render the same number of columns at the same width`,
+      );
+      warn(
+        backend.maxFontACells <= cols && frontend.maxFontACells <= cols,
+        `column-parity/${template}/${cols}: no font-A line overflows the shared width on either path`,
+      );
+    }
   }
 
   // ------------------------------------------------------------------

@@ -338,7 +338,6 @@ assert.deepEqual(
 // Nepali POS terminology leans on virama conjuncts (rakar/repha like र्म,
 // प्र, न्ध) plus stacked matras, so each conjunct must measure as one cell and
 // survive narrow-width layout intact.
-const STRANDED_MARK_RE = /^\p{Mark}/u;
 for (const [term, segments, cells] of [
   ['छूट', ['छू', 'ट'], 2],
   ['कर्मचारी', ['क', 'र्म', 'चा', 'री'], 4],
@@ -356,13 +355,18 @@ for (const [term, segments, cells] of [
       [...segments],
       `Nepali term ${term} keeps every cluster after a ${width}-cell wrap`,
     );
-    // Re-joining cannot detect a split on its own: the second half of a split
-    // Indic cluster always begins with a combining mark, so a line that starts
-    // with one is the actual proof that no cluster was severed here.
-    for (const line of wrapped) {
-      assert.ok(
-        !STRANDED_MARK_RE.test(line),
-        `Nepali term ${term} must not start a ${width}-cell line with a severed cluster, got ${JSON.stringify(line)}`,
+    // Re-joining cannot detect a split, so check every line boundary directly:
+    // the clusters of two adjacent lines must not merge into fewer clusters
+    // when concatenated. This catches both a matra stranded at a line start
+    // and a virama stranded at a line end before a base consonant.
+    for (let index = 0; index < wrapped.length - 1; index += 1) {
+      const left = graphemeSegments(wrapped[index]);
+      const right = graphemeSegments(wrapped[index + 1]);
+      assert.equal(
+        graphemeSegments(wrapped[index] + wrapped[index + 1]).length,
+        left.length + right.length,
+        `Nepali term ${term} must break between complete clusters at the ${width}-cell boundary `
+        + `${JSON.stringify(wrapped[index])} | ${JSON.stringify(wrapped[index + 1])}`,
       );
     }
   }

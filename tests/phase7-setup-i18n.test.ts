@@ -175,18 +175,19 @@ async function run(): Promise<void> {
       assert.equal(rows('products', 'name', "id = 'prod-demo-dal-bhat'")[0].name, 'दाल भात', 'Nepali demo dal bhat uses Nepali restaurant terminology');
       assert.equal(snapshot.manager, 'डेमो प्रबन्धक', 'Nepali demo manager is localized');
       assert.equal(snapshot.customer, 'अनिश अधिकारी', 'Nepali demo customer is localized');
-      // The seeded dessert is स्याउ (soup), so the product id must not claim a
-      // different product. Only the id is corrected here; the merchant-visible
-      // label is left exactly as reviewed.
+      // The seeded dessert is स्याउ, which is Nepali for "apple", so the product
+      // id and the merchant-visible label must name the same product. Pinning
+      // the pairing in both directions means a future rename of either side
+      // fails loudly instead of silently shipping an id/label mismatch.
       assert.equal(
-        rows('products', 'id, name', "id LIKE 'prod-demo-%' AND name = 'स्याउ'")[0].id,
-        'prod-demo-soup',
-        'Nepali demo dessert id must agree with its स्याउ label',
+        rows('products', 'name', "id = 'prod-demo-apple'")[0].name,
+        'स्याउ',
+        'Nepali demo apple id must still carry the स्याउ (apple) label',
       );
       assert.equal(
-        rows('products', 'name', "id = 'prod-demo-soup'")[0].name,
-        'स्याउ',
-        'Nepali demo dessert label is unchanged and localized',
+        rows('products', 'id', "name = 'स्याउ'")[0].id,
+        'prod-demo-apple',
+        'Nepali demo dessert id must still name the product its स्याउ (apple) label shows',
       );
       assert.deepEqual(
         rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => [customer.phone, customer.country_code]),

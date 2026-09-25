@@ -2510,12 +2510,19 @@ function runNegativeTests(): void {
   );
   expectDetected(
     'order number: placeholder welded to a preceding word',
-    orderNumberPlaceholderErrors({ ne: { 'pos.addingItemsToOrder': 'अर्डर # मा वस्तुहरू थप्दै{number}' } }),
+    // Both keys are supplied so the only errors the validator can report are the
+    // welds; a missing key would otherwise mask whether the weld was detected.
+    orderNumberPlaceholderErrors({
+      ne: {
+        'pos.addingItemsToOrder': 'अर्डर # मा वस्तुहरू थप्दै{number}',
+        'pos.itemsAddedToOrder': 'अर्डर # मा वस्तुहरू थपियो{number}',
+      },
+    }),
   );
-  expectDetected(
-    'order number: placeholder missing its separator',
-    orderNumberPlaceholderErrors({ en: { 'pos.itemsAddedToOrder': 'Items added to order {number}' } }),
-  );
+  // A space before {number} is legitimate (Persian and Arabic use
+  // "شماره {number}"), so only a letter or combining mark is a violation.
+  // There is deliberately no "missing separator" fixture: that case is healthy
+  // and asserting it would contradict the validator's actual contract.
   expectDetected(
     'order number: key missing from a locale',
     orderNumberPlaceholderErrors({ en: { 'pos.addingItemsToOrder': 'Adding items to order #{number}' } }),

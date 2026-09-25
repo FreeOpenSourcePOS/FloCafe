@@ -1699,6 +1699,8 @@
     "navGroupOperations": "Operaties",
     "newPin": "Nieuw PIN",
     "no": "Nee",
+    "noAccessDatabase": "U heeft geen toegang tot back-up- en databasetools.",
+    "noAccessMobileAccess": "U heeft geen toegang tot instellingen voor mobiele toegang.",
     "noAppsToShow": "Er zijn nog geen apps om te tonen.",
     "noCategoriesYet": "Nog geen categorieën. Voeg eerst categorieën toe onder Producten.",
     "noChefsYet": "Nog geen actieve chefkokaccounts. Voeg eerst een chef toe onder Personeel.",
@@ -2211,7 +2213,32 @@
       "serverApp": "Gebruik de zelfstandige server-app",
       "support": "Neem contact op met ondersteuning en bekijk de diagnostiek",
       "inventoryManage": "Voorraadartikelen en recepten beheren"
-    }
+    },
+    "editorSubtitle": "Standaardinstellingen per rol configureren of een uitzondering maken voor één medewerker. Wijzigingen gelden vanaf diens volgende actie.",
+    "roleDefaultsTab": "Rolstandaarden",
+    "staffExceptionTab": "Uitzondering medewerker",
+    "selectStaffPlaceholder": "Selecteer een medewerker",
+    "selectStaffEmptyState": "Selecteer een medewerker om de rechten te bewerken.",
+    "effectiveHeader": "Effectief",
+    "overrideHeader": "Overschrijving",
+    "inherit": "Overerven",
+    "allow": "Toestaan",
+    "deny": "Weigeren",
+    "protected": "Beschermd",
+    "editorFooterNote": "Gevoelige bedrijfsregels zoals goedkeuringspincodes, de laatste actieve eigenaar, terugbettaanvallen en keukenstationtoewijzingen blijven gelden."
+  },
+  "permissionAudit": {
+    "title": "Geschiedenis van rechtenwijzigingen",
+    "subtitle": "Elke wijziging vanuit de rolmachtigingen hierboven, meest recente eerst.",
+    "columnTime": "Tijd",
+    "columnActor": "Wie",
+    "columnTarget": "Doel",
+    "columnPermission": "Recht",
+    "columnChange": "Wijziging",
+    "targetTypeRole": "Rol",
+    "targetTypeUser": "Medewerker",
+    "empty": "Nog geen rechtenwijzigingen.",
+    "loadMore": "Meer laden"
   },
   "support": {
     "askAi": "Vraag AI",

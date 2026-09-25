@@ -1699,6 +1699,8 @@
     "navGroupOperations": "Operacionet",
     "newPin": "PIN i ri",
     "no": "Jo",
+    "noAccessDatabase": "Nuk keni qasje te backupet dhe mjetet e bazës së të dhënave.",
+    "noAccessMobileAccess": "Nuk keni qasje te cilësimet e qasjes mobile.",
     "noAppsToShow": "Nuk ka ende aplikacione për t'u shfaqur.",
     "noCategoriesYet": "Ende nuk ka kategori. Fillimisht shtoni kategoritë nën Produktet.",
     "noChefsYet": "Ende nuk ka llogari aktive të kuzhinierëve. Fillimisht shtoni një kuzhinier nën Stafi.",
@@ -2211,7 +2213,32 @@
       "serverApp": "Përdorni Server App të pavarur",
       "support": "Kontaktoni me mbështetjen dhe shikoni diagnostikimin",
       "inventoryManage": "Menaxhoni furnizimet dhe recetat"
-    }
+    },
+    "editorSubtitle": "Konfiguroni vlerat e parazgjedhura të rolit ose bëni një përjashtim për një staf. Ndryshimet zbatohen në veprimin e tij të ardhshëm.",
+    "roleDefaultsTab": "Vlerat e parazgjedhura të rolit",
+    "staffExceptionTab": "Përjashtim stafi",
+    "selectStaffPlaceholder": "Zgjidhni një staf",
+    "selectStaffEmptyState": "Zgjidhni një staf për të redaktuar lejet e tij.",
+    "effectiveHeader": "Efektive",
+    "overrideHeader": "Mbiçalltërim",
+    "inherit": "Trashëgo",
+    "allow": "Lejo",
+    "deny": "Ndalo",
+    "protected": "E mbrojtur",
+    "editorFooterNote": "Rregullat e ndjeshme të biznesit, si PIN-at e miratimit, pronari i fundit aktiv, afatet e rimbursimit dhe caktimet e stacioneve të kuzhinës, vazhdojnë të zbatohen."
+  },
+  "permissionAudit": {
+    "title": "Historia e ndryshimeve të lejeve",
+    "subtitle": "Çdo ndryshim i bërë nga lejet e roleve më sipër, më i fundit së pari.",
+    "columnTime": "Koha",
+    "columnActor": "Kryerësi",
+    "columnTarget": "Objektivi",
+    "columnPermission": "Leja",
+    "columnChange": "Ndryshimi",
+    "targetTypeRole": "Roli",
+    "targetTypeUser": "Stafi",
+    "empty": "Ende nuk ka ndryshime lejesh.",
+    "loadMore": "Ngarko më shumë"
   },
   "support": {
     "askAi": "Pyet AI",

@@ -209,6 +209,7 @@ export default function OrdersPage() {
   const fmt = useFormatCurrency();
   const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
   const canRestoreItems = tenantCan(currentTenant, 'orders.item.restore');
+  const canRefund = tenantCan(currentTenant, 'refunds.initiate');
 
   if (discountModal && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
     setDiscountModal({
@@ -1017,7 +1018,9 @@ export default function OrdersPage() {
               key={order.id}
               order={order}
               now={now}
-              isOwnerOrManager={canCancelItems}
+              canCancelItems={canCancelItems}
+              canRestoreItems={canRestoreItems}
+              canRefund={canRefund}
               isWhatsAppReady={isWhatsAppReady}
               printHistory={printHistory}
               generatingBillId={generatingBill}

@@ -88,7 +88,9 @@ const ORDER_TYPE_KEYS = {
 interface OrderCardProps {
   order: Order;
   now: number;
-  isOwnerOrManager: boolean;
+  canCancelItems: boolean;
+  canRestoreItems: boolean;
+  canRefund: boolean;
   isWhatsAppReady: boolean;
   printHistory: Record<number, { id: number; print_type: string; user_name: string; printed_at: string }[]>;
   generatingBillId: number | null;
@@ -122,7 +124,9 @@ interface OrderCardProps {
 export function OrderCard({
   order,
   now,
-  isOwnerOrManager,
+  canCancelItems,
+  canRestoreItems,
+  canRefund,
   isWhatsAppReady,
   printHistory,
   generatingBillId,
@@ -566,7 +570,7 @@ export function OrderCard({
                     </span>
 
                     {/* Touchscreen-accessible item actions for Manager */}
-                    {isOwnerOrManager && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
+                    {canCancelItems && !isPaid && !['completed', 'cancelled'].includes(order.status) && (
                       <div className="flex items-center gap-1 ms-1 shrink-0">
                         {item.status === 'pending' && onDeleteItem && (
                           <button
@@ -625,7 +629,7 @@ export function OrderCard({
               </button>
             )}
 
-            {inactiveItems.length > 0 && isOwnerOrManager && (
+            {inactiveItems.length > 0 && canRestoreItems && (
               <button
                 type="button"
                 onClick={() => setShowVoidedItems((prev) => !prev)}
@@ -641,7 +645,7 @@ export function OrderCard({
           </div>
 
           {/* Expanded voided items list */}
-          {showVoidedItems && inactiveItems.length > 0 && isOwnerOrManager && (
+          {showVoidedItems && inactiveItems.length > 0 && canRestoreItems && (
             <div id={`order-voided-${order.id}`} className="mt-2 ps-2.5 border-s-2 border-red-200 dark:border-red-900/40 space-y-1.5 py-1">
               {inactiveItems.map((cItem: OrderItem) => (
                 <div key={cItem.id} className="flex items-center justify-between text-xs opacity-70">
@@ -805,8 +809,8 @@ export function OrderCard({
               </Button>
             )}
 
-            {/* Refund button for Owner / Manager (neutral outline, no purple) */}
-            {isOwnerOrManager && hasEligibleRefund && (
+            {/* Refund button (neutral outline, no purple) */}
+            {canRefund && hasEligibleRefund && (
               <Button
                 variant="outline"
                 onClick={() => onRefund(order, paidBills)}

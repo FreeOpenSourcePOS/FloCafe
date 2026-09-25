@@ -6,7 +6,8 @@
  * A route renamed out of that list is no longer excluded, so its own request
  * keeps the drain waiting on itself until MAINTENANCE_DRAIN_TIMEOUT_MS - a
  * self-deadlock, not an authorization gap. This test fails the moment a
- * string stops matching a registered route.
+ * string stops matching a registered route, or when a handler leaves the
+ * allowlist while staying registered.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/database-maintenance-allowlist.test.ts
  */
@@ -27,6 +28,19 @@ Module._load = function (request_: string, parent: unknown, isMain: boolean) {
 
 const { registerRoutes } = require('../main/routes/index');
 
+// The handlers that take the database maintenance lock. Declared here
+// independently of the allowlist so deleting an entry from
+// DATABASE_MAINTENANCE_ROUTES while leaving the handler registered fails the
+// test. Deriving the expectation from the set under test would make such a
+// deletion pass by probing only whatever survived.
+const EXPECTED_MAINTENANCE_HANDLERS = [
+  'POST /api/db/import',
+  'POST /api/db/backup',
+  'GET /api/db/download',
+  'POST /api/db-tools/initialize',
+  'POST /api/db-tools/currency-reset',
+];
+
 function readAllowlistedRoutes(): string[] {
   const source = fs.readFileSync(path.join(__dirname, '..', 'main', 'db.ts'), 'utf8');
   const block = source.match(/DATABASE_MAINTENANCE_ROUTES = new Set\(\[([\s\S]*?)\]\)/);
@@ -37,6 +51,11 @@ function readAllowlistedRoutes(): string[] {
 async function run() {
   const allowlisted = readAllowlistedRoutes();
   assert.ok(allowlisted.length > 0, 'the maintenance allowlist is not empty');
+  assert.deepEqual(
+    [...allowlisted].sort(),
+    [...EXPECTED_MAINTENANCE_HANDLERS].sort(),
+    'the maintenance allowlist still holds exactly the five handlers that take the lock',
+  );
 
   const app = express();
   app.use(express.json());

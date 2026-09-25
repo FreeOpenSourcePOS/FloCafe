@@ -96,10 +96,15 @@ async function runTests() {
   assert.ok(sqCurrency.includes('Lekë'), `sq-AL ALL formatting must retain the Lekë label, got: ${sqCurrency}`);
   assert.ok(sqDate.includes('shtator'), `sq-AL must format Albanian month names, got: ${sqDate}`);
   const urDecimal = new Intl.NumberFormat('ur-PK').format(1234567.89);
-  const urCurrency = new Intl.NumberFormat('ur-PK', { style: 'currency', currency: 'PKR' }).format(1234.56);
+  const urCurrency = new Intl.NumberFormat('ur-PK', {
+    style: 'currency',
+    currency: 'PKR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(1234.56);
   const urDate = new Intl.DateTimeFormat('ur-PK', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date('2026-09-20T12:00:00Z'));
   assert.equal(urDecimal, '1,234,567.89', `ur-PK must use Latin digits and Western separators, got: ${urDecimal}`);
-  assert.ok(urCurrency.includes('Rs') && urCurrency.includes('1,235'), `ur-PK PKR formatting must retain Latin digits, got: ${urCurrency}`);
+  assert.ok(urCurrency.includes('Rs') && urCurrency.includes('1,235'), `ur-PK PKR formatting must round to whole rupees with Latin digits, got: ${urCurrency}`);
   assert.ok(urDate.includes('ستمبر') && urDate.includes('2026') && !/[۰-۹]/.test(urDate), `ur-PK must use localized month names with Latin digits, got: ${urDate}`);
   assert.deepEqual(
     albania && { locale: albania.locale, currency: albania.currency, timezone: albania.timezone },

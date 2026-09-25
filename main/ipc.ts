@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow, Menu, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -11,6 +11,7 @@ import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './serv
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus, sanitizeLogText } from './services/whatsapp';
 import { createKdsWindow, applyWindowControlAction } from './window-options';
+import { isApplicationMenuSender, listApplicationMenuEntries, openApplicationMenuSubmenu } from './application-menu';
 import {
   isCurrentRendererFrame,
   markWindowRendererReady,
@@ -344,6 +345,45 @@ export function registerIpcHandlers(
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return { error: 'Window unavailable' };
     return applyWindowControlAction(win, action);
+  });
+
+  // Application menu for the frameless Windows/Linux title bar. Electron does
+  // not draw a menu bar on a frameless window, so the renderer renders the
+  // top-level labels and main pops the matching submenu from the same Menu
+  // object createMenu() already applied (accelerators keep working). macOS
+  // keeps its authoritative native menu bar and has no title-bar menu.
+  handle('get-application-menu', () => {
+    if (process.platform === 'darwin') return { entries: [] };
+    const menu = Menu.getApplicationMenu() ?? null;
+    return { entries: menu ? listApplicationMenuEntries(menu.items) : [] };
+  });
+
+  handle('open-application-menu', (event, key: unknown, x: unknown, y: unknown) => {
+    if (process.platform === 'darwin') return { error: 'Application menu is native on macOS' };
+    // The popup is a privileged native surface on the main window, so bind it
+    // to that window's own current renderer frame. The trusted-sender check
+    // alone also admits the KDS window, which is served from localhost too.
+    let currentFrame: Electron.WebFrameMain | null = null;
+    try {
+      currentFrame = event.sender.mainFrame;
+    } catch {
+      return { error: 'Unauthorized sender' };
+    }
+    const mainWindow = getMainWindow?.() ?? null;
+    if (!isApplicationMenuSender(mainWindow, {
+      window: BrowserWindow.fromWebContents(event.sender),
+      currentFrame,
+      senderFrame: event.senderFrame,
+    })) {
+      return { error: 'Unauthorized sender' };
+    }
+    return openApplicationMenuSubmenu(
+      Menu.getApplicationMenu() ?? null,
+      key,
+      mainWindow,
+      x,
+      y,
+    );
   });
 
   handle('get-window-state', (event) => {

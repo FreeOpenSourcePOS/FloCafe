@@ -6,6 +6,7 @@ import { useTranslations } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Ltr } from './Ltr';
+import ApplicationMenuRow from './ApplicationMenuRow';
 import UpdateBadge from './UpdateBadge';
 
 const subscribeToElectronCapability = () => () => {};
@@ -88,6 +89,10 @@ export default function TitleBar() {
           />
         </div>
 
+        {/* Windows/Linux: the frameless window has no native menu bar, so the
+            top-level application menu is restored here (macOS keeps the native one). */}
+        <ApplicationMenuRow />
+
         {/* Trailing edge: Update badge */}
         <div className="flo-title-bar__interactive pointer-events-auto ms-auto flex items-center">
           <UpdateBadge />
@@ -95,7 +100,7 @@ export default function TitleBar() {
       </div>
 
       {/* Centered business name and user identity */}
-      <div className="pointer-events-none absolute inset-0 m-auto flex h-fit w-fit flex-col items-center justify-center leading-tight text-center max-w-[min(60vw,32rem)] select-none">
+      <div className="flo-title-bar__identity pointer-events-none absolute inset-0 m-auto flex h-fit w-fit flex-col items-center justify-center leading-tight text-center max-w-[min(60vw,32rem)] select-none">
         <span className="truncate text-xs font-semibold text-foreground max-w-full" title={businessName}>
           {businessName}
         </span>

@@ -1910,7 +1910,8 @@ async function run(): Promise<void> {
     ['products.csvProductsHelp', 'non_veg'],
     ['products.csvProductsHelp', 'is_active'],
   ] as const) {
-    assert(ruMessages[key]?.includes(technicalLiteral), `ru.json ${key} must preserve the machine-readable CSV field ${technicalLiteral}`);
+    const machineFields = ruMessages[key]?.match(/[a-z][a-z0-9_]*/g) ?? [];
+    assert(machineFields.includes(technicalLiteral), `ru.json ${key} must preserve the machine-readable CSV field ${technicalLiteral}`);
   }
   console.log('  ✓ Russian CSV guidance preserves machine-readable field names');
   console.log(`  ✓ no untranslated ru.json values (${RU_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);

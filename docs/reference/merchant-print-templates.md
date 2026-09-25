@@ -1,7 +1,5 @@
 # Merchant print templates
 
-Status: CURRENT (model shipped in issue #447; offline import/export shipped in issue #448; visual editor remains future work)
-
 Merchant print templates are tenant-owned, versioned descriptions of receipt
 SEMANTIC STRUCTURE. They let a merchant choose which PrintDocument v1 blocks
 appear on their receipts, in which order, and with which label variants —
@@ -102,11 +100,14 @@ migration v73):
   longer matches their checksum, or that no longer validate under the current
   schema, are left untouched for the fail-closed checks above.
 
-CRUD API (owner role): `/api/print-templates` — create draft, update draft /
-active (active edits snapshot the previous payload), `activate`, `archive`,
-`rollback`.
+API under `/api/print-templates`. Owners have full access. Managers have
+**read** access to the template list (`GET /`) and to a template's payload
+(`GET /:id/payload`); every other operation, including export, create, update,
+activate, archive, rollback, and import, is owner-only. The write operations are
+create draft, update draft or active (an active edit snapshots the previous
+payload), `activate`, `archive`, and `rollback`.
 
-## Offline transfer format (public contract, #448)
+## Offline transfer format (public contract)
 
 Templates travel as self-describing `.json` files (`*.flocafe-template.json`),
 built by `GET /api/print-templates/:id/export` and consumed by

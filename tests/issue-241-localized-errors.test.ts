@@ -18,6 +18,7 @@ import * as fs from 'fs';
 import * as os from 'node:os';
 import * as path from 'path';
 import { spawnSync } from 'node:child_process';
+import type { Language } from '../frontend/src/lib/i18n/languages';
 
 const ROOT = path.join(__dirname, '..');
 const EVIDENCE_DIR =
@@ -82,6 +83,7 @@ React.useSyncExternalStore = function (subscribe: any, getSnapshot: any, getServ
 };
 
 const { getLanguageDirection, loadLocaleMessages, getCachedMessages, getLanguageLocale } = require('@/lib/i18n');
+const { LANGUAGES: LANGUAGE_REGISTRY } = require('@/lib/i18n/languages') as typeof import('../frontend/src/lib/i18n/languages');
 const { createTranslator } = frontendRequire('use-intl/core');
 const { IntlProvider } = frontendRequire('use-intl');
 const { usePosSettingsStore } = require('@/store/pos-settings');
@@ -94,8 +96,8 @@ function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-const LANGUAGES = ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ja', 'zh-tw', 'hi', 'sq', 'th', 'ne'] as const;
-type Lang = (typeof LANGUAGES)[number];
+const LANGUAGES = Object.keys(LANGUAGE_REGISTRY) as Language[];
+type Lang = Language;
 
 const t = (key: string, lang: Lang, params?: Record<string, string | number>): string => {
   const translator = createTranslator({

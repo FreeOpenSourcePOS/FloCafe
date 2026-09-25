@@ -42,9 +42,13 @@ import {
   type ThermalLayoutContext,
 } from '../shared/print';
 import type { LanguageRegistryFacts } from '../shared/print';
+import { LANGUAGES } from '../frontend/src/lib/i18n/languages';
 
-// Test registry: mirrors what a call site injects from the central registry.
-const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi', 'th', 'ne']);
+// The shipped registry, not a hand-written stand-in, so the kernel is exercised
+// against the real selectable locale set and a new locale cannot be left out.
+const SELECTABLE = new Set(
+  (Object.keys(LANGUAGES) as Array<keyof typeof LANGUAGES>).filter((code) => LANGUAGES[code].selectable),
+);
 const FACTS: LanguageRegistryFacts = {
   isSelectableLanguage: (code) => SELECTABLE.has(code),
 };
@@ -128,9 +132,9 @@ const badCases: Array<[unknown, RegExp]> = [
   [{ primary: { mode: 'auto' } }, /mode must be "inherit" or "fixed"/],
   [{ primary: { mode: 'fixed' } }, /non-empty string/],
   [{ primary: { mode: 'fixed', language: '' } }, /non-empty string/],
-  [{ primary: { mode: 'fixed', language: 'de' } }, /not a registered selectable language/],
+  [{ primary: { mode: 'fixed', language: 'xx' } }, /not a registered selectable language/],
   [
-    { primary: { mode: 'inherit' }, additional: ['de'] },
+    { primary: { mode: 'inherit' }, additional: ['xx'] },
     /not a registered selectable language/,
   ],
   [

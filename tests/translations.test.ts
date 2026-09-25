@@ -1645,6 +1645,39 @@ function neFallbackErrors(neFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Keys whose `{number}` placeholder names an order number that must stay
+ * introduced by punctuation (for example `#` or `№`) or a space, never welded
+ * onto the end of a verb-final clause. */
+const ORDER_NUMBER_PLACEHOLDER_KEYS = ['pos.addingItemsToOrder', 'pos.itemsAddedToOrder'] as const;
+const WORD_CHARACTER_RE = /[\p{L}\p{M}]/u;
+
+/** Order numbers must not be glued to a word, in any locale or script. */
+function orderNumberPlaceholderErrors(flatByLang: Record<string, Record<string, string>>): string[] {
+  const errors: string[] = [];
+  for (const [lang, messages] of Object.entries(flatByLang)) {
+    for (const key of ORDER_NUMBER_PLACEHOLDER_KEYS) {
+      const value = messages[key];
+      if (value === undefined) {
+        errors.push(`${lang}.json is missing ${key}`);
+        continue;
+      }
+      const index = value.indexOf('{number}');
+      if (index < 0) {
+        errors.push(`${lang}.json ${key} must contain the {number} placeholder, got "${value}"`);
+        continue;
+      }
+      const preceding = value[index - 1] ?? '';
+      if (WORD_CHARACTER_RE.test(preceding)) {
+        errors.push(
+          `${lang}.json ${key} — {number} is welded to the preceding letter/mark `
+          + `(…${preceding}{number}); the order number must be introduced by punctuation or a space, got "${value}"`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -2178,6 +2211,25 @@ async function run(): Promise<void> {
   assert(Object.values(neMessages).some((v) => v.includes('पुनः')), 'ne.json must contain the visarga spelling of पुनः');
   console.log(`  ✓ no untranslated ne.json values (${NE_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
 
+  // 25. No locale may weld an order number onto a word. Devanagari, Arabic, and
+  // Cyrillic are all verb-final, so a trailing "{number}" reads as part of the
+  // word. This covers every registered locale, not only Nepali.
+  const orderNumberErrors = orderNumberPlaceholderErrors(Object.fromEntries(loadedStrings));
+  if (orderNumberErrors.length) {
+    console.error(`\norder-number placeholder errors (${orderNumberErrors.length}):`);
+    for (const e of orderNumberErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'an order-number placeholder is glued to a preceding word');
+  }
+  assert(
+    neMessages['pos.addingItemsToOrder'] === 'अर्डर #{number} मा वस्तुहरू थप्दैछन्',
+    'ne.json addingItemsToOrder must place the order number directly after the # marker',
+  );
+  assert(
+    neMessages['pos.itemsAddedToOrder'] === 'अर्डर #{number} मा वस्तुहरू थपियो',
+    'ne.json itemsAddedToOrder must place the order number directly after the # marker',
+  );
+  console.log(`  ✓ no locale welds an order number onto a word (${Object.keys(Object.fromEntries(loadedStrings)).length} locales checked)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -2455,6 +2507,43 @@ function runNegativeTests(): void {
   expectDetected(
     'ne: Unicode replacement character',
     neFallbackErrors({ 'a.b': 'क��ा' }, { 'a.b': 'काफी' }),
+  );
+  expectDetected(
+    'order number: placeholder welded to a preceding word',
+    orderNumberPlaceholderErrors({ ne: { 'pos.addingItemsToOrder': 'अर्डर # मा वस्तुहरू थप्दै{number}' } }),
+  );
+  expectDetected(
+    'order number: placeholder missing its separator',
+    orderNumberPlaceholderErrors({ en: { 'pos.itemsAddedToOrder': 'Items added to order {number}' } }),
+  );
+  expectDetected(
+    'order number: key missing from a locale',
+    orderNumberPlaceholderErrors({ en: { 'pos.addingItemsToOrder': 'Adding items to order #{number}' } }),
+  );
+  expectDetected(
+    'order number: placeholder entirely absent',
+    orderNumberPlaceholderErrors({ en: { 'pos.addingItemsToOrder': 'Adding items to order', 'pos.itemsAddedToOrder': 'Added' } }),
+  );
+  assert(
+    orderNumberPlaceholderErrors({
+      en: {
+        'pos.addingItemsToOrder': 'Adding items to order #{number}',
+        'pos.itemsAddedToOrder': 'Items added to order #{number}',
+      },
+      ne: {
+        'pos.addingItemsToOrder': 'अर्डर #{number} मा वस्तुहरू थप्दैछन्',
+        'pos.itemsAddedToOrder': 'अर्डर #{number} मा वस्तुहरू थपियो',
+      },
+      ru: {
+        'pos.addingItemsToOrder': 'Добавление товаров в заказ №{number}',
+        'pos.itemsAddedToOrder': 'Товары добавлены в заказ №{number}',
+      },
+      fa: {
+        'pos.addingItemsToOrder': 'در حال افزودن کالاها به سفارش شماره {number}',
+        'pos.itemsAddedToOrder': 'کالاها به سفارش شماره {number} افزوده شدند',
+      },
+    }).length === 0,
+    'order-number validator must not flag healthy English, Nepali, Russian, or Persian values',
   );
 
   // 8. TypeScript key safety.

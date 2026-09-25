@@ -31,7 +31,7 @@ function readAllowlistedRoutes(): string[] {
   const source = fs.readFileSync(path.join(__dirname, '..', 'main', 'db.ts'), 'utf8');
   const block = source.match(/DATABASE_MAINTENANCE_ROUTES = new Set\(\[([\s\S]*?)\]\)/);
   assert.ok(block, 'DATABASE_MAINTENANCE_ROUTES is still a Set literal in main/db.ts');
-  return [...block[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  return [...block[1].matchAll(/['"]([^'"]+)['"]/g)].map((match) => match[1]);
 }
 
 async function run() {
@@ -61,7 +61,13 @@ async function run() {
   console.log(`Maintenance allowlist verified: ${allowlisted.length} routes still registered.`);
 }
 
-run().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// process.exitCode rather than process.exit: an immediate exit would skip the
+// cleanup below and leak a temp directory on every run.
+run()
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    fs.rmSync(testDir, { recursive: true, force: true });
+  });

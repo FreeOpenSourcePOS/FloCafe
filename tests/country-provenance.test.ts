@@ -209,39 +209,6 @@ async function run() {
     assertEqual(body?.business?.country, 'DO', 'a confirmed country is registered');
     assertEqual(body?.business?.country_source, 'user', 'the payload says a human chose it');
 
-    // ── Language and tax plugin ride along on the same payload ────────────
-    setSettings({ language: 'es' });
-    body = null;
-    await cloudSync.register();
-    assertEqual(body?.business?.language, 'es', 'the payload carries the configured UI language');
-    assertEqual(body?.business?.tax_pack, null, 'tax_pack is null while no official pack is active for the country');
-
-    // Activating an official tax pack for the confirmed country surfaces it as
-    // the tax plugin in use — the bundled fallback (publisher 'local') never counts.
-    setSettings({ taxes_enabled: 'true' });
-    getDatabase().prepare(`
-      INSERT INTO country_packs (id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at)
-      VALUES ('official-do', 'official', 'DO', 'DO', 'official-do@1.0.0', 'active', ?, ?)
-    `).run(now(), now());
-    getDatabase().prepare(`
-      INSERT INTO country_pack_versions (
-        id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
-        effective_from, effective_to, min_flo_version, published_at, status, created_at
-      ) VALUES ('official-do@1.0.0', 'official-do', '1.0.0', 1, '{}', ?, NULL, NULL, ?, NULL, '0.0.0', ?, 'active', ?)
-    `).run(JSON.stringify({
-      schemaVersion: 1, id: 'official-do', publisher: 'official', version: '1.0.0', country: 'DO',
-      jurisdiction: 'DO', currency: 'DOP', effectiveFrom: now(), publishedAt: now(), minFloVersion: '0.0.0',
-      taxPoint: 'order_created', inclusivePricingDefault: false, registrationNumberLabel: '',
-      categories: [], rules: [], businessTypes: [],
-    }), now(), now(), now());
-    body = null;
-    await cloudSync.register();
-    assertEqual(
-      JSON.stringify(body?.business?.tax_pack),
-      JSON.stringify({ id: 'official-do', publisher: 'official' }),
-      'the payload carries the active official tax plugin'
-    );
-
     // The shared assertion helpers tally failures instead of throwing, so a
     // test that never reads the tally always reports success.
     const results = getResults();

@@ -2,7 +2,6 @@
 
 import { app } from 'electron';
 import { readCountryProvenance } from './country-provenance';
-import { getActiveCountryPack, isTaxModuleActiveForCountry } from './tax';
 import log from 'electron-log';
 import { ensureTelemetryAnonId, isTelemetryEnabled, getSettingValue, parseDbTimestamp, upsertTelemetryLastPing } from '../db';
 
@@ -35,12 +34,6 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
     // Report only user-confirmed country so FloAdmin IP geolocation fallback can operate.
     const provenance = readCountryProvenance();
     const country = provenance.country ?? undefined;
-    const currency = getSettingValue('currency') || undefined;
-    const language = getSettingValue('language') || undefined;
-    // Tax plugin is only meaningful alongside a confirmed country and an actually active pack.
-    const taxPack = country && isTaxModuleActiveForCountry(country)
-      ? (() => { const pack = getActiveCountryPack(country); return { id: pack.id, publisher: pack.publisher }; })()
-      : undefined;
     const response = await fetch(TELEMETRY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -51,9 +44,6 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
         event_type: eventType,
         platform: process.platform,
         ...(country ? { country } : {}),
-        ...(currency ? { currency } : {}),
-        ...(language ? { language } : {}),
-        ...(taxPack ? { tax_pack: taxPack } : {}),
         ...(payload ? { payload } : {}),
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),

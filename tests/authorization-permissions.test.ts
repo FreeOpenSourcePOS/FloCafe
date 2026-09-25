@@ -93,6 +93,23 @@ function main(): void {
   assert.equal(hasPermission('inactive-permissions', 'reports.view'), false, 'inactive users have no usable permissions');
   assert.equal(resolveEffectivePermissions('missing-user'), null, 'missing users do not resolve');
 
+  // The tax preview gate is requireAnyPermission('pos.use', 'orders.create', 'kitchen.use').
+  // Their union has to stay every role, or the checkout modal 403s mid-cart.
+  const basketPricingRoles = ['owner', 'manager', 'cashier', 'server', 'chef'] as const;
+  for (const role of basketPricingRoles) {
+    const permissions = defaultPermissionIdsForRole(role);
+    assert.ok(
+      ['pos.use', 'orders.create', 'kitchen.use'].some((permissionId) => (permissions as readonly string[]).includes(permissionId)),
+      `${role} can price a basket under the shipped defaults`,
+    );
+  }
+
+  // bills.print is a payments-area permission, not a second name for bills.discount.apply.
+  assert.deepEqual(defaultPermissionIdsForRole('cashier').includes('bills.print'), false, 'cashier does not receive bills.print');
+  assert.deepEqual(defaultPermissionIdsForRole('server').includes('bills.print'), false, 'server does not receive bills.print');
+  assert.equal(defaultPermissionIdsForRole('manager').includes('bills.print'), true, 'manager receives bills.print');
+  assert.equal(defaultPermissionIdsForRole('owner').includes('bills.print'), true, 'owner receives bills.print');
+
   insertRoleOverride(db, 'manager', 'reports.view', 'deny');
   assert.equal(hasPermission('manager-permissions', 'reports.view'), false, 'role deny overrides shipped allow');
   insertUserOverride(db, 'manager-permissions', 'reports.view', 'allow');

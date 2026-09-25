@@ -37,8 +37,6 @@ async function main() {
   // from an untouched default and is deliberately withheld — see the
   // unconfirmed case below.
   set.run('country_confirmed_at', new Date().toISOString(), now());
-  set.run('currency', 'ARS', now());
-  set.run('language', 'es', now());
 
   const originalFetch = globalThis.fetch;
   let requestBody: Record<string, unknown> | null = null;
@@ -51,42 +49,8 @@ async function main() {
 
     assert.equal(await sendEvent('app_launch'), true, '2xx telemetry delivery succeeds');
     assert.equal(requestBody?.country, 'AR', 'telemetry sends the configured ISO country');
-    assert.equal(requestBody?.currency, 'ARS', 'telemetry sends the configured currency');
-    assert.equal(requestBody?.language, 'es', 'telemetry sends the configured UI language');
-    assert.equal(
-      Object.prototype.hasOwnProperty.call(requestBody ?? {}, 'tax_pack'),
-      false,
-      'tax_pack is omitted while taxes are disabled'
-    );
     assert.equal(requestBody?.app, 'flocafe');
     assert.equal(requestBody?.app_version, '2.7.2-test');
-
-    // Activating an official tax pack surfaces it as the tax plugin in use —
-    // the bundled fallback pack (publisher 'local') never counts as one.
-    set.run('taxes_enabled', 'true', now());
-    db.prepare(`
-      INSERT INTO country_packs (id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at)
-      VALUES ('official-ar', 'official', 'AR', 'AR', 'official-ar@1.0.0', 'active', ?, ?)
-    `).run(now(), now());
-    db.prepare(`
-      INSERT INTO country_pack_versions (
-        id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
-        effective_from, effective_to, min_flo_version, published_at, status, created_at
-      ) VALUES ('official-ar@1.0.0', 'official-ar', '1.0.0', 1, '{}', ?, NULL, NULL, ?, NULL, '0.0.0', ?, 'active', ?)
-    `).run(JSON.stringify({
-      schemaVersion: 1, id: 'official-ar', publisher: 'official', version: '1.0.0', country: 'AR',
-      jurisdiction: 'AR', currency: 'ARS', effectiveFrom: now(), publishedAt: now(), minFloVersion: '0.0.0',
-      taxPoint: 'order_created', inclusivePricingDefault: false, registrationNumberLabel: '',
-      categories: [], rules: [], businessTypes: [],
-    }), now(), now(), now());
-    requestBody = null;
-    assert.equal(await sendEvent('app_launch'), true);
-    assert.deepEqual(
-      requestBody?.tax_pack,
-      { id: 'official-ar', publisher: 'official' },
-      'telemetry sends the active official tax plugin'
-    );
-    set.run('taxes_enabled', 'false', now());
 
     // An unconfirmed country is omitted rather than sent as the install
     // default. FloAdmin geolocates the request IP when the field is absent, so

@@ -118,7 +118,8 @@ report for the same day agree.
 `main/services/refund.ts` allows a refund freely within `REFUND_WINDOW_MS` of order creation, which
 is one hour. After that window the order's business day is computed with `localDateInTimezone`, and
 if the current instant has passed that day's end the refund is refused with a `409`. Before the
-`409`, a late refund requires an owner Master PIN.
+`409`, a late refund narrows the approver to owners and requires that owner's Staff Approval PIN.
+The device Master PIN never authorizes a refund.
 
 `parseDbTimestamp` is used on both ends of that comparison, so the boundary is an instant
 comparison in UTC rather than a string comparison.

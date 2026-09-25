@@ -135,7 +135,7 @@ Three layers, in precedence order: the versioned pack, then a merchant override,
 immutable snapshot written onto the transaction.
 
 A merchant override is keyed to an entity (product, add-on, packaging, delivery, or service charge)
-and must resolve against the pack version being evaluated. Activation check 17 refuses a version
+and must resolve against the pack version being evaluated. Activation check 20 refuses a version
 that any live merchant override would not resolve against, so an override can never silently point
 at a category the new version dropped.
 

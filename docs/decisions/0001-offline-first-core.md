@@ -1,7 +1,11 @@
 # 0001: Core POS operation is offline-first, and network features are optional
 
 Status: Accepted
-Date: 2026-09-25
+Recorded: 2026-09-25
+
+The decision this record describes predates the record. It is written down here because the
+code does not explain itself: nothing in the source tells a reader that the alternative was
+considered and rejected, or what a re-introduction would cost.
 
 ## Context
 
@@ -58,5 +62,3 @@ startup latency depend on a remote system, and it turns a network problem into a
 **A single "connectivity" gate that enables a subsystem when the network is available.** Rejected:
 it makes behaviour depend on a condition that is not observable up front, so the offline path is
 the one that goes untested.
-
-<!-- docs:policy-allow: past-tense-without-verification -->

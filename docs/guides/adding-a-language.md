@@ -45,9 +45,10 @@ layout code: `HtmlLangSync` sets `<html dir>` from the registry entry, and toast
 
 ## 3. Translate every leaf
 
-`<lang>.json` has 30 top-level namespaces and 2,639 non-empty string leaves. All of them need real
-translations, because parity against `en.json` is exact and there is no per-key English fallback at
-runtime.
+`<lang>.json` has the same top-level namespaces and non-empty string leaves as `en.json`, whose counts
+are recorded in [internationalization](../architecture/internationalization.md). All of them need
+real translations, because parity against `en.json` is exact and there is no per-key English
+fallback at runtime.
 
 While translating:
 
@@ -72,8 +73,8 @@ While translating:
 
 ## 4. Register the intentional-identical keys
 
-Each language has a `_<LANG>_INTENTIONAL_IDENTICAL` set in `tests/translations.test.ts` listing the
-keys allowed to be English-identical, most with a comment saying why. There are 16 such sets.
+Each language has a `<LANG>_INTENTIONAL_IDENTICAL` set in `tests/translations.test.ts` listing the
+keys allowed to be English-identical, most with a comment saying why. There are 18 such sets.
 
 Add an entry for every key you deliberately left identical, with a comment giving the reason. Without
 the entry the check fails, and the failure is what keeps an accidentally untranslated string from
@@ -113,7 +114,7 @@ language is not covered by them until you add it:
 
 | File | Array | Current coverage |
 | --- | --- | --- |
-| `tests/phase3-print-regressions.test.ts` | `languages` | 21 of 23; omits `ar` and `fil`. |
+| `tests/phase3-print-regressions.test.ts` | `languages` | 22 of 23; omits `ar`. |
 | `tests/issue-241-localized-errors.test.ts` | `LANGUAGES` | 11 of 23; omits 12 including `ar` and `ur`. |
 | `tests/rtl-setup-auth-settings.test.ts` | `languages` | 19 of 23; omits `ar`, `de`, `fil`, `tr`. |
 | `tests/browser-receipts.test.ts` | loop array | 19 of 23; omits `ar`, `de`, `fil`, `tr`. |

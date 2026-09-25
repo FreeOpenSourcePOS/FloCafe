@@ -931,22 +931,22 @@ documents only the two routes.
 
 ## Coverage
 
-This page describes 294 HTTP endpoints and one WebSocket contract:
+This page lists 294 HTTP route registrations across 293 distinct rows, and one WebSocket contract:
 
 - `267` on the main API: 257 router registrations, 9 inline registrations in `main/routes/index.ts`,
   and `GET /api/health` in `main/server.ts`.
 - `8` REST routes on the KDS server, plus 3 static handlers.
-- `19` route registrations on the Server App, of which 11 forward to the main API.
+- `19` route registrations on the Server App, of which 11 forward to the main API. Two of those 19
+  are mutually exclusive `GET /` handlers under one path, which is why 19 registrations render as 18
+  rows.
 
-Every one of the 294 is listed with its method, path, authorization gate, and the parameters its
-handler reads. The **Response** column carries a note for 157 of them: 131 main-API endpoints, all 8
-KDS-server routes, and the 18 Server App routes. The remaining 136 main-API endpoints are
+Every one of the 293 rows is listed with its method, path, authorization gate, and the parameters
+its handler reads. The **Response** column carries a note for 157 of them: 131 main-API endpoints,
+all 8 KDS-server routes, and the 18 Server App routes. The remaining 136 main-API endpoints are
 listed with method, path, gate, and parameters only, and this page asserts nothing about what they
 return. Those rows are complete as a route inventory and silent as a contract; the handler in
-`main/routes/` is authoritative for them.
-
-The nineteenth Server App registration is the `GET /` placeholder that replaces the redirect when
-the frontend export is missing, so it is two mutually exclusive handlers under one path.
+`main/routes/` is authoritative for them. A `-` in the Response column means that, not that the
+endpoint does nothing.
 
 The route inventory is maintained by hand against the route files, not generated. The role groups,
 parameters, and rate limiters in the tables were read out of the route registrations themselves, but

@@ -120,6 +120,18 @@ git diff --check      # whitespace errors
 completeness) always gates. `docs:check:policy` reports development-process material and currently
 reports warnings only; it is a ratchet, and it is promoted to a gate once the corpus is clean.
 
+The policy check matches each category of material listed in section 3, plus workflow-run links,
+`NOT-RUN` and verdict transcripts, and issue or pull-request references. A page that legitimately
+needs one, such as a decision record citing the issue it supersedes, opts out with a comment naming
+the rule:
+
+```markdown
+<!-- docs:policy-allow: issue-reference -->
+```
+
+Use it for a named exception, not to silence a check you disagree with. If a rule produces a
+constant false positive, fix the rule instead.
+
 When a claim depends on runtime behaviour, run the focused test suite that covers it. The
 verification table in [AGENTS.md](AGENTS.md) lists the minimum check per change type. Do not claim
 verification you did not run; report a check you could not run, and why.

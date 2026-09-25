@@ -1,7 +1,11 @@
 # 0004: Country tax packs are data, not executable plugins
 
 Status: Accepted
-Date: 2026-09-25
+Recorded: 2026-09-25
+
+The decision this record describes predates the record. It is written down here because the
+code does not explain itself: nothing in the source tells a reader that the alternative was
+considered and rejected, or what a re-introduction would cost.
 
 ## Context
 
@@ -59,5 +63,3 @@ review.
 
 **Multiple calculation engines, one per pack type.** Rejected: it makes tax behaviour depend on
 which pack is installed, so the same transaction can compute differently on two stores.
-
-<!-- docs:policy-allow: past-tense-without-verification -->

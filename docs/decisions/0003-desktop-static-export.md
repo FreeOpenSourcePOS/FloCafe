@@ -1,7 +1,11 @@
 # 0003: The desktop build is a static export served by Express
 
 Status: Accepted
-Date: 2026-09-25
+Recorded: 2026-09-25
+
+The decision this record describes predates the record. It is written down here because the
+code does not explain itself: nothing in the source tells a reader that the alternative was
+considered and rejected, or what a re-introduction would cost.
 
 ## Context
 
@@ -54,5 +58,3 @@ and a second lifecycle to manage for no capability the POS needs.
 
 **Route handlers as a thin proxy onto Express.** Rejected: it adds a hop and a second place where
 the API surface is defined, with no behaviour the backend cannot provide directly.
-
-<!-- docs:policy-allow: past-tense-without-verification -->

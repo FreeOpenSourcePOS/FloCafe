@@ -66,6 +66,11 @@ const POLICY_RULES = [
     pattern: /^\*\*Status:/m,
     allow: ['decisions/'],
   },
+  {
+    id: 'issue-reference',
+    pattern: /\b(issue|pull request|PR|epic)\s*#\d+|#\d{3}\b|owning issues\b/i,
+    allow: [],
+  },
 ];
 
 // "Describe the present." Sentence-anchored past narration with nothing

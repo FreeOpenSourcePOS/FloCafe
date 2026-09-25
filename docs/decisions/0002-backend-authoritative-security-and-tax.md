@@ -1,7 +1,11 @@
 # 0002: Security, payment, and tax calculations are backend-authoritative
 
 Status: Accepted
-Date: 2026-09-25
+Recorded: 2026-09-25
+
+The decision this record describes predates the record. It is written down here because the
+code does not explain itself: nothing in the source tells a reader that the alternative was
+considered and rejected, or what a re-introduction would cost.
 
 ## Context
 
@@ -53,5 +57,3 @@ creates the appearance of a single enforcement point where none exists.
 **Declaring the renderer untrusted and validating at the edge only.** Rejected for authorization:
 several gates legitimately re-read state inside a transaction, such as the KDS station gate, and an
 edge check cannot see that.
-
-<!-- docs:policy-allow: past-tense-without-verification -->

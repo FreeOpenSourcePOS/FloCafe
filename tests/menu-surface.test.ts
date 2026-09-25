@@ -8,6 +8,7 @@
  */
 import * as assert from 'node:assert/strict';
 import {
+  isApplicationMenuSender,
   listApplicationMenuEntries,
   openApplicationMenuSubmenu,
   type ApplicationMenuItem,
@@ -79,5 +80,58 @@ for (const [x, y] of [[-1, 0], [0, -1], [Number.NaN, 0], ['0', 0], [null, 0], [0
   assert.deepEqual(open('0', liveWindow, x, y), { error: 'Invalid menu position' });
 }
 assert.equal(popupCalls.length, 1);
+
+// The submenu popup is a privileged native surface on the main window, so it
+// is bound to that window's own current renderer frame. The trusted-sender
+// origin check alone is not enough: other windows this process serves, such as
+// the KDS window, are localhost too and would otherwise be able to open a
+// popup on the main window.
+const mainWindow = { isDestroyed: () => false };
+const destroyedWindowForSender = { isDestroyed: () => true };
+const kdsWindow = { isDestroyed: () => false };
+const currentFrame = { frameToken: 'frame-main', detached: false };
+const staleFrame = { frameToken: 'frame-stale', detached: false };
+const detachedFrame = { frameToken: 'frame-main', detached: true };
+
+const sender = (overrides: Record<string, unknown>) =>
+  isApplicationMenuSender(mainWindow as never, {
+    window: mainWindow,
+    currentFrame,
+    senderFrame: currentFrame,
+    ...overrides,
+  } as never);
+
+assert.equal(sender({}), true);
+assert.equal(
+  sender({ window: kdsWindow }),
+  false,
+  'a sender that is not the main window is refused even when it passes the origin check',
+);
+assert.equal(sender({ window: null }), false, 'a sender that owns no window is refused');
+assert.equal(
+  sender({ senderFrame: staleFrame }),
+  false,
+  'a message from a stale frame is refused',
+);
+assert.equal(
+  sender({ senderFrame: detachedFrame }),
+  false,
+  'a message from a detached frame is refused',
+);
+assert.equal(
+  isApplicationMenuSender(null, { window: mainWindow, currentFrame, senderFrame: currentFrame } as never),
+  false,
+  'no main window means no popup',
+);
+assert.equal(
+  isApplicationMenuSender(destroyedWindowForSender as never, {
+    window: destroyedWindowForSender,
+    currentFrame,
+    senderFrame: currentFrame,
+  } as never),
+  false,
+  'a destroyed main window is refused',
+);
+assert.equal(popupCalls.length, 1, 'refused senders never pop anything');
 
 console.log('menu-surface: application menu surface contract OK');

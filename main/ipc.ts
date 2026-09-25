@@ -11,7 +11,7 @@ import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './serv
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus, sanitizeLogText } from './services/whatsapp';
 import { createKdsWindow, applyWindowControlAction } from './window-options';
-import { listApplicationMenuEntries, openApplicationMenuSubmenu } from './application-menu';
+import { isApplicationMenuSender, listApplicationMenuEntries, openApplicationMenuSubmenu } from './application-menu';
 import {
   isCurrentRendererFrame,
   markWindowRendererReady,
@@ -358,12 +358,29 @@ export function registerIpcHandlers(
     return { entries: menu ? listApplicationMenuEntries(menu.items) : [] };
   });
 
-  handle('open-application-menu', (_event, key: unknown, x: unknown, y: unknown) => {
+  handle('open-application-menu', (event, key: unknown, x: unknown, y: unknown) => {
     if (process.platform === 'darwin') return { error: 'Application menu is native on macOS' };
+    // The popup is a privileged native surface on the main window, so bind it
+    // to that window's own current renderer frame. The trusted-sender check
+    // alone also admits the KDS window, which is served from localhost too.
+    let currentFrame: Electron.WebFrameMain | null = null;
+    try {
+      currentFrame = event.sender.mainFrame;
+    } catch {
+      return { error: 'Unauthorized sender' };
+    }
+    const mainWindow = getMainWindow?.() ?? null;
+    if (!isApplicationMenuSender(mainWindow, {
+      window: BrowserWindow.fromWebContents(event.sender),
+      currentFrame,
+      senderFrame: event.senderFrame,
+    })) {
+      return { error: 'Unauthorized sender' };
+    }
     return openApplicationMenuSubmenu(
       Menu.getApplicationMenu() ?? null,
       key,
-      getMainWindow?.() ?? null,
+      mainWindow,
       x,
       y,
     );

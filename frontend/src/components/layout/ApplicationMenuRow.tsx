@@ -28,10 +28,15 @@ export default function ApplicationMenuRow() {
   useEffect(() => {
     if (!isElectron || window.electronAPI?.platform === 'darwin') return;
     let cancelled = false;
-    void window.electronAPI?.getApplicationMenu().then((result) => {
-      if (cancelled || 'error' in result) return;
-      setEntries(result.entries);
-    });
+    void window.electronAPI
+      ?.getApplicationMenu()
+      .then((result) => {
+        if (cancelled || 'error' in result) return;
+        setEntries(result.entries);
+      })
+      // Main rejects the invoke when the renderer tears down before it
+      // answers, so an uncatchable rejection would surface in the console.
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -53,10 +58,11 @@ export default function ApplicationMenuRow() {
           role="menuitem"
           className="flo-title-bar__menu-button"
           onClick={(event) => {
-            // Electron positions the popup against the window content
-            // bounds, so the button's viewport rect is already correct.
-            const { left, top } = event.currentTarget.getBoundingClientRect();
-            void window.electronAPI?.openApplicationMenu(entry.key, left, top);
+            // Electron anchors the popup's top-left at these content-bounds-relative
+            // coordinates, so the button's viewport rect is already the right space;
+            // anchoring on the bottom edge drops the submenu below the label.
+            const { left, bottom } = event.currentTarget.getBoundingClientRect();
+            void window.electronAPI?.openApplicationMenu(entry.key, left, bottom).catch(() => {});
           }}
         >
           {entry.label}

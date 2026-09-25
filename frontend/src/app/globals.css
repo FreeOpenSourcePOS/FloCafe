@@ -210,6 +210,15 @@ body:has(.flo-title-bar__fallback-controls) .flo-title-bar__safe-area {
   max-inline-size: min(38vw, 20rem);
 }
 
+/* At the 64rem minimum window width the non-wrapping menu row and the
+ * absolutely centered identity would overlap. The menu is the restored
+ * surface, so the identity yields there and only there. */
+@media (max-width: 64rem) {
+  .flo-title-bar:has(.flo-title-bar__menu) .flo-title-bar__identity {
+    display: none;
+  }
+}
+
 .flo-title-bar--root-drag {
   position: fixed;
   inset-block-start: 0;

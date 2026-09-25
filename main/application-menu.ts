@@ -1,4 +1,5 @@
-import type { BrowserWindow, Menu, MenuItem } from 'electron';
+import type { BrowserWindow, Menu, MenuItem, WebFrameMain } from 'electron';
+import { isCurrentRendererFrame } from './window-readiness';
 
 /** A top-level application-menu entry the Windows/Linux title bar renders. */
 export interface ApplicationMenuEntry {
@@ -28,6 +29,34 @@ export function listApplicationMenuEntries(
     entries.push({ key: String(index), label });
   });
   return entries;
+}
+
+/**
+ * The identity of the window and frame an application-menu request came from,
+ * already resolved by the main process.
+ */
+export interface ApplicationMenuSender {
+  /** Window the request came from, or null when it belongs to none. */
+  window: BrowserWindow | null;
+  /** The sending webContents' current main frame. */
+  currentFrame: WebFrameMain | null;
+  /** The frame the invoking message was actually delivered to. */
+  senderFrame: WebFrameMain | null | undefined;
+}
+
+/**
+ * The submenu popup is a privileged native surface on the main window, so only
+ * that window's own current renderer frame may request one. The localhost
+ * origin check alone is not enough: other windows this process serves, such as
+ * the KDS window, pass it while belonging to a different window.
+ */
+export function isApplicationMenuSender(
+  mainWindow: BrowserWindow | null,
+  sender: ApplicationMenuSender,
+): boolean {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (sender.window !== mainWindow) return false;
+  return isCurrentRendererFrame(sender.senderFrame, sender.currentFrame);
 }
 
 /**

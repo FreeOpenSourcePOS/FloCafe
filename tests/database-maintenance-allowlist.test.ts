@@ -4,7 +4,7 @@
  * main/db.ts holds five hardcoded "<METHOD> /api/..." strings so the handlers
  * that take the maintenance lock are not counted in activeDatabaseRequests.
  * A route renamed out of that list is no longer excluded, so its own request
- * keeps the drain waiting on itself until MAINTENANCE_DRAIN_TIMEOUT_MS — a
+ * keeps the drain waiting on itself until MAINTENANCE_DRAIN_TIMEOUT_MS - a
  * self-deadlock, not an authorization gap. This test fails the moment a
  * string stops matching a registered route.
  *

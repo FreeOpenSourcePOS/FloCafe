@@ -3,7 +3,7 @@
  * tests/test-harness-assertions.test.ts.
  *
  * It must exit non-zero: that is the regression this fixture exists to prove.
- * The counting assertions run first and must NOT throw — a suite that migrates
+ * The counting assertions run first and must NOT throw - a suite that migrates
  * one of them onto a throwing variant without wiring getResults() would abort
  * here instead of reporting, and every "tests protect X" claim downstream
  * would be false again.

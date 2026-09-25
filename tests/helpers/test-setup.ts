@@ -99,17 +99,17 @@ function assertOrThrow(condition: boolean, message: string) {
 
 function assertEqualOrThrow(actual: any, expected: any, message: string) {
   assertEqual(actual, expected, message);
-  if (actual !== expected) throw new Error(`${message} — expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  if (actual !== expected) throw new Error(`${message} - expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 }
 
 function assertIncludesOrThrow(haystack: string, needle: string, message: string) {
   assertIncludes(haystack, needle, message);
-  if (!haystack || !haystack.includes(needle)) throw new Error(`${message} — "${haystack}" does not contain "${needle}"`);
+  if (!haystack || !haystack.includes(needle)) throw new Error(`${message} - "${haystack}" does not contain "${needle}"`);
 }
 
 function assertGreaterThanOrThrow(actual: number, expected: number, message: string) {
   assertGreaterThan(actual, expected, message);
-  if (!(actual > expected)) throw new Error(`${message} — expected > ${expected}, got ${actual}`);
+  if (!(actual > expected)) throw new Error(`${message} - expected > ${expected}, got ${actual}`);
 }
 
 function getResults() {

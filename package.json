@@ -160,6 +160,7 @@
     "test:issue-265-morocco-profile": "node tests/run-electron-node-test.cjs tests/issue-265-morocco-profile.test.ts",
     "test:issue-266-currency-symbol-print": "node tests/run-electron-node-test.cjs tests/issue-266-currency-symbol-print.test.ts",
     "test:tables-string-ids": "node tests/run-electron-node-test.cjs tests/tables-string-ids.test.ts",
+    "test:issue-646-floor-management": "node tests/run-electron-node-test.cjs tests/issue-646-floor-management.test.ts",
     "test:held-orders": "node tests/run-electron-node-test.cjs tests/held-orders.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/held-orders-store.test.ts",
     "test:product-images": "node tests/run-electron-node-test.cjs tests/product-images.test.ts",
     "test:schema-health": "node tests/run-electron-node-test.cjs tests/schema-health.test.ts",

@@ -191,11 +191,12 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     const addStaffBtn = page.locator('button', { has: page.locator('svg') }).filter({ hasText: /افزودن|Add/i }).first();
     if (await addStaffBtn.isVisible()) {
       await addStaffBtn.click();
-      const roleSelect = page.locator('select').first();
+      const modal = page.getByRole('dialog');
+      const roleSelect = modal.locator('select').first();
       await roleSelect.selectOption('manager');
-      const pinInput = page.locator('input[placeholder*="PIN"], input[placeholder*="پین"], input[inputmode="numeric"]').first();
+      const pinInput = modal.locator('input[placeholder*="PIN"], input[placeholder*="پین"], input[inputmode="numeric"]').first();
       await expect(pinInput).toBeVisible();
-      const togglePinBtn = page.locator('button[aria-label="Toggle PIN visibility"]').first();
+      const togglePinBtn = modal.locator('button[aria-label="Toggle PIN visibility"]').first();
       await expect(togglePinBtn).toBeVisible();
       const pinBox = await pinInput.boundingBox();
       const toggleBox = await togglePinBtn.boundingBox();
@@ -204,7 +205,7 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
       // In RTL, end-3 is on the left half of the input.
       expect(toggleBox!.x + toggleBox!.width).toBeLessThan(pinBox!.x + pinBox!.width / 2);
       await captureScreenshot(page, 'staff-modal-rtl-fa.png');
-      const closeFormBtn = page.locator('button:has(svg.lucide-x)').first();
+      const closeFormBtn = modal.locator('button:has(svg.lucide-x)').first();
       if (await closeFormBtn.isVisible()) {
         await closeFormBtn.click();
       } else {

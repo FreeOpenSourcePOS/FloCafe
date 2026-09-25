@@ -1799,6 +1799,13 @@ async function run(): Promise<void> {
     assert(sqMessages[key]?.includes(technicalLiteral), `sq.json ${key} must preserve the CSV field ${technicalLiteral}`);
   }
   console.log('  ✓ Albanian CSV guidance preserves machine-readable field names');
+  assert(sqMessages['dashboard.payIn'] === 'Depozitë', 'Albanian cash pay-in label must match the Z-report terminology');
+  assert(sqMessages['dashboard.payOut'] === 'Tërheqje', 'Albanian cash pay-out label must match the Z-report terminology');
+  assert(sqMessages['orders.takeaway'] === 'Me vete', 'Albanian takeaway label must use the approved pickup term');
+  assert(sqMessages['pos.orderTypeTakeaway'] === 'Me vete', 'Albanian order-type takeaway label must use the approved pickup term');
+  assert(sqMessages['orders.convertToTakeaway'] === 'Konverto në porosi me vete', 'Albanian takeaway conversion action must use pickup wording');
+  assert(sqMessages['orders.orderConvertedTakeaway'] === 'Porosia u konvertua në porosi me vete', 'Albanian takeaway conversion result must use pickup wording');
+  console.log('  ✓ Albanian cash-movement and takeaway terminology is consistent');
 
   console.log('\n✅ All translation integrity checks passed.');
 }

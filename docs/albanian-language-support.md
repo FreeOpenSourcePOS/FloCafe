@@ -119,7 +119,7 @@ The translation uses one Albanian glossary across UI, seed data, and print label
 | wallet | Portofel | |
 | refund | Kthim i pagesës | UI action can use `Rimburso` |
 | delivery | Dorëzim | |
-| takeaway | Marr me shtëpica | |
+| takeaway | Me vete | Short pickup label; use `porosi me vete` in phrases |
 | dine in | Në lokal | |
 | ready | Gati | |
 | preparing | Po përgatitet | |
@@ -218,10 +218,11 @@ The rebased implementation was verified with the repository-native checks and fo
 - `npm run test:print-kernel` and `npm run test:raster` passed, preserving shared grapheme, Arabic/Persian, CJK, thermal, and Electron raster behavior.
 - `npm run test:rtl-setup-auth-settings`, `npm run test:rtl-dashboard-pos-common`, and `npm run test:rtl-kds-server-whatsapp` passed. Browser detection resolves both `sq` and `sq-AL`; standalone layouts retain `dir="ltr"`.
 - `npm run test:browser-receipts` passed 67 checks, including the Albanian receipt and tableside order slip; `npm run test:i18n-audit-remediations` passed 53 checks, `npm run test:issue-241-localized-errors` passed, and `npm run test:decoupled-ui-locale` passed with `sq-AL` decimal, grouping, `Lekë`, date, and Albania-profile assertions.
-- `npm run test:locale-chunks` passed after `npm run build:frontend`. Albanian is a distinct 155 KB lazy chunk, is not eager on any page, and has no external references.
+- `npm run test:locale-chunks` passed after `npm run build:frontend`. Albanian is a distinct 154 KB lazy chunk, is not eager on any page, and has no external references.
 - `npm run lint`, `npm run build`, and `npm run build:frontend` passed. Lint reports only the repository's pre-existing warnings and no errors.
-- `npm run test:e2e:browser` passed all 76 Chromium tests, including the multi-locale visible print-control spec with Albanian.
+- `npm run test:e2e:browser` passed all 76 Chromium tests, including the multi-locale visible print-control spec with Albanian. The phone-unification spec also passed twice against the same fixture; it now waits for business hydration and uses a unique customer row so retries cannot select stale rows.
 - `npm test` passed the complete repository suite.
+- Post-review repair corrected the distinct cash labels to `Depozitë`/`Tërheqje`, unified takeaway labels to `Me vete`, regenerated the derived print catalog, and added translation assertions for those semantics. The CI failure was reproduced from the run log as a pre-hydration settings save followed by a retry duplicate; the focused and full browser suites pass after the test synchronization fix.
 - `chrome-devtools-axi` manual smoke verification against the isolated E2E fixture confirmed persisted `language: "sq"`, `<html lang="sq-AL" dir="ltr">`, `Cilësimet`, `Dëftesë bazë (termike)`, `Printim në web (shfletues)`, and `Ndarje përmes WhatsApp`, with no raw translation keys and no console errors. Screenshot evidence was written outside Git at `/tmp/flocafe-albanian-print-test.png`.
 - Physical 58 mm/80 mm printer coverage remains an honest release limitation: capability-gated software paths passed, but no hardware printer was available in this environment.
 

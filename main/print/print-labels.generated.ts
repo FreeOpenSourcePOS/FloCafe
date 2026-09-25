@@ -2133,7 +2133,7 @@ const PRINT_LABELS: Record<PrintLabelLanguage, PrintLabelTable> = {
     'pos.orderTypeDineIn': "Në lokal",
     'pos.orderTypeDelivery': "Dorëzim",
     'pos.orderTypeOnline': "Online",
-    'pos.orderTypeTakeaway': "Marr me shtëpica",
+    'pos.orderTypeTakeaway': "Me vete",
     'pos.methodCash': "Cash",
     'pos.methodCard': "Kartë",
     'pos.methodWallet': "Portofel",

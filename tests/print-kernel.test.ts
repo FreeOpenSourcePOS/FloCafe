@@ -44,7 +44,7 @@ import {
 import type { LanguageRegistryFacts } from '../shared/print';
 
 // Test registry: mirrors what a call site injects from the central registry.
-const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi']);
+const SELECTABLE = new Set(['en', 'es', 'fr', 'pt', 'fa', 'ja', 'zh-tw', 'hi', 'th']);
 const FACTS: LanguageRegistryFacts = {
   isSelectableLanguage: (code) => SELECTABLE.has(code),
 };

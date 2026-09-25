@@ -109,6 +109,8 @@ export function generateKotHtml(
   const locale = LANGUAGES[lang]?.locale ?? 'en-US';
   const fontFamily = lang === 'hi'
     ? "'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Courier New', monospace"
+    : lang === 'th'
+    ? "'Noto Sans Thai', 'Leelawadee UI', Thonburi, 'Courier New', monospace"
     : lang === 'zh-tw'
     ? "'PingFang TC', 'Microsoft JhengHei', 'Noto Sans CJK TC', 'Noto Sans TC', monospace"
     : "'Courier New',monospace";

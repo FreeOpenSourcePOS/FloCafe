@@ -26,6 +26,7 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   bn: { basic: 'মৌলিক রসিদ (থার্মাল)', web: 'ওয়েব প্রিন্ট (ব্রাউজার)', whatsapp: 'হোয়াটসঅ্যাপ শেয়ার করুন' },
   sq: { basic: 'Dëftesë bazë (termike)', web: 'Printim në web (shfletues)', whatsapp: 'Ndarje përmes WhatsApp' },
   vi: { basic: 'Biên nhận đơn giản (máy in nhiệt)', web: 'In web (trình duyệt)', whatsapp: 'Chia sẻ WhatsApp' },
+  th: { basic: 'ใบเสร็จพื้นฐาน (เครื่องพิมพ์ความร้อน)', web: 'พิมพ์เว็บ (เบราว์เซอร์)', whatsapp: 'แชร์ผ่าน WhatsApp' },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {

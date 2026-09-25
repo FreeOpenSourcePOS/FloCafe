@@ -59,6 +59,9 @@
  *  22. Vietnamese safeguards: vi.json values never contain placeholders,
  *      malformed replacement characters, or non-NFC text, and only documented
  *      shared values may remain identical to English.
+ *  23. Thai safeguards: th.json values never contain placeholders, malformed
+ *      replacement characters, or non-NFC text, and only documented shared
+ *      values may remain identical to English.
  *
  * Negative tests at the bottom feed broken fixture data into each validator
  * and assert it is caught, so a regression in the validators themselves
@@ -1565,6 +1568,44 @@ function viFallbackErrors(viFlat: Record<string, string>, enFlat: Record<string,
   return errors;
 }
 
+/** Thai translation safeguards. */
+const TH_INTENTIONAL_IDENTICAL = new Set<string>([
+  'auth.emailPlaceholder', 'common.appTitle', 'common.brandName', 'common.logoAlt',
+  'dashboard.exportCsv', 'dashboard.exportXlsx', 'dashboard.ticketMethodCount',
+  'kds.emptyColumn', 'nav.kds', 'nav.pos', 'nav.whatsapp', 'pos.addonPrice',
+  'pos.loadingEllipsis', 'pos.tagCount', 'pos.taxLine', 'printTest.escpos',
+  'print.hsn', 'print.zReport.paymentCount', 'products.addonSelectionRange',
+  'products.fieldSku', 'products.saleUnitCl', 'products.saleUnitFlOz', 'products.saleUnitG',
+  'products.saleUnitKg', 'products.saleUnitL', 'products.saleUnitLb', 'products.saleUnitMl',
+  'products.saleUnitOz', 'products.skuLabel', 'serverApp.emailPlaceholder',
+  'serverApp.title', 'settings.apiKeyInputPlaceholder', 'settings.connectionUsb',
+  'settings.instagramPlaceholder', 'settings.ipAddressPlaceholder', 'settings.kds',
+  'settings.paymentMethodUpi', 'settings.portPlaceholder', 'settings.registrationEmailPlaceholder',
+  'settings.registrationLastError', 'settings.revflo', 'settings.serverApp',
+  'settings.tabOrderflow', 'settings.tabWhatsapp', 'settings.unicode', 'settings.whatsapp',
+  'setup.finedineLabel', 'setup.ownerEmailPlaceholder', 'setup.pinLabel', 'setup.qsrLabel',
+  'tax.auditCreateOverride', 'tax.auditUpdateOverride', 'update.downloadingBadge',
+  'whatsapp.connect.pairingPhonePlaceholder',
+]);
+
+function thFallbackErrors(thFlat: Record<string, string>, enFlat: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const k of Object.keys(enFlat)) {
+    const thVal = thFlat[k];
+    if (thVal === undefined) continue;
+    if (thVal.startsWith('[TH]') || thVal.startsWith('[TODO]')) {
+      errors.push(`th.json ${k} — placeholder prefix found: "${thVal}"`);
+    } else if (thVal === enFlat[k] && !TH_INTENTIONAL_IDENTICAL.has(k)) {
+      errors.push(`th.json ${k} — identical to English value (renders as English for Thai users)`);
+    } else if (thVal !== thVal.normalize('NFC')) {
+      errors.push(`th.json ${k} — value must use Unicode NFC`);
+    } else if (thVal.includes('\uFFFD')) {
+      errors.push(`th.json ${k} — value contains a Unicode replacement character`);
+    }
+  }
+  return errors;
+}
+
 /* ------------------------------------------------------------ *
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
@@ -2057,6 +2098,26 @@ async function run(): Promise<void> {
   assert(!viMessages['orders.voidItemConfirm'].includes('đã đang'), 'vi.json void confirmation must not contain duplicated progressive grammar');
   console.log(`  ✓ no untranslated vi.json values (${VI_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
 
+  // 22. th.json values must be complete, NFC text without malformed characters.
+  const thMessages = loadedStrings.get('th');
+  if (!thMessages) throw new Error('languages registry must include the maintained th locale');
+  const thErrors = thFallbackErrors(thMessages, loadedStrings.get('en')!);
+  if (thErrors.length) {
+    console.error(`\nth.json values with errors (${thErrors.length}):`);
+    for (const e of thErrors.slice(0, 100)) console.error(`  - ${e}`);
+    assert(false, 'th.json contains untranslated, placeholder, non-NFC, or replacement-character values');
+  }
+  assert(thMessages['receipt.cashReceived'] === 'เงินสดที่ได้รับ', 'th.json receipt.cashReceived must preserve the canonical cash-received label');
+  assert(thMessages['pos.tagVeg'] === 'มังสวิรัติ' && thMessages['products.tagVeg'] === 'มังสวิรัติ', 'th.json vegetarian product tags must use the vegetarian Thai term, not an unrelated homograph');
+  assert(thMessages['pos.tagNonVeg'] === 'ไม่มังสวิรัติ' && thMessages['products.tagNonVeg'] === 'ไม่มังสวิรัติ', 'th.json non-vegetarian product tags must negate the vegetarian Thai term');
+  assert(thMessages['orders.takeaway'] === thMessages['pos.orderTypeTakeaway'], 'th.json takeaway labels must match the reviewed Thai pickup term');
+  assert(thMessages['dashboard.payIn'] === 'เติมเงิน' && thMessages['dashboard.payOut'] === 'จ่ายออก', 'th.json cash-movement labels must match the Z-report terminology');
+  // The setup card only offers optional product-update and marketing opt-ins, so the
+  // mandatory-notice clause must read "cannot be disabled" (ปิดไม่ได้), matching en.json.
+  assert(thMessages['setup.emailCommunicationDescription'].includes('ปิดไม่ได้ในขั้นตอนนี้'), 'th.json must tell Thai users that essential notices cannot be disabled at setup');
+  assert(!thMessages['setup.emailCommunicationDescription'].includes('ปิดได้ในขั้นตอนนี้'), 'th.json must not tell Thai users that essential notices can be disabled at setup');
+  console.log(`  ✓ no untranslated th.json values (${TH_INTENTIONAL_IDENTICAL.size} intentional shared values; NFC verified)`);
+
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -2162,7 +2223,7 @@ function runNegativeTests(): void {
     tagParityErrors({ 'a.b': 'Click <bold>here</bold>' }, { 'a.b': 'Click here' }, 'es'),
   );
 
-  // 7. Language safeguards (fa, fr, tr, fil, de, it, ru, ur, ja, zh, ko, id, nl, hi, bn, sq, vi).
+  // 7. Language safeguards (fa, fr, tr, fil, de, it, ru, ur, ja, zh, ko, id, nl, hi, bn, sq, vi, th).
   expectDetected(
     'fa: English-identical value',
     faFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
@@ -2310,6 +2371,18 @@ function runNegativeTests(): void {
   expectDetected(
     'vi: Unicode replacement character',
     viFallbackErrors({ 'a.b': 'Ti�ng Việt' }, { 'a.b': 'Tiếng Việt' }),
+  );
+  expectDetected(
+    'th: English-identical value',
+    thFallbackErrors({ 'a.b': 'Same value' }, { 'a.b': 'Same value' }),
+  );
+  expectDetected(
+    'th: placeholder prefix value',
+    thFallbackErrors({ 'a.b': '[TH] Placeholder value' }, { 'a.b': 'Different value' }),
+  );
+  expectDetected(
+    'th: Unicode replacement character',
+    thFallbackErrors({ 'a.b': 'กา�แฟ' }, { 'a.b': 'กาแฟ' }),
   );
 
   // 8. TypeScript key safety.

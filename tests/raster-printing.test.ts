@@ -1081,8 +1081,11 @@ async function run(): Promise<void> {
   assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: true }), false);
   assert.equal(isRasterRenderResult({ version: 1, requestId: 'r1', ok: false, code: 'render-failed', detail: 'failed' }), true);
 
-  // Verify raster HTML includes system CJK fallbacks
+  // Verify raster HTML includes system Thai and CJK fallbacks
   const html = rasterRendererHtml();
+  assert.ok(html.includes('Noto Sans Thai'));
+  assert.ok(html.includes('Leelawadee UI'));
+  assert.ok(html.includes('Thonburi'));
   assert.ok(html.includes('PingFang SC'));
   assert.ok(html.includes('Microsoft YaHei'));
   assert.ok(html.includes('Noto Sans CJK SC'));

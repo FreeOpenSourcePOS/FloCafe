@@ -40,6 +40,13 @@ export const LANGUAGES = {
     selectable: true,
     load: () => import('./messages/tr.json'),
   },
+  th: {
+    locale: 'th-TH',
+    nativeName: 'ไทย',
+    direction: 'ltr',
+    selectable: true,
+    load: () => import('./messages/th.json'),
+  },
   fil: {
     locale: 'fil-PH',
     nativeName: 'Filipino',

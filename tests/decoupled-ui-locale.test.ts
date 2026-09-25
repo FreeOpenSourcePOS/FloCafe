@@ -7,7 +7,7 @@
  * 2. Tenant timezone (e.g. America/Argentina/Buenos_Aires), calendar system, and digit
  *    preferences remain backend-authoritative and respected regardless of UI locale.
  * 3. Browser thermal receipts (web-print.ts / generateBillHtml) format receipt dates
- *    in the active UI language (including Albanian and Urdu) for an Argentina tenant.
+ *    in the active UI language (including Albanian, Thai, and Urdu) for an Argentina tenant.
  * 4. WhatsApp share messages (whatsapp-share.ts) respect the active UI locale for date/amounts.
  * 5. React useFormatDate hook correctly provides localized formatting based on useLocale().
  * 6. Reviewer-visible visual evidence artifacts (HTML & PNG screenshots) are generated
@@ -262,7 +262,7 @@ async function runTests() {
     },
   };
 
-  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'ru' | 'fa' | 'ur' | 'ja' | 'hi' | 'sq'; label: string; filePrefix: string }> = [
+  const receiptLanguages: Array<{ lang: 'en' | 'es' | 'fr' | 'pt' | 'ru' | 'fa' | 'ur' | 'ja' | 'hi' | 'sq' | 'th'; label: string; filePrefix: string }> = [
     { lang: 'en', label: 'English UI', filePrefix: 'receipt-argentina-english-ui' },
     { lang: 'es', label: 'Spanish UI', filePrefix: 'receipt-argentina-spanish-ui' },
     { lang: 'fr', label: 'French UI', filePrefix: 'receipt-argentina-french-ui' },
@@ -273,6 +273,7 @@ async function runTests() {
     { lang: 'ja', label: 'Japanese UI', filePrefix: 'receipt-argentina-japanese-ui' },
     { lang: 'hi', label: 'Hindi UI', filePrefix: 'receipt-argentina-hindi-ui' },
     { lang: 'sq', label: 'Albanian UI', filePrefix: 'receipt-argentina-albanian-ui' },
+    { lang: 'th', label: 'Thai UI', filePrefix: 'receipt-argentina-thai-ui' },
   ];
 
   const receiptResults: Record<string, { html: string; htmlPath: string; pngPath: string }> = {};

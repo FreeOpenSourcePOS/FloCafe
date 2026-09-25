@@ -53,7 +53,7 @@ export function generateOrderSlipHtml(order: Order, labels: OrderSlipLabels, opt
   `).join('');
 
   return `
-    <div class="order-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN',monospace;font-size:${fontSize};direction:${direction};text-align:${textAlign};">
+    <div class="order-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Thai','Leelawadee UI',Thonburi,monospace;font-size:${fontSize};direction:${direction};text-align:${textAlign};">
       <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(labels.title)}</h2>
       <p style="margin:2px 0;font-weight:bold;">#${escapeHtml(order.order_number)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(order.table.name)}</p>` : ''}

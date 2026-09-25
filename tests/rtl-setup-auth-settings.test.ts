@@ -294,6 +294,12 @@ async function run(): Promise<void> {
   withNavigatorLanguage('vi', () => {
     assert(i18nModule.getBrowserLanguage() === 'vi', 'getBrowserLanguage must return "vi" for bare vi');
   });
+  withNavigatorLanguage('th-TH', () => {
+    assert(i18nModule.getBrowserLanguage() === 'th', 'getBrowserLanguage must return "th" for th-TH');
+  });
+  withNavigatorLanguage('th', () => {
+    assert(i18nModule.getBrowserLanguage() === 'th', 'getBrowserLanguage must return "th" for bare th');
+  });
   withNavigatorLanguage('en-US', () => {
     assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must honor the first supported navigator.languages preference');
   }, ['es-ES', 'en-US']);
@@ -306,7 +312,7 @@ async function run(): Promise<void> {
   console.log('  ✓ getBrowserLanguage resolves regional locales before primary-language fallbacks');
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all supported languages.
-  const languages = ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi'] as const;
+  const languages = ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th'] as const;
   const { createTranslator } = frontendRequire('use-intl/core');
   // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {

@@ -139,6 +139,9 @@ function run(): void {
   assert('vi resolves grand total to Vietnamese', printLabel('vi', 'print.grandTotal') === 'TỔNG CỘNG');
   assert('vi resolves kitchen ticket to Vietnamese', printLabel('vi', 'print.kot.banner') === 'PHIẾU BẾP');
   assert('vi resolves cash received from the canonical receipt key', printLabel('vi', 'receipt.cashReceived') === 'Tiền mặt đã nhận');
+  assert('th resolves grand total to Thai', printLabel('th', 'print.grandTotal') === 'ยอดรวมทั้งสิ้น');
+  assert('th resolves kitchen ticket to Thai', printLabel('th', 'print.kot.banner') === 'ใบสั่งอาหาร');
+  assert('th resolves cash received from the canonical receipt key', printLabel('th', 'receipt.cashReceived') === 'เงินสดที่ได้รับ');
   assert('pt resolves grand total', typeof printLabel('pt', 'print.grandTotal') === 'string' && printLabel('pt', 'print.grandTotal').length > 0);
   assert('unknown language falls back to English', printLabel('xx', 'print.grandTotal') === 'TOTAL');
   assert('empty language falls back to English', printLabel('', 'receipt.billNumber') === 'Bill #');

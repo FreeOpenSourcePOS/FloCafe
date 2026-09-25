@@ -147,6 +147,22 @@ async function run(): Promise<void> {
         'Taiwan Traditional Chinese demo customers use Taiwan E.164 numbers',
       );
     }
+    if (language === 'th') {
+      assert.equal(snapshot.category, 'อาหารเริ่มต้น', 'Thai demo category is localized');
+      assert.equal(snapshot.product, 'สะเต๊ะไก่', 'Thai demo satay uses the correct Thai spelling');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-pad-krapow'")[0].name, 'ผัดกะเพราไก่', 'Thai demo pad krapow uses restaurant terminology');
+      assert.equal(snapshot.manager, 'ผู้จัดการสาธิต', 'Thai demo manager is localized');
+      assert.equal(snapshot.customer, 'สมชาย รักดี', 'Thai demo customer is localized');
+      assert.deepEqual(
+        rows('customers', 'phone, country_code', "id LIKE 'cust-demo-%' ORDER BY id").map((customer) => [customer.phone, customer.country_code]),
+        [
+          ['+66812345678', '+66'],
+          ['+66812345679', '+66'],
+          ['+66812345680', '+66'],
+        ],
+        'Thai demo customers use Thailand E.164 numbers independent of the selected store country',
+      );
+    }
     if (language === 'hi') {
       assert.equal(snapshot.category, 'स्टार्टर', 'Hindi demo category is localized');
       assert.equal(snapshot.product, 'पनीर टिक्का', 'Hindi demo product is localized');

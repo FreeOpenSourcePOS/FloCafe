@@ -86,14 +86,30 @@ function collectReachableScripts(scripts) {
   return reachable;
 }
 
+// A referenced path only counts when the segment actually invokes a test
+// runner. Without this, `echo "tests/foo.test.ts"` would mark that suite
+// covered, and the validator would report a file as run that nothing runs.
+const TEST_RUNNER_PATTERN = /^(?:npx\s+)?(?:node|ts-node|tsx|bun|deno|electron)\b/;
+
+function segmentInvokesTestRunner(segment) {
+  const withoutWrapper = segment.trim().replace(/^bash\s+tests\/run-test\.sh\s+/, '');
+  return TEST_RUNNER_PATTERN.test(withoutWrapper);
+}
+
 // Suite files a command actually executes, e.g.
 // `node tests/run-electron-node-test.cjs tests/held-orders.test.ts`.
 function extractReferencedTestFiles(command) {
   const pattern = /(?:^|[\s'"])(tests\/[\w.\/-]+\.test\.(?:ts|cjs|js|mjs))/g;
   // match[1], not match.slice(1): the boundary alternates a real character with
   // the zero-width `^`, so slicing by one drops the leading `t` on a match that
-  // anchors at the start of the command.
-  return [...new Set([...command.matchAll(pattern)].map((match) => match[1]))];
+  // anchors at the start of a string. Requiring a runner means a counted
+  // segment begins with a runner token, so `^` does not currently fire here;
+  // reading the capture group keeps the extractor correct if that ever changes.
+  return [...new Set(
+    splitTopLevelCommands(command)
+      .filter(segmentInvokesTestRunner)
+      .flatMap((segment) => [...segment.matchAll(pattern)].map((match) => match[1])),
+  )];
 }
 
 function listTestFiles() {
@@ -144,7 +160,7 @@ function main() {
   }
 
   console.log(`Test script coverage OK: ${testScripts.length - Object.keys(TEST_EXCLUSIONS).length} reachable, ${Object.keys(TEST_EXCLUSIONS).length} explicitly excluded.`);
-  console.log(`Test file coverage OK: ${testFiles.length - Object.keys(TEST_FILE_EXCLUSIONS).length} run by the default suite, ${Object.keys(TEST_FILE_EXCLUSIONS).length} by a dedicated command.`);
+  console.log(`Test file coverage OK: ${testFiles.length - Object.keys(TEST_FILE_EXCLUSIONS).length} run by the default suite, ${Object.keys(TEST_FILE_EXCLUSIONS).length} excluded with a stated reason.`);
 }
 
 if (require.main === module) main();

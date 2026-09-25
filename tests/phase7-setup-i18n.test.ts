@@ -141,6 +141,8 @@ async function run(): Promise<void> {
     if (language === 'bn') {
       assert.equal(snapshot.category, 'স্টার্টার', 'Bengali demo category is localized');
       assert.equal(snapshot.product, 'ফুচকা', 'Bengali demo product is localized');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-bhuna-khichuri'")[0].name, 'ভুনা খিচুড়ি', 'Bengali demo bhuna khichuri is labeled correctly');
+      assert.equal(rows('products', 'name', "id = 'prod-demo-ilish-bhaja'")[0].name, 'ইলিশ ভাজা', 'Bengali demo fried hilsa is labeled correctly');
       assert.equal(snapshot.manager, 'ম্যানেজার ডেমো', 'Bengali demo manager is localized');
       assert.equal(snapshot.customer, 'রাফেকুল ইসলাম', 'Bengali demo customer is localized');
       assert.deepEqual(

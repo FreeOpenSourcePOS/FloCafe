@@ -561,8 +561,8 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     ? [
         ['prod-demo-fuchka', 'cat-demo-starters', 'ফুচকা', 280, 1],
         ['prod-demo-singara', 'cat-demo-starters', 'সিঙ্গারা', 250, 2],
-        ['prod-demo-bhuna-khichuri', 'cat-demo-main', 'ভোলা খিচুড়ি', 800, 1],
-        ['prod-demo-ilish-bhaja', 'cat-demo-main', 'ইলিশ মাছের ঝোল', 1100, 2],
+        ['prod-demo-bhuna-khichuri', 'cat-demo-main', 'ভুনা খিচুড়ি', 800, 1],
+        ['prod-demo-ilish-bhaja', 'cat-demo-main', 'ইলিশ ভাজা', 1100, 2],
         ['prod-demo-mug-dal-rice', 'cat-demo-main', 'মুগ ডাল ভাত', 1200, 3],
         ['prod-demo-tea', 'cat-demo-beverages', 'চা', 350, 1],
         ['prod-demo-water', 'cat-demo-beverages', 'পানি', 200, 2],

@@ -151,7 +151,7 @@
     "test:issue-134-routing": "node tests/run-electron-node-test.cjs tests/issue-134-station-routing.test.ts",
     "test:issue-134-mgmt": "node tests/run-electron-node-test.cjs tests/issue-134-station-management.test.ts",
     "test:issue-133-kds-kot-toggles": "node tests/run-electron-node-test.cjs tests/issue-133-kds-kot-toggles.test.ts",
-    "test:issue-137-barcode": "node tests/run-electron-node-test.cjs tests/issue-137-barcode.test.ts",
+    "test:issue-137-barcode": "node tests/run-electron-node-test.cjs tests/issue-137-barcode.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/issue-365-scale-barcode.test.ts",
     "test:issue-244-product-addon-links": "node tests/run-electron-node-test.cjs tests/issue-244-product-addon-links.test.ts",
     "test:issue-245-246-addon-groups": "node tests/run-electron-node-test.cjs tests/issue-245-246-addon-groups.test.ts",
     "test:issue-247-catalog-invariants": "node tests/run-electron-node-test.cjs tests/issue-247-catalog-invariants.test.ts",

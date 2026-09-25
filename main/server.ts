@@ -34,8 +34,10 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!req.path.startsWith('/api')) { next(); return; }
   // Health check — unauthenticated
   if (req.path === '/api/health') { next(); return; }
-  // Auth routes handle their own token verification
-  if (req.path.startsWith('/api/auth')) { next(); return; }
+  // Auth routes handle their own token verification. Matched with a trailing
+  // slash so this doesn't also swallow /api/authorization, which relies on
+  // this middleware to populate req.user before its own permission gate runs.
+  if (req.path === '/api/auth' || req.path.startsWith('/api/auth/')) { next(); return; }
   // Allow unauthenticated GET requests for product images (so <img> tags work)
   if (req.path.startsWith('/api/products/') && req.path.endsWith('/image') && req.method === 'GET') { next(); return; }
   // Login-screen support-ticket paths, rate-limited in support-ticket.ts.

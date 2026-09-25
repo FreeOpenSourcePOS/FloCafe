@@ -101,6 +101,23 @@ string, and it must not grow one. The resolved mode is reported to the renderer 
 buttons in the 40-pixel custom title bar. When the mode is `native-overlay`, `titleBarOverlay` is
 supplied with the theme colours and `TITLE_BAR_HEIGHT` (40).
 
+### The top-level application menu
+
+`titleBarStyle: 'hidden'` makes the main window frameless on Windows and Linux, and Electron creates
+no menu bar for a frameless window, so `Menu.setApplicationMenu` still registers the accelerators but
+draws nothing. [`ApplicationMenuRow`](../../frontend/src/components/layout/ApplicationMenuRow.tsx)
+renders the top-level labels inside the title bar's safe area and opens the matching submenu through
+the `open-application-menu` IPC.
+
+`createMenu()` is the single source of the menu. `get-application-menu` returns only the descriptor a
+label needs, and `open-application-menu` pops the same `Menu` object that was applied, so roles,
+accelerators, and click handlers are the native ones. The popup is a privileged native surface, so the
+handler binds the request to the main window's own `webContents` and current renderer frame rather
+than relying on the trusted-origin check alone, which the KDS window also passes.
+
+macOS keeps its native top-level menu: the handler returns an empty entry list on `darwin` and the
+renderer draws nothing.
+
 ### Theme
 
 [`main/title-bar-theme.ts`](../../main/title-bar-theme.ts) owns the palette: white background with

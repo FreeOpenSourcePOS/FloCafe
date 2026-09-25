@@ -69,49 +69,6 @@ test('real preload, renderer, and main boundaries reach an authenticated dashboa
   expect(runtime.readiness).toEqual({ success: true });
 });
 
-test('real main-process application menu is intact and the title-bar row mirrors it', async () => {
-  await harness.authenticateDashboard();
-
-  const menu = await harness.app.evaluate(({ app, Menu }) => {
-    const application = Menu.getApplicationMenu();
-    if (!application) return null;
-    return {
-      appName: app.getName(),
-      topLevel: application.items.map((item) => ({
-        label: item.label,
-        type: item.type,
-        hasSubmenu: Boolean(item.submenu),
-        submenuItems: item.submenu ? item.submenu.items.map((entry) => entry.label) : [],
-      })),
-    };
-  });
-
-  // The menu main builds is unchanged by the title-bar row: every top-level
-  // entry still carries the submenu the renderer pops, so roles, accelerators,
-  // and click handlers stay the native ones.
-  expect(menu).not.toBeNull();
-  const entries = menu!.topLevel;
-  const labels = entries.map((entry) => entry.label);
-  expect(entries.every((entry) => entry.hasSubmenu)).toBe(true);
-  expect(entries.find((entry) => entry.label === 'File')?.submenuItems).toContain('New Order');
-
-  // macOS prepends the app-name menu and a dev build appends Developer; the
-  // shared top-level surface must be identical on every platform.
-  expect(labels.filter((label) => label !== menu!.appName && label !== 'Developer')).toEqual([
-    'File', 'Edit', 'Orders', 'Reports', 'Settings', 'Window', 'Help',
-  ]);
-
-  const row = harness.page.getByTestId('desktop-application-menu');
-  if (process.platform === 'darwin') {
-    // macOS keeps its authoritative native top-level menu.
-    expect(labels[0]).toBe(menu!.appName);
-    await expect(row).toHaveCount(0);
-  } else {
-    await expect(row).toBeVisible();
-    await expect(row.locator('button')).toHaveText(labels);
-  }
-});
-
 test('POS topbar fullscreen toggle stays synchronized with native window state', async () => {
   test.skip(process.platform === 'linux', 'Linux CI uses Xvfb without a window manager, so native maximize state is not observable');
   await harness.authenticateDashboard();
@@ -195,6 +152,49 @@ test('native window lifecycle is observable through the Electron boundary', asyn
   await expect.poll(() => nativeWindow.evaluate((window) => window.isMinimized())).toBe(true);
   await nativeWindow.evaluate((window) => window.restore());
   await expect.poll(() => nativeWindow.evaluate((window) => !window.isMinimized())).toBe(true);
+});
+
+test('real main-process application menu is intact and the title-bar row mirrors it', async () => {
+  await harness.authenticateDashboard();
+
+  const menu = await harness.app.evaluate(({ app, Menu }) => {
+    const application = Menu.getApplicationMenu();
+    if (!application) return null;
+    return {
+      appName: app.getName(),
+      topLevel: application.items.map((item) => ({
+        label: item.label,
+        type: item.type,
+        hasSubmenu: Boolean(item.submenu),
+        submenuItems: item.submenu ? item.submenu.items.map((entry) => entry.label) : [],
+      })),
+    };
+  });
+
+  // The menu main builds is unchanged by the title-bar row: every top-level
+  // entry still carries the submenu the renderer pops, so roles, accelerators,
+  // and click handlers stay the native ones.
+  expect(menu).not.toBeNull();
+  const entries = menu!.topLevel;
+  const labels = entries.map((entry) => entry.label);
+  expect(entries.every((entry) => entry.hasSubmenu)).toBe(true);
+  expect(entries.find((entry) => entry.label === 'File')?.submenuItems).toContain('New Order');
+
+  // macOS prepends the app-name menu and a dev build appends Developer; the
+  // shared top-level surface must be identical on every platform.
+  expect(labels.filter((label) => label !== menu!.appName && label !== 'Developer')).toEqual([
+    'File', 'Edit', 'Orders', 'Reports', 'Settings', 'Window', 'Help',
+  ]);
+
+  const row = harness.page.getByTestId('desktop-application-menu');
+  if (process.platform === 'darwin') {
+    // macOS keeps its authoritative native top-level menu.
+    expect(labels[0]).toBe(menu!.appName);
+    await expect(row).toHaveCount(0);
+  } else {
+    await expect(row).toBeVisible();
+    await expect(row.locator('button')).toHaveText(labels);
+  }
 });
 
 test('native shell geometry remains an explicit platform boundary', async () => {

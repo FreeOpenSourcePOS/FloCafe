@@ -29,6 +29,10 @@ export type EffectivePermissionSet = {
 };
 
 type EffectRow = { permission_id: string; effect: PermissionEffect };
+type EffectRoleRow = EffectRow & { role: string };
+type EffectUserRow = EffectRow & { user_id: string };
+
+type Database = ReturnType<typeof getDatabase>;
 
 export type PermissionOverride = {
   permissionId: PermissionId;
@@ -174,4 +178,107 @@ export function requireAnyPermission(...permissionIds: PermissionId[]): RequestH
     }
     next();
   };
+}
+
+/**
+ * The administrative surface an install must never lose: the permission editor,
+ * owner/manager account control, the gate on every staff mutation, and store
+ * configuration. Losing all four strands the store.
+ */
+export const ADMINISTRATIVE_PERMISSION_IDS = [
+  'authorization.manage',
+  'staff.privileged.manage',
+  'staff.operational.manage',
+  'settings.manage',
+] as const satisfies readonly PermissionId[];
+
+export class AdministrationUnreachableError extends Error {
+  constructor() {
+    // Names the invariant and the action that resolves it, and blames the store
+    // rather than the actor: most of the time the actor is not who is locked out.
+    super(
+      'This change would leave no account able to manage staff, permissions, or store settings. '
+      + 'Grant another active owner these permissions first.',
+    );
+    this.name = 'AdministrationUnreachableError';
+  }
+}
+
+/** The one post-write state a permission-changing write may propose. */
+export type AdministrationCandidate =
+  | { kind: 'role_overrides'; role: Role; overrides: ReadonlyMap<PermissionId, PermissionEffect> }
+  | { kind: 'user_overrides'; userId: string; overrides: ReadonlyMap<PermissionId, PermissionEffect> }
+  | { kind: 'user_state'; userId: string; role: Role; isActive: boolean };
+
+export function reachesAdministration(permissionIds: ReadonlySet<PermissionId>): boolean {
+  return ADMINISTRATIVE_PERMISSION_IDS.every((permissionId) => permissionIds.has(permissionId));
+}
+
+const NO_OVERRIDES: ReadonlyMap<PermissionId, PermissionEffect> = new Map();
+
+/** Mirrors resolveEffectivePermissions for a single permission id. */
+function effectiveAllows(
+  permissionId: PermissionId,
+  role: Role,
+  userOverrides: ReadonlyMap<PermissionId, PermissionEffect>,
+  roleOverrides: ReadonlyMap<PermissionId, PermissionEffect>,
+): boolean {
+  const protectedResult = protectedDecision(permissionId, role);
+  if (protectedResult) return protectedResult.allowed;
+  const effect = userOverrides.get(permissionId) ?? roleOverrides.get(permissionId);
+  return effect ? effectAllows(effect) : permissionDefaultAllows(permissionId, role);
+}
+
+/**
+ * Guards a write that could leave the store unadministrable. Evaluated against
+ * the post-write state, so `candidate` describes the overrides or the account
+ * the caller is about to store, never what is already on disk.
+ */
+export function assertAdministrationReachable(
+  db: Database,
+  candidate: AdministrationCandidate,
+): void {
+  const roleOverridesByRole = new Map<Role, Map<PermissionId, PermissionEffect>>();
+  for (const row of db.prepare('SELECT role, permission_id, effect FROM role_permission_overrides').all() as EffectRoleRow[]) {
+    if (!isRole(row.role) || !isPermissionId(row.permission_id)) continue;
+    const overrides = roleOverridesByRole.get(row.role) ?? new Map<PermissionId, PermissionEffect>();
+    overrides.set(row.permission_id, row.effect);
+    roleOverridesByRole.set(row.role, overrides);
+  }
+
+  const userOverridesByUser = new Map<string, Map<PermissionId, PermissionEffect>>();
+  for (const row of db.prepare('SELECT user_id, permission_id, effect FROM user_permission_overrides').all() as EffectUserRow[]) {
+    if (!isPermissionId(row.permission_id)) continue;
+    const overrides = userOverridesByUser.get(row.user_id) ?? new Map<PermissionId, PermissionEffect>();
+    overrides.set(row.permission_id, row.effect);
+    userOverridesByUser.set(row.user_id, overrides);
+  }
+
+  const users = db.prepare('SELECT id, role, is_active FROM users').all() as Array<{
+    id: string;
+    role: string;
+    is_active: number;
+  }>;
+
+  for (const user of users) {
+    const restated = candidate.kind === 'user_state' && candidate.userId === user.id ? candidate : null;
+    const role = restated ? restated.role : user.role;
+    const isActive = restated ? restated.isActive : user.is_active === 1;
+    if (!isActive || !isRole(role)) continue;
+
+    const roleOverrides = candidate.kind === 'role_overrides' && candidate.role === role
+      ? candidate.overrides
+      : roleOverridesByRole.get(role) ?? NO_OVERRIDES;
+    const userOverrides = candidate.kind === 'user_overrides' && candidate.userId === user.id
+      ? candidate.overrides
+      : userOverridesByUser.get(user.id) ?? NO_OVERRIDES;
+
+    const administrative = new Set<PermissionId>(
+      ADMINISTRATIVE_PERMISSION_IDS.filter((permissionId) =>
+        effectiveAllows(permissionId, role, userOverrides, roleOverrides)),
+    );
+    if (reachesAdministration(administrative)) return;
+  }
+
+  throw new AdministrationUnreachableError();
 }

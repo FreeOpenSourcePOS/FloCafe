@@ -18,6 +18,9 @@ const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { authorizationRoutes } = require('../main/routes/authorization');
 const { requireAnyPermission, requirePermission } = require('../main/services/authorization');
 const { requireAuth } = require('../main/server');
+// Required after the electron stub above; a hoisted import would load main/db
+// before Module._load is patched and bind the real electron module.
+const { assertIncludesOrThrow } = require('./helpers/test-setup');
 
 function seedUser(db: any, id: string, role: string) {
   const email = `${id}@test.local`;
@@ -193,6 +196,92 @@ async function main(): Promise<void> {
     200,
     'an owner token reaches the catalog',
   );
+
+  // ── Administration reachability ────────────────────────────────────────
+  // An install must always keep at least one active account holding
+  // authorization.manage, staff.privileged.manage, staff.operational.manage
+  // and settings.manage. authorization-owner is the only owner here, so every
+  // write that would strip one of those from them must be rejected.
+  const ownerId = 'authorization-owner';
+  const ownerUser = await request(app).get(`/api/authorization/users/${ownerId}`).set(owner);
+  const baseline = await request(app).put(`/api/authorization/users/${ownerId}`).set(owner).send({
+    revision: ownerUser.body.revision,
+    overrides: [{ permission_id: 'dashboard.view', effect: 'allow' }],
+  });
+  assert.equal(baseline.status, 200, 'a save that only affects non-administrative permissions is accepted');
+
+  const strandedUser = await request(app).put(`/api/authorization/users/${ownerId}`).set(owner).send({
+    revision: baseline.body.revision,
+    overrides: [
+      { permission_id: 'dashboard.view', effect: 'allow' },
+      { permission_id: 'staff.operational.manage', effect: 'deny' },
+    ],
+  });
+  assert.equal(strandedUser.status, 400, 'the sole active owner cannot deny their own staff administration');
+  assert.equal(strandedUser.body.code, 'administration_unreachable', 'the rejection carries a stable code');
+  assertIncludesOrThrow(
+    strandedUser.body.error,
+    'Grant another active owner these permissions first',
+    'the rejection names the action that resolves it',
+  );
+  assert.doesNotMatch(
+    strandedUser.body.error,
+    /locking yourself out/i,
+    'the rejection blames the store, not the actor',
+  );
+  // The guard runs inside the transaction ahead of the DELETE, so the
+  // rejected write must leave the previously stored override rows intact
+  // rather than half-applied.
+  const storedAfterReject = db
+    .prepare('SELECT permission_id, effect FROM user_permission_overrides WHERE user_id = ? ORDER BY permission_id')
+    .all(ownerId) as Array<{ permission_id: string; effect: string }>;
+  assert.deepEqual(
+    storedAfterReject,
+    [{ permission_id: 'dashboard.view', effect: 'allow' }],
+    'a rejected write leaves the previous overrides intact',
+  );
+
+  const rolesBefore = await request(app).get('/api/authorization/roles').set(owner);
+  const ownerRole = rolesBefore.body.roles.find((entry: any) => entry.role === 'owner');
+  const strandedRole = await request(app).put('/api/authorization/roles/owner').set(owner).send({
+    revision: ownerRole.revision,
+    overrides: [{ permission_id: 'settings.manage', effect: 'deny' }],
+  });
+  assert.equal(strandedRole.status, 400, 'a role override that would strand administration is rejected');
+  assert.equal(strandedRole.body.code, 'administration_unreachable');
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM role_permission_overrides WHERE role = 'owner'").get().count,
+    0,
+    'the rejected role write stores nothing',
+  );
+
+  const secondOwner = seedUser(db, 'authorization-owner-second', 'owner');
+  const acceptedUser = await request(app).put(`/api/authorization/users/${ownerId}`).set(owner).send({
+    revision: baseline.body.revision,
+    overrides: [
+      { permission_id: 'dashboard.view', effect: 'allow' },
+      { permission_id: 'staff.operational.manage', effect: 'deny' },
+    ],
+  });
+  assert.equal(acceptedUser.status, 200, 'the same save is accepted once a second active owner holds the permissions');
+  const ownerEffective = (await request(app).get(`/api/authorization/users/${ownerId}`).set(secondOwner))
+    .body.permissions.find((entry: any) => entry.permission_id === 'staff.operational.manage');
+  assert.equal(ownerEffective.allowed, false, 'the accepted save is really applied to the actor');
+
+  const rolesAfter = await request(app).get('/api/authorization/roles').set(secondOwner);
+  const ownerRoleRevision = rolesAfter.body.roles.find((entry: any) => entry.role === 'owner').revision;
+  const acceptedRole = await request(app).put('/api/authorization/roles/owner').set(secondOwner).send({
+    revision: ownerRoleRevision,
+    overrides: [{ permission_id: 'reports.daily-sales.export', effect: 'deny' }],
+  });
+  assert.equal(acceptedRole.status, 200, 'a role override on a non-administrative permission is untouched');
+
+  const cleared = await request(app)
+    .delete(`/api/authorization/users/${ownerId}/overrides`)
+    .set(secondOwner)
+    .send({ revision: acceptedUser.body.revision });
+  assert.equal(cleared.status, 200, 'clearing overrides only grants access back and is never stranded');
+  assert.equal(cleared.body.overrides.length, 0);
 
   console.log('Authorization management API tests passed');
 }

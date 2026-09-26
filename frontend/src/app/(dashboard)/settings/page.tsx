@@ -4040,7 +4040,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="diagnostics">
-          <DiagnosticsSettingsTab />
+          <DiagnosticsSettingsTab isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="receipts-printers" forceMount hidden={activeTab !== 'receipts-printers'}>

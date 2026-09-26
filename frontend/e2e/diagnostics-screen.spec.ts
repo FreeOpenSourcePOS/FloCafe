@@ -102,5 +102,31 @@ test('nothing is transmitted automatically', async ({ page }) => {
   });
   const settingsJson = await settings.json();
   expect(settingsJson.settings?.diagnostics_transmission_enabled, 'automatic transmission defaults to off').toBe('false');
-  await expect(page.getByRole('switch', { name: 'Send diagnostics automatically' })).toHaveAttribute('aria-checked', 'false');
+  const ownerSwitch = page.getByRole('switch', { name: 'Send diagnostics automatically' });
+  await expect(ownerSwitch).toHaveAttribute('aria-checked', 'false');
+  await expect(ownerSwitch, 'an owner who holds the settings permission can use it').toBeEnabled();
+});
+
+test('an operator without the settings permission cannot use the transmission switch', async ({ page }) => {
+  // A server holds the support permission that opens this screen but not
+  // settings.manage, which is what PUT /settings/:key enforces.
+  await page.goto(`${BASE}/auth/login`);
+  await page.getByLabel('Email').fill('server@flo.local');
+  await page.getByLabel('Password').fill(E2E_PASSWORD);
+  await page.getByRole('button', { name: 'Sign In' }).click();
+  await page.waitForURL(/\/(pos|orders)/, { timeout: 20000 });
+
+  await page.goto(`${BASE}/settings?tab=diagnostics`);
+  await expect(page.getByRole('heading', { name: 'Diagnostics', exact: true })).toBeVisible();
+
+  // A manager has the support permission that opens this screen but not the
+  // settings permission the write endpoint enforces, so the switch is offered
+  // visibly unavailable rather than apparently broken.
+  const transmission = page.getByRole('switch', { name: 'Send diagnostics automatically' });
+  await expect(transmission, 'the control is still shown, so its state is legible').toBeVisible();
+  await expect(transmission, 'the control is visibly unavailable').toBeDisabled();
+  await expect(
+    page.getByRole('button', { name: 'Copy for support', exact: true }),
+    'the parts of the screen a manager may use still work',
+  ).toBeEnabled();
 });

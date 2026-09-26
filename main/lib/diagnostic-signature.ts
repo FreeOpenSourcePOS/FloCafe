@@ -24,6 +24,23 @@ const LEADING_PUNCTUATION_RE = /^[({\[]+/;
 const TRAILING_PUNCTUATION_RE = /[)\]},.:;!?]+$/;
 
 /**
+ * A URL is a structure, not a substring. A host can stand before or after
+ * anything else in a message, so the whole value is recognised and replaced with
+ * a single placeholder rather than one known host being matched out of it.
+ *
+ * The pattern matches the WHOLE token (after surrounding punctuation), which is
+ * what makes it safe: it cannot leave part of a host standing, and it cannot be
+ * defeated by adjacency. It is deliberately over-inclusive - a dotted name that
+ * is not really a host is redacted too - because over-redacting is the safe
+ * direction and under-redacting is the failure this module exists to prevent.
+ *
+ * Underscore is not a host-label character, so a SQL reference such as
+ * `orders.customer_id` is not caught here and stays a schema reference.
+ */
+const URL_LIKE_RE = /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/)?[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d{1,5})?(?:\/\S*)?$/;
+const HOST_PORT_RE = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*:\d{1,5}$/;
+
+/**
  * Structural words that belong to a fixed error phrase rather than to a value.
  *
  * The list is derived from the repository's own diagnostic strings (the
@@ -63,6 +80,18 @@ const SAFE_WORDS = new Set([
  * the `orders` in `no such table: orders`.
  */
 const SCHEMA_SLOT_INTRODUCERS = new Set(['table', 'column', 'index', 'view', 'trigger', 'constraint']);
+
+/**
+ * Words after which a *qualified* name (`orders.customer_id`) is a schema
+ * reference. Deliberately tiny and deliberately NOT the structural-word
+ * vocabulary: an ordinary preposition or verb - "to", "by", "at", "found" - is
+ * not evidence that the dotted token that follows it is a database object, and
+ * treating it as evidence is what let a hostname or a username survive here.
+ * A schema reference that does not match this shape is dropped, which is the
+ * safe direction: losing a table name costs a little detail, keeping a host
+ * costs the privacy guarantee.
+ */
+const SCHEMA_QUALIFIED_NAME_INTRODUCERS = new Set(['table', 'column', 'index', 'view', 'trigger', 'constraint', 'failed']);
 
 /** Plain-language opening clause per error class, so the operator reads a sentence. */
 const CLASS_PHRASE: Record<string, string> = {
@@ -119,13 +148,17 @@ function tokenize(source: string): string[] {
 /** Classifies one token; returns the replacement text, or '' to drop it. */
 function classifyToken(token: string, previousWord: string): string {
   if (QUOTED_RE.test(token)) return '<string>';
-  if (ABSOLUTE_PATH_RE.test(token)) return '<path>';
-  if (UUID_RE.test(token)) return '<id>';
 
   const prefix = LEADING_PUNCTUATION_RE.exec(token)?.[0] || '';
   const suffix = TRAILING_PUNCTUATION_RE.exec(token.slice(prefix.length))?.[0] || '';
   const core = token.slice(prefix.length, token.length - suffix.length);
   if (!core) return '';
+
+  // Before the path and identifier rules: a host is matched whole, so where it
+  // sits in the message cannot help it survive.
+  if (URL_LIKE_RE.test(core) || HOST_PORT_RE.test(core)) return `${prefix}<url>${suffix}`;
+  if (ABSOLUTE_PATH_RE.test(token)) return '<path>';
+  if (UUID_RE.test(token)) return '<id>';
 
   // Checked before the hex rule so an all-digit value (a phone number, a
   // count) is typed as a number rather than as an opaque identifier.
@@ -135,11 +168,8 @@ function classifyToken(token: string, previousWord: string): string {
   const word = core.replace(/[^\p{L}\p{N}_]/gu, '').toLowerCase();
   if (SAFE_WORDS.has(word)) return `${prefix}${core}${suffix}`;
   if (!SQL_IDENTIFIER_RE.test(core)) return '';
-  // A dotted token such as `orders.customer_id` is a schema reference only in a
-  // SQL phrase. Requiring the preceding word to be a known structural word stops
-  // a dotted value elsewhere - a username, a hostname - from surviving.
-  if (core.includes('.') && SAFE_WORDS.has(previousWord)) return `${prefix}${core}${suffix}`;
   if (SCHEMA_SLOT_INTRODUCERS.has(previousWord)) return `${prefix}${core}${suffix}`;
+  if (core.includes('.') && SCHEMA_QUALIFIED_NAME_INTRODUCERS.has(previousWord)) return `${prefix}${core}${suffix}`;
   return '';
 }
 

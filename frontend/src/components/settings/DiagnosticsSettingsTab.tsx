@@ -50,7 +50,7 @@ function readDiagnostics(): Promise<DiagnosticsSnapshot> {
   }));
 }
 
-export function DiagnosticsSettingsTab() {
+export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
   const t = useTranslations('settings');
   const [failures, setFailures] = useState<LocalFailure[]>([]);
   const [bundle, setBundle] = useState<SupportBundle | null>(null);
@@ -199,6 +199,9 @@ export function DiagnosticsSettingsTab() {
         <div className="flex items-start gap-3">
           <Toggle
             value={transmissionEnabled}
+            // PUT /settings/:key requires settings.manage; a support
+            // permission without it would show a working switch that 403s.
+            disabled={!isAdmin}
             onChange={(next) => void saveSetting('diagnostics_transmission_enabled', next, setTransmissionEnabled)}
             label={t('diagnosticsSendAutomatically')}
           />

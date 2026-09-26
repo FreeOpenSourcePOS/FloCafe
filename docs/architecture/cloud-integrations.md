@@ -61,10 +61,12 @@ control the operator turns on after seeing what it is.
 data's most likely hiding place, so
 [`main/lib/diagnostic-signature.ts`](../../main/lib/diagnostic-signature.ts) reduces it to a
 template: the error class, plus the message with literal values replaced by typed placeholders
-(`<string>`, `<number>`, `<id>`, `<path>`) and anything that cannot be confidently classified
-dropped. Two tills failing the same way therefore produce byte-identical text, which is what makes
-grouping possible. `deriveDiagnosticSignature()` is the only code path that decides what a stored
-diagnostic says; there is no per-event-code phrase table any more.
+(`<string>`, `<number>`, `<id>`, `<path>`, `<url>`) and anything that cannot be confidently classified
+dropped. A URL is matched as a whole structure rather than as a substring, so a host cannot survive by
+standing before or after other text; the pattern is deliberately over-inclusive, and a dotted name that
+is not really a host is redacted too. Two tills failing the same way therefore produce byte-identical
+text, which is what makes grouping possible. `deriveDiagnosticSignature()` is the only code path that
+decides what a stored diagnostic says; there is no per-event-code phrase table any more.
 
 **Transmission is off by default.** Two settings gate it and both must hold:
 
@@ -82,7 +84,6 @@ structural word, or a schema reference inside a SQL phrase. Two consequences: a 
 phrase around it and survives; and the projected `metadata` (for example `route`) is copied into
 the bundle as the existing allowlist already projects it, so a client that supplies its own
 `server.internal_error` metadata controls that one field.
-
 **Offline behaviour.** With transmission on, diagnostics are queued in the
 `store_diagnostics_outbox` table and flushed in the background. With no cloud key or with cloud
 sync off, nothing is enqueued at all: such a till can never deliver the row, so queueing it would

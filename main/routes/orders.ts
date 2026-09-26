@@ -12,7 +12,7 @@ import {
   normalizeChargeAmount,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
-import { calculateOrderTotals } from '../services/orders';
+import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
 import { adjustProductStock, resolveInventoryDeduction } from '../services/inventory';
 import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
@@ -912,18 +912,12 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
       }
 
       // BUG #3 FIX: Filter out terminal items from total recalculation.
-      const {
-        subtotal,
-        totalTax,
-        exclusiveTax,
-        allTaxBreakdowns,
-        allTaxSnapshots,
-      } = calculateOrderTotals(db, req.params.id as string);
+      const totals = calculateOrderTotals(db, req.params.id as string);
+      const { subtotal } = totals;
 
       // BUG #12 FIX: Preserve order-level discount (scale percentage proportionally)
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
-      const minorFactor = getCurrencyMinorUnitFactor(currency);
       const existingDiscountAmount = currentOrder.discount_amount || 0;
       let newDiscountAmount = existingDiscountAmount;
       if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
@@ -934,30 +928,14 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         // amount type: keep same value
       }
 
-      const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
-      let newTaxAmount = totalTax;
-      let newExclusiveTax = exclusiveTax;
-      let taxRatio = 1;
-      if (newDiscountAmount > 0 && subtotal > 0) {
-        taxRatio = discountedSubtotal / subtotal;
-        newTaxAmount = Number((totalTax * taxRatio).toFixed(decimals));
-        newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
-      }
-
-      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, currentOrder, customer);
-      const taxRollup = combineItemAndChargeTaxes({
-        itemTaxAmount: newTaxAmount,
-        itemExclusiveTaxAmount: newExclusiveTax,
-        itemBreakdowns: allTaxBreakdowns,
-        itemSnapshots: allTaxSnapshots,
-        itemTaxRatio: taxRatio,
-        chargeTaxes,
-        minorFactor,
+      const { taxRollup, total, roundOff } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: currentOrder,
+        customer,
+        totals,
+        discountAmount: newDiscountAmount,
+        taxScaling: 'when-discounted',
       });
-      const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
-      const total = Number(preRoundTotal.toFixed(decimals));
-      const roundOff = 0;
 
       // Update order totals and optionally update order-level notes
       if (special_instructions !== undefined) {
@@ -1390,7 +1368,6 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         : null;
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
-      const minorFactor = getCurrencyMinorUnitFactor(currency);
 
       // Calculate discount amount
       let discountAmount = 0;
@@ -1404,37 +1381,20 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
       }
 
       // Recalculate tax from item-level data to avoid compounding on repeated discount edits.
-      const {
-        totalTax: freshTax,
-        exclusiveTax,
-        allTaxBreakdowns,
-        allTaxSnapshots,
-      } = calculateOrderTotals(db, req.params.id as string);
-      let newTaxAmount = freshTax;
-      let newExclusiveTax = exclusiveTax;
-      let taxRatio = 1;
-      if (discountAmount > 0 && currentOrder.subtotal > 0) {
-        const discountedSubtotal = Math.max(0, currentOrder.subtotal - discountAmount);
-        taxRatio = discountedSubtotal / currentOrder.subtotal;
-        newTaxAmount = Number((freshTax * taxRatio).toFixed(decimals));
-        newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
-      }
-
-      const discountedSubtotal = Math.max(0, currentOrder.subtotal - discountAmount);
-      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, currentOrder, customer);
-      const taxRollup = combineItemAndChargeTaxes({
-        itemTaxAmount: newTaxAmount,
-        itemExclusiveTaxAmount: newExclusiveTax,
-        itemBreakdowns: allTaxBreakdowns,
-        itemSnapshots: allTaxSnapshots,
-        itemTaxRatio: taxRatio,
-        chargeTaxes,
-        minorFactor,
+      // This site has always scaled tax against the STORED orders.subtotal rather
+      // than a freshly summed one, and unlike every other site it does not rewrite
+      // that column. The shared recomputation keeps that denominator; changing it
+      // is a money-formula decision, not a refactor.
+      const { taxRollup, total: newTotal, roundOff } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: currentOrder,
+        customer,
+        totals: calculateOrderTotals(db, req.params.id as string),
+        subtotalBasis: 'stored-order',
+        storedSubtotal: currentOrder.subtotal,
+        discountAmount,
+        taxScaling: 'when-discounted',
       });
-      const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + (currentOrder.packaging_charge || 0) + (currentOrder.delivery_charge || 0) + (currentOrder.service_charge || 0);
-      const newTotal = Number(preRoundTotal.toFixed(decimals));
-      const roundOff = 0;
 
       db.prepare(`
         UPDATE orders SET discount_amount = ?, discount_type = ?, discount_value = ?,
@@ -1580,7 +1540,6 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
     const itemBaseTotal = item.unit_price * item.quantity + addonTotal;
     const currency = getTenantCurrency();
     const decimals = getCurrencyFractionDigits(currency);
-    const minorFactor = getCurrencyMinorUnitFactor(currency);
 
     let discountAmount: number;
     if (discount_type === 'percentage') {
@@ -1624,51 +1583,29 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
       );
 
       // Update order totals excluding terminal items.
-      const {
-        subtotal: orderSubtotal,
-        totalTax: orderTax,
-        exclusiveTax: exclusiveOrderTax,
-        allTaxBreakdowns,
-        allTaxSnapshots,
-      } = calculateOrderTotals(db, req.params.id as string);
+      const orderTotals = calculateOrderTotals(db, req.params.id as string);
 
       // Recalculate order-level discount proportionally on new subtotal
       const existingDiscountAmount = order.discount_amount || 0;
       let newOrderDiscount = existingDiscountAmount;
       if (existingDiscountAmount > 0 && order.subtotal > 0) {
         // Scale discount proportionally to new subtotal
-        newOrderDiscount = Number((existingDiscountAmount * (orderSubtotal / order.subtotal)).toFixed(decimals));
+        newOrderDiscount = Number((existingDiscountAmount * (orderTotals.subtotal / order.subtotal)).toFixed(decimals));
       }
 
       // Recalculate tax on discounted subtotal
-      const discountedSubtotal = Math.max(0, orderSubtotal - newOrderDiscount);
-      let newOrderTax = orderTax;
-      let newExclusiveOrderTax = exclusiveOrderTax;
-      let taxRatio = 1;
-      if (newOrderDiscount > 0 && orderSubtotal > 0) {
-        taxRatio = discountedSubtotal / orderSubtotal;
-        newOrderTax = Number((orderTax * taxRatio).toFixed(decimals));
-        newExclusiveOrderTax = Number((exclusiveOrderTax * taxRatio).toFixed(decimals));
-      }
-
-      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, order, customer);
-      const taxRollup = combineItemAndChargeTaxes({
-        itemTaxAmount: newOrderTax,
-        itemExclusiveTaxAmount: newExclusiveOrderTax,
-        itemBreakdowns: allTaxBreakdowns,
-        itemSnapshots: allTaxSnapshots,
-        itemTaxRatio: taxRatio,
-        chargeTaxes,
-        minorFactor,
+      const { taxRollup, total: orderTotal, roundOff } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: order,
+        customer,
+        totals: orderTotals,
+        discountAmount: newOrderDiscount,
+        taxScaling: 'when-discounted',
       });
-      const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + (order.packaging_charge || 0) + (order.delivery_charge || 0) + (order.service_charge || 0);
-      const orderTotal = Number(preRoundTotal.toFixed(decimals));
-      const roundOff = 0;
 
       db.prepare(`
         UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-      `).run(orderSubtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, orderTotal, roundOff, now(), req.params.id);
+      `).run(orderTotals.subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, orderTotal, roundOff, now(), req.params.id);
 
       // BUG #15 FIX: Sync item-level discount to bill
       const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
@@ -1677,7 +1614,7 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requirePermissi
         const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(orderTotal, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`UPDATE bills SET subtotal = ?, total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, service_charge = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-          .run(orderSubtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, order.service_charge || 0, billRoundOff, now(), existingBill.id);
+          .run(orderTotals.subtotal, billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, order.service_charge || 0, billRoundOff, now(), existingBill.id);
       }
 
       recordOrderAudit(db, {
@@ -1856,11 +1793,11 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
       }
 
       // Recalculate order totals excluding terminal items.
-      const { activeItems, subtotal, totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots } = calculateOrderTotals(db, orderId);
+      const orderTotals = calculateOrderTotals(db, orderId);
+      const { activeItems, subtotal } = orderTotals;
       // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
-      const minorFactor = getCurrencyMinorUnitFactor(currency);
       const existingDiscountAmount = currentOrder.discount_amount || 0;
       let newDiscountAmount = existingDiscountAmount;
       if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
@@ -1871,15 +1808,6 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
         // amount type: keep same value
       }
 
-      const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
-      let newTaxAmount = totalTax;
-      let newExclusiveTax = exclusiveTax;
-      let taxRatio = 1;
-      if (newDiscountAmount > 0 && subtotal > 0) {
-        taxRatio = discountedSubtotal / subtotal;
-        newTaxAmount = Number((totalTax * taxRatio).toFixed(decimals));
-        newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
-      }
       const tenantInfo = {
         country: getSettingValue('country') || '',
         business_type: getSettingValue('business_type') || 'restaurant',
@@ -1890,22 +1818,15 @@ router.patch('/:orderId/items/:itemId/cancel', orderItemCancelRateLimit, (req: R
       const customer = currentOrder.customer_id
         ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
         : null;
-      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, currentOrder, customer);
-      const taxRollup = combineItemAndChargeTaxes({
-        itemTaxAmount: newTaxAmount,
-        itemExclusiveTaxAmount: newExclusiveTax,
-        itemBreakdowns: allTaxBreakdowns,
-        itemSnapshots: allTaxSnapshots,
-        itemTaxRatio: taxRatio,
-        chargeTaxes,
-        minorFactor,
-      });
-
       // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
-      const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
-      const roundOff = 0;
-      const total = Number(preRoundTotal.toFixed(decimals));
+      const { taxRollup, total, roundOff } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: currentOrder,
+        customer,
+        totals: orderTotals,
+        discountAmount: newDiscountAmount,
+        taxScaling: 'when-discounted',
+      });
 
       // Cancelling the last active item marks the entire order cancelled and frees table.
       const orderCancelled = activeItems.length === 0 && currentOrder.status !== 'cancelled';
@@ -2044,11 +1965,11 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
         .run(now(), itemId);
 
       // Recalculate order totals
-      const { subtotal, totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots } = calculateOrderTotals(db, orderId);
+      const orderTotals = calculateOrderTotals(db, orderId);
+      const { subtotal } = orderTotals;
       // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
-      const minorFactor = getCurrencyMinorUnitFactor(currency);
       const existingDiscountAmount = currentOrder.discount_amount || 0;
       let newDiscountAmount = existingDiscountAmount;
       if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
@@ -2059,15 +1980,6 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
         // amount type: keep same value
       }
 
-      const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
-      let newTaxAmount = totalTax;
-      let newExclusiveTax = exclusiveTax;
-      let taxRatio = 1;
-      if (newDiscountAmount > 0 && subtotal > 0) {
-        taxRatio = discountedSubtotal / subtotal;
-        newTaxAmount = Number((totalTax * taxRatio).toFixed(decimals));
-        newExclusiveTax = Number((exclusiveTax * taxRatio).toFixed(decimals));
-      }
       const tenantInfo = {
         country: getSettingValue('country') || '',
         business_type: getSettingValue('business_type') || 'restaurant',
@@ -2078,22 +1990,15 @@ router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) =>
       const customer = currentOrder.customer_id
         ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
         : null;
-      const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, currentOrder, customer);
-      const taxRollup = combineItemAndChargeTaxes({
-        itemTaxAmount: newTaxAmount,
-        itemExclusiveTaxAmount: newExclusiveTax,
-        itemBreakdowns: allTaxBreakdowns,
-        itemSnapshots: allTaxSnapshots,
-        itemTaxRatio: taxRatio,
-        chargeTaxes,
-        minorFactor,
-      });
-
       // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
-      const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0) + (currentOrder.service_charge || 0);
-      const roundOff = 0;
-      const total = Number(preRoundTotal.toFixed(decimals));
+      const { taxRollup, total, roundOff } = recomputeOrderTotals({
+        tenantInfo,
+        chargeContext: currentOrder,
+        customer,
+        totals: orderTotals,
+        discountAmount: newDiscountAmount,
+        taxScaling: 'when-discounted',
+      });
 
       db.prepare(`
         UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?

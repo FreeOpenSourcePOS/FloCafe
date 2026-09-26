@@ -3,7 +3,7 @@ import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencyMinorUnitFactor, resolveTenantCurrency, type TaxIdFormat } from '../countries';
 
-interface TenantInfo {
+export interface TenantInfo {
   country: string;
   business_type: string;
   state_code: string;
@@ -21,7 +21,7 @@ interface Product {
   tax_behavior?: 'country_default' | 'inclusive' | 'exclusive' | 'exempt';
 }
 
-interface Customer {
+export interface Customer {
   taxRegistrationNumber?: string;
   customer_state_code?: string;
 }

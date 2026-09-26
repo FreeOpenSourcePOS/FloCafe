@@ -21,13 +21,11 @@ import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getOpenSession, isCashTender, NO_CASH_SESSION_ID, requireOpenSessionForCashTender } from '../services/shift-session-gate';
 import {
-  calculateConfiguredChargeTaxes,
-  combineItemAndChargeTaxes,
   getActiveCountryPack,
   scaleTaxSnapshots,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
-import { calculateOrderTotals } from '../services/orders';
+import { calculateOrderTotals, recomputeOrderTotals } from '../services/orders';
 import { sendEvent } from '../services/telemetry';
 import {
   getCurrencyFractionDigits,
@@ -2219,22 +2217,10 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     }
     const currency = getTenantCurrency();
     const decimals = getCurrencyFractionDigits(currency);
-    const minorFactor = getCurrencyMinorUnitFactor(currency);
     discountAmount = Math.min(discountAmount, bill.subtotal);
     discountAmount = Number(discountAmount.toFixed(decimals));
 
     // Derive undiscounted tax basis directly from active items to prevent compounding discounts.
-    const {
-      totalTax: itemTaxAmount,
-      exclusiveTax: itemExclusiveTax,
-      allTaxBreakdowns: itemBreakdowns,
-      allTaxSnapshots: itemSnapshots,
-    } = calculateOrderTotals(db, bill.order_id);
-
-    const discountedSubtotal = Math.max(0, bill.subtotal - discountAmount);
-    const taxRatio = bill.subtotal > 0 ? discountedSubtotal / bill.subtotal : 1;
-    const newTaxAmount = Number((itemTaxAmount * taxRatio).toFixed(decimals));
-    const newExclusiveTax = Number((itemExclusiveTax * taxRatio).toFixed(decimals));
     const tenantInfo = {
       country: getSettingValue('country') || '',
       business_type: getSettingValue('business_type') || 'restaurant',
@@ -2245,26 +2231,25 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     const customer = bill.customer_id
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id) as any
       : null;
-    const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
-      ...order,
-      packaging_charge: bill.packaging_charge || 0,
-      delivery_charge: bill.delivery_charge || 0,
-      service_charge: bill.service_charge || 0,
-    }, customer);
-    const taxRollup = combineItemAndChargeTaxes({
-      itemTaxAmount: newTaxAmount,
-      itemExclusiveTaxAmount: newExclusiveTax,
-      itemBreakdowns,
-      itemSnapshots,
-      itemTaxRatio: taxRatio,
-      chargeTaxes,
-      minorFactor,
+    // The bill is the settlement boundary: it scales tax on its own stored
+    // subtotal and its own charges, and rounds the tax even with no discount
+    // applied, which is why this site passes 'always' and its own subtotal.
+    const { taxRollup, total: exactTotal } = recomputeOrderTotals({
+      tenantInfo,
+      chargeContext: {
+        ...order,
+        packaging_charge: bill.packaging_charge || 0,
+        delivery_charge: bill.delivery_charge || 0,
+        service_charge: bill.service_charge || 0,
+      },
+      customer,
+      totals: calculateOrderTotals(db, bill.order_id),
+      subtotalBasis: 'stored-order',
+      storedSubtotal: bill.subtotal,
+      discountAmount,
+      taxScaling: 'always',
     });
     const taxBreakdownJson = JSON.stringify(taxRollup.breakdowns);
-
-    const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-      + (bill.delivery_charge || 0) + (bill.packaging_charge || 0) + (bill.service_charge || 0);
-    const exactTotal = Number(preRoundTotal.toFixed(decimals));
     const pack = getActiveCountryPack(tenantInfo.country);
     const { total: newTotal, adjustment: newRoundOff } = applyPayableRounding(exactTotal, pack, currency);
     const newBalance = Math.max(0, newTotal - (bill.paid_amount || 0));

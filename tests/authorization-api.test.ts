@@ -161,11 +161,18 @@ async function main(): Promise<void> {
   // middleware and not merely through the router's own permission gate.
   const jwt = require('jsonwebtoken');
   const { getJWTSecret } = require('../main/routes/auth');
+  const passedByRequireAuth: string[] = [];
   const realApp = express();
   realApp.use(express.json());
   realApp.use(requireAuth);
+  // Records what the exemption let through, so the assertion is about the
+  // middleware's decision rather than about some stub route's status code.
+  realApp.use((req: any, res: any, next: any) => {
+    if (req.path.startsWith('/api/authorization')) { next(); return; }
+    passedByRequireAuth.push(req.path);
+    res.json({ ok: true });
+  });
   realApp.use('/api/authorization', authorizationRoutes);
-  realApp.get('/api/auth/login', (_req: any, res: any) => res.json({ ok: true }));
 
   const tokenFor = (userId: string, role: string, secret = getJWTSecret()) =>
     `Bearer ${jwt.sign({ userId, email: `${userId}@test.local`, role }, secret, { expiresIn: '1h' })}`;
@@ -188,6 +195,8 @@ async function main(): Promise<void> {
     'an owner token reaches the catalog',
   );
   assert.equal((await request(realApp).get('/api/auth/login')).status, 200, 'the /api/auth exemption still lets login verify its own token');
+  assert.ok(passedByRequireAuth.includes('/api/auth/login'), '/api/auth is still exempt from requireAuth');
+  assert.ok(!passedByRequireAuth.includes('/api/authorization/catalog'), '/api/authorization is not exempt from requireAuth');
 
   console.log('Authorization management API tests passed');
 }

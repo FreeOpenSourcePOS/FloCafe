@@ -17,6 +17,7 @@ const request = require('supertest');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { authorizationRoutes } = require('../main/routes/authorization');
 const { requireAnyPermission, requirePermission } = require('../main/services/authorization');
+const { requireAuth } = require('../main/server');
 
 function seedUser(db: any, id: string, role: string) {
   const email = `${id}@test.local`;
@@ -152,6 +153,41 @@ async function main(): Promise<void> {
     VALUES ('authorization-cashier', 'orders.create', 'deny', ?, ?, ?)
   `).run('authorization-owner', now(), now());
   assert.equal((await request(app).post('/api/tax/preview').set(cashier)).status, 403, 'a cashier denied both pos.use and orders.create loses basket pricing');
+
+  // The real requireAuth exempted anything whose path started with '/api/auth',
+  // which also matched '/api/authorization/*' because "authorization" starts
+  // with "auth". That skipped token verification for the whole management API,
+  // so prove a tokenless request is actually rejected through the production
+  // middleware and not merely through the router's own permission gate.
+  const jwt = require('jsonwebtoken');
+  const { getJWTSecret } = require('../main/routes/auth');
+  const realApp = express();
+  realApp.use(express.json());
+  realApp.use(requireAuth);
+  realApp.use('/api/authorization', authorizationRoutes);
+  realApp.get('/api/auth/login', (_req: any, res: any) => res.json({ ok: true }));
+
+  const tokenFor = (userId: string, role: string, secret = getJWTSecret()) =>
+    `Bearer ${jwt.sign({ userId, email: `${userId}@test.local`, role }, secret, { expiresIn: '1h' })}`;
+
+  assert.equal((await request(realApp).get('/api/authorization/catalog')).status, 401, 'no token cannot reach the authorization API');
+  assert.equal((await request(realApp).get('/api/authorization/catalog').set('Authorization', 'Bearer not-a-jwt')).status, 401, 'a malformed token cannot reach the authorization API');
+  assert.equal(
+    (await request(realApp).get('/api/authorization/catalog').set('Authorization', tokenFor('authorization-owner', 'owner', 'a-different-secret'))).status,
+    401,
+    'a token signed with the wrong secret cannot reach the authorization API',
+  );
+  assert.equal(
+    (await request(realApp).get('/api/authorization/catalog').set('Authorization', tokenFor('authorization-manager', 'manager'))).status,
+    403,
+    'a real manager token reaches the route and is refused by its own permission gate, not by the path exemption',
+  );
+  assert.equal(
+    (await request(realApp).get('/api/authorization/catalog').set('Authorization', tokenFor('authorization-owner', 'owner'))).status,
+    200,
+    'an owner token reaches the catalog',
+  );
+  assert.equal((await request(realApp).get('/api/auth/login')).status, 200, 'the /api/auth exemption still lets login verify its own token');
 
   console.log('Authorization management API tests passed');
 }

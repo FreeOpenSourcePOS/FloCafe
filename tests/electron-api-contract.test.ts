@@ -79,7 +79,7 @@ async function run(): Promise<void> {
     'backupDatabase', 'checkForUpdates', 'dbApplySafeFixes', 'dbHealthCheck',
     'dbInitialize', 'getAppInfo', 'getApplicationMenu', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getLogTail', 'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
-    'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openApplicationMenu', 'openKdsWindow', 'openWhatsAppShare', 'platform', 'reportRendererError', 'restartAndInstall',
+    'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openApplicationMenu', 'openKdsWindow', 'openWhatsAppShare', 'pickRestoreFile', 'platform', 'reportRendererError', 'restartAndInstall',
     'rasterizeKotDocument', 'rasterizePrintDocument', 'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'setThemeEffective',
     'windowAction', 'windowReady',
   ].sort());

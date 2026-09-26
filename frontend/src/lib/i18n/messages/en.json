@@ -1999,7 +1999,12 @@
     "themeTitle": "Theme",
     "themeLight": "Light",
     "themeDark": "Dark",
-    "themeSystem": "System"
+    "themeSystem": "System",
+    "restoreFromFile": "Restore Backup from File...",
+    "restoreFromFileHint": "Already have a backup file on this computer? Pick it here instead of copying it over the database by hand.",
+    "restoreReplacesDetail": "Restoring replaces every order, bill, product and customer record added since this backup was taken.",
+    "restoreKeepsDetail": "Your staff accounts, PINs, printers, tax settings and this computer's cloud account are kept.",
+    "restoreSafetyCopyDetail": "Before anything changes, Flo keeps a copy of your current data so you can undo this restore."
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

@@ -122,6 +122,27 @@ mode that corrupts a database, so any new entry point in this area must take the
 decides between a direct file replacement and a data-only restore from the metadata. An unreadable
 source returns a structured failure with both versions rather than throwing.
 
+### Entry points
+
+Two routes reach `restoreBackup`, and they differ only in how the operator is authorised:
+
+| Route | Authorisation | Use |
+| --- | --- | --- |
+| `POST /api/db/restore` | Session holding `database.manage`, the typed phrase `RESTORE BACKUP`, and a file the operator picked in the native dialog | Restore from a backup file anywhere on disk. The settings screen and the application menu both land here. |
+| `restore-backup` IPC | Master PIN, and for a caller-supplied path a managed-backup check | Restore a managed backup from Backup History. |
+
+The HTTP route never accepts a path the renderer invented. `pick-restore-file` shows the native
+dialog in the main process and hands the chosen path to `main/services/restore-file-selection.ts`,
+which returns it once for a single-use token. A path with no matching outstanding selection is
+refused, so a compromised renderer cannot aim the restore at a file of its choosing.
+
+A successful restore keeps the snapshot of what it replaced. `retainRestoreSafetyCopy` stamps
+`_flo_meta` onto the replacement-journal snapshot, renames it to
+`flo-backup-<timestamp>-pre-restore-v<version>.db`, and prunes to `MAX_RETAINED_RESTORE_SAFETY_COPIES`
+(3). Because the name carries the `flo-backup-` prefix, the copy appears in `listBackups()` and is
+restorable through the same preset path as any other managed backup, so a restore of the wrong file
+is an undo rather than data loss.
+
 ### Durability
 
 Replacement is journalled, not best-effort. `writeReplacementJournal` writes a temporary file,

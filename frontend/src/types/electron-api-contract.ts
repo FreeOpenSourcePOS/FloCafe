@@ -43,6 +43,7 @@ export type ElectronApiMethodPresence = Pick<
   | 'onMenuAction'
   | 'backupDatabase'
   | 'restoreBackup'
+  | 'pickRestoreFile'
   | 'dbHealthCheck'
   | 'dbApplySafeFixes'
   | 'dbInitialize'

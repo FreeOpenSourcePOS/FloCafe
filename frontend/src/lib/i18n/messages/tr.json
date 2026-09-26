@@ -1999,7 +1999,12 @@
     "themeTitle": "Tema ve Renk Modu",
     "themeLight": "Açık Tema",
     "themeDark": "Koyu Tema",
-    "themeSystem": "Sistem Varsayılanı"
+    "themeSystem": "Sistem Varsayılanı",
+    "restoreFromFile": "Dosyadan Yedek Geri Yükle...",
+    "restoreFromFileHint": "Bu bilgisayarda bir yedek dosyanız zaten var mı? Veritabanının üzerine elle kopyalamak yerine buradan seçin.",
+    "restoreReplacesDetail": "Geri yükleme, bu yedek alındığından beri eklenen tüm sipariş, fatura, ürün ve müşteri kayıtlarını değiştirir.",
+    "restoreKeepsDetail": "Personel hesaplarınız, PIN kodlarınız, yazıcılarınız, vergi ayarlarınız ve bu bilgisayarın bulut hesabı korunur.",
+    "restoreSafetyCopyDetail": "Hiçbir şey değişmeden önce Flo, bu geri yüklemeyi geri alabilmeniz için mevcut verilerinizin bir kopyasını saklar."
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",

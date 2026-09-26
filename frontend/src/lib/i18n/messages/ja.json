@@ -1999,7 +1999,12 @@
     "themeTitle": "テーマ",
     "themeLight": "ライト",
     "themeDark": "ダーク",
-    "themeSystem": "システム"
+    "themeSystem": "システム",
+    "restoreFromFile": "ファイルからバックアップを復元…",
+    "restoreFromFileHint": "このコンピューターにすでにバックアップファイルがありますか？データベースに手で上書きするのではなく、ここで選択してください。",
+    "restoreReplacesDetail": "復元すると、このバックアップの作成以降に追加されたすべての注文、伝票、商品、顧客記録が置き換えられます。",
+    "restoreKeepsDetail": "スタッフアカウント、PIN、プリンター、税率設定、このコンピューターのクラウドアカウントはそのまま残ります。",
+    "restoreSafetyCopyDetail": "変更する前に、Flo は現在のデータのコピーを保存します。復元を元に戻せます。"
   },
   "setup": {
     "alreadyCompleted": "このインストールではセットアップが完了しています。ログインへ移動します…",

@@ -1999,7 +1999,12 @@
     "themeTitle": "主題",
     "themeLight": "淺色",
     "themeDark": "深色",
-    "themeSystem": "跟隨系統"
+    "themeSystem": "跟隨系統",
+    "restoreFromFile": "從檔案還原備份…",
+    "restoreFromFileHint": "這台電腦上已經有備份檔了嗎？在這裡選擇它，不必手動覆蓋資料庫。",
+    "restoreReplacesDetail": "還原會取代自該備份建立以來新增的所有訂單、帳單、商品與客戶記錄。",
+    "restoreKeepsDetail": "您的員工帳號、PIN、印表機、稅務設定以及本機的雲端帳號都會保留。",
+    "restoreSafetyCopyDetail": "在變更任何內容之前，Flo 會先保留目前資料的副本，讓您可以復原這次還原。"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

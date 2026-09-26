@@ -7,6 +7,7 @@ ipcRenderer.sendSync('window-document', documentNonce);
 contextBridge.exposeInMainWorld('electronAPI', {
   backupDatabase: (pin?: string) => ipcRenderer.invoke('backup-database', pin),
   restoreBackup: (pin?: string, backupPath?: string) => ipcRenderer.invoke('restore-backup', pin, backupPath),
+  pickRestoreFile: () => ipcRenderer.invoke('pick-restore-file'),
   dbHealthCheck: () => ipcRenderer.invoke('db-health-check'),
   dbApplySafeFixes: (findingIds?: string[]) => ipcRenderer.invoke('db-apply-safe-fixes', findingIds),
   dbInitialize: (pin: string, confirmationPhrase: string) => ipcRenderer.invoke('db-initialize', { pin, confirmationPhrase }),
@@ -71,7 +72,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   onMenuAction: (callback: (channel: string) => void) => {
     const channels = [
-      'new-order', 'quick-search', 'backup-database', 'restore-backup',
+      'new-order', 'quick-search', 'backup-database',
+      'menu-restore-from-file',
       'view-orders', 'report-daily', 'report-sales', 'report-x', 'report-z',
       'settings-business', 'settings-tax', 'settings-printer', 'settings-kitchen',
       'menu-db-health-check', 'menu-db-initialize', 'menu-master-pin',

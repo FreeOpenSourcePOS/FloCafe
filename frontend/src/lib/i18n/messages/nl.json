@@ -1999,7 +1999,12 @@
     "themeTitle": "Thema",
     "themeLight": "Licht",
     "themeDark": "Donker",
-    "themeSystem": "Systeem"
+    "themeSystem": "Systeem",
+    "restoreFromFile": "Back-up terugzetten uit bestand...",
+    "restoreFromFileHint": "Heb je al een back-upbestand op deze computer? Kies het hier in plaats van het handmatig over de database te kopiëren.",
+    "restoreReplacesDetail": "Terugzetten vervangt alle bestellingen, facturen, producten en klantgegevens die zijn toegevoegd sinds deze back-up is gemaakt.",
+    "restoreKeepsDetail": "Je medewerkersaccounts, pincodes, printers, belastinginstellingen en de cloudaccount van deze computer blijven behouden.",
+    "restoreSafetyCopyDetail": "Voordat er iets verandert, bewaart Flo een kopie van je huidige gegevens zodat je dit terugzetten kunt ongedaan maken."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",

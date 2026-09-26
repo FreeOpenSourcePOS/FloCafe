@@ -650,6 +650,14 @@ Router: `main/routes/database-tools.ts`. Full path: `/api/db-tools`.
 | `POST` | `/currency-reset` | `ROLE_ACCESS.owner` + Master PIN | body: `currency` | Also needs `current_currency` and `confirmation_phrase` of the form `CHANGE TO <CODE>`. Creates a recovery backup, recreates the local database, preserves the sanitized menu catalog with monetary fields zeroed, and returns the backup path. The active session becomes invalid. |
 | `POST` | `/initialize` | `ROLE_ACCESS.owner` + Master PIN | body: `confirmation_phrase` | Master-PIN gated database initialization. |
 
+### Database
+
+Router: `main/routes/database.ts`. Full path: `/api/db`.
+
+| Method | Path | Authorization | Parameters | Response |
+| --- | --- | --- | --- | --- |
+| `POST` | `/restore` | `ROLE_ACCESS.owner` (`database.manage`) | body: `confirmation`, `selection_token` | Restores a backup file the operator picked in the native dialog. `confirmation` must equal `RESTORE BACKUP`, and `selection_token` must be the single-use token the main process issued for that dialog; a path with no outstanding selection is refused with `400`. A backup whose schema version differs from the live database is imported data-only. Returns `422` with the reason when the mechanism refuses the file. The pre-restore data is retained as a listed `flo-backup-*-pre-restore-*.db` copy. |
+
 ### Reports
 
 Router: `main/routes/reports.ts`. Full path: `/api/reports`.

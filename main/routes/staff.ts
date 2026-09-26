@@ -4,11 +4,19 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { getDatabase, now } from '../db';
 import { validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
-import { hasPermission, requirePermission } from '../services/authorization';
+import { hasPermission, requireAnyPermission, requirePermission } from '../services/authorization';
+import { AdministrationUnreachableError, assertAdministrationReachable } from '../services/authorization';
 import { isValidEmail } from './auth';
 import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
 
 const router = Router();
+
+/**
+ * staff.privileged.manage is owner-only and not configurable, so the outer
+ * staff gate must admit it too: gating only on staff.operational.manage let one
+ * override turn a protected permission into an inert one.
+ */
+const requireStaffWrite = requireAnyPermission('staff.operational.manage', 'staff.privileged.manage');
 
 const VALID_ROLES: readonly string[] = ROLE_KEYS;
 const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at';
@@ -104,7 +112,7 @@ router.get('/:id', requirePermission('staff.view'), (req: Request, res: Response
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
-router.post('/', requirePermission('staff.operational.manage'), authRateLimit(), (req: Request, res: Response) => {
+router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Response) => {
   try {
     const { name, email, password, role, pin, station_ids } = req.body;
     const normalizedEmail = normalizeStaffEmail(email);
@@ -131,8 +139,18 @@ router.post('/', requirePermission('staff.operational.manage'), authRateLimit(),
     }
 
     const requesterId = (req as any).user.userId;
-    if (!isOperationalRole(role) && !hasPermission(requesterId, 'staff.privileged.manage')) {
-      return res.status(403).json({ error: `This account can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})` });
+    // requireStaffWrite admits either permission, so the target role decides
+    // which one the creator actually needs. This mirrors canModifyTargetStaff,
+    // otherwise an account denied staff.operational.manage could create a
+    // cashier yet be refused when it tried to edit, deactivate or reactivate
+    // that same cashier.
+    const requiredToCreate = isOperationalRole(role) ? 'staff.operational.manage' : 'staff.privileged.manage';
+    if (!hasPermission(requesterId, requiredToCreate)) {
+      return res.status(403).json({
+        error: isOperationalRole(role)
+          ? 'This account cannot create operational staff accounts'
+          : `This account can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})`,
+      });
     }
 
     if (isOperationalRole(role) && hasNonEmptyPin(pin)) {
@@ -193,7 +211,7 @@ router.post('/', requirePermission('staff.operational.manage'), authRateLimit(),
 
 // ── Update ────────────────────────────────────────────────────────────────────
 
-router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(), (req: Request, res: Response) => {
+router.put('/:id', requireStaffWrite, authRateLimit(), (req: Request, res: Response) => {
   try {
     const { name, email, password, role, pin, is_active } = req.body;
     const emailProvided = email !== undefined;
@@ -272,6 +290,12 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
     const tokensValidAfter = credentialsChanged ? now() : member.tokens_valid_after;
 
     const demotesActiveOwner = member.role === 'owner' && member.is_active === 1 && targetRole !== 'owner';
+    assertAdministrationReachable(db, {
+      kind: 'user_state',
+      userId: String(req.params.id),
+      role: targetRole,
+      isActive: member.is_active === 1,
+    });
     const result = db.prepare(`
       UPDATE users SET
         name       = COALESCE(?, name),
@@ -302,13 +326,16 @@ router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(
 
     res.json({ staff: updated });
   } catch (error: any) {
+    if (error instanceof AdministrationUnreachableError) {
+      return res.status(400).json({ error: error.message, code: 'administration_unreachable' });
+    }
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // Staff are deactivated rather than hard-deleted to preserve order and print log references.
-router.post('/:id/deactivate', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
+router.post('/:id/deactivate', requireStaffWrite, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const member = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as any;
@@ -320,6 +347,12 @@ router.post('/:id/deactivate', requirePermission('staff.operational.manage'), (r
     }
 
     const changedAt = now();
+    assertAdministrationReachable(db, {
+      kind: 'user_state',
+      userId: String(req.params.id),
+      role: member.role,
+      isActive: false,
+    });
     const result = db.prepare(`
       UPDATE users SET is_active = 0, tokens_valid_after = ?, updated_at = ?
       WHERE id = ? AND is_active = 1
@@ -334,12 +367,15 @@ router.post('/:id/deactivate', requirePermission('staff.operational.manage'), (r
     ).get(req.params.id);
     res.json({ staff: updated });
   } catch (error: any) {
+    if (error instanceof AdministrationUnreachableError) {
+      return res.status(400).json({ error: error.message, code: 'administration_unreachable' });
+    }
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.post('/:id/reactivate', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
+router.post('/:id/reactivate', requireStaffWrite, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const member = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as any;

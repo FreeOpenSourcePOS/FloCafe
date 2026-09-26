@@ -20,8 +20,20 @@ export interface BusinessDateInput {
   instant: Date;
   /** IANA timezone of the tenant, e.g. `Europe/Madrid`. */
   timezone: string;
-  /** `business_day_start_time` as `HH:MM`; anything unset or unparsable means midnight. */
+  /** `business_day_start_time` as `HH:MM`; anything unset or out of contract means midnight. */
   startTime?: string;
+}
+
+/**
+ * The tenant's start-time contract: `00:00` to `11:59`, and midnight for anything
+ * else. This is the range the settings endpoint accepts, so it is the range a
+ * stored value can legitimately hold. Anything wider would make the renderer
+ * honour an afternoon cutoff the backend's own read path normalises away, and the
+ * two would then name different days for the same store.
+ */
+export function normalizeBusinessDayStartTime(startTime: string | null | undefined): string {
+  const trimmed = typeof startTime === 'string' ? startTime.trim() : '';
+  return /^(?:0\d|1[01]):[0-5]\d$/.test(trimmed) ? trimmed : '00:00';
 }
 
 /** Offset of a configured day start in milliseconds, or 0 when unset or unparsable. */
@@ -104,12 +116,15 @@ function sqlTimestamp(instant: Date): string {
 }
 
 /** Business date of an instant: the tenant-local calendar day, rolled back one day when
- *  the instant is still inside the previous business day's window. */
+ *  the instant is still inside the previous business day's window. The configured start
+ *  time is held to the tenant contract first, so this answers exactly what the
+ *  backend's own settings read path answers. */
 export function businessDateForInstant({ instant, timezone, startTime = '00:00' }: BusinessDateInput): string {
+  const offset = normalizeBusinessDayStartTime(startTime);
   const calendarDate = calendarDateInTimezone(instant, timezone);
-  if (dayStartOffsetMs(startTime) === 0) return calendarDate;
+  if (dayStartOffsetMs(offset) === 0) return calendarDate;
 
-  const [start] = dayStartInstants(calendarDate, timezone, startTime) ?? [utcDayStartInstant(calendarDate, startTime)];
+  const [start] = dayStartInstants(calendarDate, timezone, offset) ?? [utcDayStartInstant(calendarDate, offset)];
   if (instant >= start) return calendarDate;
 
   return previousCalendarDate(calendarDate);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { localDateInTimezone } from '../main/db';
-import { businessDateForInstant } from '../shared/business-date';
+import { businessDateForInstant, dayBoundsInTimezone, normalizeBusinessDayStartTime } from '../shared/business-date';
 
 /** The backend and the renderer each answer "what is today's business date?" for the same
  *  instant, tenant timezone and `business_day_start_time`. The two copies of that rule were
@@ -13,8 +13,10 @@ import { businessDateForInstant } from '../shared/business-date';
  *  The instants sit on the 2026 US transitions in America/New_York (2026-03-08 02:00 EST ->
  *  03:00 EDT, 2026-11-01 02:00 EDT -> 01:00 EST), which is where a wall-clock-minute comparison
  *  and an instant comparison stop being the same function. The 13:00 and 12:00 rows are the
- *  afternoon case: the renderer used to reject a start time outside 00:00-11:59 and silently
- *  fall back to the calendar date. */
+ *  afternoon case: those values are outside the tenant's start-time contract, so the settings
+ *  endpoint rejects them and the backend's own read path normalises them to midnight. A renderer
+ *  that honoured them would name a day the backend does not, which is the divergence these rows
+ *  pin shut. */
 const cases = [
   {
     timezone: 'America/New_York',
@@ -31,8 +33,8 @@ const cases = [
   {
     timezone: 'America/New_York',
     instant: '2026-03-08T07:30:00Z',
-    startTime: '13:00', // afternoon cutoff, which the renderer used to ignore entirely
-    businessDate: '2026-03-07',
+    startTime: '13:00', // outside the tenant contract, so midnight on both sides
+    businessDate: '2026-03-08',
   },
   {
     timezone: 'America/New_York',
@@ -49,7 +51,7 @@ const cases = [
   {
     timezone: 'America/New_York',
     instant: '2026-03-08T17:00:00Z',
-    startTime: '13:00', // inclusive lower bound: this instant opens the business day
+    startTime: '13:00', // also outside the contract, so still the plain calendar day
     businessDate: '2026-03-08',
   },
   {
@@ -66,9 +68,9 @@ const cases = [
   },
   {
     timezone: 'UTC',
-    instant: '2026-04-21T09:00:00Z', // afternoon cutoff, no daylight saving involved
+    instant: '2026-04-21T09:00:00Z', // outside the tenant contract, no daylight saving involved
     startTime: '12:00',
-    businessDate: '2026-04-20',
+    businessDate: '2026-04-21',
   },
   {
     timezone: 'UTC',
@@ -98,3 +100,41 @@ for (const testCase of cases) {
 }
 
 console.log(`Business-day parity tests passed (${cases.length} start-time and DST cases)`);
+
+/** The start-time contract itself, so the renderer and the backend's settings read path
+ *  cannot drift apart on which values count. The backend resolves the stored setting
+ *  through tenantBusinessDayStartTime(), which delegates to this function. */
+const contractCases = [
+  ['00:00', '00:00'],
+  ['04:00', '04:00'],
+  ['  07:15  ', '07:15'],
+  ['11:59', '11:59'],
+  ['12:00', '00:00'],
+  ['13:00', '00:00'],
+  ['23:59', '00:00'],
+  ['24:00', '00:00'],
+  ['9:00', '00:00'],
+  ['garbage', '00:00'],
+  ['', '00:00'],
+  [null, '00:00'],
+  [undefined, '00:00'],
+] as const;
+
+for (const [stored, effective] of contractCases) {
+  assert.equal(
+    normalizeBusinessDayStartTime(stored),
+    effective,
+    `stored start time ${JSON.stringify(stored)} resolves to ${effective}`,
+  );
+}
+
+/** The day-bounds primitive stays wider than the tenant contract on purpose: every
+ *  backend caller normalises the setting before reaching it, and narrowing it here
+ *  would silently move an existing store's report range. */
+assert.deepEqual(
+  dayBoundsInTimezone('2026-04-21', 'UTC', '13:00'),
+  ['2026-04-21 13:00:00', '2026-04-22 13:00:00'],
+  'dayBoundsInTimezone still honours a 13:00 offset for backend report ranges',
+);
+
+console.log('Business-day start-time contract tests passed');

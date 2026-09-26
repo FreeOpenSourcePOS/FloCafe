@@ -12,7 +12,7 @@ import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 import { ROLE_KEYS } from '../shared/role-permissions';
-import { businessDateForInstant, dayBoundsInTimezone, utcDayBounds } from '../shared/business-date';
+import { businessDateForInstant, dayBoundsInTimezone, normalizeBusinessDayStartTime, utcDayBounds } from '../shared/business-date';
 import { getCurrencyFractionDigits, resolveRegionalSnapshot } from './countries';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
@@ -337,15 +337,13 @@ export function getSettingValue(key: string): string | null {
   return row?.value ?? null;
 }
 
-/** Resolves the tenant's configured business day start time ('HH:mm', 00:00 to 11:59). */
+/** Resolves the tenant's configured business day start time, holding it to the
+ *  `00:00`-`11:59` contract the settings endpoint enforces. */
 export function tenantBusinessDayStartTime(customDb?: ReturnType<typeof getDatabase>): string {
   const raw = customDb
     ? (customDb.prepare("SELECT value FROM settings WHERE key = 'business_day_start_time'").get() as { value?: unknown } | undefined)?.value
     : getSettingValue('business_day_start_time');
-  if (typeof raw === 'string' && /^(?:0\d|1[01]):[0-5]\d$/.test(raw.trim())) {
-    return raw.trim();
-  }
-  return '00:00';
+  return normalizeBusinessDayStartTime(typeof raw === 'string' ? raw : null);
 }
 
 export function upsertSettings(entries: Record<string, string | undefined | null>): void {

@@ -214,12 +214,14 @@ const DATABASE_MAINTENANCE_ROUTES = new Set([
 ]);
 
 function isDatabaseMaintenanceRoute(req: Request): boolean {
-  const fullPath = (req.baseUrl || '') + req.path;
+  // Lowercased for the same reason as requireAuth: the mount is case-insensitive,
+  // so an exact-match lookup on the raw spelling misses case variants.
+  const fullPath = ((req.baseUrl || '') + req.path).toLowerCase();
   return DATABASE_MAINTENANCE_ROUTES.has(`${req.method} ${fullPath}`);
 }
 
 export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const fullPath = (req.baseUrl || '') + req.path;
+  const fullPath = ((req.baseUrl || '') + req.path).toLowerCase();
   if (!fullPath.startsWith('/api')) {
     next();
     return;

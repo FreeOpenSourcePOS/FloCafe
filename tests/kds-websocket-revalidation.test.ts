@@ -1,7 +1,8 @@
 /**
  * Test suite for Area F: KDS WebSocket Authorization & Revalidation
  * Verifies WebSocket token expiry, revocation, active-user status revalidation,
- * and privilege checks during long-lived socket operations.
+ * and privilege checks during long-lived socket operations, plus the
+ * connect-to-auth grace window that a broadcast must not cut short.
  */
 
 import request from 'supertest';
@@ -24,7 +25,7 @@ Module._load = function (requestName: string, parent: unknown, isMain: boolean) 
 import { startKdsServer, stopKdsServer, getKdsPort } from '../main/kds-server';
 import { initDatabase, closeDatabase, getDatabase, now } from '../main/db';
 import { revokeToken, clearRevokedTokens, invalidateUserAuthCache } from '../main/middleware/security';
-import { notifyKdsUpdate } from '../main/services/kds';
+import { notifyKdsUpdate, KDS_AUTH_TIMEOUT_MS } from '../main/services/kds';
 import { getJWTSecret } from '../main/routes/auth';
 import { WebSocket } from 'ws';
 import * as jwt from 'jsonwebtoken';
@@ -145,6 +146,81 @@ async function run() {
     const errRes2 = await q2('auth_error');
     assertOrThrow(errRes2.message.includes('revoked') || errRes2.message.includes('expired'), 'Deactivated user status update blocked');
     await once(ws2, 'close');
+
+    // Test 4: A broadcast must not terminate a socket that is still inside its
+    // connect-to-auth grace window. isKdsClientAuthorized() reports false for a
+    // socket with no userId yet, so treating that as "revoked" closed
+    // reconnecting KDS displays mid-handshake and handed them a misleading
+    // "Session expired or revoked". Their lifecycle belongs to the
+    // KDS_AUTH_TIMEOUT_MS timer alone.
+    clearRevokedTokens();
+    db.prepare('UPDATE users SET is_active = 1 WHERE id = ?').run('kds-ws-chef-1');
+    invalidateUserAuthCache('kds-ws-chef-1');
+    const graceToken = jwt.sign({ userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-grace-1' }, getJWTSecret(), { expiresIn: '1h' });
+
+    // A second, fully authenticated socket so the broadcast has an authorized
+    // client to serve while the pre-auth one is connected. It authenticates
+    // with its own token so revoking the token under test does not close it.
+    const authedToken = jwt.sign({ userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-authed-1' }, getJWTSecret(), { expiresIn: '1h' });
+    const wsAuthed = new WebSocket(`ws://127.0.0.1:${port}/kds`);
+    const qAuthed = createMessageQueue(wsAuthed);
+    await once(wsAuthed, 'open');
+    wsAuthed.send(JSON.stringify({ type: 'auth', token: authedToken }));
+    await qAuthed('auth_success');
+    await qAuthed('initial_data');
+
+    const wsPreAuth = new WebSocket(`ws://127.0.0.1:${port}/kds`);
+    const qPreAuth = createMessageQueue(wsPreAuth);
+    await once(wsPreAuth, 'open');
+    const messagesDuringWindow: string[] = [];
+    wsPreAuth.on('message', (raw: WebSocket.RawData) => {
+      messagesDuringWindow.push(JSON.parse(raw.toString()).type);
+    });
+    let closedEarly: string | null = null;
+    wsPreAuth.once('close', (_code: number, reason: Buffer) => { closedEarly = reason.toString(); });
+
+    // Fire several broadcasts inside the grace window.
+    for (let i = 0; i < 5; i++) {
+      notifyKdsUpdate();
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    assertOrThrow(wsPreAuth.readyState === WebSocket.OPEN,
+      `Unauthenticated socket survives broadcasts inside its grace window (closed: ${closedEarly})`);
+    assertOrThrow(!messagesDuringWindow.includes('auth_error'),
+      'Unauthenticated socket receives no auth_error from a broadcast');
+    assertOrThrow(!messagesDuringWindow.includes('initial_data'),
+      'Unauthenticated socket receives no order snapshot from a broadcast');
+
+    // The grace window itself still owns the socket: it is closed on its own
+    // schedule, with the authentication-required reason rather than a
+    // revocation.
+    const windowDeadline = KDS_AUTH_TIMEOUT_MS + 4000;
+    const windowClose = await Promise.race([
+      once(wsPreAuth, 'close').then(([code, reason]: any) => ({ closed: true, code, reason: reason.toString() })),
+      new Promise((resolve) => setTimeout(() => resolve({ closed: false }), windowDeadline)),
+    ]);
+    assertOrThrow(windowClose.closed, 'An unauthenticated socket is still closed once its grace window expires');
+    assertOrThrow(String(windowClose.reason).includes('Authentication required'),
+      `Grace-window close reports authentication, not revocation (got: ${windowClose.reason})`);
+
+    // Test 5: an authenticated-but-revoked socket is still closed by a broadcast.
+    const revokedGraceToken = jwt.sign({ userId: 'kds-ws-chef-1', role: 'chef', jti: 'test-grace-2' }, getJWTSecret(), { expiresIn: '1h' });
+    const wsRevoked = new WebSocket(`ws://127.0.0.1:${port}/kds`);
+    const qRevoked = createMessageQueue(wsRevoked);
+    await once(wsRevoked, 'open');
+    wsRevoked.send(JSON.stringify({ type: 'auth', token: revokedGraceToken }));
+    await qRevoked('auth_success');
+    await qRevoked('initial_data');
+    revokeToken(revokedGraceToken);
+    const revokedClose = new Promise<void>((resolve, reject) => {
+      const deadline = setTimeout(() => reject(new Error('revoked KDS socket survived the broadcast')), 2500);
+      wsRevoked.once('close', () => { clearTimeout(deadline); resolve(); });
+    });
+    notifyKdsUpdate();
+    await revokedClose;
+
+    if (wsAuthed.readyState === WebSocket.OPEN) wsAuthed.close();
+    if (wsAuthed.readyState !== WebSocket.CLOSED) await once(wsAuthed, 'close');
 
     console.log('✅ KDS WebSocket session revalidation tests passed!');
   } finally {

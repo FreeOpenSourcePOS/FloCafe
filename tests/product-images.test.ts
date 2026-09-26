@@ -7,6 +7,7 @@
  * C) GET /:id/image — serve Base64, ETag, reject legacy external URLs, 404
  * D) GET / — has_image flag computed, image_url stripped from response
  * E) POST /fetch-url — CORS proxy (mocked external fetch)
+ * E8) POST /fetch-url — SSRF guard rejects IPv4-embedded IPv6 literals
  * F) POST / — create product with image_url validation
  * G) Transaction wrapping — product + addon groups succeed or fail together
  *
@@ -340,6 +341,89 @@ async function main() {
     } finally {
       (dns.promises as any).Resolver = originalResolver;
       https.request = originalRequest;
+    }
+
+    // E8: The SSRF blocklist must catch the embedded IPv4 address whichever
+    // notation carries it. WHATWG URL canonicalizes a mapped literal to hex
+    // before the app sees it, so a dotted-quad-only check misses it entirely.
+    // https.request is mocked and counted so "refused" means no outbound
+    // connection was even attempted, not merely a downstream error.
+    console.log('\n─── E8) POST /fetch-url refuses IPv4-embedded IPv6 targets ───');
+    const BLOCKED_EMBEDDED_TARGETS: Array<[string, string]> = [
+      ['IPv4-mapped loopback (dotted)', 'https://[::ffff:127.0.0.1]/photo.jpg'],
+      ['IPv4-mapped loopback (hex)', 'https://[::ffff:7f00:1]/photo.jpg'],
+      ['IPv4-mapped loopback (expanded)', 'https://[0:0:0:0:0:ffff:127.0.0.1]/photo.jpg'],
+      ['IPv4-compatible loopback (hex)', 'https://[::7f00:1]/photo.jpg'],
+      ['IPv4-compatible loopback (dotted)', 'https://[::127.0.0.1]/photo.jpg'],
+      ['NAT64 loopback (hex)', 'https://[64:ff9b::7f00:1]/photo.jpg'],
+      ['NAT64 loopback (dotted)', 'https://[64:ff9b::127.0.0.1]/photo.jpg'],
+      ['IPv4-mapped private (hex)', 'https://[::ffff:a00:1]/photo.jpg'],
+      ['IPv4-mapped link-local / cloud metadata (hex)', 'https://[::ffff:a9fe:a9fe]/photo.jpg'],
+      ['IPv4-mapped link-local / cloud metadata (expanded)', 'https://[0:0:0:0:0:ffff:169.254.169.254]/photo.jpg'],
+      ['plain IPv4 loopback (control)', 'https://127.0.0.1/photo.jpg'],
+      ['plain IPv4 link-local (control)', 'https://169.254.169.254/photo.jpg'],
+    ];
+    {
+      const originalResolverForSsrf = (dns.promises as any).Resolver;
+      const originalRequestForSsrf = https.request;
+      let outboundAttempts = 0;
+      (dns.promises as any).Resolver = class {
+        resolve4 = async () => ['8.8.8.8'];
+        resolve6 = async () => [];
+        cancel = () => undefined;
+      };
+      https.request = () => { outboundAttempts += 1; throw new Error('outbound connection must not be attempted'); };
+      try {
+        for (const [label, url] of BLOCKED_EMBEDDED_TARGETS) {
+          const before = outboundAttempts;
+          const blocked = await api(baseUrl, '/api/products/fetch-url', {
+            method: 'POST', headers: authHeader, body: { url },
+          });
+          assertEqual(blocked.status, 400, `E8: ${label} is refused with 400`);
+          assertEqual(blocked.data.error, 'URL is not allowed', `E8: ${label} reports the SSRF guard`);
+          assertEqual(outboundAttempts, before, `E8: ${label} opens no outbound connection`);
+        }
+      } finally {
+        (dns.promises as any).Resolver = originalResolverForSsrf;
+        https.request = originalRequestForSsrf;
+      }
+
+      // A public address in the same notation must still be fetched, so the
+      // widened guard rejects the target rather than the syntax.
+      const originalResolverForPublic = (dns.promises as any).Resolver;
+      const originalRequestForPublic = https.request;
+      let publicHostnames: string[] = [];
+      (dns.promises as any).Resolver = class {
+        resolve4 = async () => ['8.8.8.8'];
+        resolve6 = async () => [];
+        cancel = () => undefined;
+      };
+      https.request = (options: any, callback: (response: any) => void) => {
+        publicHostnames.push(options.hostname);
+        const req = new EventEmitter() as any;
+        req.end = () => {
+          const response = new EventEmitter() as any;
+          response.statusCode = 200;
+          response.headers = { 'content-type': 'image/webp', 'content-length': '4' };
+          callback(response);
+          response.emit('data', Buffer.from('test'));
+          response.emit('end');
+        };
+        req.destroy = () => undefined;
+        return req;
+      };
+      try {
+        for (const url of ['https://[::ffff:8.8.8.8]/photo.webp', 'https://[2606:4700:4700::1111]/photo.webp']) {
+          const allowed = await api(baseUrl, '/api/products/fetch-url', {
+            method: 'POST', headers: authHeader, body: { url },
+          });
+          assertEqual(allowed.status, 200, `E8: public target ${url} still passes the SSRF guard`);
+        }
+        assertEqual(publicHostnames.length, 2, 'E8: both public targets reached the pinned fetch');
+      } finally {
+        (dns.promises as any).Resolver = originalResolverForPublic;
+        https.request = originalRequestForPublic;
+      }
     }
 
     // ── F) POST / — create product with image validation ───────────────────

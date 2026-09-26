@@ -889,6 +889,106 @@ exit 1
     'a failed Path Filtering job makes every dependent "skipped" for the wrong reason — the gate must not treat that as passing',
   );
 
+  // A newer push cancels the in-flight run of an older one on the same ref
+  // (concurrency cancel-in-progress). That push never reported its required
+  // checks, so the gate still fails - but the run must name the newer push
+  // instead of reporting the same condition as a job failure.
+  const gateTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flocafe-required-gate-'));
+  const runsFixturePath = path.join(gateTempDir, 'runs.json');
+  const thisPush = { id: 1000, run_number: 40, head_branch: 'main', head_sha: 'a'.repeat(40), html_url: 'https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/1000' };
+  const newerPush = { id: 1002, run_number: 41, head_branch: 'main', head_sha: 'b'.repeat(40), html_url: 'https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/1002' };
+  const otherBranchRun = { id: 1003, run_number: 42, head_branch: 'some-other-branch', head_sha: 'c'.repeat(40), html_url: 'https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/1003' };
+  const fakeRunsGh = `#!/bin/sh
+if [ "\${CI_TEST_GH_FAIL:-}" = "1" ]; then
+  echo "gh: HTTP 403: Resource not accessible by integration" >&2
+  exit 1
+fi
+cat "$CI_TEST_RUNS_FIXTURE"
+`;
+  const gateEnv = (runs: unknown[] = [], extra: Record<string, string> = {}) => {
+    fs.writeFileSync(runsFixturePath, JSON.stringify({ workflow_runs: runs }));
+    return {
+      GH_TOKEN: 'test-token',
+      CONCURRENCY_BRANCH: 'main',
+      GITHUB_REPOSITORY: 'FreeOpenSourcePOS/FloCafe',
+      GITHUB_RUN_ID: String(thisPush.id),
+      GITHUB_RUN_NUMBER: String(thisPush.run_number),
+      CI_TEST_RUNS_FIXTURE: runsFixturePath,
+      ...extra,
+    };
+  };
+  try {
+    const gateSuperseded = executeWorkflowStep(requiredGateStep, {
+      env: gateEnv([newerPush, thisPush]),
+      expressions: gateExpressions('cancelled', ['cancelled', 'cancelled', 'cancelled']),
+      fakeCommands: { gh: fakeRunsGh },
+    });
+    assert.notEqual(
+      gateSuperseded.status,
+      0,
+      'a superseded push never reported its required checks, so the gate must still fail - the change is messaging only',
+    );
+    assert.match(gateSuperseded.stdout, /superseded by a newer push/i, gateSuperseded.stdout);
+    assert.match(gateSuperseded.stdout, new RegExp(newerPush.head_sha), 'the superseded message must name the newer push by commit');
+    assert.match(gateSuperseded.stdout, new RegExp(newerPush.html_url), 'the superseded message must link the newer push run');
+    assert.doesNotMatch(
+      gateSuperseded.stdout,
+      /did not succeed/,
+      'a superseded push must not be reported as a required job failure',
+    );
+
+    const gateCancelledWithoutNewerPush = executeWorkflowStep(requiredGateStep, {
+      env: gateEnv([otherBranchRun, thisPush]),
+      expressions: gateExpressions('cancelled', ['cancelled', 'cancelled', 'cancelled']),
+      fakeCommands: { gh: fakeRunsGh },
+    });
+    assert.notEqual(
+      gateCancelledWithoutNewerPush.status,
+      0,
+      'cancelled required checks with no newer push on this ref are an unreported required check, not supersession - the gate must still block',
+    );
+    assert.doesNotMatch(
+      gateCancelledWithoutNewerPush.stdout,
+      /superseded/i,
+      'without a newer push on this ref to name, the gate must not claim this run was superseded',
+    );
+
+    const gateFailureIsNotSuperseded = executeWorkflowStep(requiredGateStep, {
+      env: gateEnv([newerPush, thisPush]),
+      expressions: gateExpressions('cancelled', ['cancelled', 'failure', 'cancelled']),
+      fakeCommands: { gh: fakeRunsGh },
+    });
+    assert.notEqual(
+      gateFailureIsNotSuperseded.status,
+      0,
+      'a required job that actually failed must still fail the gate',
+    );
+    assert.doesNotMatch(
+      gateFailureIsNotSuperseded.stdout,
+      /superseded/i,
+      'a real job failure must never be explained away as supersession',
+    );
+    assert.match(gateFailureIsNotSuperseded.stdout, /did not succeed/, gateFailureIsNotSuperseded.stdout);
+
+    const gateLookupFails = executeWorkflowStep(requiredGateStep, {
+      env: gateEnv([newerPush, thisPush], { CI_TEST_GH_FAIL: '1' }),
+      expressions: gateExpressions('cancelled', ['cancelled', 'cancelled', 'cancelled']),
+      fakeCommands: { gh: fakeRunsGh },
+    });
+    assert.notEqual(
+      gateLookupFails.status,
+      0,
+      'a superseded-lookup failure must not turn an unreported required check into a pass',
+    );
+    assert.doesNotMatch(
+      gateLookupFails.stdout,
+      /superseded/i,
+      'when the newer push cannot be identified the gate must fall back to the ordinary failure report',
+    );
+  } finally {
+    fs.rmSync(gateTempDir, { recursive: true, force: true });
+  }
+
   const e2eJob = ciWorkflow.jobs['e2e-playwright'];
   const releaseRegression = findStep(e2eJob, 'Run renderer and printer regression suites');
   assertShellStep(e2eJob, 'Run renderer and printer regression suites');

@@ -9,15 +9,36 @@ import { getE2eToken } from './helpers/test-auth';
 // read fails a settings tab hydration, and Save Changes then writes nothing at all.
 // tests/e2e-server.cjs raises the read limit so no test can starve another.
 const PRODUCTION_READ_LIMIT = 120;
-const BURST = PRODUCTION_READ_LIMIT + 80;
+const BURST_TOTAL = PRODUCTION_READ_LIMIT + 20;
+const BATCH = 20;
 
+const authHeaders = () => ({ Authorization: `Bearer ${getE2eToken()}` });
+
+let originalBusinessPhone = '';
+
+// The whole suite shares one seeded database, so hand the store phone back or the next
+// spec inherits this one's value. Registered here so it still runs when the test below
+// fails partway.
+test.afterAll(async ({ request }) => {
+  await request.put(`${BASE}/api/settings/business`, {
+    headers: authHeaders(),
+    data: { business_phone: originalBusinessPhone },
+  });
+});
+
+// Sent in small batches rather than all at once: opening a couple of hundred sockets
+// at the same moment is needless load on the very server under test.
 async function exceedProductionReadBudget(page: import('@playwright/test').Page): Promise<number[]> {
-  const headers = { Authorization: `Bearer ${getE2eToken()}` };
-  return Promise.all(
-    Array.from({ length: BURST }, () =>
-      page.request.get(`${BASE}/api/settings/theme_mode`, { headers }).then((response) => response.status()),
-    ),
-  );
+  const statuses: number[] = [];
+  for (let sent = 0; sent < BURST_TOTAL; sent += BATCH) {
+    const batch = await Promise.all(
+      Array.from({ length: Math.min(BATCH, BURST_TOTAL - sent) }, () =>
+        page.request.get(`${BASE}/api/settings/theme_mode`, { headers: authHeaders() }).then((response) => response.status()),
+      ),
+    );
+    statuses.push(...batch);
+  }
+  return statuses;
 }
 
 test('E2E settings reads are never throttled by the production per-IP read limit', async ({ page }) => {
@@ -37,6 +58,9 @@ test('Settings save still persists once the production read budget is spent', as
   await page.goto(`${BASE}/settings`);
   const phoneInput = page.locator('div:has(> label:has-text("Phone")) input').first();
   await expect(phoneInput).toBeVisible();
+
+  const business = await (await page.request.get(`${BASE}/api/settings/business`, { headers: authHeaders() })).json();
+  originalBusinessPhone = business.business_phone || '';
 
   await phoneInput.fill('0898765432');
   const businessSave = page.waitForResponse((response) => {

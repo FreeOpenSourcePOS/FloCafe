@@ -129,6 +129,22 @@ const TEMPLATE_CARDS: TemplateCard[] = [
 const THROTTLED_READ_RETRIES = 3;
 const THROTTLED_READ_BACKOFF_MS = 300;
 
+/** A tab fires its reads together, so a fixed delay would retry them all in lockstep
+ * and collide again. Jitter spreads the batch, and the abort listener stops the timer
+ * as soon as the merchant leaves the tab. */
+function waitBeforeRetryRead(signal: AbortSignal, baseMs: number): Promise<void> {
+  const delayMs = baseMs / 2 + Math.random() * (baseMs / 2);
+  return new Promise<void>((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, delayMs);
+    signal.addEventListener('abort', finish, { once: true });
+  });
+}
+
 // Sanitize prefix on load to alphanumeric characters so legacy values pass save validation.
 function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -1557,7 +1573,7 @@ export default function SettingsPage() {
           // throws, which is what keeps an unhydrated tab from being written back.
           const throttled = axios.isAxiosError(error) && error.response?.status === 429;
           if (!throttled || attempt >= THROTTLED_READ_RETRIES || signal.aborted) throw error;
-          await new Promise((resolve) => setTimeout(resolve, THROTTLED_READ_BACKOFF_MS * 2 ** attempt));
+          await waitBeforeRetryRead(signal, THROTTLED_READ_BACKOFF_MS * 2 ** attempt);
         }
       }
     };

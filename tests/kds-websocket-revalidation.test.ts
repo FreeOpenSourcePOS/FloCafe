@@ -196,10 +196,10 @@ async function run() {
     // revocation.
     const windowDeadline = KDS_AUTH_TIMEOUT_MS + 4000;
     const windowClose = await Promise.race([
-      once(wsPreAuth, 'close').then(([code, reason]: any) => ({ closed: true, code, reason: reason.toString() })),
-      new Promise((resolve) => setTimeout(() => resolve({ closed: false }), windowDeadline)),
+      once(wsPreAuth, 'close').then(([code, reason]: any) => ({ closed: true as const, code, reason: reason.toString() })),
+      new Promise<{ closed: false }>((resolve) => setTimeout(() => resolve({ closed: false }), windowDeadline)),
     ]);
-    assertOrThrow(windowClose.closed, 'An unauthenticated socket is still closed once its grace window expires');
+    if (!windowClose.closed) throw new Error('An unauthenticated socket is still closed once its grace window expires');
     assertOrThrow(String(windowClose.reason).includes('Authentication required'),
       `Grace-window close reports authentication, not revocation (got: ${windowClose.reason})`);
 

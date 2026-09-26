@@ -204,6 +204,16 @@ export class AdministrationUnreachableError extends Error {
   }
 }
 
+export class SelfPrivilegeChangeError extends Error {
+  constructor() {
+    super(
+      'This change would remove your own access to staff, permissions, or store settings. '
+      + 'Confirm your owner PIN to apply it.',
+    );
+    this.name = 'SelfPrivilegeChangeError';
+  }
+}
+
 /** The one post-write state a permission-changing write may propose. */
 export type AdministrationCandidate =
   | { kind: 'role_overrides'; role: Role; overrides: ReadonlyMap<PermissionId, PermissionEffect> }
@@ -281,4 +291,31 @@ export function assertAdministrationReachable(
   }
 
   throw new AdministrationUnreachableError();
+}
+
+/**
+ * Guards a write that would take an administrative capability away from the
+ * actor making it. Same four capabilities and the same post-write evaluation
+ * assertAdministrationReachable performs, scoped to one account: the store may
+ * survive the actor's self-lockout, but the actor still has to prove who they
+ * are before removing their own way back in.
+ */
+export function assertActorKeepsOwnAdministration(
+  actorUserId: string,
+  candidate: AdministrationCandidate,
+): void {
+  const actor = resolveEffectivePermissions(actorUserId);
+  if (!actor) return;
+
+  const roleOverrides = candidate.kind === 'role_overrides' && candidate.role === actor.role
+    ? candidate.overrides
+    : readRoleOverrides(actor.role);
+  const userOverrides = candidate.kind === 'user_overrides' && candidate.userId === actorUserId
+    ? candidate.overrides
+    : readUserPermissionOverrides(actorUserId);
+
+  const losesOwnAccess = ADMINISTRATIVE_PERMISSION_IDS.some((permissionId) =>
+    actor.permissionIds.has(permissionId)
+    && !effectiveAllows(permissionId, actor.role, userOverrides, roleOverrides));
+  if (losesOwnAccess) throw new SelfPrivilegeChangeError();
 }

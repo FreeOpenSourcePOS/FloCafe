@@ -256,12 +256,19 @@ async function main(): Promise<void> {
   );
 
   const secondOwner = seedUser(db, 'authorization-owner-second', 'owner');
+  // The second owner makes the store survive the first owner's self-denial, so
+  // from here on that save only needs the factor, which the sole-owner case
+  // above never had to ask for.
+  const bcrypt = require('bcryptjs');
+  const OWNER_PIN = '2468';
+  db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(bcrypt.hashSync(OWNER_PIN, 10), ownerId);
   const acceptedUser = await request(app).put(`/api/authorization/users/${ownerId}`).set(owner).send({
     revision: baseline.body.revision,
     overrides: [
       { permission_id: 'dashboard.view', effect: 'allow' },
       { permission_id: 'staff.operational.manage', effect: 'deny' },
     ],
+    override_pin: OWNER_PIN,
   });
   assert.equal(acceptedUser.status, 200, 'the same save is accepted once a second active owner holds the permissions');
   const ownerEffective = (await request(app).get(`/api/authorization/users/${ownerId}`).set(secondOwner))
@@ -282,6 +289,89 @@ async function main(): Promise<void> {
     .send({ revision: acceptedUser.body.revision });
   assert.equal(cleared.status, 200, 'clearing overrides only grants access back and is never stranded');
   assert.equal(cleared.body.overrides.length, 0);
+
+  // ── Self-lockout confirmation ─────────────────────────────────────────
+  // The store surviving an actor's self-lockout is the floor's job; proving the
+  // actor is the owner first is this one. A write that takes any of the four
+  // administrative capabilities away from whoever makes it is refused with 428
+  // naming the factor, and the factor is the staff PIN the rest of the
+  // repository already reads as override_pin.
+  const managerRoleBeforeSelfScope = (await request(app).get('/api/authorization/roles').set(owner))
+    .body.roles.find((entry: any) => entry.role === 'manager');
+  const otherRoleTarget = await request(app).put('/api/authorization/roles/manager').set(owner).send({
+    revision: managerRoleBeforeSelfScope.revision,
+    overrides: [{ permission_id: 'settings.manage', effect: 'deny' }],
+  });
+  assert.equal(otherRoleTarget.status, 200, 'an override on a role the actor does not hold needs no factor');
+
+  const ownRoleRevision = (await request(app).get('/api/authorization/roles').set(owner))
+    .body.roles.find((entry: any) => entry.role === 'owner').revision;
+  // A third owner, held above the role default with a user override, so the
+  // floor still passes when the actor's own role loses a capability: the store
+  // survives, so the refusal has to be the 428 and not administration_unreachable.
+  const thirdOwnerId = 'authorization-owner-third';
+  seedUser(db, thirdOwnerId, 'owner');
+  db.prepare(`
+    INSERT INTO user_permission_overrides
+      (user_id, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES (?, 'staff.operational.manage', 'allow', ?, ?, ?)
+  `).run(thirdOwnerId, 'authorization-owner-second', now(), now());
+  const ownRole = await request(app).put('/api/authorization/roles/owner').set(owner).send({
+    revision: ownRoleRevision,
+    overrides: [{ permission_id: 'staff.operational.manage', effect: 'deny' }],
+  });
+  assert.equal(ownRole.status, 428, 'a role override that costs the actor their own access is a precondition failure');
+  assert.equal(ownRole.body.code, 'self_privilege_change_requires_factor');
+  assert.equal(ownRole.body.requires, 'pin', 'the refusal names the factor the server wants');
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM role_permission_overrides WHERE role = 'owner' AND permission_id = 'staff.operational.manage'").get().count,
+    0,
+    'the refused role write stores nothing',
+  );
+
+  const selfLock = async (extra: Record<string, unknown> = {}) => {
+    const revision = (await request(app).get(`/api/authorization/users/${ownerId}`).set(owner)).body.revision;
+    return request(app).put(`/api/authorization/users/${ownerId}`).set(owner).send({
+      revision,
+      overrides: [{ permission_id: 'settings.manage', effect: 'deny' }],
+      ...extra,
+    });
+  };
+  const storedSelfLocks = () => db
+    .prepare("SELECT COUNT(*) AS count FROM user_permission_overrides WHERE user_id = ? AND permission_id = 'settings.manage'")
+    .get(ownerId) as { count: number };
+
+  const noFactor = await selfLock();
+  assert.equal(noFactor.status, 428, 'the self-lockout is refused without the factor');
+  assert.equal(noFactor.body.code, 'self_privilege_change_requires_factor');
+  assert.equal(noFactor.body.requires, 'pin');
+  assert.equal(storedSelfLocks().count, 0, 'the refused self-lockout stored nothing');
+
+  const wrongFactor = await selfLock({ override_pin: '1111' });
+  assert.equal(wrongFactor.status, 428, 'a wrong owner PIN does not confirm the self-lockout');
+  assert.equal(wrongFactor.body.code, 'self_privilege_change_requires_factor');
+  assert.equal(storedSelfLocks().count, 0, 'a wrong owner PIN stores nothing either');
+
+  const confirmed = await selfLock({ override_pin: OWNER_PIN });
+  assert.equal(confirmed.status, 200, 'the correct owner PIN confirms the self-lockout');
+  assert.equal(
+    confirmed.body.permissions.find((entry: any) => entry.permission_id === 'settings.manage').allowed,
+    false,
+    'the confirmed self-lockout is really applied to the actor',
+  );
+  assert.equal(storedSelfLocks().count, 1, 'the confirmed self-lockout is stored');
+  assert.equal(
+    (await request(app).get(`/api/authorization/users/${ownerId}`).set(secondOwner))
+      .body.permissions.find((entry: any) => entry.permission_id === 'settings.manage').allowed,
+    false,
+    'the actor really loses the capability on the next read',
+  );
+
+  const restored = await request(app)
+    .delete(`/api/authorization/users/${ownerId}/overrides`)
+    .set(secondOwner)
+    .send({ revision: confirmed.body.revision });
+  assert.equal(restored.status, 200, 'another owner can hand the capability back without presenting a factor');
 
   console.log('Authorization management API tests passed');
 }

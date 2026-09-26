@@ -25,6 +25,7 @@ import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { ORDER_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 import { splitHoursMinutes } from '@/lib/table-timing';
 import { tenantCan } from '@/lib/permissions';
+import { businessDateForInstant } from '@shared/business-date';
 
 
 interface PaymentMethodBreakdown {
@@ -155,13 +156,6 @@ interface DashboardMetric {
   comparison?: ReactNode;
 }
 
-/** Today's date as YYYY-MM-DD in a given IANA timezone (not UTC — avoids an
- *  off-by-one-day default near midnight relative to the tenant's locale). */
-function getLocalDateString(date: Date, timeZone: string): string {
-  // en-CA formats as YYYY-MM-DD by convention — a convenient built-in shortcut.
-  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
-}
-
 function getMonthRange(month: string): { startDate: string; endDate: string } {
   const [year, monthNumber] = month.split('-').map(Number);
   const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
@@ -232,7 +226,14 @@ export default function DashboardPage() {
   const { formatDateTime } = useFormatDate();
   const locale = useLocale();
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const todayLocal = getLocalDateString(new Date(), timeZone);
+  // The store's business day starts at its configured time, not at midnight, so
+  // the day picker and its upper bound follow the same rule the cash-close modal
+  // and the drawer movements use instead of the plain tenant-local date.
+  const todayLocal = businessDateForInstant({
+    instant: new Date(),
+    timezone: timeZone,
+    startTime: currentTenant?.business_day_start_time || '00:00',
+  });
   const [selectedDate, setSelectedDate] = useState(todayLocal);
   const [selectedMonth, setSelectedMonth] = useState(todayLocal.slice(0, 7));
   const [periodMode, setPeriodMode] = useState<'day' | 'month'>('day');

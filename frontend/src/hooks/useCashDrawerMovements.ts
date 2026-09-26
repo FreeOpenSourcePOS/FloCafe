@@ -9,7 +9,7 @@ import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getCurrencyMinorUnitFactor } from '@/lib/countries';
-import { businessDateInTimezone } from '@/lib/business-date';
+import { businessDateForInstant } from '@shared/business-date';
 
 export type CashDrawerMovementType = 'opening_float' | 'pay_in' | 'pay_out' | 'safe_drop';
 
@@ -35,10 +35,11 @@ export function useCashDrawerMovements() {
   const fmt = useFormatCurrency();
   const unitAdapter = useCurrencyUnitAdapter();
   const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
-  const todayLocal = businessDateInTimezone(
-    currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-    currentTenant?.business_day_start_time || '00:00',
-  );
+  const todayLocal = businessDateForInstant({
+    instant: new Date(),
+    timezone: currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+    startTime: currentTenant?.business_day_start_time || '00:00',
+  });
   const [open, setOpen] = useState(false);
   const [businessDate, setBusinessDate] = useState(todayLocal);
   const [movementType, setMovementType] = useState<CashDrawerMovementType>('pay_in');

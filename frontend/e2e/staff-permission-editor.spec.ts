@@ -7,6 +7,7 @@ import { E2E_BASE_URL as BASE } from './helpers/urls';
 // renamed or dropped message key fails here instead of passing against a
 // hand-copied string.
 const EN = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'i18n', 'messages', 'en.json'), 'utf8')) as {
+  common: Record<string, string>;
   permissionMatrix: Record<string, string>;
 };
 
@@ -201,6 +202,9 @@ test('owner can override a role permission and see it saved', async ({ page }) =
 
   await expect(page.getByText('Done', { exact: true })).toBeVisible();
   await expect(voidRow.getByText('Not allowed', { exact: true })).toBeVisible();
+  // A save the server simply accepts must not pick up any refusal surface.
+  await expect(page.getByTestId('permission-save-refusal')).toHaveCount(0);
+  await expect(page.getByTestId('permission-self-access-warning')).toHaveCount(0);
 
   // Protected permissions never expose an override control.
   const protectedRow = page.locator('tr', { hasText: 'staff · privileged · manage' });
@@ -355,6 +359,28 @@ test('a 428 the PIN does not clear refuses with an explanation instead of prompt
   await page.waitForTimeout(500);
   expect(putRequests).toHaveLength(2);
   await expect(dialog).toHaveCount(0);
+});
+
+test('an unexpected error shape still surfaces a message instead of doing nothing', async ({ page }) => {
+  // Neither refusal code, and no usable error text: the shape the backend has
+  // not promised to send, and the one an outage or proxy would produce.
+  const { putRequests } = await startOwnerSession(page, {
+    putResponder: () => ({ status: 500, body: { detail: 'upstream unavailable' } }),
+  });
+
+  await roleSelect(page).selectOption('owner');
+  await rowFor(page, 'settings.manage').locator('select').selectOption('deny');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  await expect.poll(() => putRequests.length).toBe(1);
+  // A real message, localised, rather than silence.
+  await expect(page.getByText(EN.common.failedToSave, { exact: true })).toBeVisible();
+  // Neither refusal surface is implied, and the pending diff stays editable so
+  // the owner can retry without re-entering it.
+  await expect(page.getByTestId('permission-save-refusal')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(rowFor(page, 'settings.manage').getByText('Not allowed', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
 });
 
 test('a mistyped PIN leaves the prompt available again on the next save', async ({ page }) => {

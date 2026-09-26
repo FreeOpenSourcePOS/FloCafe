@@ -177,7 +177,10 @@ from audit attribution, not from hiding orders between staff.
 **Staff management.** Managers can manage operational staff by default (`staff.operational.manage`),
 but cannot modify or deactivate owner or manager accounts: that needs the protected
 `staff.privileged.manage`, which only an owner holds. Only an owner can change the role on an
-existing account, and the last active owner cannot be demoted.
+existing account. Demoting or deactivating an account is refused when no other active account
+would still hold all four of `authorization.manage`, `staff.privileged.manage`,
+`staff.operational.manage`, and `settings.manage`, so the last administrator is protected even
+while other active owners remain who have been denied one of those capabilities.
 
 **Conditional surfaces.** Business type, feature settings such as KDS or WhatsApp, and account
 state can hide or disable a surface independently of whether the permission is granted.

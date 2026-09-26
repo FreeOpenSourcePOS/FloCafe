@@ -226,9 +226,16 @@ export function wrapToDisplayCells(text: string, columns: number): string[] {
   return lines;
 }
 
-/** Resolve the configured logical columns used by browser/WebUSB receipt settings. */
+/**
+ * Resolve the configured logical columns used by browser/WebUSB receipt settings.
+ *
+ * 80 mm resolves to 42, the exact Font A capacity of a 512-dot (180 dpi) head, so
+ * this equals `generic-escpos-80.fontAColumns` and `epson-tm-series` keeps its
+ * 48 for 576-dot heads. This is the single source both render paths fall back to;
+ * nothing else should restate the number.
+ */
 export function columnsForReceiptPaperSize(paperWidth: ReceiptPaperSize): number {
-  return paperWidth === 58 ? 32 : 48;
+  return paperWidth === 58 ? 32 : 42;
 }
 
 /** Resolve configured text columns independently of physical printer capability. */

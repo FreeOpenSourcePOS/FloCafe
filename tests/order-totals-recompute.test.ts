@@ -163,6 +163,15 @@ async function main() {
         subtotal: 400, tax_amount: 5, discount_amount: 300, total: 135, round_off: 0,
         components: '[[["Tax A",2.5,2.5],["Tax B",2.5,2.5]]]',
       }), 'the fresh basis leaves 100 of subtotal, so tax stands at 20 x (100/400) = 5 instead of being wiped to 0');
+
+      // Re-applying the same discount must not move: the column is healed now,
+      // so the cap reads the same 400 either way.
+      const repeated = await orderFlatDiscount(orderId, 300);
+      assertEqualOrThrow(repeated.status, 200, 'the same flat discount applied again');
+      assertEqualOrThrow(JSON.stringify(totalsRow(db, 'orders', orderId)), JSON.stringify({
+        subtotal: 400, tax_amount: 5, discount_amount: 300, total: 135, round_off: 0,
+        components: '[[["Tax A",2.5,2.5],["Tax B",2.5,2.5]]]',
+      }), 're-applying the same discount is idempotent once the column is healed');
     }
 
     console.log('\n─── PATCH /:id/items/:itemId/discount (proportional rescale) ───');
@@ -271,6 +280,20 @@ async function main() {
         subtotal: 400, tax_amount: 5, discount_amount: 300, total: 135, round_off: 0,
         components: '[[["Tax A",2.5,2.5],["Tax B",2.5,2.5]]]',
       }), 'the order row is healed in the same transaction as the bill');
+
+      // The order-level discount path syncs the same healed subtotal onto an
+      // unpaid bill, in the same transaction, so the two rows never disagree.
+      const syncOrder = await createOrder({ type: 'takeaway', delivery_charge: 30, items: [{ product_id: 'prod-totals-200', quantity: 2 }] });
+      const syncOrderId = syncOrder.data.order.id;
+      const syncBill = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: syncOrderId }, headers: authHeader });
+      const syncBillId = syncBill.data.bill.id;
+      db.prepare('UPDATE orders SET subtotal = ? WHERE id = ?').run(100, syncOrderId);
+      db.prepare('UPDATE bills SET subtotal = ? WHERE id = ?').run(100, syncBillId);
+      assertEqualOrThrow((await orderFlatDiscount(syncOrderId, 300)).status, 200, 'order discount applied over stale order and bill subtotals');
+      assertEqualOrThrow(JSON.stringify(totalsRow(db, 'bills', syncBillId)), JSON.stringify({
+        subtotal: 400, tax_amount: 5, discount_amount: 300, total: 135, round_off: 0,
+        components: '[[["Tax A",2.5,2.5],["Tax B",2.5,2.5]]]',
+      }), 'the synced bill is healed to the same 400 and settles at the same 135');
     }
 
     console.log('\n─── POST /bills/:id/applyDiscount refusals (unchanged) ───');

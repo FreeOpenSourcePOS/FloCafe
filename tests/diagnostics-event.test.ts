@@ -288,11 +288,17 @@ async function main() {
       headers: owner.authHeader,
       body: { type: 'dine_in', items: [{ product_id: 'missing-product', quantity: 1 }], table_id: 'diag-table-1' },
     });
-    assert(badOrderRes.status >= 400, `order with unknown product is rejected (got ${badOrderRes.status})`);
-    const badOrderQueued = await settle(() => findDiagnosticByStageAndStatus(db, 'order.create.failed', 'order_insert', 500, 1) !== null);
+    // An unknown product_id is a client error the merchant can act on, so the
+    // route rejects it with 404 rather than a 500 internal error.
+    assertEqual(badOrderRes.status, 404, 'order with unknown product is rejected with 404');
+    // The diagnostic reports the status the request actually produced, so a
+    // reported status that drifts from the response leaves nothing to find here.
+    const badOrderQueued = await settle(() => findDiagnosticByStageAndStatus(db, 'order.create.failed', 'order_insert', badOrderRes.status, 1) !== null);
     assert(badOrderQueued, 'order.create.failed is enqueued for other create failures too');
-    const badOrderDiag = findDiagnosticByStageAndStatus(db, 'order.create.failed', 'order_insert', 500, 1);
+    const badOrderDiag = findDiagnosticByStageAndStatus(db, 'order.create.failed', 'order_insert', badOrderRes.status, 1);
+    assertEqual(badOrderDiag?.metadata.status, badOrderRes.status, 'diagnostic metadata carries the HTTP status');
     assertEqual(badOrderDiag?.metadata.stage, 'order_insert', 'non-inventory failures report the order_insert stage');
+    assertEqual(badOrderDiag?.metadata.item_count, 1, 'diagnostic metadata carries the product count');
 
     console.log('\n9. payment.batch.failed: unexpected 500 from applyPaymentBatch is enqueued');
     const diagOrder = db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)

@@ -274,18 +274,21 @@ Router: `main/routes/orders.ts`. Full path: `/api/orders`.
 | `PATCH` | `/:id/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`; body: `discount_type`, `discount_value`, `discount_reason`, `override_pin` | - |
 | `PATCH` | `/:id/items/:itemId/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`, `itemId`; body: `discount_type`, `discount_value`, `override_pin` | - |
 | `PATCH` | `/:orderId/items/:itemId/cancel` | any authenticated role + item cancel limiter, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
-| `PATCH` | `/:orderId/items/:itemId/restore` | in-handler `ROLE_ACCESS.ownerManager` | path: `orderId`, `itemId` | Returns `{ order: { ...order, items } }`. `400` on a completed or cancelled order or a paid one. Re-deducts inventory and recipe components, and rescales an order-level percentage discount. |
+| `PATCH` | `/:orderId/items/:itemId/restore` | in-handler `orders.item.restore` (shipped to `ROLE_ACCESS.ownerManager`) | path: `orderId`, `itemId` | Returns `{ order: { ...order, items } }`. `400` on a completed or cancelled order or a paid one. Re-deducts inventory and recipe components, and rescales an order-level percentage discount. |
 
-Both item endpoints resolve the caller's effective permissions from the database inside an
-IMMEDIATE transaction rather than from the JWT claim, and re-run every policy check there. Each
-opens the single transaction scope it runs in; the route does not wrap the handler again.
+Both item endpoints resolve the caller's effective permissions from the database inside a `withTxn`
+(deferred, not immediate) transaction rather than from the JWT claim, and re-run every policy check
+there. Each opens the single transaction scope it runs in; the route does not wrap the handler
+again.
 
 `PATCH .../cancel` is a policy switch, not a plain status write:
 
-- `403` without `orders.item.cancel` (shipped to `ROLE_ACCESS.ownerManager`) for a terminal item,
-  or without `orders.item.void` (shipped to `ROLE_ACCESS.sales`) for an item already in
-  `preparing` or `ready`. Voiding an in-progress item additionally requires `override_pin`. An
-  owner or manager can cancel a terminal item without a PIN, in which case the call is a no-op
+- `403` without `orders.item.void` (shipped to `ROLE_ACCESS.sales`) when the item is already in
+  `preparing` or `ready`, and `403` without it again for an item that is already `voided`,
+  `void_adjustment` or `refunded`. Every other status, including `pending`, `served` and an item
+  already `cancelled`, needs `orders.item.cancel` (shipped to `ROLE_ACCESS.ownerManager`). Voiding
+  an in-progress item additionally requires `override_pin`. A caller who already holds the required
+  permission can repeat the call on a terminal item without a PIN, in which case it is a no-op
   that returns the current state.
 - `409` when any bill for the order is paid, partially paid, or carries payment details.
 - `400` when the order is `completed` or `cancelled`.

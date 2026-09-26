@@ -280,8 +280,9 @@ later. Snapshots keep historical cancellations correct under recipe edits, mirro
 
 **Enforced by:** `applySupplyStockChange()` in `main/services/supplies.ts`, which does not clamp;
 `buildRecipeSnapshot()` and `applyRecipeSnapshot()` in `main/services/recipes.ts`; the order
-creation, item append, item cancel and item restore paths in `main/routes/orders.ts`, where restore
-re-deducts only for `pending` items.
+creation, item append, item cancel and item restore paths in `main/routes/orders.ts`. Restore acts
+only on a `cancelled` item, re-deducts its inventory and recipe components, and returns it to
+`pending`; a `voided` item is never restored.
 
 **How to verify:**
 

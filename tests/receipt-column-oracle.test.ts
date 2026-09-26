@@ -90,7 +90,7 @@ const SPEC_PARAM_COUNT = new Map<number, number>([
   [0x1b40, 0], // ESC @        initialise
   [0x1b45, 1], // ESC E n      bold
   [0x1b4d, 1], // ESC M n      select font
-  [0x1b61, 1], // ESC a n      line spacing
+  [0x1b61, 1], // ESC a n      select justification (arity is all this oracle needs)
   [0x1b64, 1], // ESC d n      feed n lines
   [0x1b74, 1], // ESC t n      select code table
   [0x1c2e, 2], // FS . a b     Kanji character mode

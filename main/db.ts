@@ -12,6 +12,7 @@ import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 import { ROLE_KEYS } from '../shared/role-permissions';
+import { businessDateForInstant, dayBoundsInTimezone, utcDayBounds } from '../shared/business-date';
 import { getCurrencyFractionDigits, resolveRegionalSnapshot } from './countries';
 
 const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
@@ -6258,88 +6259,19 @@ export function utcTodayDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function parseStartTimeOffsetMs(startTime: string = '00:00'): number {
-  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(startTime.trim());
-  if (!match) return 0;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  return (hours * 60 + minutes) * 60 * 1000;
-}
+// The business-day rule lives in shared/business-date.ts so the renderer cannot
+// restate it. These re-exports keep the existing importer surface for one
+// release: every remaining import of a business-date symbol from this module is
+// visible in review instead of hidden behind a silent copy. Delete them and
+// repoint the importers in a follow-on, or the move is cosmetic.
+export { dayBoundsInTimezone, utcDayBounds };
 
-function calendarDateInTimezone(instant: Date, timezone: string): string {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).formatToParts(instant);
-    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
-    return `${get('year')}-${get('month')}-${get('day')}`;
-  } catch {
-    return instant.toISOString().slice(0, 10);
-  }
-}
-
-/** Return the business date represented by an instant in an IANA timezone with an optional day start offset. */
+/** Deprecated positional alias of `businessDateForInstant`, kept so the existing
+ *  `localDateInTimezone(instant, timezone, startTime)` importers keep their exact
+ *  signature for one release. A bare rename would have changed the argument order
+ *  of a live export without any of those callers changing. */
 export function localDateInTimezone(instant: Date, timezone: string, startTime: string = '00:00'): string {
-  if (parseStartTimeOffsetMs(startTime) === 0) return calendarDateInTimezone(instant, timezone);
-
-  const calendarDate = calendarDateInTimezone(instant, timezone);
-  const [start] = dayBoundsInTimezone(calendarDate, timezone, startTime);
-  if (instant >= parseDbTimestamp(start)) return calendarDate;
-
-  const [year, month, day] = calendarDate.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day - 1)).toISOString().slice(0, 10);
-}
-
-function timezoneOffsetMilliseconds(instant: Date, timezone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(instant);
-  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
-  return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second')) - instant.getTime();
-}
-
-/** Half-open UTC ranges `[start, end)` for one date in the tenant timezone with an optional day start offset. */
-export function dayBoundsInTimezone(date: string, timezone: string, startTime: string = '00:00'): [string, string] {
-  const [y, m, d] = date.split('-').map(Number);
-  const format = (instant: Date) => instant.toISOString().replace('T', ' ').replace(/\..*$/, '');
-  const offsetMinutes = parseStartTimeOffsetMs(startTime) / 60000;
-  const startHour = Math.floor(offsetMinutes / 60);
-  const startMinute = offsetMinutes % 60;
-  try {
-    const toUtc = (localWallTime: number): Date => {
-      let instant = new Date(localWallTime);
-      for (let attempt = 0; attempt < 3; attempt++) {
-        instant = new Date(localWallTime - timezoneOffsetMilliseconds(instant, timezone));
-      }
-      return instant;
-    };
-    return [
-      format(toUtc(Date.UTC(y, m - 1, d, startHour, startMinute))),
-      format(toUtc(Date.UTC(y, m - 1, d + 1, startHour, startMinute))),
-    ];
-  } catch {
-    return utcDayBounds(date, startTime);
-  }
-}
-
-/** Half-open UTC range strings `[start, end)` for a UTC calendar date with an optional day start offset. */
-export function utcDayBounds(date: string, startTime: string = '00:00'): [string, string] {
-  const [y, m, d] = date.split('-').map(Number);
-  const offsetMs = parseStartTimeOffsetMs(startTime);
-  const start = new Date(Date.UTC(y, m - 1, d, 0, 0, 0) + offsetMs);
-  const end = new Date(start.getTime() + 24 * 3600 * 1000);
-  const fmt = (dt: Date) => dt.toISOString().replace('T', ' ').replace(/\..*$/, '');
-  return [fmt(start), fmt(end)];
+  return businessDateForInstant({ instant, timezone, startTime });
 }
 
 /** Verify a user PIN against the stored pin_hash. */

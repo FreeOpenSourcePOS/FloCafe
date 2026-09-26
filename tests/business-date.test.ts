@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { localDateInTimezone } from '../main/db';
-import { businessDateInTimezone } from '../frontend/src/lib/business-date';
+import { businessDateForInstant } from '../shared/business-date';
 
 /** The backend and the renderer each answer "what is today's business date?" for the same
  *  instant, tenant timezone and `business_day_start_time`. The two copies of that rule were
@@ -82,7 +82,11 @@ for (const testCase of cases) {
   const instant = new Date(testCase.instant);
   const label = `${testCase.timezone} ${testCase.instant} business_day_start_time=${testCase.startTime}`;
   const backendDate = localDateInTimezone(instant, testCase.timezone, testCase.startTime);
-  const rendererDate = businessDateInTimezone(testCase.timezone, testCase.startTime, instant);
+  const rendererDate = businessDateForInstant({
+    instant,
+    timezone: testCase.timezone,
+    startTime: testCase.startTime,
+  });
 
   assert.equal(backendDate, testCase.businessDate, `${label}: backend business date`);
   assert.equal(rendererDate, testCase.businessDate, `${label}: renderer business date`);

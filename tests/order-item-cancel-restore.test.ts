@@ -172,6 +172,21 @@ async function main() {
       assertEqualOrThrow(response.data.error, 'Cannot cancel items on a paid or partially paid order', 'the 409 names the paid-order reason');
     }
     {
+      // Guard order, not a coincidence: the already-terminal no-op is checked
+      // before the paid-order query, so re-cancelling an item that was cancelled
+      // before the bill was paid stays a 200 no-op for a role that may cancel,
+      // while an active item on the same paid order is a 409. Both are asserted
+      // so a relocation cannot silently swap them.
+      const order = seedOrderWithItem(db, 'PAID-TERMINAL-ITEM', 'prod-cancel', 'cancelled');
+      db.prepare(`INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, created_at, updated_at)
+        VALUES (?, ?, 100, 100, 100, 0, 'paid', ?, ?)`).run('INV-CANCEL-PAID-TERMINAL', order.orderId, now(), now());
+      const noOp = await cancel(order.orderId, order.itemId, {}, managerAuth);
+      assertEqualOrThrow(noOp.status, 200, 're-cancelling an already-cancelled item on a paid order is an idempotent 200, not a 409');
+      assertEqualOrThrow(itemStatus(order.itemId), 'cancelled', 'the no-op leaves the item cancelled');
+      const forbidden = await cancel(order.orderId, order.itemId, {}, cashierAuth);
+      assertEqualOrThrow(forbidden.status, 403, 'the same no-op still refuses a role without the terminal-item permission');
+    }
+    {
       const order = seedOrderWithItem(db, 'COMPLETED', 'prod-cancel', 'pending');
       db.prepare("UPDATE orders SET status = 'completed' WHERE id = ?").run(order.orderId);
       const response = await cancel(order.orderId, order.itemId, {}, managerAuth);

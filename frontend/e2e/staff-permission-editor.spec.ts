@@ -357,6 +357,45 @@ test('a 428 the PIN does not clear refuses with an explanation instead of prompt
   await expect(dialog).toHaveCount(0);
 });
 
+test('a mistyped PIN leaves the prompt available again on the next save', async ({ page }) => {
+  // Refuse every attempt that is not carrying the right PIN, so the owner
+  // mistypes, and then has to be able to try again without reloading.
+  const { putRequests } = await startOwnerSession(page, {
+    putResponder: (body) => (body.pin === '1234'
+      ? null
+      : { status: 428, body: { error: 'PIN required', code: 'self_privilege_change_requires_factor', requires: 'pin' } }),
+  });
+
+  const submitPin = async (pin: string) => {
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.locator('#master-pin').fill(pin);
+    await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+  };
+
+  await roleSelect(page).selectOption('owner');
+  await rowFor(page, 'settings.manage').locator('select').selectOption('deny');
+  // 1: the unconfirmed save, 2: the mistyped PIN, 3: the retry, 4: the correct PIN.
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  await submitPin('9999');
+  await expect.poll(() => putRequests.length).toBe(2);
+  await expect(page.getByTestId('permission-save-refusal')).toHaveText(EN.permissionMatrix.selfPrivilegeNotConfirmed);
+
+  // A second attempt after the mistype must offer the prompt again, not leave
+  // the owner with an error banner and no way to correct it.
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await submitPin('1234');
+
+  await expect.poll(() => putRequests.length).toBe(4);
+  expect(putRequests[3].body.pin).toBe('1234');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByTestId('permission-save-refusal')).toHaveCount(0);
+  // The retry settles on the first correct PIN rather than re-prompting.
+  await page.waitForTimeout(500);
+  expect(putRequests).toHaveLength(4);
+});
+
 test('an owner with no PIN is refused with an explanation instead of a dead prompt', async ({ page }) => {
   const { putRequests } = await startOwnerSession(page, {
     ownerHasPin: false,

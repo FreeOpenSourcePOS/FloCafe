@@ -118,6 +118,14 @@ function run(): void {
     'the 428 path prompts for the PIN once and only when one is set',
   );
   assertOrThrow(
+    /pinRetried\.current = Boolean\(pin\)/.test(source),
+    'the PIN latch records whether this attempt presented a PIN, so a mistyped PIN stays correctable',
+  );
+  assertOrThrow(
+    (source.match(/useRef\(/g) || []).length === 1,
+    'the matrix declares exactly one latch, so there is no second attempt-scoped guard to drift',
+  );
+  assertOrThrow(
     !/status === 400[\s\S]{0,200}\.data\?\.error/.test(source),
     'the 400 refusal never falls through to the server-supplied error text',
   );

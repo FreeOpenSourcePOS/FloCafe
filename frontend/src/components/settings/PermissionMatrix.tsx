@@ -154,7 +154,9 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
 
   const save = async (pin?: string) => {
     if (!activePayload) return;
-    if (pin) pinRetried.current = true;
+    // Latch this attempt, not the session: a fresh save may prompt again, so a
+    // mistyped PIN is correctable without a reload.
+    pinRetried.current = Boolean(pin);
     setRefusal(null);
     setSaving(true);
     const body = {

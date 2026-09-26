@@ -745,6 +745,13 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
       : '';
 
     const language = resolveTenantReceiptLanguages(db).primary;
+    // The merchant's delivery exception, default on. Unchecked means the
+    // Customer Number setting governs delivery orders and slips too, so the
+    // slip withholds the number as well. See
+    // docs/reference/product-invariants.md.
+    const showCustomerPhone = (db.prepare(
+      "SELECT value FROM settings WHERE key = 'bill_delivery_show_customer_phone_always'",
+    ).get() as { value?: string } | undefined)?.value !== 'false';
     const result = await printDeliverySlipDetailed(
       order,
       items,
@@ -760,6 +767,7 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
       getHttpRequestSignal(req),
       arabicShapingOverride,
       language,
+      showCustomerPhone,
     );
 
     if (result.ok) {

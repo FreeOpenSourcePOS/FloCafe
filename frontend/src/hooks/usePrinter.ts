@@ -597,12 +597,15 @@ export const usePrinterStore = create<PrinterState>()(
       printDeliverySlip: async (order, contact, opts) => {
         set({ lastError: null });
         try {
-          const { printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
+          const { printerUseUnicode, printerArabicShaping, billDeliveryShowCustomerPhoneAlways } = usePosSettingsStore.getState();
           const tenant = useAuthStore.getState().currentTenant;
           const tenantTimezone = tenant?.timezone;
           const orderForPrint = (opts as { items?: OrderItem[] } | undefined)?.items
             ? { ...order, items: (opts as { items?: OrderItem[] }).items }
             : order;
+          // Same override as the backend route, so the two transports cannot
+          // disagree about the merchant's choice.
+          const slipContact = billDeliveryShowCustomerPhoneAlways ? contact : { ...contact, phone: '' };
           const slipItems = (orderForPrint.items ?? []).map((item) => ({
             product_name: item.product_name,
             quantity: Number(item.quantity) || 0,
@@ -642,7 +645,7 @@ export const usePrinterStore = create<PrinterState>()(
                 type: String((orderForPrint as { type?: string }).type ?? ''),
               },
               slipItems,
-              contact,
+              slipContact,
               {
                 paperWidth,
                 columns,
@@ -665,7 +668,7 @@ export const usePrinterStore = create<PrinterState>()(
               type: String((orderForPrint as { type?: string }).type ?? ''),
             },
             slipItems,
-            contact,
+            slipContact,
             { paperWidth, ...(tenantTimezone ? { timezone: tenantTimezone } : {}) },
           );
           await printerService.printViaBrowser(html, paperWidth);

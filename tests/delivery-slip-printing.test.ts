@@ -29,7 +29,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildDeliverySlipDocument, isDeliverySlipDocument } from '../shared/print/document';
+import { buildDeliverySlipDocument, isDeliverySlipDocument, shouldShowCustomerNumber } from '../shared/print/document';
 import { buildDeliverySlipPrintData, renderDeliverySlipViaDocument, MAX_DELIVERY_SLIP_ADDRESS_CHARS } from '../main/printers/document-delivery-slip';
 import { formatReceipt, escPosToText } from '../main/printers/thermal';
 import { capabilitiesForPrinter, getSupportedPrinterProfiles, resolvePrinterProfile } from '../main/printers/profiles';
@@ -108,7 +108,7 @@ const RECEIPT_BILL: any = {
   payment_details: [{ method: 'cash', amount: 500 }],
 };
 
-function renderSlip(columns: number) {
+function renderSlip(columns: number, options: { showCustomerPhone?: boolean } = {}) {
   const profile = resolvePrinterProfile({ paper_width: `cols-${columns}` });
   const capabilities = capabilitiesForPrinter(profile, `cols-${columns}`, false);
   return renderDeliverySlipViaDocument(ORDER, ORDER.items, CONTACT, {
@@ -120,6 +120,7 @@ function renderSlip(columns: number) {
     arabicShaping: false,
     cutMode: profile.cutMode,
     capabilities,
+    ...options,
   });
 }
 
@@ -185,6 +186,89 @@ test('delivery slip: the customer block builder exposes no show/mask gate at all
   assert.equal(typeof contact.nameLabel, 'object');
   assert.equal(contact.showCustomerPhone, undefined, 'the slip contact block has no visibility flag to flip');
   assert.equal(contact.addressSource, 'customer', 'the slip records where the printed address came from');
+});
+
+// ---------------------------------------------------------------------------
+// 1b. The delivery customer-number exception and its merchant override.
+//     The exception is the shipped default; the override turns it off.
+// ---------------------------------------------------------------------------
+
+test('delivery exception: a delivery slip prints the full number with the override unset', () => {
+  for (const columns of COLUMN_RUNGS) {
+    const text = escPosToText(renderSlip(columns).data);
+    assert.ok(text.includes(FULL_PHONE), `slip at ${columns} columns must print the number when the override is unset`);
+  }
+});
+
+test('delivery exception: a delivery slip withholds the number when the override is set', () => {
+  const text = escPosToText(renderSlip(42, { showCustomerPhone: false }).data);
+  assert.ok(!text.includes(FULL_PHONE), 'the slip must not print the number once the merchant opts back out');
+  assert.ok(!text.includes(MASKED_PHONE), 'and it must not print a masked number either: there is nothing to hand over');
+  assert.ok(
+    text.replace(/\s+/g, ' ').includes(FULL_ADDRESS),
+    'the override governs the number, not the address, so the address still prints',
+  );
+  assert.ok(text.includes('Espresso Doppio'), 'the items still print');
+});
+
+test('delivery exception: a delivery receipt shows the number with receipts turned off', () => {
+  // The receipt the merchant sees, with Customer Number off and the exception
+  // on: the number is on the receipt for a delivery order.
+  assert.equal(
+    shouldShowCustomerNumber({ showOnReceipts: false, alwaysForDeliveryOrders: true, orderType: 'delivery' }),
+    true,
+    'a delivery order shows the number even with Customer Number off',
+  );
+  assert.equal(
+    shouldShowCustomerNumber({ showOnReceipts: false, alwaysForDeliveryOrders: true, orderType: 'dine_in' }),
+    false,
+    'the exception is scoped to delivery orders only',
+  );
+  assert.equal(
+    shouldShowCustomerNumber({ showOnReceipts: true, alwaysForDeliveryOrders: false, orderType: 'delivery' }),
+    true,
+    'the merchant setting still wins when it is on',
+  );
+  assert.equal(
+    shouldShowCustomerNumber({ showOnReceipts: false, alwaysForDeliveryOrders: false, orderType: 'delivery' }),
+    false,
+    'the override hands the decision back to the merchant setting',
+  );
+});
+
+test('delivery exception: a receipt still masks the number in both override states', () => {
+  const bill: any = { ...RECEIPT_BILL, order: { ...RECEIPT_ORDER, type: 'delivery', customer: { name: 'Asha Kumar', phone: FULL_PHONE } } };
+  const tenant: any = { business_name: 'Cafe', currency: 'INR', country: 'IN', timezone: 'Asia/Kolkata' };
+  for (const alwaysForDeliveryOrders of [true, false]) {
+    const bytes = fe.receiptEncoder.buildClassicReceiptBytes(bill, tenant, {
+      paperWidth: 80,
+      showCustomerPhone: false,
+      deliveryShowCustomerPhoneAlways: alwaysForDeliveryOrders,
+    }, []);
+    const text = escPosToText(Buffer.from(bytes));
+    const shouldShow = shouldShowCustomerNumber({ showOnReceipts: false, alwaysForDeliveryOrders, orderType: 'delivery' });
+    if (shouldShow) {
+      // Visible, and masked: decision 2 keeps the last-four mask on receipts.
+      // Visibility and the mask are independent, which is the point of this
+      // test - the exception turns visibility on, it does not lift the mask.
+      assert.ok(text.includes(MASKED_PHONE), `override=${alwaysForDeliveryOrders}: the delivery receipt shows the masked number`);
+      assert.ok(!text.includes(FULL_PHONE), `override=${alwaysForDeliveryOrders}: the receipt never prints the full number`);
+    } else {
+      assert.ok(!text.includes(MASKED_PHONE), `override=${alwaysForDeliveryOrders}: the delivery receipt withholds the number entirely`);
+      assert.ok(!text.includes(FULL_PHONE), `override=${alwaysForDeliveryOrders}: and never the full one`);
+    }
+  }
+  // With receipts on, the masked value is what prints, in both override states.
+  for (const alwaysForDeliveryOrders of [true, false]) {
+    const text = escPosToText(Buffer.from(fe.receiptEncoder.buildClassicReceiptBytes(
+      { ...bill, order: { ...bill.order, type: 'dine_in' } } as any,
+      tenant,
+      { paperWidth: 80, showCustomerPhone: true, deliveryShowCustomerPhoneAlways: alwaysForDeliveryOrders },
+      [],
+    )));
+    assert.ok(text.includes(MASKED_PHONE), `override=${alwaysForDeliveryOrders}: receipts still mask the number`);
+    assert.ok(!text.includes(FULL_PHONE), `override=${alwaysForDeliveryOrders}: and never the full one`);
+  }
 });
 
 // ---------------------------------------------------------------------------

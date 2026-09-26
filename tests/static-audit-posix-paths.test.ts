@@ -8,10 +8,12 @@
  *
  * These cases are pure string checks, so they run - and fail - on every host.
  */
-import { toPosixPath } from './helpers/posix-path';
-import { isReviewedRolePolicyFile, allowedRolePolicyFiles } from './authorization-static-audit.test';
-
 const { assertOrThrow, assertEqualOrThrow, getResults, resetCounters } = require('./helpers/test-setup');
+const { toPosixPath } = require('./helpers/posix-path');
+// Importing the audit is side-effect free: it runs its assertions behind a
+// require.main guard, so this suite reports on path normalisation even when the
+// audit itself is broken.
+const { isReviewedRolePolicyFile, allowedRolePolicyFiles } = require('./authorization-static-audit.test');
 
 resetCounters();
 

@@ -172,7 +172,7 @@ so it must not embed device names or user data.
 
 | Id | Make and model | Paper | Font A columns |
 | --- | --- | --- | --- |
-| `xprinter-xp-v320m-v330m` | Xprinter XP-V320M / XP-V330M | 72 mm, `cols-42` | 42 |
+| `xprinter-xp-v320m-v330m` | Xprinter XP-V320M / XP-V330M | 72 mm, `cols-48` | 48 |
 | `epson-tm-series` | Epson TM Series ESC/POS | `cols-48` | 48 |
 | `generic-escpos-80` | Generic ESC/POS 80 mm | `cols-42` | 42 |
 | `generic-escpos-58` | Generic ESC/POS 58 mm | `cols-32` | 32 |

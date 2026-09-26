@@ -69,7 +69,7 @@ const BACKEND_COLUMNS = [32, 42, 48] as const;
  * pinning its width in the same change that adds it.
  */
 const PROFILE_COLUMNS: ReadonlyMap<string, number> = new Map([
-  ['xprinter-xp-v320m-v330m', 42],
+  ['xprinter-xp-v320m-v330m', 48],
   ['epson-tm-series', 48],
   ['generic-escpos-80', 42],
   ['generic-escpos-58', 32],

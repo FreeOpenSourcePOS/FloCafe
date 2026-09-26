@@ -167,10 +167,9 @@ async function main(): Promise<void> {
   realApp.use(requireAuth);
   // Records what the exemption let through, so the assertion is about the
   // middleware's decision rather than about some stub route's status code.
-  realApp.use((req: any, res: any, next: any) => {
-    if (req.path.startsWith('/api/authorization')) { next(); return; }
+  realApp.use((req: any, _res: any, next: any) => {
     passedByRequireAuth.push(req.path);
-    res.json({ ok: true });
+    next();
   });
   realApp.use('/api/authorization', authorizationRoutes);
 
@@ -178,6 +177,7 @@ async function main(): Promise<void> {
     `Bearer ${jwt.sign({ userId, email: `${userId}@test.local`, role }, secret, { expiresIn: '1h' })}`;
 
   assert.equal((await request(realApp).get('/api/authorization/catalog')).status, 401, 'no token cannot reach the authorization API');
+  assert.deepEqual(passedByRequireAuth, [], 'a tokenless request never gets past requireAuth at all');
   assert.equal((await request(realApp).get('/api/authorization/catalog').set('Authorization', 'Bearer not-a-jwt')).status, 401, 'a malformed token cannot reach the authorization API');
   assert.equal(
     (await request(realApp).get('/api/authorization/catalog').set('Authorization', tokenFor('authorization-owner', 'owner', 'a-different-secret'))).status,
@@ -194,9 +194,9 @@ async function main(): Promise<void> {
     200,
     'an owner token reaches the catalog',
   );
-  assert.equal((await request(realApp).get('/api/auth/login')).status, 200, 'the /api/auth exemption still lets login verify its own token');
-  assert.ok(passedByRequireAuth.includes('/api/auth/login'), '/api/auth is still exempt from requireAuth');
-  assert.ok(!passedByRequireAuth.includes('/api/authorization/catalog'), '/api/authorization is not exempt from requireAuth');
+  await request(realApp).get('/api/auth/login');
+  assert.ok(passedByRequireAuth.includes('/api/auth/login'), '/api/auth is still exempt from requireAuth so login can verify its own token');
+  assert.ok(passedByRequireAuth.includes('/api/authorization/catalog'), '/api/authorization is gated by requireAuth, and only a valid token gets through');
 
   console.log('Authorization management API tests passed');
 }

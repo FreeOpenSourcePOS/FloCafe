@@ -1996,6 +1996,7 @@
     "yes": "Evet",
     "zeroNoLimit": "0 = Limit Yok",
     "tabAppearance": "Görünüm",
+    "viewOnlyNotice": "Bu ayarları değiştirme izniniz olmadan görüntülüyorsunuz, bu yüzden buradaki denetimler salt okunurdur. Değişiklik yapmanız gerekirse bir sahip size Ayarlar iznini verebilir.",
     "themeTitle": "Tema ve Renk Modu",
     "themeLight": "Açık Tema",
     "themeDark": "Koyu Tema",
@@ -2225,6 +2226,14 @@
     "allow": "İzin ver",
     "deny": "Reddet",
     "protected": "Korumalı",
+    "selfAccessWarningAuthorization": "Bunu kaydetmek, personel izinlerine kendi erişiminizi kaldırır.",
+    "selfAccessWarningStaffPrivileged": "Bunu kaydetmek, sahip ve müdür hesaplarına kendi erişiminizi kaldırır.",
+    "selfAccessWarningStaffOperational": "Bunu kaydetmek, personel hesaplarına kendi erişiminizi kaldırır.",
+    "selfAccessWarningSettings": "Bunu kaydetmek, mağaza ayarlarına kendi erişiminizi kaldırır.",
+    "administrationUnreachable": "Bu değişiklik, personeli, izinleri veya mağaza ayarlarını yönetebilecek hiçbir hesap bırakmaz. Önce bu izinleri başka bir aktif sahibe verin.",
+    "selfPrivilegeChangeTitle": "Kendi erişiminizdeki bu değişikliği onaylayın",
+    "selfPrivilegeChangePrompt": "Bu değişiklik, personele, izinlere veya mağaza ayarlarına kendi erişiminizi etkiler. Devam etmek için PIN kodunuzu girin veya başka bir sahipten bu değişikliği yapmasını isteyin.",
+    "selfPrivilegeNotConfirmed": "Kendi erişiminizdeki bu değişiklik onaylanamadı, bu yüzden hiçbir şey kaydedilmedi. Hesabınız için bir PIN belirleyin veya başka bir sahipten bu değişikliği yapmasını isteyin.",
     "editorFooterNote": "Onay PIN'leri, son aktif sahip, iade son tarihleri ve mutfak istasyonu atamaları gibi hassas iş kuralları geçerliliğini korur."
   },
   "permissionAudit": {

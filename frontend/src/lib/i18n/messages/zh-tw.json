@@ -1996,6 +1996,7 @@
     "yes": "是",
     "zeroNoLimit": "（0 = 不限）",
     "tabAppearance": "外觀",
+    "viewOnlyNotice": "您正以唯讀方式檢視這些設定，因此此處的控制項無法編輯。如需變更，店主可以授予您設定權限。",
     "themeTitle": "主題",
     "themeLight": "淺色",
     "themeDark": "深色",
@@ -2225,6 +2226,14 @@
     "allow": "允許",
     "deny": "拒絕",
     "protected": "受保護",
+    "selfAccessWarningAuthorization": "儲存此變更會取消您自己對員工權限的存取權。",
+    "selfAccessWarningStaffPrivileged": "儲存此變更會取消您自己對店主與經理帳戶的存取權。",
+    "selfAccessWarningStaffOperational": "儲存此變更會取消您自己對員工帳戶的存取權。",
+    "selfAccessWarningSettings": "儲存此變更會取消您自己對門市設定的存取權。",
+    "administrationUnreachable": "此變更會讓所有帳戶都無法管理員工、權限或門市設定。請先將這些權限授予另一位啟用中的店主。",
+    "selfPrivilegeChangeTitle": "確認此變更對您自己存取權的影響",
+    "selfPrivilegeChangePrompt": "此變更會改變您自己對員工、權限或門市設定的存取權。請輸入 PIN 碼以繼續，或請另一位店主執行此變更。",
+    "selfPrivilegeNotConfirmed": "無法確認此變更對您自己存取權的影響，因此未儲存任何內容。請為您的帳戶設定 PIN 碼，或請另一位店主執行此變更。",
     "editorFooterNote": "核准 PIN、最後一位有效業主、退款時間上限與廚房工作站分派等敏感商業規則仍然適用。"
   },
   "permissionAudit": {

@@ -1,13 +1,14 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { Check, LockKeyhole, Minus, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Check, LockKeyhole, Minus, RotateCcw } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
 import type { Staff } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
+import { MasterPinPrompt } from './MasterPinPrompt';
 import toast from 'react-hot-toast';
 import type { PermissionArea, PermissionEffect, PermissionId, PermissionRisk } from '@shared/permissions';
 import { ROLE_KEYS, type Role } from '@shared/role-permissions';
@@ -34,6 +35,46 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * The administrative surface the backend capability floor protects. Mirrors
+ * ADMINISTRATIVE_PERMISSION_IDS in main/services/authorization.ts so the row
+ * that costs the actor their own access is named before the save, not only by
+ * the server's refusal after it.
+ */
+const ADMINISTRATIVE_PERMISSION_IDS = [
+  'authorization.manage',
+  'staff.privileged.manage',
+  'staff.operational.manage',
+  'settings.manage',
+] as const satisfies readonly PermissionId[];
+
+type SelfAccessMessageKey =
+  | 'selfAccessWarningAuthorization'
+  | 'selfAccessWarningStaffPrivileged'
+  | 'selfAccessWarningStaffOperational'
+  | 'selfAccessWarningSettings';
+
+type AdministrativePermissionId = (typeof ADMINISTRATIVE_PERMISSION_IDS)[number];
+
+const ADMINISTRATIVE_SURFACE_KEYS: Record<AdministrativePermissionId, SelfAccessMessageKey> = {
+  'authorization.manage': 'selfAccessWarningAuthorization',
+  'staff.privileged.manage': 'selfAccessWarningStaffPrivileged',
+  'staff.operational.manage': 'selfAccessWarningStaffOperational',
+  'settings.manage': 'selfAccessWarningSettings',
+};
+
+type RefusalCode = 'administration_unreachable' | 'self_privilege_change_requires_factor';
+
+function refusalCode(error: unknown): { status?: number; code?: RefusalCode; requires?: string } {
+  if (!axios.isAxiosError(error)) return {};
+  const data = error.response?.data as { code?: string; requires?: string } | undefined;
+  return {
+    status: error.response?.status,
+    code: data?.code as RefusalCode | undefined,
+    requires: data?.requires,
+  };
+}
+
 export function permissionLabel(permissionId: PermissionId): string {
   return permissionId.split('.').map((part) => part.replace(/-/g, ' ')).join(' · ');
 }
@@ -43,6 +84,8 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
   const tStaff = useTranslations('staff');
   const tCommon = useTranslations('common');
   const refreshAuthContext = useAuthStore((state) => state.refreshAuthContext);
+  const currentUserId = useAuthStore((state) => state.user?.id);
+  const currentTenantRole = useAuthStore((state) => state.currentTenant?.role);
   const [catalog, setCatalog] = useState<PermissionDefinition[]>([]);
   const [roles, setRoles] = useState<RolePayload[]>([]);
   const [selectedRole, setSelectedRole] = useState<Role>('manager');
@@ -52,6 +95,21 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
   const [mode, setMode] = useState<'role' | 'user'>('role');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [pinGateOpen, setPinGateOpen] = useState(false);
+  // One retry only: a second 428 after the PIN is a refusal, not another prompt.
+  const pinRetried = useRef(false);
+
+  const actorId = String(currentUserId ?? '');
+  /** The proposed save changes the actor's own effective set only when it targets them. */
+  const targetsActor = mode === 'user'
+    ? selectedUserId !== '' && selectedUserId === actorId
+    : selectedRole === currentTenantRole;
+  /** Unknown when the actor is not in the loaded list; assume a PIN and let the server decide. */
+  const actorHasPin = useMemo(
+    () => { const actor = staff.find((member) => member.id === actorId); return actor ? Boolean(actor.has_pin) : true; },
+    [staff, actorId],
+  );
 
   const loadRoles = useCallback(async (): Promise<RolePayload[]> => {
     const [{ data: catalogData }, { data: roleData }] = await Promise.all([
@@ -94,10 +152,16 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
   const effectiveById = useMemo(() => new Map((activePayload?.permissions || []).map((permission) => [permission.permission_id, permission])), [activePayload]);
   const areas = useMemo(() => [...new Set(catalog.map(({ area }) => area))], [catalog]);
 
-  const save = async () => {
+  const save = async (pin?: string) => {
     if (!activePayload) return;
+    if (pin) pinRetried.current = true;
+    setRefusal(null);
     setSaving(true);
-    const body = { revision: activePayload.revision, overrides: Object.entries(overrides).map(([permission_id, effect]) => ({ permission_id, effect })) };
+    const body = {
+      revision: activePayload.revision,
+      overrides: Object.entries(overrides).map(([permission_id, effect]) => ({ permission_id, effect })),
+      ...(pin ? { pin } : {}),
+    };
     try {
       if (mode === 'role') {
         const { data } = await api.put(`/authorization/roles/${selectedRole}`, body);
@@ -111,7 +175,22 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
       await refreshAuthContext();
       toast.success(tCommon('done'));
     } catch (error) {
-      toast.error(errorMessage(error, tCommon('failedToSave')));
+      const { status, code, requires } = refusalCode(error);
+      if (code === 'administration_unreachable' && status === 400) {
+        const message = t('administrationUnreachable');
+        setRefusal(message);
+        toast.error(message);
+      } else if (code === 'self_privilege_change_requires_factor' && status === 428) {
+        if (requires === 'pin' && !pinRetried.current && actorHasPin) {
+          setPinGateOpen(true);
+          return;
+        }
+        const message = t('selfPrivilegeNotConfirmed');
+        setRefusal(message);
+        toast.error(message);
+      } else {
+        toast.error(errorMessage(error, tCommon('failedToSave')));
+      }
       if (axios.isAxiosError(error) && error.response?.status === 409) {
         const loadedRoles = await loadRoles();
         if (mode === 'role') setOverrides(overrideRecord(loadedRoles.find(({ role }) => role === selectedRole)?.overrides || []));
@@ -154,9 +233,16 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={reset} disabled={saving || !activePayload}><RotateCcw size={14} className="me-1" /> {tCommon('restore')}</Button>
-          <Button size="sm" onClick={save} disabled={saving || !activePayload}>{saving ? tCommon('saving') : tCommon('save')}</Button>
+          <Button size="sm" onClick={() => { void save(); }} disabled={saving || !activePayload}>{saving ? tCommon('saving') : tCommon('save')}</Button>
         </div>
       </div>
+
+      {refusal && (
+        <p role="alert" data-testid="permission-save-refusal" className="mb-5 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          <AlertTriangle size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+          <span>{refusal}</span>
+        </p>
+      )}
 
       <div className="mb-5 flex flex-wrap gap-3">
         <div className="inline-flex rounded-lg border border-border p-1">
@@ -186,6 +272,8 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
                   const selected = overrides[permission.id] || 'inherit';
                   const inherited = effectiveById.get(permission.id);
                   const effective = selected === 'allow' ? true : selected === 'deny' ? false : inherited?.allowed === true;
+                  const costsActorAccess = targetsActor && inherited?.allowed === true && !effective
+                    && (ADMINISTRATIVE_PERMISSION_IDS as readonly PermissionId[]).includes(permission.id);
                   return <tr key={permission.id} className="border-b border-border last:border-b-0">
                     <th className="px-4 py-3 text-start font-medium"><span className="block capitalize">{permissionLabel(permission.id)}</span><code className="text-xs font-normal text-muted-foreground">{permission.id}</code></th>
                     <td className="px-3 py-3"><span className={`inline-flex items-center gap-1 ${effective ? 'text-emerald-600' : 'text-muted-foreground'}`}>{effective ? <Check size={15} /> : <Minus size={15} />}{effective ? t('allowed') : t('notAllowed')}</span></td>
@@ -197,7 +285,14 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
                       })} className="w-full rounded-md border border-border bg-background px-2 py-1.5">
                         <option value="inherit">{t('inherit')}</option><option value="allow">{t('allow')}</option><option value="deny">{t('deny')}</option>
                       </select>
-                    ) : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><LockKeyhole size={14} /> {t('protected')}</span>}</td>
+                    ) : <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><LockKeyhole size={14} /> {t('protected')}</span>}
+                    {costsActorAccess && (
+                      <p data-testid="permission-self-access-warning" className="mt-1.5 flex items-start gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+                        <AlertTriangle size={13} aria-hidden="true" className="mt-0.5 shrink-0" />
+                        <span>{t(ADMINISTRATIVE_SURFACE_KEYS[permission.id as AdministrativePermissionId])}</span>
+                      </p>
+                    )}
+                  </td>
                   </tr>;
                 })}
               </Fragment>)}
@@ -206,6 +301,15 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
         </div>
       )}
       <p className="mt-4 text-xs text-muted-foreground">{t('editorFooterNote')}</p>
+
+      <MasterPinPrompt
+        open={pinGateOpen}
+        mode="verify"
+        title={t('selfPrivilegeChangeTitle')}
+        description={t('selfPrivilegeChangePrompt')}
+        onCancel={() => setPinGateOpen(false)}
+        onSubmit={async (pin) => { setPinGateOpen(false); await save(pin); return { success: true }; }}
+      />
     </section>
   );
 }

@@ -1996,6 +1996,7 @@
     "yes": "はい",
     "zeroNoLimit": "（0 = 制限なし）",
     "tabAppearance": "外観",
+    "viewOnlyNotice": "これらの設定を変更する権限がないため、ここでのコントロールはすべて読み取り専用です。変更が必要な場合は、オーナーが設定権限を付与できます。",
     "themeTitle": "テーマ",
     "themeLight": "ライト",
     "themeDark": "ダーク",
@@ -2225,6 +2226,14 @@
     "allow": "許可",
     "deny": "拒否",
     "protected": "保護済み",
+    "selfAccessWarningAuthorization": "これを保存すると、あなた自身のスタッフ権限へのアクセスが失われます。",
+    "selfAccessWarningStaffPrivileged": "これを保存すると、あなた自身のオーナーおよびマネージャーアカウントへのアクセスが失われます。",
+    "selfAccessWarningStaffOperational": "これを保存すると、あなた自身のスタッフアカウントへのアクセスが失われます。",
+    "selfAccessWarningSettings": "これを保存すると、あなた自身の店舗設定へのアクセスが失われます。",
+    "administrationUnreachable": "この変更を行うと、スタッフ、権限、または店舗設定を管理できるアカウントが一つも残りません。まず、別の有効なオーナーにこれらの権限を付与してください。",
+    "selfPrivilegeChangeTitle": "自分自身のアクセス権に対するこの変更を確認してください",
+    "selfPrivilegeChangePrompt": "この変更は、スタッフ、権限、または店舗設定に対するあなた自身のアクセス権を変更します。続行するにはPINを入力するか、別のオーナーにこの変更を依頼してください。",
+    "selfPrivilegeNotConfirmed": "自分自身のアクセス権に対するこの変更は確認できなかったため、何も保存されませんでした。アカウントにPINを設定するか、別のオーナーにこの変更を依頼してください。",
     "editorFooterNote": "承認PIN、最後のアクティブなオーナー、返金期限、キッチンステーションの割り当てなどの機密性の高い業務ルールは引き続き適用されます。"
   },
   "permissionAudit": {

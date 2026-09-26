@@ -59,6 +59,21 @@ const GOLDEN_HEADER = [
 const PAPER_SIZES = [58, 80] as const;
 /** Backend-only column rungs, kept so the oracle covers the legacy 42-column profile. */
 const BACKEND_COLUMNS = [32, 42, 48] as const;
+/**
+ * Column count every supported printer profile is required to declare, keyed by
+ * profile id. This suite measures output, so the width it compares against has
+ * to be written down here rather than read back out of the profile: measuring a
+ * profile at whatever it happens to declare only proves the backend rendered the
+ * width it was handed. Pinning it here means a profile whose width moves fails
+ * until someone widens this pin in the same change, and adding a profile means
+ * pinning its width in the same change that adds it.
+ */
+const PROFILE_COLUMNS: ReadonlyMap<string, number> = new Map([
+  ['xprinter-xp-v320m-v330m', 42],
+  ['epson-tm-series', 48],
+  ['generic-escpos-80', 42],
+  ['generic-escpos-58', 32],
+]);
 /** Templates both render paths implement. */
 const TEMPLATES = ['classic', 'compact'] as const;
 
@@ -264,14 +279,31 @@ test('receipt column oracle: the backend renders at the column count it is drive
   }
 });
 
-test('receipt column oracle: the backend renders at the column count every supported printer profile declares', () => {
-  // The backend's column count is configured from a printer profile, so the
-  // profile is the specification side of this comparison and the measured rule
-  // width is the output side. A profile widened past what the generic widths
-  // allow has to fail here rather than quietly reflow every receipt.
+test('receipt column oracle: every supported printer profile declares the column count it is pinned to', () => {
+  // The profile table is the specification side of this comparison and the pin
+  // is the recorded decision about it, so the two are compared in both
+  // directions: every profile has a pin, and every profile declares it. A
+  // profile widened past what the generic widths allow has to fail here rather
+  // than quietly reflow every receipt.
+  const profiles = getSupportedPrinterProfiles();
+  const unpinned = profiles.map((profile) => profile.id).filter((id) => !PROFILE_COLUMNS.has(id));
+  assert.deepEqual(unpinned, [], 'supported printer profiles with no pinned column count');
+  for (const [id, columns] of PROFILE_COLUMNS) {
+    const profile = profiles.find((candidate) => candidate.id === id);
+    assert.ok(profile, `printer profile ${id} is missing`);
+    assert.equal(profile.fontAColumns, columns, `profile ${id}: fontAColumns moved off its pinned column count`);
+  }
+});
+
+test('receipt column oracle: the backend renders at the column count every supported printer profile is pinned to', () => {
+  // Driven at the pinned width rather than at the profile's declared one, so a
+  // profile declaring a width the backend cannot render at is a failure here
+  // instead of a receipt quietly remeasured to whatever it was handed.
   for (const profile of getSupportedPrinterProfiles()) {
-    const { measuredRuleWidths } = measureBackend('classic', profile.fontAColumns);
-    assert.deepEqual(measuredRuleWidths, [profile.fontAColumns], `profile ${profile.id}: measured rule width`);
+    const columns = PROFILE_COLUMNS.get(profile.id);
+    assert.ok(columns, `profile ${profile.id}: no pinned column count`);
+    const { measuredRuleWidths } = measureBackend('classic', columns);
+    assert.deepEqual(measuredRuleWidths, [columns], `profile ${profile.id}: measured rule width at the pinned ${columns} columns`);
   }
 });
 

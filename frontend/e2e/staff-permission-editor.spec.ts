@@ -1,5 +1,14 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
+
+// The copy the matrix renders is asserted from the real en.json catalog, so a
+// renamed or dropped message key fails here instead of passing against a
+// hand-copied string.
+const EN = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'i18n', 'messages', 'en.json'), 'utf8')) as {
+  permissionMatrix: Record<string, string>;
+};
 
 // Minimal permission catalog covering two areas — enough to exercise grouping,
 // the configurable vs. protected row rendering, and the role/user override flow
@@ -7,12 +16,24 @@ import { E2E_BASE_URL as BASE } from './helpers/urls';
 const CATALOG = [
   { id: 'orders.read', area: 'orders', defaultRoles: ['owner', 'manager', 'cashier', 'server'], configurable: true, risk: 'standard' },
   { id: 'orders.item.void', area: 'orders', defaultRoles: ['owner', 'manager', 'server'], configurable: true, risk: 'sensitive' },
+  { id: 'staff.operational.manage', area: 'staff', defaultRoles: ['owner', 'manager'], configurable: true, risk: 'sensitive' },
   { id: 'staff.privileged.manage', area: 'staff', defaultRoles: ['owner'], configurable: false, risk: 'sensitive' },
+  { id: 'authorization.manage', area: 'authorization', defaultRoles: ['owner'], configurable: false, risk: 'sensitive' },
+  { id: 'settings.manage', area: 'settings', defaultRoles: ['owner', 'manager'], configurable: true, risk: 'sensitive' },
 ];
 
 const ROLES = ['owner', 'manager', 'cashier', 'server', 'chef'];
 
 const STAFF_MEMBER = { id: 'e2e-server-1', name: 'Sam Server', email: 'sam@flo.local', role: 'server', has_pin: false, is_active: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
+const OWNER = { id: 'e2e-owner', name: 'E2E Owner', email: 'owner@flo.local', role: 'owner', has_pin: true, is_active: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
+
+type PutResponse = { status: number; body: unknown };
+
+type PutBody = { revision?: string; overrides: { permission_id: string; effect: string }[]; pin?: string };
+type PutRequest = { url: string; body: PutBody };
+
+/** How the save endpoint answers. Returning `null` accepts the write. */
+type PutResponder = (body: PutBody, attempt: number) => PutResponse | null;
 
 function permissionsFor(overrides: Record<string, 'allow' | 'deny'>, defaultAllowRoles: (id: string) => boolean) {
   return CATALOG.map(({ id }) => {
@@ -39,8 +60,9 @@ function serverUserPayload(overrides: Record<string, 'allow' | 'deny'> = {}) {
   };
 }
 
-async function startOwnerSession(page: Page): Promise<{ putRequests: Array<{ url: string; body: unknown }> }> {
-  const putRequests: Array<{ url: string; body: unknown }> = [];
+async function startOwnerSession(page: Page, options: { putResponder?: PutResponder; ownerHasPin?: boolean } = {}): Promise<{ putRequests: PutRequest[] }> {
+  const putRequests: PutRequest[] = [];
+  const ownerHasPin = options.ownerHasPin ?? true;
 
   await page.addInitScript(() => {
     localStorage.setItem('token', 'staff-permission-editor-token');
@@ -65,7 +87,7 @@ async function startOwnerSession(page: Page): Promise<{ putRequests: Array<{ url
     }
 
     if (path === '/api/authorization/users' && method === 'GET') {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ users: [STAFF_MEMBER] }) });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ users: [{ ...OWNER, has_pin: ownerHasPin }, STAFF_MEMBER] }) });
       return;
     }
 
@@ -86,9 +108,28 @@ async function startOwnerSession(page: Page): Promise<{ putRequests: Array<{ url
     if (path === '/api/authorization/roles/manager' && method === 'PUT') {
       const body = request.postDataJSON();
       putRequests.push({ url: path, body });
+      const refusal = options.putResponder?.(body, putRequests.length) ?? null;
+      if (refusal) {
+        await route.fulfill({ status: refusal.status, contentType: 'application/json', body: JSON.stringify(refusal.body) });
+        return;
+      }
       const overrides: Record<string, 'allow' | 'deny'> = {};
       for (const entry of body.overrides || []) overrides[entry.permission_id] = entry.effect;
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: managerRolePayload(overrides) }) });
+      return;
+    }
+
+    if (path === '/api/authorization/roles/owner' && method === 'PUT') {
+      const body = request.postDataJSON();
+      putRequests.push({ url: path, body });
+      const refusal = options.putResponder?.(body, putRequests.length) ?? null;
+      if (refusal) {
+        await route.fulfill({ status: refusal.status, contentType: 'application/json', body: JSON.stringify(refusal.body) });
+        return;
+      }
+      const overrides: Record<string, 'allow' | 'deny'> = {};
+      for (const entry of body.overrides || []) overrides[entry.permission_id] = entry.effect;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: { ...managerRolePayload(overrides), role: 'owner' } }) });
       return;
     }
 
@@ -197,4 +238,138 @@ test('permission change history lists prior overrides', async ({ page }) => {
   await expect(historyRow.getByText('Staff · Sam Server', { exact: true })).toBeVisible();
   await expect(historyRow.getByText('Inherit', { exact: true })).toBeVisible();
   await expect(historyRow.getByText('Allow', { exact: true })).toBeVisible();
+});
+
+/** The matrix's role tab is the only select that offers the owner's own role. */
+const roleSelect = (page: Page) => page.locator('select').filter({ has: page.locator('option[value="owner"]') });
+const rowFor = (page: Page, permissionId: string) => page.locator('tr', { hasText: permissionId });
+const selfAccessWarnings = (page: Page) => page.getByTestId('permission-self-access-warning');
+
+test('a save that would strip the actor of an administrative capability names the loss on the row before the save', async ({ page }) => {
+  const { putRequests } = await startOwnerSession(page);
+
+  await roleSelect(page).selectOption('owner');
+
+  const settingsRow = rowFor(page, 'settings.manage');
+  await expect(settingsRow.getByText('Allowed', { exact: true })).toBeVisible();
+  await settingsRow.locator('select').selectOption('deny');
+
+  // The warning appears while the change is still unsaved, and names the surface
+  // actually being lost rather than asking for blanket confirmation.
+  await expect(selfAccessWarnings(page)).toHaveCount(1);
+  await expect(selfAccessWarnings(page)).toHaveText(EN.permissionMatrix.selfAccessWarningSettings);
+  await expect(settingsRow.getByTestId('permission-self-access-warning')).toBeVisible();
+  expect(putRequests).toHaveLength(0);
+
+  // It is a warning, not a client-side gate: the server stays the authority.
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => putRequests.length).toBe(1);
+});
+
+test('an ordinary permission change renders no self-access warning', async ({ page }) => {
+  await startOwnerSession(page);
+
+  await roleSelect(page).selectOption('owner');
+
+  await rowFor(page, 'orders.read').locator('select').selectOption('deny');
+  await expect(selfAccessWarnings(page)).toHaveCount(0);
+
+  // The other configurable administrative capability gets its own copy, not the
+  // settings one, so the warning stays specific to what is being lost.
+  await rowFor(page, 'staff.operational.manage').locator('select').selectOption('deny');
+  await expect(selfAccessWarnings(page)).toHaveCount(1);
+  await expect(selfAccessWarnings(page)).toHaveText(EN.permissionMatrix.selfAccessWarningStaffOperational);
+
+  // Protected administrative permissions expose no control and no warning.
+  const protectedRow = rowFor(page, 'authorization.manage');
+  await expect(protectedRow.locator('select')).toHaveCount(0);
+  await expect(protectedRow.getByTestId('permission-self-access-warning')).toHaveCount(0);
+});
+
+test('a rejected save states the invariant and the remedy instead of a bare error', async ({ page }) => {
+  const { putRequests } = await startOwnerSession(page, {
+    putResponder: () => ({
+      status: 400,
+      body: { error: 'This change would leave no account able to manage staff, permissions, or store settings.', code: 'administration_unreachable' },
+    }),
+  });
+
+  await roleSelect(page).selectOption('owner');
+  await rowFor(page, 'settings.manage').locator('select').selectOption('deny');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  await expect.poll(() => putRequests.length).toBe(1);
+  await expect(page.getByTestId('permission-save-refusal')).toHaveText(EN.permissionMatrix.administrationUnreachable);
+  // The refused diff stays on screen so one row can be fixed and the save retried.
+  await expect(rowFor(page, 'settings.manage').getByText('Not allowed', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('a 428 prompts for the PIN and re-submits with it exactly once', async ({ page }) => {
+  const { putRequests } = await startOwnerSession(page, {
+    putResponder: (body) => (body.pin
+      ? null
+      : { status: 428, body: { error: 'PIN required', code: 'self_privilege_change_requires_factor', requires: 'pin' } }),
+  });
+
+  await roleSelect(page).selectOption('owner');
+  await rowFor(page, 'settings.manage').locator('select').selectOption('deny');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(EN.permissionMatrix.selfPrivilegeChangeTitle, { exact: true })).toBeVisible();
+  await expect(dialog.getByText(EN.permissionMatrix.selfPrivilegeChangePrompt, { exact: true })).toBeVisible();
+
+  await dialog.locator('#master-pin').fill('1234');
+  await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+
+  await expect.poll(() => putRequests.length).toBe(2);
+  expect(putRequests[0].body.pin).toBeUndefined();
+  expect(putRequests[1].body.pin).toBe('1234');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId('permission-save-refusal')).toHaveCount(0);
+
+  // A settled save must not re-arm the prompt.
+  await page.waitForTimeout(500);
+  expect(putRequests).toHaveLength(2);
+});
+
+test('a 428 the PIN does not clear refuses with an explanation instead of prompting again', async ({ page }) => {
+  const { putRequests } = await startOwnerSession(page, {
+    putResponder: () => ({ status: 428, body: { error: 'PIN rejected', code: 'self_privilege_change_requires_factor', requires: 'pin' } }),
+  });
+
+  await roleSelect(page).selectOption('owner');
+  await rowFor(page, 'settings.manage').locator('select').selectOption('deny');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.locator('#master-pin').fill('1234');
+  await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+
+  await expect.poll(() => putRequests.length).toBe(2);
+  await expect(page.getByTestId('permission-save-refusal')).toHaveText(EN.permissionMatrix.selfPrivilegeNotConfirmed);
+  await page.waitForTimeout(500);
+  expect(putRequests).toHaveLength(2);
+  await expect(dialog).toHaveCount(0);
+});
+
+test('an owner with no PIN is refused with an explanation instead of a dead prompt', async ({ page }) => {
+  const { putRequests } = await startOwnerSession(page, {
+    ownerHasPin: false,
+    putResponder: () => ({ status: 428, body: { error: 'PIN required', code: 'self_privilege_change_requires_factor', requires: 'pin' } }),
+  });
+
+  await roleSelect(page).selectOption('owner');
+  await rowFor(page, 'settings.manage').locator('select').selectOption('deny');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  await expect.poll(() => putRequests.length).toBe(1);
+  await expect(page.getByTestId('permission-save-refusal')).toHaveText(EN.permissionMatrix.selfPrivilegeNotConfirmed);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await page.waitForTimeout(500);
+  expect(putRequests).toHaveLength(1);
 });

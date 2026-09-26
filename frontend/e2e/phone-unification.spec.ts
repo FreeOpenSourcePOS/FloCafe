@@ -147,8 +147,10 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
     await page.goto(`${BASE}/whatsapp`);
     await page.waitForLoadState('networkidle');
 
-    // WhatsApp blocklist form inputs
-    const blockPhoneInput = page.locator('input[placeholder*="+66" i], input[inputmode="tel"], input[placeholder*="+CC" i]').first();
+    // WhatsApp blocklist form inputs. Scope the phone field to the blocklist card:
+    // the connect card also has a tel input for the pairing code, and which of the
+    // two comes first depends on the live connection state.
+    const blockPhoneInput = page.locator('div:has(> label:has-text("Phone (E.164)")) input').first();
     await expect(blockPhoneInput).toBeVisible();
 
     await blockPhoneInput.fill('0812345678');

@@ -124,6 +124,11 @@ const TEMPLATE_CARDS: TemplateCard[] = [
   { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core', selectionSource: 'core' },
 ];
 
+// Bounded backoff for settings reads the server rate-limited. Long enough to ride out a
+// shared per-IP read limit, short enough that a merchant does not notice the pause.
+const THROTTLED_READ_RETRIES = 3;
+const THROTTLED_READ_BACKOFF_MS = 300;
+
 // Sanitize prefix on load to alphanumeric characters so legacy values pass save validation.
 function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
   return (value ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -1541,7 +1546,21 @@ export default function SettingsPage() {
   };
 
   const loadSettingsTab = async (tab: string, signal: AbortSignal, includeStatusOnly = true): Promise<void> => {
-    const get = (path: string) => api.get(path, { signal });
+    const get = async (path: string) => {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          return await api.get(path, { signal });
+        } catch (error) {
+          // A 429 means throttled, not unavailable: the stored value is unknown but
+          // readable. Letting it fail hydration makes Save Changes discard every
+          // edit, so back off and read again. A genuinely unavailable read still
+          // throws, which is what keeps an unhydrated tab from being written back.
+          const throttled = axios.isAxiosError(error) && error.response?.status === 429;
+          if (!throttled || attempt >= THROTTLED_READ_RETRIES || signal.aborted) throw error;
+          await new Promise((resolve) => setTimeout(resolve, THROTTLED_READ_BACKOFF_MS * 2 ** attempt));
+        }
+      }
+    };
     const active = () => !signal.aborted;
     const hydrationTouchSnapshot = new Map(hydrationTouchVersions.current);
     const readOptional = async (path: string) => {

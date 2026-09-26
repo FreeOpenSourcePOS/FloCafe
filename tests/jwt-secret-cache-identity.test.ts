@@ -31,6 +31,7 @@ const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const {
   assertOrThrow, assertEqualOrThrow, getResults, resetCounters,
 } = require('./helpers/test-setup');
+const { toPosixPath } = require('./helpers/posix-path');
 const { getJWTSecret, clearJWTSecretCache } = require('../main/security/jwt-secret');
 const authReExport = require('../main/routes/auth');
 
@@ -42,12 +43,7 @@ const OWNER_MODULE = 'main/security/jwt-secret';
 const LEGACY_SHIM_MODULE = 'main/routes/auth';
 const PRODUCTION_PREFIX = 'main/';
 
-/** Normalise a repo-relative path to forward slashes on every platform. */
-function toPosix(p: string): string {
-  return p.split(/[\\/]/).join('/');
-}
-
-const isProductionFile = (file: string): boolean => toPosix(file).startsWith(PRODUCTION_PREFIX);
+const isProductionFile = (file: string): boolean => toPosixPath(file).startsWith(PRODUCTION_PREFIX);
 
 /** Recursively collect .ts/.tsx source files under a directory. */
 function collectSourceFiles(dir: string): string[] {
@@ -88,7 +84,7 @@ function relativeToRepo(file: string): string {
   // path.relative() emits platform-native separators, so a win32 host would
   // hand back 'main\ipc.ts' and every startsWith('main/') below would silently
   // skip. Normalise here so the comparison below is platform-independent.
-  return toPosix(path.relative(path.resolve(__dirname, '..'), file));
+  return toPosixPath(path.relative(path.resolve(__dirname, '..'), file));
 }
 
 function main() {
@@ -140,7 +136,7 @@ function main() {
     const winStyleFile = `main${separator}ipc.ts`;
     const winStyleOwner = `main${separator}security${separator}jwt-secret`;
     assertOrThrow(
-      toPosix(winStyleFile) === 'main/ipc.ts',
+      toPosixPath(winStyleFile) === 'main/ipc.ts',
       `toPosix normalises a ${separator === '\\' ? 'backslash' : 'posix'} path`,
     );
     assertOrThrow(
@@ -148,7 +144,7 @@ function main() {
       `a ${separator === '\\' ? 'backslash' : 'posix'}-separated main/ path is classified as production`,
     );
     assertOrThrow(
-      toPosix(winStyleOwner) === OWNER_MODULE,
+      toPosixPath(winStyleOwner) === OWNER_MODULE,
       `a ${separator === '\\' ? 'backslash' : 'posix'}-separated owner path equals the owner constant`,
     );
   }

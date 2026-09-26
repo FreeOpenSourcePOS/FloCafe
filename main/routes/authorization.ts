@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { getDatabase, now } from '../db';
 import { requirePermission } from '../services/authorization';
 import {
+  AdministrationUnreachableError,
+  assertAdministrationReachable,
   readUserPermissionOverrides,
   resolveEffectivePermissions,
   resolveRolePermissions,
@@ -24,6 +26,22 @@ type OverrideInput = { permission_id?: unknown; effect?: unknown };
 
 function actorId(req: Request): string {
   return String((req as Request & { user?: { userId?: string } }).user?.userId || '');
+}
+
+/**
+ * Runs `write` and reports whether the administration guard rejected it. `write`
+ * already ran inside its own transaction, so a rejection means nothing was
+ * stored. Returns true when the response has been sent.
+ */
+function applyOrReject(res: Response, write: () => void): boolean {
+  try {
+    write();
+    return false;
+  } catch (error) {
+    if (!(error instanceof AdministrationUnreachableError)) throw error;
+    res.status(400).json({ error: error.message, code: 'administration_unreachable' });
+    return true;
+  }
 }
 
 function parseOverrides(value: unknown): Map<PermissionId, PermissionEffect> | null {
@@ -126,6 +144,7 @@ router.put('/roles/:role', (req: Request, res: Response) => {
   const actor = actorId(req);
   const batchId = randomUUID();
   const apply = db.transaction(() => {
+    assertAdministrationReachable(db, { kind: 'role_overrides', role, overrides });
     const previous = new Map<PermissionId, PermissionEffect>();
     const rows = db.prepare('SELECT permission_id, effect FROM role_permission_overrides WHERE role = ?').all(role) as Array<{ permission_id: string; effect: PermissionEffect }>;
     for (const row of rows) if (isPermissionId(row.permission_id)) previous.set(row.permission_id, row.effect);
@@ -142,7 +161,7 @@ router.put('/roles/:role', (req: Request, res: Response) => {
       if (before !== after) writeAudit(actor, batchId, 'role', role, permissionId, before, after);
     }
   });
-  apply();
+  if (applyOrReject(res, apply)) return;
   res.json({ role: rolePayload(role) });
 });
 
@@ -174,6 +193,7 @@ router.put('/users/:userId', (req: Request, res: Response) => {
   const actor = actorId(req);
   const batchId = randomUUID();
   const apply = db.transaction(() => {
+    assertAdministrationReachable(db, { kind: 'user_overrides', userId, overrides });
     const previous = readUserPermissionOverrides(userId);
     db.prepare('DELETE FROM user_permission_overrides WHERE user_id = ?').run(userId);
     const insert = db.prepare(`
@@ -188,7 +208,7 @@ router.put('/users/:userId', (req: Request, res: Response) => {
       if (before !== after) writeAudit(actor, batchId, 'user', userId, permissionId, before, after);
     }
   });
-  apply();
+  if (applyOrReject(res, apply)) return;
   res.json(userPayload(userId));
 });
 
@@ -203,11 +223,13 @@ router.delete('/users/:userId/overrides', (req: Request, res: Response) => {
   const actor = actorId(req);
   const db = getDatabase();
   const batchId = randomUUID();
-  db.transaction(() => {
+  const apply = db.transaction(() => {
+    assertAdministrationReachable(db, { kind: 'user_overrides', userId, overrides: new Map() });
     const previous = readUserPermissionOverrides(userId);
     db.prepare('DELETE FROM user_permission_overrides WHERE user_id = ?').run(userId);
     for (const [permissionId, effect] of previous) writeAudit(actor, batchId, 'user', userId, permissionId, effect, null);
-  })();
+  });
+  if (applyOrReject(res, apply)) return;
   res.json(userPayload(userId));
 });
 

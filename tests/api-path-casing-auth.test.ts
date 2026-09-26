@@ -58,6 +58,7 @@ function buildProtectedApp(): express.Express {
   app.use(express.json());
   app.use('/api', databaseMaintenanceMiddleware);
   app.use(requireAuth);
+  // codeql[js/missing-rate-limiting] this app exists only inside the test: supertest drives it in-process and it never binds a port, so the production rate limiter is not reachable from it. Scoping a real limiter here would test nothing.
   app.get('/api/health', (_req: any, res: any) => res.json({ status: 'ok' }));
   app.use('/api/pos-info', posInfoRoutes);
   app.use((_req: any, res: any) => res.status(404).json({ error: 'Not found' }));

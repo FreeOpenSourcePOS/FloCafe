@@ -46,9 +46,9 @@ did what, not from hiding data between staff who already share a till and a kitc
 3. **Audit attribution.** Every order and every write is recorded against the authenticated actor
    (`user_id`, `created_by`). This serves the audit trail, not access gating.
 
-**Enforced by:** `main/routes/orders.ts` (order list, `GET /:id`, item append, status update),
-`main/routes/index.ts` (inline item cancel/void endpoints), `main/routes/printers.ts` (`print-kot`).
-None of these compare `order.user_id`, or an item's creator, against the requesting user.
+**Enforced by:** `main/routes/orders.ts` (order list, `GET /:id`, item append, status update, item
+cancel/void and restore), `main/routes/printers.ts` (`print-kot`). None of these compare
+`order.user_id`, or an item's creator, against the requesting user.
 
 **How to verify:** both commands must return nothing.
 
@@ -280,8 +280,9 @@ later. Snapshots keep historical cancellations correct under recipe edits, mirro
 
 **Enforced by:** `applySupplyStockChange()` in `main/services/supplies.ts`, which does not clamp;
 `buildRecipeSnapshot()` and `applyRecipeSnapshot()` in `main/services/recipes.ts`; the order
-creation and item append paths in `main/routes/orders.ts`; and the inline item cancel and restore
-endpoints in `main/routes/index.ts`, which restore only for `pending` items.
+creation, item append, item cancel and item restore paths in `main/routes/orders.ts`. Restore acts
+only on a `cancelled` item, re-deducts its inventory and recipe components, and returns it to
+`pending`; a `voided` item is never restored.
 
 **How to verify:**
 

@@ -19,7 +19,7 @@ async function signInAsOwner(page: Page) {
 }
 
 function pickerCalls(page: Page): Promise<number> {
-  return page.evaluate(() => (window as any).__floPickerCalls ?? -1);
+  return page.evaluate(() => window.__floPickerCalls ?? -1);
 }
 
 test.describe('restore-from-file deep link is consumed once', () => {

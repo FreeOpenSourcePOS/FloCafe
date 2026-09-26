@@ -295,7 +295,9 @@ async function main(): Promise<void> {
   // actor is the owner first is this one. A write that takes any of the four
   // administrative capabilities away from whoever makes it is refused with 428
   // naming the factor, and the factor is the staff PIN the rest of the
-  // repository already reads as override_pin.
+  // repository already reads as override_pin. Every scenario below starts from a
+  // clean PIN budget so the rate limiter only has one thing to prove.
+  const { resetPinRateLimitForTests } = require('../main/routes/orders');
   const managerRoleBeforeSelfScope = (await request(app).get('/api/authorization/roles').set(owner))
     .body.roles.find((entry: any) => entry.role === 'manager');
   const otherRoleTarget = await request(app).put('/api/authorization/roles/manager').set(owner).send({
@@ -305,8 +307,7 @@ async function main(): Promise<void> {
   assert.equal(otherRoleTarget.status, 200, 'an override on a role the actor does not hold needs no factor');
 
   const ownRoleRevision = (await request(app).get('/api/authorization/roles').set(owner))
-    .body.roles.find((entry: any) => entry.role === 'owner').revision;
-  // A third owner, held above the role default with a user override, so the
+    .body.roles.find((entry: any) => entry.role === 'owner').revision;  // A third owner, held above the role default with a user override, so the
   // floor still passes when the actor's own role loses a capability: the store
   // survives, so the refusal has to be the 428 and not administration_unreachable.
   const thirdOwnerId = 'authorization-owner-third';
@@ -348,8 +349,9 @@ async function main(): Promise<void> {
   assert.equal(storedSelfLocks().count, 0, 'the refused self-lockout stored nothing');
 
   const wrongFactor = await selfLock({ override_pin: '1111' });
-  assert.equal(wrongFactor.status, 428, 'a wrong owner PIN does not confirm the self-lockout');
-  assert.equal(wrongFactor.body.code, 'self_privilege_change_requires_factor');
+  assert.equal(wrongFactor.status, 403, 'a wrong owner PIN is rejected explicitly rather than re-prompted');
+  assert.equal(wrongFactor.body.code, 'self_privilege_change_factor_invalid');
+  assert.notEqual(wrongFactor.body.code, 'self_privilege_change_requires_factor', 'a wrong PIN is distinguishable from a missing one');
   assert.equal(storedSelfLocks().count, 0, 'a wrong owner PIN stores nothing either');
 
   const confirmed = await selfLock({ override_pin: OWNER_PIN });
@@ -372,6 +374,99 @@ async function main(): Promise<void> {
     .set(secondOwner)
     .send({ revision: confirmed.body.revision });
   assert.equal(restored.status, 200, 'another owner can hand the capability back without presenting a factor');
+
+  // ── Clearing your own overrides is the same self-lockout ──────────────
+  // Deleting overrides revokes rather than grants whenever a role default
+  // denies what a user override allowed, so it has to carry the factor too.
+  // The role default is written directly here because the write path would
+  // refuse it, which is the point: a store can already hold that state.
+  resetPinRateLimitForTests();
+  db.prepare(`
+    INSERT INTO role_permission_overrides
+      (role, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES ('owner', 'settings.manage', 'deny', ?, ?, ?)
+    ON CONFLICT (role, permission_id) DO UPDATE SET effect = 'deny'
+  `).run('authorization-owner-second', now(), now());
+  db.prepare(`
+    INSERT INTO user_permission_overrides
+      (user_id, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES (?, 'settings.manage', 'allow', ?, ?, ?)
+  `).run(ownerId, 'authorization-owner-second', now(), now());
+  db.prepare(`
+    INSERT INTO user_permission_overrides
+      (user_id, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES (?, 'settings.manage', 'allow', ?, ?, ?)
+    ON CONFLICT (user_id, permission_id) DO UPDATE SET effect = 'allow'
+  `).run(thirdOwnerId, 'authorization-owner-second', now(), now());
+  assert.equal(
+    (await request(app).get(`/api/authorization/users/${ownerId}`).set(owner))
+      .body.permissions.find((entry: any) => entry.permission_id === 'settings.manage').allowed,
+    true,
+    'precondition: the actor holds the capability only through a user override on a denied role default',
+  );
+
+  const selfClearRevision = (await request(app).get(`/api/authorization/users/${ownerId}`).set(owner)).body.revision;
+  const selfClearStillsStores = () => db
+    .prepare("SELECT COUNT(*) AS count FROM user_permission_overrides WHERE user_id = ? AND permission_id = 'settings.manage'")
+    .get(ownerId) as { count: number };
+  const selfClear = await request(app)
+    .delete(`/api/authorization/users/${ownerId}/overrides`)
+    .set(owner)
+    .send({ revision: selfClearRevision });
+  assert.equal(selfClear.status, 428, 'clearing your own overrides that would revoke a capability is refused without the factor');
+  assert.equal(selfClear.body.code, 'self_privilege_change_requires_factor');
+  assert.equal(selfClearStillsStores().count, 1, 'the refused clear left the override in place');
+
+  // ── An owner with no PIN cannot be told to supply one ─────────────────
+  // A demand for a factor the account does not have is the same class of bug
+  // as the stranded store: the answer has to be something the person can act
+  // on, not a prompt they can never satisfy. settings.manage is already denied
+  // at the role level by the scenario above, so this uses the other configurable
+  // administrative capability, which this owner still holds.
+  resetPinRateLimitForTests();
+  const pinlessOwner = seedUser(db, 'authorization-owner-pinless', 'owner');
+  const pinlessRevision = (await request(app).get('/api/authorization/users/authorization-owner-pinless').set(pinlessOwner)).body.revision;
+  const pinless = await request(app)
+    .put('/api/authorization/users/authorization-owner-pinless')
+    .set(pinlessOwner)
+    .send({ revision: pinlessRevision, overrides: [{ permission_id: 'staff.operational.manage', effect: 'deny' }] });
+  assert.equal(pinless.status, 409, 'an owner with no PIN set is not asked for one they cannot supply');
+  assert.equal(pinless.body.code, 'self_privilege_change_factor_unavailable');
+  assertIncludesOrThrow(
+    pinless.body.error,
+    'Set a PIN on your own account',
+    'the refusal names the action that resolves it',
+  );
+  assert.notEqual(pinless.status, 428, 'the missing-factor contract is not used for an account that has no factor to give');
+  assert.equal(
+    (db.prepare("SELECT COUNT(*) AS count FROM user_permission_overrides WHERE user_id = ?").get('authorization-owner-pinless') as { count: number }).count,
+    0,
+    'the pinless owner stored nothing',
+  );
+
+  // ── The factor guess is rate limited, with or without a PIN ───────────
+  resetPinRateLimitForTests();
+  const ownerStillLocked = async () => {
+    const revision = (await request(app).get(`/api/authorization/users/${ownerId}`).set(owner)).body.revision;
+    return request(app).put(`/api/authorization/users/${ownerId}`).set(owner).send({
+      revision,
+      overrides: [{ permission_id: 'settings.manage', effect: 'deny' }],
+    });
+  };
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const res = await ownerStillLocked();
+    assert.equal(res.status, 428, `attempt ${attempt} with no PIN is the plain missing-factor refusal (got ${res.status})`);
+  }
+  const rateLimited = await ownerStillLocked();
+  assert.equal(rateLimited.status, 429, 'the sixth attempt in the window is rate limited even with no PIN at all');
+  assertIncludesOrThrow(rateLimited.body.error, 'Too many PIN attempts', 'the rate limit names itself');
+  const stillRateLimited = await request(app)
+    .put(`/api/authorization/users/${ownerId}`)
+    .set(owner)
+    .send({ revision: selfClearRevision, overrides: [{ permission_id: 'settings.manage', effect: 'deny' }], override_pin: OWNER_PIN });
+  assert.equal(stillRateLimited.status, 429, 'a correct owner PIN does not buy a way past the limiter');
+  assert.equal(storedSelfLocks().count, 1, 'no rate limited attempt stored anything');
+  resetPinRateLimitForTests();
 
   console.log('Authorization management API tests passed');
 }

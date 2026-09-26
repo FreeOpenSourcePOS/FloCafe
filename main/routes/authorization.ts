@@ -12,8 +12,9 @@ import {
   resolveRolePermissions,
   rolePermissionRevision,
   userPermissionRevision,
-  type AdministrationCandidate,
+  type PermissionOverrideCandidate,
 } from '../services/authorization';
+import { checkPinRateLimit } from './orders';
 import {
   PERMISSION_DEFINITIONS,
   isPermissionId,
@@ -36,12 +37,10 @@ function actorId(req: Request): string {
  * response has already been sent, in the order that helps the caller. The store
  * first: no factor rescues a write that would strand it, so that refusal stays a
  * 400 naming the remedy. The actor second: a self-lockout is recoverable by
- * proving who you are, so it is a 428 naming the factor. The factor is the staff
- * PIN that already authorises privileged writes everywhere else in this
- * repository, sent as `override_pin` and checked with the shared verifyPin.
- * Both run before the write, so a refusal stores nothing.
+ * proving who you are, so it is a 428 naming the factor. Both run before the
+ * write, so a refusal stores nothing.
  */
-function preflightOverrides(req: Request, res: Response, candidate: AdministrationCandidate): boolean {
+function preflightOverrides(req: Request, res: Response, candidate: PermissionOverrideCandidate): boolean {
   try {
     assertAdministrationReachable(getDatabase(), candidate);
   } catch (error) {
@@ -56,8 +55,33 @@ function preflightOverrides(req: Request, res: Response, candidate: Administrati
     return false;
   } catch (error) {
     if (!(error instanceof SelfPrivilegeChangeError)) throw error;
+
+    // The shared limiter every other override-PIN path uses, on the same key
+    // shape. It counts this attempt whether or not a PIN came with it, so
+    // omitting one cannot buy unlimited guesses at a four to six digit factor.
+    const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+    if (!checkPinRateLimit(`pin:${clientIp}:authorization-self-privilege`)) {
+      res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+      return true;
+    }
+
+    // An account with no PIN can never satisfy the factor, so demanding one
+    // would lock the owner out of the one action that lets them continue.
     const pinHash = (getDatabase().prepare('SELECT pin_hash FROM users WHERE id = ?').get(actor) as { pin_hash: string | null } | undefined)?.pin_hash;
-    if (verifyPin(pinHash, req.body?.override_pin)) return false;
+    if (!pinHash) {
+      res.status(409).json({
+        error: 'Set a PIN on your own account in Staff before removing your own administrative access.',
+        code: 'self_privilege_change_factor_unavailable',
+      });
+      return true;
+    }
+
+    const presented = req.body?.override_pin;
+    if (verifyPin(pinHash, presented)) return false;
+    if (presented) {
+      res.status(403).json({ error: 'Invalid owner PIN', code: 'self_privilege_change_factor_invalid' });
+      return true;
+    }
     res.status(428).json({ error: error.message, code: 'self_privilege_change_requires_factor', requires: 'pin' });
     return true;
   }

@@ -220,6 +220,13 @@ export type AdministrationCandidate =
   | { kind: 'user_overrides'; userId: string; overrides: ReadonlyMap<PermissionId, PermissionEffect> }
   | { kind: 'user_state'; userId: string; role: Role; isActive: boolean };
 
+/**
+ * The override shapes alone. An account's role and active flag are a different
+ * kind of write, and a guard that only reads override tables must not accept
+ * one and quietly evaluate the state already on disk.
+ */
+export type PermissionOverrideCandidate = Extract<AdministrationCandidate, { kind: 'role_overrides' | 'user_overrides' }>;
+
 export function reachesAdministration(permissionIds: ReadonlySet<PermissionId>): boolean {
   return ADMINISTRATIVE_PERMISSION_IDS.every((permissionId) => permissionIds.has(permissionId));
 }
@@ -294,6 +301,19 @@ export function assertAdministrationReachable(
 }
 
 /**
+ * Whether any active account can still reach the administrative surface. The
+ * counterpart to assertAdministrationReachable: the guard asks this to refuse
+ * stranding an install, and recovery asks it whether the install is stranded.
+ */
+export function hasActiveAdministrator(): boolean {
+  const rows = getDatabase().prepare('SELECT id FROM users WHERE is_active = 1').all() as Array<{ id: string }>;
+  return rows.some(({ id }) => {
+    const effective = resolveEffectivePermissions(id);
+    return effective !== null && reachesAdministration(effective.permissionIds);
+  });
+}
+
+/**
  * Guards a write that would take an administrative capability away from the
  * actor making it. Same four capabilities and the same post-write evaluation
  * assertAdministrationReachable performs, scoped to one account: the store may
@@ -302,7 +322,7 @@ export function assertAdministrationReachable(
  */
 export function assertActorKeepsOwnAdministration(
   actorUserId: string,
-  candidate: AdministrationCandidate,
+  candidate: PermissionOverrideCandidate,
 ): void {
   const actor = resolveEffectivePermissions(actorUserId);
   if (!actor) return;

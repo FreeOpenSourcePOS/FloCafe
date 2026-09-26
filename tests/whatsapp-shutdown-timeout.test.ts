@@ -22,6 +22,15 @@
  * `allSettled` waits for them. Not `values()`: those are the cancellation
  * callbacks, equally non-thenable.
  *
+ * A second `whatsapp.shutdown()` call used to sit here claiming to cover the same
+ * drain. It covered nothing: `shutdown()` memoizes `whatsappShutdownPromise` and never
+ * clears it, so the second call returns the promise the first call already rejected and
+ * the assertion could not fail. It was removed. Worse, the drain was only ever asserted
+ * through `runShutdownSteps`, which arms its per-step budget *before* the step runs, so
+ * the rejection that arrived was that budget's `ERR_SHUTDOWN_TIMEOUT` and not the
+ * service's. The drain is now asserted directly, first, and matched against the
+ * service's own error message so the two can be told apart.
+ *
  * The sample number has to pass `libphonenumber-js` validation, because
  * `resolveJid` returns null before ever calling `sock.onWhatsApp` for an invalid
  * number. An invalid one leaves `presenceSubscribe` uncalled, so the pending
@@ -100,7 +109,7 @@ function withDeadline<T>(promise: Promise<T>, label: string, ms = 5_000): Promis
 
 const whatsapp = require('../main/services/whatsapp');
 const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
-const { runShutdownSteps } = require('../main/shutdown');
+const { runShutdownSteps, SHUTDOWN_TIMEOUT_MS } = require('../main/shutdown');
 
 async function main(): Promise<void> {
   const originalFetch = globalThis.fetch;
@@ -125,6 +134,20 @@ async function main(): Promise<void> {
     (globalThis as any).setTimeout = ((handler: (...args: any[]) => void, delay?: number, ...args: any[]) =>
       originalSetTimeout(handler, delay === 10_000 ? 1 : delay, ...args)) as typeof setTimeout;
 
+    // The property this branch fixes, asserted directly: the service's own drain reaches
+    // its bounded shutdown instead of spinning. This has to be the first shutdown call
+    // in the process. runShutdownSteps arms its per-step budget before the step runs, so
+    // driven through the coordinator this same rejection would arrive with that budget's
+    // error instead, and the assertion could not tell the two apart.
+    await assert.rejects(
+      withDeadline(whatsapp.shutdown(), 'WhatsApp drain never reached its own bounded shutdown'),
+      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT'
+        && error?.message === `WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`,
+    );
+
+    // shutdown() memoizes, so this re-observes the rejection above rather than draining
+    // again. What it still covers is the coordinator contract: a bounded WhatsApp timeout
+    // blocks the database step and invokes fatal termination.
     let databaseClosed = false;
     let fatalTimeoutObserved = false;
     await assert.rejects(
@@ -137,14 +160,6 @@ async function main(): Promise<void> {
     assert.equal(databaseClosed, false, 'a bounded WhatsApp timeout blocks database closure');
     assert.equal(fatalTimeoutObserved, true, 'a bounded WhatsApp timeout invokes fatal termination');
     assert.equal(presenceSettled, false, 'terminal shutdown reports a bounded error while raw WhatsApp work remains pending');
-
-    // runShutdownSteps' own budget expired first and force-terminates the app in
-    // production. The service's own drain must still reach its bounded shutdown
-    // rather than spinning - that is the regression this file exists for.
-    await assert.rejects(
-      withDeadline(whatsapp.shutdown(), 'WhatsApp drain never reached its own bounded shutdown'),
-      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
-    );
 
     releasePendingPresence();
     await sendPromise;

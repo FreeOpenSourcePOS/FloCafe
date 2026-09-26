@@ -1999,7 +1999,12 @@
     "themeTitle": "Tema",
     "themeLight": "Drita",
     "themeDark": "E errët",
-    "themeSystem": "Sistemi"
+    "themeSystem": "Sistemi",
+    "restoreFromFile": "Rikupero kopje rezerve nga një skedar...",
+    "restoreFromFileHint": "Keni një skedar kopjeje rezerve tashmë në këtë kompjuter? Zgjidheni këtu, në vend që ta kopjoni me dorë mbi bazën e të dhënave.",
+    "restoreReplacesDetail": "Rikuperimi zëvendëson çdo porosi, faturë, produkt dhe regjistër klienti shtuar që nga koha e krijimit të kësaj kopjeje rezerve.",
+    "restoreKeepsDetail": "Llogaritë e stafit, kodet PIN, printerët, cilësimet e taksës dhe llogaria cloud e këtij kompjuteri ruhen.",
+    "restoreSafetyCopyDetail": "Para se të ndryshojë diçka, Flo mban një kopje të të dhënave tuaja aktuale që të mund ta ktheni këtë rikuperim."
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

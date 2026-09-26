@@ -1999,7 +1999,12 @@
     "themeTitle": "主题",
     "themeLight": "浅色",
     "themeDark": "深色",
-    "themeSystem": "跟随系统"
+    "themeSystem": "跟随系统",
+    "restoreFromFile": "从文件恢复备份…",
+    "restoreFromFileHint": "这台电脑上已经有备份文件了吗？在这里选择它，无需手动覆盖数据库。",
+    "restoreReplacesDetail": "恢复会替换自该备份创建以来新增的所有订单、账单、商品和客户记录。",
+    "restoreKeepsDetail": "您的员工账号、PIN、打印机、税务设置以及本机的云端账号都会保留。",
+    "restoreSafetyCopyDetail": "在更改任何内容之前，Flo 会先保存当前数据的副本，以便您可以撤销此次恢复。"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",

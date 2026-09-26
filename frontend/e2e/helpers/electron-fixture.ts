@@ -134,6 +134,7 @@ export async function injectElectronFixture(
       },
       backupDatabase: async () => ({ success: false, error: ipcError.error }),
       restoreBackup: async () => ({ success: false, error: ipcError.error }),
+      pickRestoreFile: async () => ({ canceled: true }),
       dbHealthCheck: async () => healthReport,
       dbApplySafeFixes: async () => safeFixes,
       dbInitialize: async () => ({ success: false, error: ipcError.error }),

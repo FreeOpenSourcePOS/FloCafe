@@ -1999,7 +1999,12 @@
     "themeTitle": "Tema",
     "themeLight": "Maliwanag",
     "themeDark": "Madilim",
-    "themeSystem": "System"
+    "themeSystem": "System",
+    "restoreFromFile": "I-restore ang backup mula sa isang file...",
+    "restoreFromFileHint": "May backup file ka na ba sa computer na ito? Piliin dito sa halip na kopyahin ito nang mano sa ibabaw ng database.",
+    "restoreReplacesDetail": "Ang restore ay pinapalitan ang lahat ng order, resibo, produkto, at talaan ng customer na idinagdag mula pa noong ginawa ang backup na ito.",
+    "restoreKeepsDetail": "Nananatili ang inyong mga account ng staff, PIN, printer, tax setting, at cloud account ng computer na ito.",
+    "restoreSafetyCopyDetail": "Bago magbago ang anumang bagay, iniingatan ng Flo ang kopya ng inyong kasalukuyang datos para mabawi ninyo ang restore na ito."
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

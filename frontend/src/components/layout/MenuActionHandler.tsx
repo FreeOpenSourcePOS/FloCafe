@@ -37,47 +37,27 @@ export default function MenuActionHandler() {
     }
   }
 
-  async function runRestore(pin: string) {
-    if (!window.electronAPI?.restoreBackup) return { success: false, error: tCommon('notAvailable') };
-
-    try {
-      const result = await window.electronAPI.restoreBackup(pin);
-      if (result.success) {
-        toast.success(tRestore('success'));
-        setTimeout(() => window.location.reload(), 1500);
-      } else if (result.error !== 'Cancelled') {
-        toast.error(tRestore('failedWith', { error: tCommon('somethingWrong') }));
-      }
-      return result;
-    } catch {
-      const message = tCommon('somethingWrong');
-      toast.error(tRestore('failedWith', { error: message }));
-      return { success: false, error: message };
-    }
-  }
-
   async function handlePinSubmit(pin: string) {
-    const result = pendingPinAction === 'backup' ? await runBackup(pin) : await runRestore(pin);
+    const result = await runBackup(pin);
     if (result.success || result.error === 'Cancelled') {
       setPendingPinAction(null);
     }
     return result;
   }
 
-  async function beginPinGatedAction(action: 'backup' | 'restore') {
+  async function beginPinGatedAction(action: 'backup') {
     try {
       const status = await window.electronAPI?.getMasterPinStatus?.();
 
       if (!status || 'error' in status) {
         const message = tCommon('somethingWrong');
-        toast.error(action === 'backup' ? tBackup('failedWith', { error: message }) : tRestore('failedWith', { error: message }));
+        toast.error(tBackup('failedWith', { error: message }));
         return;
       }
 
       if (!status.available) {
         // No OS-backed encryption on this machine — the gate is inert, proceed directly.
-        if (action === 'backup') await runBackup('');
-        else await runRestore('');
+        await runBackup('');
         return;
       }
 
@@ -90,7 +70,7 @@ export default function MenuActionHandler() {
       setPendingPinAction(action);
     } catch {
       const message = tCommon('somethingWrong');
-      toast.error(action === 'backup' ? tBackup('failedWith', { error: message }) : tRestore('failedWith', { error: message }));
+      toast.error(tBackup('failedWith', { error: message }));
     }
   }
 
@@ -125,8 +105,8 @@ export default function MenuActionHandler() {
         case 'backup-database':
           beginPinGatedAction('backup');
           break;
-        case 'restore-backup':
-          beginPinGatedAction('restore');
+        case 'menu-restore-from-file':
+          router.push('/settings?tab=data&action=restore-from-file');
           break;
         case 'menu-db-health-check':
           router.push('/settings?tab=data&action=health-check');

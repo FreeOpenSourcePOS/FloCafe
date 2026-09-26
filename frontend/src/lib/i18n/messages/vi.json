@@ -1999,7 +1999,12 @@
     "themeTitle": "Giao diện",
     "themeLight": "Sáng",
     "themeDark": "Tối",
-    "themeSystem": "Theo hệ thống"
+    "themeSystem": "Theo hệ thống",
+    "restoreFromFile": "Khôi phục bản sao lưu từ tệp...",
+    "restoreFromFileHint": "Bạn đã có tệp sao lưu trên máy này? Hãy chọn tại đây thay vì chép tay lên cơ sở dữ liệu.",
+    "restoreReplacesDetail": "Khôi phục sẽ thay thế mọi đơn hàng, hóa đơn, sản phẩm và hồ sơ khách hàng đã thêm kể từ khi bản sao lưu này được tạo.",
+    "restoreKeepsDetail": "Tài khoản nhân viên, mã PIN, máy in, cài đặt thuế và tài khoản đám mây của máy này đều được giữ nguyên.",
+    "restoreSafetyCopyDetail": "Trước khi ada perubahan, Flo lưu một bản sao dữ liệu hiện tại của bạn để bạn có thể hoàn tác thao tác khôi phục này."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

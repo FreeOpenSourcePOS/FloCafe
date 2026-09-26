@@ -8,6 +8,7 @@ import { getLocalIP } from './server';
 import { clearJWTSecretCache } from './security/jwt-secret';
 import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
+import { clearRestoreFileSelection, rememberRestoreFileSelection } from './services/restore-file-selection';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus, sanitizeLogText } from './services/whatsapp';
 import { createKdsWindow, applyWindowControlAction } from './window-options';
@@ -155,6 +156,20 @@ export function registerIpcHandlers(
       : { success: false, error: 'Invalid document nonce' };
   });
 
+  // Opens the native picker for "Restore from a file...". It only chooses a
+  // path; the restore itself is authorised over HTTP by the session that holds
+  // database.manage, so this handler performs no destructive step and is not
+  // Master-PIN gated. The picked path is bound to a single-use token.
+  ipcMain.handle('pick-restore-file', async () => {
+    const result = await dialog.showOpenDialog({
+      filters: [{ name: 'SQLite Database', extensions: ['db'] }],
+      properties: ['openFile'],
+    });
+    if (result.canceled || !result.filePaths.length) return { canceled: true };
+    const selection = rememberRestoreFileSelection(result.filePaths[0]);
+    return { canceled: false, path: selection.path, token: selection.token };
+  });
+
   // Database backup/restore
   ipcMain.handle('backup-database', async (event, pin?: string) => {
     const auth = authorizeMasterPin(pin, 'ipc:backup');
@@ -189,6 +204,7 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle('restore-backup', async (event, pin?: string, presetBackupPath?: string) => {
+    clearRestoreFileSelection();
     const auth = authorizeMasterPin(pin, 'ipc:restore');
     if (!auth.ok) return { success: false, error: auth.error };
 

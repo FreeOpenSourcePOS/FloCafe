@@ -1059,7 +1059,7 @@ function createMenu(): void {
         { label: 'Quick Search', accelerator: 'CmdOrCtrl+K', click: () => mainWindow?.webContents.send('quick-search') },
         { type: 'separator' },
         { label: 'Backup Database', click: () => mainWindow?.webContents.send('backup-database') },
-        { label: 'Restore Backup', click: () => mainWindow?.webContents.send('restore-backup') },
+        { label: 'Restore Backup', click: () => mainWindow?.webContents.send('menu-restore-from-file') },
         { type: 'separator' },
         { label: 'Database Health Check', click: () => mainWindow?.webContents.send('menu-db-health-check') },
         { label: 'Initialize Database', click: () => mainWindow?.webContents.send('menu-db-initialize') },

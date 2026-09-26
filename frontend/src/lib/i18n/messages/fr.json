@@ -1999,7 +1999,12 @@
     "themeTitle": "Thème",
     "themeLight": "Clair",
     "themeDark": "Sombre",
-    "themeSystem": "Système"
+    "themeSystem": "Système",
+    "restoreFromFile": "Restaurer une sauvegarde depuis un fichier...",
+    "restoreFromFileHint": "Vous avez déjà un fichier de sauvegarde sur cet ordinateur ? Sélectionnez-le ici au lieu de le copier manuellement sur la base de données.",
+    "restoreReplacesDetail": "La restauration remplace toutes les commandes, factures, produits et fiches clients ajoutés depuis la création de cette sauvegarde.",
+    "restoreKeepsDetail": "Vos comptes du personnel, vos codes PIN, vos imprimantes, votre configuration fiscale et le compte cloud de cet ordinateur sont conservés.",
+    "restoreSafetyCopyDetail": "Avant toute modification, Flo conserve une copie de vos données actuelles afin que vous puissiez annuler cette restauration."
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

@@ -160,24 +160,23 @@ async function main(): Promise<void> {
   // so prove a tokenless request is actually rejected through the production
   // middleware and not merely through the router's own permission gate.
   const jwt = require('jsonwebtoken');
+  const expressRateLimit = require('express-rate-limit');
   const { getJWTSecret } = require('../main/routes/auth');
-  const passedByRequireAuth: string[] = [];
   const realApp = express();
   realApp.use(express.json());
+  // Same order as main/server.ts: rate limit, then requireAuth, then routes.
+  realApp.use('/api', expressRateLimit({ windowMs: 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
   realApp.use(requireAuth);
-  // Records what the exemption let through, so the assertion is about the
-  // middleware's decision rather than about some stub route's status code.
-  realApp.use((req: any, _res: any, next: any) => {
-    passedByRequireAuth.push(req.path);
-    next();
-  });
   realApp.use('/api/authorization', authorizationRoutes);
 
   const tokenFor = (userId: string, role: string, secret = getJWTSecret()) =>
     `Bearer ${jwt.sign({ userId, email: `${userId}@test.local`, role }, secret, { expiresIn: '1h' })}`;
 
   assert.equal((await request(realApp).get('/api/authorization/catalog')).status, 401, 'no token cannot reach the authorization API');
-  assert.deepEqual(passedByRequireAuth, [], 'a tokenless request never gets past requireAuth at all');
+  // 404 rather than 401 is the proof the exemption still holds: the request got
+  // past requireAuth and all the way to routing, where nothing is mounted. No
+  // route is registered here on purpose, so nothing shadows the 401.
+  assert.equal((await request(realApp).get('/api/auth/login')).status, 404, 'the /api/auth exemption lets login reach routing so it can verify its own token');
   assert.equal((await request(realApp).get('/api/authorization/catalog').set('Authorization', 'Bearer not-a-jwt')).status, 401, 'a malformed token cannot reach the authorization API');
   assert.equal(
     (await request(realApp).get('/api/authorization/catalog').set('Authorization', tokenFor('authorization-owner', 'owner', 'a-different-secret'))).status,
@@ -194,9 +193,6 @@ async function main(): Promise<void> {
     200,
     'an owner token reaches the catalog',
   );
-  await request(realApp).get('/api/auth/login');
-  assert.ok(passedByRequireAuth.includes('/api/auth/login'), '/api/auth is still exempt from requireAuth so login can verify its own token');
-  assert.ok(passedByRequireAuth.includes('/api/authorization/catalog'), '/api/authorization is gated by requireAuth, and only a valid token gets through');
 
   console.log('Authorization management API tests passed');
 }

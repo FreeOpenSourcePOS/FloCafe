@@ -117,12 +117,12 @@ including LAN addresses.
 
 `registerRoutes` in [`main/routes/index.ts`](../../main/routes/index.ts) mounts 36 routers under 37
 paths. `staffRoutes` is the same router mounted at both `/api/staff` and `/api/users`, so the two
-prefixes expose an identical surface. Nine further endpoints are registered inline on `app` in that
+prefixes expose an identical surface. Seven further endpoints are registered inline on `app` in that
 same file, outside any router, and are listed under
 [Inline endpoints](#inline-endpoints-registered-outside-a-router). `GET /api/health` is registered
 directly in `main/server.ts`.
 
-A search for `router.` in the route files misses all ten of those, so a route inventory built on that
+A search for `router.` in the route files misses all eight of those, so a route inventory built on that
 pattern alone is incomplete.
 
 ### Health
@@ -273,6 +273,28 @@ Router: `main/routes/orders.ts`. Full path: `/api/orders`.
 | `PATCH` | `/:id/convert-to-takeaway` | `ROLE_ACCESS.sales` + order write limiter | path: `id` | - |
 | `PATCH` | `/:id/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`; body: `discount_type`, `discount_value`, `discount_reason`, `override_pin` | - |
 | `PATCH` | `/:id/items/:itemId/discount` | `ROLE_ACCESS.ownerManagerCashier` + order write limiter | path: `id`, `itemId`; body: `discount_type`, `discount_value`, `override_pin` | - |
+| `PATCH` | `/:orderId/items/:itemId/cancel` | any authenticated role + item cancel limiter, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
+| `PATCH` | `/:orderId/items/:itemId/restore` | in-handler `ROLE_ACCESS.ownerManager` | path: `orderId`, `itemId` | Returns `{ order: { ...order, items } }`. `400` on a completed or cancelled order or a paid one. Re-deducts inventory and recipe components, and rescales an order-level percentage discount. |
+
+Both item endpoints resolve the caller's effective permissions from the database inside an
+IMMEDIATE transaction rather than from the JWT claim, and re-run every policy check there. Each
+opens the single transaction scope it runs in; the route does not wrap the handler again.
+
+`PATCH .../cancel` is a policy switch, not a plain status write:
+
+- `403` without `orders.item.cancel` (shipped to `ROLE_ACCESS.ownerManager`) for a terminal item,
+  or without `orders.item.void` (shipped to `ROLE_ACCESS.sales`) for an item already in
+  `preparing` or `ready`. Voiding an in-progress item additionally requires `override_pin`. An
+  owner or manager can cancel a terminal item without a PIN, in which case the call is a no-op
+  that returns the current state.
+- `409` when any bill for the order is paid, partially paid, or carries payment details.
+- `400` when the order is `completed` or `cancelled`.
+- Voiding an item in preparation writes a mirrored negative `order_items` row with status
+  `void_adjustment` and marks the original `voided`, so the bill total adjusts while the original
+  line stays visible. Inventory is not restored on the void path. A plain cancel sets the item to
+  `cancelled` and restores the recorded inventory deduction and recipe components.
+- Cancelling the last active item cancels the order and frees its table.
+- `override_pin` attempts are rate limited per client IP, not per item, to slow brute force.
 
 ### Order item status
 
@@ -674,7 +696,7 @@ always ASCII `.`.
 
 ### Inline endpoints (registered outside a router)
 
-These nine are declared on `app` inside `registerRoutes` in `main/routes/index.ts`, not on a
+These seven are declared on `app` inside `registerRoutes` in `main/routes/index.ts`, not on a
 router. Every path below is absolute; there is no mount prefix.
 
 Router: declared inline in `main/routes/index.ts`.
@@ -688,27 +710,6 @@ Router: declared inline in `main/routes/index.ts`.
 | `GET` | `/api/mobile/devices` | `ROLE_ACCESS.owner` | none | `{ devices: [ ... ] }`. `502` when FloAdmin is unreachable. |
 | `GET` | `/api/customers-search` | `ROLE_ACCESS.sales` | query: `q` | Flat array of at most 20 active customers, each with a `wallet_balance`. `q` shorter than 2 characters returns `[]`. A query with no letters is treated as phone-like and matched against stored phone digits. |
 | `GET` | `/api/crm/lookup` | `ROLE_ACCESS.sales` | query: `phone`, `country_code` | `{ found, customer }`. `400` when `phone` is missing. The number is normalized to E.164 against the tenant country before lookup. |
-| `PATCH` | `/api/orders/:orderId/items/:itemId/cancel` | any authenticated role, then an in-handler permission check | path: `orderId`, `itemId`; body: `override_pin`, `reason`, `manager_id` | See the note below. Returns `{ order: { ...order, items } }`. |
-| `PATCH` | `/api/orders/:orderId/items/:itemId/restore` | in-handler `ROLE_ACCESS.ownerManager` | path: `orderId`, `itemId` | Returns `{ order: { ...order, items } }`. `400` on a completed or cancelled order or a paid one. Re-deducts inventory and recipe components, and rescales an order-level percentage discount. |
-
-Both item endpoints resolve the caller's effective permissions from the database inside an
-IMMEDIATE transaction rather than from the JWT claim, and re-run every policy check there.
-
-`PATCH .../cancel` is a policy switch, not a plain status write:
-
-- `403` without `orders.item.cancel` (shipped to `ROLE_ACCESS.ownerManager`) for a terminal item,
-  or without `orders.item.void` (shipped to `ROLE_ACCESS.sales`) for an item already in
-  `preparing` or `ready`. Voiding an in-progress item additionally requires `override_pin`. An
-  owner or manager can cancel a terminal item without a PIN, in which case the call is a no-op
-  that returns the current state.
-- `409` when any bill for the order is paid, partially paid, or carries payment details.
-- `400` when the order is `completed` or `cancelled`.
-- Voiding an item in preparation writes a mirrored negative `order_items` row with status
-  `void_adjustment` and marks the original `voided`, so the bill total adjusts while the original
-  line stays visible. Inventory is not restored on the void path. A plain cancel sets the item to
-  `cancelled` and restores the recorded inventory deduction and recipe components.
-- Cancelling the last active item cancels the order and frees its table.
-- `override_pin` attempts are rate limited per client IP, not per item, to slow brute force.
 
 ## KDS server (`:3002`)
 
@@ -966,7 +967,7 @@ documents only the two routes.
 
 This page lists 294 HTTP route registrations across 293 distinct rows, and one WebSocket contract:
 
-- `267` on the main API: 257 router registrations, 9 inline registrations in `main/routes/index.ts`,
+- `267` on the main API: 259 router registrations, 7 inline registrations in `main/routes/index.ts`,
   and `GET /api/health` in `main/server.ts`.
 - `8` REST routes on the KDS server, plus 3 static handlers.
 - `19` route registrations on the Server App, of which 11 forward to the main API. Two of those 19

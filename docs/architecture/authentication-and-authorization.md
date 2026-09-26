@@ -120,14 +120,15 @@ owner-configurable feature area is added or a formerly-fixed check gets its own 
 middleware and must follow `requireAuth`. It answers 401 when there is no authenticated user and
 403 when the resolved effective permission set does not include `id`.
 
-**Inline gates on the app object.** Nine endpoints are registered directly on `app` rather than on
+**Inline gates on the app object.** Seven endpoints are registered directly on `app` rather than on
 a router, in [`main/routes/index.ts`](../../main/routes/index.ts). A static search for
 `router.<verb>` does not find them.
 
 **Gates inside transaction bodies.** The most important case. Some endpoints perform the
 permission check inside the `withTxn` callback, after the transaction opens, using
 `hasPermission(actorId, id)` against state read in the same transaction. `PATCH
-/api/orders/:orderId/items/:itemId/cancel` and the matching `.../restore` endpoint do this, and
+/api/orders/:orderId/items/:itemId/cancel` and the matching `.../restore` endpoint in
+`main/routes/orders.ts` do this, and
 the override-PIN path additionally requires the presenting user to satisfy `hasRole(role,
 ROLE_ACCESS.ownerManager)` — a deliberate context-policy role check, not a permission, because the
 override PIN belongs to a person acting in an owner/manager capacity regardless of what their

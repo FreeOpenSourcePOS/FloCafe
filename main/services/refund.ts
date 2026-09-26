@@ -15,8 +15,6 @@ const LOYALTY_REDEMPTION_RATE = 1;
 // Items already served/completed become refundable once an order is past the short window below.
 const REFUND_ITEM_ELIGIBLE_STATUSES = ['preparing', 'ready', 'served', 'completed'];
 const REFUND_WINDOW_MS = 60 * 60 * 1000;
-// Terminal item statuses excluded from active order calculations.
-export const TERMINAL_ITEM_STATUSES = ['cancelled', 'voided', 'void_adjustment', 'refunded'];
 
 export function getTenantCurrency(db?: Database): string {
   const explicit = db ? (db.prepare("SELECT value FROM settings WHERE key = 'currency'").get() as any)?.value : getSettingValue('currency');

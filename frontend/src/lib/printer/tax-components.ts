@@ -1,4 +1,5 @@
 import type { Bill, Order } from '@/lib/types';
+import { isTerminalItemStatus } from '../../../../shared/order-item-status';
 
 export interface DisplayTaxComponent {
   title: string;
@@ -173,7 +174,7 @@ function reconcileSplitSnapshotComponents(
 
 function legacyItemComponents(items: Array<TaxSource & { status?: string | null }> | undefined): DisplayTaxComponent[] {
   return (items || []).filter(
-    (item) => item.status !== 'cancelled' && item.status !== 'voided' && item.status !== 'void_adjustment',
+    (item) => !isTerminalItemStatus(item.status),
   ).flatMap((item) => {
     const snapshot = snapshotComponents(item.tax_snapshot);
     return snapshot.present ? [] : legacyComponents(item.tax_breakdown);
@@ -244,7 +245,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
 
   const items = document.order?.items ?? document.items;
   const activeItems = items?.filter(
-    (item) => item.status !== 'cancelled' && item.status !== 'voided' && item.status !== 'void_adjustment',
+    (item) => !isTerminalItemStatus(item.status),
   );
   const components: DisplayTaxComponent[] = [];
   let usedSnapshot = false;

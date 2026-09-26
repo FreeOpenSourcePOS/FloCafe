@@ -1,5 +1,7 @@
 import Decimal from 'decimal.js';
 
+import { isTerminalItemStatus } from '../../shared/order-item-status';
+
 export interface DisplayTaxComponent {
   title: string;
   rate: number | null;
@@ -171,7 +173,7 @@ function reconcileTotal(
 
 function legacyItemComponents(document: TaxDocument): DecimalTaxComponent[] {
   return (document.items || []).filter(
-    (item) => item.status !== 'cancelled' && item.status !== 'voided' && item.status !== 'void_adjustment' && item.status !== 'refunded',
+    (item) => !isTerminalItemStatus(item.status),
   ).flatMap((item) => {
     const snapshot = flattenSnapshots(item.tax_snapshot);
     return snapshot.present ? [] : flattenLegacyBreakdown(item.tax_breakdown);
@@ -241,7 +243,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
   }
 
   const activeItems = document.items?.filter(
-    (item) => item.status !== 'cancelled' && item.status !== 'voided' && item.status !== 'void_adjustment' && item.status !== 'refunded',
+    (item) => !isTerminalItemStatus(item.status),
   );
 
   if (activeItems && activeItems.length > 0) {

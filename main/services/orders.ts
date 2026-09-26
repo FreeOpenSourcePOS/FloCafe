@@ -1,6 +1,6 @@
 import { getDatabase } from '../db';
 import type { TaxBreakdown } from './tax';
-import { TERMINAL_ITEM_STATUSES } from './refund';
+import { TERMINAL_ITEM_STATUSES } from '../../shared/order-item-status';
 
 type Database = ReturnType<typeof getDatabase>;
 type OrderItemRow = {

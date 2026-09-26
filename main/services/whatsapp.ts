@@ -845,6 +845,12 @@ function queueCredentialWrite(socket: BaileysSocket, saveCreds: (...values: unkn
 }
 
 function startSocket(requestSignal?: AbortSignal): Promise<void> {
+  // Test processes never need a live WhatsApp session. Dialing out only adds
+  // third-party latency and a reconnect loop to an otherwise deterministic run.
+  if (process.env.FLO_WHATSAPP_SOCKET_DISABLED === '1') {
+    logWhatsApp('info', 'socket_start_skipped', { reason: 'externally_disabled' });
+    return Promise.resolve();
+  }
   const previousStart = whatsappStartPromise;
   if (previousStart && !whatsappStartController?.signal.aborted) {
     logWhatsApp('info', 'socket_start_deduplicated', { attemptId: whatsappStartAttempt });

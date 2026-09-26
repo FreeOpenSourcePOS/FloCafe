@@ -897,6 +897,35 @@ test('Save All stops when printing hydration fails', async ({ page }) => {
   expect(writes).toEqual([]);
 });
 
+test('Save All persists when a settings read is rate limited', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  const writes: string[] = [];
+  let throttledAttempts = 0;
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'PUT' && path.startsWith('/api/settings/')) writes.push(path);
+  });
+  // A 429 is throttling, not unavailability, so the read must be retried. Treating it
+  // as a failed hydration used to make Save Changes discard the whole edit set.
+  await page.route('**/api/settings/z_report_language_policy', async (route) => {
+    throttledAttempts += 1;
+    if (throttledAttempts === 1) {
+      await route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: 'Too many requests' }) });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`${BASE}/settings?tab=store`);
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  await page.locator('input[type="text"]').first().fill('Should Save');
+  await page.getByRole('button', { name: /^(Save Changes|Saving\.\.\.)$/ }).click();
+  // The save bar disappears once the edit set is persisted, so wait on the write.
+  await expect.poll(() => writes).toContain('/api/settings/business');
+
+  expect(throttledAttempts).toBeGreaterThan(1);
+});
+
 test('Health-check deep link loads from the existing store URL', async ({ page }) => {
   await startMockedSettingsSession(page);
   const apiPaths = collectApiPaths(page);

@@ -209,9 +209,17 @@ export interface GoldenBlock {
   body: string;
 }
 
-/** Parse a golden file back into per-configuration blocks. */
+/**
+ * Parse a golden file back into per-configuration blocks.
+ *
+ * `core.autocrlf` is on by default on Windows, so the checked-out fixture
+ * arrives with CRLF there and LF everywhere else. Matching the block header
+ * against a literal `\n` found nothing in a CRLF file, so every title parsed as
+ * the whole block and each lookup reported the configuration as missing. The
+ * fixture is the canonical LF form, so CRLF is converted on the way in.
+ */
 export function parseGoldenBlocks(text: string): GoldenBlock[] {
-  return text.split(/^=== /m).slice(1).map((chunk) => {
+  return text.replace(/\r\n/g, '\n').split(/^=== /m).slice(1).map((chunk) => {
     const titleEnd = chunk.indexOf(' ===\n');
     const rest = chunk.slice(titleEnd + ' ===\n'.length);
     const header = rest.slice(0, rest.indexOf('\n'));

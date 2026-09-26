@@ -10,6 +10,9 @@
  */
 const { assertOrThrow, assertEqualOrThrow, getResults, resetCounters } = require('./helpers/test-setup');
 const { toPosixPath } = require('./helpers/posix-path');
+const fs = require('node:fs');
+const path = require('node:path');
+const { parseGoldenBlocks } = require('./helpers/receipt-column-measure');
 // Importing the audit is side-effect free: it runs its assertions behind a
 // require.main guard, so this suite reports on path normalisation even when the
 // audit itself is broken.
@@ -55,6 +58,30 @@ for (const audit of pathAllowlistAudits) {
   assertOrThrow(!audit.matcher('main/routes/not-allowlisted.ts'), `${audit.name} still rejects an unlisted file`);
   assertOrThrow(!audit.matcher('main\\routes\\not-allowlisted.ts'), `${audit.name} still rejects an unlisted win32 path`);
 }
+
+/**
+ * The same defect, one layer over: the receipt column oracle pins its
+ * measurements to a golden text fixture, and `core.autocrlf` is on by default on
+ * Windows, so that fixture is checked out with CRLF there and LF everywhere
+ * else. Parsing the block headers against a literal `\n` found nothing in a CRLF
+ * file, so every title parsed as the whole block and every configuration read as
+ * missing from the golden. The fixture is the canonical LF form, so the parser
+ * has to reach the same blocks from the CRLF form the Windows runner supplies.
+ */
+const goldenFixture = fs.readFileSync(
+  path.join(__dirname, 'fixtures/receipt-columns/golden-receipt-columns-v1.txt'),
+  'utf8',
+);
+const crlfGoldenFixture = goldenFixture.split('\n').join('\r\n');
+assertOrThrow(goldenFixture.includes('\n'), 'the golden receipt fixture is readable as text');
+const lfTitles = parseGoldenBlocks(goldenFixture).map((block) => block.title);
+const crlfTitles = parseGoldenBlocks(crlfGoldenFixture).map((block) => block.title);
+assertOrThrow(lfTitles.length > 0, 'the golden receipt fixture parses into blocks');
+assertEqualOrThrow(crlfTitles.join('\n'), lfTitles.join('\n'), 'a CRLF fixture parses to the same block titles as the LF one');
+assertOrThrow(
+  lfTitles.every((title) => crlfTitles.includes(title)),
+  'every golden block title is reachable from the CRLF checkout the Windows runner produces',
+);
 
 const { passed, failed, total } = getResults();
 console.log(`Static audit path normalisation: ${passed}/${total} assertions passed`);

@@ -726,7 +726,7 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
       return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
     }
 
-    const order: any = getOrderWithItems(db, Number(orderId));
+    const order = getOrderWithItems(db, Number(orderId));
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
@@ -735,9 +735,9 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
 
     // The slip prints the address in full, so it reads the column the receipt
     // route deliberately omits.
-    const customer: any = order.customer_id
-      ? db.prepare('SELECT name, phone, country_code, address FROM customers WHERE id = ?').get(order.customer_id)
-      : null;
+    const customer: { name?: string; phone?: string; country_code?: string; address?: string } | undefined = order.customer_id
+      ? db.prepare('SELECT name, phone, country_code, address FROM customers WHERE id = ?').get(order.customer_id) as { name?: string; phone?: string; country_code?: string; address?: string }
+      : undefined;
     const phone = customer?.phone
       ? (customer.country_code && !customer.phone.startsWith(customer.country_code)
         ? `${customer.country_code} ${customer.phone}`
@@ -781,7 +781,7 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
       correlation_id: result.correlationId,
       stage: result.stage,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Print Delivery Slip] Error:', error);
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });

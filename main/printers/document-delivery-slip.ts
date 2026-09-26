@@ -66,8 +66,8 @@ function parseSlipAddons(value: unknown): Array<{ name: string; quantity?: numbe
   }
   if (!Array.isArray(candidates)) return [];
   return candidates
-    .filter((addon: any): addon is { name: string; quantity?: number } =>
-      Boolean(addon) && typeof addon === 'object' && typeof addon.name === 'string')
+    .filter((addon: unknown): addon is { name: string; quantity?: number } =>
+      Boolean(addon) && typeof addon === 'object' && typeof (addon as { name?: unknown }).name === 'string')
     .map((addon) => ({
       name: addon.name,
       ...(typeof addon.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
@@ -83,9 +83,27 @@ function parseSlipAddons(value: unknown): Array<{ name: string; quantity?: numbe
  * resolved order-first, then the customer's standing record, and the resolved
  * source is carried on the snapshot so the document records which one printed.
  */
+/** The order fields the slip reads. Rows arrive from SQLite, so all are optional. */
+export interface DeliverySlipOrderRow {
+  readonly order_number?: unknown;
+  readonly created_at?: unknown;
+  readonly type?: unknown;
+  /** Address confirmed for this delivery; absent on every pre-column order. */
+  readonly delivery_address?: unknown;
+  readonly customer?: { readonly name?: unknown } | null;
+}
+
+/** The item fields the slip reads. */
+export interface DeliverySlipItemRow {
+  readonly product_name?: unknown;
+  readonly quantity?: unknown;
+  readonly addons?: unknown;
+  readonly special_instructions?: unknown;
+}
+
 export function buildDeliverySlipPrintData(
-  order: any,
-  items: any[],
+  order: DeliverySlipOrderRow,
+  items: readonly DeliverySlipItemRow[],
   contact: { name?: string; phone?: string; address?: string; addressSource?: DeliverySlipAddressSource | null },
   options: { showCustomerPhone?: boolean } = {},
 ): DeliverySlipPrintData {
@@ -113,7 +131,7 @@ export function buildDeliverySlipPrintData(
       address,
       addressSource,
     },
-    items: ticketItems.map((item: any) => ({
+    items: ticketItems.map((item) => ({
       productName: String(item?.product_name ?? ''),
       quantity: Number(item?.quantity) || 0,
       addons: parseSlipAddons(item?.addons),
@@ -392,8 +410,8 @@ export interface DeliverySlipDocumentRenderResult {
 
 /** Full document-driven delivery slip pipeline: data -> document -> lines -> bytes. */
 export function renderDeliverySlipViaDocument(
-  order: any,
-  items: any[],
+  order: DeliverySlipOrderRow,
+  items: readonly DeliverySlipItemRow[],
   contact: { name?: string; phone?: string; address?: string; addressSource?: DeliverySlipAddressSource | null },
   opts: {
     columns: number;

@@ -512,8 +512,8 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
     // validated the same way order notes are, at this boundary.
     try {
       validateDeliveryAddress(db, deliveryAddress);
-    } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+    } catch (err: unknown) {
+      return res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid delivery address' });
     }
 
     try {

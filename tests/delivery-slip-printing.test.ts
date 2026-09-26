@@ -493,6 +493,46 @@ test('delivery slip: the normaliser caps a legacy over-long address instead of t
   assert.equal(printData.contact.addressSource, 'customer');
 });
 
+test('delivery slip: an order-recorded address reaches the slip, and an order without one falls back', () => {
+  // Finding: the WebUSB and browser paths build the slip from the contact the
+  // caller resolved, so the order's own address has to survive that resolution
+  // and the customer's standing address has to be what an order created before
+  // the column existed gets. The fallback is the common case, not the rare one.
+  const withOrderAddress = buildDeliverySlipPrintData(
+    { ...ORDER, delivery_address: 'Flat 9, Per Order Street, Sector 4' },
+    ORDER.items,
+    CONTACT,
+  );
+  assert.equal(withOrderAddress.contact.address, 'Flat 9, Per Order Street, Sector 4');
+  assert.equal(withOrderAddress.contact.addressSource, 'order');
+  assert.ok(
+    escPosToText(renderSlip(42).data).includes('+91 98765 43210'),
+    'the number is unaffected by which address was chosen',
+  );
+
+  // An order with no address of its own falls back to the customer's record.
+  const fallback = buildDeliverySlipPrintData(ORDER, ORDER.items, CONTACT);
+  assert.equal(fallback.contact.address, FULL_ADDRESS, 'the standing customer address is the fallback');
+  assert.equal(fallback.contact.addressSource, 'customer');
+
+  // An order with neither prints no address and claims no source.
+  const neither = buildDeliverySlipPrintData(ORDER, ORDER.items, { name: '', phone: '', address: '' });
+  assert.equal(neither.contact.address, '');
+  assert.equal(neither.contact.addressSource, null);
+
+  // And the browser print path, which resolves its contact in the renderer,
+  // follows the same order-then-customer precedence.
+  const handler = fs.readFileSync(
+    path.join(__dirname, '../frontend/src/app/(dashboard)/orders/page.tsx'),
+    'utf8',
+  );
+  assert.match(
+    handler,
+    /address: order\.delivery_address \|\| customer\?\.address \|\| ''/,
+    'the slip action prefers the order-recorded address and falls back to the customer record',
+  );
+});
+
 test('delivery slip: the order-recorded address wins over the standing customer address', () => {
   const printData = buildDeliverySlipPrintData(
     { ...ORDER, delivery_address: 'Flat 9, Per Order Street' },

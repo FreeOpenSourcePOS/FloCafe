@@ -881,7 +881,6 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'billing_type', 'tables_required', 'tax_registered', 'bill_show_name', 'bill_show_address',
   'bill_show_phone', 'bill_show_tax_id', 'bill_show_tax_breakdown', 'bill_show_customer_name',
   'bill_show_customer_phone', 'bill_show_table_number',
-  'bill_delivery_show_customer_phone_always',
   'tax_scheme',
   'taxes_enabled',
   'loyalty_enabled',
@@ -963,6 +962,7 @@ const PRINTING_BOOLEAN_KEYS = [
   'bill_show_customer_name',
   'bill_show_customer_phone',
   'bill_show_table_number',
+  'bill_delivery_show_customer_phone_always',
 ] as const;
 
 const PRINTING_BATCH_KEYS = new Set<string>([

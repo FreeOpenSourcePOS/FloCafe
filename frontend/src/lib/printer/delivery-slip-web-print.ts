@@ -11,6 +11,7 @@ import { createTranslator } from 'use-intl/core';
 import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
 import { escapeHtml } from './web-print';
+import { formatTime } from './format-date';
 import type {
   DeliverySlipContact,
   DeliverySlipItem,
@@ -49,6 +50,7 @@ export function generateDeliverySlipHtml(
   const tr = translatorFor(lang);
   const direction = getLanguageDirection(lang);
   const locale = opts.locale ?? LANGUAGES[lang]?.locale ?? 'en';
+  const timezone = opts.timezone;
   const textAlign = direction === 'rtl' ? 'right' : 'left';
 
   const itemRows = (items ?? []).map((item) => `
@@ -60,7 +62,7 @@ export function generateDeliverySlipHtml(
     <div class="delivery-slip" lang="${escapeHtml(locale)}" dir="${direction}" style="width:100%;max-width:${paperWidthCss};min-width:0;box-sizing:border-box;overflow-wrap:anywhere;word-break:break-word;padding:${padding};font-family:'Courier New','Noto Sans Bengali','Nirmala UI','Vrinda','Bangla Sangam MN','Noto Sans Devanagari','Kohinoor Devanagari','Devanagari Sangam MN','Noto Sans Thai','Leelawadee UI',Thonburi,monospace;font-size:${fontSize};direction:${direction};text-align:${textAlign};">
       <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(tr('print.deliverySlip.banner'))}</h2>
       <p style="margin:2px 0;font-weight:bold;">#${escapeHtml(order.order_number)}</p>
-      <p style="margin:2px 0;">${escapeHtml(tr('print.time'))}: ${escapeHtml(opts.timezone ? new Date(order.created_at.replace(' ', 'T') + 'Z').toLocaleTimeString(locale, { timeZone: opts.timezone }) : order.created_at)}</p>
+      <p style="margin:2px 0;">${escapeHtml(tr('print.time'))}: ${escapeHtml(formatTime(order.created_at, locale, timezone ? { timeZone: timezone } : undefined))}</p>
       <hr style="border:1px dashed #000;margin:${padding} 0;">
       ${contact.name ? `<p style="margin:2px 0;font-weight:bold;">${escapeHtml(contact.name)}</p>` : ''}
       ${contact.phone ? `<p style="margin:2px 0;">${escapeHtml(tr('print.numberShort'))}: ${escapeHtml(contact.phone)}</p>` : ''}

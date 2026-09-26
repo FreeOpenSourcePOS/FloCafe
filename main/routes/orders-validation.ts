@@ -1,11 +1,14 @@
 /** Order and item notes validation functions. */
 
+/** The read-only handle these validators need: a settings lookup and nothing more. */
+type SettingsLookup = { prepare(sql: string): { get(...params: unknown[]): unknown } };
+
 const DEFAULT_MAX_ORDER_NOTES_LENGTH = 200;
 const DEFAULT_MAX_ITEM_NOTES_LENGTH = 100;
 const DEFAULT_MAX_CUSTOMER_ADDRESS_LENGTH = 300;
 const DEFAULT_MAX_DELIVERY_ADDRESS_LENGTH = 300;
 
-function validateNoteLength(db: any, settingKey: string, defaultLimit: number, notes: string | null | undefined, label: string): void {
+function validateNoteLength(db: SettingsLookup, settingKey: string, defaultLimit: number, notes: string | null | undefined, label: string): void {
   if (!notes) return;
   const rawValue = (db.prepare('SELECT value FROM settings WHERE key = ?').get(settingKey) as { value?: string } | undefined)?.value;
   const parsed = parseInt(rawValue || '', 10);
@@ -15,11 +18,11 @@ function validateNoteLength(db: any, settingKey: string, defaultLimit: number, n
   }
 }
 
-export function validateOrderNotes(db: any, notes: string | null | undefined): void {
+export function validateOrderNotes(db: SettingsLookup, notes: string | null | undefined): void {
   validateNoteLength(db, 'max_order_notes_length', DEFAULT_MAX_ORDER_NOTES_LENGTH, notes, 'Order notes');
 }
 
-export function validateItemNotes(db: any, notes: string | null | undefined): void {
+export function validateItemNotes(db: SettingsLookup, notes: string | null | undefined): void {
   validateNoteLength(db, 'max_item_notes_length', DEFAULT_MAX_ITEM_NOTES_LENGTH, notes, 'Item notes');
 }
 
@@ -32,7 +35,7 @@ export function validateItemNotes(db: any, notes: string | null | undefined): vo
  * legacy address written before the cap still reads and still prints (wrapped)
  * on the slip.
  */
-export function validateCustomerAddress(db: any, address: string | null | undefined): void {
+export function validateCustomerAddress(db: SettingsLookup, address: string | null | undefined): void {
   validateNoteLength(db, 'max_customer_address_length', DEFAULT_MAX_CUSTOMER_ADDRESS_LENGTH, address, 'Customer address');
 }
 
@@ -43,7 +46,7 @@ export function validateCustomerAddress(db: any, address: string | null | undefi
  * is free text flowing into a printed document. Capped at the order boundary, so
  * nothing unbounded is ever persisted.
  */
-export function validateDeliveryAddress(db: any, address: string | null | undefined): void {
+export function validateDeliveryAddress(db: SettingsLookup, address: string | null | undefined): void {
   validateNoteLength(db, 'max_delivery_address_length', DEFAULT_MAX_DELIVERY_ADDRESS_LENGTH, address, 'Delivery address');
 }
 

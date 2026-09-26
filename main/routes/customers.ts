@@ -310,8 +310,8 @@ router.post('/', customerWriteRateLimit, requirePermission('customers.create'), 
     // refused on the way in rather than on a courier's paper.
     try {
       validateCustomerAddress(db, address === undefined || address === null ? null : String(address));
-    } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+    } catch (err: unknown) {
+      return res.status(400).json({ error: err instanceof Error ? err.message : 'Invalid address' });
     }
 
     const originalPhone = phone ? String(phone).trim() : '';

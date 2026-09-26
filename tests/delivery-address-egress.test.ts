@@ -13,6 +13,12 @@
  *   3. The merchant's delivery customer-number override is a real, persisted
  *      setting beside `bill_show_customer_phone`, writable through the same
  *      batch route, and the Settings panel states what it does.
+ *
+ * ASSERTIONS: every check here throws, via `node:assert/strict`. The shared
+ * helper's `assert`/`assertEqual` variants only print and count, and a suite
+ * that never reads `getResults()` exits 0 with failing assertions. That is not
+ * hypothetical here: it is how the inert override switch was reported as
+ * passing. Do not reintroduce the counting helpers into this file.
  */
 
 const Module = require('module');
@@ -21,8 +27,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-import express from 'express';
-import jwt from 'jsonwebtoken';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -33,28 +37,25 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const {
-  initTestDb, startServer, api, seedOwnerUser, seedCategory, seedProduct,
-  assertEqual, closeDatabase, getDatabase,
+  initTestDb, createApp, startServer, api, seedOwnerUser, seedCategory, seedProduct,
+  closeDatabase,
 } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
 const { settingsRoutes } = require('../main/routes/settings');
-const { getJWTSecret } = require('../main/routes/auth');
 
 const DELIVERY_ADDRESS = 'Flat 4B, 123A-Anecacuilco 04330, Colonia Naucalpan';
 const OVER_CAP_ADDRESS = 'x'.repeat(400);
 
+/**
+ * The shared factory, not a hand-rolled app.
+ *
+ * `createApp` mounts the same middleware production mounts, in the same order,
+ * so the reproduction is faithful and the rate-limiting scanner sees the real
+ * chain. A test that builds its own app here diverges from production and
+ * reads as a rate-limiting finding.
+ */
 function testApp(): any {
-  const app = express();
-  app.use(express.json());
-  app.use((req: any, res: any, next: any) => {
-    const header = req.headers.authorization;
-    if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'Authentication required' });
-    try { req.user = jwt.verify(header.slice(7), getJWTSecret()); next(); }
-    catch { res.status(401).json({ error: 'Invalid token' }); }
-  });
-  app.use('/api/orders', orderRoutes);
-  app.use('/api/settings', settingsRoutes);
-  return app;
+  return createApp({ '/api/orders': orderRoutes, '/api/settings': settingsRoutes });
 }
 
 /** Wait for the outbox row that cloud sync would transmit. */
@@ -82,8 +83,8 @@ test('delivery address: a delivery order persists the address the cashier typed'
       headers: owner.authHeader,
       body: { type: 'delivery', delivery_address: DELIVERY_ADDRESS, items: [{ product_id: 'product-1', quantity: 1 }] },
     });
-    assertEqual(created.status, 200, 'the delivery order is accepted');
-    assertEqual(
+    assert.equal(created.status, 201, 'the delivery order is accepted');
+    assert.equal(
       db.prepare('SELECT delivery_address FROM orders WHERE id = ?').get(created.data.order.id).delivery_address,
       DELIVERY_ADDRESS,
       'the order row carries the delivery address',
@@ -106,8 +107,8 @@ test('delivery address: a non-delivery order stores no address', async () => {
       headers: owner.authHeader,
       body: { type: 'dine_in', items: [{ product_id: 'product-1', quantity: 1 }] },
     });
-    assertEqual(created.status, 200, 'the order is accepted');
-    assertEqual(
+    assert.equal(created.status, 201, 'the order is accepted');
+    assert.equal(
       db.prepare('SELECT delivery_address FROM orders WHERE id = ?').get(created.data.order.id).delivery_address,
       null,
       'no address is stored for an order that is not a delivery',
@@ -130,10 +131,12 @@ test('delivery address: an over-long address is refused at the boundary', async 
       headers: owner.authHeader,
       body: { type: 'delivery', delivery_address: OVER_CAP_ADDRESS, items: [{ product_id: 'product-1', quantity: 1 }] },
     });
-    assertEqual(rejected.status, 400, 'an address past the cap is refused, not stored and not printed');
+    assert.equal(rejected.status, 400, 'an address past the cap is refused, not stored and not printed');
     assert.match(String(rejected.data.error), /Delivery address exceed maximum length/);
-    assertEqual(
-      db.prepare("SELECT COUNT(*) AS c FROM orders WHERE delivery_address IS NOT NULL AND delivery_address != ''").get().c,
+    // Scoped to the cap, not to any non-empty address: earlier cases in this
+    // suite legitimately persist short addresses.
+    assert.equal(
+      db.prepare('SELECT COUNT(*) AS c FROM orders WHERE LENGTH(delivery_address) > ?').get(300).c,
       0,
       'nothing over-long was persisted',
     );
@@ -143,7 +146,7 @@ test('delivery address: an over-long address is refused at the boundary', async 
       headers: owner.authHeader,
       body: { type: 'delivery', delivery_address: { not: 'a string' }, items: [{ product_id: 'product-1', quantity: 1 }] },
     });
-    assertEqual(wrongType.status, 400, 'a non-string address is refused');
+    assert.equal(wrongType.status, 400, 'a non-string address is refused');
   } finally {
     server.close();
     closeDatabase();
@@ -167,7 +170,7 @@ test('delivery address: it never reaches the cloud sync outbox', async () => {
       headers: owner.authHeader,
       body: { type: 'delivery', delivery_address: DELIVERY_ADDRESS, items: [{ product_id: 'product-1', quantity: 1 }] },
     });
-    assertEqual(created.status, 200, 'the delivery order is accepted');
+    assert.equal(created.status, 201, 'the delivery order is accepted');
 
     const { cloudSync } = require('../main/services/cloud-sync');
     cloudSync.recordOrderChanged(created.data.order.id);
@@ -196,33 +199,72 @@ test('delivery exception: the override is a persisted setting beside the receipt
   const { baseUrl, server } = await startServer(testApp());
   try {
     const business = await api(baseUrl, '/api/settings/business', { headers: owner.authHeader });
-    assertEqual(business.status, 200, 'the business settings are readable');
-    assertEqual(
+    assert.equal(business.status, 200, 'the business settings are readable');
+    assert.equal(
       business.data.bill_delivery_show_customer_phone_always,
       true,
       'a fresh install ships the delivery exception on',
     );
 
+    // The batch route validates every accepted key, so the payload is complete
+    // rather than partial. A partial payload is rejected for an unrelated key
+    // and would mask a real rejection of the override.
     const saved = await api(baseUrl, '/api/settings/printing', {
       method: 'PUT',
       headers: owner.authHeader,
+      // Every accepted key, because the batch route is all-or-nothing: a
+      // partial payload is rejected for whichever key it omits, which would mask
+      // a real rejection of the override this test is about.
       body: {
         printer_trim_decimals: true,
+        bill_show_name: true,
+        bill_show_address: true,
+        bill_show_phone: true,
+        bill_show_tax_id: false,
+        bill_show_tax_breakdown: true,
+        bill_show_customer_name: true,
         bill_show_customer_phone: false,
+        bill_show_table_number: true,
         bill_delivery_show_customer_phone_always: false,
+        bill_language_policy: { primary: { mode: 'fixed', language: 'en' }, additional: [] },
+        kot_language_policy: { primary: { mode: 'fixed', language: 'en' }, additional: [] },
+        z_report_language_policy: { primary: { mode: 'fixed', language: 'en' }, additional: [] },
+        cash_drawer_pulse_enabled: true,
+        cash_drawer_pulse_methods: ['cash', 'card'],
       },
     });
-    assertEqual(saved.status, 200, 'the printing batch accepts the override');
-    assertEqual(
+    assert.equal(saved.status, 200, 'the printing batch accepts the override');
+    assert.equal(
       db.prepare("SELECT value FROM settings WHERE key = 'bill_delivery_show_customer_phone_always'").get().value,
       'false',
       'the override persists through the same batch route as the receipt toggles',
     );
-    assertEqual(
+    assert.equal(
       db.prepare("SELECT value FROM settings WHERE key = 'bill_show_customer_phone'").get().value,
       'false',
       'and the receipt toggle beside it is unaffected',
     );
+
+    // The round trip, not just the write. A setting that is accepted and then
+    // quietly dropped is a different bug from one that is refused, and only a
+    // read after the write distinguishes them.
+    const readBack = await api(baseUrl, '/api/settings/business', { headers: owner.authHeader });
+    assert.equal(readBack.status, 200, 'the settings can be read back after the save');
+    assert.equal(
+      readBack.data.bill_delivery_show_customer_phone_always,
+      false,
+      'a save followed by a read returns what was saved, so the switch is live and not inert',
+    );
+    assert.equal(readBack.data.bill_show_customer_phone, false, 'and the receipt toggle round-trips beside it');
+
+    // And it survives a restart, because the merchant's choice is persisted.
+    const reopened = initTestDb();
+    assert.equal(
+      reopened.prepare("SELECT value FROM settings WHERE key = 'bill_delivery_show_customer_phone_always'").get().value,
+      'false',
+      'the override is durable, not session state',
+    );
+    closeDatabase();
   } finally {
     server.close();
     closeDatabase();

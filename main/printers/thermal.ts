@@ -34,7 +34,11 @@ import {
 import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from './document-classic';
 import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from './document-compact';
 import { renderKotDocumentToLines, renderKotViaDocument } from './document-kot';
-import { renderDeliverySlipViaDocument } from './document-delivery-slip';
+import {
+  renderDeliverySlipViaDocument,
+  type DeliverySlipItemRow,
+  type DeliverySlipOrderRow,
+} from './document-delivery-slip';
 import type { DeliverySlipAddressSource } from '../../shared/print';
 import {
   isThermalTextRepresentable,
@@ -979,11 +983,11 @@ export async function printKOT(order: any, items: any[], stationName: string, us
 
 /** Dispatch a rendered delivery slip to the resolved printer. */
 export async function printDeliverySlip(
-  order: any,
-  items: any[],
+  order: DeliverySlipOrderRow,
+  items: readonly DeliverySlipItemRow[],
   contact: { name?: string; phone?: string; address?: string; addressSource?: DeliverySlipAddressSource | null },
   useUnicode: boolean = false,
-  targetPrinter?: any,
+  targetPrinter?: { readonly id?: unknown; readonly name?: unknown; readonly connection_type?: string; readonly paper_width?: string; readonly profile_id?: string },
   signal?: AbortSignal,
   arabicShapingOverride?: boolean,
   language?: string,
@@ -998,8 +1002,9 @@ export async function printDeliverySlip(
 
     const { profile, columns: cols, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
     const db = getDatabase();
-    const biz = db.prepare('SELECT * FROM settings LIMIT 1').get() as any;
-    const locale = biz?.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
+    const settings = db.prepare('SELECT * FROM settings LIMIT 1').get() as { language?: string; country?: string } | undefined;
+    const biz: { language?: string; country?: string } = settings ?? {};
+    const locale = biz.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
     const timezone = resolveRegionalSnapshot({
       country: getSettingValue('country') ?? undefined,
       currency: getSettingValue('currency') ?? undefined,
@@ -1045,9 +1050,9 @@ export async function printDeliverySlip(
     }
     const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Printer] Delivery slip print error:', error);
-    return { ok: false, detail: error?.message };
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
   }
 }
 

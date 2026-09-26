@@ -589,7 +589,15 @@ export default function OrdersPage() {
     try {
       const warnings = await printDeliverySlip(
         order,
-        { name: customer?.name || '', phone, address: customer?.address || '' },
+        {
+          name: customer?.name || '',
+          phone,
+          // The address confirmed for this order wins; the customer's standing
+          // address is the fallback. Every order created before the column
+          // existed takes the fallback, so it is the common case, not the
+          // exceptional one.
+          address: order.delivery_address || customer?.address || '',
+        },
       );
       showPrintWarningsToast(warnings);
       toast.success(tOrders('printDeliverySlip'));

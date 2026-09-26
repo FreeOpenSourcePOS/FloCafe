@@ -34,6 +34,7 @@ const basePayload = {
   bill_show_customer_name: false,
   bill_show_customer_phone: true,
   bill_show_table_number: false,
+  bill_delivery_show_customer_phone_always: true,
   cash_drawer_pulse_enabled: true,
   cash_drawer_pulse_methods: ['cash', 'card'],
 };
@@ -66,6 +67,7 @@ async function main() {
     assertEqual(zReportRead.status, 200, 'Z-report policy can be read through the settings API');
     assertEqual(zReportRead.data.setting.value, JSON.stringify({ primary: { mode: 'fixed', language: 'fr' }, additional: [] }), 'settings API returns the persisted Z-report policy');
     assertPersisted(db, 'bill_show_name', 'false', 'bill name visibility is persisted');
+  assertPersisted(db, 'bill_delivery_show_customer_phone_always', 'true', 'the delivery customer-number override is persisted');
     assertPersisted(db, 'bill_show_tax_id', 'true', 'tax ID visibility is persisted');
     assertPersisted(db, 'cash_drawer_pulse_methods', JSON.stringify(['cash', 'card']), 'cash drawer methods are persisted');
 

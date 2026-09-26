@@ -56,15 +56,15 @@ import {
 //
 // Both render paths are driven off one ladder so their output can be compared
 // at the same column budget. The backend takes an explicit column count; the
-// frontend encoder is addressed by paper size and its only entry point for
-// width is the paper->column map, so a rung is comparable only where a paper
-// size actually reaches it. The rungs the two sides share are what section 2a
-// measures; the ones they do not share are reported rather than skipped
-// silently.
+// frontend encoder is addressed by paper size, and paper size maps to columns
+// through `columnsForReceiptPaperSize`, so a rung is comparable only where a
+// paper size actually reaches it. The rungs the two sides share are what
+// section 2a measures; the ones they do not share are reported rather than
+// skipped silently.
 // ---------------------------------------------------------------------------
 
 const WIDTH_LADDER = [32, 42, 48] as const;
-const FRONTEND_PAPER_BY_COLUMNS: ReadonlyMap<number, 58 | 80> = new Map([[32, 58], [48, 80]]);
+const FRONTEND_PAPER_BY_COLUMNS: ReadonlyMap<number, 58 | 80> = new Map([[32, 58], [42, 80]]);
 
 // ---------------------------------------------------------------------------
 // Shared fixtures (exported so later print-architecture issues reuse them)

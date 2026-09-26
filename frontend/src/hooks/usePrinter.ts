@@ -31,7 +31,7 @@ import type { Bill, Tenant, Order, OrderItem } from '@/lib/types';
 import { type Language } from '@/lib/i18n/languages';
 import type { ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 import { rasterWebUsbPathEnabled } from '@print/raster';
-import { columnsForReceiptPaperSize } from '@print/width';
+import { columnsForConfiguredPrinter } from '@print/width';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 
 type CoreBillTemplate = 'classic' | 'compact';
@@ -175,6 +175,15 @@ export const usePrinterStore = create<PrinterState>()(
             printerTrimDecimals,
           } = usePosSettingsStore.getState();
 
+          const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
+          // One width for every path this bill can take. The byte encoders, the
+          // raster document, and the browser page all render the same bill, so
+          // they resolve the configured printer once rather than each guessing.
+          const billColumns = columnsForConfiguredPrinter(
+            (get().webusbPrinter ?? get().hardwarePrinter)?.paper_width,
+            configuredPaperWidth,
+          );
+
           const isReprint = opts?.isReprint ?? false;
           const isUnknownCoreTemplate = billTemplateSource === null && (billTemplate === 'compact' || billTemplate === 'classic');
           const billTemplateWarning = billTemplateSource === 'core' || isUnknownCoreTemplate
@@ -186,6 +195,7 @@ export const usePrinterStore = create<PrinterState>()(
             const { printWebBill } = await import('@/lib/printer/web-print');
             const browserWarnings = await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
+              columns: billColumns,
               languages: opts?.languages ?? resolveBillPrintLanguages(),
               includeTaxId: billShowTaxId,
               taxRegistrationNumber: billShowTaxId && billTaxRegistrationNumber ? billTaxRegistrationNumber : undefined,
@@ -233,7 +243,6 @@ export const usePrinterStore = create<PrinterState>()(
           }
 
           // ESC/POS thermal path: load requested language bundles before resolving labels.
-          const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
           const languages = opts?.languages ?? resolveBillPrintLanguages();
           const failedLanguages = await ensurePrintLanguagesLoaded(languages);
           // Surface failed locale loads as warnings when labels fall back to English.
@@ -247,6 +256,7 @@ export const usePrinterStore = create<PrinterState>()(
           const builderOpts: ReceiptOptions = {
             ...opts,
             paperWidth: opts?.paperWidth ?? configuredPaperWidth,
+            columns: billColumns,
             taxRegistrationNumber: billShowTaxId && billTaxRegistrationNumber ? billTaxRegistrationNumber : undefined,
             address: billShowAddress && billAddress ? billAddress : undefined,
             phone: billShowPhone && billPhone ? billPhone : undefined,
@@ -283,7 +293,7 @@ export const usePrinterStore = create<PrinterState>()(
               const rasterResult = await rasterizePrintDocument({
                 document: buildFrontendBillDocument(bill, tenant, {
                   ...builderOpts,
-                  columns: columnsForReceiptPaperSize(builderOpts.paperWidth ?? configuredPaperWidth),
+                  columns: billColumns,
                   businessName: tenant.business_name,
                   includeTaxId: billShowTaxId,
                   taxIdLabel: getCountryByCode(tenant.country)?.taxIdLabel ?? 'Tax ID',
@@ -293,7 +303,7 @@ export const usePrinterStore = create<PrinterState>()(
                 template: rasterBillTemplate,
                 profileId: webusbPrinter.profile_id,
                 options: {
-                  columns: columnsForReceiptPaperSize(builderOpts.paperWidth ?? configuredPaperWidth),
+                  columns: billColumns,
                   language: languages[0],
                   locale: getCountryByCode(tenant.country)?.locale ?? 'en-US',
                   currency,
@@ -348,6 +358,7 @@ export const usePrinterStore = create<PrinterState>()(
             billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
           } = usePosSettingsStore.getState();
           const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
+          const taxBillColumns = columnsForConfiguredPrinter(get().webusbPrinter?.paper_width, configuredPaperWidth);
           const languages = opts?.language
             ? [opts.language as Language] as const
             : resolveBillPrintLanguages();
@@ -364,6 +375,7 @@ export const usePrinterStore = create<PrinterState>()(
             const { printWebBill } = await import('@/lib/printer/web-print');
             const browserWarnings = await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
+              columns: taxBillColumns,
               languages,
               includeTaxId: billShowTaxId,
               taxRegistrationNumber: billShowTaxId
@@ -394,6 +406,7 @@ export const usePrinterStore = create<PrinterState>()(
           const bytes = buildTaxBillBytes(bill, tenant, {
             ...opts,
             paperWidth: opts?.paperWidth ?? configuredPaperWidth,
+            columns: taxBillColumns,
             taxRegistrationNumber: billShowTaxId
               ? (opts?.taxRegistrationNumber || billTaxRegistrationNumber || undefined)
               : undefined,
@@ -462,6 +475,7 @@ export const usePrinterStore = create<PrinterState>()(
             const warnings: PrintWarning[] = [];
             const encoderWarnings: PrintWarning[] = [];
             const webusbPrinter = get().webusbPrinter;
+            const kotColumns = columnsForConfiguredPrinter(webusbPrinter?.paper_width, paperWidth);
             const webusbCapabilities = webusbPrinter?.capabilities;
             const rasterizeKotDocument = window.electronAPI?.rasterizeKotDocument;
             const useRaster = Boolean(webusbPrinter && rasterizeKotDocument && rasterWebUsbPathEnabled(webusbCapabilities, true, webusbPrinter.profile_id));
@@ -479,7 +493,7 @@ export const usePrinterStore = create<PrinterState>()(
             }
             const bytes = buildKotBytes(
               rasterOrder,
-              { ...opts, paperWidth, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities) },
+              { ...opts, paperWidth, columns: kotColumns, stationName: opts?.stationName, arabicShaping: printerArabicShaping, language: kotLanguage, timezone: tenantTimezone ?? opts?.timezone, capabilities: nativeFallbackCapabilities(get().webusbPrinter?.capabilities) },
               encoderWarnings,
             );
             let output = bytes;
@@ -492,13 +506,13 @@ export const usePrinterStore = create<PrinterState>()(
                   document: buildFrontendKotDocument(rasterOrder, {
                     items: rasterOrder.items,
                     stationName: opts?.stationName ?? 'Kitchen',
-                    columns: columnsForReceiptPaperSize(paperWidth),
+                    columns: kotColumns,
                     language: kotLanguage,
                     ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),
                   }),
                   profileId: webusbPrinter.profile_id,
                   options: {
-                    columns: columnsForReceiptPaperSize(paperWidth),
+                    columns: kotColumns,
                     language: kotLanguage,
                     locale: tenantLocale,
                     ...(tenantTimezone ?? opts?.timezone ? { timezone: tenantTimezone ?? opts?.timezone } : {}),

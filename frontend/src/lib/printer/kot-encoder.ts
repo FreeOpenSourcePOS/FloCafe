@@ -17,8 +17,10 @@ import { printLabelResolver } from './print-document';
 import { isKotItemPending } from '@print/document';
 
 export interface KotOptions {
-  /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
+  /** 58 mm (32 cols) or 80 mm (42 cols). Default: 58 */
   paperWidth?: 58 | 80;
+  /** Exact column count the configured printer declares; overrides `paperWidth`. */
+  columns?: number;
   /** Kitchen station name to print on KOT */
   stationName?: string;
   /** Printer firmware performs Arabic/Persian contextual shaping. Default: false. */
@@ -33,7 +35,8 @@ export interface KotOptions {
   capabilities?: ThermalPrinterCapabilities;
 }
 
-// Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
+// Paper-size fallback only. Callers that know the configured printer pass
+// `columns`; the number itself lives in `columnsForReceiptPaperSize`.
 const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
 
 function safePrinterTextForLanguage(language: string, columns: number, capabilities?: ThermalPrinterCapabilities) {
@@ -59,7 +62,7 @@ export function buildKotBytes(
   warnings?: PrintWarning[]
 ): Uint8Array {
   const { paperWidth = 58, arabicShaping = false, language = 'en' } = opts;
-  const cols = CHARS[paperWidth];
+  const cols = opts.columns ?? CHARS[paperWidth];
   const label = (key: string): string => printLabelResolver(key, language);
   const locale = opts.locale ?? LANGUAGES[language as Language]?.locale ?? 'en-US';
   const safePrinterText = safePrinterTextForLanguage(language, cols, opts.capabilities);

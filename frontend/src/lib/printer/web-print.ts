@@ -66,6 +66,8 @@ function directionalValue(value: DirectionalText | null, base: TextDirection): s
 
 export interface WebPrintOptions {
   paperSize?: PaperSize;
+  /** Exact column count the configured printer declares; overrides `paperSize`. */
+  columns?: number;
   includeTaxId?: boolean;
   taxRegistrationNumber?: string;
   address?: string;
@@ -232,7 +234,7 @@ export function generateBillHtml(
   const lang = languages[0] as Language;
 
   const document = buildFrontendBillDocument(bill, tenant, {
-    columns: columnsForReceiptPaperSize(paperSize === 'thermal80' ? 80 : 58),
+    columns: opts.columns ?? columnsForReceiptPaperSize(paperSize === 'thermal80' ? 80 : 58),
     businessName: showBusinessName ? (businessName ?? tenant.business_name) : undefined,
     address,
     phone,

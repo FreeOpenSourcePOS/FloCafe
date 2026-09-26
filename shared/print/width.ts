@@ -257,6 +257,20 @@ export function columnsForPaperWidth(paperWidth: string | null | undefined): num
   }
 }
 
+/**
+ * Resolve the columns one print path should render at: the exact count the
+ * merchant configured for the printer row, when it names one, otherwise the
+ * paper-size default. Every render path on a given printer goes through this,
+ * so the receipt, the KOT, the tax bill, the raster document, and the browser
+ * page cannot resolve to different numbers for the same printer.
+ */
+export function columnsForConfiguredPrinter(
+  configuredPaperWidth: string | null | undefined,
+  paperWidth: ReceiptPaperSize,
+): number {
+  return columnsForPaperWidth(configuredPaperWidth) ?? columnsForReceiptPaperSize(paperWidth);
+}
+
 /** Keep a native ESC/POS text line inside its logical character budget. */
 export function fitThermalLine(text: string, columns: number, doubleWidth = false): string {
   const maxColumns = Math.max(1, doubleWidth ? Math.floor(columns / 2) : columns);

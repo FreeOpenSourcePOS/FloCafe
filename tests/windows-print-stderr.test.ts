@@ -55,6 +55,25 @@ function runTests(): void {
   const malformedClixml = '#< CLIXML\r\nSome unexpected error message_x000D__x000A_';
   assert.equal(sanitizePowerShellStderr(malformedClixml), 'Some unexpected error message');
 
+  // 5b. Real ticket #885: engine-level progress-record CLIXML from `Add-Type`
+  // module auto-loading, with no leading "#< CLIXML" marker, appended after
+  // the real plain-text exception message. Must keep only the first line.
+  const progressNoise = [
+    'Exception calling "SendRaw" with "2" argument(s): "printer is set to \'Use Printer Offline\' in Windows"',
+    '<Objs Version="1.1.0.1" xmlns="http://schemas.microsoft.com/powershell/2004/04">'
+      + '<Obj S="progress" RefId="0"><TN RefId="0"><T>System.Management.Automation.PSCustomObject</T>'
+      + '<T>System.Object</T></TN><MS><I64 N="SourceId">1</I64><PR N="Record">'
+      + '<AV>Preparing modules for first use.</AV><AI>0</AI><Nil /><PI>-1</PI><PC>-1</PC>'
+      + '<T>Completed</T><SR>-1</SR><SD> </SD></PR></MS></Obj>'
+      + '<Obj S="progress" RefId="1"><TNRef RefId="0" /><MS><I64 N="SourceId">2</I64><PR N="Record">'
+      + '<AV>Preparing modules for first use.</AV><AI>0</AI><Nil /><PI>-1</PI><PC>-1</PC>'
+      + '<T>Completed</T><SR>-1</SR><SD> </SD></PR></MS></Obj></Objs>',
+  ].join('\n');
+  assert.equal(
+    sanitizePowerShellStderr(progressNoise),
+    'Exception calling "SendRaw" with "2" argument(s): "printer is set to \'Use Printer Offline\' in Windows"',
+  );
+
   // 6. classifyPrintFailure handles CLIXML-wrapped errors correctly
   assert.equal(classifyPrintFailure(clixmlSingle), "unknown");
   const clixmlOffline = "#< CLIXML\r\n<Objs Version=\"1.1.0.1\"><S S=\"Error\">Printer device is offline_x000D__x000A_</S></Objs>";

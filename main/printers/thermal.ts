@@ -168,7 +168,7 @@ const XML_ENTITIES: Record<string, string> = {
 export function sanitizePowerShellStderr(stderr?: string): string {
   if (!stderr) return '';
   const raw = String(stderr).trim();
-  if (!raw.includes('#< CLIXML')) {
+  if (!raw.includes('#< CLIXML') && !raw.includes('<Objs')) {
     return raw;
   }
 
@@ -190,8 +190,13 @@ export function sanitizePowerShellStderr(stderr?: string): string {
     return errorMatches.join('\n').trim();
   }
 
+  // No structured error-stream content — e.g. only progress-record CLIXML
+  // (<Obj S="progress">...), as emitted by module auto-loading during
+  // `Add-Type`. Strip every CLIXML envelope wherever it appears in the
+  // buffer, not just a leading header, and keep the surrounding plain text.
   return raw
-    .replace(/^#<\s*CLIXML[\r\n]*/i, '')
+    .replace(/#<\s*CLIXML[\r\n]*/gi, '')
+    .replace(/<Objs[^>]*>.*?<\/Objs>/gs, '')
     .replace(/_x000D__x000A_/g, '\n')
     .replace(/_x([0-9a-fA-F]{4})_/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     .trim();

@@ -597,7 +597,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       for (const item of items) {
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
         if (!product) {
-          throw new Error(`Product ${item.product_id} not found`);
+          throw Object.assign(new Error(`Product ${item.product_id} not found`), { statusCode: 404 });
         }
 
         const unitPrice = parseFloat(product.price);
@@ -609,7 +609,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
         validateProductQuantity(product, quantity);
         const deduction = resolveInventoryDeduction(product, quantity);
         if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
-          throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
+          throw Object.assign(new Error(`Invalid price for ${product.name}: must be a non-negative number`), { statusCode: 400 });
         }
 
         let itemSubtotal = unitPrice * quantity;
@@ -618,7 +618,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
             if (!addon) continue;
             if (addon.quantity !== undefined) {
               if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
-                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
+                throw Object.assign(new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`), { statusCode: 400 });
               }
             }
             const addonQty = addon.quantity || 1;
@@ -840,7 +840,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
       for (const item of items) {
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
         if (!product) {
-          throw new Error(`Product ${item.product_id} not found`);
+          throw Object.assign(new Error(`Product ${item.product_id} not found`), { statusCode: 404 });
         }
         const unitPrice = parseFloat(product.price);
         const quantity = item.quantity;
@@ -851,7 +851,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
         validateProductQuantity(product, quantity);
         const deduction = resolveInventoryDeduction(product, quantity);
         if (unitPrice < 0 || !Number.isFinite(unitPrice)) {
-          throw new Error(`Invalid price for ${product.name}: must be a non-negative number`);
+          throw Object.assign(new Error(`Invalid price for ${product.name}: must be a non-negative number`), { statusCode: 400 });
         }
 
         let itemSubtotal = unitPrice * quantity;
@@ -860,7 +860,7 @@ router.post('/:id/items', orderWriteRateLimit, requirePermission('orders.create'
             if (!addon) continue;
             if (addon.quantity !== undefined) {
               if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
-                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
+                throw Object.assign(new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`), { statusCode: 400 });
               }
             }
             const addonQty = addon.quantity || 1;

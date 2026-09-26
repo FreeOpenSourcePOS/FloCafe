@@ -1,6 +1,6 @@
 import { Express } from 'express';
 import { authRoutes } from './auth';
-import { hasPermission, requirePermission } from '../services/authorization';
+import { hasPermission, requireAnyPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { categoryRoutes } from './categories';
 import { productRoutes } from './products';
@@ -121,8 +121,12 @@ export function registerRoutes(app: Express): void {
   app.use('/api/diagnostics', diagnosticsRoutes);
   app.use('/api/authorization', authorizationRoutes);
 
-  // Tax preview
-  app.post('/api/tax/preview', requirePermission('tax-packs.view-test'), asyncHandler(async (req, res) => {
+  // Tax preview. Priced on every cart change in the prepaid checkout modal, so it
+  // has to admit every role that can run a sale; `tax-packs.view-test` (owner and
+  // manager) would 403 a cashier mid-checkout, and a 403 makes the API client
+  // refresh the whole auth context. Any one of the three sale-facing permissions
+  // resolves to the same role set the ungated endpoint had before this migration.
+  app.post('/api/tax/preview', requireAnyPermission('pos.use', 'orders.create', 'kitchen.use'), asyncHandler(async (req, res) => {
     const { calculateTaxPreview } = await import('../services/tax');
     calculateTaxPreview(req, res);
   }));

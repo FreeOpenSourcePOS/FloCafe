@@ -43,4 +43,27 @@ for (const file of runtimeFiles) {
   assert.doesNotMatch(source, /\bhasRole\s*\(/, `${relative} contains an unreviewed direct role check`);
 }
 
+// The order card used to take one `isOwnerOrManager` prop and gate the refund
+// button, the voided-items list, and item restoration with it, which let one
+// permission quietly govern three others in both directions.
+const ordersPage = fs.readFileSync(path.join(root, 'frontend/src/app/(dashboard)/orders/page.tsx'), 'utf8');
+const orderCard = fs.readFileSync(path.join(root, 'frontend/src/components/orders/OrderCard.tsx'), 'utf8');
+
+for (const permissionId of ['orders.item.cancel', 'orders.item.restore', 'refunds.initiate']) {
+  assert.match(
+    ordersPage,
+    new RegExp(`tenantCan\\(currentTenant, '${permissionId.replace(/\./g, '\\.')}'\\)`),
+    `the orders page reads ${permissionId} for itself`,
+  );
+}
+for (const capability of ['canCancelItems', 'canRestoreItems', 'canRefund']) {
+  assert.match(orderCard, new RegExp(`\\b${capability}: boolean;`), `OrderCard takes ${capability} as its own capability`);
+  assert.match(ordersPage, new RegExp(`${capability}=\\{${capability}\\}`), `the orders page passes ${capability} through unchanged`);
+}
+assert.doesNotMatch(orderCard, /isOwnerOrManager/, 'the order card no longer collapses three permissions into one flag');
+assert.match(orderCard, /\{canCancelItems && !isPaid/, 'item cancellation is gated on orders.item.cancel');
+assert.match(orderCard, /\{inactiveItems\.length > 0 && canRestoreItems && \(/, 'viewing voided items is gated on orders.item.restore');
+assert.match(orderCard, /\{showVoidedItems && inactiveItems\.length > 0 && canRestoreItems && \(/, 'restoring voided items is gated on orders.item.restore');
+assert.match(orderCard, /\{canRefund && hasEligibleRefund && \(/, 'the refund button is gated on refunds.initiate');
+
 console.log('Authorization static enforcement audit passed');

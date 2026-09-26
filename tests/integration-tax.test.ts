@@ -31,6 +31,22 @@ const {
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { registerRoutes } = require('../main/routes/index');
+
+/** Operational staff with a live token: authorization resolves from the users row, not the claim. */
+function seedStaffUser(db: any, role: string, reuse = false) {
+  const bcrypt = require('bcryptjs');
+  const jwt = require('jsonwebtoken');
+  const { getJWTSecret } = require('../main/routes/auth');
+  const userId = `${role}-test-001`;
+  if (!reuse) {
+    db.prepare(`
+      INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `).run(userId, `Test ${role}`, `${role}@test.local`, bcrypt.hashSync('testpass123', 10), role, now(), now());
+  }
+  const token = jwt.sign({ userId, email: `${role}@test.local`, role }, getJWTSecret(), { expiresIn: '1h' });
+  return { Authorization: `Bearer ${token}` };
+}
 // Same dual-rate / flat-rate structure the real country tax packs use, kept
 // generic (no brand-specific tax names) — the country/currency fields stay
 // 'IN'/'TH' only so getActiveCountryPack() resolves them and the currency
@@ -638,6 +654,48 @@ async function main() {
       .run(activeThailandVersion.pack_json, activeThailandVersion.id);
     db.prepare("UPDATE settings SET value = 'IN' WHERE key = 'country'").run();
 
+    // ── Step 12: an ordinary cashier and server can still price a basket ──
+    // The POS prepaid-checkout modal previews tax on every cart change, so a
+    // 403 here would also trip the API client's global auth-context refresh.
+    console.log('\n12. Tax preview stays open to operational staff');
+    for (const role of ['cashier', 'server']) {
+      const staffAuth = seedStaffUser(db, role);
+      const staffPreview = await api(baseUrl, '/api/tax/preview', {
+        method: 'POST',
+        body: { items: [{ product_id: 'prod-tax-1', quantity: 1, addons: [] }] },
+        headers: staffAuth,
+      });
+      assertEqual(staffPreview.status, 200, `${role} can price a basket`);
+      assertEqual(staffPreview.data.summary.subtotal, 1000, `${role} preview subtotal = ₹1000.00`);
+      assertEqual(staffPreview.data.summary.tax_amount, 50, `${role} preview CGST+SGST = ₹50.00`);
+      assertEqual(staffPreview.data.summary.total, 1050, `${role} preview payable total = ₹1050.00`);
+    }
+
+    const noAuthPreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: { items: [{ product_id: 'prod-tax-1', quantity: 1 }] },
+    });
+    assertEqual(noAuthPreview.status, 401, 'an unauthenticated caller cannot price a basket');
+
+    // Denying every sale permission is what actually closes the endpoint.
+    const ownerOverride = db.prepare(`
+      INSERT INTO role_permission_overrides (role, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES ('cashier', 'pos.use', 'deny', ?, ?, ?)
+    `).run('owner-test-001', now(), now());
+    const cashierAuth = seedStaffUser(db, 'cashier', true);
+    db.prepare(`
+      INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
+      VALUES ('cashier-test-001', 'orders.create', 'deny', ?, ?, ?)
+    `).run('owner-test-001', now(), now());
+    const deniedPreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: { items: [{ product_id: 'prod-tax-1', quantity: 1, addons: [] }] },
+      headers: cashierAuth,
+    });
+    assertEqual(deniedPreview.status, 403, 'a cashier denied every sale permission loses basket pricing');
+    assertEqual(deniedPreview.data.code, 'permission_denied', 'the refusal carries the code the API client reacts to');
+    db.prepare('DELETE FROM user_permission_overrides WHERE user_id = ?').run('cashier-test-001');
+    db.prepare('DELETE FROM role_permission_overrides WHERE rowid = ?').run(ownerOverride.lastInsertRowid);
   } finally {
     server.close();
     closeDatabase();

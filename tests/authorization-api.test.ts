@@ -16,7 +16,7 @@ const express = require('express');
 const request = require('supertest');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { authorizationRoutes } = require('../main/routes/authorization');
-const { requirePermission } = require('../main/services/authorization');
+const { requireAnyPermission, requirePermission } = require('../main/services/authorization');
 
 function seedUser(db: any, id: string, role: string) {
   const email = `${id}@test.local`;
@@ -32,7 +32,9 @@ async function main(): Promise<void> {
   const db = getDatabase();
   const owner = seedUser(db, 'authorization-owner', 'owner');
   const manager = seedUser(db, 'authorization-manager', 'manager');
-  seedUser(db, 'authorization-cashier', 'cashier');
+  const cashier = seedUser(db, 'authorization-cashier', 'cashier');
+  const server = seedUser(db, 'authorization-server', 'server');
+  const chef = seedUser(db, 'authorization-chef', 'chef');
   const app = express();
   app.use(express.json());
   app.use((req: any, _res: any, next: any) => {
@@ -42,6 +44,10 @@ async function main(): Promise<void> {
   });
   app.use('/api/authorization', authorizationRoutes);
   app.get('/api/protected-report', requirePermission('reports.view'), (_req: any, res: any) => res.json({ ok: true }));
+  // Mirrors the real tax preview gate in main/routes/index.ts.
+  app.post('/api/tax/preview', requireAnyPermission('pos.use', 'orders.create', 'kitchen.use'), (_req: any, res: any) => res.json({ ok: true }));
+  app.post('/api/bills/:id/markPrinted', requirePermission('bills.print'), (_req: any, res: any) => res.json({ ok: true }));
+  app.post('/api/bills/:id/applyDiscount', requirePermission('bills.discount.apply'), (_req: any, res: any) => res.json({ ok: true }));
 
   assert.equal((await request(app).get('/api/authorization/catalog')).status, 401);
   assert.equal((await request(app).get('/api/authorization/catalog').set(manager)).status, 403);
@@ -113,6 +119,39 @@ async function main(): Promise<void> {
   assert.ok(audit.body.audit.every((entry: any) => entry.actor_user_id === 'authorization-owner'));
   assert.ok(audit.body.audit.some((entry: any) => entry.target_type === 'role' && entry.target_id === 'manager'));
   assert.ok(audit.body.audit.some((entry: any) => entry.target_type === 'user' && entry.target_id === 'authorization-cashier'));
+
+  // requireAnyPermission admits any one of its permissions, and the tax preview
+  // gate it serves has to keep every role pricing a basket.
+  assert.equal((await request(app).post('/api/tax/preview')).status, 401, 'no user means no basket pricing');
+  for (const [role, header] of [['owner', owner], ['manager', manager], ['cashier', cashier], ['server', server], ['chef', chef]] as const) {
+    assert.equal(
+      (await request(app).post('/api/tax/preview').set(header)).status,
+      200,
+      `${role} can price a basket`,
+    );
+  }
+
+  // markPrinted is gated on bills.print, not on the discount endpoint above it.
+  assert.equal((await request(app).post('/api/bills/1/markPrinted').set(cashier)).status, 403, 'cashier cannot mark a bill printed');
+  assert.equal((await request(app).post('/api/bills/1/markPrinted').set(server)).status, 403, 'server cannot mark a bill printed');
+  assert.equal((await request(app).post('/api/bills/1/markPrinted').set(manager)).status, 200, 'manager can mark a bill printed');
+  assert.equal((await request(app).post('/api/bills/1/markPrinted').set(owner)).status, 200, 'owner can mark a bill printed');
+  assert.equal((await request(app).post('/api/bills/1/applyDiscount').set(manager)).status, 200, 'manager can still apply a bill discount');
+
+  // Denying one of the three sale permissions must not close basket pricing
+  // while the caller still holds either of the other two.
+  db.prepare(`
+    INSERT INTO role_permission_overrides
+      (role, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES ('cashier', 'pos.use', 'deny', ?, ?, ?)
+  `).run('authorization-owner', now(), now());
+  assert.equal((await request(app).post('/api/tax/preview').set(cashier)).status, 200, 'a cashier denied pos.use still prices a basket through orders.create');
+  db.prepare(`
+    INSERT INTO user_permission_overrides
+      (user_id, permission_id, effect, updated_by, created_at, updated_at)
+    VALUES ('authorization-cashier', 'orders.create', 'deny', ?, ?, ?)
+  `).run('authorization-owner', now(), now());
+  assert.equal((await request(app).post('/api/tax/preview').set(cashier)).status, 403, 'a cashier denied both pos.use and orders.create loses basket pricing');
 
   console.log('Authorization management API tests passed');
 }

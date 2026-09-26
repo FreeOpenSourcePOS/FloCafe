@@ -2304,7 +2304,7 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
   }
 });
 
-router.post('/:id/markPrinted', requirePermission('bills.discount.apply'), (req: Request, res: Response) => {
+router.post('/:id/markPrinted', requirePermission('bills.print'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id);

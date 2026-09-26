@@ -1699,8 +1699,8 @@
     "navGroupOperations": "運營",
     "newPin": "新 PIN",
     "no": "否",
-    "noAccessDatabase": "您無權使用備份與資料庫工具。",
-    "noAccessMobileAccess": "您無權存取行動裝置存取設定。",
+    "noAccessDatabase": "您沒有備份與資料庫工具的存取權。",
+    "noAccessMobileAccess": "您沒有行動裝置存取設定的存取權。",
     "noAppsToShow": "暫無可顯示的應用程式。",
     "noCategoriesYet": "還沒有分類。請先在商品下新增分類。",
     "noChefsYet": "還沒有啟用中的廚師帳戶。請先在員工中新增廚師。",
@@ -2214,22 +2214,22 @@
       "serverApp": "使用獨立服務員應用程式",
       "support": "聯絡支援並檢視診斷"
     },
-    "editorSubtitle": "設定角色的預設權限，或為單一員工建立例外。變更將於其下次操作時生效。",
+    "editorSubtitle": "設定角色預設值，或為單一位員工建立例外。變更會從他的下一個操作開始生效。",
     "roleDefaultsTab": "角色預設值",
     "staffExceptionTab": "員工例外",
     "selectStaffPlaceholder": "選擇一位員工",
     "selectStaffEmptyState": "選擇一位員工以編輯其權限。",
-    "effectiveHeader": "生效中",
+    "effectiveHeader": "實際生效",
     "overrideHeader": "覆寫",
-    "inherit": "繼承",
+    "inherit": "沿用",
     "allow": "允許",
     "deny": "拒絕",
     "protected": "受保護",
-    "editorFooterNote": "審核 PIN、最後一位在職店主、退款截止時間及厨房工作站指派等敏感業務規則仍然適用。"
+    "editorFooterNote": "核准 PIN、最後一位有效業主、退款時間上限與廚房工作站分派等敏感商業規則仍然適用。"
   },
   "permissionAudit": {
-    "title": "權限變更歷史",
-    "subtitle": "對上方角色權限所做的每一次變更，依最新排序。",
+    "title": "權限異動紀錄",
+    "subtitle": "由上方角色權限所做的每項變更，最新的排在最前。",
     "columnTime": "時間",
     "columnActor": "操作者",
     "columnTarget": "對象",
@@ -2237,7 +2237,7 @@
     "columnChange": "變更",
     "targetTypeRole": "角色",
     "targetTypeUser": "員工",
-    "empty": "目前尚無權限變更紀錄。",
+    "empty": "尚無權限異動。",
     "loadMore": "載入更多"
   },
   "support": {

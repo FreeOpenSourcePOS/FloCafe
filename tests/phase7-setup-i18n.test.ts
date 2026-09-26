@@ -4,7 +4,9 @@
  * The seed path is exercised through the exported setup-profile API for every
  * registered UI locale. Filipino's English-identical seed data is an explicit
  * reviewed exception; country selection is passed separately and must not be
- * inferred from the selected UI language.
+ * inferred from the selected UI language. Every seeded merchant-visible string
+ * is also checked for script integrity, because a code point copied from another
+ * script reads as a plausible word in review while rendering broken.
  */
 
 import * as fs from 'node:fs';
@@ -59,6 +61,67 @@ function resetDatabase(): void {
 
 function rows(table: string, columns: string, where: string): any[] {
   return getDatabase().prepare(`SELECT ${columns} FROM ${table} WHERE ${where}`).all();
+}
+
+/** Merchant-visible text the setup seed writes, so no localized string escapes the script check. */
+const SEEDED_TEXT_COLUMNS: ReadonlyArray<readonly [string, string]> = [
+  ['categories', 'name'],
+  ['products', 'name'],
+  ['customers', 'name'],
+  ['users', 'name'],
+  ['tables', 'number'],
+];
+
+function seededTexts(): Array<[string, string]> {
+  return SEEDED_TEXT_COLUMNS.flatMap(([table, column]) =>
+    rows(table, `id, ${column}`, '1 = 1').map((row) => [`${table}.${row.id}`, String(row[column])]));
+}
+
+/**
+ * `Intl.Locale` resolves the registry's locale tag to a CLDR script code, so a
+ * newly registered locale is covered without a hand-maintained per-language
+ * list. Every CLDR code is a Unicode script name except the four script *sets*
+ * below; an unrecognized code would make the script regex throw, which fails the
+ * run instead of quietly passing.
+ */
+const CLDR_SCRIPT_SETS: Record<string, string[]> = {
+  Hans: ['Han'],
+  Hant: ['Han'],
+  Jpan: ['Han', 'Hiragana', 'Katakana'],
+  Kore: ['Hangul'],
+};
+
+function localeScripts(language: string): string[] {
+  const code = new Intl.Locale(LANGUAGES[language as keyof typeof LANGUAGES].locale).maximize().script ?? '';
+  return CLDR_SCRIPT_SETS[code] ?? [code];
+}
+
+/** Digits, currency and unit symbols, punctuation, spaces and ZWJ/ZWNJ carry no script identity. */
+const SCRIPT_NEUTRAL = /^[\p{N}\p{S}\p{P}\p{Z}\p{C}]$/u;
+/** `Common` covers punctuation, digits and joiners; `Inherited` covers combining diacritics. */
+const SCRIPT_SHARED = /^(?:\p{Script=Common}|\p{Script=Inherited})$/u;
+
+/**
+ * Returns the characters of `text` whose script the locale does not use, so the
+ * letters of a localized seed string come only from its own locale's scripts. A
+ * string that uses none of them is an untranslated label (the shared `T1` table
+ * label) rather than a mixed script, and is left to the localization
+ * assertions in this suite.
+ */
+function foreignScriptCharacters(text: string, allowedScripts: string[]): string[] {
+  const own = new RegExp(`^(?:${allowedScripts.map((script) => `\\p{Script=${script}}`).join('|')})$`, 'u');
+  const foreign: string[] = [];
+  let usesOwnScript = false;
+  for (const character of text) {
+    if (SCRIPT_NEUTRAL.test(character) || SCRIPT_SHARED.test(character)) continue;
+    if (own.test(character)) { usesOwnScript = true; continue; }
+    foreign.push(character);
+  }
+  return usesOwnScript ? foreign : [];
+}
+
+function describeCodePoints(text: string): string {
+  return [...text].map((character) => `U+${character.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`).join(' ');
 }
 
 async function run(): Promise<void> {
@@ -133,6 +196,15 @@ async function run(): Promise<void> {
       assert.ok(parsed, `${language}: demo customer phone ${customer.phone} must be valid E.164`);
       assert.equal(customer.phone, `+${customer.phone_digits}`, `${language}: demo customer phone and digits must agree`);
       assert.equal(customer.country_code, parsed.countryCode, `${language}: demo customer country code must follow the phone number`);
+    }
+    const languageScripts = localeScripts(language);
+    for (const [location, value] of seededTexts()) {
+      const foreign = foreignScriptCharacters(value, languageScripts);
+      assert.deepEqual(
+        foreign,
+        [],
+        `${language}: seeded ${location} ${JSON.stringify(value)} mixes ${languageScripts.join('+')} with ${describeCodePoints(foreign)}: ${foreign.join('')}`,
+      );
     }
     const snapshot = {
       category: rows('categories', 'name', "id = 'cat-demo-starters'")[0].name,

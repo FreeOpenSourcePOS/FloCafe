@@ -86,6 +86,11 @@ async function main() {
     api(baseUrl, `/api/orders/${orderId}/discount`, { method: 'PATCH', body: { discount_type: 'amount', discount_value: value, override_pin: '1234' }, headers: authHeader });
   const billDiscount = (billId: any, type: string, value: number) =>
     api(baseUrl, `/api/bills/${billId}/applyDiscount`, { method: 'POST', body: { type, value, override_pin: '1234' }, headers: authHeader });
+  // The flat-discount cases need a store that allows both discount types.
+  const allowFlatDiscounts = () => db.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run('discount_mode', 'both');
   const addItems = (orderId: any, items: any[]) =>
     api(baseUrl, `/api/orders/${orderId}/items`, { method: 'POST', body: { items }, headers: authHeader });
   const itemIdOf = (order: any, productId: string) => order.items.find((i: any) => i.product_id === productId).id;
@@ -140,7 +145,7 @@ async function main() {
       assertEqualOrThrow(added.status, 200, 'add-items recomputes the same order on the fresh basis');
       assertEqualOrThrow(JSON.stringify(totalsRow(db, 'orders', orderId)), JSON.stringify({
         subtotal: 500, tax_amount: 22.5, discount_amount: 50, total: 502.5, round_off: 0,
-        components: '[[["Tax A",2.5,4.5],["Tax B",2.5,4.5]],[["Tax A",2.5,2.25],["Tax B",2.5,2.25]]]',
+        components: '[[["Tax A",2.5,9],["Tax B",2.5,9]],[["Tax A",2.5,2.25],["Tax B",2.5,2.25]]]',
       }), 'add-items keeps using the fresh 500 for both the discount and the rescale');
     }
 
@@ -150,6 +155,7 @@ async function main() {
       const orderId = created.data.order.id;
       // Stored 100 against a fresh 400. The stored basis capped the 300 discount
       // at 100, which left a 0 subtotal, a 0 ratio and wiped the whole 20 of tax.
+      allowFlatDiscounts();
       db.prepare('UPDATE orders SET subtotal = ? WHERE id = ?').run(100, orderId);
       const discounted = await orderFlatDiscount(orderId, 300);
       assertEqualOrThrow(discounted.status, 200, 'flat 300 discount applied over a stored subtotal below the discount');
@@ -248,6 +254,7 @@ async function main() {
 
       // Stale subtotals on both rows against a fresh 400, with a flat 300: the
       // stored bill basis capped the discount at 100 and zeroed the tax.
+      allowFlatDiscounts();
       const staleOrder = await createOrder({ type: 'takeaway', delivery_charge: 30, items: [{ product_id: 'prod-totals-200', quantity: 2 }] });
       const staleOrderId = staleOrder.data.order.id;
       const staleBill = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: staleOrderId }, headers: authHeader });

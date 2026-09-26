@@ -210,10 +210,10 @@ async function run(): Promise<void> {
   const untrustedCredentialPrefix = { sender: { getURL: () => 'http://localhost:3001@evil.example/' } };
   const untrustedNullSender = { sender: { getURL: () => null } };
 
-  // 1. Verify ALL non-PIN-gated handlers enforce sender identity
+  // 1. Verify ALL handlers that need no credential beyond sender identity enforce it
   const nonPinGatedHandlers = [
     { channel: 'db-health-check', args: [] },
-    { channel: 'db-apply-safe-fixes', args: [['finding-1']] },
+    { channel: 'db-apply-safe-fixes', args: [undefined] },
     { channel: 'master-pin-status', args: [] },
     { channel: 'get-settings', args: [] },
     { channel: 'set-setting', args: ['business_name', 'My Cafe'] },
@@ -223,9 +223,18 @@ async function run(): Promise<void> {
     { channel: 'open-kds-window', args: [] },
     { channel: 'get-app-info', args: [] },
     { channel: 'get-printers', args: [] },
-    { channel: 'save-printer', args: [{ name: 'Kitchen Printer', type: 'thermal', connection_type: 'network' }] },
-    { channel: 'get-daily-summary', args: [] },
   ];
+
+  // These two channels are deleted rather than gated: writing a printer and
+  // reading the day's financial totals are permission-gated HTTP routes, and
+  // an origin-checked IPC channel is the wrong boundary for either one.
+  for (const removedChannel of ['save-printer', 'get-daily-summary']) {
+    assert.equal(
+      registered.has(removedChannel),
+      false,
+      `IPC channel '${removedChannel}' is no longer registered`,
+    );
+  }
 
   log(`\n[Phase 1] Verifying sender identity across ${nonPinGatedHandlers.length} non-PIN-gated IPC channels...`);
 
@@ -278,6 +287,17 @@ async function run(): Promise<void> {
   const validPinRes = await backupListener(trustedLocalhost, '1234');
   assert.equal(validPinRes.success, true, 'backup accepted valid PIN');
   log('  ✓ backup-database: successfully protected by master PIN');
+
+  // db-apply-safe-fixes mutates the live database, so it moved from the
+  // sender-only list into this PIN-gated one.
+  const safeFixesListener = registered.get('db-apply-safe-fixes')!;
+  const noPinRes = await safeFixesListener(trustedLocalhost, undefined);
+  assert.equal(noPinRes.success, false, 'db-apply-safe-fixes rejected a missing master PIN');
+  const badPinRes = await safeFixesListener(trustedLocalhost, 'wrong-pin');
+  assert.equal(badPinRes.success, false, 'db-apply-safe-fixes rejected an invalid master PIN');
+  const goodPinRes = await safeFixesListener(trustedLocalhost, '1234');
+  assert.notEqual(goodPinRes.success, false, 'db-apply-safe-fixes accepted a valid master PIN');
+  log('  ✓ db-apply-safe-fixes: successfully protected by master PIN');
 
   // 3. KDS window webPreferences: privileged preload bridge removed, isolation intact
   log('\n[Phase 3] Verifying KDS window construction and bridge removal...');

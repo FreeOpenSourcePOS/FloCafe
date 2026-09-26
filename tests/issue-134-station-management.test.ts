@@ -270,6 +270,37 @@ async function main() {
       assertEqual(res.status, 400, 'E: rejects an unknown user_id');
     }
 
+    console.log('\n─── Scenario G: assigning a non-chef or inactive chef is rejected (issue #833) ───');
+    {
+      db.prepare(`INSERT INTO users (id, name, email, password, role) VALUES ('u-cashier', 'Front Cashier', 'cashier@test.com', 'x', 'cashier')`).run();
+      db.prepare(`INSERT INTO users (id, name, email, password, role, is_active) VALUES ('u-chef-inactive', 'Retired Chef', 'retired@test.com', 'x', 'chef', 0)`).run();
+
+      const cashierRes = await api(baseUrl, `/api/kitchen-stations/${stationId!}/users`, {
+        method: 'PUT',
+        body: { user_ids: ['u-cashier'] },
+        headers: authHeader,
+      });
+      assertEqual(cashierRes.status, 400, 'G: rejects assigning a cashier to a kitchen station');
+
+      const inactiveChefRes = await api(baseUrl, `/api/kitchen-stations/${stationId!}/users`, {
+        method: 'PUT',
+        body: { user_ids: ['u-chef-inactive'] },
+        headers: authHeader,
+      });
+      assertEqual(inactiveChefRes.status, 400, 'G: rejects assigning an inactive chef to a kitchen station');
+
+      const mixedRes = await api(baseUrl, `/api/kitchen-stations/${stationId!}/users`, {
+        method: 'PUT',
+        body: { user_ids: ['u-bar-staff-3', 'u-cashier'] },
+        headers: authHeader,
+      });
+      assertEqual(mixedRes.status, 400, 'G: rejects a mixed batch containing one non-chef');
+
+      const unchanged = await api(baseUrl, `/api/kitchen-stations/${stationId!}`, { headers: authHeader });
+      assertEqual(unchanged.data.kitchenStation.users.length, 1, 'G: rejected assignment attempts leave the existing chef assignment untouched');
+      assertEqual(unchanged.data.kitchenStation.users[0].id, 'u-bar-staff-3', 'G: existing assignment from Scenario E is preserved');
+    }
+
   } finally {
     server.close();
     closeDatabase();

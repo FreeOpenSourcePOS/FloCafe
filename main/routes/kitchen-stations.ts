@@ -234,9 +234,9 @@ router.put('/:id/users', requirePermission('kitchen.stations.manage'), (req: Req
 
     if (user_ids.length > 0) {
       const placeholders = user_ids.map(() => '?').join(',');
-      const found = db.prepare(`SELECT id FROM users WHERE id IN (${placeholders})`).all(...user_ids) as { id: string }[];
+      const found = db.prepare(`SELECT id FROM users WHERE role = 'chef' AND is_active = 1 AND id IN (${placeholders})`).all(...user_ids) as { id: string }[];
       if (found.length !== user_ids.length) {
-        return res.status(400).json({ error: 'One or more user_ids do not match an existing user' });
+        return res.status(400).json({ error: 'Kitchen stations can only be assigned to active chef accounts' });
       }
     }
 

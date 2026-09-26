@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
@@ -60,6 +60,8 @@ import { tenantCan } from '@/lib/permissions';
 const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
 const GOOGLE_DRIVE_JOB_POLL_INTERVAL_MS = 500;
 const GOOGLE_DRIVE_JOB_STATUS_RETRY_WINDOW_MS = 30_000;
+// Must match RESTORE_CONFIRMATION in main/routes/database.ts.
+const RESTORE_CONFIRMATION = 'RESTORE BACKUP';
 
 function isRequestCancelled(error: unknown): boolean {
   return axios.isCancel(error);
@@ -2192,6 +2194,45 @@ export default function SettingsPage() {
     return () => controller.abort();
   }, [activeTab, currentTenant?.id, requestedAction, t]);
 
+  // Restore a backup file the operator picks from anywhere on disk. This is the
+  // path a shop on Windows needs so nobody has to hand-copy flo.db over the live
+  // database; the app closes and reopens the database itself.
+  const handleRestoreFromFile = useCallback(async () => {
+    if (!window.electronAPI?.pickRestoreFile) {
+      toast.error(tCommon('notAvailable'));
+      return;
+    }
+    const picked = await window.electronAPI.pickRestoreFile();
+    if (picked.canceled || !picked.path || !picked.token) return;
+
+    const fileName = picked.path.split(/[\\/]/).pop() || picked.path;
+    const ok = await confirm(
+      `${t('restoreConfirm', { fileName })}\n\n${t('restoreReplacesDetail')}\n\n${t('restoreKeepsDetail')}\n\n${t('restoreSafetyCopyDetail')}`,
+      { title: t('confirmRestoreTitle'), confirmLabel: t('restoreBackup'), destructive: true },
+    );
+    if (!ok) return;
+
+    try {
+      const { data } = await api.post('/db/restore', {
+        confirmation: RESTORE_CONFIRMATION,
+        selection_token: picked.token,
+      });
+      toast.success(tRestore('success'));
+      setTimeout(() => window.location.reload(), 1500);
+      return data;
+    } catch (error) {
+      const detail = axios.isAxiosError(error)
+        ? (error.response?.data as { error?: string } | undefined)?.error
+        : undefined;
+      toast.error(detail || t('restoreFailedGeneric'));
+    }
+  }, [confirm, t, tCommon, tRestore]);
+
+  useEffect(() => {
+    if (requestedAction !== 'restore-from-file') return;
+    void handleRestoreFromFile();
+  }, [requestedAction, handleRestoreFromFile]);
+
   const saveCloud = async (silent = false) => {
     setSavingCloud(true);
     try {
@@ -3984,6 +4025,7 @@ export default function SettingsPage() {
             onCreateBackup={handleCreateBackup}
             onChooseBackupLocation={handleChooseBackupLocation}
             onRestoreFromHistory={handleRestoreFromHistory}
+            onRestoreFromFile={handleRestoreFromFile}
             onDeleteBackup={handleDeleteBackup}
             onConnectGoogleDrive={connectGoogleDrive}
             onDisconnectGoogleDrive={disconnectGoogleDrive}

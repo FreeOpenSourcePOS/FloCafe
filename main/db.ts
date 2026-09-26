@@ -800,6 +800,73 @@ function isHealthyDatabaseFile(
   }
 }
 
+export const MAX_RETAINED_RESTORE_SAFETY_COPIES = 3;
+
+/** True for the retained copies a successful restore leaves behind as an undo. */
+export function isRestoreSafetyCopyName(fileName: string): boolean {
+  return fileName.startsWith('flo-backup-') && fileName.includes('-pre-restore-') && fileName.endsWith('.db');
+}
+
+/**
+ * A successful restore replaces the live database, so the pre-restore snapshot is
+ * the only copy of what it replaced. It is copied into the managed backup naming
+ * scheme rather than deleted, which makes it appear in listBackups() and makes it
+ * restorable through the same preset-path route as any other managed backup.
+ * Retention is bounded so a long-lived install cannot accumulate copies forever.
+ *
+ * The snapshot is copied rather than renamed so the replacement journal keeps
+ * pointing at a real file: a crash between the committed journal and cleanup must
+ * still be able to roll the live database back from it.
+ */
+export function retainRestoreSafetyCopy(recoveryPath: string, schemaVersion: number): string | null {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const retainedPath = path.join(
+    getBackupDir(),
+    `flo-backup-${timestamp}-pre-restore-v${schemaVersion}.db`,
+  );
+  try {
+    if (!pathEntryExists(recoveryPath)) return null;
+    // The replacement journal snapshots the live file with a raw copy, so the
+    // snapshot carries no _flo_meta stamp and every restore route would refuse
+    // it. Stamp it before copying, so a failure here leaves the recovery copy
+    // exactly where the journal expects it and changes nothing.
+    const snapshotDb = new Database(recoveryPath);
+    try {
+      snapshotDb.pragma('journal_mode = DELETE');
+      snapshotDb.exec('CREATE TABLE IF NOT EXISTS _flo_meta (key TEXT PRIMARY KEY, value TEXT)');
+      snapshotDb.prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+        .run('schema_version', String(schemaVersion));
+      snapshotDb.prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+        .run('backup_created_at', new Date().toISOString());
+      snapshotDb.prepare('INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)')
+        .run('app_version', app.getVersion());
+    } finally {
+      snapshotDb.close();
+    }
+    syncFile(recoveryPath);
+    fs.copyFileSync(recoveryPath, retainedPath);
+    syncFile(retainedPath);
+    syncDirectory(getBackupDir());
+  } catch (error) {
+    // Retention is a safety net, never a reason to fail a committed restore.
+    console.warn('[DB] Could not retain the pre-restore safety copy:', error);
+    return null;
+  }
+  try {
+    const existing = fs.readdirSync(getBackupDir())
+      .filter(isRestoreSafetyCopyName)
+      .map((name) => ({ name, mtimeMs: fs.lstatSync(path.join(getBackupDir(), name)).mtimeMs }))
+      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+    for (const stale of existing.slice(MAX_RETAINED_RESTORE_SAFETY_COPIES)) {
+      fs.unlinkSync(path.join(getBackupDir(), stale.name));
+    }
+    syncDirectory(getBackupDir());
+  } catch (error) {
+    console.warn('[DB] Could not apply pre-restore safety copy retention:', error);
+  }
+  return retainedPath;
+}
+
 function removeOlderReplacementJournals(journals: string[], dbPath: string, backupDir: string): void {
   const backupRoot = path.resolve(backupDir);
   for (const journalPath of journals) {
@@ -1674,7 +1741,7 @@ export function listBackups(): { fileName: string; path: string; sizeBytes: numb
         path: fullPath,
         sizeBytes: stat.size,
         createdAt: stat.mtime.toISOString(),
-        kind: (fileName.includes('-pre-v') ? 'auto' : 'manual') as 'manual' | 'auto',
+        kind: (fileName.includes('-pre-v') || isRestoreSafetyCopyName(fileName) ? 'auto' : 'manual') as 'manual' | 'auto',
         schemaVersion: readBackupSchemaVersion(fullPath),
       };
     })
@@ -2407,14 +2474,30 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
   let metadataStampPresent = false;
   let pragmaVersion = 0;
   let backupDb: Database.Database | undefined;
+  let unreadableSource = false;
   try {
     backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
     const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
     metadataStampPresent = Boolean(metaRow);
     metadataVersion = metaRow ? parseCanonicalSchemaVersion(metaRow.value) ?? 0 : 0;
     pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
+  } catch {
+    // A file that is not a readable SQLite database (truncated, corrupt, or
+    // simply not a database at all) must be refused, never applied.
+    unreadableSource = true;
   } finally {
     backupDb?.close();
+  }
+
+  if (unreadableSource) {
+    return {
+      success: false,
+      mode: forceDirect ? 'direct' : 'data_only',
+      backupSchemaVersion: 0,
+      currentSchemaVersion: getCurrentSchemaVersion(),
+      tablesRestored: 0,
+      error: 'Restore source is not a readable Flo database file',
+    };
   }
 
   // Determine schema version from metadata stamp or SQLite user_version pragma.
@@ -2531,6 +2614,9 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
         driveInvalidationRequired: true,
       });
+      // The replacement is durable; keep the snapshot of what it replaced so a
+      // customer who restores the wrong file can undo it.
+      retainRestoreSafetyCopy(recoveryPath, currentVersion);
       return {
         success: true,
         mode: 'direct',
@@ -2880,6 +2966,7 @@ function dataOnlyRestore(
       throw journalError;
     }
     replacementCommitted = true;
+    retainRestoreSafetyCopy(replacementJournal.recoveryPath, currentVersion);
     try {
       currentDb.exec('DETACH DATABASE _restore_src');
       attached = false;

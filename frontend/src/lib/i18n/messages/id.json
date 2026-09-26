@@ -1999,7 +1999,12 @@
     "themeTitle": "Tema",
     "themeLight": "Terang",
     "themeDark": "Gelap",
-    "themeSystem": "Sistem"
+    "themeSystem": "Sistem",
+    "restoreFromFile": "Pulihkan cadangan dari file...",
+    "restoreFromFileHint": "Sudah punya file cadangan di komputer ini? Pilih di sini, bukan menyalinnya manual ke atas basis data.",
+    "restoreReplacesDetail": "Pemulihan menggantikan semua pesanan, tagihan, produk, dan data pelanggan yang ditambahkan sejak cadangan ini dibuat.",
+    "restoreKeepsDetail": "Akun staf, PIN, printer, pengaturan pajak, dan akun cloud komputer ini tetap dipertahankan.",
+    "restoreSafetyCopyDetail": "Sebelum ada yang berubah, Flo menyimpan salinan data Anda saat ini sehingga Anda bisa membatalkan pemulihan ini."
   },
   "setup": {
     "alreadyCompleted": "Pengaturan awal sudah selesai dilakukan pada instalasi ini. Mengalihkan ke layar masuk…",

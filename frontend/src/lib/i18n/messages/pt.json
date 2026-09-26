@@ -1999,7 +1999,12 @@
     "themeTitle": "Tema",
     "themeLight": "Claro",
     "themeDark": "Escuro",
-    "themeSystem": "Sistema"
+    "themeSystem": "Sistema",
+    "restoreFromFile": "Restaurar backup de um arquivo...",
+    "restoreFromFileHint": "Já tem um arquivo de backup neste computador? Selecione-o aqui em vez de copiá-lo sobre o banco de dados manualmente.",
+    "restoreReplacesDetail": "Restaurar substitui todos os pedidos, faturas, produtos e registros de clientes adicionados desde que este backup foi feito.",
+    "restoreKeepsDetail": "Suas contas de funcionários, PINs, impressoras, configurações de impostos e a conta na nuvem deste computador são mantidas.",
+    "restoreSafetyCopyDetail": "Antes de mudar qualquer coisa, o Flo guarda uma cópia dos seus dados atuais para você desfazer esta restauração."
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",

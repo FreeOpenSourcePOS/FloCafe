@@ -16,6 +16,7 @@ export interface ElectronAPI {
   // Database
   backupDatabase: (pin?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   restoreBackup: (pin?: string, backupPath?: string) => Promise<{ success: boolean; error?: string }>;
+  pickRestoreFile: () => Promise<{ canceled: boolean; path?: string; token?: string }>;
   dbHealthCheck: () => Promise<HealthCheckReport | { error: string }>;
   dbApplySafeFixes: (findingIds?: string[]) => Promise<ElectronDbSafeFixesResult | ElectronIpcError>;
   dbInitialize: (pin: string, confirmationPhrase: string) => Promise<{ success: boolean; backupPath?: string; error?: string }>;

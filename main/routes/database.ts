@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, clearGoogleDriveRestoreBinding, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, getInventoryMovementRows, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, now, throwIfDatabaseMaintenanceAborted, validateInventoryLedgerDatabase, validateInventoryLedgerReplacement, validateInventoryLedgerRows, withTxn, withDatabaseMaintenanceLock } from '../db';
+import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, clearGoogleDriveRestoreBinding, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, getInventoryMovementRows, getSchemaVersionFromBackup, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, now, restoreBackup, throwIfDatabaseMaintenanceAborted, validateInventoryLedgerDatabase, validateInventoryLedgerReplacement, validateInventoryLedgerRows, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from '../middleware/security';
 import { requirePermission } from '../services/authorization';
 import { requireMasterPin } from '../middleware/master-pin';
@@ -13,6 +13,7 @@ import { parsePhoneE164 } from '../lib/phone';
 import { isRole } from '../../shared/role-permissions';
 import { randomUUID } from 'node:crypto';
 import { googleDrive } from '../services/google-drive';
+import { consumeRestoreFileSelection } from '../services/restore-file-selection';
 
 const router = Router();
 
@@ -554,6 +555,62 @@ router.post('/backup', requirePermission('database.manage'), requireMasterPin, a
   } catch (error: any) {
     console.error('[DB Backup] Error:', error);
     res.status(500).json({ error: 'Backup failed' });
+  }
+}));
+
+const RESTORE_CONFIRMATION = 'RESTORE BACKUP';
+
+// Restore from a file the operator picked in the native dialog. This is the
+// authorised alternative to the Master PIN gate: the session must hold
+// database.manage, the operator must type the confirmation phrase, and the file
+// path is only accepted when it is the one the main process just handed out from
+// that dialog (see services/restore-file-selection). The restore itself runs
+// through the same restoreBackup() mechanism as every other route.
+router.post('/restore', requirePermission('database.manage'), asyncHandler(async (req: Request, res: Response) => {
+  if (req.body?.confirmation !== RESTORE_CONFIRMATION) {
+    return res.status(400).json({ error: `Type "${RESTORE_CONFIRMATION}" to confirm` });
+  }
+
+  const selectionToken = typeof req.body?.selection_token === 'string' ? req.body.selection_token : '';
+  const backupPath = consumeRestoreFileSelection(selectionToken);
+  if (!backupPath) {
+    return res.status(400).json({ error: 'Choose a backup file in the restore dialog before confirming' });
+  }
+
+  const backupVersion = getSchemaVersionFromBackup(backupPath);
+  if (backupVersion === null) {
+    return res.status(400).json({ error: 'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of Flo.' });
+  }
+
+  const currentVersion = getCurrentSchemaVersion();
+  const versionMismatch = backupVersion !== currentVersion;
+
+  await googleDrive.prepareForDatabaseRestore();
+  try {
+    const restoreResult = await withDatabaseMaintenanceLock(
+      (signal) => restoreBackup(backupPath, !versionMismatch, signal),
+      getHttpRequestSignal(req),
+    );
+    if (!restoreResult.success) {
+      return res.status(422).json({ error: restoreResult.error || 'Restore failed' });
+    }
+    const cleanup = googleDrive.completeDatabaseRestore();
+    clearUserAuthCache();
+    clearInMemoryRevokedTokens();
+    clearJWTSecretCache();
+    res.json({
+      success: true,
+      mode: restoreResult.mode,
+      backupVersion,
+      currentVersion,
+      tablesRestored: restoreResult.tablesRestored,
+      cleanupPending: restoreResult.cleanupPending === true || cleanup?.cleanupPending === true,
+    });
+  } catch (error: any) {
+    console.error('[DB Restore] Error:', error);
+    res.status(500).json({ error: 'Restore failed' });
+  } finally {
+    googleDrive.releaseDatabaseRestore();
   }
 }));
 

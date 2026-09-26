@@ -28,8 +28,8 @@ let stopPromise: Promise<void> | null = null;
 let startReject: ((error: Error) => void) | null = null;
 let stopping = false;
 
-/** JWT verification middleware protecting API routes from unauthenticated LAN access. */
-function requireAuth(req: Request, res: Response, next: NextFunction): void {
+/** JWT verification middleware protecting API routes from unauthenticated LAN access. Exported so tests can assert its path exemptions. */
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   // Only protect API routes — static files and SPA fallback must pass through
   if (!req.path.startsWith('/api')) { next(); return; }
   // Health check — unauthenticated

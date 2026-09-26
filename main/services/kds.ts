@@ -638,6 +638,13 @@ function broadcastOrderUpdate(): void {
       clearClientAuthTimeout(client);
       return;
     }
+    // A socket still inside its connect-to-auth window is not a revoked
+    // session — its lifecycle belongs to the KDS_AUTH_TIMEOUT_MS timer, the
+    // same way the heartbeat below treats it. Skip it before sendActiveOrders
+    // so no order snapshot can reach an unauthenticated socket.
+    if (!client.userId) {
+      return;
+    }
     if (!isKdsClientAuthorized(client)) {
       closeKdsClient(client, 'Session expired or revoked');
       return;

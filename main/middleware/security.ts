@@ -324,6 +324,37 @@ export function isAllowedPrivateIp(ip: string): boolean {
   return false;
 }
 
+/** Expands an IPv6 literal (with an optional trailing dotted-quad) into its 8 hextets. */
+function expandIpv6Groups(ip: string): number[] | null {
+  let text = ip;
+  const dotted = text.match(/^(.*:)(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (dotted) {
+    const octets = dotted[2].split('.').map(Number);
+    if (octets.some((n) => n > 255)) return null;
+    const hi = ((octets[0] << 8) | octets[1]).toString(16);
+    const lo = ((octets[2] << 8) | octets[3]).toString(16);
+    text = `${dotted[1]}${hi}:${lo}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const parseSide = (side: string): number[] | null => {
+    if (side === '') return [];
+    const groups: number[] = [];
+    for (const piece of side.split(':')) {
+      if (!/^[0-9a-f]{1,4}$/.test(piece)) return null;
+      groups.push(parseInt(piece, 16));
+    }
+    return groups;
+  };
+  const left = parseSide(halves[0]);
+  const right = parseSide(halves[1] ?? '');
+  if (left === null || right === null) return null;
+  const explicit = left.length + right.length;
+  if (explicit > 8) return null;
+  if (halves.length === 1) return explicit === 8 ? left : null;
+  return [...left, ...Array(8 - explicit).fill(0), ...right];
+}
+
 /** Checks if an IP address is disallowed as an outbound fetch target for SSRF protection. */
 export function isBlockedSsrfTarget(ip: string): boolean {
   const version = net.isIP(ip);
@@ -348,9 +379,19 @@ export function isBlockedSsrfTarget(ip: string): boolean {
     if (normalized === '::1' || normalized === '::') return true; // loopback / unspecified
     if (/^fe[89ab]/.test(normalized)) return true; // link-local fe80::/10
     if (/^f[cd]/.test(normalized)) return true; // unique local fc00::/7
-    // IPv4-mapped (::ffff:a.b.c.d) — validate the embedded IPv4 address
-    const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    if (mapped) return isBlockedSsrfTarget(mapped[1]);
+    // IPv4-embedded IPv6 — validate the embedded IPv4 against the same blocklist,
+    // whichever notation carries it. WHATWG URL canonicalizes ::ffff:127.0.0.1
+    // and 0:0:0:0:0:ffff:127.0.0.1 to ::ffff:7f00:1, so a dotted-quad-only
+    // check never fires for a URL-supplied host.
+    const groups = expandIpv6Groups(normalized);
+    if (groups) {
+      const isZeros = (from: number, to: number) => groups.slice(from, to).every((g) => g === 0);
+      const embedded = `${groups[6] >> 8}.${groups[6] & 0xff}.${groups[7] >> 8}.${groups[7] & 0xff}`;
+      const ipv4Mapped = isZeros(0, 5) && groups[5] === 0xffff; // ::ffff:0:0/96
+      const ipv4Compatible = isZeros(0, 6); // ::/96 (IPv4-compatible, deprecated)
+      const nat64 = groups[0] === 0x64 && groups[1] === 0xff9b && isZeros(2, 6); // 64:ff9b::/96
+      if (ipv4Mapped || ipv4Compatible || nat64) return isBlockedSsrfTarget(embedded);
+    }
     return false;
   }
   return true; // unparseable — fail closed

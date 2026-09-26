@@ -20,6 +20,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import express from 'express';
+import expressRateLimit from 'express-rate-limit';
 import request from 'supertest';
 
 const Module = require('module');
@@ -52,13 +53,19 @@ const PROTECTED_VARIANTS = [
   '/api/POS-INFO',
 ];
 
-/** Builds the production middleware chain: maintenance guard, then requireAuth. */
+/** Builds the production middleware chain, in the production order, so the
+ *  reproduction is faithful rather than approximated: main/server.ts mounts the
+ *  maintenance guard, then the global API rate limiter, then requireAuth, and
+ *  only then the routers. Dropping the limiter (or moving it) would leave this
+ *  test exercising a chain the server never runs. The LAN `skip` production
+ *  passes to express-rate-limit is deliberately not reproduced - supertest
+ *  connects over loopback, so keeping it would leave the limiter inert here. */
 function buildProtectedApp(): express.Express {
   const app = express();
   app.use(express.json());
   app.use('/api', databaseMaintenanceMiddleware);
+  app.use('/api', expressRateLimit({ windowMs: 60 * 1000, limit: 100, standardHeaders: true, legacyHeaders: false }));
   app.use(requireAuth);
-  // codeql[js/missing-rate-limiting] this app exists only inside the test: supertest drives it in-process and it never binds a port, so the production rate limiter is not reachable from it. Scoping a real limiter here would test nothing.
   app.get('/api/health', (_req: any, res: any) => res.json({ status: 'ok' }));
   app.use('/api/pos-info', posInfoRoutes);
   app.use((_req: any, res: any) => res.status(404).json({ error: 'Not found' }));

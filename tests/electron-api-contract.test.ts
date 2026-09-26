@@ -100,7 +100,7 @@ async function run(): Promise<void> {
   const call = (name: string, ...args: unknown[]) =>
     (exposedApi![name] as (...callArgs: unknown[]) => Promise<unknown>)(...args);
   await call('getSettings');
-  await call('setSetting', 'business_name', 'Flo Cafe');
+  await call('setSetting', 'theme_mode', 'dark');
   await call('getKdsInfo');
   await call('openKdsWindow');
   await call('getPrinters');
@@ -141,7 +141,7 @@ async function run(): Promise<void> {
 
   assert.deepEqual(calls, [
     { channel: 'get-settings', args: [] },
-    { channel: 'set-setting', args: ['business_name', 'Flo Cafe'] },
+    { channel: 'set-setting', args: ['theme_mode', 'dark'] },
     { channel: 'get-kds-info', args: [] },
     { channel: 'open-kds-window', args: [] },
     { channel: 'get-printers', args: [] },

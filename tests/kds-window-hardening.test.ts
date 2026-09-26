@@ -210,22 +210,30 @@ async function run(): Promise<void> {
   const untrustedCredentialPrefix = { sender: { getURL: () => 'http://localhost:3001@evil.example/' } };
   const untrustedNullSender = { sender: { getURL: () => null } };
 
-  // 1. Verify ALL non-PIN-gated handlers enforce sender identity
+  // 1. Verify ALL handlers that need no credential beyond sender identity enforce it
   const nonPinGatedHandlers = [
     { channel: 'db-health-check', args: [] },
-    { channel: 'db-apply-safe-fixes', args: [['finding-1']] },
     { channel: 'master-pin-status', args: [] },
     { channel: 'get-settings', args: [] },
-    { channel: 'set-setting', args: ['business_name', 'My Cafe'] },
+    { channel: 'set-setting', args: ['theme_mode', 'dark'] },
     { channel: 'whatsapp-get-status', args: [] },
     { channel: 'whatsapp-open-share', args: ['https://wa.me/15555550100?text=test'] },
     { channel: 'get-kds-info', args: [] },
     { channel: 'open-kds-window', args: [] },
     { channel: 'get-app-info', args: [] },
     { channel: 'get-printers', args: [] },
-    { channel: 'save-printer', args: [{ name: 'Kitchen Printer', type: 'thermal', connection_type: 'network' }] },
-    { channel: 'get-daily-summary', args: [] },
   ];
+
+  // These two channels are deleted rather than gated: writing a printer and
+  // reading the day's financial totals are permission-gated HTTP routes, and
+  // an origin-checked IPC channel is the wrong boundary for either one.
+  for (const removedChannel of ['save-printer', 'get-daily-summary']) {
+    assert.equal(
+      registered.has(removedChannel),
+      false,
+      `IPC channel '${removedChannel}' is no longer registered`,
+    );
+  }
 
   log(`\n[Phase 1] Verifying sender identity across ${nonPinGatedHandlers.length} non-PIN-gated IPC channels...`);
 
@@ -278,6 +286,27 @@ async function run(): Promise<void> {
   const validPinRes = await backupListener(trustedLocalhost, '1234');
   assert.equal(validPinRes.success, true, 'backup accepted valid PIN');
   log('  ✓ backup-database: successfully protected by master PIN');
+
+  // db-apply-safe-fixes now needs a master PIN, so it is no longer one of the
+  // handlers that need nothing beyond sender identity. Its sender check is
+  // verified here instead, next to its PIN check.
+  const safeFixesListener = registered.get('db-apply-safe-fixes')!;
+  assert.deepEqual(
+    await safeFixesListener(untrustedExternal),
+    { error: 'Unauthorized sender' },
+    'db-apply-safe-fixes rejected an untrusted sender',
+  );
+  const noPinRes = await safeFixesListener(trustedLocalhost, undefined);
+  assert.equal(noPinRes.success, false, 'db-apply-safe-fixes rejected a missing master PIN');
+  const badPinRes = await safeFixesListener(trustedLocalhost, 'wrong-pin');
+  assert.equal(badPinRes.success, false, 'db-apply-safe-fixes rejected an invalid master PIN');
+  // Assert the real success shape. A bare `notEqual(res.success, false)` is
+  // satisfied by any result that has no `success` key at all, so a handler that
+  // took the PIN and then silently skipped the repairs still read as a pass.
+  const goodPinRes = await safeFixesListener(trustedLocalhost, '1234');
+  assert.deepEqual(goodPinRes, { applied: ['fix1'], skipped: [], errors: [] },
+    'db-apply-safe-fixes ran the repairs for a valid master PIN');
+  log('  ✓ db-apply-safe-fixes: sender-checked and protected by master PIN');
 
   // 3. KDS window webPreferences: privileged preload bridge removed, isolation intact
   log('\n[Phase 3] Verifying KDS window construction and bridge removal...');

@@ -11,6 +11,7 @@ const originalLoad = Module._load;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const http = require('http');
 const crypto = require('crypto');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-diagnostics-event-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
@@ -35,7 +36,7 @@ function countDiagnostics(db: any, eventCode?: string): number {
 }
 
 function findDiagnostic(db: any, eventCode: string): any | null {
-  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC').all() as Array<{ payload: string; status: string }>;
+  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC, rowid DESC').all() as Array<{ payload: string; status: string }>;
   for (const row of rows) {
     try {
       const payload = JSON.parse(row.payload);
@@ -46,7 +47,7 @@ function findDiagnostic(db: any, eventCode: string): any | null {
 }
 
 function findDiagnosticByStage(db: any, eventCode: string, stage: string): any | null {
-  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC').all() as Array<{ payload: string; status: string }>;
+  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC, rowid DESC').all() as Array<{ payload: string; status: string }>;
   for (const row of rows) {
     try {
       const payload = JSON.parse(row.payload);
@@ -57,7 +58,7 @@ function findDiagnosticByStage(db: any, eventCode: string, stage: string): any |
 }
 
 function findDiagnosticByStageAndHttpStatus(db: any, eventCode: string, stage: string, status: number): any | null {
-  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC').all() as Array<{ payload: string; status: string }>;
+  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC, rowid DESC').all() as Array<{ payload: string; status: string }>;
   for (const row of rows) {
     try {
       const payload = JSON.parse(row.payload);
@@ -70,7 +71,7 @@ function findDiagnosticByStageAndHttpStatus(db: any, eventCode: string, stage: s
 }
 
 function findDiagnosticByStageAndStatus(db: any, eventCode: string, stage: string, status: number, itemCount: number): any | null {
-  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC').all() as Array<{ payload: string; status: string }>;
+  const rows = db.prepare('SELECT payload, status FROM store_diagnostics_outbox ORDER BY created_at DESC, rowid DESC').all() as Array<{ payload: string; status: string }>;
   for (const row of rows) {
     try {
       const payload = JSON.parse(row.payload);
@@ -97,6 +98,29 @@ async function main() {
   const app = createApp({});
   registerRoutes(app);
   const { baseUrl, server } = await startServer(app);
+
+  // The outbox is only the transmission path, and transmission now requires an
+  // explicit setting plus a cloud key and sync that could actually deliver the
+  // row. A till without those never enqueues, so this suite configures a
+  // loopback endpoint that accepts the POST: that is what lets it assert the
+  // enqueue, the payload projection, and the delivery in one pass. The
+  // default-off and no-key paths are asserted in diagnostics-outbox-bounds.test.ts.
+  const cloudStub = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end('{}');
+  });
+  await new Promise<void>((resolve) => cloudStub.listen(0, '127.0.0.1', resolve));
+  const cloudStubUrl = `http://127.0.0.1:${(cloudStub.address() as { port: number }).port}`;
+  const setSetting = (key: string, value: string) => db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  ).run(key, value, now());
+  setSetting('diagnostics_transmission_enabled', 'true');
+  setSetting('cloud_server_url', cloudStubUrl);
+  setSetting('cloud_api_key', 'test-diagnostics-key');
+  setSetting('cloud_sync_enabled', '1');
+  setSetting('cloud_registration_status', 'registered');
+  setSetting('cloud_services_disabled_by_user', 'false');
 
   // Enqueue is async (withDatabaseRequest + runBackground); drain by spinning
   // the event loop until a row appears or the deadline passes.
@@ -125,13 +149,38 @@ async function main() {
       },
     });
     assertEqual(okRes.status, 202, 'a well-formed event is accepted with 202');
-    const queued = await settle(() => countDiagnostics(db, 'order.place.failed') > 0);
-    assert(queued, 'the event is written to store_diagnostics_outbox');
+    const queued = await settle(() => (findDiagnostic(db, 'order.place.failed')?.status || '') === 'delivered', 5000);
+    assert(queued, 'the event is written to store_diagnostics_outbox and delivered');
     const row = findDiagnostic(db, 'order.place.failed');
-    assertEqual(row?.status, 'pending', 'the outbox row starts pending');
+    assertEqual(row?.status, 'delivered', 'the outbox row reaches delivered once a deliverable cloud endpoint is configured');
     assert(row?.event_id && /^[0-9a-f-]{36}$/i.test(row.event_id), 'event_id is a server-generated UUID');
     assertEqual(row?.severity, 'error', 'severity is preserved');
-    assertEqual(row?.message, 'Order placement failed', 'message is replaced with the approved diagnostic text');
+    // WHAT WAS DECIDED BEFORE: every diagnostic message was overwritten with a
+    // fixed string from a nine-entry table keyed by event_code. That was a
+    // deliberate privacy decision - the raw exception message is exactly where
+    // customer data appears, so it must never be stored or transmitted.
+    //
+    // WHY IT WAS RIGHT THEN: it was structural, not a filter, so the first field
+    // anyone added to the payload could not leak.
+    //
+    // WHAT REPLACED IT: a derived signature instead of a constant. The stored
+    // message is now the error class plus the message with literal values
+    // replaced by typed placeholders, so "no such table: orders" survives as
+    // "Error: no such table: orders" and two tills failing the same way produce
+    // identical text. The privacy property is kept and is now per token rather
+    // than per message: a literal that classifies as a quoted string, a number,
+    // an identifier or a path becomes a placeholder, and anything that does not
+    // classify is dropped. A message made only of structural words is
+    // indistinguishable from the fixed phrase around it and is kept, which is a
+    // known limit recorded in main/lib/diagnostic-signature.ts. The submitted
+    // message below is product-authored prose containing no literal, so the
+    // whole sentence survives - which is exactly the diagnostic content the
+    // constant threw away.
+    assertEqual(
+      row?.message,
+      'Error: The order could not be completed on this device',
+      'the stored message is the derived signature of the submitted message, not a constant',
+    );
     assertEqual(row?.metadata.stage, 'order_place', 'metadata is stored');
     assertEqual(row?.metadata.detail, undefined, 'unapproved free-form metadata is not persisted');
 
@@ -184,9 +233,9 @@ async function main() {
     assertEqual(noBody.status, 400, 'an empty payload is rejected with 400');
     assertEqual(countDiagnostics(db), before, 'no outbox rows were written by rejected requests');
     for (const [eventCode, message] of [
-      ['order.place.rejected', 'Order rejected'],
-      ['order.place.unreachable', 'Order server unreachable'],
-      ['order.place.storage_unavailable', 'Order storage unavailable'],
+      ['order.place.rejected', 'Error'],
+      ['order.place.unreachable', 'Error'],
+      ['order.place.storage_unavailable', 'Error'],
     ] as const) {
       const supported = await api(baseUrl, '/api/diagnostics/event', {
         method: 'POST',
@@ -195,10 +244,15 @@ async function main() {
       });
       assertEqual(supported.status, 202, `${eventCode} is accepted`);
       assert(await settle(() => findDiagnostic(db, eventCode) !== null), `${eventCode} is enqueued`);
-      assertEqual(findDiagnostic(db, eventCode)?.message, message, `${eventCode} uses approved diagnostic text`);
+      // No constant phrase per event code any more: with no message to derive
+      // from, the stored signature is the bare error class. Under the old
+      // constant-message behaviour this was the per-code approved string
+      // ('Order rejected', 'Order server unreachable', ...), so this assertion
+      // cannot pass under the behaviour it replaces.
+      assertEqual(findDiagnostic(db, eventCode)?.message, message, `${eventCode} stores the derived signature, not a per-code constant`);
     }
 
-    console.log('\n3. Boundary: messages use approved text; oversized metadata is rejected');
+    console.log('\n3. Boundary: the stored message is the derived signature; oversized metadata is rejected');
     const longMessage = 'M'.repeat(500);
     const clampRes = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
@@ -209,7 +263,8 @@ async function main() {
     const clamped = await settle(() => findDiagnostic(db, 'payment.batch.failed') !== null);
     assert(clamped, 'the clamped event is enqueued');
     const clampedRow = findDiagnostic(db, 'payment.batch.failed');
-    assertEqual(clampedRow?.message, 'Payment batch failed', 'the stored message uses the approved diagnostic text');
+    assertEqual(clampedRow?.message, 'Error', 'an over-long unclassifiable message reduces to the bare class, not to stored literal text');
+    assert(!String(clampedRow?.message).includes('MMM'), 'the 500-character literal is not stored at all');
 
     const hugeMetadata: Record<string, string> = {};
     for (let i = 0; i < 40; i++) hugeMetadata[`key_${i}`] = 'X'.repeat(300);
@@ -236,7 +291,7 @@ async function main() {
     assertEqual(depthRow?.metadata.keep, undefined, 'unapproved metadata is dropped');
     assertEqual(depthRow?.metadata.a, undefined, 'nested metadata is dropped');
 
-    console.log('\n5. Consent toggle: diagnostics_consent=false discards events (never written)');
+    console.log('\n5. Consent toggle: diagnostics_consent=false keeps the local capture and sends nothing');
     const consentBefore = countDiagnostics(db);
     db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent', 'false', ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`).run(now());
@@ -247,6 +302,13 @@ async function main() {
     });
     assertEqual(consentOff.status, 202, 'the endpoint still acknowledges the event while consent is off');
     await settle(() => false, 400); // allow any in-flight enqueue to run
+    const localWithConsentOff = (db.prepare('SELECT COUNT(*) AS count FROM local_diagnostics').get() as { count: number }).count;
+    assert(localWithConsentOff > 0, 'the failure is still captured locally for the screen while consent is off');
+    assertEqual(
+      (db.prepare("SELECT value FROM settings WHERE key = 'diagnostics_transmission_enabled'").get() as { value: string }).value,
+      'true',
+      'precondition: transmission is on for this suite, so the consent gate is what is under test',
+    );
     assertEqual(countDiagnostics(db), consentBefore, 'no row was written while diagnostics consent was disabled');
     db.prepare(`UPDATE settings SET value = 'true', updated_at = ? WHERE key = 'diagnostics_consent'`).run(now());
 
@@ -335,7 +397,12 @@ async function main() {
     assert(mismatchQueued, 'payment.batch.failed is enqueued for a customer mismatch');
     const mismatchDiag = findDiagnosticByStageAndHttpStatus(db, 'payment.batch.failed', 'payment_batch', 400);
     assertEqual(mismatchDiag?.metadata.status, 400, 'customer mismatch diagnostic metadata carries the HTTP status');
-    assertEqual(mismatchDiag?.message, 'Payment batch failed', 'customer mismatch diagnostic uses approved text');
+    assert(String(mismatchDiag?.message).startsWith('Error: '), 'customer mismatch diagnostic stores a derived signature');
+    assert(
+      mismatchDiag?.message !== 'Payment batch failed',
+      'customer mismatch diagnostic no longer stores the per-code constant',
+    );
+    assert(!/does not match/.test(String(mismatchDiag?.message)), 'the raw exception text is not stored verbatim');
 
     console.log('\n11. POS checkout failure path: reporting must not throw or add toasts when telemetry fails');
     // Mirror of frontend reportOrderFailure: dispatch failure is swallowed and
@@ -372,8 +439,10 @@ async function main() {
     });
     assertEqual(paddedRes.status, 202, 'an event with a padded message is accepted');
     const paddedQueued = await settle(() => findDiagnostic(db, 'payment.batch.failed') !== null);
+    const paddedRow = findDiagnostic(db, 'payment.batch.failed');
     assert(paddedQueued, 'the padded-message event is enqueued');
-    assertEqual(findDiagnostic(db, 'payment.batch.failed')?.message, 'Payment batch failed', 'free-form message is replaced with the approved diagnostic text');
+    assertEqual(paddedRow?.message, 'Error', 'a free-form message with no classifiable literal reduces to the bare class');
+    assert(paddedRow?.message !== 'Payment batch failed', 'free-form message is not replaced with the per-code constant');
 
     const protoRes = await api(baseUrl, '/api/diagnostics/event', {
       method: 'POST',
@@ -391,12 +460,14 @@ async function main() {
     console.log('\n' + '='.repeat(56));
     const results = getResults();
     console.log(`${results.passed} passed, ${results.failed} failed`);
+    cloudStub.close();
     server.close();
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });
     process.exit(results.failed > 0 ? 1 : 0);
   } catch (error) {
     console.error('Test suite crashed:', error);
+    cloudStub.close();
     server.close();
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

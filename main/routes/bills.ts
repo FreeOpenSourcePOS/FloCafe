@@ -2108,10 +2108,9 @@ router.post('/:id/payments', requirePermission('payments.take'), (req: Request, 
           event_id: randomUUID(),
           event_code: 'payment.batch.failed',
           severity: 'error',
-          message: 'Payment batch failed',
           metadata: { status: statusCode, stage: 'payment_batch' },
           occurred_at: new Date().toISOString(),
-        });
+        }, error);
       } catch { /* diagnostics must never mask the original failure */ }
     }
     res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message });

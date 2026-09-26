@@ -2,10 +2,12 @@
 
 import * as crypto from 'crypto';
 import * as os from 'os';
+import type BetterSqlite3 from 'better-sqlite3';
 import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
 import { readCountryProvenance } from './country-provenance';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDiagnosticsTransmissionEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
+import { deriveDiagnosticSignature, errorClassOf } from '../lib/diagnostic-signature';
 import { getTenantCurrency } from './refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
 
@@ -123,23 +125,40 @@ export type DiagnosticEventInput = {
   occurred_at: string;
 };
 
-const DIAGNOSTIC_MESSAGE_BY_CODE = {
-  'order.place.failed': 'Order placement failed',
-  'order.place.rejected': 'Order rejected',
-  'order.place.unreachable': 'Order server unreachable',
-  'order.place.storage_unavailable': 'Order storage unavailable',
-  'order.create.failed': 'Order creation failed',
-  'payment.batch.failed': 'Payment batch failed',
-  'server.internal_error': 'Internal server error',
-  'print.receipt.failed': 'Receipt print failed',
-  'print.kot.failed': 'Kitchen order print failed',
-} as const;
+/** A locally captured failure, as the diagnostics screen and the copy-for-support bundle see it. */
+export type LocalDiagnostic = {
+  id: number;
+  event_code: string;
+  severity: string;
+  error_class: string;
+  signature: string;
+  summary: string;
+  metadata?: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
+};
 
-type DiagnosticEventCode = keyof typeof DIAGNOSTIC_MESSAGE_BY_CODE;
+/** Allowlist of event codes; built from this list, never filtered from a wider set afterwards. */
+const DIAGNOSTIC_EVENT_CODES = [
+  'order.place.failed',
+  'order.place.rejected',
+  'order.place.unreachable',
+  'order.place.storage_unavailable',
+  'order.create.failed',
+  'payment.batch.failed',
+  'server.internal_error',
+  'print.receipt.failed',
+  'print.kot.failed',
+] as const;
+
+type DiagnosticEventCode = typeof DIAGNOSTIC_EVENT_CODES[number];
 
 export const ALLOWED_DIAGNOSTIC_EVENT_CODES = new Set<DiagnosticEventCode>(
-  Object.keys(DIAGNOSTIC_MESSAGE_BY_CODE) as DiagnosticEventCode[],
+  [...DIAGNOSTIC_EVENT_CODES],
 );
+
+/** Upper bound on both the local failure log and the undelivered outbox. Oldest rows are evicted first. */
+export const DIAGNOSTIC_LOG_MAX_ROWS = 200;
 
 const ALLOWED_DIAGNOSTIC_SEVERITIES = new Set<DiagnosticEventInput['severity']>(['debug', 'info', 'warn', 'error', 'critical']);
 const ALLOWED_ORDER_PLACE_STAGES = new Set(['order_place']);
@@ -214,6 +233,45 @@ function sha256Hex(value: string): string {
 
 function hmacHex(secret: string, value: string): string {
   return crypto.createHmac('sha256', secret).update(value).digest('hex');
+}
+
+/** Appends a locally captured failure and keeps the log inside its row cap. */
+function recordLocalDiagnostic(db: BetterSqlite3.Database, entry: Omit<LocalDiagnostic, 'id' | 'created_at'>, timestamp: string): void {
+  db.prepare(`
+    INSERT INTO local_diagnostics
+      (event_code, severity, error_class, signature, summary, metadata_json, occurred_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    entry.event_code,
+    entry.severity,
+    entry.error_class,
+    entry.signature,
+    entry.summary,
+    entry.metadata ? JSON.stringify(entry.metadata) : null,
+    entry.occurred_at,
+    timestamp,
+  );
+  evictOldestDiagnostics(db, 'local_diagnostics', DIAGNOSTIC_LOG_MAX_ROWS);
+}
+
+/**
+ * Enforces the row cap on write by dropping the oldest rows, so neither the log
+ * nor the outbox can grow without bound between reads. `rowid` is the implicit
+ * SQLite insertion order and exists on both tables (`event_id` is the outbox
+ * primary key but is not a rowid alias).
+ */
+function evictOldestDiagnostics(db: BetterSqlite3.Database, table: 'local_diagnostics' | 'store_diagnostics_outbox', max: number): void {
+  db.prepare(`DELETE FROM ${table} WHERE rowid NOT IN (SELECT rowid FROM ${table} ORDER BY rowid DESC LIMIT ?)`)
+    .run(max);
+}
+
+function safeParseMetadata(json: string): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isLocalDevUrl(url: URL): boolean {
@@ -982,18 +1040,36 @@ export class CloudSyncService {
     return this.supportFlushPromise;
   }
 
-  /** Queue a Tier 2 diagnostic event durably if consent is enabled. */
-  reportDiagnostic(input: DiagnosticEventInput): void {
+  /**
+   * Capture a failure locally, and queue it for transmission only when the store
+   * has explicitly turned transmission on and a cloud key could deliver it.
+   *
+   * `error` is the thrown value when the call site has it: the stored message is
+   * a signature derived from it, never the raw exception text.
+   */
+  reportDiagnostic(input: DiagnosticEventInput, error?: unknown): void {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     if (!isAllowedDiagnosticEventCode(input.event_code)) return;
     if (!ALLOWED_DIAGNOSTIC_SEVERITIES.has(input.severity)) return;
     if (typeof input.event_id !== 'string' || !DIAGNOSTIC_ID_RE.test(input.event_id)) return;
     const metadata = sanitizeDiagnosticMetadata(input.event_code, input.metadata);
+    // A handler that catches a non-Error throw has no `.message`; the thrown value
+    // itself is then the only text there is, and a string throw is the message.
+    const thrown = error === undefined || error === null
+      ? input.message
+      : typeof error === 'string'
+        ? error
+        : typeof (error as { message?: unknown }).message === 'string'
+          ? (error as { message: string }).message
+          : input.message;
+    const derived = deriveDiagnosticSignature(
+      error ? { errorClass: errorClassOf(error), message: thrown } : { message: thrown },
+    );
     const sanitized: DiagnosticEventInput = {
       event_id: input.event_id,
       event_code: input.event_code,
       severity: input.severity,
-      message: DIAGNOSTIC_MESSAGE_BY_CODE[input.event_code],
+      message: derived.signature,
       ...(typeof input.correlation_id === 'string' && DIAGNOSTIC_ID_RE.test(input.correlation_id)
         ? { correlation_id: input.correlation_id }
         : {}),
@@ -1003,16 +1079,64 @@ export class CloudSyncService {
         : new Date().toISOString(),
     };
     this.runBackground(this.withDatabaseRequest(() => {
-      if (this.cloudDeletionInProgress || this.shutdownRequested || !isDiagnosticsConsentEnabled()) return;
+      if (this.cloudDeletionInProgress || this.shutdownRequested) return;
       const db = getDatabase();
       const timestamp = now();
+      recordLocalDiagnostic(db, {
+        event_code: sanitized.event_code,
+        severity: sanitized.severity,
+        error_class: derived.error_class,
+        signature: derived.signature,
+        summary: derived.summary,
+        metadata,
+        occurred_at: sanitized.occurred_at,
+      }, timestamp);
+      if (!isDiagnosticsConsentEnabled() || !isDiagnosticsTransmissionEnabled()) return;
+      // A till with no key or no sync can never deliver this row, so queueing it
+      // would only accumulate rows nothing will ever send.
+      const cfg = this.settings ?? this.loadSettings();
+      if (!cfg?.sync_enabled || !cfg.api_key) return;
       db.prepare(`
         INSERT OR IGNORE INTO store_diagnostics_outbox
           (event_id, payload, status, created_at, updated_at)
         VALUES (?, ?, 'pending', ?, ?)
       `).run(sanitized.event_id, JSON.stringify(sanitized), timestamp, timestamp);
+      evictOldestDiagnostics(db, 'store_diagnostics_outbox', DIAGNOSTIC_LOG_MAX_ROWS);
       this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
-    }), 'diagnostic enqueue', (error) => this.markError((error as Error).message));
+    }), 'diagnostic enqueue', (enqueueError) => this.markError((enqueueError as Error).message));
+  }
+
+  /** Recent locally captured failures, newest first, for the diagnostics screen. */
+  listLocalDiagnostics(limit = 50): LocalDiagnostic[] {
+    const db = getDatabase();
+    const bounded = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, DIAGNOSTIC_LOG_MAX_ROWS) : 50;
+    const rows = db.prepare(`
+      SELECT id, event_code, severity, error_class, signature, summary, metadata_json, occurred_at, created_at
+        FROM local_diagnostics ORDER BY id DESC LIMIT ?
+    `).all(bounded) as Array<{
+      id: number; event_code: string; severity: string; error_class: string;
+      signature: string; summary: string; metadata_json: string | null;
+      occurred_at: string; created_at: string;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      event_code: row.event_code,
+      severity: row.severity,
+      error_class: row.error_class,
+      signature: row.signature,
+      summary: row.summary,
+      metadata: row.metadata_json ? safeParseMetadata(row.metadata_json) : undefined,
+      occurred_at: row.occurred_at,
+      created_at: row.created_at,
+    }));
+  }
+
+  /** Remove every locally captured failure. Nothing has been transmitted, so nothing is withdrawn. */
+  clearLocalDiagnostics(): number {
+    const db = getDatabase();
+    const removed = db.prepare('SELECT COUNT(*) AS count FROM local_diagnostics').get() as { count: number };
+    db.prepare('DELETE FROM local_diagnostics').run();
+    return removed?.count || 0;
   }
 
   private flushDiagnosticsOutbox(): Promise<void> {
@@ -1020,6 +1144,7 @@ export class CloudSyncService {
     if (this.diagnosticsFlushPromise) return this.diagnosticsFlushPromise;
     const run = this.withDatabaseRequest(async () => {
     if (this.cloudDeletionInProgress || this.shutdownRequested || !isDiagnosticsConsentEnabled()) return;
+    if (!isDiagnosticsTransmissionEnabled()) return;
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key || this.diagnosticsFlushing) return;
     this.diagnosticsFlushing = true;

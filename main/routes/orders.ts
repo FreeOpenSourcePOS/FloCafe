@@ -35,16 +35,15 @@ const orderItemCancelRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
 const MAX_ORDER_ITEMS = 200;
 
-function reportOrderCreateFailure(status: number, itemCount: number, stage: 'inventory_validation' | 'order_insert'): void {
+function reportOrderCreateFailure(status: number, itemCount: number, stage: 'inventory_validation' | 'order_insert', error?: unknown): void {
   try {
     cloudSync.reportDiagnostic({
       event_id: randomUUID(),
       event_code: 'order.create.failed',
       severity: 'error',
-      message: 'Order creation failed',
       metadata: { stage, status, item_count: itemCount },
       occurred_at: new Date().toISOString(),
-    });
+    }, error);
   } catch { /* diagnostics must never mask the original failure */ }
 }
 
@@ -464,6 +463,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
     const authenticatedUserId = (req as any).user.userId;
 
     if (!Array.isArray(items) || items.length === 0) {
+      // A client validation failure, not a fault: there is no exception to derive from.
       reportOrderCreateFailure(400, 0, 'order_insert');
       return res.status(400).json({ error: 'At least one item is required' });
     }
@@ -741,6 +741,7 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       statusCode,
       Array.isArray(req.body?.items) ? req.body.items.length : 0,
       error.message === 'Insufficient stock' ? 'inventory_validation' : 'order_insert',
+      error,
     );
     res.status(statusCode).json({ error: error.statusCode ? error.message : "Internal server error" });
   }

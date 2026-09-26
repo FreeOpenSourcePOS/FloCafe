@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backupDatabase: (pin?: string) => ipcRenderer.invoke('backup-database', pin),
   restoreBackup: (pin?: string, backupPath?: string) => ipcRenderer.invoke('restore-backup', pin, backupPath),
   dbHealthCheck: () => ipcRenderer.invoke('db-health-check'),
-  dbApplySafeFixes: (findingIds?: string[]) => ipcRenderer.invoke('db-apply-safe-fixes', findingIds),
+  dbApplySafeFixes: (pin: string, findingIds?: string[]) => ipcRenderer.invoke('db-apply-safe-fixes', pin, findingIds),
   dbInitialize: (pin: string, confirmationPhrase: string) => ipcRenderer.invoke('db-initialize', { pin, confirmationPhrase }),
   getMasterPinStatus: () => ipcRenderer.invoke('master-pin-status'),
 
@@ -46,11 +46,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   getPrinters: () => ipcRenderer.invoke('get-printers'),
-  savePrinter: (printer: unknown) => ipcRenderer.invoke('save-printer', printer),
   rasterizePrintDocument: (request: unknown) => ipcRenderer.invoke('rasterize-print-document', request),
   rasterizeKotDocument: (request: unknown) => ipcRenderer.invoke('rasterize-kot-document', request),
-
-  getDailySummary: () => ipcRenderer.invoke('get-daily-summary'),
 
   getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
   getBetaChannel: () => ipcRenderer.invoke('updates:get-beta-channel'),

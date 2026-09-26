@@ -1,7 +1,6 @@
 import type { Page } from '@playwright/test';
 import type {
   ApplicationMenuEntry,
-  DailySummary,
   ElectronAPI,
   ElectronActionResult,
   ElectronAppInfo,
@@ -109,13 +108,6 @@ export async function injectElectronFixture(
       localIP: '127.0.0.1',
       port: 3002,
     };
-    const dailySummary: DailySummary = {
-      date: '1970-01-01',
-      revenue: 0,
-      bill_count: 0,
-      covers: 0,
-      pending_orders: 0,
-    };
     const masterPinStatus: ElectronMasterPinStatus = { available: false, isSet: false };
     const safeFixes: ElectronDbSafeFixesResult = { applied: [], skipped: [], errors: [] };
     const openedMenuEntries: { key: string; x: number; y: number }[] = [];
@@ -149,10 +141,8 @@ export async function injectElectronFixture(
       getAppInfo: async () => appInfo,
       getLogTail: async () => ({ text: '', truncated: false }),
       getPrinters: async () => [],
-      savePrinter: async () => result,
       rasterizePrintDocument: async () => ({ ok: false, error: 'fixture' }),
       rasterizeKotDocument: async () => ({ ok: false, error: 'fixture' }),
-      getDailySummary: async () => dailySummary,
       getStatus: async () => status,
       windowReady: async () => result,
       onUpdateStatus: (callback) => {

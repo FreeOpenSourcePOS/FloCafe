@@ -2265,8 +2265,14 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (requestedAction !== 'restore-from-file') return;
+    // Consume the deep link exactly once, before the work runs. Stripping the
+    // parameter first is what keeps a finished restore from reopening the picker
+    // when the page reloads, and it leaves no armed parameter behind when the
+    // operator cancels, so the next menu click lands on a different address and
+    // fires the action again.
+    router.replace(`/settings?tab=${activeTabRef.current || 'data'}`, { scroll: false });
     void handleRestoreFromFile();
-  }, [requestedAction, handleRestoreFromFile]);
+  }, [requestedAction, handleRestoreFromFile, router]);
 
   const saveCloud = async (silent = false) => {
     setSavingCloud(true);

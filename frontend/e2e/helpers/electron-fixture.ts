@@ -134,7 +134,13 @@ export async function injectElectronFixture(
       },
       backupDatabase: async () => ({ success: false, error: ipcError.error }),
       restoreBackup: async () => ({ success: false, error: ipcError.error }),
-      pickRestoreFile: async () => ({ canceled: true }),
+      pickRestoreFile: async () => {
+        // Stands in for the operator opening the native picker and cancelling.
+        // Tests assert on this count to prove the restore deep link fires once.
+        ((window as any).__floPickerCalls ??= 0);
+        (window as any).__floPickerCalls += 1;
+        return { canceled: true };
+      },
       dbHealthCheck: async () => healthReport,
       dbApplySafeFixes: async () => safeFixes,
       dbInitialize: async () => ({ success: false, error: ipcError.error }),
@@ -168,6 +174,7 @@ export async function injectElectronFixture(
     };
 
     Object.defineProperty(window, 'electronAPI', { configurable: true, value: api });
+    (window as any).__floPickerCalls ??= 0;
     Object.defineProperty(window, '__floElectronFixture', {
       configurable: true,
       value: { actions, status, ipcError, openedMenuEntries },

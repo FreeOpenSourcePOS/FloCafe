@@ -11,7 +11,6 @@ type PendingPinAction = 'backup' | 'restore' | null;
 export default function MenuActionHandler() {
   const tCommon = useTranslations('common');
   const tBackup = useTranslations('backup');
-  const tRestore = useTranslations('restore');
   const tSettings = useTranslations('settings');
   const router = useRouter();
   const [pendingPinAction, setPendingPinAction] = useState<PendingPinAction>(null);

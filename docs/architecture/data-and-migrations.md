@@ -137,11 +137,13 @@ which returns it once for a single-use token. A path with no matching outstandin
 refused, so a compromised renderer cannot aim the restore at a file of its choosing.
 
 A successful restore keeps the snapshot of what it replaced. `retainRestoreSafetyCopy` stamps
-`_flo_meta` onto the replacement-journal snapshot, renames it to
+`_flo_meta` onto the replacement-journal snapshot, copies it to
 `flo-backup-<timestamp>-pre-restore-v<version>.db`, and prunes to `MAX_RETAINED_RESTORE_SAFETY_COPIES`
-(3). Because the name carries the `flo-backup-` prefix, the copy appears in `listBackups()` and is
-restorable through the same preset path as any other managed backup, so a restore of the wrong file
-is an undo rather than data loss.
+(3). It copies rather than renames so the journal keeps pointing at a real file, which is what lets a
+crash between the committed journal and cleanup still roll the live database back. Because the copy
+carries the `flo-backup-` prefix, it appears in `listBackups()` and is restorable through the same
+preset path as any other managed backup, so a restore of the wrong file is an undo rather than data
+loss. Retention failure is logged and never fails the committed restore.
 
 ### Durability
 

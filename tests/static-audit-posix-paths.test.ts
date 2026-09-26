@@ -67,14 +67,18 @@ for (const audit of pathAllowlistAudits) {
  * file, so every title parsed as the whole block and every configuration read as
  * missing from the golden. The fixture is the canonical LF form, so the parser
  * has to reach the same blocks from the CRLF form the Windows runner supplies.
+ *
+ * Both forms are derived from whichever one the checkout produced, so this case
+ * is the same on every host: on Windows the file is already CRLF and on Linux it
+ * is already LF, and either way the parser is asked for both.
  */
 const goldenFixture = fs.readFileSync(
   path.join(__dirname, 'fixtures/receipt-columns/golden-receipt-columns-v1.txt'),
   'utf8',
 );
-const crlfGoldenFixture = goldenFixture.split('\n').join('\r\n');
-assertOrThrow(goldenFixture.includes('\n'), 'the golden receipt fixture is readable as text');
-const lfTitles = parseGoldenBlocks(goldenFixture).map((block) => block.title);
+const lfGoldenFixture = goldenFixture.replace(/\r\n/g, '\n');
+const crlfGoldenFixture = lfGoldenFixture.split('\n').join('\r\n');
+const lfTitles = parseGoldenBlocks(lfGoldenFixture).map((block) => block.title);
 const crlfTitles = parseGoldenBlocks(crlfGoldenFixture).map((block) => block.title);
 assertOrThrow(lfTitles.length > 0, 'the golden receipt fixture parses into blocks');
 assertEqualOrThrow(crlfTitles.join('\n'), lfTitles.join('\n'), 'a CRLF fixture parses to the same block titles as the LF one');

@@ -30,10 +30,9 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 process.env.JWT_SECRET = 'test-secret-order-item-cancel-restore';
 
 const bcrypt = require('bcryptjs');
-const express = require('express');
 const jwt = require('jsonwebtoken');
 const {
-  initTestDb, startServer, api, assertOrThrow, assertEqualOrThrow,
+  initTestDb, createApp, startServer, api, assertOrThrow, assertEqualOrThrow,
   getResults, resetCounters, closeDatabase, now,
 } = require('./helpers/test-setup');
 const { withTxn } = require('../main/db');
@@ -86,16 +85,9 @@ async function main() {
   const cashierAuth = seedUser(db, 'cashier-cancel', 'cashier', '9876');
   const waiterAuth = seedUser(db, 'waiter-cancel', 'server');
 
-  const app = express();
-  app.use(express.json());
-  app.use((req: any, res: any, next: any) => {
-    const header = req.headers.authorization;
-    if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'Authentication required' });
-    try { req.user = jwt.verify(header.slice(7), getJWTSecret()); next(); }
-    catch { res.status(401).json({ error: 'Invalid token' }); }
-  });
-  app.use('/api/orders', orderRoutes);
-  app.use('/api/bills', billRoutes);
+  // createApp brings the shared test auth middleware; the order of the mounts
+  // below is the part under test, so orderRoutes goes in first.
+  const app = createApp({ '/api/orders': orderRoutes, '/api/bills': billRoutes });
   registerRoutes(app);
   const { baseUrl, server } = await startServer(app);
 

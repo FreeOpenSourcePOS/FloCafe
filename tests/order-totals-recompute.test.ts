@@ -35,13 +35,10 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 process.env.JWT_SECRET = 'test-secret-order-totals-recompute';
 
-const express = require('express');
-const jwt = require('jsonwebtoken');
 const {
-  initTestDb, startServer, api, assertEqualOrThrow, getResults, resetCounters, closeDatabase,
+  initTestDb, createApp, startServer, api, assertEqualOrThrow, getResults, resetCounters, closeDatabase,
   seedOwnerUser, seedManagerUser, seedCategory, seedProduct, installAndActivateTestTaxPack,
 } = require('./helpers/test-setup');
-const { getJWTSecret } = require('../main/routes/auth');
 const { orderRoutes, resetPinRateLimitForTests } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { registerRoutes } = require('../main/routes/index');
@@ -78,16 +75,7 @@ async function main() {
   seedProduct(db, 'prod-totals-100', 'cat-totals', 'Hundred', 100, taxable);
   seedProduct(db, 'prod-totals-200', 'cat-totals', 'Two hundred', 200, taxable);
 
-  const app = express();
-  app.use(express.json());
-  app.use((req: any, res: any, next: any) => {
-    const header = req.headers.authorization;
-    if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'Authentication required' });
-    try { req.user = jwt.verify(header.slice(7), getJWTSecret()); next(); }
-    catch { res.status(401).json({ error: 'Invalid token' }); }
-  });
-  app.use('/api/orders', orderRoutes);
-  app.use('/api/bills', billRoutes);
+  const app = createApp({ '/api/orders': orderRoutes, '/api/bills': billRoutes });
   registerRoutes(app);
   const { baseUrl, server } = await startServer(app);
 

@@ -50,15 +50,14 @@ const ordersPage = fs.readFileSync(path.join(root, 'frontend/src/app/(dashboard)
 const orderCard = fs.readFileSync(path.join(root, 'frontend/src/components/orders/OrderCard.tsx'), 'utf8');
 
 for (const permissionId of ['orders.item.cancel', 'orders.item.restore', 'refunds.initiate']) {
-  assert.match(
-    ordersPage,
-    new RegExp(`tenantCan\\(currentTenant, '${permissionId.replace(/\./g, '\\.')}'\\)`),
+  assert.ok(
+    ordersPage.includes(`tenantCan(currentTenant, '${permissionId}')`),
     `the orders page reads ${permissionId} for itself`,
   );
 }
 for (const capability of ['canCancelItems', 'canRestoreItems', 'canRefund']) {
-  assert.match(orderCard, new RegExp(`\\b${capability}: boolean;`), `OrderCard takes ${capability} as its own capability`);
-  assert.match(ordersPage, new RegExp(`${capability}=\\{${capability}\\}`), `the orders page passes ${capability} through unchanged`);
+  assert.ok(orderCard.includes(`${capability}: boolean;`), `OrderCard takes ${capability} as its own capability`);
+  assert.ok(ordersPage.includes(`${capability}={${capability}}`), `the orders page passes ${capability} through unchanged`);
 }
 assert.doesNotMatch(orderCard, /isOwnerOrManager/, 'the order card no longer collapses three permissions into one flag');
 assert.match(orderCard, /\{canCancelItems && !isPaid/, 'item cancellation is gated on orders.item.cancel');

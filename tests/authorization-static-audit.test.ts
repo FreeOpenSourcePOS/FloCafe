@@ -5,6 +5,11 @@ import * as path from 'node:path';
 
 const root = path.resolve(__dirname, '..');
 
+/** POSIX-style relative path, so the allowlist below matches on Windows too. */
+function relativePath(file: string): string {
+  return path.relative(root, file).split(path.sep).join('/');
+}
+
 function filesUnder(directory: string): string[] {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const fullPath = path.join(directory, entry.name);
@@ -21,7 +26,7 @@ const runtimeFiles = [
 
 for (const file of runtimeFiles) {
   const source = fs.readFileSync(file, 'utf8');
-  assert.doesNotMatch(source, /\brequireRole\s*\(/, `${path.relative(root, file)} must authorize with permissions`);
+  assert.doesNotMatch(source, /\brequireRole\s*\(/, `${relativePath(file)} must authorize with permissions`);
 }
 
 const allowedRolePolicyFiles = new Set([
@@ -37,7 +42,7 @@ const allowedRolePolicyFiles = new Set([
   'main/kds-server.ts',
 ]);
 for (const file of runtimeFiles) {
-  const relative = path.relative(root, file);
+  const relative = relativePath(file);
   if (allowedRolePolicyFiles.has(relative)) continue;
   const source = fs.readFileSync(file, 'utf8');
   assert.doesNotMatch(source, /\bhasRole\s*\(/, `${relative} contains an unreviewed direct role check`);

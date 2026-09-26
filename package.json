@@ -89,7 +89,7 @@
     "test:issue-718-whatsapp-order-status": "node tests/run-electron-node-test.cjs tests/issue-718-whatsapp-order-status.test.ts",
     "test:order-audit-log": "node tests/run-electron-node-test.cjs tests/order-audit-log.test.ts",
     "test:authz-phase3": "node tests/run-electron-node-test.cjs tests/authz-matrix-phase3.test.ts",
-    "test:authorization-permissions": "node tests/run-electron-node-test.cjs tests/authorization-permissions.test.ts && node tests/run-electron-node-test.cjs tests/authorization-api.test.ts && node tests/run-electron-node-test.cjs tests/authorization-static-audit.test.ts",
+    "test:authorization-permissions": "node tests/run-electron-node-test.cjs tests/authorization-permissions.test.ts && node tests/run-electron-node-test.cjs tests/authorization-api.test.ts && node tests/run-electron-node-test.cjs tests/authorization-static-audit.test.ts && node tests/run-electron-node-test.cjs tests/static-audit-posix-paths.test.ts",
     "test:customer-auth": "node tests/run-electron-node-test.cjs tests/customer-auth.test.ts",
     "test:backup": "ts-node --transpile-only -P tests/tsconfig.json tests/backup-restore.test.ts && node tests/run-electron-node-test.cjs tests/backup-restore-production.test.ts && node tests/run-electron-node-test.cjs tests/restore-managed-path.test.ts && node tests/run-electron-node-test.cjs tests/windows-backup-unlink-ebusy.test.ts",
     "test:issue-278-fail-closed-db": "node tests/run-electron-node-test.cjs tests/issue-278-fail-closed-missing-db.test.ts",

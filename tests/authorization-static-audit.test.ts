@@ -2,6 +2,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { toPosixPath } from './helpers/posix-path';
 
 const root = path.resolve(__dirname, '..');
 
@@ -21,10 +22,10 @@ const runtimeFiles = [
 
 for (const file of runtimeFiles) {
   const source = fs.readFileSync(file, 'utf8');
-  assert.doesNotMatch(source, /\brequireRole\s*\(/, `${path.relative(root, file)} must authorize with permissions`);
+  assert.doesNotMatch(source, /\brequireRole\s*\(/, `${toPosixPath(path.relative(root, file))} must authorize with permissions`);
 }
 
-const allowedRolePolicyFiles = new Set([
+export const allowedRolePolicyFiles: ReadonlySet<string> = new Set([
   'main/routes/kds.ts',
   'main/routes/kitchen.ts',
   'main/routes/order-items.ts',
@@ -36,9 +37,19 @@ const allowedRolePolicyFiles = new Set([
   'main/services/refund.ts',
   'main/kds-server.ts',
 ]);
+
+/**
+ * Membership test for the allowlist above. The candidate is normalised first:
+ * `path.relative` yields backslashes on Windows, so an unconverted comparison
+ * missed every entry there and reported a reviewed file as unreviewed.
+ */
+export function isReviewedRolePolicyFile(relativePath: string): boolean {
+  return allowedRolePolicyFiles.has(toPosixPath(relativePath));
+}
+
 for (const file of runtimeFiles) {
-  const relative = path.relative(root, file);
-  if (allowedRolePolicyFiles.has(relative)) continue;
+  const relative = toPosixPath(path.relative(root, file));
+  if (isReviewedRolePolicyFile(relative)) continue;
   const source = fs.readFileSync(file, 'utf8');
   assert.doesNotMatch(source, /\bhasRole\s*\(/, `${relative} contains an unreviewed direct role check`);
 }

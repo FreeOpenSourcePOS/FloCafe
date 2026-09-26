@@ -139,8 +139,18 @@ router.post('/', requireStaffWrite, authRateLimit(), (req: Request, res: Respons
     }
 
     const requesterId = (req as any).user.userId;
-    if (!isOperationalRole(role) && !hasPermission(requesterId, 'staff.privileged.manage')) {
-      return res.status(403).json({ error: `This account can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})` });
+    // requireStaffWrite admits either permission, so the target role decides
+    // which one the creator actually needs. This mirrors canModifyTargetStaff,
+    // otherwise an account denied staff.operational.manage could create a
+    // cashier yet be refused when it tried to edit, deactivate or reactivate
+    // that same cashier.
+    const requiredToCreate = isOperationalRole(role) ? 'staff.operational.manage' : 'staff.privileged.manage';
+    if (!hasPermission(requesterId, requiredToCreate)) {
+      return res.status(403).json({
+        error: isOperationalRole(role)
+          ? 'This account cannot create operational staff accounts'
+          : `This account can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})`,
+      });
     }
 
     if (isOperationalRole(role) && hasNonEmptyPin(pin)) {

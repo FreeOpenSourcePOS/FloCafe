@@ -257,6 +257,15 @@ async function main() {
 
   result = await request(app).put('/api/staff/admin-target').set(adminOwnerA).send({ name: 'Renamed through privileged gate' });
   assertEqual(result.status, 200, 'staff.privileged.manage still admits the staff update once staff.operational.manage is denied');
+  // Both directions matter. The operational half must stay refused, because
+  // canModifyTargetStaff refuses the same account on edit, deactivate and
+  // reactivate of a cashier; admitting creation here would be incoherent.
+  result = await request(app).post('/api/staff').set(adminOwnerA).send({
+    name: 'Cashier by limited owner', email: 'limited-owner-cashier@test.local', password: 'StrongPass1', role: 'cashier',
+  });
+  assertEqual(result.status, 403, 'staff.privileged.manage alone must not create operational staff');
+  assertEqual(result.body.error, 'This account cannot create operational staff accounts',
+    'the refused operational creation says why');
   result = await request(app).post('/api/staff').set(adminOwnerA).send({
     name: 'Owner created by limited owner', email: 'limited-owner-created@test.local', password: 'StrongPass1', role: 'owner',
   });

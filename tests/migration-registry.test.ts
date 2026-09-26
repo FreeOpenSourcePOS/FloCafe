@@ -77,8 +77,8 @@ function main() {
 
   // The tail is what runMigrations() reports as the app's supported version,
   // so a migrated store and a fresh install must agree on the same number.
-  initDatabase();
   try {
+    initDatabase();
     assertEqualOrThrow(
       getCurrentSchemaVersion(),
       PRISTINE_REGISTRY[PRISTINE_REGISTRY.length - 1].version,

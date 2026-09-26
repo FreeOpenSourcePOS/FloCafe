@@ -2211,6 +2211,9 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
 
     // An unpaid, unsplit bill's items are the order's active items, so the fresh
     // sum is the only basis: the tax it rescales is a sum over those same items.
+    // The read and the recomputation below sit outside `withTxn` on purpose, and
+    // are safe only because no `await` separates them: adding one opens a window
+    // where the items change between what was summed and what is written.
     const totals = calculateOrderTotals(db, bill.order_id);
     let discountAmount = 0;
     if (type === 'percentage') {

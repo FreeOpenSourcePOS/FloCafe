@@ -2230,7 +2230,7 @@
     "selfAccessWarningStaffPrivileged": "Guardar isto remove o seu próprio acesso às contas de proprietário e gerente.",
     "selfAccessWarningStaffOperational": "Guardar isto remove o seu próprio acesso às contas da equipa.",
     "selfAccessWarningSettings": "Guardar isto remove o seu próprio acesso às definições da loja.",
-    "administrationUnreachable": "Esta alteração deixaria nenhuma conta capaz de gerir a equipa, as permissões ou as definições da loja. Conceda primeiro estas permissões a outro proprietário ativo.",
+    "administrationUnreachable": "Esta alteração não deixaria nenhuma conta capaz de gerir a equipa, as permissões ou as definições da loja. Conceda primeiro estas permissões a outro proprietário ativo.",
     "selfPrivilegeChangeTitle": "Confirme esta alteração ao seu próprio acesso",
     "selfPrivilegeChangePrompt": "Esta alteração muda o seu próprio acesso à equipa, às permissões ou às definições da loja. Introduza o seu PIN para continuar, ou peça a outro proprietário que faça esta alteração.",
     "selfPrivilegeNotConfirmed": "Não foi possível confirmar esta alteração ao seu próprio acesso, por isso nada foi guardado. Defina um PIN para a sua conta ou peça a outro proprietário que faça esta alteração.",

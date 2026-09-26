@@ -125,6 +125,25 @@ function run(): void {
     (source.match(/useRef\(/g) || []).length === 1,
     'the matrix declares exactly one latch, so there is no second attempt-scoped guard to drift',
   );
+
+  // 5. The PIN re-submission must use the request field this repository
+  // actually reads. A staff PIN authorising a privileged write is
+  // `override_pin` (bills, orders, refunds); `master_pin` is the device
+  // break-glass factor. A third spelling would 428 forever with no way out.
+  assertOrThrow(
+    /override_pin: pin/.test(source),
+    'the 428 re-submission carries the staff PIN in the repository\'s override_pin field',
+  );
+  assertOrThrow(
+    !/\{\s*pin\s*\}\s*\}/.test(source) && !/\bpin:\s*pin\b/.test(source),
+    'the matrix never invents a bare `pin` request field',
+  );
+  for (const file of ['main/routes/orders.ts', 'main/routes/bills.ts', 'main/routes/refunds.ts']) {
+    assertOrThrow(
+      fs.readFileSync(path.join(ROOT, file), 'utf8').includes('override_pin'),
+      `${file} reads override_pin, so that is the name the client must send`,
+    );
+  }
   assertOrThrow(
     !/status === 400[\s\S]{0,200}\.data\?\.error/.test(source),
     'the 400 refusal never falls through to the server-supplied error text',

@@ -162,7 +162,10 @@ export function PermissionMatrix({ staff }: { staff: Staff[] }) {
     const body = {
       revision: activePayload.revision,
       overrides: Object.entries(overrides).map(([permission_id, effect]) => ({ permission_id, effect })),
-      ...(pin ? { pin } : {}),
+      // A staff PIN authorising a privileged write is `override_pin` everywhere
+      // in this repository (bills, orders, refunds); `master_pin` is the
+      // device break-glass factor, and bare `pin` is not a request field here.
+      ...(pin ? { override_pin: pin } : {}),
     };
     try {
       if (mode === 'role') {

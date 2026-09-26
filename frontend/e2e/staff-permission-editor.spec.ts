@@ -30,7 +30,7 @@ const OWNER = { id: 'e2e-owner', name: 'E2E Owner', email: 'owner@flo.local', ro
 
 type PutResponse = { status: number; body: unknown };
 
-type PutBody = { revision?: string; overrides: { permission_id: string; effect: string }[]; pin?: string };
+type PutBody = { revision?: string; overrides: { permission_id: string; effect: string }[]; override_pin?: string };
 type PutRequest = { url: string; body: PutBody };
 
 /** How the save endpoint answers. Returning `null` accepts the write. */
@@ -312,7 +312,7 @@ test('a rejected save states the invariant and the remedy instead of a bare erro
 
 test('a 428 prompts for the PIN and re-submits with it exactly once', async ({ page }) => {
   const { putRequests } = await startOwnerSession(page, {
-    putResponder: (body) => (body.pin
+    putResponder: (body) => (body.override_pin
       ? null
       : { status: 428, body: { error: 'PIN required', code: 'self_privilege_change_requires_factor', requires: 'pin' } }),
   });
@@ -330,8 +330,8 @@ test('a 428 prompts for the PIN and re-submits with it exactly once', async ({ p
   await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
 
   await expect.poll(() => putRequests.length).toBe(2);
-  expect(putRequests[0].body.pin).toBeUndefined();
-  expect(putRequests[1].body.pin).toBe('1234');
+  expect(putRequests[0].body.override_pin).toBeUndefined();
+  expect(putRequests[1].body.override_pin).toBe('1234');
   await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId('permission-save-refusal')).toHaveCount(0);
 
@@ -387,7 +387,7 @@ test('a mistyped PIN leaves the prompt available again on the next save', async 
   // Refuse every attempt that is not carrying the right PIN, so the owner
   // mistypes, and then has to be able to try again without reloading.
   const { putRequests } = await startOwnerSession(page, {
-    putResponder: (body) => (body.pin === '1234'
+    putResponder: (body) => (body.override_pin === '1234'
       ? null
       : { status: 428, body: { error: 'PIN required', code: 'self_privilege_change_requires_factor', requires: 'pin' } }),
   });
@@ -414,7 +414,7 @@ test('a mistyped PIN leaves the prompt available again on the next save', async 
   await submitPin('1234');
 
   await expect.poll(() => putRequests.length).toBe(4);
-  expect(putRequests[3].body.pin).toBe('1234');
+  expect(putRequests[3].body.override_pin).toBe('1234');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByTestId('permission-save-refusal')).toHaveCount(0);
   // The retry settles on the first correct PIN rather than re-prompting.

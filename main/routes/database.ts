@@ -1,15 +1,16 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
 import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, clearGoogleDriveRestoreBinding, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, getInventoryMovementRows, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, now, throwIfDatabaseMaintenanceAborted, validateInventoryLedgerDatabase, validateInventoryLedgerReplacement, validateInventoryLedgerRows, withTxn, withDatabaseMaintenanceLock } from '../db';
-import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
+import { clearInMemoryRevokedTokens, clearUserAuthCache } from '../middleware/security';
+import { requirePermission } from '../services/authorization';
 import { requireMasterPin } from '../middleware/master-pin';
-import { clearJWTSecretCache } from './auth';
+import { clearJWTSecretCache } from '../security/jwt-secret';
 import * as fs from 'fs';
 import * as path from 'path';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { parsePhoneE164 } from '../lib/phone';
-import { ROLE_ACCESS, isRole } from '../../shared/role-permissions';
+import { isRole } from '../../shared/role-permissions';
 import { randomUUID } from 'node:crypto';
 import { googleDrive } from '../services/google-drive';
 
@@ -42,7 +43,7 @@ function parseImportSchemaVersion(value: unknown): number {
   return /^(?:0|[1-9]\d*)$/.test(raw) ? Number(raw) : -1;
 }
 
-router.get('/export', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.get('/export', requirePermission('database.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
 
@@ -113,7 +114,7 @@ router.get('/export', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Res
   }
 });
 
-router.post('/import', requireRole(...ROLE_ACCESS.owner),
+router.post('/import', requirePermission('database.manage'),
   (req: Request, res: Response, next: () => void) => {
     // Require Master PIN for overwrite or version mismatch to guard destructive replacement.
     const body = req.body as { overwrite?: unknown; data?: Record<string, unknown> } | undefined;
@@ -541,7 +542,7 @@ function getTableColumns(db: Database.Database, tableName: string): string[] {
   }
 }
 
-router.post('/backup', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+router.post('/backup', requirePermission('database.manage'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { path: backupPath, schemaVersion } = await createBackup(undefined, getHttpRequestSignal(req));
     res.json({ 
@@ -556,7 +557,7 @@ router.post('/backup', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyn
   }
 }));
 
-router.get('/download', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+router.get('/download', requirePermission('database.manage'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   let tempDir: string | null = null;
   try {
     const dbPath = getDbPath();
@@ -610,7 +611,7 @@ router.get('/download', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asy
   }
 }));
 
-router.get('/tables', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.get('/tables', requirePermission('database.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const tables = db.prepare(`

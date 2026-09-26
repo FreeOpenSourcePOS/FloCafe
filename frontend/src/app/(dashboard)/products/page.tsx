@@ -18,7 +18,7 @@ import CurrencyAmountInput from '@/components/ui/CurrencyAmountInput';
 import { useConfirm } from '@/hooks/use-confirm';
 import { nameToColor } from '@/lib/image-utils';
 import { useTranslations, type AppConfig } from 'use-intl';
-import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { tenantCan } from '@/lib/permissions';
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 type ProductsKey = keyof AppConfig['Messages']['products'];
@@ -127,7 +127,7 @@ export default function ProductsPage() {
   const fmt = useFormatCurrency();
   const amountFormat = useAmountFormat();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
-  const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
+  const isOwnerOrManager = tenantCan(currentTenant, 'catalog.manage');
 
   const fetchData = async () => {
     try {

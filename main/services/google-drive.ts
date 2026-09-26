@@ -26,7 +26,7 @@ import {
 import type { DatabaseReplacementJournalHandle } from '../db';
 import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from '../middleware/security';
-import { clearJWTSecretCache } from '../routes/auth';
+import { clearJWTSecretCache } from '../security/jwt-secret';
 
 type OAuth2Client = InstanceType<typeof googleAuth.OAuth2>;
 type DriveClient = ReturnType<typeof drive>;

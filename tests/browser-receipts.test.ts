@@ -74,7 +74,7 @@ async function run() {
 
   // #375: prime the shared locale cache so synchronous t() resolves the
   // on-demand bundles in this test process.
-  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th'] as const) {
+  for (const lang of ['en', 'es', 'fr', 'pt', 'ru', 'fa', 'ur', 'it', 'ja', 'zh', 'zh-tw', 'ko', 'id', 'nl', 'hi', 'bn', 'sq', 'vi', 'th', 'ne'] as const) {
     await i18n.loadLocaleMessages(lang);
   }
 
@@ -409,6 +409,30 @@ async function run() {
       sqHtml.includes('Totali i përgjithshëm') &&
       sqHtml.includes('Faleminderit për vizitën!')
     );
+
+    const neTenant = {
+      business_name: 'FloCafe Kathmandu',
+      currency: 'NPR',
+      country: 'NP',
+      timezone: 'Asia/Kathmandu',
+    };
+    const neHtml = generateBillHtml(sampleEnBill, neTenant, { language: 'ne', isReprint: true });
+    assert('NE receipt has lang="ne-NP" and dir="ltr"', neHtml.includes('<html lang="ne-NP" dir="ltr">'));
+    assert('NE labels are Devanagari',
+      neHtml.includes('पुनः छाप्नुहोस्') &&
+      neHtml.includes('बिल #') &&
+      neHtml.includes('कुल जम्मा') &&
+      neHtml.includes('तपाईंको भ्रमणको लागि धन्यवाद!')
+    );
+
+    // The browser receipt is the primary print path, and its body stack was
+    // extended per language by hand, so Bengali was the one merged locale left
+    // without a declared family here. Assert the families the order-slip and
+    // raster stacks already carry.
+    const bnHtml = generateBillHtml(sampleEnBill, { ...neTenant, currency: 'BDT', country: 'BD' }, { language: 'bn', isReprint: true });
+    assert('BN receipt declares the Bengali font families in the order-slip position',
+      bnHtml.includes("'Noto Naskh Arabic', 'Noto Sans Bengali', 'Vrinda', 'Bangla Sangam MN', 'Noto Sans Devanagari'")
+    );
   }
 
   console.log('\nTest Suite 6: Canonical semantic labels and unknown-language fallback');
@@ -571,6 +595,28 @@ async function run() {
       hindiSlip.includes('Noto Sans Devanagari') &&
       hindiSlip.includes('उप-योग') &&
       hindiSlip.includes('कुल योग'),
+    );
+
+    const nepaliSlip = generateOrderSlipHtml(testIranOrder, {
+      title: 'अर्डर स्लिप',
+      subtotal: 'उप-जम्मा',
+      discount: 'छूट',
+      serviceCharge: 'सेवा शुल्क',
+      deliveryCharge: 'डिलिभरी शुल्क',
+      packagingCharge: 'प्याकेजिङ शुल्क',
+      tax: 'कर',
+      total: 'कुल जम्मा',
+    }, {
+      country: 'NP',
+      currency: 'NPR',
+      locale: 'ne-NP',
+      direction: 'ltr',
+    });
+    assert('Nepali order slip carries ne-NP LTR metadata, Devanagari labels, and tenant currency',
+      nepaliSlip.includes('lang="ne-NP" dir="ltr"') &&
+      nepaliSlip.includes('उप-जम्मा') &&
+      nepaliSlip.includes('कुल जम्मा') &&
+      nepaliSlip.includes('रू'),
     );
 
     const bengaliSlip = generateOrderSlipHtml(testIranOrder, {

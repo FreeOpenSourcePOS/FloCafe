@@ -11,7 +11,7 @@ Module._load = function (request, parent, isMain) {
 };
 
 const { buildIdealSchemaDb } = require('../main/db');
-const { assertEqual, assert } = require('./helpers/test-setup');
+const { assertEqualOrThrow, assertOrThrow } = require('./helpers/test-setup');
 
 const db = buildIdealSchemaDb();
 
@@ -36,31 +36,31 @@ function search(q) {
 
 try {
   const hits1 = search('9876543210');
-  assertEqual(hits1.length, 1, `digits "9876543210" finds e164 row`);
-  assert(hits1.includes('c-e164'),      'e164 row returned');
+  assertEqualOrThrow(hits1.length, 1, `digits "9876543210" finds e164 row`);
+  assertOrThrow(hits1.includes('c-e164'),      'e164 row returned');
 
   const hitsUs = search('5551234567');
-  assertEqual(hitsUs.length, 1, `US short digits "5551234567" find c-us only (got ${hitsUs.length})`);
-  assertEqual(hitsUs[0], 'c-us', 'US pretty-format row matched after stripping parens');
+  assertEqualOrThrow(hitsUs.length, 1, `US short digits "5551234567" find c-us only (got ${hitsUs.length})`);
+  assertEqualOrThrow(hitsUs[0], 'c-us', 'US pretty-format row matched after stripping parens');
 
   const hitsUsIntl = search('15551234567');
-  assertEqual(hitsUsIntl.length, 1, `US intl digits "15551234567" find c-us only (got ${hitsUsIntl.length})`);
-  assertEqual(hitsUsIntl[0], 'c-us', 'US pretty-format row matched for intl-digit query');
+  assertEqualOrThrow(hitsUsIntl.length, 1, `US intl digits "15551234567" find c-us only (got ${hitsUsIntl.length})`);
+  assertEqualOrThrow(hitsUsIntl[0], 'c-us', 'US pretty-format row matched for intl-digit query');
 
   const hits2 = search('919876543210');
-  assertEqual(hits2.length, 1, `intl digits "919876543210" match e164 row`);
-  assert(hits2.includes('c-e164'),      'e164 row matched for intl-digit query');
+  assertEqualOrThrow(hits2.length, 1, `intl digits "919876543210" match e164 row`);
+  assertOrThrow(hits2.includes('c-e164'),      'e164 row matched for intl-digit query');
 
   const hits3 = search('1111111111');
-  assertEqual(hits3.length, 0, 'inactive e164 row is excluded by is_active = 1');
+  assertEqualOrThrow(hits3.length, 0, 'inactive e164 row is excluded by is_active = 1');
 
   const hits4 = search('541143210000');
-  assertEqual(hits4.length, 1, `AR digits find c-ar only (got ${hits4.length})`);
-  assertEqual(hits4[0], 'c-ar', 'AR e164 row matched');
+  assertEqualOrThrow(hits4.length, 1, `AR digits find c-ar only (got ${hits4.length})`);
+  assertEqualOrThrow(hits4[0], 'c-ar', 'AR e164 row matched');
 
   const hits5 = search('Carlos');
-  assertEqual(hits5.length, 1, `name LIKE still matches (got ${hits5.length})`);
-  assertEqual(hits5[0], 'c-ar', 'name LIKE branch unchanged');
+  assertEqualOrThrow(hits5.length, 1, `name LIKE still matches (got ${hits5.length})`);
+  assertEqualOrThrow(hits5[0], 'c-ar', 'name LIKE branch unchanged');
 
   db.close();
   console.log('\nAll assertions passed');

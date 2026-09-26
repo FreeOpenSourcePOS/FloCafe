@@ -22,14 +22,14 @@ const { test, describe, before, after, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
 
-const { initDatabase, getDatabase, closeDatabase, createSchema } = require('../main/db');
+const { getDatabase, closeDatabase, createSchema } = require('../main/db');
 const { parsePhoneE164, stripPhoneDigits, normalizeOptionalPhone } = require('../main/lib/phone');
 const { seedSetupProfile, authRoutes } = require('../main/routes/auth');
 const { settingsRoutes } = require('../main/routes/settings');
 const { customerRoutes } = require('../main/routes/customers');
 const { supportTicketRoutes } = require('../main/routes/support-ticket');
 const { whatsappRoutes } = require('../main/routes/whatsapp');
-const { createApp, seedOwnerUser, startServer, api } = require('./helpers/test-setup');
+const { createApp, seedOwnerUser, startServer, api, initTestDb } = require('./helpers/test-setup');
 
 describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
   let app;
@@ -72,7 +72,7 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     if (fs.existsSync(shm)) fs.unlinkSync(shm);
     const marker = path.join(tempDir, '.flo-db-initialized');
     if (fs.existsSync(marker)) fs.unlinkSync(marker);
-    initDatabase();
+    initTestDb();
     ownerAuth = seedOwnerUser(getDatabase());
   });
 

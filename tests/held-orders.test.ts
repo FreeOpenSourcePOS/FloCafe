@@ -24,7 +24,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedCategory, seedProduct, seedTable,
-  api, assert, assertEqual,
+  api, assertOrThrow, assertEqualOrThrow,
   closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
 
@@ -73,25 +73,25 @@ async function main() {
       headers: authHeader
     });
     
-    assertEqual(postRes.status, 200, 'POST /held-orders returns 200');
-    assertEqual(postRes.data.success, true, 'Returns success: true');
-    assert(typeof postRes.data.id === 'string' && postRes.data.id.length > 0, 'POST returns the current held-order identity');
+    assertEqualOrThrow(postRes.status, 200, 'POST /held-orders returns 200');
+    assertEqualOrThrow(postRes.data.success, true, 'Returns success: true');
+    assertOrThrow(typeof postRes.data.id === 'string' && postRes.data.id.length > 0, 'POST returns the current held-order identity');
     console.log('  ✓ POST /held-orders creates successfully');
 
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario B: GET /held-orders returns held orders ───');
     
     const getRes = await api(baseUrl, '/api/held-orders', { headers: authHeader });
-    assertEqual(getRes.status, 200, 'GET /held-orders returns 200');
-    assert(Array.isArray(getRes.data.orders), 'Returns an array of orders');
-    assertEqual(getRes.data.orders.length, 1, 'Array contains one order');
+    assertEqualOrThrow(getRes.status, 200, 'GET /held-orders returns 200');
+    assertOrThrow(Array.isArray(getRes.data.orders), 'Returns an array of orders');
+    assertEqualOrThrow(getRes.data.orders.length, 1, 'Array contains one order');
     
     const held = getRes.data.orders[0];
-    assertEqual(held.tableId, tableId, 'Table ID matches');
-    assertEqual(held.guestCount, 2, 'Guest count matches');
-    assertEqual(held.orderNotes, 'Test Note', 'Notes match');
-    assert(Array.isArray(held.items), 'Items is an array');
-    assertEqual(held.items[0].product.name, 'Latte', 'Items parsed correctly');
+    assertEqualOrThrow(held.tableId, tableId, 'Table ID matches');
+    assertEqualOrThrow(held.guestCount, 2, 'Guest count matches');
+    assertEqualOrThrow(held.orderNotes, 'Test Note', 'Notes match');
+    assertOrThrow(Array.isArray(held.items), 'Items is an array');
+    assertEqualOrThrow(held.items[0].product.name, 'Latte', 'Items parsed correctly');
     console.log('  ✓ GET /held-orders retrieves held order');
 
     console.log('\n─── Scenario B2: fractional quantities can be held ───');
@@ -109,10 +109,10 @@ async function main() {
       body: { tableId: weightedTableId, items: weightedItems },
       headers: authHeader,
     });
-    assertEqual(weightedPost.status, 200, 'POST /held-orders accepts fractional weighted quantity');
+    assertEqualOrThrow(weightedPost.status, 200, 'POST /held-orders accepts fractional weighted quantity');
     const weightedList = await api(baseUrl, '/api/held-orders', { headers: authHeader });
     const weightedHeld = weightedList.data.orders.find((order: any) => order.tableId === weightedTableId);
-    assertEqual(weightedHeld?.items[0].quantity, 1.25, 'Fractional quantity survives storage and parsing');
+    assertEqualOrThrow(weightedHeld?.items[0].quantity, 1.25, 'Fractional quantity survives storage and parsing');
     await api(
       baseUrl,
       `/api/held-orders/${weightedTableId}?heldOrderId=${encodeURIComponent(weightedPost.data.id)}`,
@@ -128,7 +128,7 @@ async function main() {
       },
       headers: authHeader,
     });
-    assertEqual(disallowedFraction.status, 400, 'POST /held-orders rejects fractional quantity for a whole-unit product');
+    assertEqualOrThrow(disallowedFraction.status, 400, 'POST /held-orders rejects fractional quantity for a whole-unit product');
 
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario C: POST /held-orders validates request data ───');
@@ -143,7 +143,7 @@ async function main() {
       const invalidRes = await api(baseUrl, '/api/held-orders', {
         method: 'POST', body, headers: authHeader,
       });
-      assertEqual(invalidRes.status, 400, 'Invalid held-order input returns 400');
+      assertEqualOrThrow(invalidRes.status, 400, 'Invalid held-order input returns 400');
     }
     console.log('  ✓ POST /held-orders rejects malformed input');
 
@@ -151,36 +151,36 @@ async function main() {
     console.log('\n─── Scenario D: DELETE /held-orders/:tableId removes order ───');
 
     const noIdDeleteRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE', headers: authHeader });
-    assertEqual(noIdDeleteRes.status, 200, 'ID-less DELETE returns 200');
-    assertEqual(noIdDeleteRes.data.success, true, 'ID-less DELETE returns success');
-    assertEqual(noIdDeleteRes.data.deleted, false, 'ID-less DELETE is a non-consuming no-op');
-    assertEqual((db.prepare('SELECT status FROM tables WHERE id = ?').get(tableId) as any).status, 'held', 'ID-less DELETE preserves the held table');
-    assertEqual((await api(baseUrl, '/api/held-orders', { headers: authHeader })).data.orders.length, 1, 'ID-less DELETE preserves the held order');
+    assertEqualOrThrow(noIdDeleteRes.status, 200, 'ID-less DELETE returns 200');
+    assertEqualOrThrow(noIdDeleteRes.data.success, true, 'ID-less DELETE returns success');
+    assertEqualOrThrow(noIdDeleteRes.data.deleted, false, 'ID-less DELETE is a non-consuming no-op');
+    assertEqualOrThrow((db.prepare('SELECT status FROM tables WHERE id = ?').get(tableId) as any).status, 'held', 'ID-less DELETE preserves the held table');
+    assertEqualOrThrow((await api(baseUrl, '/api/held-orders', { headers: authHeader })).data.orders.length, 1, 'ID-less DELETE preserves the held order');
     
     const delRes = await api(baseUrl, `/api/held-orders/${tableId}?heldOrderId=${encodeURIComponent(postRes.data.id)}`, { method: 'DELETE', headers: authHeader });
-    assertEqual(delRes.status, 200, 'DELETE /held-orders returns 200');
-    assertEqual(delRes.data.success, true, 'First DELETE returns success');
-    assertEqual(delRes.data.deleted, true, 'First DELETE reports that the row was consumed');
-    assertEqual((db.prepare('SELECT status FROM tables WHERE id = ?').get(tableId) as any).status, 'available', 'First DELETE releases the table');
+    assertEqualOrThrow(delRes.status, 200, 'DELETE /held-orders returns 200');
+    assertEqualOrThrow(delRes.data.success, true, 'First DELETE returns success');
+    assertEqualOrThrow(delRes.data.deleted, true, 'First DELETE reports that the row was consumed');
+    assertEqualOrThrow((db.prepare('SELECT status FROM tables WHERE id = ?').get(tableId) as any).status, 'available', 'First DELETE releases the table');
     
     const verifyRes = await api(baseUrl, '/api/held-orders', { headers: authHeader });
-    assertEqual(verifyRes.data.orders.length, 0, 'Held orders list is empty after deletion');
+    assertEqualOrThrow(verifyRes.data.orders.length, 0, 'Held orders list is empty after deletion');
     console.log('  ✓ DELETE /held-orders consumes the held order and releases the table');
 
     // A second terminal can retain the same held-order snapshot and race the
     // first terminal. It must get an explicit no-op result, not a second
     // consumption signal.
     const staleDeleteRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE', headers: authHeader });
-    assertEqual(staleDeleteRes.status, 200, 'Stale DELETE is a successful no-op');
-    assertEqual(staleDeleteRes.data.success, true, 'Stale DELETE returns success');
-    assertEqual(staleDeleteRes.data.deleted, false, 'Stale DELETE reports that no row was consumed');
-    assertEqual((db.prepare('SELECT status FROM tables WHERE id = ?').get(tableId) as any).status, 'available', 'Stale DELETE preserves the released table');
+    assertEqualOrThrow(staleDeleteRes.status, 200, 'Stale DELETE is a successful no-op');
+    assertEqualOrThrow(staleDeleteRes.data.success, true, 'Stale DELETE returns success');
+    assertEqualOrThrow(staleDeleteRes.data.deleted, false, 'Stale DELETE reports that no row was consumed');
+    assertEqualOrThrow((db.prepare('SELECT status FROM tables WHERE id = ?').get(tableId) as any).status, 'available', 'Stale DELETE preserves the released table');
     console.log('  ✓ Stale DELETE cannot consume the same held order twice');
 
     // Missing credentials must still be rejected before the idempotent
     // deletion path is reached.
     const unauthorizedDeleteRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE' });
-    assertEqual(unauthorizedDeleteRes.status, 401, 'DELETE /held-orders requires authentication');
+    assertEqualOrThrow(unauthorizedDeleteRes.status, 401, 'DELETE /held-orders requires authentication');
     console.log('  ✓ DELETE /held-orders keeps its authorization boundary');
 
     // Replacing a held order for the same table creates a new identity. A
@@ -201,25 +201,25 @@ async function main() {
       headers: authHeader,
     });
     const secondReplacementId = secondReplacement.data.id;
-    assert(firstReplacementId !== secondReplacementId, 'Replacing a held order changes its identity');
+    assertOrThrow(firstReplacementId !== secondReplacementId, 'Replacing a held order changes its identity');
 
     const staleReplacementDelete = await api(
       baseUrl,
       `/api/held-orders/${replacementTableId}?heldOrderId=${encodeURIComponent(firstReplacementId)}`,
       { method: 'DELETE', headers: authHeader },
     );
-    assertEqual(staleReplacementDelete.data.deleted, false, 'Stale identity cannot delete a replacement row');
+    assertEqualOrThrow(staleReplacementDelete.data.deleted, false, 'Stale identity cannot delete a replacement row');
     const replacementList = await api(baseUrl, '/api/held-orders', { headers: authHeader });
     const replacement = replacementList.data.orders.find((order: any) => order.tableId === replacementTableId);
-    assertEqual(replacement?.id, secondReplacementId, 'Replacement row remains listed after stale deletion');
-    assertEqual(replacement?.items[0].product.name, 'Cappuccino', 'Replacement contents remain intact');
+    assertEqualOrThrow(replacement?.id, secondReplacementId, 'Replacement row remains listed after stale deletion');
+    assertEqualOrThrow(replacement?.items[0].product.name, 'Cappuccino', 'Replacement contents remain intact');
 
     const currentReplacementDelete = await api(
       baseUrl,
       `/api/held-orders/${replacementTableId}?heldOrderId=${encodeURIComponent(secondReplacementId)}`,
       { method: 'DELETE', headers: authHeader },
     );
-    assertEqual(currentReplacementDelete.data.deleted, true, 'Current identity can consume the replacement row');
+    assertEqualOrThrow(currentReplacementDelete.data.deleted, true, 'Current identity can consume the replacement row');
 
     // ─── Scenario F: malformed legacy rows do not hide valid rows ───
     console.log('\n─── Scenario F: malformed legacy rows are isolated ───');
@@ -232,11 +232,11 @@ async function main() {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run('ho-malformed', 'tbl-malformed', '{invalid-json', null, 1, '', now(), now());
     const malformedRes = await api(baseUrl, '/api/held-orders', { headers: authHeader });
-    assertEqual(malformedRes.status, 200, 'GET /held-orders succeeds with malformed stored data');
-    assertEqual(malformedRes.data.orders.length, 1, 'Valid stored rows remain visible');
-    assertEqual(malformedRes.data.orders[0].tableId, 'tbl-valid-legacy', 'Valid legacy row is returned');
-    assertEqual(malformedRes.data.skippedCount, 1, 'Malformed row count is reported');
-    assert(!JSON.stringify(malformedRes.data).includes('JSON'), 'Parser details are not exposed');
+    assertEqualOrThrow(malformedRes.status, 200, 'GET /held-orders succeeds with malformed stored data');
+    assertEqualOrThrow(malformedRes.data.orders.length, 1, 'Valid stored rows remain visible');
+    assertEqualOrThrow(malformedRes.data.orders[0].tableId, 'tbl-valid-legacy', 'Valid legacy row is returned');
+    assertEqualOrThrow(malformedRes.data.skippedCount, 1, 'Malformed row count is reported');
+    assertOrThrow(!JSON.stringify(malformedRes.data).includes('JSON'), 'Parser details are not exposed');
     console.log('  ✓ Malformed held orders are isolated');
 
     console.log('\n✅ All held orders tests passed');

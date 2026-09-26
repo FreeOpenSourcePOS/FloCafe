@@ -1,33 +1,78 @@
 # Authentication and authorization
 
 FloCafe authorizes in the backend. The renderer renders, and never decides. This page describes the
-authentication lifecycle, the shape of the authorization surface, and the boundaries the product
-deliberately leaves open.
+authentication lifecycle, the shape of the authorization surface, the configurable permission
+layer, and the boundaries the product deliberately leaves open.
 
-For the in-app UI capability matrix, see
+For the in-app permission editor and UI capability matrix, see
 [the roles and permissions reference](../reference/roles-and-permissions.md). For the product rules
 that constrain authorization, see
 [the product invariants reference](../reference/product-invariants.md).
 
 ## Roles
 
-FloCafe has five fixed staff roles, declared in
+FloCafe has five fixed staff identities, declared in
 [`shared/role-permissions.ts`](../../shared/role-permissions.ts): `owner`, `manager`, `cashier`,
-`server`, and `chef`. There is no role editor, no permission toggle, and no IAM layer. The role a
-request acts under is read from the `users.role` column at request time, not from the token.
+`server`, and `chef`. The identity a request acts under is read from the `users.role` column at
+request time, not from the token, and there is no role editor — an install cannot add a sixth
+identity or rename one.
 
-The same file also exports `ROLE_ACCESS`, a map of nine named role groups that both the backend
-middleware and the renderer use. Route gates pass a group, for example
-`requireRole(...ROLE_ACCESS.ownerManager)`, so the route gate and the displayed matrix are derived
-from one list rather than from two.
+What each identity is *allowed to do* is a separate, configurable layer. See
+[Configurable permissions](#configurable-permissions) below.
+
+`shared/role-permissions.ts` also exports `ROLE_ACCESS`, a map of nine named role groups. Those
+groups now serve two purposes: they are the *shipped default* `defaultRoles` values in
+[`shared/permissions.ts`](../../shared/permissions.ts) (`PERMISSION_DEFINITIONS`), and they remain
+the direct gate for the small set of context-policy checks described below that are role-based by
+product decision rather than by omission.
+
+## Configurable permissions
+
+Almost every protected action — 245 call sites — is gated by `requirePermission(id)` or
+`requireAnyPermission(...ids)` from
+[`main/services/authorization.ts`](../../main/services/authorization.ts), not by a fixed role
+list. `requireRole` (in `main/middleware/security.ts`) still exists, but a static audit test
+(`tests/authorization-static-audit.test.ts`) fails the build if a new call site under
+`main/routes/` uses it; the few remaining direct role checks are reviewed context policy, covered
+in their own sections below (KDS station/category scope, refund approver identity, the
+override-PIN holder for item cancel/void, and the last-active-owner/staff-target rule).
+
+**Resolution.** For every permission id, `resolveEffectivePermissions(userId)` evaluates, in
+order: the protected-owner rule (for `authorization.manage` and `staff.privileged.manage` only,
+always true for an active owner and never grantable to anyone else); an explicit user override;
+an explicit role override; then the shipped default. It re-reads current SQLite state — an
+`Authorization` header's JWT role claim is never authoritative, and neither is a cached
+`permission_ids` list. `hasPermission(userId, id)` and `requirePermission(id)` are thin wrappers
+around this resolver; `requireAnyPermission(...ids)` passes if any one resolves true.
+
+**Storage.** `role_permission_overrides` and `user_permission_overrides` are sparse override
+tables (schema migration v93): a missing row means "use the shipped default," so a permission
+introduced by a later upgrade is judged on its own reviewed default rather than inheriting
+whatever an old override happened to resolve to. `authorization_audit_log` records every write:
+actor, target (role or user), permission id, previous effect, next effect. Writes go through the
+owner-only `/api/authorization` API, one SQLite transaction per save, gated on a last-seen
+`revision` string to reject a stale concurrent editor with `409` instead of silently overwriting
+it.
+
+**Migration guarantee.** The shipped defaults in `PERMISSION_DEFINITIONS` were derived from the
+`ROLE_ACCESS` groups the routes used before this layer existed, so an installation with zero
+override rows resolves identically to the fixed-role system it replaced. `authorization.manage`
+and `staff.privileged.manage` are the two exceptions: they are `configurable: false` and always
+resolve for an active owner, so an override can never remove the last administration path or hand
+owner/manager account control to another role.
+
+See [the roles and permissions reference](../reference/roles-and-permissions.md) for the editor
+itself, the full permission catalog rendered as a matrix, and the owner-only management API.
 
 ## JWT lifecycle
 
 **Secret.** `getJWTSecret()` in
-[`main/routes/auth.ts`](../../main/routes/auth.ts) reads `process.env.JWT_SECRET` when set and
+[`main/security/jwt-secret.ts`](../../main/security/jwt-secret.ts) reads `process.env.JWT_SECRET` when set and
 otherwise reads the `jwt_secret` row in the `settings` table, generating one on first launch. The
 value is cached in a module-level variable, so each install has its own secret and a token from
-one install does not validate against another.
+one install does not validate against another. That module owns the only copy of the cache;
+`clearJWTSecretCache()` in the same module invalidates it, and a restore that restored a rotated
+secret must go through it or pre-rotation tokens would keep validating.
 
 **Issuance.** `jwt.sign` runs on login and on the token-refresh paths. A token without the remember
 option expires in 24 hours; with it, in 10 days.
@@ -63,24 +108,33 @@ security gap.
 
 ## The shape of the authorization surface
 
-There is no single authorization layer to read. Authorization is expressed as roughly 225
-`requireRole(` call sites across 31 files in `main/routes/`, and a route gate is not the only way a
-role is checked. This section exists because the number matters when you change an endpoint.
+There is no single authorization layer to read. Authorization is expressed as roughly 245
+`requirePermission(`/`requireAnyPermission(` call sites across `main/routes/`, plus a small,
+reviewed set of direct role checks left in place as context policy (see
+[Configurable permissions](#configurable-permissions)). A gate is not the only way access is
+checked. This section exists because the shape matters when you change an endpoint, not because
+the count does — unlike the fixed-role predecessor, the count moves in both directions as an
+owner-configurable feature area is added or a formerly-fixed check gets its own permission id.
 
-**Router-level gates.** The common case. `requireRole` is a factory that returns Express middleware
-and must follow `requireAuth`. It answers 401 when there is no authenticated user and 403 when the
-role is not in the allowed list.
+**Router-level gates.** The common case. `requirePermission(id)` is a factory that returns Express
+middleware and must follow `requireAuth`. It answers 401 when there is no authenticated user and
+403 when the resolved effective permission set does not include `id`.
 
-**Inline gates on the app object.** Nine endpoints are registered directly on `app` rather than on
+**Inline gates on the app object.** Seven endpoints are registered directly on `app` rather than on
 a router, in [`main/routes/index.ts`](../../main/routes/index.ts). A static search for
 `router.<verb>` does not find them.
 
-**Gates inside transaction bodies.** The most important case. Some endpoints perform the role check
-inside the `withTxn` callback, after the transaction opens, using the actor's role read from the
-database in the same transaction. `PATCH /api/orders/:orderId/items/:itemId/cancel` and the matching
-`PATCH /api/orders/:orderId/items/:itemId/restore` endpoint do this. The check cannot be hoisted
-into middleware without changing the read the decision is based on, and it is invisible to
-anything that inspects the route's middleware chain.
+**Gates inside transaction bodies.** The most important case. Some endpoints perform the
+permission check inside the `withTxn` callback, after the transaction opens, using
+`hasPermission(actorId, id)` against state read in the same transaction. `PATCH
+/api/orders/:orderId/items/:itemId/cancel` and the matching `.../restore` endpoint in
+`main/routes/orders.ts` do this, and
+the override-PIN path additionally requires the presenting user to satisfy `hasRole(role,
+ROLE_ACCESS.ownerManager)` — a deliberate context-policy role check, not a permission, because the
+override PIN belongs to a person acting in an owner/manager capacity regardless of what their
+`orders.item.void`/`orders.item.restore` grant says. The check cannot be hoisted into middleware
+without changing the read the decision is based on, and it is invisible to anything that inspects
+the route's middleware chain.
 
 **KDS WebSocket authorization.** The KDS socket authenticates with the same bearer token but
 authorizes per message. See below.
@@ -95,8 +149,8 @@ own.
 | Server | Middleware | Shape |
 | --- | --- | --- |
 | `:3001` | `requireAuth` in [`main/server.ts`](../../main/server.ts) | Guards `/api`, with an unauthenticated-path allowlist, then revocation, verify, cached user lookup, staleness. |
-| `:3002` | `requireAuth` closure inside the server factory in [`main/kds-server.ts`](../../main/kds-server.ts) | Revocation, verify, uncached user lookup, staleness, then the kitchen role check and station resolution. |
-| `:3003` | `requireServerAppAuth` in [`main/server-app.ts`](../../main/server-app.ts) | 404-when-disabled, then revocation, verify, uncached user lookup, staleness, then the Server App role check. |
+| `:3002` | `requireAuth` closure inside the server factory in [`main/kds-server.ts`](../../main/kds-server.ts) | Revocation, verify, uncached user lookup, staleness, then `hasPermission(user.id, 'kitchen.use')` and station resolution. |
+| `:3003` | `requireServerAppAuth` in [`main/server-app.ts`](../../main/server-app.ts) | 404-when-disabled, then revocation, verify, uncached user lookup, staleness, then `hasPermission(user.id, 'server-app.use')`. |
 
 The three already differ in one observable way. `:3001` reads user active status, role, and
 `tokens_valid_after` through `getUserAuthStatus`, which caches for 30 seconds. `:3002` and `:3003`
@@ -136,12 +190,16 @@ the intended scoping, not an oversight.
 
 ## KDS station and category narrowing
 
-KDS access is role-gated to `ROLE_ACCESS.kitchen` (owner, manager, chef) and then narrowed twice
-more, in [`main/services/kds.ts`](../../main/services/kds.ts).
+KDS access requires `hasPermission(userId, 'kitchen.use')` (shipped to owner, manager, chef, and
+independently configurable) and is then narrowed twice more, in
+[`main/services/kds.ts`](../../main/services/kds.ts).
 
-**Category narrowing.** Owner and manager receive an empty `categoryIds` array, which means
-unrestricted. A chef receives the `category_ids` recorded on the user row. A chef whose item's
-category is not in that list is refused.
+**Category narrowing.** Whether the caller is unrestricted is decided by
+`hasRole(role, ROLE_ACCESS.ownerManager)` — a deliberate role check, not a permission, because
+category scope is about which identity the KDS trusts to see the whole kitchen, independent of
+whatever `kitchen.use` an owner may have granted to some other role. Owner and manager receive an
+empty `categoryIds` array, which means unrestricted. A chef receives the `category_ids` recorded on
+the user row. A chef whose item's category is not in that list is refused.
 
 **Station narrowing.** The user's assigned stations come from `getUserKdsStationIds`. If station
 assignments are configured for the user and the resolved list is empty, authentication fails rather
@@ -156,11 +214,11 @@ the transaction boundary or move this check above it.
 
 ## Server App authorization
 
-The standalone Server App on `:3003` is a filtered proxy. It is gated twice: the role list is
-`ROLE_ACCESS.serverApp` (server, manager, owner), and when the feature is disabled every route
-returns 404 rather than 403, so a disabled surface is not discoverable. The 404 check appears in
-three places in `main/server-app.ts`, including the one that decides whether a path is proxied at
-all.
+The standalone Server App on `:3003` is a filtered proxy. It is gated twice: `hasPermission(user.id,
+'server-app.use')`, shipped by default to server, manager, and owner and independently
+configurable, and when the feature is disabled every route returns 404 rather than 403, so a
+disabled surface is not discoverable. The 404 check appears in three places in
+`main/server-app.ts`, including the one that decides whether a path is proxied at all.
 
 ## Audit attribution
 
@@ -170,8 +228,8 @@ movements record the same attribution: `applyStockChange` and `applySupplyStockC
 an `actorUserId` and throw rather than write a movement without one.
 
 This is the answer to "who did this", and it is why orders are not hidden between staff. The
-authorization model restricts by role and, for kitchen work, by station and stage. It does not
-restrict by who created a record. See
+authorization model restricts by permission and, for kitchen work, by station and stage. It does
+not restrict by who created a record. See
 [the product invariants reference](../reference/product-invariants.md).
 
 ## Fail-closed inventory behaviour

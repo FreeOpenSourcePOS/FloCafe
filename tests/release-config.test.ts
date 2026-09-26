@@ -849,7 +849,7 @@ exit 1
   const winArtifact = build?.win?.artifactName;
   assert.ok(typeof winArtifact === 'string' && winArtifact.includes('${arch}') && winArtifact.includes('win') && !/\s/.test(winArtifact.replace(/\$\{[^}]+\}/g, '')), `win artifact template must be safe: ${JSON.stringify(winArtifact)}`);
 
-  const matrixWorkflow = loadWorkflow('nightly-release.yml');
+  const matrixWorkflow = loadWorkflow('full-cross-platform-matrix.yml');
   const matrixTriggers = matrixWorkflow.on || matrixWorkflow['true'];
   assert.deepEqual(matrixTriggers.push.branches, ['main']);
   assert.ok(matrixTriggers.workflow_dispatch !== undefined);

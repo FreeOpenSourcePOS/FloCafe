@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import { deleteRecipe, getRecipeByProduct, listRecipes, saveRecipe } from '../services/recipes';
 
 const router = Router();
@@ -13,7 +12,7 @@ function sendError(res: Response, error: unknown): void {
   res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : details.message });
 }
 
-router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
+router.get('/', requirePermission('supplies.manage'), (_req: Request, res: Response) => {
   try {
     res.json({ recipes: listRecipes(getDatabase()) });
   } catch (error: unknown) {
@@ -21,7 +20,7 @@ router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: R
   }
 });
 
-router.get('/product/:productId', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/product/:productId', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const recipe = getRecipeByProduct(getDatabase(), String(req.params.productId));
     res.json({ recipe });
@@ -30,7 +29,7 @@ router.get('/product/:productId', requireRole(...ROLE_ACCESS.ownerManager), (req
   }
 });
 
-router.put('/product/:productId', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.put('/product/:productId', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const recipe = saveRecipe(getDatabase(), {
@@ -45,7 +44,7 @@ router.put('/product/:productId', requireRole(...ROLE_ACCESS.ownerManager), (req
   }
 });
 
-router.delete('/product/:productId', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.delete('/product/:productId', requirePermission('supplies.manage'), (req: Request, res: Response) => {
   try {
     deleteRecipe(getDatabase(), String(req.params.productId));
     res.json({ success: true });

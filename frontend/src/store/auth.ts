@@ -33,6 +33,7 @@ interface AuthState {
   selectTenant: (tenantId: number) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => Promise<void>;
+  refreshAuthContext: () => Promise<void>;
   updateCurrentTenant: (updates: Partial<Tenant>) => void;
 }
 
@@ -124,6 +125,18 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.setItem('tenant', JSON.stringify(updated));
       return { currentTenant: updated };
     });
+  },
+
+  refreshAuthContext: async () => {
+    const state = useAuthStore.getState();
+    if (!state.token) return;
+    const { data } = await api.get('/auth/me');
+    const tenants: Tenant[] = data.tenants || [];
+    const currentTenant = state.currentTenant
+      ? tenants.find((tenant) => tenant.id === state.currentTenant?.id) ?? null
+      : (tenants.length === 1 ? tenants[0] : null);
+    if (currentTenant) localStorage.setItem('tenant', JSON.stringify(currentTenant));
+    set({ user: data.user, tenants, currentTenant });
   },
 
   loadFromStorage: async () => {

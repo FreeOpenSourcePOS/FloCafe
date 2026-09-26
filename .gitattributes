@@ -1,0 +1,4 @@
+# Compared byte for byte against regenerated output, so a CRLF checkout must not
+# rewrite it. `parseGoldenBlocks` also normalises line endings on read, which is
+# what protects an already-checked-out working tree.
+tests/fixtures/receipt-columns/golden-receipt-columns-v1.txt text eol=lf

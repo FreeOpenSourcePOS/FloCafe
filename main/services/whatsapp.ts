@@ -286,7 +286,11 @@ function cancelInFlightWhatsAppWork(): void {
 async function waitForWhatsAppWork(): Promise<void> {
   const drain = (async () => {
     while (inFlightWhatsAppWork.size > 0) {
-      await Promise.allSettled([...inFlightWhatsAppWork]);
+      // Keys, not entries: the key is the in-flight operation. Spreading the Map
+      // yields [operation, cancel] entry arrays, which allSettled treats as
+      // non-thenable, so the loop would spin on microtasks and starve the timer
+      // that bounds this drain.
+      await Promise.allSettled([...inFlightWhatsAppWork.keys()]);
     }
   })();
   void drain.catch(() => {});

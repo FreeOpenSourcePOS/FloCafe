@@ -223,7 +223,7 @@ function validateMerchantTemplateTextSafe(raw: string): boolean {
 // 2–4. Export/import over HTTP (owner role) + round-trip parity
 // ---------------------------------------------------------------------------
 
-const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 try {
   initDatabase();
 } catch (error: any) {
@@ -232,6 +232,15 @@ try {
     process.exit(77);
   }
   throw error;
+}
+
+// requirePermission() resolves effective permissions from a real users row
+// keyed by the JWT's userId — the token alone is not authoritative.
+for (const role of ['owner', 'cashier']) {
+  getDatabase().prepare(
+    `INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, 'unused', ?, 1, ?, ?)`
+  ).run(`actor-${role}`, `actor-${role}`, `actor-${role}@test.local`, role, now(), now());
 }
 
 const express = require('express');

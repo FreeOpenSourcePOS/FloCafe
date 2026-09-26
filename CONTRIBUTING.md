@@ -155,7 +155,7 @@ FloCafe runs on real business data that must survive software upgrades.
 
 ## Translations and i18n
 
-FloCafe currently provides translations for English (`en`), Spanish (`es`), French (`fr`), Brazilian Portuguese (`pt`), Russian (`ru`), Filipino (`fil`), Turkish (`tr`), Persian (`fa`, including RTL support), Arabic (`ar`, including RTL support), Urdu (`ur`, including RTL support), German (`de`), Italian (`it`), Japanese (`ja`), Simplified Chinese (`zh`), Traditional Chinese for Taiwan (`zh-tw`), Korean (`ko`), Bahasa Indonesia (`id`), Dutch (`nl`), Hindi (`hi`), Bengali/Bangla (`bn`), Albanian (`sq`), Vietnamese (`vi`), and Thai (`th`).
+FloCafe currently provides translations for English (`en`), Spanish (`es`), French (`fr`), Brazilian Portuguese (`pt`), Russian (`ru`), Filipino (`fil`), Turkish (`tr`), Persian (`fa`, including RTL support), Arabic (`ar`, including RTL support), Urdu (`ur`, including RTL support), German (`de`), Italian (`it`), Japanese (`ja`), Simplified Chinese (`zh`), Traditional Chinese for Taiwan (`zh-tw`), Korean (`ko`), Bahasa Indonesia (`id`), Dutch (`nl`), Hindi (`hi`), Bengali/Bangla (`bn`), Albanian (`sq`), Vietnamese (`vi`), Thai (`th`), and Nepali (`ne`).
 
 - **Existing languages:** Narrowly scoped fixes and improvements to existing translation strings are always welcome. Verify changes with `npm run i18n:check`.
 - **New languages:** Adding an entirely new language requires maintainer coordination through an issue first.

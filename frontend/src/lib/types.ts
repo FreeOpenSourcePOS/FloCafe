@@ -1,5 +1,6 @@
 import type { Language } from '@/lib/i18n';
 import type { CurrencyDisplay, DigitMode, CalendarMode } from '@/lib/countries';
+import type { PermissionId } from '../../../shared/permissions';
 
 export interface User {
   id: number;
@@ -24,6 +25,8 @@ export interface Tenant {
   plan: string;
   status: string;
   role?: string;
+  permission_ids?: PermissionId[];
+  authorization_revision?: string;
   language?: Language;
   /** Raw backend-authoritative print policies included in auth bootstrap. */
   bill_language_policy?: string | null;

@@ -410,3 +410,64 @@ test('frontend split resolution excludes void adjustment tax evidence', () => {
     { title: 'Legacy Tax', rate: 2, amount: 0.1 },
   ]);
 });
+
+test('backend resolution excludes void adjustment tax evidence', () => {
+  const document = {
+    tax_amount: 0.1,
+    tax_breakdown: [],
+    items: [
+      { status: 'pending', tax_snapshot: null, tax_breakdown: [{ title: 'Legacy Tax', rate: 2, amount: 0.1 }] },
+      { status: 'voided', tax_snapshot: null, tax_breakdown: [{ title: 'Legacy Tax', rate: 2, amount: 0.1 }] },
+      { status: 'void_adjustment', tax_snapshot: null, tax_breakdown: [{ title: 'Legacy Tax', rate: 2, amount: -0.1 }] },
+    ],
+  };
+  assert.deepEqual(resolveBackendTaxComponents(document), [
+    { title: 'Legacy Tax', rate: 2, amount: 0.1 },
+  ]);
+});
+
+test('refunded items are excluded from printed per-rate tax lines on both print paths', () => {
+  // The refund is already deducted from the stored tax amount and the order
+  // total, so the per-rate lines printed for a bill with a refunded item have
+  // to agree: the browser path used to keep the refunded item and print 30
+  // where the Electron path printed 10.
+  const document = {
+    subtotal: 200,
+    tax_amount: 10,
+    total: 210,
+    tax_breakdown: [],
+    items: [
+      { status: 'served', tax_snapshot: null, tax_breakdown: [{ title: 'GST', rate: 5, amount: 10 }] },
+      { status: 'refunded', tax_snapshot: null, tax_breakdown: [{ title: 'GST', rate: 5, amount: 20 }] },
+    ],
+  };
+  const expected = [{ title: 'GST', rate: 5, amount: 10 }];
+  assert.deepEqual(resolveBackendTaxComponents(document), expected);
+  assert.deepEqual(resolveFrontendTaxComponents(document), expected);
+  assert.equal(
+    expected.reduce((sum, component) => sum + component.amount, 0),
+    document.tax_amount,
+  );
+});
+
+test('bills without a refunded item print byte-identical tax lines on both print paths', () => {
+  const document = {
+    subtotal: 200,
+    tax_amount: 12,
+    total: 212,
+    tax_breakdown: [],
+    items: [
+      { status: 'served', tax_snapshot: null, tax_breakdown: [{ title: 'GST', rate: 5, amount: 10 }] },
+      { status: 'pending', tax_snapshot: null, tax_breakdown: [{ title: 'GST', rate: 5, amount: 2 }] },
+      { status: 'cancelled', tax_snapshot: null, tax_breakdown: [{ title: 'VAT', rate: 12, amount: 3 }] },
+      { status: 'voided', tax_snapshot: null, tax_breakdown: [{ title: 'VAT', rate: 12, amount: 4 }] },
+      { status: 'void_adjustment', tax_snapshot: null, tax_breakdown: [{ title: 'VAT', rate: 12, amount: -5 }] },
+    ],
+  };
+  // Pinned, not just parity: if the shared terminal-status predicate lost an
+  // entry, both paths would drift together and a parity-only assertion would
+  // still pass while a printed bill silently gained a terminal item's tax.
+  const expected = JSON.stringify([{ title: 'GST', rate: 5, amount: 12 }]);
+  assert.equal(JSON.stringify(resolveBackendTaxComponents(document)), expected);
+  assert.equal(JSON.stringify(resolveFrontendTaxComponents(document)), expected);
+});

@@ -117,6 +117,32 @@ selector would fail the check for every other locale too.
 The pattern to follow: put the noun in a form that works with any number, and let the count follow as
 an argument.
 
+## An order-number placeholder is never welded to a word
+
+`{number}` names an order number, and the number must be introduced by punctuation or a space, never
+by a letter or combining mark. In a verb-final language the failure is silent and reads as a
+mangled word: English `Adding items to order #{number}` became
+`अर्डर # मा वस्तुहरू थप्दै{number}` in Nepali, which renders as
+`अर्डर # मा वस्तुहरू थप्दैA-12`.
+
+ICU argument parity cannot catch this. The placeholder is present, its name is unchanged, and
+`npm run i18n:check` passes; only the position is wrong. `tests/translations.test.ts` therefore
+asserts across every registered locale that the character before `{number}` is not a letter or
+combining mark, which covers this class for all locales rather than for one.
+
+A space before `{number}` is legitimate. Persian and Arabic use `شماره {number}`, and
+`№{number}` in Russian is also correct.
+
+## Devanagari spelling: the visarga in पुनः
+
+Nepali spells "again" `पुनः` with the visarga, U+0903, not with an ASCII colon. `पुन:` looks
+close enough in a diff to be overlooked, and it renders as a visibly wrong glyph on a thermal
+receipt. The same applies to the matra in a trailing syllable, where a base consonant must keep
+the marks that attach to it.
+
+`tests/translations.test.ts` rejects a `ne.json` value containing `पुन:` and requires at least one
+`पुनः`, so the spelling cannot silently regress.
+
 ## POS terminology a translator would otherwise get wrong
 
 **Russian.** Orders are `Заказов` in the counter wording, not a pluralised noun. Refund and payment
@@ -129,6 +155,14 @@ wording throughout, as above.
 `Lëvizja e parave të gatshme`, and the counted-versus-expected pair is `Paratë e numëruara` and
 `Paratë e pritura`. Where a term must be abbreviated on a receipt, remember that `Ë` and `ë`
 transliterate to `E` and `e` on a generic thermal printer.
+
+**Nepali.** Subtotal `उप-जम्मा` and grand total `कुल जम्मा` are distinct labels and must stay
+distinct on the receipt. The vegetarian tags are `शाकाहारी` and the non-vegetarian tags
+`मासाहारी`, identical between `pos.*` and `products.*` so the two surfaces never disagree. Cash
+movement uses `नगद जम्मा` for pay-in and `नगद निकासी` for pay-out, identically on the dashboard and on
+the Z-report. Watch the visarga above, and note that Nepali keeps loanwords common in restaurant
+POS use: order is `अर्डर`, takeaway is `टेकअवे`, delivery is `डेलिभरी`, dine-in is
+`रेस्टुरेन्टमा खाने`, and a WebUSB or USB port is untranslated.
 
 ## Verification
 

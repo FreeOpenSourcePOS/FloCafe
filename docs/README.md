@@ -86,6 +86,7 @@ was rejected, so a future reader does not re-open a settled question.
 | [0002-backend-authoritative-security-and-tax.md](decisions/0002-backend-authoritative-security-and-tax.md) | The renderer never decides authorization, payment, or tax. |
 | [0003-desktop-static-export.md](decisions/0003-desktop-static-export.md) | The desktop build is a static export served by Express, with no Next.js server runtime. |
 | [0004-data-only-tax-packs.md](decisions/0004-data-only-tax-packs.md) | Country tax packs are data, never executable plugins. |
+| [0005-owner-configurable-permissions-with-fixed-context-policy.md](decisions/0005-owner-configurable-permissions-with-fixed-context-policy.md) | Permissions are owner-configurable; sensitive context-policy checks are not. |
 
 ## Operator guides
 

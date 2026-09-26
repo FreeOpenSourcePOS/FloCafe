@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
+import { LANGUAGES } from '../src/lib/i18n/languages';
 
 /** Phase 7 browser coverage for visible print-test labels across every locale. */
 
@@ -27,6 +28,8 @@ const LABELS: Record<string, { basic: string; web: string; whatsapp: string }> =
   sq: { basic: 'Dëftesë bazë (termike)', web: 'Printim në web (shfletues)', whatsapp: 'Ndarje përmes WhatsApp' },
   vi: { basic: 'Biên nhận đơn giản (máy in nhiệt)', web: 'In web (trình duyệt)', whatsapp: 'Chia sẻ WhatsApp' },
   th: { basic: 'ใบเสร็จพื้นฐาน (เครื่องพิมพ์ความร้อน)', web: 'พิมพ์เว็บ (เบราว์เซอร์)', whatsapp: 'แชร์ผ่าน WhatsApp' },
+  ne: { basic: 'आधारभूत रसिद (थर्मल)', web: 'वेब प्रिन्ट (ब्राउजर)', whatsapp: 'व्हाट्सएप सेयर गर्नुहोस्' },
+  ar: { basic: 'إيصال أساسي (حراري)', web: 'الطباعة من الويب (المتصفح)', whatsapp: 'مشاركة عبر WhatsApp' },
 };
 
 async function loginAsOwner(page: Page): Promise<void> {
@@ -40,7 +43,11 @@ async function loginAsOwner(page: Page): Promise<void> {
 test('print-test visible labels use the selected UI locale', async ({ page }) => {
   await loginAsOwner(page);
   try {
-    for (const [language, labels] of Object.entries(LABELS)) {
+    // Driven from the registry so a newly registered locale cannot be skipped:
+    // a missing LABELS entry fails here instead of silently dropping coverage.
+    for (const language of Object.keys(LANGUAGES)) {
+      const labels = LABELS[language];
+      expect(labels, `print-test label literals are missing for registered locale ${language}`).toBeTruthy();
       await setLanguage(page, language);
       await page.goto(`${BASE}/print-test`);
       await expect(page.getByRole('button', { name: labels.basic, exact: true })).toBeVisible();

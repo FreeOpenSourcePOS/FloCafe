@@ -20,7 +20,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { dialCodeFor, parsePhone } from '@/lib/phone';
 import { Ltr } from '@/components/layout/Ltr';
-import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { tenantCan } from '@/lib/permissions';
 
 interface WhatsAppStatus {
   enabled: boolean;
@@ -203,7 +203,7 @@ export default function WhatsAppPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const setWhatsappEnabled = usePosSettingsStore((s) => s.setWhatsappEnabled);
   const { currentTenant } = useAuthStore();
-  const isAdmin = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
+  const isAdmin = tenantCan(currentTenant, 'whatsapp.manage');
   const { formatDateTime: fmt, formatTime: fmtClock } = useFormatDate();
 
   const tenantCountry = currentTenant?.country || '';

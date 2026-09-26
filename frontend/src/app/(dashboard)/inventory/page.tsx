@@ -11,7 +11,7 @@ import { Plus, Search, X, Edit, Trash2, ArrowDownCircle, ArrowUpCircle, PackageM
 import { useTranslations } from 'use-intl';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
-import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { tenantCan } from '@/lib/permissions';
 
 const SUPPLY_UNITS = ['each', 'g', 'kg', 'ml', 'l'] as const;
 type SupplyUnit = (typeof SUPPLY_UNITS)[number];
@@ -78,7 +78,7 @@ export default function InventoryPage() {
   const tCommon = useTranslations('common');
   const { formatDate } = useFormatDate();
   const fmtNum = useFormatNumber();
-  const canManage = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
+  const canManage = tenantCan(currentTenant, 'inventory.manage');
 
   const [tab, setTab] = useState('supplies');
   const [supplies, setSupplies] = useState<Supply[]>([]);

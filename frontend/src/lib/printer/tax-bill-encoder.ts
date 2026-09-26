@@ -12,8 +12,10 @@ import { printLabelResolver } from './print-document';
 import { GENERIC_THERMAL_CAPABILITIES, isThermalTextRepresentable, selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
 
 export interface TaxBillOptions {
-  /** 58 mm (2.5", 32 chars) or 80 mm (3.5", 48 chars). Default: 58 */
+  /** 58 mm (2.5", 32 cols) or 80 mm (3.5", 42 cols). Default: 58 */
   paperWidth?: 58 | 80;
+  /** Exact column count the configured printer declares; overrides `paperWidth`. */
+  columns?: number;
   /** Show "Thank you" footer. Default: true */
   showFooter?: boolean;
   /** Business tax registration number */
@@ -48,7 +50,8 @@ export interface TaxBillOptions {
   capabilities?: ThermalPrinterCapabilities;
 }
 
-// Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
+// Paper-size fallback only. Callers that know the configured printer pass
+// `columns`; the number itself lives in `columnsForReceiptPaperSize`.
 const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
 
 function printPoweredByFooter(enc: ReceiptPrinterEncoder, columns: number): void {
@@ -150,7 +153,7 @@ export function buildTaxBillBytes(
     language = 'en',
   } = opts;
   const labelFor = (key: string): string => printLabelResolver(key, language);
-  const cols = CHARS[paperWidth];
+  const cols = opts.columns ?? CHARS[paperWidth];
   const safePrinterText = safePrinterTextForLanguage(language, useUnicode, opts.capabilities);
   const padRow = (left: string, right: string, _columns?: number): string => {
     void _columns;

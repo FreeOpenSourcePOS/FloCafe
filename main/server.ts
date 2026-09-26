@@ -8,7 +8,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
-import { getJWTSecret } from './routes/auth';
+import { getJWTSecret } from './security/jwt-secret';
 import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
 import expressRateLimit from 'express-rate-limit';
@@ -28,14 +28,16 @@ let stopPromise: Promise<void> | null = null;
 let startReject: ((error: Error) => void) | null = null;
 let stopping = false;
 
-/** JWT verification middleware protecting API routes from unauthenticated LAN access. */
-function requireAuth(req: Request, res: Response, next: NextFunction): void {
+/** JWT verification middleware protecting API routes from unauthenticated LAN access. Exported so tests can assert its path exemptions. */
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   // Only protect API routes — static files and SPA fallback must pass through
   if (!req.path.startsWith('/api')) { next(); return; }
   // Health check — unauthenticated
   if (req.path === '/api/health') { next(); return; }
-  // Auth routes handle their own token verification
-  if (req.path.startsWith('/api/auth')) { next(); return; }
+  // Auth routes handle their own token verification. Matched with a trailing
+  // slash so this doesn't also swallow /api/authorization, which relies on
+  // this middleware to populate req.user before its own permission gate runs.
+  if (req.path === '/api/auth' || req.path.startsWith('/api/auth/')) { next(); return; }
   // Allow unauthenticated GET requests for product images (so <img> tags work)
   if (req.path.startsWith('/api/products/') && req.path.endsWith('/image') && req.method === 'GET') { next(); return; }
   // Login-screen support-ticket paths, rate-limited in support-ticket.ts.

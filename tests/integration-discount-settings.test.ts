@@ -165,13 +165,21 @@ async function main() {
   db.prepare(`INSERT INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?) ON CONFLICT(key) DO UPDATE SET value='IN', updated_at=excluded.updated_at`).run(now());
   seedTestData(db);
 
+  // requirePermission() resolves effective permissions from a real users row
+  // keyed by req.user.userId — seed an active owner so settings checks pass.
+  db.prepare(`
+    INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    VALUES ('discount-settings-owner', 'Test Owner', 'discount-settings-owner@test.local', 'unused', 'owner', 1, ?, ?)
+    ON CONFLICT(id) DO NOTHING
+  `).run(now(), now());
+
   // Build a minimal Express app with just the settings and orders routes
   const app = express();
   app.use(express.json());
 
   // Mock auth middleware for testing — must run BEFORE routes
   app.use((req: any, _res: any, next: any) => {
-    req.user = { id: 1, role: 'owner', name: 'Test Owner' };
+    req.user = { userId: 'discount-settings-owner', role: 'owner', name: 'Test Owner' };
     next();
   });
 

@@ -6,12 +6,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Ltr } from '@/components/layout/Ltr';
 import { useAuthStore } from '@/store/auth';
-import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { tenantCan } from '@/lib/permissions';
 import type { CashDrawerMovementType, CashDrawerMovementsModel } from '@/hooks/useCashDrawerMovements';
 
 export function CashDrawerMovementModal({ model }: { model: CashDrawerMovementsModel }) {
   const { currentTenant } = useAuthStore();
-  const canVoid = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
+  const canVoid = tenantCan(currentTenant, 'cash.movements.void');
   const {
     open, setOpen, businessDate, setBusinessDate, loadMovements, movementType, setMovementType,
     amountInput, setAmountInput, reason, setReason, movements, loading, submitting, error,

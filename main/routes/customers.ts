@@ -2,8 +2,7 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { getDatabase, now, getSettingValue } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 
 export function parseCustomer(c: any): any {
@@ -55,7 +54,7 @@ export function getWalletBalance(customerId: string | number | null): number {
 }
 
 // Cleanup endpoint: delete all customers with null IDs - must be before /:id
-router.delete('/admin/cleanup', customerWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.delete('/admin/cleanup', customerWriteRateLimit, requirePermission('customers.cleanup'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const result = db.prepare("DELETE FROM customers WHERE id IS NULL").run();
@@ -66,7 +65,7 @@ router.delete('/admin/cleanup', customerWriteRateLimit, requireRole(...ROLE_ACCE
   }
 });
 
-router.post('/admin/repair-phones', customerWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/admin/repair-phones', customerWriteRateLimit, requirePermission('customers.maintenance'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const tenantCountry = getSettingValue('country') || '';
@@ -109,7 +108,7 @@ router.post('/admin/repair-phones', customerWriteRateLimit, requireRole(...ROLE_
   }
 });
 
-router.get('/alerts', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
+router.get('/alerts', customerReadRateLimit, requirePermission('customers.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const result = db.prepare(`
@@ -125,7 +124,7 @@ router.get('/alerts', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), 
   }
 });
 
-router.get('/', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
+router.get('/', customerReadRateLimit, requirePermission('customers.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     // Aggregate customer order and wallet stats using CTEs and indexes.
@@ -223,7 +222,7 @@ router.get('/', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: 
   }
 });
 
-router.get('/:id', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
+router.get('/:id', customerReadRateLimit, requirePermission('customers.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const customerRaw = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
@@ -248,7 +247,7 @@ router.get('/:id', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (re
   }
 });
 
-router.get('/:id/wallet', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
+router.get('/:id/wallet', customerReadRateLimit, requirePermission('customers.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const customerId = req.params.id as string;
@@ -296,7 +295,7 @@ router.get('/:id/wallet', customerReadRateLimit, requireRole(...ROLE_ACCESS.sale
   }
 });
 
-router.post('/', customerWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
+router.post('/', customerWriteRateLimit, requirePermission('customers.create'), (req: Request, res: Response) => {
   try {
     const { phone, name, email, address, notes, country_code } = req.body;
 
@@ -376,7 +375,7 @@ router.post('/', customerWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req
   }
 });
 
-router.put('/:id', customerWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
+router.put('/:id', customerWriteRateLimit, requirePermission('customers.edit'), (req: Request, res: Response) => {
   try {
     const {
       phone, name, email, address, notes, country_code

@@ -77,9 +77,9 @@ async function run(): Promise<void> {
   );
   assert.deepEqual(Object.keys(exposedApi!).sort(), [
     'backupDatabase', 'checkForUpdates', 'dbApplySafeFixes', 'dbHealthCheck',
-    'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
+    'dbInitialize', 'getAppInfo', 'getApplicationMenu', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getLogTail', 'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
-    'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openKdsWindow', 'openWhatsAppShare', 'platform', 'reportRendererError', 'restartAndInstall',
+    'getWindowState', 'onMenuAction', 'onUpdateStatus', 'onWindowStateChanged', 'openApplicationMenu', 'openKdsWindow', 'openWhatsAppShare', 'platform', 'reportRendererError', 'restartAndInstall',
     'rasterizeKotDocument', 'rasterizePrintDocument', 'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'setThemeEffective',
     'windowAction', 'windowReady',
   ].sort());
@@ -104,6 +104,8 @@ async function run(): Promise<void> {
   await call('getWindowState');
   await call('openWhatsAppShare', 'https://wa.me/15555550100?text=test');
   await call('reportRendererError', { message: 'boom', stack: 'stack', digest: 'd1', route: '/dashboard' });
+  await call('getApplicationMenu');
+  await call('openApplicationMenu', '0', 12, 0);
 
   const receivedStatuses: unknown[] = [];
   const unsubscribe = (exposedApi!['onUpdateStatus'] as (callback: (status: unknown) => void) => () => void)(
@@ -145,6 +147,8 @@ async function run(): Promise<void> {
     { channel: 'get-window-state', args: [] },
     { channel: 'whatsapp-open-share', args: ['https://wa.me/15555550100?text=test'] },
     { channel: 'report-renderer-error', args: [{ message: 'boom', stack: 'stack', digest: 'd1', route: '/dashboard' }] },
+    { channel: 'get-application-menu', args: [] },
+    { channel: 'open-application-menu', args: ['0', 12, 0] },
   ]);
 
   console.log('Electron preload methods expose the expected narrow IPC channels.');

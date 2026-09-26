@@ -10,8 +10,10 @@ import type { Staff } from '@/lib/types';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import { PermissionMatrix } from '@/components/settings/PermissionMatrix';
+import { PermissionAuditLog } from '@/components/settings/PermissionAuditLog';
 import { ROLE_ACCESS, ROLE_KEYS, hasRole } from '@shared/role-permissions';
 import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
+import { tenantCan } from '@/lib/permissions';
 
 const VALID_ROLES = ROLE_KEYS;
 
@@ -44,7 +46,9 @@ export default function StaffPage() {
   const tAuth = useTranslations('auth');
   const tSetup = useTranslations('setup');
   const { currentTenant } = useAuthStore();
-  const canViewPermissionMatrix = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
+  const canManagePermissions = tenantCan(currentTenant, 'authorization.manage');
+  const canManageStaff = tenantCan(currentTenant, 'staff.operational.manage');
+  const canManagePrivilegedStaff = tenantCan(currentTenant, 'staff.privileged.manage');
   const [staff, setStaff] = useState<Staff[]>([]);
   const [kitchenStations, setKitchenStations] = useState<{ id: string; name: string }[]>([]);
   const [kdsEnabled, setKdsEnabled] = useState(true);
@@ -70,8 +74,8 @@ export default function StaffPage() {
 
   const fetchStaff = async () => {
     try {
-      const { data } = await api.get('/staff');
-      setStaff(data.staff || []);
+      const { data } = await api.get(canManagePermissions ? '/authorization/users' : '/staff');
+      setStaff(data.staff || data.users || []);
     } catch {
       toast.error(t('failedToLoad'));
     } finally {
@@ -80,8 +84,8 @@ export default function StaffPage() {
   };
 
   useEffect(() => {
-    api.get('/staff')
-      .then(({ data }) => setStaff(data.staff || []))
+    api.get(canManagePermissions ? '/authorization/users' : '/staff')
+      .then(({ data }) => setStaff(data.staff || data.users || []))
       .catch(() => toast.error(t('failedToLoad')))
       .finally(() => setLoading(false));
     api.get('/kitchen-stations')
@@ -91,7 +95,7 @@ export default function StaffPage() {
       .then(({ data }) => setKdsEnabled(data.setting?.value !== 'false'))
       .catch(() => setKdsEnabled(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canManagePermissions]);
 
   const openAdd = () => {
     setEditingStaff(null);
@@ -194,7 +198,7 @@ export default function StaffPage() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
-        <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('addButton')}</Button>
+        {canManageStaff && <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('addButton')}</Button>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -212,7 +216,7 @@ export default function StaffPage() {
                 {roleLabel(s.role, t)}
               </span>
             </div>
-            <div className="flex flex-wrap gap-2 mt-3">
+            {canManageStaff && (canManagePrivilegedStaff || !hasRole(s.role, ROLE_ACCESS.ownerManager)) && <div className="flex flex-wrap gap-2 mt-3">
               <Button variant="outline" size="sm" onClick={() => openEdit(s)}>
                 <Edit size={14} className="me-1" /> {tCommon('edit')}
               </Button>
@@ -227,20 +231,21 @@ export default function StaffPage() {
               >
                 {s.is_active ? t('deactivate') : t('reactivate')}
               </Button>
-            </div>
+            </div>}
           </div>
         ))}
       </div>
 
       {staff.length === 0 && <p className="text-center text-muted-foreground py-12">{t('empty')}</p>}
 
-      {canViewPermissionMatrix && <PermissionMatrix />}
+      {canManagePermissions && <PermissionMatrix staff={staff} />}
+      {canManagePermissions && <PermissionAuditLog staff={staff} />}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card rounded-2xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
+          <div role="dialog" aria-modal="true" aria-labelledby="staff-modal-title" className="bg-card rounded-2xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{editingStaff ? t('modalTitleEdit') : t('modalTitleAdd')}</h2>
+              <h2 id="staff-modal-title" className="text-lg font-bold">{editingStaff ? t('modalTitleEdit') : t('modalTitleAdd')}</h2>
               <button type="button" onClick={closeForm}><X size={20} className="text-gray-400" /></button>
             </div>
             <form onSubmit={handleSave} className="space-y-4">
@@ -288,7 +293,7 @@ export default function StaffPage() {
                 }}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               >
-                {VALID_ROLES.map((r) => (
+                {VALID_ROLES.filter((role) => canManagePrivilegedStaff || !hasRole(role, ROLE_ACCESS.ownerManager)).map((r) => (
                   <option key={r} value={r} disabled={editingLastActiveOwner && r !== 'owner'}>{roleLabel(r, t)}</option>
                 ))}
               </select>

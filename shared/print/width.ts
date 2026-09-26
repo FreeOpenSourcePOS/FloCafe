@@ -226,9 +226,16 @@ export function wrapToDisplayCells(text: string, columns: number): string[] {
   return lines;
 }
 
-/** Resolve the configured logical columns used by browser/WebUSB receipt settings. */
+/**
+ * Resolve the configured logical columns used by browser/WebUSB receipt settings.
+ *
+ * 80 mm resolves to 42, the exact Font A capacity of a 512-dot (180 dpi) head, so
+ * this equals `generic-escpos-80.fontAColumns` and `epson-tm-series` keeps its
+ * 48 for 576-dot heads. This is the single source both render paths fall back to;
+ * nothing else should restate the number.
+ */
 export function columnsForReceiptPaperSize(paperWidth: ReceiptPaperSize): number {
-  return paperWidth === 58 ? 32 : 48;
+  return paperWidth === 58 ? 32 : 42;
 }
 
 /** Resolve configured text columns independently of physical printer capability. */
@@ -248,6 +255,20 @@ export function columnsForPaperWidth(paperWidth: string | null | undefined): num
     default:
       return null;
   }
+}
+
+/**
+ * Resolve the columns one print path should render at: the exact count the
+ * merchant configured for the printer row, when it names one, otherwise the
+ * paper-size default. Every render path on a given printer goes through this,
+ * so the receipt, the KOT, the tax bill, the raster document, and the browser
+ * page cannot resolve to different numbers for the same printer.
+ */
+export function columnsForConfiguredPrinter(
+  configuredPaperWidth: string | null | undefined,
+  paperWidth: ReceiptPaperSize,
+): number {
+  return columnsForPaperWidth(configuredPaperWidth) ?? columnsForReceiptPaperSize(paperWidth);
 }
 
 /** Keep a native ESC/POS text line inside its logical character budget. */

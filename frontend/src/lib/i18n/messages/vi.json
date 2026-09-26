@@ -1699,6 +1699,8 @@
     "navGroupOperations": "Vận hành",
     "newPin": "PIN mới",
     "no": "Không",
+    "noAccessDatabase": "Bạn không có quyền truy cập công cụ sao lưu và cơ sở dữ liệu.",
+    "noAccessMobileAccess": "Bạn không có quyền truy cập cài đặt truy cập di động.",
     "noAppsToShow": "Chưa có ứng dụng nào để hiển thị.",
     "noCategoriesYet": "Chưa có danh mục nào. Hãy thêm danh mục trong Sản phẩm trước.",
     "noChefsYet": "Chưa có tài khoản đầu bếp đang hoạt động. Hãy thêm đầu bếp trong Nhân viên trước.",
@@ -2211,7 +2213,32 @@
       "serverApp": "Sử dụng Server App độc lập",
       "support": "Liên hệ hỗ trợ và xem chẩn đoán",
       "inventoryManage": "Quản lý vật tư và công thức"
-    }
+    },
+    "editorSubtitle": "Cấu hình mặc định theo vai trò hoặc tạo ngoại lệ cho một nhân viên. Thay đổi sẽ áp dụng từ hành động tiếp theo của họ.",
+    "roleDefaultsTab": "Mặc định vai trò",
+    "staffExceptionTab": "Ngoại lệ nhân viên",
+    "selectStaffPlaceholder": "Chọn một nhân viên",
+    "selectStaffEmptyState": "Chọn một nhân viên để chỉnh sửa quyền của họ.",
+    "effectiveHeader": "Hiệu lực",
+    "overrideHeader": "Ghi đè",
+    "inherit": "Kế thừa",
+    "allow": "Cho phép",
+    "deny": "Từ chối",
+    "protected": "Được bảo vệ",
+    "editorFooterNote": "Các quy tắc kinh doanh nhạy cảm như mã PIN phê duyệt, chủ sở hữu đang hoạt động cuối cùng, hạn chót hoàn tiền và phân công bếp vẫn được áp dụng."
+  },
+  "permissionAudit": {
+    "title": "Lịch sử thay đổi quyền",
+    "subtitle": "Mọi thay đổi từ quyền theo vai trò ở trên, mới nhất trước.",
+    "columnTime": "Thời gian",
+    "columnActor": "Người thực hiện",
+    "columnTarget": "Đối tượng",
+    "columnPermission": "Quyền",
+    "columnChange": "Thay đổi",
+    "targetTypeRole": "Vai trò",
+    "targetTypeUser": "Nhân viên",
+    "empty": "Chưa có thay đổi quyền nào.",
+    "loadMore": "Tải thêm"
   },
   "support": {
     "askAi": "Hỏi trợ lý AI",

@@ -3,7 +3,8 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'node:crypto';
 import { getDatabase, now } from '../db';
-import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
+import { validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
+import { hasPermission, requirePermission } from '../services/authorization';
 import { isValidEmail } from './auth';
 import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
 
@@ -12,10 +13,11 @@ const router = Router();
 const VALID_ROLES: readonly string[] = ROLE_KEYS;
 const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at';
 
-function canModifyTargetStaff(requesterRole: string, targetRole: string): boolean {
-  if (requesterRole === 'owner') return true;
-  if (requesterRole === 'manager') return !hasRole(targetRole, ROLE_ACCESS.ownerManager);
-  return false;
+function canModifyTargetStaff(requesterId: string, targetRole: string): boolean {
+  if (hasRole(targetRole, ROLE_ACCESS.ownerManager)) {
+    return hasPermission(requesterId, 'staff.privileged.manage');
+  }
+  return hasPermission(requesterId, 'staff.operational.manage');
 }
 
 function isOperationalRole(role: string): boolean {
@@ -44,7 +46,7 @@ function normalizeStationIds(value: unknown): string[] | null {
 
 // ── List ──────────────────────────────────────────────────────────────────────
 
-router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/', requirePermission('staff.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE 1=1`;
@@ -76,7 +78,7 @@ router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Re
 
 // ── Get one ───────────────────────────────────────────────────────────────────
 
-router.get('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/:id', requirePermission('staff.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const member = db.prepare(
@@ -102,7 +104,7 @@ router.get('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
-router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req: Request, res: Response) => {
+router.post('/', requirePermission('staff.operational.manage'), authRateLimit(), (req: Request, res: Response) => {
   try {
     const { name, email, password, role, pin, station_ids } = req.body;
     const normalizedEmail = normalizeStaffEmail(email);
@@ -128,9 +130,9 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
       return res.status(400).json({ error: 'Kitchen stations can only be assigned to chef accounts' });
     }
 
-    const requesterRole = (req as any).user.role;
-    if (requesterRole === 'manager' && !isOperationalRole(role)) {
-      return res.status(403).json({ error: `Managers can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})` });
+    const requesterId = (req as any).user.userId;
+    if (!isOperationalRole(role) && !hasPermission(requesterId, 'staff.privileged.manage')) {
+      return res.status(403).json({ error: `This account can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})` });
     }
 
     if (isOperationalRole(role) && hasNonEmptyPin(pin)) {
@@ -191,7 +193,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
 
 // ── Update ────────────────────────────────────────────────────────────────────
 
-router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req: Request, res: Response) => {
+router.put('/:id', requirePermission('staff.operational.manage'), authRateLimit(), (req: Request, res: Response) => {
   try {
     const { name, email, password, role, pin, is_active } = req.body;
     const emailProvided = email !== undefined;
@@ -207,16 +209,16 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
       return res.status(404).json({ error: 'Staff member not found' });
     }
 
-    const requesterRole = (req as any).user.role;
-    if (!canModifyTargetStaff(requesterRole, member.role)) {
-      return res.status(403).json({ error: 'Managers cannot modify owner or manager accounts' });
+    const requesterId = (req as any).user.userId;
+    if (!canModifyTargetStaff(requesterId, member.role)) {
+      return res.status(403).json({ error: 'This account cannot modify privileged staff accounts' });
     }
 
     if (role !== undefined) {
       if (!VALID_ROLES.includes(role)) {
         return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
       }
-      if (role !== member.role && requesterRole !== 'owner') {
+      if (role !== member.role && !hasPermission(requesterId, 'staff.privileged.manage')) {
         return res.status(403).json({ error: 'Only owners can change roles' });
       }
     }
@@ -306,15 +308,15 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (r
 });
 
 // Staff are deactivated rather than hard-deleted to preserve order and print log references.
-router.post('/:id/deactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/deactivate', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const member = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as any;
     if (!member) return res.status(404).json({ error: 'Staff member not found' });
     if (member.is_active === 0) return res.status(400).json({ error: 'Already deactivated' });
 
-    if (!canModifyTargetStaff((req as any).user.role, member.role)) {
-      return res.status(403).json({ error: 'Managers cannot deactivate or reactivate owner or manager accounts' });
+    if (!canModifyTargetStaff((req as any).user.userId, member.role)) {
+      return res.status(403).json({ error: 'This account cannot deactivate or reactivate privileged staff accounts' });
     }
 
     const changedAt = now();
@@ -337,15 +339,15 @@ router.post('/:id/deactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: R
   }
 });
 
-router.post('/:id/reactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.post('/:id/reactivate', requirePermission('staff.operational.manage'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const member = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as any;
     if (!member) return res.status(404).json({ error: 'Staff member not found' });
     if (member.is_active === 1) return res.status(400).json({ error: 'Already active' });
 
-    if (!canModifyTargetStaff((req as any).user.role, member.role)) {
-      return res.status(403).json({ error: 'Managers cannot deactivate or reactivate owner or manager accounts' });
+    if (!canModifyTargetStaff((req as any).user.userId, member.role)) {
+      return res.status(403).json({ error: 'This account cannot deactivate or reactivate privileged staff accounts' });
     }
 
     db.prepare('UPDATE users SET is_active = 1, updated_at = ? WHERE id = ?').run(now(), req.params.id);

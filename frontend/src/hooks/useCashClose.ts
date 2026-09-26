@@ -10,7 +10,7 @@ import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { getCurrencyMinorUnitFactor } from '@/lib/countries';
 import { printerService } from '@/lib/printer/PrinterService';
 import { displayAmountToCents } from '@/lib/money';
-import { businessDateInTimezone } from '@/lib/business-date';
+import { businessDateForInstant } from '@shared/business-date';
 /** Live day aggregates returned by GET /api/reports/x-report. Display totals
  *  are in tenant major units (minorFactor-divided); expectedCashCents is the
  *  integer-cents drawer expected figure. Do not rename fields — the backend
@@ -89,7 +89,7 @@ export function useCashClose() {
   const fmt = useFormatCurrency();
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dayStartTime = currentTenant?.business_day_start_time || '00:00';
-  const todayLocal = businessDateInTimezone(timeZone, dayStartTime);
+  const todayLocal = businessDateForInstant({ instant: new Date(), timezone: timeZone, startTime: dayStartTime });
   // ── Close-day modal state ────────────────────────────────────────────────
   // Modal flow: open → load X (live aggregates) + prior-day Z (default float)
   // → operator edits float + counted → POST /cash-closures → immutable Z view
@@ -146,7 +146,7 @@ export function useCashClose() {
   const minorFactor = getCurrencyMinorUnitFactor(currentTenant?.currency || '');
 
   // Prior business date = day before the modal's date. ISO date arithmetic on
-  // the YYYY-MM-DD string is timezone-safe — no need for `localDateInTimezone`
+  // the YYYY-MM-DD string is timezone-safe — no need for `businessDateForInstant`
   // in the renderer.
   const shiftDate = (yyyymmdd: string, deltaDays: number): string => {
     const d = new Date(`${yyyymmdd}T00:00:00Z`);

@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, generateShortId } from '../db';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 
 const router = Router();
 const categoryWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
@@ -74,7 +73,7 @@ function serializeCategory(category: any): any {
   };
 }
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = 'SELECT * FROM categories WHERE deleted_at IS NULL';
@@ -122,7 +121,7 @@ router.get('/', (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', requirePermission('catalog.view'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const category = db.prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
@@ -182,7 +181,7 @@ function createCategory(req: Request, res: Response) {
   }
 }
 
-router.post('/', categoryWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), createCategory);
+router.post('/', categoryWriteRateLimit, requirePermission('catalog.manage'), createCategory);
 
 function updateCategory(req: Request, res: Response) {
   try {
@@ -250,7 +249,7 @@ function updateCategory(req: Request, res: Response) {
   }
 }
 
-router.put('/:id', categoryWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), updateCategory);
+router.put('/:id', categoryWriteRateLimit, requirePermission('catalog.manage'), updateCategory);
 
 function deleteCategory(req: Request, res: Response) {
   try {
@@ -316,6 +315,6 @@ function deleteCategory(req: Request, res: Response) {
   }
 }
 
-router.delete('/:id', categoryWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), deleteCategory);
+router.delete('/:id', categoryWriteRateLimit, requirePermission('catalog.manage'), deleteCategory);
 
 export const categoryRoutes = router;

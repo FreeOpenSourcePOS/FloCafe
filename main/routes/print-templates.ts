@@ -2,8 +2,7 @@
 
 import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
-import { requireRole } from '../middleware/security';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { requirePermission } from '../services/authorization';
 import {
   MerchantTemplateError,
   activateMerchantPrintTemplate,
@@ -63,7 +62,7 @@ function handleError(res: Response, error: unknown): void {
   res.status(500).json({ error: 'Internal server error' });
 }
 
-router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
+router.get('/', requirePermission('print-templates.view'), (_req: Request, res: Response) => {
   try {
     res.json({ templates: listMerchantPrintTemplates().map(shape) });
   } catch (error) {
@@ -71,7 +70,7 @@ router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: R
   }
 });
 
-router.post('/', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
   try {
     const row = createMerchantPrintTemplate({
       name: req.body?.name,
@@ -85,7 +84,7 @@ router.post('/', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.owne
   }
 });
 
-router.put('/:id', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.put('/:id', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
   try {
     const row = updateMerchantPrintTemplate(String(req.params.id), {
       name: req.body?.name,
@@ -97,7 +96,7 @@ router.put('/:id', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.ow
   }
 });
 
-router.post('/:id/activate', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/:id/activate', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
   try {
     const row = activateMerchantPrintTemplate(String(req.params.id), actorId(req));
     res.json({ template: shape(row) });
@@ -106,7 +105,7 @@ router.post('/:id/activate', merchantTemplateWriteRateLimit, requireRole(...ROLE
   }
 });
 
-router.post('/:id/archive', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/:id/archive', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
   try {
     const row = archiveMerchantPrintTemplate(String(req.params.id), actorId(req));
     res.json({ template: shape(row) });
@@ -115,7 +114,7 @@ router.post('/:id/archive', merchantTemplateWriteRateLimit, requireRole(...ROLE_
   }
 });
 
-router.post('/:id/rollback', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/:id/rollback', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
   try {
     const row = rollbackMerchantPrintTemplate(String(req.params.id), actorId(req));
     res.json({ template: shape(row) });
@@ -124,7 +123,7 @@ router.post('/:id/rollback', merchantTemplateWriteRateLimit, requireRole(...ROLE
   }
 });
 
-router.get('/:id/payload', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
+router.get('/:id/payload', requirePermission('print-templates.view'), (req: Request, res: Response) => {
   try {
     const row = loadMerchantPrintTemplateRow(String(req.params.id));
     if (!row) return res.status(404).json({ error: 'Template not found' });
@@ -137,7 +136,7 @@ router.get('/:id/payload', requireRole(...ROLE_ACCESS.ownerManager), (req: Reque
 // --- Offline transfer (#448) ----------------------------------------------
 
 /** Download the portable transfer envelope for one template (owner only). */
-router.get('/:id/export', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.get('/:id/export', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
   try {
     const file = exportMerchantPrintTemplateFile(String(req.params.id));
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -149,7 +148,7 @@ router.get('/:id/export', merchantTemplateWriteRateLimit, requireRole(...ROLE_AC
 });
 
 /** Import a validated template transfer file as a new draft. */
-router.post('/import', merchantTemplateWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
+router.post('/import', merchantTemplateWriteRateLimit, requirePermission('print-templates.manage'), (req: Request, res: Response) => {
   try {
     const row = importMerchantPrintTemplateFile({
       file: req.body?.file,

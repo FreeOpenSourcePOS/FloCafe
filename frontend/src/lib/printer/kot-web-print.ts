@@ -92,6 +92,34 @@ function resolveOrderType(type: unknown, language: Language, tr: (key: string) =
   return tr(key);
 }
 
+/** Monospace tail every script stack ends in, so a missing family still prints. */
+const KOT_MONOSPACE_TAIL = "'Courier New', monospace";
+
+/**
+ * KOT font stacks keyed by the CLDR script of a registered locale's maximized
+ * tag, so a newly registered locale resolves a declared family without editing
+ * this file. The per-script family lists are the ones the raster renderer
+ * (`main/printers/raster-renderer.ts`) already declares for the same script.
+ */
+const KOT_FONT_STACKS_BY_SCRIPT: Record<string, string> = {
+  Arab: `'Noto Naskh Arabic', -apple-system, 'Segoe UI', Tahoma, ${KOT_MONOSPACE_TAIL}`,
+  Beng: `'Noto Sans Bengali', 'Nirmala UI', 'Vrinda', 'Bangla Sangam MN', ${KOT_MONOSPACE_TAIL}`,
+  Cyrl: `'Noto Sans', ${KOT_MONOSPACE_TAIL}`,
+  Deva: `'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', ${KOT_MONOSPACE_TAIL}`,
+  Hans: `'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Noto Sans', ${KOT_MONOSPACE_TAIL}`,
+  Hant: `'PingFang TC', 'Microsoft JhengHei', 'Noto Sans CJK TC', 'Noto Sans TC', monospace`,
+  Jpan: `'Yu Gothic', Meiryo, 'Hiragino Sans', 'Noto Sans CJK JP', 'Noto Sans JP', ${KOT_MONOSPACE_TAIL}`,
+  Kore: `'Noto Sans', ${KOT_MONOSPACE_TAIL}`,
+  Latn: `'Courier New',monospace`,
+  Thai: `'Noto Sans Thai', 'Leelawadee UI', Thonburi, ${KOT_MONOSPACE_TAIL}`,
+};
+
+/** Script-keyed KOT font stack for a language, falling back to the Latin stack. */
+export function kotFontStackForLanguage(lang: Language): string {
+  const script = new Intl.Locale(LANGUAGES[lang]?.locale ?? 'en').maximize().script;
+  return KOT_FONT_STACKS_BY_SCRIPT[script ?? ''] ?? KOT_FONT_STACKS_BY_SCRIPT.Latn;
+}
+
 /** Generate the semantic KOT HTML fragment (without opening a print dialog). */
 export function generateKotHtml(
   order: Order,
@@ -107,13 +135,7 @@ export function generateKotHtml(
   const padding = paperWidth === 58 ? '4px' : '6px';
   const paperWidthCss = paperWidth === 58 ? '58mm' : '80mm';
   const locale = LANGUAGES[lang]?.locale ?? 'en-US';
-  const fontFamily = lang === 'hi'
-    ? "'Noto Sans Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', 'Devanagari Sangam MN', 'Courier New', monospace"
-    : lang === 'th'
-    ? "'Noto Sans Thai', 'Leelawadee UI', Thonburi, 'Courier New', monospace"
-    : lang === 'zh-tw'
-    ? "'PingFang TC', 'Microsoft JhengHei', 'Noto Sans CJK TC', 'Noto Sans TC', monospace"
-    : "'Courier New',monospace";
+  const fontFamily = kotFontStackForLanguage(lang);
 
   // Header facts annotated by the direction kernel.
   const orderNumber = directionalText(String(order.order_number ?? ''), base);

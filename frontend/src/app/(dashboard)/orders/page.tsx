@@ -47,7 +47,7 @@ import {
 } from '@/lib/append-attempt';
 import { preferChildScopedBill } from '@/lib/printer/tax-components';
 import { matchesOrderSearch } from '@/lib/orders-search';
-import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
+import { tenantCan } from '@/lib/permissions';
 
 import { OrderCard } from '@/components/orders/OrderCard';
 
@@ -207,7 +207,9 @@ export default function OrdersPage() {
     ? normalizeFixedDiscountValue(discountModal.value, unitAdapter.maxDecimals)
     : discountModal?.value ?? 0;
   const fmt = useFormatCurrency();
-  const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
+  const canCancelItems = tenantCan(currentTenant, 'orders.item.cancel');
+  const canRestoreItems = tenantCan(currentTenant, 'orders.item.restore');
+  const canRefund = tenantCan(currentTenant, 'refunds.initiate');
 
   if (discountModal && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
     setDiscountModal({
@@ -599,7 +601,7 @@ export default function OrdersPage() {
   };
 
   const deleteItem = async (orderId: number, itemId: number) => {
-    if (!isOwnerOrManager) {
+    if (!canCancelItems) {
       toast.error(tOrders('onlyOwnersRemove'));
       return;
     }
@@ -632,7 +634,7 @@ export default function OrdersPage() {
   };
 
   const restoreItem = async (orderId: number, itemId: number) => {
-    if (!isOwnerOrManager) return;
+    if (!canRestoreItems) return;
     try {
       await api.patch(`/orders/${orderId}/items/${itemId}/restore`);
       toast.success(tOrders('itemRestored'));
@@ -1016,7 +1018,9 @@ export default function OrdersPage() {
               key={order.id}
               order={order}
               now={now}
-              isOwnerOrManager={isOwnerOrManager}
+              canCancelItems={canCancelItems}
+              canRestoreItems={canRestoreItems}
+              canRefund={canRefund}
               isWhatsAppReady={isWhatsAppReady}
               printHistory={printHistory}
               generatingBillId={generatingBill}

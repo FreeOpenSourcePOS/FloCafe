@@ -16,6 +16,11 @@
  * Requires `npm run build:frontend` output (`frontend/out`). Skips with
  * exit 0 when the build output is absent (e.g. `npm test` on a fresh
  * checkout without a preceding frontend build).
+ *
+ * A locale source file that has no chunk in the output is only explained by
+ * the build when the output predates that source file; that case gets its own
+ * stale-build message instead of the missing-chunk one. It is still a failure,
+ * not a skip, and every other check keeps its own assertion.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -54,6 +59,23 @@ function walkFiles(dir: string, predicate: (name: string) => boolean): string[] 
   return found;
 }
 
+// A locale with no chunk in the output fails as a stale build rather than as a
+// missing-chunk defect when, and only when, the output was written before that
+// locale's source file: the build never saw it. No-op while the chunk is
+// present, so a current build and every non-missing failure are unaffected.
+function assertNotStaleBuildOutput(lang: string, chunksFound: number): void {
+  if (chunksFound > 0) return;
+  const sourceMtime = fs.statSync(path.join(MESSAGES_DIR, `${lang}.json`)).mtimeMs;
+  const buildIsNewer = walkFiles(OUT, () => true).some((f) => fs.statSync(f).mtimeMs > sourceMtime);
+  assert(
+    buildIsNewer,
+    `STALE BUILD OUTPUT: frontend/out has no ${lang} chunk because the build was written before ` +
+    `${lang}.json (the locale source file), so the build output predates the locale sources. Run ` +
+    '`npm run build:frontend` before this assertion means anything. This is a stale build, not a ' +
+    'missing-chunk defect, and it still fails.',
+  );
+}
+
 function decodeJavaScriptEscapes(value: string): string {
   return value.replace(/\\x([0-9a-f]{2})|\\u([0-9a-f]{4})/gi, (_match, hex8, hex16) => {
     return String.fromCharCode(parseInt(hex8 ?? hex16, 16));
@@ -79,6 +101,7 @@ function run(): void {
   });
 
   const enFiles = filesWith(MARKERS.en);
+  assertNotStaleBuildOutput('en', enFiles.length);
   assert(
     enFiles.length >= 1,
     `packaged English messages must ship eagerly (cold-boot fallback), found in ${enFiles.length} chunks`,
@@ -87,6 +110,7 @@ function run(): void {
   const lazyByLang: Record<string, string> = {};
   for (const lang of nonEnglishLangs) {
     const files = filesWith(MARKERS[lang]);
+    assertNotStaleBuildOutput(lang, files.length);
     assert(
       files.length === 1,
       `${lang} messages must live in exactly one code-split chunk, found in ${files.length}`,

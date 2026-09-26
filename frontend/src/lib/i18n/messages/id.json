@@ -606,6 +606,7 @@
     "selectedItems": "Item Terpilih",
     "sendFailed": "Gagal mengirim",
     "sendReceipt": "Kirim Struk",
+    "printDeliverySlip": "Slip Pengantaran",
     "served": "Disajikan",
     "settled": "Diselesaikan",
     "startNewOrderForCustomer": "Mulai pesanan baru untuk pelanggan ini",
@@ -917,6 +918,11 @@
       "type": "Jenis",
       "noPendingItems": "Tidak ada item tertunda",
       "end": "AKHIR"
+    },
+    "deliverySlip": {
+      "title": "SLIP PENGANTARAN",
+      "banner": "SLIP PENGANTARAN",
+      "address": "Alamat pengantaran"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "skema v{version}",
     "billContent": "Isi Tagihan",
     "billContentHint": "Detail yang diaktifkan hanya dicetak jika datanya tersedia.",
+    "deliveryCustomerPhoneWarning": "Pesanan pengiriman dan struk pengiriman selalu menampilkan nomor pelanggan, meski Nomor Pelanggan dimatikan. Kurir membutuhkannya untuk menelepon pelanggan.",
+    "deliveryShowCustomerPhoneAlways": "Tampilkan nomor pelanggan pada pesanan dan struk pengiriman",
+    "deliveryShowCustomerPhoneAlwaysHint": "Hanya berlaku untuk pesanan pengiriman. Matikan agar Nomor Pelanggan di atas juga berlaku untuk pesanan pengiriman.",
     "billTemplate": "Templat Tagihan",
     "billTemplateClassicDesc": "Tata letak personal dengan nama/nomor ponsel pelanggan, detail add-on, diskon, serta poin loyalitas yang diperoleh/saldo. Terbaik untuk makan di tempat.",
     "billTemplateClassicName": "Klasik",

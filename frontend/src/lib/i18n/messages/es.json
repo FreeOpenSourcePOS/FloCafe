@@ -606,6 +606,7 @@
     "selectedItems": "Ítems seleccionados",
     "sendFailed": "Envío fallido",
     "sendReceipt": "Enviar recibo",
+    "printDeliverySlip": "Comprobante de entrega",
     "served": "Servido",
     "settled": "Liquidado",
     "startNewOrderForCustomer": "Iniciar un pedido nuevo para este cliente",
@@ -917,6 +918,11 @@
       "type": "Tipo",
       "noPendingItems": "Sin pendientes",
       "end": "FIN"
+    },
+    "deliverySlip": {
+      "title": "COMPROBANTE DE ENTREGA",
+      "banner": "COMPROBANTE DE ENTREGA",
+      "address": "Dirección de entrega"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "esquema v{version}",
     "billContent": "Contenido del comprobante",
     "billContentHint": "Los datos activados se imprimen solo cuando están disponibles.",
+    "deliveryCustomerPhoneWarning": "Los pedidos a domicilio y los comprobantes de entrega siempre muestran el número del cliente, aunque Numero de cliente esté desactivado. El repartidor lo necesita para llamar al cliente.",
+    "deliveryShowCustomerPhoneAlways": "Mostrar el número del cliente en pedidos a domicilio y comprobantes de entrega",
+    "deliveryShowCustomerPhoneAlwaysHint": "Se aplica solo a los pedidos a domicilio. Desactívalo para que Numero de cliente también decida en los pedidos a domicilio.",
     "billTemplate": "Plantilla de comprobante",
     "billTemplateClassicDesc": "Diseño personalizado con nombre/teléfono del cliente, detalles de extras, descuentos y puntos de fidelidad obtenidos/saldo. Ideal para comer en el local.",
     "billTemplateClassicName": "Clásica",

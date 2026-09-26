@@ -606,6 +606,7 @@
     "selectedItems": "নির্বাচিত আইটেম",
     "sendFailed": "পাঠাতে ব্যর্থ হয়েছে",
     "sendReceipt": "রসিদ পাঠান",
+    "printDeliverySlip": "ডেলিভারি স্লিপ",
     "served": "পরিবেশিত",
     "settled": "নিষ্পত্তি হয়েছে",
     "startNewOrderForCustomer": "এই গ্রাহকের জন্য নতুন অর্ডার শুরু করুন",
@@ -917,6 +918,11 @@
       "type": "টাইপ",
       "noPendingItems": "কোন মুলতুবি আইটেম",
       "end": "শেষ"
+    },
+    "deliverySlip": {
+      "title": "ডেলিভারি স্লিপ",
+      "banner": "ডেলিভারি স্লিপ",
+      "address": "ডেলিভারি ঠিকানা"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "স্কিমা v{version}",
     "billContent": "বিল বিষয়বস্তু",
     "billContentHint": "শুধুমাত্র ডেটা উপলব্ধ থাকলেই বিশদ মুদ্রণ সক্ষম করা হয়েছে।",
+    "deliveryCustomerPhoneWarning": "ডেলিভারি অর্ডার ও কুরিয়ার স্লিপে গ্রাহকের নম্বর সবসময় দেখা যায়, গ্রাহক নম্বর বন্ধ থাকলেও। কুরিয়ারের গ্রাহককে ফোন করতে এটি দরকার।",
+    "deliveryShowCustomerPhoneAlways": "ডেলিভারি অর্ডার ও কুরিয়ার স্লিপে গ্রাহকের নম্বর দেখান",
+    "deliveryShowCustomerPhoneAlwaysHint": "শুধু ডেলিভারি অর্ডারে প্রযোজ্য। বন্ধ করলে উপরের গ্রাহক নম্বর ডেলিভারি অর্ডারেও প্রযোজ্য হবে।",
     "billTemplate": "বিল টেমপ্লেট",
     "billTemplateClassicDesc": "গ্রাহকের নাম/মোবাইল, অ্যাড-অন বিবরণ, ডিসকাউন্ট এবং অর্জিত/ব্যালেন্স লয়্যালটি পয়েন্ট সহ ব্যক্তিগতকৃত লেআউট। ডাইন-ইন জন্য সেরা.",
     "billTemplateClassicName": "ক্লাসিক",

@@ -606,6 +606,7 @@
     "selectedItems": "عناصر مختارة",
     "sendFailed": "فشل الإرسال",
     "sendReceipt": "إرسال إيصال",
+    "printDeliverySlip": "قسيمة التوصيل",
     "served": "تم تقديمه",
     "settled": "تم تسويتها",
     "startNewOrderForCustomer": "إنشاء طلب جديد لهذا العميل",
@@ -917,6 +918,11 @@
       "type": "النوع",
       "noPendingItems": "لا توجد بنود معلقة",
       "end": "النهاية"
+    },
+    "deliverySlip": {
+      "title": "قسيمة التوصيل",
+      "banner": "قسيمة التوصيل",
+      "address": "عنوان التوصيل"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "المخطط v{version}",
     "billContent": "مضمون مشروع القانون",
     "billContentHint": "لا تُطبع التفاصيل إلا عند توفر البيانات.",
+    "deliveryCustomerPhoneWarning": "تعرض طلبات التوصيل وإيصالات التوصيل دائمًا رقم العميل، حتى عندما يكون رقم العميل معطلًا. يحتاج المندوب إليه للاتصال بالعميل.",
+    "deliveryShowCustomerPhoneAlways": "إظهار رقم العميل في طلبات التوصيل وإيصالات التوصيل",
+    "deliveryShowCustomerPhoneAlwaysHint": "ينطبق على طلبات التوصيل فقط. أوقفه ليقرر رقم العميل أعلاه أيضًا في طلبات التوصيل.",
     "billTemplate": "نموذج فاتورة",
     "billTemplateClassicDesc": "تصميم مخصص يتضمن اسم العميل ورقم هاتفه المحمول، وتفاصيل العروض الإضافية، والخصومات، ونقاط الولاء المكتسبة ورصيدها. مثالي لتناول الطعام في المطعم.",
     "billTemplateClassicName": "كلاسيكي",

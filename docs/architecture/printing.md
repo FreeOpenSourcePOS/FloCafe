@@ -39,7 +39,7 @@ checks the consumer boundary from outside the kernel; it does not close this gap
 | --- | --- |
 | `types.ts` | `PrintLanguageCode`, `TextDirection`, `DirectionScope`, the policy shapes, and `LanguageRegistryFacts`. |
 | `concepts.ts` | `PRINT_CONCEPT_IDS`, the typed concept-id catalog boundary. |
-| `document.ts` | `PrintDocument` v1 and `KotDocument` v1, the block types, and the pure `buildBillDocument` / `buildKotDocument` builders. |
+| `document.ts` | `PrintDocument` v1, `KotDocument` v1, and `DeliverySlipDocument` v1, the block types, and the pure `buildBillDocument` / `buildKotDocument` / `buildDeliverySlipDocument` builders. |
 | `direction.ts` | Per-scope direction resolution and LTR-island classification. |
 | `policy.ts` | `parsePrintLanguagePolicy`, `parseKotLanguagePolicy`, and the language resolvers. |
 | `bilingual.ts` | `BilingualLabel` and width-fit strategies. |
@@ -57,6 +57,16 @@ vocabulary is `business-header`, `document-meta`, `customer`, `item-table`, `tax
 `totals`, `payments`, and `message`.
 
 `KotDocument` v1 is the same shape for a kitchen ticket, with a reduced block vocabulary.
+
+`DeliverySlipDocument` v1 is a courier handout: `delivery-slip-header`,
+`delivery-slip-contact`, `delivery-slip-items`. It is a **separate kind, not a receipt
+template**, and that is load-bearing. It carries the full customer number and the delivery
+address, and it never passes through `buildBillDocument`, so it does not consult the receipt's
+`bill_show_customer_phone` setting and does not share the receipt's mask default. A merchant who
+hides the customer number on receipts still gets it on the slip; see
+[product invariants](../reference/product-invariants.md). The contact block also records
+`addressSource`, so a printed slip records whether the address came from the order or from the
+customer's standing record.
 
 ### Labels are semantic
 
@@ -128,10 +138,12 @@ four whitespace-separated tokens read as a sentence.
 | Classic | `main/printers/document-classic.ts` | `PrintDocument` |
 | Compact | `main/printers/document-compact.ts` | `PrintDocument` |
 | Kitchen ticket | `main/printers/document-kot.ts` | `KotDocument` |
+| Delivery slip | `main/printers/document-delivery-slip.ts` | `DeliverySlipDocument` |
 | Merchant | `main/printers/document-merchant.ts` | Wraps the classic renderer and applies a merchant template's block selection and order. |
 | Compliance line template | `renderEscposLineTemplateV1` in `main/printers/thermal.ts` | A pack-signed `escpos-line-template-v1` payload, as a plugin inside the thermal pipeline. |
 | Browser HTML | `frontend/src/lib/printer/web-print.ts` and `kot-web-print.ts` | A `PrintDocument` or `KotDocument`, rendered as HTML. |
 | WebUSB | `frontend/src/lib/printer/PrinterService.ts` | Encoder output, sent over the browser's WebUSB API. |
+| Delivery slip | `frontend/src/lib/printer/delivery-slip-encoder.ts` and `delivery-slip-web-print.ts` | A `DeliverySlipDocument`'s contact facts, rendered as bytes or HTML. |
 | Tax bill | `frontend/src/lib/printer/tax-bill-encoder.ts` | A raw `Bill` and `Tenant`, not a document. |
 
 The tax bill encoder is the single exception to "renderers consume documents". It targets the

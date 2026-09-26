@@ -606,6 +606,7 @@
     "selectedItems": "已选商品",
     "sendFailed": "发送失败",
     "sendReceipt": "发送小票",
+    "printDeliverySlip": "配送单",
     "served": "已上餐",
     "settled": "已结清",
     "startNewOrderForCustomer": "为该顾客开始新订单",
@@ -917,6 +918,11 @@
       "type": "类型",
       "noPendingItems": "没有待处理条目",
       "end": "结束"
+    },
+    "deliverySlip": {
+      "title": "配送单",
+      "banner": "配送单",
+      "address": "送货地址"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "架构 v{version}",
     "billContent": "账单内容",
     "billContentHint": "仅在数据可用时打印已启用的明细。",
+    "deliveryCustomerPhoneWarning": "即使关闭“顾客号码”，配送订单和配送单仍始终显示顾客号码。配送员需要它来联系顾客。",
+    "deliveryShowCustomerPhoneAlways": "在配送订单和配送单上显示顾客号码",
+    "deliveryShowCustomerPhoneAlwaysHint": "仅适用于配送订单。关闭后，上方的“顾客号码”设置将对配送订单同样生效。",
     "billTemplate": "账单模板",
     "billTemplateClassicDesc": "包含顾客姓名/手机、加购明细、折扣以及积分获得/余额的个性化版式。最适合堂食。",
     "billTemplateClassicName": "经典",

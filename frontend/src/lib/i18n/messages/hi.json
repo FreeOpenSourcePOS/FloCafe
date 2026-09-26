@@ -606,6 +606,7 @@
     "selectedItems": "चयनित आइटम",
     "sendFailed": "भेजना विफल",
     "sendReceipt": "रसीद भेजें",
+    "printDeliverySlip": "डिलीवरी स्लिप",
     "served": "परोसा गया",
     "settled": "निपटान",
     "startNewOrderForCustomer": "इस ग्राहक के लिए नया ऑर्डर प्रारंभ करें",
@@ -917,6 +918,11 @@
       "type": "प्रकार",
       "noPendingItems": "कोई लंबित आइटम नहीं",
       "end": "समाप्त"
+    },
+    "deliverySlip": {
+      "title": "डिलीवरी स्लिप",
+      "banner": "डिलीवरी स्लिप",
+      "address": "डिलीवरी का पता"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "schema v{version}",
     "billContent": "बिल सामग्री",
     "billContentHint": "सक्षम विवरण तभी प्रिंट करें जब डेटा उपलब्ध हो।",
+    "deliveryCustomerPhoneWarning": "डिलीवरी ऑर्डर और कुरियर स्लिप में ग्राहक नंबर हमेशा दिखता है, भले ही ग्राहक नंबर बंद हो। कूरियर को ग्राहक को कॉल करने के लिए यह चाहिए।",
+    "deliveryShowCustomerPhoneAlways": "डिलीवरी ऑर्डर और कुरियर स्लिप पर ग्राहक नंबर दिखाएँ",
+    "deliveryShowCustomerPhoneAlwaysHint": "केवल डिलीवरी ऑर्डर पर लागू। इसे बंद करें ताकि ऊपर का ग्राहक नंबर डिलीवरी ऑर्डर पर भी लागू हो।",
     "billTemplate": "बिल टेम्पलेट",
     "billTemplateClassicDesc": "ग्राहक के नाम/मोबाइल, एड-ऑन विवरण, छूट और अर्जित लॉयल्टी पॉइंट/शेष राशि के साथ वैयक्तिकृत लेआउट। भोजन के लिए सर्वोत्तम.",
     "billTemplateClassicName": "क्लासिक",

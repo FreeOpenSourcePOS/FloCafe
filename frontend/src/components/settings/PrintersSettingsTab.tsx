@@ -92,6 +92,7 @@ export type PrintingForm = {
   billShowTaxBreakdown: boolean;
   billShowCustomerName: boolean;
   billShowCustomerPhone: boolean;
+  billDeliveryShowCustomerPhoneAlways: boolean;
   billShowTableNumber: boolean;
 };
 
@@ -1043,6 +1044,32 @@ export function PrintersSettingsTab({
                     />
                   </div>
                 ))}
+
+                {/* Delivery-order exception, immediately beside the toggle it
+                    contradicts. Always present, not only when Customer Number is
+                    off, so a merchant turning it off sees what the slip will do
+                    next. Reads as a consequence of the slip feature, not as an
+                    error state. */}
+                <div className="col-span-full mt-1 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                    <span>{t('deliveryCustomerPhoneWarning')}</span>
+                  </div>
+                  <div className="mt-3 flex min-h-11 items-center justify-between gap-3">
+                    <span className="flex flex-col">
+                      <span className="font-medium">{t('deliveryShowCustomerPhoneAlways')}</span>
+                      <span className="text-[11px] opacity-80">{t('deliveryShowCustomerPhoneAlwaysHint')}</span>
+                    </span>
+                    <Toggle
+                      value={printingForm.billDeliveryShowCustomerPhoneAlways}
+                      label={t('deliveryShowCustomerPhoneAlways')}
+                      onChange={(value) => {
+                        markHydrationTouched('billDeliveryShowCustomerPhoneAlways');
+                        setPrintingForm((previous) => ({ ...previous, billDeliveryShowCustomerPhoneAlways: value }));
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
               <div className="mt-4 border-t border-border pt-4">
                 <label

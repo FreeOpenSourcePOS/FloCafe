@@ -606,6 +606,7 @@
     "selectedItems": "已選商品",
     "sendFailed": "傳送失敗",
     "sendReceipt": "傳送收據",
+    "printDeliverySlip": "外送單",
     "served": "已上餐",
     "settled": "已結清",
     "startNewOrderForCustomer": "為該顧客開始新訂單",
@@ -917,6 +918,11 @@
       "type": "類型",
       "noPendingItems": "沒有待處理項目",
       "end": "結束"
+    },
+    "deliverySlip": {
+      "title": "外送單",
+      "banner": "外送單",
+      "address": "外送地址"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "架構 v{version}",
     "billContent": "帳單內容",
     "billContentHint": "僅在資料可用時列印已啟用的明細。",
+    "deliveryCustomerPhoneWarning": "即使關閉「顧客號碼」，外送訂單與外送單仍一律顯示顧客號碼。配送員需要它來聯絡顧客。",
+    "deliveryShowCustomerPhoneAlways": "在外送訂單與外送單上顯示顧客號碼",
+    "deliveryShowCustomerPhoneAlwaysHint": "僅適用於外送訂單。關閉後，上方的「顧客號碼」設定也會套用於外送訂單。",
     "billTemplate": "帳單模板",
     "billTemplateClassicDesc": "包含顧客姓名/手機、加購明細、折扣以及積分獲得/餘額的個性化版式。最適合內用。",
     "billTemplateClassicName": "經典",

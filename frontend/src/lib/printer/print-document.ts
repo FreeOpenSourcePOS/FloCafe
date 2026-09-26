@@ -20,6 +20,7 @@ import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/langu
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getCountryByCode, getCurrencySymbol, resolveTenantCurrency } from '@countries';
 import { resolveTaxComponents } from './tax-components';
+import { shouldShowCustomerNumber } from '@print/document';
 import type { Bill, Order, OrderItem } from '@/lib/types';
 
 /** Business contact facts and visibility flags for one bill print run. */
@@ -40,6 +41,14 @@ export interface BillBusinessOptions {
   showBusinessName?: boolean;
   showCustomerName?: boolean;
   showCustomerPhone?: boolean;
+  /**
+   * The merchant's `bill_delivery_show_customer_phone_always` override. Defaults
+   * to on, matching the shipped setting: a delivery order shows the customer's
+   * number even when receipts have it turned off, until the merchant says
+   * otherwise. Resolved by the shared `shouldShowCustomerNumber` rule so the
+   * renderer and the backend print route cannot disagree.
+   */
+  deliveryShowCustomerPhoneAlways?: boolean;
   showTableNumber?: boolean;
   isReprint?: boolean;
 }
@@ -203,7 +212,11 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       showTaxBreakdown: opts.showTaxBreakdown === true,
       showTableNumber: opts.showTableNumber !== false,
       showCustomerName: opts.showCustomerName !== false,
-      showCustomerPhone: opts.showCustomerPhone !== false,
+      showCustomerPhone: shouldShowCustomerNumber({
+        showOnReceipts: opts.showCustomerPhone !== false,
+        alwaysForDeliveryOrders: opts.deliveryShowCustomerPhoneAlways !== false,
+        orderType: String(order?.type ?? ''),
+      }),
     },
   };
 }

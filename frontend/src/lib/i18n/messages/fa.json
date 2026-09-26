@@ -606,6 +606,7 @@
     "selectedItems": "کالاهای برگزیده",
     "sendFailed": "ارسال ناموفق بود",
     "sendReceipt": "ارسال رسید",
+    "printDeliverySlip": "رسید تحویل",
     "served": "تحویل‌شده",
     "settled": "تسویه‌شده",
     "startNewOrderForCustomer": "آغاز سفارش تازه برای این مشتری",
@@ -917,6 +918,11 @@
       "type": "نوع",
       "noPendingItems": "مورد در انتظاری نیست",
       "end": "پایان"
+    },
+    "deliverySlip": {
+      "title": "رسید تحویل",
+      "banner": "رسید تحویل",
+      "address": "نشانی تحویل"
     },
     "hsn": "کد کالا",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "ساختار v{version}",
     "billContent": "محتوای صورتحساب",
     "billContentHint": "جزئیات فعال‌شده فقط در صورت در دسترس بودن داده چاپ می‌شوند.",
+    "deliveryCustomerPhoneWarning": "سفارش‌های تحویل و رسیدهای پیک همیشه شمارهٔ مشتری را نشان می‌دهند، حتی وقتی شمارهٔ مشتری خاموش است. پیک برای تماس با مشتری به آن نیاز دارد.",
+    "deliveryShowCustomerPhoneAlways": "نمایش شمارهٔ مشتری در سفارش‌های تحویل و رسیدهای پیک",
+    "deliveryShowCustomerPhoneAlwaysHint": "فقط برای سفارش‌های تحویل اعمال می‌شود. اگر آن را خاموش کنید، شمارهٔ مشتری برای سفارش‌های تحویل هم تصمیم می‌گیرد.",
     "billTemplate": "قالب صورتحساب",
     "billTemplateClassicDesc": "چیدمان شخصی‌سازی‌شده با نام/موبایل مشتری، جزئیات افزونه‌ها، تخفیف‌ها و امتیازهای وفاداری کسب‌شده/مانده. بهترین گزینه برای سرویس داخل رستوران.",
     "billTemplateClassicName": "کلاسیک",

@@ -2,6 +2,8 @@
 
 const DEFAULT_MAX_ORDER_NOTES_LENGTH = 200;
 const DEFAULT_MAX_ITEM_NOTES_LENGTH = 100;
+const DEFAULT_MAX_CUSTOMER_ADDRESS_LENGTH = 300;
+const DEFAULT_MAX_DELIVERY_ADDRESS_LENGTH = 300;
 
 function validateNoteLength(db: any, settingKey: string, defaultLimit: number, notes: string | null | undefined, label: string): void {
   if (!notes) return;
@@ -19,6 +21,30 @@ export function validateOrderNotes(db: any, notes: string | null | undefined): v
 
 export function validateItemNotes(db: any, notes: string | null | undefined): void {
   validateNoteLength(db, 'max_item_notes_length', DEFAULT_MAX_ITEM_NOTES_LENGTH, notes, 'Item notes');
+}
+
+/**
+ * Cap a customer address on the way in.
+ *
+ * The delivery slip prints the address in full, so the address is free text
+ * flowing into a printed document and is capped the same way order notes are.
+ * This refuses a too-long new value; it never rewrites an existing row, so a
+ * legacy address written before the cap still reads and still prints (wrapped)
+ * on the slip.
+ */
+export function validateCustomerAddress(db: any, address: string | null | undefined): void {
+  validateNoteLength(db, 'max_customer_address_length', DEFAULT_MAX_CUSTOMER_ADDRESS_LENGTH, address, 'Customer address');
+}
+
+/**
+ * Cap a per-order delivery address on the way in.
+ *
+ * Same reason as the customer address: the courier slip prints it in full, so it
+ * is free text flowing into a printed document. Capped at the order boundary, so
+ * nothing unbounded is ever persisted.
+ */
+export function validateDeliveryAddress(db: any, address: string | null | undefined): void {
+  validateNoteLength(db, 'max_delivery_address_length', DEFAULT_MAX_DELIVERY_ADDRESS_LENGTH, address, 'Delivery address');
 }
 
 export function validateProductQuantity(

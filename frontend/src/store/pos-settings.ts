@@ -44,6 +44,8 @@ export interface PosSettingsState {
   billShowTaxBreakdown: boolean;
   billShowCustomerName: boolean;
   billShowCustomerPhone: boolean;
+  /** Delivery-order customer-number exception; see docs/reference/product-invariants.md. */
+  billDeliveryShowCustomerPhoneAlways: boolean;
   billShowTableNumber: boolean;
   // Thermal printer unicode support
   printerUseUnicode: boolean;
@@ -84,6 +86,7 @@ export interface PosSettingsState {
   setBillShowTaxBreakdown: (v: boolean) => void;
   setBillShowCustomerName: (v: boolean) => void;
   setBillShowCustomerPhone: (v: boolean) => void;
+  setBillDeliveryShowCustomerPhoneAlways: (v: boolean) => void;
   setBillShowTableNumber: (v: boolean) => void;
   setBillingType: (v: 'postpaid' | 'prepaid') => void;
   setTablesRequired: (v: boolean) => void;
@@ -129,6 +132,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billShowTaxBreakdown: true,
       billShowCustomerName: true,
       billShowCustomerPhone: true,
+    billDeliveryShowCustomerPhoneAlways: true,
       billShowTableNumber: true,
       printerUseUnicode: false,
       printerArabicShaping: false,
@@ -167,6 +171,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillShowTaxBreakdown: (v) => set({ billShowTaxBreakdown: v }),
       setBillShowCustomerName: (v) => set({ billShowCustomerName: v }),
       setBillShowCustomerPhone: (v) => set({ billShowCustomerPhone: v }),
+      setBillDeliveryShowCustomerPhoneAlways: (v) => set({ billDeliveryShowCustomerPhoneAlways: v }),
       setBillShowTableNumber: (v) => set({ billShowTableNumber: v }),
       setBillingType: (v) => set({ billingType: v }),
       setTablesRequired: (v) => set({ tablesRequired: v }),
@@ -211,6 +216,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           state.billShowTaxBreakdown ??= true;
           state.billShowCustomerName ??= true;
           state.billShowCustomerPhone ??= true;
+          state.billDeliveryShowCustomerPhoneAlways ??= true;
           state.billShowTableNumber ??= true;
         }
         return state as unknown as PosSettingsState;

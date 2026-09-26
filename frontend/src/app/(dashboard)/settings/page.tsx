@@ -1085,6 +1085,7 @@ export default function SettingsPage() {
     billShowTaxBreakdown: posSettings.billShowTaxBreakdown,
     billShowCustomerName: posSettings.billShowCustomerName,
     billShowCustomerPhone: posSettings.billShowCustomerPhone,
+    billDeliveryShowCustomerPhoneAlways: posSettings.billDeliveryShowCustomerPhoneAlways,
     billShowTableNumber: posSettings.billShowTableNumber,
   });
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
@@ -1438,6 +1439,7 @@ export default function SettingsPage() {
         billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
         billShowCustomerName: d.bill_show_customer_name !== false,
         billShowCustomerPhone: d.bill_show_customer_phone !== false,
+        billDeliveryShowCustomerPhoneAlways: d.bill_delivery_show_customer_phone_always !== false,
         billShowTableNumber: d.bill_show_table_number !== false,
       };
       setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
@@ -1449,6 +1451,7 @@ export default function SettingsPage() {
       posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
       posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
       posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
+      posSettings.setBillDeliveryShowCustomerPhoneAlways(billDisplay.billDeliveryShowCustomerPhoneAlways);
       posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
 
       setLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
@@ -1650,6 +1653,7 @@ export default function SettingsPage() {
           billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
           billShowCustomerName: d.bill_show_customer_name !== false,
           billShowCustomerPhone: d.bill_show_customer_phone !== false,
+          billDeliveryShowCustomerPhoneAlways: d.bill_delivery_show_customer_phone_always !== false,
           billShowTableNumber: d.bill_show_table_number !== false,
         };
         mergeHydratedPrinting(billDisplay, printingAtHydrationStart, hydrationTouchSnapshot);
@@ -1661,6 +1665,7 @@ export default function SettingsPage() {
         posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
         posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
         posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
+        posSettings.setBillDeliveryShowCustomerPhoneAlways(billDisplay.billDeliveryShowCustomerPhoneAlways);
         posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
         if (d.tax_registration_number) posSettings.setBillTaxRegistrationNumber(d.tax_registration_number);
         if (d.business_address) posSettings.setBillAddress(d.business_address);

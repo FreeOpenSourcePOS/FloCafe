@@ -1,0 +1,67 @@
+# FloCafe delivery slip column golden fixture v1
+#
+# Every block is a measurement of emitted ESC/POS output, walked the way a
+# printer parses it, exactly as tests/receipt-column-oracle.test.ts does for
+# receipts. Nothing here imports a production width constant.
+#   rule=<cells>   cell count of every full-width rule the stream rendered
+#   maxFontA=<n>   widest font-A single-size line, in cells
+#   max=<n>        widest line of any font or size, in cells
+#   NNN cccA |<text>|   line number, measured cells, font A marker, text
+#
+# Regenerate with: DELIVERY_SLIP_GOLDEN=write npx ts-node --transpile-only -P tests/tsconfig.json tests/delivery-slip-printing.test.ts
+=== slip 32 columns ===
+rule=32 maxFontA=32 max=32
+001 013A |DELIVERY SLIP|
+002 000A ||
+003 018A |Order #ORD-DEL-001|
+004 014A |Type: Delivery|
+005 017A |Time: 12:12:00 am|
+006 032A |================================|
+007 000A ||
+008 010  |Asha Kumar|
+009 015A |+91 98765 43210|
+010 026A |Delivery address: Flat 4B,|
+011 031A |123A-Anecacuilco 04330, Colonia|
+012 032A |Naucalpan, Edo. de Mexico, 06700|
+013 019A |2x  Espresso Doppio|
+014 015A |  >> Less sugar|
+015 013A |1x  Cold Brew|
+016 000A ||
+017 032A |================================|
+=== slip 42 columns ===
+rule=42 maxFontA=42 max=42
+001 013A |DELIVERY SLIP|
+002 000A ||
+003 018A |Order #ORD-DEL-001|
+004 014A |Type: Delivery|
+005 017A |Time: 12:12:00 am|
+006 042A |==========================================|
+007 000A ||
+008 010  |Asha Kumar|
+009 015A |+91 98765 43210|
+010 026A |Delivery address: Flat 4B,|
+011 042A |123A-Anecacuilco 04330, Colonia Naucalpan,|
+012 021A |Edo. de Mexico, 06700|
+013 019A |2x  Espresso Doppio|
+014 015A |  >> Less sugar|
+015 013A |1x  Cold Brew|
+016 000A ||
+017 042A |==========================================|
+=== slip 48 columns ===
+rule=48 maxFontA=48 max=48
+001 013A |DELIVERY SLIP|
+002 000A ||
+003 018A |Order #ORD-DEL-001|
+004 014A |Type: Delivery|
+005 017A |Time: 12:12:00 am|
+006 048A |================================================|
+007 000A ||
+008 010  |Asha Kumar|
+009 015A |+91 98765 43210|
+010 043A |Delivery address: Flat 4B, 123A-Anecacuilco|
+011 047A |04330, Colonia Naucalpan, Edo. de Mexico, 06700|
+012 019A |2x  Espresso Doppio|
+013 015A |  >> Less sugar|
+014 013A |1x  Cold Brew|
+015 000A ||
+016 048A |================================================|

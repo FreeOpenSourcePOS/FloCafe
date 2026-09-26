@@ -606,6 +606,7 @@
     "selectedItems": "منتخب آئٹمز",
     "sendFailed": "بھیجنا ناکام",
     "sendReceipt": "رسید بھیجیں",
+    "printDeliverySlip": "ڈیلیوری سلپ",
     "served": "پیش شدہ",
     "settled": "حساب لگا دیا گیا",
     "startNewOrderForCustomer": "اس گاہک کے لیے نیا آرڈر شروع کریں",
@@ -917,6 +918,11 @@
       "type": "قسم",
       "noPendingItems": "کوئی زیر التوا آئٹم نہیں",
       "end": "اختتام"
+    },
+    "deliverySlip": {
+      "title": "ڈیلیوری سلپ",
+      "banner": "ڈیلیوری سلپ",
+      "address": "ڈیلیوری کا پتہ"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "schema v{version}",
     "billContent": "بل کا مواد",
     "billContentHint": "فعال تفصیلات صرف اس وقت پرنٹ ہوتی ہیں جب ڈیٹا دستیاب ہو۔",
+    "deliveryCustomerPhoneWarning": "ڈیلیوری آرڈرز اور کورئر سلپ ہمیشہ کسٹمر کا نمبر دکھاتے ہیں، چاہے کسٹمر نمبر بند ہو۔ کورئر کو کسٹمر کو کال کرنے کے لیے اس کی ضرورت ہوتی ہے۔",
+    "deliveryShowCustomerPhoneAlways": "ڈیلیوری آرڈرز اور کورئر سلپ پر کسٹمر کا نمبر دکھائیں",
+    "deliveryShowCustomerPhoneAlwaysHint": "یہ صرف ڈیلیوری آرڈرز پر لاگو ہوتا ہے۔ بند کریں تاکہ کسٹمر نمبر ڈیلیوری آرڈرز کے لیے بھی فیصلہ کرے۔",
     "billTemplate": "بل ٹیمپلیٹ",
     "billTemplateClassicDesc": "گاہک کے نام/موبائل، ایڈ آن تفصیلات، رعایتوں اور کمائے گئے/بیلنس پوائنٹس کے ساتھ اپنے مطابق لے آؤٹ۔ ٹیبل سروس کے لیے بہترین۔",
     "billTemplateClassicName": "کلاسک",

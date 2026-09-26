@@ -869,6 +869,137 @@ export interface KotDocument {
   readonly blocks: readonly KotDocumentBlock[];
 }
 
+// ---------------------------------------------------------------------------
+// Delivery slip document v1
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the slip's contact block reads from, in resolution order.
+ *
+ * `order` is the address recorded against this specific delivery; `customer` is
+ * the customer's standing address on their record. The slip records which one
+ * it used so a renderer, a test, or a merchant reading the printed document can
+ * tell the difference instead of guessing.
+ */
+export type DeliverySlipAddressSource = 'order' | 'customer';
+
+/** Inputs to the customer-number visibility rule, all caller-resolved. */
+export interface CustomerNumberVisibility {
+  /** The merchant's `bill_show_customer_phone` setting. */
+  readonly showOnReceipts: boolean;
+  /** The merchant's `bill_delivery_show_customer_phone_always` override. */
+  readonly alwaysForDeliveryOrders: boolean;
+  /** The order type being printed, e.g. `delivery`. */
+  readonly orderType: string;
+}
+
+/**
+ * Decide whether a document may print the customer's number.
+ *
+ * One rule, two call sites (the backend print route and the renderer's document
+ * builder), so a merchant's receipt and a merchant's delivery order cannot
+ * disagree about the same setting.
+ *
+ * The delivery exception is deliberately a product default rather than a
+ * default-off toggle: a merchant who has turned the number off on receipts
+ * generally has not turned it off because a courier should not have it, and
+ * defaulting the exception off would reproduce the reported problem for every
+ * install that never visits Settings. The merchant can opt back out, and the
+ * Settings panel says so next to the toggle it contradicts. See
+ * docs/reference/product-invariants.md.
+ */
+export function shouldShowCustomerNumber(visibility: CustomerNumberVisibility): boolean {
+  if (visibility.showOnReceipts) return true;
+  return visibility.alwaysForDeliveryOrders && visibility.orderType.trim() === 'delivery';
+}
+
+/** Courier-facing contact block: who to call and where to go. */
+export interface DeliverySlipContactBlock {
+  readonly kind: 'delivery-slip-contact';
+  readonly direction: TextDirection;
+  readonly name: DirectionalText | null;
+  /** Always the full number. The slip is the one document where it is the point. */
+  readonly phone: DirectionalText | null;
+  readonly address: DirectionalText | null;
+  /** Which record the printed address came from, when an address is present. */
+  readonly addressSource: DeliverySlipAddressSource | null;
+  readonly nameLabel: SemanticLabel;
+  readonly phoneLabel: SemanticLabel;
+  readonly addressLabel: SemanticLabel;
+}
+
+/** One item row on the slip: quantity, name, and add-ons. */
+export interface DeliverySlipItemRow {
+  readonly direction: TextDirection;
+  readonly name: DirectionalText;
+  readonly quantity: number;
+  readonly addons: readonly DeliverySlipItemAddon[];
+  readonly specialInstructions: DirectionalText | null;
+}
+
+export interface DeliverySlipItemAddon extends DirectionalText {
+  readonly quantity?: number;
+}
+
+/** Items block: what the courier is delivering, in order. */
+export interface DeliverySlipItemsBlock {
+  readonly kind: 'delivery-slip-items';
+  readonly direction: TextDirection;
+  readonly rows: readonly DeliverySlipItemRow[];
+}
+
+/** Ticket header: banner, order number, order type, and timestamp. */
+export interface DeliverySlipHeaderBlock {
+  readonly kind: 'delivery-slip-header';
+  readonly direction: TextDirection;
+  readonly banner: SemanticLabel;
+  readonly title: SemanticLabel;
+  readonly orderNumberLabel: SemanticLabel;
+  readonly orderNumber: DirectionalText;
+  readonly orderType: { readonly label: SemanticLabel; readonly value: DirectionalText; readonly code: string } | null;
+  readonly timeLabel: SemanticLabel;
+  readonly timestamp: DirectionalText;
+}
+
+/** Ordered union of delivery-slip v1 block kinds. */
+export type DeliverySlipDocumentBlock =
+  | DeliverySlipHeaderBlock
+  | DeliverySlipContactBlock
+  | DeliverySlipItemsBlock;
+
+/** Normalized authoritative values for one courier slip. Pure snapshot. */
+export interface DeliverySlipPrintData {
+  readonly order: {
+    readonly orderNumber: string;
+    readonly createdAt: string;
+    readonly orderType: string;
+  };
+  readonly contact: {
+    readonly name: string;
+    /** Full number, country code already prefixed by the caller. */
+    readonly phone: string;
+    readonly address: string;
+    readonly addressSource: DeliverySlipAddressSource | null;
+  };
+  readonly items: readonly {
+    readonly productName: string;
+    readonly quantity: number;
+    readonly addons: readonly { readonly name: string; readonly quantity?: number }[];
+    readonly specialInstructions: string;
+  }[];
+}
+
+/**
+ * Renderer-independent semantic delivery slip, version 1. Single-primary
+ * language like the KOT: a courier reads one sheet, not a bilingual receipt.
+ */
+export interface DeliverySlipDocument {
+  readonly version: 1;
+  readonly direction: DirectionSpec;
+  readonly languages: ResolvedPrintLanguages;
+  readonly blocks: readonly DeliverySlipDocumentBlock[];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object';
 }
@@ -1111,5 +1242,131 @@ export function buildKotDocument(printData: KotPrintData, printContext: PrintCon
     direction: resolveDirectionSpec(base),
     languages: printContext.languages,
     blocks: Object.freeze([header, items] as readonly KotDocumentBlock[]),
+  });
+}
+
+function isDeliverySlipDocumentBlock(value: unknown): value is DeliverySlipDocumentBlock {
+  if (!isRecord(value) || !isDirection(value.direction) || typeof value.kind !== 'string') return false;
+  if (value.kind === 'delivery-slip-contact') {
+    return (value.name === null || isDirectionalText(value.name))
+      && (value.phone === null || isDirectionalText(value.phone))
+      && (value.address === null || isDirectionalText(value.address))
+      && (value.addressSource === null || value.addressSource === 'order' || value.addressSource === 'customer')
+      && isSemanticLabel(value.nameLabel)
+      && isSemanticLabel(value.phoneLabel)
+      && isSemanticLabel(value.addressLabel);
+  }
+  if (value.kind === 'delivery-slip-header') {
+    return isSemanticLabel(value.banner)
+      && isSemanticLabel(value.title)
+      && isSemanticLabel(value.orderNumberLabel)
+      && isDirectionalText(value.orderNumber)
+      && (value.orderType === null || (isRecord(value.orderType)
+        && isSemanticLabel(value.orderType.label)
+        && isDirectionalText(value.orderType.value)
+        && typeof value.orderType.code === 'string'))
+      && isSemanticLabel(value.timeLabel)
+      && isDirectionalText(value.timestamp);
+  }
+  if (value.kind !== 'delivery-slip-items' || !Array.isArray(value.rows)) return false;
+  return value.rows.every((row) => isRecord(row)
+    && isDirectionalText(row.name)
+    && isFiniteNumber(row.quantity)
+    && Array.isArray(row.addons)
+    && row.addons.every((addon) => isRecord(addon) && isDirectionalText(addon)
+      && (addon.quantity === undefined || isFiniteNumber(addon.quantity)))
+    && isOptionalDirectionalText(row.specialInstructions));
+}
+
+export function isDeliverySlipDocument(value: unknown): value is DeliverySlipDocument {
+  return isRecord(value)
+    && value.version === 1
+    && isDirectionSpec(value.direction)
+    && isLanguages(value.languages)
+    && value.languages.length === 1
+    && Array.isArray(value.blocks)
+    && value.blocks.length === 3
+    && value.blocks[0].kind === 'delivery-slip-header'
+    && value.blocks[1].kind === 'delivery-slip-contact'
+    && value.blocks[2].kind === 'delivery-slip-items'
+    && value.blocks.filter((block) => isRecord(block) && block.kind === 'delivery-slip-contact').length === 1
+    && value.blocks.every(isDeliverySlipDocumentBlock);
+}
+
+/**
+ * Build a DeliverySlipDocument v1 from normalized slip data. Pure: reads only
+ * its arguments and performs no IO or recomputation.
+ *
+ * The contact block deliberately carries the full customer number and does NOT
+ * consult the receipt's `bill_show_customer_phone` setting. A courier who cannot
+ * call the customer is the problem this document exists to solve, so a merchant
+ * who hid the number on receipts still gets it on the slip. The divergence is
+ * intentional and is recorded in docs/reference/product-invariants.md.
+ */
+export function buildDeliverySlipDocument(
+  printData: DeliverySlipPrintData,
+  printContext: PrintContext,
+): DeliverySlipDocument {
+  const base = printContext.baseDirection;
+  const labels: LabelContext = { ctx: printContext, primary: printContext.languages[0] };
+
+  const orderTypeCode = String(printData.order?.orderType ?? '').trim();
+
+  const header: DeliverySlipHeaderBlock = Object.freeze({
+    kind: 'delivery-slip-header',
+    direction: base,
+    banner: resolveSemanticLabel(labels, 'print.deliverySlip.banner'),
+    title: resolveSemanticLabel(labels, 'print.deliverySlip.title'),
+    orderNumberLabel: resolveSemanticLabel(labels, 'pos.orderNumber'),
+    orderNumber: directionalText(String(printData.order?.orderNumber ?? ''), base),
+    orderType: orderTypeCode.length > 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'print.kot.type'),
+        value: directionalText(kotOrderTypeValue(labels, orderTypeCode), base),
+        code: orderTypeCode,
+      })
+      : null,
+    timeLabel: resolveSemanticLabel(labels, 'print.time'),
+    timestamp: directionalText(String(printData.order?.createdAt ?? ''), base),
+  });
+
+  const address = String(printData.contact?.address ?? '');
+
+  const contact: DeliverySlipContactBlock = Object.freeze({
+    kind: 'delivery-slip-contact',
+    direction: base,
+    name: optionalDirectional(printData.contact?.name, base),
+    phone: optionalDirectional(printData.contact?.phone, base),
+    address: optionalDirectional(address, base),
+    addressSource: address.length > 0 ? (printData.contact?.addressSource ?? 'customer') : null,
+    nameLabel: resolveSemanticLabel(labels, 'pos.customer'),
+    phoneLabel: resolveSemanticLabel(labels, 'print.numberShort'),
+    addressLabel: resolveSemanticLabel(labels, 'print.deliverySlip.address'),
+  });
+
+  const items: DeliverySlipItemsBlock = Object.freeze({
+    kind: 'delivery-slip-items',
+    direction: base,
+    rows: Object.freeze((Array.isArray(printData.items) ? printData.items : []).map((item) => Object.freeze({
+      direction: base,
+      name: directionalText(String(item?.productName ?? ''), base),
+      quantity: Number(item?.quantity) || 0,
+      addons: Object.freeze((item?.addons ?? [])
+        .filter((addon: { readonly name?: string } | undefined) => typeof addon?.name === 'string' && addon.name.length > 0)
+        .map((addon: { readonly name: string; readonly quantity?: number }) => Object.freeze({
+          ...directionalText(String(addon.name), base),
+          ...(typeof addon.quantity === 'number' && Number.isFinite(addon.quantity) && addon.quantity > 0
+            ? { quantity: addon.quantity }
+            : {}),
+        }))),
+      specialInstructions: optionalDirectional(item?.specialInstructions, base),
+    }))),
+  });
+
+  return Object.freeze({
+    version: 1 as const,
+    direction: resolveDirectionSpec(base),
+    languages: printContext.languages,
+    blocks: Object.freeze([header, contact, items] as readonly DeliverySlipDocumentBlock[]),
   });
 }

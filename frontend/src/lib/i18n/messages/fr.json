@@ -606,6 +606,7 @@
     "selectedItems": "Articles sélectionnés",
     "sendFailed": "Échec de l'envoi",
     "sendReceipt": "Envoyer le reçu",
+    "printDeliverySlip": "Bon de livraison",
     "served": "Servie",
     "settled": "Réglée",
     "startNewOrderForCustomer": "Créer une commande pour ce client",
@@ -917,6 +918,11 @@
       "type": "Type",
       "noPendingItems": "Aucun article en attente",
       "end": "FIN"
+    },
+    "deliverySlip": {
+      "title": "BON DE LIVRAISON",
+      "banner": "BON DE LIVRAISON",
+      "address": "Adresse de livraison"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "schéma v{version}",
     "billContent": "Contenu de la facture",
     "billContentHint": "Les détails activés ne sont imprimés que lorsque les données sont disponibles.",
+    "deliveryCustomerPhoneWarning": "Les commandes a domicile et les bons de livraison affichent toujours le numéro du client, même si Numéro du client est désactivé. Le livreur en a besoin pour appeler le client.",
+    "deliveryShowCustomerPhoneAlways": "Afficher le numéro du client sur les commandes a domicile et les bons de livraison",
+    "deliveryShowCustomerPhoneAlwaysHint": "S'applique uniquement aux commandes a domicile. Desactivez pour que Numéro du client decide aussi pour les commandes a domicile.",
     "billTemplate": "Modèle de facture",
     "billTemplateClassicDesc": "Mise en page personnalisée avec le nom et le numéro de téléphone du client, le détail des options, les remises ainsi que les points de fidélité gagnés et leur solde. Idéale pour le service sur place.",
     "billTemplateClassicName": "Classique",

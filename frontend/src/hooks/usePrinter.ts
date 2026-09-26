@@ -19,6 +19,7 @@ import {
 } from '@/lib/printer/print-document';
 import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
+import { buildDeliverySlipBytes, type DeliverySlipContact, type DeliverySlipWebUsbOptions } from '@/lib/printer/delivery-slip-encoder';
 import {
   hasFinancialPrintWarning,
   makeBillTemplateFallbackWarning,
@@ -110,6 +111,11 @@ interface PrinterState {
   printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
   printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
   printKot: (order: Order, opts?: KotOptions & { items?: OrderItem[] }) => Promise<PrintWarning[]>;
+  /**
+   * Print the courier slip for one delivery order. Carries the full customer
+   * number and the delivery address; never a receipt and never a bill.
+   */
+  printDeliverySlip: (order: Order, contact: DeliverySlipContact, opts?: DeliverySlipWebUsbOptions) => Promise<PrintWarning[]>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;
   setPrintMethod: (method: PrintMode) => void;
@@ -168,7 +174,7 @@ export const usePrinterStore = create<PrinterState>()(
             billTemplateSource,
             billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
             billShowName, billShowAddress, billShowPhone, billShowTaxId,
-            billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
+            billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billDeliveryShowCustomerPhoneAlways, billShowTableNumber,
             printerPaperSize,
             printerUseUnicode,
             printerArabicShaping,
@@ -207,6 +213,7 @@ export const usePrinterStore = create<PrinterState>()(
               showTaxBreakdown: billShowTaxBreakdown,
               showCustomerName: billShowCustomerName,
               showCustomerPhone: billShowCustomerPhone,
+              deliveryShowCustomerPhoneAlways: billDeliveryShowCustomerPhoneAlways,
               showTableNumber: billShowTableNumber,
               useUnicode: printerUseUnicode,
               isReprint,
@@ -265,6 +272,7 @@ export const usePrinterStore = create<PrinterState>()(
             showTaxBreakdown: billShowTaxBreakdown,
             showCustomerName: billShowCustomerName,
             showCustomerPhone: billShowCustomerPhone,
+            deliveryShowCustomerPhoneAlways: billDeliveryShowCustomerPhoneAlways,
             showTableNumber: billShowTableNumber,
             useUnicode: printerUseUnicode,
             arabicShaping: printerArabicShaping,
@@ -355,7 +363,7 @@ export const usePrinterStore = create<PrinterState>()(
             printerUseUnicode, printerArabicShaping, printerTrimDecimals, printerPaperSize,
             billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
             billShowName, billShowAddress, billShowPhone, billShowTaxId,
-            billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
+            billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billDeliveryShowCustomerPhoneAlways, billShowTableNumber,
           } = usePosSettingsStore.getState();
           const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
           const taxBillColumns = columnsForConfiguredPrinter(get().webusbPrinter?.paper_width, configuredPaperWidth);
@@ -389,6 +397,7 @@ export const usePrinterStore = create<PrinterState>()(
               showTaxBreakdown: billShowTaxBreakdown,
               showCustomerName: billShowCustomerName,
               showCustomerPhone: billShowCustomerPhone,
+              deliveryShowCustomerPhoneAlways: billDeliveryShowCustomerPhoneAlways,
               showTableNumber: billShowTableNumber,
               useUnicode: printerUseUnicode,
               trimDecimals: printerTrimDecimals,
@@ -416,6 +425,7 @@ export const usePrinterStore = create<PrinterState>()(
             showTaxBreakdown: billShowTaxBreakdown,
             showCustomerName: billShowCustomerName,
             showCustomerPhone: billShowCustomerPhone,
+            deliveryShowCustomerPhoneAlways: billDeliveryShowCustomerPhoneAlways,
             showTableNumber: billShowTableNumber,
             useUnicode: printerUseUnicode,
             arabicShaping: printerArabicShaping,
@@ -570,6 +580,96 @@ export const usePrinterStore = create<PrinterState>()(
             message: `KOT language "${language}" could not be loaded, so English labels were used.`,
             kind: 'locale' as const,
           })) as PrintWarning[];
+        } catch (err) {
+          set({ lastError: (err as Error).message });
+          throw err;
+        }
+      },
+
+      /**
+       * Print one courier slip.
+       *
+       * Transport selection mirrors printKot: hardware first, then WebUSB, then
+       * the browser dialog. The contact number is passed through unmasked on
+       * every transport — that is the point of the document — and there is no
+       * mask option here by design.
+       */
+      printDeliverySlip: async (order, contact, opts) => {
+        set({ lastError: null });
+        try {
+          const { printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
+          const tenant = useAuthStore.getState().currentTenant;
+          const tenantTimezone = tenant?.timezone;
+          const orderForPrint = (opts as { items?: OrderItem[] } | undefined)?.items
+            ? { ...order, items: (opts as { items?: OrderItem[] }).items }
+            : order;
+          const slipItems = (orderForPrint.items ?? []).map((item) => ({
+            product_name: item.product_name,
+            quantity: Number(item.quantity) || 0,
+            special_instructions: item.special_instructions ?? null,
+          }));
+
+          const hw = get().hardwarePrinter;
+          if (hw && get().printMethod === 'escpos') {
+            try {
+              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-delivery-slip', {
+                orderId: order.id,
+                useUnicode: printerUseUnicode,
+                arabicShaping: printerArabicShaping,
+              });
+              return response.data.warnings || [];
+            } catch (err: unknown) {
+              const e = err as { response?: { data?: { error?: string; detail?: string } }; message?: string };
+              const errorMsg = e.response?.data?.detail || e.response?.data?.error || e.message || 'Delivery slip print failed';
+              if (errorMsg.includes('No default printer configured')) {
+                toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
+              } else {
+                throw new Error(errorMsg);
+              }
+            }
+          }
+
+          await printerService.awaitPendingReconnect();
+          const { paperWidth } = get();
+          if (get().printMethod === 'escpos' && printerService.isConnected) {
+            const warnings: PrintWarning[] = [];
+            const encoderWarnings: PrintWarning[] = [];
+            const columns = columnsForConfiguredPrinter(get().webusbPrinter?.paper_width, paperWidth);
+            const bytes = buildDeliverySlipBytes(
+              {
+                order_number: String(orderForPrint.order_number ?? ''),
+                created_at: String(orderForPrint.created_at ?? ''),
+                type: String((orderForPrint as { type?: string }).type ?? ''),
+              },
+              slipItems,
+              contact,
+              {
+                paperWidth,
+                columns,
+                arabicShaping: printerArabicShaping,
+                language: resolveBillPrintLanguages()[0],
+                ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
+              },
+              encoderWarnings,
+            );
+            set({ lastPrintedBytes: bytes });
+            await printerService.print(bytes);
+            return [...warnings, ...encoderWarnings];
+          }
+
+          const { generateDeliverySlipHtml } = await import('@/lib/printer/delivery-slip-web-print');
+          const html = generateDeliverySlipHtml(
+            {
+              order_number: String(orderForPrint.order_number ?? ''),
+              created_at: String(orderForPrint.created_at ?? ''),
+              type: String((orderForPrint as { type?: string }).type ?? ''),
+            },
+            slipItems,
+            contact,
+            { paperWidth, ...(tenantTimezone ? { timezone: tenantTimezone } : {}) },
+          );
+          await printerService.printViaBrowser(html, paperWidth);
+          return [];
         } catch (err) {
           set({ lastError: (err as Error).message });
           throw err;

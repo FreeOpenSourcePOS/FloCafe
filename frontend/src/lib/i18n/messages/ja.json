@@ -606,6 +606,7 @@
     "selectedItems": "選択した商品",
     "sendFailed": "送信に失敗しました",
     "sendReceipt": "レシートを送信",
+    "printDeliverySlip": "配達伝票",
     "served": "提供済み",
     "settled": "精算済み",
     "startNewOrderForCustomer": "この顧客の新しい注文を開始",
@@ -917,6 +918,11 @@
       "type": "種別",
       "noPendingItems": "保留中の商品はありません",
       "end": "終了"
+    },
+    "deliverySlip": {
+      "title": "配達伝票",
+      "banner": "配達伝票",
+      "address": "配達先住所"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "スキーマ v{version}",
     "billContent": "請求書の内容",
     "billContentHint": "有効にした項目はデータがある場合のみ印刷されます。",
+    "deliveryCustomerPhoneWarning": "配達注文と配達伝票では、電話番号の表示がオフでも常に顧客電話番号が表示されます。配達員が顧客に連絡するために必要です。",
+    "deliveryShowCustomerPhoneAlways": "配達注文と配達伝票に顧客電話番号を表示する",
+    "deliveryShowCustomerPhoneAlwaysHint": "配達注文にのみ適用されます。オフにすると、上の設定が配達注文にも適用されます。",
     "billTemplate": "請求書テンプレート",
     "billTemplateClassicDesc": "顧客名・携帯番号、追加項目、割引、獲得・残高ポイントを含むカスタムレイアウト。店内飲食に最適です。",
     "billTemplateClassicName": "クラシック",

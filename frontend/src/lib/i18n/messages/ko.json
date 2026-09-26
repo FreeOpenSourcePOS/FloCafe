@@ -606,6 +606,7 @@
     "selectedItems": "선택한 메뉴",
     "sendFailed": "전송 실패",
     "sendReceipt": "영수증 보내기",
+    "printDeliverySlip": "배달전표",
     "served": "서빙 완료",
     "settled": "정산됨",
     "startNewOrderForCustomer": "이 고객의 새 주문 시작",
@@ -917,6 +918,11 @@
       "type": "유형",
       "noPendingItems": "대기 항목 없음",
       "end": "종료"
+    },
+    "deliverySlip": {
+      "title": "배달전표",
+      "banner": "배달전표",
+      "address": "배달 주소"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "스키마 v{version}",
     "billContent": "청구서 내용",
     "billContentHint": "활성화한 항목은 데이터가 있을 때만 인쇄됩니다.",
+    "deliveryCustomerPhoneWarning": "배달 주문과 배달전표는 고객 번호 표시가 꺼져 있어도 항상 고객 번호를 보여줍니다. 배달원이 고객에게 연락할 때 필요합니다.",
+    "deliveryShowCustomerPhoneAlways": "배달 주문과 배달전표에 고객 번호 표시",
+    "deliveryShowCustomerPhoneAlwaysHint": "배달 주문에만 적용됩니다. 끄면 위의 고객 번호 설정이 배달 주문에도 적용됩니다.",
     "billTemplate": "청구서 템플릿",
     "billTemplateClassicDesc": "고객 이름/모바일, 추가 상세, 할인, 멤버십 포인트 적립/잔액이 포함된 맞춤형 레이아웃. 매장 식사에 적합.",
     "billTemplateClassicName": "클래식",

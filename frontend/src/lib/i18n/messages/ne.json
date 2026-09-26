@@ -606,6 +606,7 @@
     "selectedItems": "चयन गरिएका वस्तुहरू",
     "sendFailed": "पठाउन सकिएन",
     "sendReceipt": "रसिद पठाउनुहोस्",
+    "printDeliverySlip": "डेलिभरी स्लिप",
     "served": "सेवा गरियो",
     "settled": "बसाइयो",
     "startNewOrderForCustomer": "यस ग्राहकको लागि नयाँ अर्डर सुरु गर्नुहोस्",
@@ -917,6 +918,11 @@
       "type": "प्रकार",
       "noPendingItems": "कुनै पेन्डिङ वस्तु छैन",
       "end": "समाप्त"
+    },
+    "deliverySlip": {
+      "title": "डेलिभरी स्लिप",
+      "banner": "डेलिभरी स्लिप",
+      "address": "डेलिभरी ठिकाना"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "योजना v{version}",
     "billContent": "बिल सामग्री",
     "billContentHint": "डाटा उपलब्ध हुँदा मात्र सक्षम विवरण छाप्नुहोस्।",
+    "deliveryCustomerPhoneWarning": "डेलिभरी अर्डर र डेलिभरी स्लिपमा ग्राहक नम्बर सधैं देखिन्छ, ग्राहक नम्बर बन्द भए पनि। ग्राहकलाई फोन गर्न कोर्डरलाई यो चाहिन्छ।",
+    "deliveryShowCustomerPhoneAlways": "डेलिभरी अर्डर र डेलिभरी स्लिपमा ग्राहक नम्बर देखाउने",
+    "deliveryShowCustomerPhoneAlwaysHint": "डेलिभरी अर्डरमा मात्र लागू हुन्छ। बन्द गर्नुहोस् भनि माथिको ग्राहक नम्बर डेलिभरी अर्डरमा पनि लागू होस्।",
     "billTemplate": "बिल टेम्प्लेट",
     "billTemplateClassicDesc": "ग्राहकको नाम/मोबाइल, एडअन विवरणहरू, छुटहरू, र वफादारी अंकहरू कमाएको/ब्यालेन्सको साथ निजीकृत लेआउट। भोजनको लागि उत्तम।",
     "billTemplateClassicName": "क्लासिक",

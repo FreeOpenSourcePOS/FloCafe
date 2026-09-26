@@ -34,6 +34,8 @@ import {
 import { renderBillDocumentToClassicLines, renderClassicReceiptViaDocument } from './document-classic';
 import { renderBillDocumentToCompactLines, renderCompactReceiptViaDocument } from './document-compact';
 import { renderKotDocumentToLines, renderKotViaDocument } from './document-kot';
+import { renderDeliverySlipViaDocument } from './document-delivery-slip';
+import type { DeliverySlipAddressSource } from '../../shared/print';
 import {
   isThermalTextRepresentable,
   type ThermalCodePage,
@@ -975,8 +977,113 @@ export async function printKOT(order: any, items: any[], stationName: string, us
   }
 }
 
-/** Report print failure via telemetry tiers (best-effort, non-blocking). */
-function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void {
+/** Dispatch a rendered delivery slip to the resolved printer. */
+export async function printDeliverySlip(
+  order: any,
+  items: any[],
+  contact: { name?: string; phone?: string; address?: string; addressSource?: DeliverySlipAddressSource | null },
+  useUnicode: boolean = false,
+  targetPrinter?: any,
+  signal?: AbortSignal,
+  arabicShapingOverride?: boolean,
+  language?: string,
+  showCustomerPhone?: boolean,
+): Promise<DispatchResult> {
+  try {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
+    const printer = targetPrinter || getPrinterConfig();
+    if (!printer) {
+      return { ok: false, detail: 'No printer configured' };
+    }
+
+    const { profile, columns: cols, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
+    const db = getDatabase();
+    const biz = db.prepare('SELECT * FROM settings LIMIT 1').get() as any;
+    const locale = biz?.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
+    const timezone = resolveRegionalSnapshot({
+      country: getSettingValue('country') ?? undefined,
+      currency: getSettingValue('currency') ?? undefined,
+      timezone: getSettingValue('timezone') ?? undefined,
+    }).timezone;
+
+    const warnings: PrintWarning[] = [];
+    const nativeCapabilities = nativeFallbackCapabilities(capabilities);
+    const renderWith = (caps: ThermalPrinterCapabilities) => renderDeliverySlipViaDocument(order, items, contact, {
+      columns: cols,
+      language: normalizePrintLanguage(language ?? biz?.language),
+      locale,
+      timezone,
+      useUnicode,
+      arabicShaping: caps.shaping.arabic,
+      cutMode: profile.cutMode,
+      capabilities: caps,
+      showCustomerPhone: showCustomerPhone ?? true,
+    });
+
+    let data: Buffer;
+    if (rasterCapabilityEnabled(capabilities)) {
+      const documentResult = renderWith(capabilities);
+      const nativeResult = renderWith(nativeCapabilities);
+      const rasterized = await rasterizeDocumentLines(documentResult.lines, documentResult.warnings, {
+        useUnicode,
+        cutMode: profile.cutMode,
+        arabicShaping: capabilities.shaping.arabic,
+        columns: cols,
+        language: normalizePrintLanguage(language ?? biz?.language),
+        capabilities,
+        requestPrefix: 'delivery-slip',
+      }, documentResult.rasterGroups);
+      data = rasterized.rasterSelected && !rasterized.rasterFailed ? rasterized.data : nativeResult.data;
+      if (rasterized.rasterFailed) warnings.push(...nativeResult.warnings);
+      warnings.push(...rasterized.warnings);
+    } else {
+      data = renderWith(capabilities).data;
+    }
+
+    if (hasFinancialPrintWarning(warnings)) {
+      return { ok: false, detail: makeFinancialPrintRefusalMessage(warnings), failureClass: 'unsupported', warnings };
+    }
+    const dispatch = await dispatchPrint(printer, data, signal);
+    return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
+  } catch (error: any) {
+    console.error('[Printer] Delivery slip print error:', error);
+    return { ok: false, detail: error?.message };
+  }
+}
+
+export async function printDeliverySlipDetailed(...args: Parameters<typeof printDeliverySlip>): Promise<PrintResult> {
+  const id = correlationId();
+  try {
+    const dispatch = await printDeliverySlip(...args);
+    const result: PrintResult = dispatch.ok
+      ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
+      : {
+        ok: false,
+        code: 'print.delivery_slip.failed',
+        correlationId: id,
+        stage: 'dispatch',
+        detail: dispatch.detail,
+        failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+        platformErrorCode: dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+        jobId: dispatch.jobId,
+        driverName: dispatch.driverName,
+        printerStatus: dispatch.printerStatus,
+        warnings: dispatch.warnings,
+      };
+    if (!result.ok) reportPrintFailure('delivery_slip', result);
+    return result;
+  } catch (error) {
+    const detail = (error as Error).message;
+    const result: PrintResult = { ok: false, code: 'print.delivery_slip.failed', correlationId: id, stage: 'dispatch', detail, failureClass: classifyPrintFailure(detail), platformErrorCode: extractPlatformErrorCode(detail) };
+    reportPrintFailure('delivery_slip', result);
+    return result;
+  }
+}
+
+/**
+ * Report print failure via telemetry tiers (best-effort, non-blocking).
+ */
+function reportPrintFailure(kind: 'receipt' | 'kot' | 'delivery_slip', result: PrintResult): void {
   let connectionType = 'unknown';
   try {
     connectionType = getPrinterConfig()?.connection_type || 'unknown';

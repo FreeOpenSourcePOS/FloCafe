@@ -606,6 +606,7 @@
     "selectedItems": "Geselecteerde artikelen",
     "sendFailed": "Verzenden mislukt",
     "sendReceipt": "Bon verzenden",
+    "printDeliverySlip": "Bezorgbon",
     "served": "Geserveerd",
     "settled": "Afgewikkeld",
     "startNewOrderForCustomer": "Nieuwe bestelling starten voor deze klant",
@@ -917,6 +918,11 @@
       "type": "Type",
       "noPendingItems": "Geen openstaande artikelen",
       "end": "EINDE"
+    },
+    "deliverySlip": {
+      "title": "BEZORGbon",
+      "banner": "BEZORGbon",
+      "address": "Afleveradres"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "schema v{version}",
     "billContent": "Boninhoud",
     "billContentHint": "Ingeschakelde details worden alleen afgedrukt als er gegevens beschikbaar zijn.",
+    "deliveryCustomerPhoneWarning": "Bezelbestellingen en bezorgbonnen tonen altijd het klantnummer, ook als Klantnummer uit staat. De bezorger heeft het nodig om de klant te bellen.",
+    "deliveryShowCustomerPhoneAlways": "Klantnummer tonen op bezelbestellingen en bezorgbonnen",
+    "deliveryShowCustomerPhoneAlwaysHint": "Geldt alleen voor bezelbestellingen. Zet uit zodat Klantnummer hierboven ook voor bezelbestellingen geldt.",
     "billTemplate": "Bonsjabloon",
     "billTemplateClassicDesc": "Gepersonaliseerde lay-out met klantnaam/mobiel, add-ongegevens, kortingen en verdiende loyaliteitspunten/saldo. Het beste om te dineren.",
     "billTemplateClassicName": "Klassiek",

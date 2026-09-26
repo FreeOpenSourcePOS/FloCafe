@@ -606,6 +606,7 @@
     "selectedItems": "Mga Napiling Item",
     "sendFailed": "Bigo ang pagpapadala",
     "sendReceipt": "Ipadala ang Resibo",
+    "printDeliverySlip": "Slip ng Delivery",
     "served": "Naihain",
     "settled": "Naayos Na",
     "startNewOrderForCustomer": "Magsimula ng bagong order para sa customer na ito",
@@ -917,6 +918,11 @@
       "type": "Uri",
       "noPendingItems": "Walang mga nakabinbing item",
       "end": "WAKAS"
+    },
+    "deliverySlip": {
+      "title": "SLIP NG DELIVERY",
+      "banner": "SLIP NG DELIVERY",
+      "address": "Address ng Delivery"
     },
     "hsn": "HSN/SAC",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "schema v{version}",
     "billContent": "Nilalaman ng Bill",
     "billContentHint": "Ang mga naka-enable na detalye ay ipiniprint lamang kapag available ang data.",
+    "deliveryCustomerPhoneWarning": "Laging Delivery at ang mga resibo ng delivery ay laging nagpapakita ng numero ng kliyente, kahit naka-off ang Customer Number. Kailangan ito ng courier para tawagan ang kliyente.",
+    "deliveryShowCustomerPhoneAlways": "Ipakita ang numero ng kliyente sa mga order at resibo ng delivery",
+    "deliveryShowCustomerPhoneAlwaysHint": "Nalalagay lamang sa mga order ng delivery. I-off para maayos din ang Customer Number sa mga order ng delivery.",
     "billTemplate": "Template ng Bill",
     "billTemplateClassicDesc": "Detalyadong layout na may pangalan ng customer, mga detalye ng addon, at mga loyalty point. Pinakamahusay para sa dine-in.",
     "billTemplateClassicName": "Klasiko",

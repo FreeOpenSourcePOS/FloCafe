@@ -606,6 +606,7 @@
     "selectedItems": "Itens Selecionados",
     "sendFailed": "Falha no envio",
     "sendReceipt": "Enviar recibo",
+    "printDeliverySlip": "Comprovante de entrega",
     "served": "Servido",
     "settled": "Quitado",
     "startNewOrderForCustomer": "Iniciar novo pedido para este cliente",
@@ -917,6 +918,11 @@
       "type": "Tipo",
       "noPendingItems": "Sem itens pendentes",
       "end": "FIM"
+    },
+    "deliverySlip": {
+      "title": "COMPROVANTE DE ENTREGA",
+      "banner": "COMPROVANTE DE ENTREGA",
+      "address": "Endereço de entrega"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "schema v{version}",
     "billContent": "Conteúdo da nota",
     "billContentHint": "Os dados ativados são impressos somente quando estão disponíveis.",
+    "deliveryCustomerPhoneWarning": "Os pedidos de entrega e os comprovantes de entrega sempre mostram o número do cliente, mesmo com Número do cliente desativado. O entregador precisa dele para ligar para o cliente.",
+    "deliveryShowCustomerPhoneAlways": "Mostrar o número do cliente em pedidos de entrega e comprovantes de entrega",
+    "deliveryShowCustomerPhoneAlwaysHint": "Aplica-se apenas a pedidos de entrega. Desative para que Número do cliente também decida nos pedidos de entrega.",
     "billTemplate": "Modelo de Conta",
     "billTemplateClassicDesc": "Layout personalizado com nome/celular do cliente, detalhes de adicionais, descontos e pontos de fidelidade ganhos/saldo. Ideal para no local.",
     "billTemplateClassicName": "Clássico",

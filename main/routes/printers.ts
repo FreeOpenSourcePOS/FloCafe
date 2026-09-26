@@ -2,11 +2,12 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, isServerBillPrintingEnabled, parseItemJson } from '../db';
 import { getOrderWithItems } from './bills';
 import { randomUUID } from 'node:crypto';
-import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
+import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, printDeliverySlipDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
 import { BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
 import {
   resolveKotLanguage,
   resolveReceiptLanguages,
+  shouldShowCustomerNumber,
   type KotLanguagePolicy,
   type ReceiptLanguagePolicy,
   isKotItemPending,
@@ -492,6 +493,14 @@ router.post('/print-bill', requirePermission('printing.execute'), asyncHandler(a
            ? `${customer.country_code} ${customer.phone}`
            : customer.phone)
         : '',
+      // The delivery exception is one shared rule, resolved here for the
+      // receipt and never consulted by the slip. See
+      // docs/reference/product-invariants.md.
+      show_customer_phone: shouldShowCustomerNumber({
+        showOnReceipts: settings.bill_show_customer_phone !== 'false',
+        alwaysForDeliveryOrders: settings.bill_delivery_show_customer_phone_always !== 'false',
+        orderType: String(order?.type ?? ''),
+      }),
       points_earned: pointsEarned,
       points_redeemed: pointsRedeemed,
       points_balance: pointsBalance,
@@ -503,7 +512,6 @@ router.post('/print-bill', requirePermission('printing.execute'), asyncHandler(a
       show_tax_id: settings.bill_show_tax_id === 'true',
       show_tax_breakdown: settings.bill_show_tax_breakdown !== 'false',
       show_customer_name: settings.bill_show_customer_name !== 'false',
-      show_customer_phone: settings.bill_show_customer_phone !== 'false',
       show_table_number: settings.bill_show_table_number !== 'false',
       footer_note: settings.bill_footer_message || '',
     };
@@ -685,6 +693,90 @@ router.post('/print-kot', requirePermission('printing.execute'), asyncHandler(as
     console.error('[Print KOT] Error:', error);
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+}));
+
+// POST /api/printers/print-delivery-slip — print the courier slip for one order.
+//
+// The slip carries the FULL customer number and the delivery address. It is a
+// separate document from the receipt and does not consult the receipt's
+// bill_show_customer_phone setting, because a courier who cannot call the
+// customer is the problem this document solves. See
+// docs/reference/product-invariants.md.
+//
+// No bill is required: an order with no bill prints fine, so a courier slip can
+// be handed over before the customer pays.
+router.post('/print-delivery-slip', requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const { orderId, useUnicode = false } = req.body;
+    const arabicShapingOverride = typeof req.body?.arabicShaping === 'boolean' ? req.body.arabicShaping : undefined;
+
+    if (!orderId) {
+      return res.status(400).json({ error: 'orderId is required' });
+    }
+
+    const db = getDatabase();
+    const printer = db.prepare(
+      `SELECT * FROM printers
+       WHERE connection_type != 'webusb'
+       ORDER BY is_default DESC, name
+       LIMIT 1`,
+    ).get();
+    if (!printer) {
+      return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
+    }
+
+    const order: any = getOrderWithItems(db, Number(orderId));
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const items = getEffectiveOrderItems(db, orderId);
+
+    // The slip prints the address in full, so it reads the column the receipt
+    // route deliberately omits.
+    const customer: any = order.customer_id
+      ? db.prepare('SELECT name, phone, country_code, address FROM customers WHERE id = ?').get(order.customer_id)
+      : null;
+    const phone = customer?.phone
+      ? (customer.country_code && !customer.phone.startsWith(customer.country_code)
+        ? `${customer.country_code} ${customer.phone}`
+        : customer.phone)
+      : '';
+
+    const language = resolveTenantReceiptLanguages(db).primary;
+    const result = await printDeliverySlipDetailed(
+      order,
+      items,
+      {
+        name: customer?.name || '',
+        phone,
+        // The address confirmed for this delivery wins over the customer's
+        // standing record; the slip records which one it printed.
+        address: order.delivery_address || customer?.address || '',
+      },
+      useUnicode,
+      undefined,
+      getHttpRequestSignal(req),
+      arabicShapingOverride,
+      language,
+    );
+
+    if (result.ok) {
+      return res.json({ success: true, warnings: result.warnings || [] });
+    }
+    return res.status(502).json({
+      error: result.detail || 'Delivery slip print failed. Check printer connection.',
+      detail: result.detail,
+      failure_class: result.failureClass,
+      code: result.code,
+      correlation_id: result.correlationId,
+      stage: result.stage,
+    });
+  } catch (error: any) {
+    console.error('[Print Delivery Slip] Error:', error);
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 }));
 

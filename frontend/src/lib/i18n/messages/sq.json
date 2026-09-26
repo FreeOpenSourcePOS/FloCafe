@@ -606,6 +606,7 @@
     "selectedItems": "Artikuj të zgjedhur",
     "sendFailed": "Dërgimi dështoi",
     "sendReceipt": "Dërgo dëftesë",
+    "printDeliverySlip": "Fletë Dërgimi",
     "served": "Shërbyer",
     "settled": "U mbyll",
     "startNewOrderForCustomer": "Filloni një porosi të re për këtë klient",
@@ -917,6 +918,11 @@
       "type": "Lloji",
       "noPendingItems": "Nuk ka artikuj në pritje",
       "end": "FUND"
+    },
+    "deliverySlip": {
+      "title": "FLETË DËRGIMI",
+      "banner": "FLETË DËRGIMI",
+      "address": "Adresa e dorëzimit"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "skema v {version}",
     "billContent": "Përmbajtja e dëftesës",
     "billContentHint": "Detajet e aktivizuara printohen vetëm kur të dhënat janë të disponueshme.",
+    "deliveryCustomerPhoneWarning": "Porositë e dorëzimit dhe fletët e dorëzimit tregojnë gjithmonë numrin e klientit, edhe kur Numri i klientit është i fikur. Korrieri e ka nevojë për të telefonuar klientin.",
+    "deliveryShowCustomerPhoneAlways": "Shfaq numrin e klientit në porositë dhe fletët e dorëzimit",
+    "deliveryShowCustomerPhoneAlwaysHint": "Vlen vetëm për porositë e dorëzimit. Fikeni që Numri i klientit të zbatohet edhe për porositë e dorëzimit.",
     "billTemplate": "Shablloni i dëftesës",
     "billTemplateClassicDesc": "Paraqitje e personalizuar me emrin e klientit, telefonin, detajet e shtesave, zbritjet dhe pikët e besnikërisë. Më e mira për shërbimin në lokal.",
     "billTemplateClassicName": "Klasike",

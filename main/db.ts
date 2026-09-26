@@ -5349,6 +5349,26 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 94,
+    name: 'add_order_delivery_address',
+    up: () => {
+      // The address a merchant types for one specific delivery, kept on the
+      // order so the courier slip prints what was confirmed for that delivery
+      // rather than only the customer's standing address. Fresh installs get the
+      // column from the CREATE TABLE; existing ones get it here.
+      db.exec(`ALTER TABLE orders ADD COLUMN delivery_address TEXT DEFAULT NULL`);
+      // Merchant override for the delivery-order customer-number exception.
+      // Defaults to 'true': the number shows on delivery receipts and courier
+      // slips unless the merchant explicitly turns that off. See
+      // docs/reference/product-invariants.md.
+      db.prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
+        'bill_delivery_show_customer_phone_always',
+        'true',
+        now(),
+      );
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -5631,6 +5651,7 @@ function createSchema(): void {
       customer_id TEXT,
       user_id TEXT,
       type TEXT DEFAULT 'takeaway',
+      delivery_address TEXT DEFAULT NULL,
       guest_count INTEGER,
       special_instructions TEXT,
       packaging_charge REAL DEFAULT 0,
@@ -6126,6 +6147,7 @@ function seedInstallDefaults(): void {
   insert('bill_show_tax_breakdown', 'true');
   insert('bill_show_customer_name', 'true');
   insert('bill_show_customer_phone', 'true');
+  insert('bill_delivery_show_customer_phone_always', 'true');
   insert('bill_show_table_number', 'true');
   insert('order_number_prefix', 'ORD');
   insert('order_number_include_date', 'true');

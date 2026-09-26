@@ -17,7 +17,7 @@ import { adjustProductStock, resolveInventoryDeduction } from '../services/inven
 import { applyRecipeSnapshot, buildRecipeSnapshot, parseRecipeSnapshot } from '../services/recipes';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
-import { validateOrderNotes, validateItemNotes, validateProductQuantity } from './orders-validation';
+import { validateOrderNotes, validateItemNotes, validateProductQuantity, validateDeliveryAddress } from './orders-validation';
 import { hasPermission, requirePermission } from '../services/authorization';
 import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { getCurrencyFractionDigits, getCurrencyMinorUnitFactor } from '../countries';
@@ -453,7 +453,7 @@ router.get('/:id', orderReadRateLimit, requirePermission('orders.read'), (req: R
 router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
-    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id } = body;
+    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, service_charge, items, online_platform, external_order_id, delivery_address } = body;
     // Carries optional service charge without automatic calculation policy.
     const idempotencyKey = orderIdempotencyKey(req);
     const idempotencyUserId = String((req as any).user.userId);
@@ -499,10 +499,22 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
     if (external_order_id !== undefined && external_order_id !== null && typeof external_order_id !== 'string') {
       return res.status(400).json({ error: 'external_order_id must be a string' });
     }
+    if (delivery_address !== undefined && delivery_address !== null && typeof delivery_address !== 'string') {
+      return res.status(400).json({ error: 'delivery_address must be a string' });
+    }
+    const deliveryAddress = typeof delivery_address === 'string' ? delivery_address.trim() || null : null;
     const onlinePlatform = typeof online_platform === 'string' ? online_platform.trim().slice(0, 100) : null;
     const externalOrderId = typeof external_order_id === 'string' ? external_order_id.trim().slice(0, 100) : null;
 
     const db = getDatabase();
+
+    // Free text that ends up printed on a courier slip, so it is capped and
+    // validated the same way order notes are, at this boundary.
+    try {
+      validateDeliveryAddress(db, deliveryAddress);
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
 
     try {
       validateOrderNotes(db, special_instructions);
@@ -568,12 +580,12 @@ router.post('/', orderWriteRateLimit, requirePermission('orders.create'), (req: 
       const orderCustomerId = customer_id || reservedCustomerId || null;
 
       const orderResult = db.prepare(`
-        INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
+        INSERT INTO orders (order_number, table_id, customer_id, user_id, type, delivery_address, guest_count, special_instructions,
           packaging_charge, delivery_charge, packaging_tax_category_id, delivery_tax_category_id,
           service_charge, service_charge_tax_category_id, online_platform, external_order_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `).run(orderNumber, table_id || null, orderCustomerId, authenticatedUserId, type, guest_count || null,
-        special_instructions || null, pkgCharge, delCharge,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+      `).run(orderNumber, table_id || null, orderCustomerId, authenticatedUserId, type, deliveryAddress,
+        guest_count || null, special_instructions || null, pkgCharge, delCharge,
         chargeContext.packaging_tax_category_id, chargeContext.delivery_tax_category_id,
         serviceCharge, chargeContext.service_charge_tax_category_id,
         onlinePlatform || null, externalOrderId || null, now(), now());

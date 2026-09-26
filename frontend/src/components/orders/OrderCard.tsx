@@ -13,6 +13,7 @@ import {
   Utensils,
   ShoppingBag,
   Truck,
+  Bike,
   Globe,
   Clock,
   Printer,
@@ -108,6 +109,9 @@ interface OrderCardProps {
   onConvertToTakeaway: (order: Order) => void;
   onCancelOrder: (order: Order) => void;
   onPrint: (billId: number) => void;
+  /** Print the courier slip. Available on delivery orders whether or not a bill exists. */
+  onPrintDeliverySlip?: (order: Order) => void;
+  printingSlipOrderId?: number | null;
   onSendWhatsApp: (order: Order) => void;
   onLinkCustomer: (orderId: number) => void;
   onCancelLinkCustomer?: () => void;
@@ -144,6 +148,8 @@ export function OrderCard({
   onConvertToTakeaway,
   onCancelOrder,
   onPrint,
+  onPrintDeliverySlip,
+  printingSlipOrderId,
   onSendWhatsApp,
   onLinkCustomer,
   onCancelLinkCustomer,
@@ -806,6 +812,25 @@ export function OrderCard({
                   <Send size={15} className="me-1.5" />
                 )}
                 {tOrders('sendReceipt')}
+              </Button>
+            )}
+
+            {/* Courier slip: a delivery order's contact sheet for the rider. It
+                carries the full customer number and address, works before payment,
+                and is a separate document from the receipt. */}
+            {onPrintDeliverySlip && order.type === 'delivery' && (
+              <Button
+                variant="outline"
+                onClick={() => onPrintDeliverySlip(order)}
+                disabled={printingSlipOrderId === order.id}
+                className="flex-1 h-10 border-border text-foreground hover:bg-muted active:scale-95 touch-manipulation font-semibold text-xs"
+              >
+                {printingSlipOrderId === order.id ? (
+                  <Loader2 size={15} className="animate-spin me-1.5" />
+                ) : (
+                  <Bike size={15} className="me-1.5 text-muted-foreground" />
+                )}
+                {tOrders('printDeliverySlip')}
               </Button>
             )}
 

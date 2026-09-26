@@ -606,6 +606,7 @@
     "selectedItems": "Món đã chọn",
     "sendFailed": "Gửi thất bại",
     "sendReceipt": "Gửi biên nhận",
+    "printDeliverySlip": "Phiếu giao hàng",
     "served": "Đã phục vụ",
     "settled": "Đã quyết toán",
     "startNewOrderForCustomer": "Bắt đầu đơn hàng mới cho khách hàng này",
@@ -917,6 +918,11 @@
       "type": "Loại",
       "noPendingItems": "Không có món đang chờ",
       "end": "KẾT THÚC"
+    },
+    "deliverySlip": {
+      "title": "PHIẾU GIAO HÀNG",
+      "banner": "PHIẾU GIAO HÀNG",
+      "address": "Địa chỉ giao hàng"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1289,6 +1295,9 @@
     "backupSchemaVersion": "lược đồ v{version}",
     "billContent": "Nội dung hóa đơn",
     "billContentHint": "Các chi tiết đã bật chỉ được in khi có dữ liệu.",
+    "deliveryCustomerPhoneWarning": "Đơn giao hàng và phiếu giao hàng luôn hiển thị số khách hàng, kể cả khi Số khách hàng đã tắt. Người giao cần số này để gọi cho khách.",
+    "deliveryShowCustomerPhoneAlways": "Hiển thị số khách hàng trên đơn giao hàng và phiếu giao hàng",
+    "deliveryShowCustomerPhoneAlwaysHint": "Chỉ áp dụng cho đơn giao hàng. Tắt đi để Số khách hàng ở trên cũng áp dụng cho đơn giao hàng.",
     "billTemplate": "Mẫu hóa đơn",
     "billTemplateClassicDesc": "Bố cục đầy đủ với tên/di động khách hàng, chi tiết tuỳ chọn, giảm giá và điểm tích đã nhận/số dư. Phù hợp nhất với đơn ăn tại chỗ.",
     "billTemplateClassicName": "Cổ điển",

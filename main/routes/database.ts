@@ -35,7 +35,9 @@ const EXPORT_SETTINGS_REDACT = new Set([
 const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 
 // Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
-const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'kds_pairing_tokens']);
+// local_diagnostics is device-local operator-facing state, not customer data, so
+// a backup taken on one till must not carry another till's failure log.
+const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'local_diagnostics', 'kds_pairing_tokens']);
 
 // Parse schema version; invalid or missing versions collapse to -1 or 0 to trigger mismatch handling.
 function parseImportSchemaVersion(value: unknown): number {

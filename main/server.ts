@@ -254,20 +254,19 @@ export function startServer(): Promise<void> {
         : 500;
       if (status >= 500) {
         console.error('[Server] Error:', err);
-        // Fire-and-forget: reportDiagnostic never throws and consent-gates its own writes.
+        // Fire-and-forget: reportDiagnostic never throws and derives a signature locally.
         try {
           cloudSync.reportDiagnostic({
             event_id: crypto.randomUUID(),
             event_code: 'server.internal_error',
             severity: 'error',
-            message: String(err.message || 'Unhandled server error').slice(0, 300),
             metadata: {
               route: _req.path.slice(0, 200),
               method: _req.method,
               status,
             },
             occurred_at: new Date().toISOString(),
-          });
+          }, err);
         } catch { /* diagnostics must never mask the original error */ }
       }
       res.status(status).json({ error: status >= 500 ? 'Internal server error' : (err.message || 'Client error') });

@@ -621,6 +621,9 @@ Router: `main/routes/diagnostics.ts`. Full path: `/api/diagnostics`.
 | Method | Path | Authorization | Parameters | Response |
 | --- | --- | --- | --- | --- |
 | `POST` | `/event` | `ROLE_ACCESS.allStaff` + diagnostics write limiter | none | Consent-gated diagnostic event intake. |
+| `GET` | `/recent` | `ROLE_ACCESS.allStaff` | query: `?limit` (clamped to 200) | `{ failures: [ ... ] }`, the locally captured failures, newest first. |
+| `DELETE` | `/recent` | `ROLE_ACCESS.allStaff` | none | `{ removed }`, the number of local failures dropped. Nothing has been transmitted, so nothing is withdrawn. |
+| `GET` | `/support-bundle` | `ROLE_ACCESS.allStaff` | query: `?limit` (clamped to 200), `?category` | `{ bundle: { system, recent_failures } }` for the copy-for-support action. Never carries the raw log tail. |
 
 ### Database
 

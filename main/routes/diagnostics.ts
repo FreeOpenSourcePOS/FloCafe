@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import expressRateLimit from 'express-rate-limit';
 import { requirePermission } from '../services/authorization';
-import { cloudSync, DiagnosticEventInput, isAllowedDiagnosticEventCode } from '../services/cloud-sync';
+import { cloudSync, DiagnosticEventInput, DIAGNOSTIC_LOG_MAX_ROWS, isAllowedDiagnosticEventCode } from '../services/cloud-sync';
+import { buildSystemDiagnostics, resolveCategory } from './support-ticket';
 
 const router = Router();
 
@@ -92,6 +93,46 @@ router.post('/event', requirePermission('support.use'), diagnosticsWriteRateLimi
     cloudSync.reportDiagnostic(event);
   } catch { /* diagnostics must never mask the original failure */ }
   res.status(202).json({ queued: true });
+});
+
+/**
+ * Recently captured failures for the in-app diagnostics screen. Local read only:
+ * nothing here is transmitted, and the screen is the only consumer.
+ */
+router.get('/recent', requirePermission('support.use'), (req: Request, res: Response) => {
+  const limitRaw = Number(req.query.limit);
+  const limit = Number.isSafeInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, DIAGNOSTIC_LOG_MAX_ROWS) : 50;
+  res.json({ failures: cloudSync.listLocalDiagnostics(limit) });
+});
+
+/** Remove every locally captured failure. */
+router.delete('/recent', requirePermission('support.use'), (req: Request, res: Response) => {
+  res.json({ removed: cloudSync.clearLocalDiagnostics() });
+});
+
+/**
+ * The exact text the operator's copy action will put on the clipboard: the shared
+ * system-diagnostics builder plus the recent failures. The raw log tail is
+ * deliberately absent - it can carry order and customer detail, so the operator
+ * adds it deliberately on the screen after seeing what it is.
+ */
+router.get('/support-bundle', requirePermission('support.use'), (req: Request, res: Response) => {
+  const limitRaw = Number(req.query.limit);
+  const limit = Number.isSafeInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, DIAGNOSTIC_LOG_MAX_ROWS) : 50;
+  const failures = cloudSync.listLocalDiagnostics(limit);
+  res.json({
+    bundle: {
+      system: buildSystemDiagnostics(req, resolveCategory(req.query.category)),
+      recent_failures: failures.map((failure) => ({
+        occurred_at: failure.occurred_at,
+        event_code: failure.event_code,
+        severity: failure.severity,
+        signature: failure.signature,
+        summary: failure.summary,
+        ...(failure.metadata ? { metadata: failure.metadata } : {}),
+      })),
+    },
+  });
 });
 
 export const diagnosticsRoutes = router;

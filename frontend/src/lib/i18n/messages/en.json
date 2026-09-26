@@ -1996,6 +1996,7 @@
     "yes": "Yes",
     "zeroNoLimit": "(0 = no limit)",
     "tabAppearance": "Appearance",
+    "viewOnlyNotice": "You are viewing these settings without permission to change them, so the controls here are read-only. An owner can grant you the Settings permission if you need to make a change.",
     "themeTitle": "Theme",
     "themeLight": "Light",
     "themeDark": "Dark",
@@ -2225,6 +2226,14 @@
     "allow": "Allow",
     "deny": "Deny",
     "protected": "Protected",
+    "selfAccessWarningAuthorization": "Saving this removes your own access to staff permissions.",
+    "selfAccessWarningStaffPrivileged": "Saving this removes your own access to owner and manager accounts.",
+    "selfAccessWarningStaffOperational": "Saving this removes your own access to staff accounts.",
+    "selfAccessWarningSettings": "Saving this removes your own access to store settings.",
+    "administrationUnreachable": "This change would leave no account able to manage staff, permissions, or store settings. Grant another active owner these permissions first.",
+    "selfPrivilegeChangeTitle": "Confirm this change to your own access",
+    "selfPrivilegeChangePrompt": "This change alters your own access to staff, permissions, or store settings. Enter your PIN to continue, or ask another owner to make this change.",
+    "selfPrivilegeNotConfirmed": "This change to your own access could not be confirmed, so nothing was saved. Set a PIN for your account, or ask another owner to make this change.",
     "editorFooterNote": "Sensitive business rules such as approval PINs, the last active owner, refund cutoffs, and kitchen station assignments still apply."
   },
   "permissionAudit": {

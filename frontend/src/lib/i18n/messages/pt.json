@@ -1996,6 +1996,7 @@
     "yes": "Sim",
     "zeroNoLimit": "(0 = sem limite)",
     "tabAppearance": "Aparência",
+    "viewOnlyNotice": "Está a ver estas definições sem permissão para as alterar, por isso os controlos aqui são apenas de leitura. Um proprietário pode conceder-lhe a permissão Definições se precisar de fazer uma alteração.",
     "themeTitle": "Tema",
     "themeLight": "Claro",
     "themeDark": "Escuro",
@@ -2225,6 +2226,14 @@
     "allow": "Permitir",
     "deny": "Negar",
     "protected": "Protegido",
+    "selfAccessWarningAuthorization": "Guardar isto remove o seu próprio acesso às permissões da equipa.",
+    "selfAccessWarningStaffPrivileged": "Guardar isto remove o seu próprio acesso às contas de proprietário e gerente.",
+    "selfAccessWarningStaffOperational": "Guardar isto remove o seu próprio acesso às contas da equipa.",
+    "selfAccessWarningSettings": "Guardar isto remove o seu próprio acesso às definições da loja.",
+    "administrationUnreachable": "Esta alteração não deixaria nenhuma conta capaz de gerir a equipa, as permissões ou as definições da loja. Conceda primeiro estas permissões a outro proprietário ativo.",
+    "selfPrivilegeChangeTitle": "Confirme esta alteração ao seu próprio acesso",
+    "selfPrivilegeChangePrompt": "Esta alteração muda o seu próprio acesso à equipa, às permissões ou às definições da loja. Introduza o seu PIN para continuar, ou peça a outro proprietário que faça esta alteração.",
+    "selfPrivilegeNotConfirmed": "Não foi possível confirmar esta alteração ao seu próprio acesso, por isso nada foi guardado. Defina um PIN para a sua conta ou peça a outro proprietário que faça esta alteração.",
     "editorFooterNote": "Regras de negócio sensíveis, como PINs de aprovação, o último proprietário ativo, prazos de reembolso e atribuições de estações da cozinha, continuam se aplicando."
   },
   "permissionAudit": {

@@ -1996,6 +1996,7 @@
     "yes": "Oui",
     "zeroNoLimit": "(0 = aucune limite)",
     "tabAppearance": "Apparence",
+    "viewOnlyNotice": "Vous consultez ces paramètres sans permission pour les modifier : les commandes ici sont en lecture seule. Un propriétaire peut vous accorder la permission Paramètres si vous devez apporter un changement.",
     "themeTitle": "Thème",
     "themeLight": "Clair",
     "themeDark": "Sombre",
@@ -2225,6 +2226,14 @@
     "allow": "Autoriser",
     "deny": "Refuser",
     "protected": "Protégé",
+    "selfAccessWarningAuthorization": "Cet enregistrement supprime votre propre accès aux permissions du personnel.",
+    "selfAccessWarningStaffPrivileged": "Cet enregistrement supprime votre propre accès aux comptes propriétaire et gérant.",
+    "selfAccessWarningStaffOperational": "Cet enregistrement supprime votre propre accès aux comptes du personnel.",
+    "selfAccessWarningSettings": "Cet enregistrement supprime votre propre accès aux paramètres du magasin.",
+    "administrationUnreachable": "Ce changement ne laisserait aucun compte capable de gérer le personnel, les permissions ou les paramètres du magasin. Accordez d'abord ces permissions à un autre propriétaire actif.",
+    "selfPrivilegeChangeTitle": "Confirmez ce changement sur votre propre accès",
+    "selfPrivilegeChangePrompt": "Ce changement modifie votre propre accès au personnel, aux permissions ou aux paramètres du magasin. Saisissez votre code PIN pour continuer, ou demandez à un autre propriétaire d'effectuer ce changement.",
+    "selfPrivilegeNotConfirmed": "Ce changement sur votre propre accès n'a pas pu être confirmé, donc rien n'a été enregistré. Définissez un code PIN pour votre compte, ou demandez à un autre propriétaire d'effectuer ce changement.",
     "editorFooterNote": "Les règles métier sensibles, comme les codes PIN d'approbation, le dernier propriétaire actif, les délais de remboursement et les affectations de postes de cuisine, continuent de s'appliquer."
   },
   "permissionAudit": {

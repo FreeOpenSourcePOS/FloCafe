@@ -1996,6 +1996,7 @@
     "yes": "Ya",
     "zeroNoLimit": "(0 = tanpa batas)",
     "tabAppearance": "Tampilan",
+    "viewOnlyNotice": "Anda sedang melihat pengaturan ini tanpa izin untuk mengubahnya, sehingga semua kontrol di sini hanya dapat dibaca. Pemilik dapat memberi Anda izin Pengaturan jika Anda perlu melakukan perubahan.",
     "themeTitle": "Tema",
     "themeLight": "Terang",
     "themeDark": "Gelap",
@@ -2225,6 +2226,14 @@
     "allow": "Izinkan",
     "deny": "Tolak",
     "protected": "Dilindungi",
+    "selfAccessWarningAuthorization": "Menyimpan ini menghapus akses Anda sendiri ke izin staf.",
+    "selfAccessWarningStaffPrivileged": "Menyimpan ini menghapus akses Anda sendiri ke akun pemilik dan manajer.",
+    "selfAccessWarningStaffOperational": "Menyimpan ini menghapus akses Anda sendiri ke akun staf.",
+    "selfAccessWarningSettings": "Menyimpan ini menghapus akses Anda sendiri ke pengaturan toko.",
+    "administrationUnreachable": "Perubahan ini akan menyisakan tidak ada akun yang mampu mengelola staf, izin, atau pengaturan toko. Berikan izin ini terlebih dahulu kepada pemilik aktif lainnya.",
+    "selfPrivilegeChangeTitle": "Konfirmasikan perubahan ini pada akses Anda sendiri",
+    "selfPrivilegeChangePrompt": "Perubahan ini mengubah akses Anda sendiri ke staf, izin, atau pengaturan toko. Masukkan PIN Anda untuk melanjutkan, atau minta pemilik lain untuk melakukan perubahan ini.",
+    "selfPrivilegeNotConfirmed": "Perubahan pada akses Anda sendiri tidak dapat dikonfirmasi, sehingga tidak ada yang tersimpan. Tetapkan PIN untuk akun Anda, atau minta pemilik lain untuk melakukan perubahan ini.",
     "editorFooterNote": "Aturan bisnis sensitif seperti PIN persetujuan, pemilik aktif terakhir, batas waktu pengembalian dana, dan penugasan stasiun dapur tetap berlaku."
   },
   "permissionAudit": {

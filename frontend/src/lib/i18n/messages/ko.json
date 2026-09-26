@@ -1996,6 +1996,7 @@
     "yes": "네",
     "zeroNoLimit": "(0 = 무제한)",
     "tabAppearance": "화면",
+    "viewOnlyNotice": "변경 권한 없이 이 설정을 보고 있어 여기서 모든 컨트롤은 읽기 전용입니다. 변경이 필요하면 소유자가 설정 권한을 부여할 수 있습니다.",
     "themeTitle": "테마",
     "themeLight": "라이트",
     "themeDark": "다크",
@@ -2225,6 +2226,14 @@
     "allow": "허용",
     "deny": "거부",
     "protected": "보호됨",
+    "selfAccessWarningAuthorization": "이것을 저장하면 본인의 직원 권한 접근이 제거됩니다.",
+    "selfAccessWarningStaffPrivileged": "이것을 저장하면 본인의 소유자 및 관리자 계정 접근이 제거됩니다.",
+    "selfAccessWarningStaffOperational": "이것을 저장하면 본인의 직원 계정 접근이 제거됩니다.",
+    "selfAccessWarningSettings": "이것을 저장하면 본인의 매장 설정 접근이 제거됩니다.",
+    "administrationUnreachable": "이 변경을 적용하면 직원, 권한 또는 매장 설정을 관리할 수 있는 계정이 하나도 남지 않습니다. 먼저 다른 활성 소유자에게 이 권한을 부여하세요.",
+    "selfPrivilegeChangeTitle": "본인의 접근 권한에 대한 변경을 확인하세요",
+    "selfPrivilegeChangePrompt": "이 변경은 본인의 직원, 권한 또는 매장 설정 접근을 변경합니다. 계속하려면 PIN을 입력하거나 다른 소유자에게 이 변경을 요청하세요.",
+    "selfPrivilegeNotConfirmed": "본인의 접근 권한에 대한 변경을 확인할 수 없어 아무것도 저장되지 않았습니다. 계정에 PIN을 설정하거나 다른 소유자에게 이 변경을 요청하세요.",
     "editorFooterNote": "승인 PIN, 마지막 활성 소유자, 환불 마감 시간, 주방 스테이션 배정과 같은 민감한 비즈니스 규칙은 계속 적용됩니다."
   },
   "permissionAudit": {

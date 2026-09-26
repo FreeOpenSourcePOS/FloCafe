@@ -1996,6 +1996,7 @@
     "yes": "Po",
     "zeroNoLimit": "(0 = pa kufi)",
     "tabAppearance": "Pamja e jashtme",
+    "viewOnlyNotice": "Po shikoni këto cilësime pa leje për t’i ndryshuar, prandaj kontrollet këtu janë vetëm për lexim. Një pronar mund t’ju japë lejen Cilësimet nëse ju nevojitet të bëni një ndryshim.",
     "themeTitle": "Tema",
     "themeLight": "Drita",
     "themeDark": "E errët",
@@ -2225,6 +2226,14 @@
     "allow": "Lejo",
     "deny": "Ndalo",
     "protected": "E mbrojtur",
+    "selfAccessWarningAuthorization": "Ruajtja e këtij do ta heqë qasjen tuaj vetë te lejet e stafit.",
+    "selfAccessWarningStaffPrivileged": "Ruajtja e këtij do ta heqë qasjen tuaj vetë te llogaritë e pronarëve dhe menaxherëve.",
+    "selfAccessWarningStaffOperational": "Ruajtja e këtij do ta heqë qasjen tuaj vetë te llogaritë e stafit.",
+    "selfAccessWarningSettings": "Ruajtja e këtij do ta heqë qasjen tuaj vetë te cilësimet e dyqanit.",
+    "administrationUnreachable": "Ky ndryshim do të lërë pa asnjë llogari që mund të menaxhojë stafin, lejet ose cilësimet e dyqanit. Jepini këto leje fillimisht një pronar tjetër aktiv.",
+    "selfPrivilegeChangeTitle": "Konfirmoni këtë ndryshim në qasjen tuaj vetë",
+    "selfPrivilegeChangePrompt": "Ky ndryshim ndryshon qasjen tuaj vetë te stafi, lejet ose cilësimet e dyqanit. Shkruani PIN-in tuaj për të vazhduar, ose kërkoni që një pronar tjetër ta bëjë këtë ndryshim.",
+    "selfPrivilegeNotConfirmed": "Ky ndryshim në qasjen tuaj vetë nuk mund të konfirmohej, prandaj nuk u ruajt asgjë. Vendosni një PIN për llogarinë tuaj ose kërkoni që një pronar tjetër ta bëjë këtë ndryshim.",
     "editorFooterNote": "Rregullat e ndjeshme të biznesit, si PIN-at e miratimit, pronari i fundit aktiv, afatet e rimbursimit dhe caktimet e stacioneve të kuzhinës, vazhdojnë të zbatohen."
   },
   "permissionAudit": {

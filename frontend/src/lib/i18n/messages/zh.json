@@ -1996,6 +1996,7 @@
     "yes": "是",
     "zeroNoLimit": "（0 = 不限）",
     "tabAppearance": "外观",
+    "viewOnlyNotice": "您正在以只读方式查看这些设置，因此这里的控件不可编辑。如需更改，店主可以授予您设置权限。",
     "themeTitle": "主题",
     "themeLight": "浅色",
     "themeDark": "深色",
@@ -2225,6 +2226,14 @@
     "allow": "允许",
     "deny": "拒绝",
     "protected": "受保护",
+    "selfAccessWarningAuthorization": "保存此更改将取消您自己对员工权限的访问权。",
+    "selfAccessWarningStaffPrivileged": "保存此更改将取消您自己对店主和经理账户的访问权。",
+    "selfAccessWarningStaffOperational": "保存此更改将取消您自己对员工账户的访问权。",
+    "selfAccessWarningSettings": "保存此更改将取消您自己对门店设置的访问权。",
+    "administrationUnreachable": "此更改将导致没有任何账户能够管理员工、权限或门店设置。请先将这些权限授予另一位启用中的店主。",
+    "selfPrivilegeChangeTitle": "确认此更改对您自己的访问权的影响",
+    "selfPrivilegeChangePrompt": "此更改会改变您自己对员工、权限或门店设置的访问权。请输入 PIN 码以继续，或请另一位店主执行此更改。",
+    "selfPrivilegeNotConfirmed": "无法确认此更改对您自己的访问权的影响，因此未保存任何内容。请为您的账户设置 PIN 码，或请另一位店主执行此更改。",
     "editorFooterNote": "审批 PIN、最后一位在职店主、退款截止时间和厨房工作站分配等敏感业务规则仍然适用。"
   },
   "permissionAudit": {

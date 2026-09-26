@@ -1996,6 +1996,7 @@
     "yes": "Ja",
     "zeroNoLimit": "(0 = geen limiet)",
     "tabAppearance": "Verschijning",
+    "viewOnlyNotice": "U bekijkt deze instellingen zonder rechten om ze te wijzigen, dus de bedieningselementen hier zijn alleen-lezen. Een eigenaar kan u het recht Instellingen geven als u een wijziging moet aanbrengen.",
     "themeTitle": "Thema",
     "themeLight": "Licht",
     "themeDark": "Donker",
@@ -2225,6 +2226,14 @@
     "allow": "Toestaan",
     "deny": "Weigeren",
     "protected": "Beschermd",
+    "selfAccessWarningAuthorization": "Opslaan verwijdert uw eigen toegang tot de personeelsrechten.",
+    "selfAccessWarningStaffPrivileged": "Opslaan verwijdert uw eigen toegang tot eigenaars- en manageraccounts.",
+    "selfAccessWarningStaffOperational": "Opslaan verwijdert uw eigen toegang tot personeelsaccounts.",
+    "selfAccessWarningSettings": "Opslaan verwijdert uw eigen toegang tot de winkelinstellingen.",
+    "administrationUnreachable": "Deze wijziging zou geen account overlaten dat personeel, rechten of winkelinstellingen kan beheren. Geef deze rechten eerst aan een andere actieve eigenaar.",
+    "selfPrivilegeChangeTitle": "Bevestig deze wijziging aan uw eigen toegang",
+    "selfPrivilegeChangePrompt": "Deze wijziging verandert uw eigen toegang tot personeel, rechten of winkelinstellingen. Voer uw PIN-code in om door te gaan, of vraag een andere eigenaar om deze wijziging te maken.",
+    "selfPrivilegeNotConfirmed": "Deze wijziging aan uw eigen toegang kon niet worden bevestigd, dus er is niets opgeslagen. Stel een PIN-code in voor uw account of vraag een andere eigenaar om deze wijziging te maken.",
     "editorFooterNote": "Gevoelige bedrijfsregels zoals goedkeuringspincodes, de laatste actieve eigenaar, terugbettaanvallen en keukenstationtoewijzingen blijven gelden."
   },
   "permissionAudit": {

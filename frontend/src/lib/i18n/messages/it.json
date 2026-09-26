@@ -1996,6 +1996,7 @@
     "yes": "Sì",
     "zeroNoLimit": "(0 = nessun limite)",
     "tabAppearance": "Aspetto",
+    "viewOnlyNotice": "Stai visualizzando queste impostazioni senza il permesso di modificarle, quindi i controlli qui sono in sola lettura. Un proprietario può concederti il permesso Impostazioni se devi apportare una modifica.",
     "themeTitle": "Tema",
     "themeLight": "Chiaro",
     "themeDark": "Scuro",
@@ -2225,6 +2226,14 @@
     "allow": "Consenti",
     "deny": "Nega",
     "protected": "Protetto",
+    "selfAccessWarningAuthorization": "Il salvataggio rimuove il tuo accesso alle autorizzazioni del personale.",
+    "selfAccessWarningStaffPrivileged": "Il salvataggio rimuove il tuo accesso agli account proprietario e responsabile.",
+    "selfAccessWarningStaffOperational": "Il salvataggio rimuove il tuo accesso agli account del personale.",
+    "selfAccessWarningSettings": "Il salvataggio rimuove il tuo accesso alle impostazioni del negozio.",
+    "administrationUnreachable": "Questa modifica lascerebbe nessun account in grado di gestire personale, autorizzazioni o impostazioni del negozio. Concedi prima queste autorizzazioni a un altro proprietario attivo.",
+    "selfPrivilegeChangeTitle": "Conferma questa modifica al tuo accesso",
+    "selfPrivilegeChangePrompt": "Questa modifica cambia il tuo accesso a personale, autorizzazioni o impostazioni del negozio. Inserisci il tuo PIN per continuare oppure chiedi a un altro proprietario di eseguire la modifica.",
+    "selfPrivilegeNotConfirmed": "Non è stato possibile confermare questa modifica al tuo accesso, quindi non è stato salvato nulla. Imposta un PIN per il tuo account oppure chiedi a un altro proprietario di eseguire la modifica.",
     "editorFooterNote": "Le regole aziendali sensibili, come i PIN di approvazione, l'ultimo proprietario attivo, le scadenze dei rimborsi e le assegnazioni delle postazioni cucina, continuano ad applicarsi."
   },
   "permissionAudit": {

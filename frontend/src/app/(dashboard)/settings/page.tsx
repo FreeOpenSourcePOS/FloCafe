@@ -2918,6 +2918,13 @@ export default function SettingsPage() {
 
         <div className={`flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-8 md:pb-12 ${isDirty ? 'pb-32 md:pb-32' : ''}`}>
 
+        {!isAdmin && (
+          <p data-testid="settings-read-only-notice" className="mb-5 flex items-start gap-2 rounded-lg border border-border bg-muted p-3 text-sm text-muted-foreground">
+            <Lock size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+            <span>{t('viewOnlyNotice')}</span>
+          </p>
+        )}
+
         <TabsContent value="store">
           <GeneralSettingsTab
             isAdmin={isAdmin}

@@ -1996,6 +1996,7 @@
     "yes": "Oo",
     "zeroNoLimit": "(0 = walang limitasyon)",
     "tabAppearance": "Hitsura",
+    "viewOnlyNotice": "Tinitingnan mo ang mga setting na ito nang walang pahintulot na baguhin, kaya ang mga kontrol dito ay read-only. Maaaring magbigay sa iyo ang isang may-ari ng pahintulot sa Mga Setting kung kailangan mong gumawa ng pagbabago.",
     "themeTitle": "Tema",
     "themeLight": "Maliwanag",
     "themeDark": "Madilim",
@@ -2225,6 +2226,14 @@
     "allow": "Payagan",
     "deny": "Tanggihan",
     "protected": "Protektado",
+    "selfAccessWarningAuthorization": "Ang pag-save na ito ay alisin ang sarili mong access sa mga pahintulot ng kawani.",
+    "selfAccessWarningStaffPrivileged": "Ang pag-save na ito ay alisin ang sarili mong access sa mga account ng may-ari at manager.",
+    "selfAccessWarningStaffOperational": "Ang pag-save na ito ay alisin ang sarili mong access sa mga account ng kawani.",
+    "selfAccessWarningSettings": "Ang pag-save na ito ay alisin ang sarili mong access sa mga setting ng tindahan.",
+    "administrationUnreachable": "Ang pagbabagong ito ay mag-iwan na walang account na kayang pamahanaan ang kawani, mga pahintulot, o mga setting ng tindahan. Bigyan muna ng mga pahintulot na ito ang ibang aktibong may-ari.",
+    "selfPrivilegeChangeTitle": "Kumpirmahin ang pagbabagong ito sa sarili mong access",
+    "selfPrivilegeChangePrompt": "Binabago ng pagbabagong ito ang sarili mong access sa kawani, mga pahintulot, o mga setting ng tindahan. Ilagay ang iyong PIN upang magpatuloy, o hilinging gawin ito ng ibang may-ari.",
+    "selfPrivilegeNotConfirmed": "Hindi makukumpirma ang pagbabagong ito sa sarili mong access, kaya walang na-save. Magtakda ng PIN para sa iyong account, o hilinging gawin ito ng ibang may-ari.",
     "editorFooterNote": "Patuloy na ipinapatupad ang mga sensitibong panuntunan sa negosyo tulad ng approval PIN, ang huling aktibong may-ari, mga deadline sa refund, at pagtatalaga sa mga istasyon ng kusina."
   },
   "permissionAudit": {

@@ -464,8 +464,10 @@ test('bills without a refunded item print byte-identical tax lines on both print
       { status: 'void_adjustment', tax_snapshot: null, tax_breakdown: [{ title: 'VAT', rate: 12, amount: -5 }] },
     ],
   };
-  assert.equal(
-    JSON.stringify(resolveBackendTaxComponents(document)),
-    JSON.stringify(resolveFrontendTaxComponents(document)),
-  );
+  // Pinned, not just parity: if the shared terminal-status predicate lost an
+  // entry, both paths would drift together and a parity-only assertion would
+  // still pass while a printed bill silently gained a terminal item's tax.
+  const expected = JSON.stringify([{ title: 'GST', rate: 5, amount: 12 }]);
+  assert.equal(JSON.stringify(resolveBackendTaxComponents(document)), expected);
+  assert.equal(JSON.stringify(resolveFrontendTaxComponents(document)), expected);
 });

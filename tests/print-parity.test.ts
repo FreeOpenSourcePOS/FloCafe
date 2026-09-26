@@ -411,7 +411,7 @@ function run(): void {
       const paperWidth = FRONTEND_PAPER_BY_COLUMNS.get(cols);
       if (paperWidth === undefined) {
         console.log(`  ladder ${template} @ ${cols} cols: frontend has no paper size that reaches this width`);
-        warn(true, `column-parity/${template}/${cols}: frontend-only rung reported`);
+        warn(true, `column-parity/${template}/${cols}: backend-only rung reported, no frontend paper size reaches this width`);
         continue;
       }
       const frontend = measureEscPos(

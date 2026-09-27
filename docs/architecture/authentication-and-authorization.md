@@ -20,7 +20,7 @@ identity or rename one.
 What each identity is *allowed to do* is a separate, configurable layer. See
 [Configurable permissions](#configurable-permissions) below.
 
-`shared/role-permissions.ts` also exports `ROLE_ACCESS`, a map of nine named role groups. Those
+`shared/role-permissions.ts` also exports `ROLE_ACCESS`, a map of ten named role groups. Those
 groups now serve two purposes: they are the *shipped default* `defaultRoles` values in
 [`shared/permissions.ts`](../../shared/permissions.ts) (`PERMISSION_DEFINITIONS`), and they remain
 the direct gate for the small set of context-policy checks described below that are role-based by

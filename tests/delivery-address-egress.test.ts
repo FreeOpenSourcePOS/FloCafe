@@ -271,6 +271,42 @@ test('delivery exception: the override is a persisted setting beside the receipt
   }
 });
 
+test('delivery exception: the settings page sends the override on save, not only on load', () => {
+  // Hydration and saving are separate code paths. A key wired into the read but
+  // not the write hydrates the switch and then does nothing when it is flipped,
+  // which is the failure this catches. It happened once: a merge into this branch
+  // dropped the save-side edit and left the load-side one in place.
+  const page = fs.readFileSync(path.join(__dirname, '../frontend/src/app/(dashboard)/settings/page.tsx'), 'utf8');
+  // Take the whole handler body by brace depth, not to the next `const`: the
+  // body opens several `const` declarations of its own.
+  const saveStart = page.indexOf('const savePrinting');
+  assert.ok(saveStart > 0, 'the printing save handler exists');
+  const open = page.indexOf('{', saveStart);
+  let depth = 0;
+  let close = open;
+  for (; close < page.length; close += 1) {
+    if (page[close] === '{') depth += 1;
+    else if (page[close] === '}') {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+  }
+  const saveBody = page.slice(saveStart, close);
+  assert.ok(
+    /bill_delivery_show_customer_phone_always: formSnapshot\.billDeliveryShowCustomerPhoneAlways/.test(saveBody),
+    'the save payload carries the override',
+  );
+  assert.ok(
+    /setBillDeliveryShowCustomerPhoneAlways\(formSnapshot\.billDeliveryShowCustomerPhoneAlways\)/.test(saveBody),
+    'and the POS store is updated from the saved value, not only on load',
+  );
+  // The load path must have it too, or the switch starts from the wrong value.
+  assert.ok(
+    /d\.bill_delivery_show_customer_phone_always !== false/.test(page),
+    'hydration reads the override back',
+  );
+});
+
 test('delivery exception: the Settings panel states the consequence next to the toggle', () => {
   // Placement and copy, at the only level available without a DOM harness: the
   // panel must carry all three strings, and the warning must sit in the same

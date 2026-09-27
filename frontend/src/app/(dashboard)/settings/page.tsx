@@ -1148,6 +1148,7 @@ export default function SettingsPage() {
         bill_show_tax_breakdown: formSnapshot.billShowTaxBreakdown,
         bill_show_customer_name: formSnapshot.billShowCustomerName,
         bill_show_customer_phone: formSnapshot.billShowCustomerPhone,
+        bill_delivery_show_customer_phone_always: formSnapshot.billDeliveryShowCustomerPhoneAlways,
         bill_show_table_number: formSnapshot.billShowTableNumber,
         ...(formSnapshot.cashDrawerPulseEnabled !== undefined ? {
           cash_drawer_pulse_enabled: formSnapshot.cashDrawerPulseEnabled,
@@ -1173,6 +1174,7 @@ export default function SettingsPage() {
       posSettings.setBillShowTaxBreakdown(formSnapshot.billShowTaxBreakdown);
       posSettings.setBillShowCustomerName(formSnapshot.billShowCustomerName);
       posSettings.setBillShowCustomerPhone(formSnapshot.billShowCustomerPhone);
+      posSettings.setBillDeliveryShowCustomerPhoneAlways(formSnapshot.billDeliveryShowCustomerPhoneAlways);
       posSettings.setBillShowTableNumber(formSnapshot.billShowTableNumber);
       setSavedPrinting(formSnapshot);
       if (!silent) toast.success(t('printingSettingsSaved'));

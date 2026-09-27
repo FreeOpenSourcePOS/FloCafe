@@ -571,13 +571,7 @@ export default function OrdersPage() {
     }
   };
 
-  /**
-   * Print the courier slip for a delivery order.
-   *
-   * No bill is involved, so this works before the customer pays. The number and
-   * address are taken from the linked customer record and passed through
-   * unmasked: that is the entire point of the slip.
-   */
+  /** No bill is needed, so this works before the customer pays. */
   const handlePrintDeliverySlip = async (order: Order) => {
     const customer = order.customer;
     const phone = customer?.phone
@@ -592,10 +586,8 @@ export default function OrdersPage() {
         {
           name: customer?.name || '',
           phone,
-          // The address confirmed for this order wins; the customer's standing
-          // address is the fallback. Every order created before the column
-          // existed takes the fallback, so it is the common case, not the
-          // exceptional one.
+          // The order's own address wins; pre-column orders take the fallback,
+          // so that is the common case rather than the rare one.
           address: order.delivery_address || customer?.address || '',
         },
       );

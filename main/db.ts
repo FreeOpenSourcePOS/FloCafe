@@ -5353,19 +5353,14 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 94,
     name: 'add_order_delivery_address',
     up: () => {
-      // The address a merchant types for one specific delivery, kept on the
-      // order so the courier slip prints what was confirmed for that delivery
-      // rather than only the customer's standing address. A fresh install gets
-      // the column from the CREATE TABLE, so the ALTER is guarded exactly the
-      // way the online_platform migration guards its own columns.
+      // A fresh install gets this column from the CREATE TABLE, so the ALTER is
+      // guarded the way the online_platform migration guards its own columns.
       const orderColumns = getColumns(db, 'orders');
       if (!orderColumns.includes('delivery_address')) {
         db.exec(`ALTER TABLE orders ADD COLUMN delivery_address TEXT DEFAULT NULL`);
       }
-      // Merchant override for the delivery-order customer-number exception.
-      // Defaults to on: the number shows on delivery receipts and courier slips
-      // unless the merchant explicitly turns that off. See
-      // docs/reference/product-invariants.md.
+      // On by default: delivery documents show the number unless the merchant
+      // turns it off. See docs/reference/product-invariants.md.
       db.prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)').run(
         'bill_delivery_show_customer_phone_always',
         'true',

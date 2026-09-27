@@ -41,13 +41,7 @@ export interface BillBusinessOptions {
   showBusinessName?: boolean;
   showCustomerName?: boolean;
   showCustomerPhone?: boolean;
-  /**
-   * The merchant's `bill_delivery_show_customer_phone_always` override. Defaults
-   * to on, matching the shipped setting: a delivery order shows the customer's
-   * number even when receipts have it turned off, until the merchant says
-   * otherwise. Resolved by the shared `shouldShowCustomerNumber` rule so the
-   * renderer and the backend print route cannot disagree.
-   */
+  /** Default on, matching the shipped setting. Resolved by the shared rule. */
   deliveryShowCustomerPhoneAlways?: boolean;
   showTableNumber?: boolean;
   isReprint?: boolean;

@@ -878,14 +878,7 @@ export interface KotDocument {
 // Delivery slip document v1
 // ---------------------------------------------------------------------------
 
-/**
- * Where the slip's contact block reads from, in resolution order.
- *
- * `order` is the address recorded against this specific delivery; `customer` is
- * the customer's standing address on their record. The slip records which one
- * it used so a renderer, a test, or a merchant reading the printed document can
- * tell the difference instead of guessing.
- */
+/** `order` is this delivery's address, `customer` the standing one. */
 export type DeliverySlipAddressSource = 'order' | 'customer';
 
 /** Inputs to the customer-number visibility rule, all caller-resolved. */
@@ -898,21 +891,7 @@ export interface CustomerNumberVisibility {
   readonly orderType: string;
 }
 
-/**
- * Decide whether a document may print the customer's number.
- *
- * One rule, two call sites (the backend print route and the renderer's document
- * builder), so a merchant's receipt and a merchant's delivery order cannot
- * disagree about the same setting.
- *
- * The delivery exception is deliberately a product default rather than a
- * default-off toggle: a merchant who has turned the number off on receipts
- * generally has not turned it off because a courier should not have it, and
- * defaulting the exception off would reproduce the reported problem for every
- * install that never visits Settings. The merchant can opt back out, and the
- * Settings panel says so next to the toggle it contradicts. See
- * docs/reference/product-invariants.md.
- */
+/** One rule, so a receipt and a delivery order cannot disagree. It ships on. */
 export function shouldShowCustomerNumber(visibility: CustomerNumberVisibility): boolean {
   if (visibility.showOnReceipts) return true;
   return visibility.alwaysForDeliveryOrders && visibility.orderType.trim() === 'delivery';
@@ -928,11 +907,7 @@ export interface DeliverySlipContactBlock {
   readonly address: DirectionalText | null;
   /** Which record the printed address came from, when an address is present. */
   readonly addressSource: DeliverySlipAddressSource | null;
-  /**
-   * Characters dropped from a legacy over-long address, 0 when it printed whole.
-   * The slip prints a marker rather than handing a courier a partial address
-   * that looks complete.
-   */
+  /** Characters dropped from a legacy over-long address; the slip marks it. */
   readonly addressTruncatedChars: number;
   readonly nameLabel: SemanticLabel;
   readonly phoneLabel: SemanticLabel;
@@ -1307,16 +1282,7 @@ export function isDeliverySlipDocument(value: unknown): value is DeliverySlipDoc
     && value.blocks.every(isDeliverySlipDocumentBlock);
 }
 
-/**
- * Build a DeliverySlipDocument v1 from normalized slip data. Pure: reads only
- * its arguments and performs no IO or recomputation.
- *
- * The contact block deliberately carries the full customer number and does NOT
- * consult the receipt's `bill_show_customer_phone` setting. A courier who cannot
- * call the customer is the problem this document exists to solve, so a merchant
- * who hid the number on receipts still gets it on the slip. The divergence is
- * intentional and is recorded in docs/reference/product-invariants.md.
- */
+/** The contact block never consults the receipt's visibility setting. */
 export function buildDeliverySlipDocument(
   printData: DeliverySlipPrintData,
   printContext: PrintContext,

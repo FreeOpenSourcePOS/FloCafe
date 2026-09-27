@@ -435,9 +435,8 @@ router.put('/:id', customerWriteRateLimit, requirePermission('customers.edit'), 
     const finalAddress = address !== undefined ? (address ? String(address).trim() : null) : customer.address;
     const finalNotes = notes !== undefined ? (notes ? String(notes).trim() : null) : customer.notes;
 
-    // Only a newly supplied address is checked. A legacy row longer than the
-    // cap stays readable and stays printable; editing an unrelated field on it
-    // must not fail.
+    // Only a newly supplied address is checked, so a legacy long row stays
+    // editable and printable.
     if (address !== undefined) {
       try {
         validateCustomerAddress(db, finalAddress);

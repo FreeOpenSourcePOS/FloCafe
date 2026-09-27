@@ -493,9 +493,7 @@ router.post('/print-bill', requirePermission('printing.execute'), asyncHandler(a
            ? `${customer.country_code} ${customer.phone}`
            : customer.phone)
         : '',
-      // The delivery exception is one shared rule, resolved here for the
-      // receipt and never consulted by the slip. See
-      // docs/reference/product-invariants.md.
+      // One shared rule, so the receipt and the slip cannot disagree.
       show_customer_phone: shouldShowCustomerNumber({
         showOnReceipts: settings.bill_show_customer_phone !== 'false',
         alwaysForDeliveryOrders: settings.bill_delivery_show_customer_phone_always !== 'false',
@@ -696,16 +694,8 @@ router.post('/print-kot', requirePermission('printing.execute'), asyncHandler(as
   }
 }));
 
-// POST /api/printers/print-delivery-slip — print the courier slip for one order.
-//
-// The slip carries the FULL customer number and the delivery address. It is a
-// separate document from the receipt and does not consult the receipt's
-// bill_show_customer_phone setting, because a courier who cannot call the
-// customer is the problem this document solves. See
-// docs/reference/product-invariants.md.
-//
-// No bill is required: an order with no bill prints fine, so a courier slip can
-// be handed over before the customer pays.
+// POST /api/printers/print-delivery-slip. No bill is required, so a slip can be
+// handed over before the customer pays. See docs/reference/product-invariants.md.
 router.post('/print-delivery-slip', requirePermission('printing.execute'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { orderId, useUnicode = false } = req.body;
@@ -745,14 +735,8 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
       : '';
 
     const language = resolveTenantReceiptLanguages(db).primary;
-    // The merchant's delivery exception, default on. Unchecked means the
-    // Customer Number setting governs delivery orders and slips too, so the
-    // slip withholds the number as well. See
-    // docs/reference/product-invariants.md.
-    // The override, or the receipt setting when the override is off. Blank only
-    // when the merchant has asked for the number to be hidden on receipts AND
-    // turned the delivery exception off; a slip that silently loses the number
-    // while the receipt shows it is the case the reviewer is right about.
+    // The delivery exception, or the receipt setting when it is off. Blank only
+    // when both say hide, so the slip and a delivery receipt cannot disagree.
     const showCustomerPhone = (
       db.prepare("SELECT value FROM settings WHERE key = 'bill_delivery_show_customer_phone_always'").get() as { value?: string } | undefined
     )?.value !== 'false'

@@ -219,9 +219,8 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           state.billShowTableNumber ??= true;
         }
         if (version < 4) {
-          // Added after v3 shipped, so a store already persisted at v3 never
-          // runs the v3 block above and would keep this field undefined. That
-          // made the toggle render unset and made the save send nothing for it.
+          // Added after v3, which a store already at v3 never runs, so the field
+          // would stay undefined and the save would send nothing for it.
           state.billDeliveryShowCustomerPhoneAlways ??= true;
         }
         return state as unknown as PosSettingsState;

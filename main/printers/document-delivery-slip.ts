@@ -1,13 +1,4 @@
-/**
- * DeliverySlipDocument v1 renderer; maps the slip document onto the ESC/POS
- * token-line layout.
- *
- * A delivery slip is a separate document kind from the receipt, not a receipt
- * template. That is what lets it print the full customer number while every
- * receipt keeps masking it: the slip has its own builder, so it never consults
- * the receipt's `bill_show_customer_phone` setting and never shares the
- * `maskCustomerPhone` default. See docs/reference/product-invariants.md.
- */
+/** A separate document kind from the receipt, so the two cannot share a default. */
 
 import { parseDbTimestamp } from '../db';
 import { printLabel } from '../print/print-labels.generated';
@@ -44,15 +35,7 @@ import {
   type SemanticLabel,
 } from '../../shared/print';
 
-/**
- * Hard cap on the address text the slip renders, in characters.
- *
- * The address is merchant-entered free text flowing into a printed document, so
- * the slip does not trust its length. A legacy customer row written before the
- * customer-write cap existed can be arbitrarily long; wrapping keeps all of it
- * readable, and this ceiling bounds a single delivery to a sane number of paper
- * lines so one record cannot monopolise the printer.
- */
+/** Bounds one delivery to a sane number of paper lines. */
 export const MAX_DELIVERY_SLIP_ADDRESS_CHARS = 300;
 
 function parseSlipAddons(value: unknown): Array<{ name: string; quantity?: number }> {
@@ -76,13 +59,7 @@ function parseSlipAddons(value: unknown): Array<{ name: string; quantity?: numbe
     }));
 }
 
-/**
- * Normalize raw order/customer rows into an authoritative slip snapshot.
- *
- * The phone arrives already country-code-prefixed by the caller. The address is
- * resolved order-first, then the customer's standing record, and the resolved
- * source is carried on the snapshot so the document records which one printed.
- */
+/** Phone arrives country-code prefixed; address resolves order-first. */
 /** The order fields the slip reads. Rows arrive from SQLite, so all are optional. */
 export interface DeliverySlipOrderRow {
   readonly order_number?: unknown;
@@ -139,14 +116,7 @@ export function buildDeliverySlipPrintData(
   };
 }
 
-/**
- * Cap address text at the slip ceiling and report how much was dropped.
- *
- * The budget and the count are in the same unit the write-time boundary uses,
- * UTF-16 code units, so a supplementary-plane address cannot slip past the cap
- * the customer write enforces. The slice breaks on grapheme clusters, so a
- * combining mark or an emoji sequence is never cut in half.
- */
+/** Budget and count use the boundary's unit; the slice breaks on clusters. */
 function clampAddress(address: string): { text: string; truncatedChars: number } {
   if (address.length <= MAX_DELIVERY_SLIP_ADDRESS_CHARS) return { text: address, truncatedChars: 0 };
   const kept: string[] = [];
@@ -271,14 +241,7 @@ function slipHeaderLines(
   return lines;
 }
 
-/**
- * Courier contact block.
- *
- * The phone is emitted as supplied. There is no `maskCustomerPhone` option here:
- * it would reintroduce the receipt's redaction into the document whose purpose
- * is the number. `showCustomerPhone` is the resolved merchant choice, which the
- * caller computes as the delivery override or the receipt setting.
- */
+/** No `maskCustomerPhone` here: it would reintroduce the receipt's redaction. */
 function slipContactLines(
   contact: DeliverySlipContactBlock,
   options: DeliverySlipDocumentRenderOptions,
@@ -298,10 +261,8 @@ function slipContactLines(
     sourceControlLines.push(lines.at(-1) ?? '');
   }
   if (contact.address) {
-    // Wrapping, not truncation: a wrapped address stays readable at every
-    // column rung, a truncated one does not, and the courier reading the slip
-    // is the whole point of the document. `pushWrapped` is the same helper the
-    // receipt uses for the shop's own address, so both wrap identically.
+    // Wrapped, not truncated: a wrapped address stays readable at every rung.
+    // pushWrapped is the helper the receipt uses for the shop's own address.
     const labeled = thermalSafeText(
       `${labelOf(contact.addressLabel)}: `,
       'Delivery address: ',

@@ -54,9 +54,8 @@ function main(): void {
   initDatabase();
   const db = getDatabase();
 
-  // Pins the migration that introduced the configurable-permission tables, and
-  // asserts they survive later migrations, so the current schema version must be
-  // at least that. Tracked up as migrations land.
+  // The permission tables must survive later migrations, so the schema version
+  // is a floor rather than an exact pin.
   assert.ok(getCurrentSchemaVersion() >= 93, 'permission schema is at least migration v93');
   for (const table of ['role_permission_overrides', 'user_permission_overrides', 'authorization_audit_log']) {
     assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table), `${table} exists`);

@@ -1,11 +1,4 @@
-/**
- * Delivery slip byte encoder for the WebUSB transport.
- *
- * A courier slip, not a receipt: it carries the FULL customer number and the
- * delivery address, and it has no money on it at all. The number is emitted as
- * supplied. There is deliberately no mask option here — the receipt's mask lives
- * on the receipt encoder, so the two documents cannot come to share one default.
- */
+/** A courier slip has no money on it and no mask option; see product-invariants. */
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import { columnsForReceiptPaperSize } from '@print/width';

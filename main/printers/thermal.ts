@@ -1002,10 +1002,8 @@ export async function printDeliverySlip(
 
     const { profile, columns: cols, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
     const db = getDatabase();
-    // The settings table is key/value, so a `SELECT * LIMIT 1` row is an
-    // arbitrary {key, value} pair and carries no `country` or `language`
-    // property. Read the keys this render actually needs, or the slip's date
-    // silently falls back to en-US for every store.
+    // Key/value table: a `SELECT * LIMIT 1` row has no `country` property, so
+    // reading it that way silently pins the slip date to en-US.
     const countryCode = getSettingValue('country') ?? '';
     const storeLanguage = getSettingValue('language') ?? undefined;
     const locale = countryCode ? getCountryByCode(countryCode)?.locale ?? 'en-US' : 'en-US';
@@ -1046,9 +1044,8 @@ export async function printDeliverySlip(
         data = rasterized.data;
         warnings.push(...rasterized.warnings);
       } else {
-        // The native bytes are the ones going to the printer, so the native
-        // render's warnings are the ones staff must see. Dropping them lets a
-        // slip whose address the printer cannot represent report success.
+        // The native bytes are going to the printer, so its warnings are the
+        // ones staff must see, or an unrepresentable address reports success.
         data = nativeResult.data;
         warnings.push(...nativeResult.warnings, ...rasterized.warnings);
       }

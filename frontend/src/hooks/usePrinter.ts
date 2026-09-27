@@ -591,10 +591,8 @@ export const usePrinterStore = create<PrinterState>()(
         set({ lastError: null });
         try {
           const { printerUseUnicode, printerArabicShaping, billDeliveryShowCustomerPhoneAlways, billShowCustomerPhone } = usePosSettingsStore.getState();
-          // The renderers read cached messages, and a settings change can swap the
-          // receipt language without loading its bundle, so load it first rather
-          // than printing an English slip with no warning. printBill and printKot
-          // do the same.
+          // A settings change can swap the receipt language without loading its
+          // bundle, so load it first rather than printing an English slip silently.
           const slipLanguages = resolveBillPrintLanguages();
           const failedSlipLanguages = await ensurePrintLanguagesLoaded(slipLanguages);
           const tenant = useAuthStore.getState().currentTenant;
@@ -605,9 +603,8 @@ export const usePrinterStore = create<PrinterState>()(
           // Same rule as the backend route: the delivery override, or the
           // receipt setting when the override is off.
           const slipContact = (billDeliveryShowCustomerPhoneAlways || billShowCustomerPhone) ? contact : { ...contact, phone: '' };
-          // Add-ons are carried through, because the backend slip route prints
-          // them and a local slip that silently dropped the customer's selected
-          // add-ons would hand the courier a different order than the kitchen.
+          // The backend slip route prints add-ons, so dropping them here would
+          // hand the courier a different order than the kitchen.
           const slipItems = (orderForPrint.items ?? []).map((item) => ({
             product_name: item.product_name,
             quantity: Number(item.quantity) || 0,

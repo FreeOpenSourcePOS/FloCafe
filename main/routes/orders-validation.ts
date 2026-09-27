@@ -26,26 +26,12 @@ export function validateItemNotes(db: SettingsLookup, notes: string | null | und
   validateNoteLength(db, 'max_item_notes_length', DEFAULT_MAX_ITEM_NOTES_LENGTH, notes, 'Item notes');
 }
 
-/**
- * Cap a customer address on the way in.
- *
- * The delivery slip prints the address in full, so the address is free text
- * flowing into a printed document and is capped the same way order notes are.
- * This refuses a too-long new value; it never rewrites an existing row, so a
- * legacy address written before the cap still reads and still prints (wrapped)
- * on the slip.
- */
+/** Refuses a too-long new value; never rewrites a legacy row that is too long. */
 export function validateCustomerAddress(db: SettingsLookup, address: string | null | undefined): void {
   validateNoteLength(db, 'max_customer_address_length', DEFAULT_MAX_CUSTOMER_ADDRESS_LENGTH, address, 'Customer address');
 }
 
-/**
- * Cap a per-order delivery address on the way in.
- *
- * Same reason as the customer address: the courier slip prints it in full, so it
- * is free text flowing into a printed document. Capped at the order boundary, so
- * nothing unbounded is ever persisted.
- */
+/** Free text bound for a printed document, so nothing unbounded is persisted. */
 export function validateDeliveryAddress(db: SettingsLookup, address: string | null | undefined): void {
   validateNoteLength(db, 'max_delivery_address_length', DEFAULT_MAX_DELIVERY_ADDRESS_LENGTH, address, 'Delivery address');
 }

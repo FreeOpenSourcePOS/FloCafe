@@ -1,6 +1,5 @@
 // Delivery-address contract: the column exists and is bounded, the address never
 // reaches the cloud outbox, and the merchant's number override is a real setting.
-// Asserts through node:assert/strict: the counting helpers exit 0 while red.
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -27,13 +26,8 @@ const { settingsRoutes } = require('../main/routes/settings');
 const DELIVERY_ADDRESS = 'Flat 4B, 123A-Anecacuilco 04330, Colonia Naucalpan';
 const OVER_CAP_ADDRESS = 'x'.repeat(400);
 
-/**
- * The shared factory, not a hand-rolled app.
- *
+/** The shared factory, not a hand-rolled app.
  * `createApp` mounts the same middleware production mounts, in the same order,
- * so the reproduction is faithful and the rate-limiting scanner sees the real
- * chain. A test that builds its own app here diverges from production and
- * reads as a rate-limiting finding.
  */
 function testApp(): any {
   return createApp({ '/api/orders': orderRoutes, '/api/settings': settingsRoutes });
@@ -137,7 +131,6 @@ test('delivery address: an over-long address is refused at the boundary', async 
 test('delivery address: it never reaches the cloud sync outbox', async () => {
   // The egress guard. The outbox row IS what leaves the machine: cloud sync ships
   // enabled by default, and the snapshot is built from `SELECT * FROM orders`, so
-  // this only holds while the strip list names the column.
   const db = initTestDb();
   const owner = seedOwnerUser(db);
   seedCategory(db, 'cat-1', 'Coffee');
@@ -189,13 +182,11 @@ test('delivery exception: the override is a persisted setting beside the receipt
 
     // The batch route validates every accepted key, so the payload is complete
     // rather than partial. A partial payload is rejected for an unrelated key
-    // and would mask a real rejection of the override.
     const saved = await api(baseUrl, '/api/settings/printing', {
       method: 'PUT',
       headers: owner.authHeader,
       // Every accepted key, because the batch route is all-or-nothing: a
       // partial payload is rejected for whichever key it omits, which would mask
-      // a real rejection of the override this test is about.
       body: {
         printer_trim_decimals: true,
         bill_show_name: true,
@@ -228,7 +219,6 @@ test('delivery exception: the override is a persisted setting beside the receipt
 
     // The round trip, not just the write. A setting that is accepted and then
     // quietly dropped is a different bug from one that is refused, and only a
-    // read after the write distinguishes them.
     const readBack = await api(baseUrl, '/api/settings/business', { headers: owner.authHeader });
     assert.equal(readBack.status, 200, 'the settings can be read back after the save');
     assert.equal(
@@ -255,8 +245,6 @@ test('delivery exception: the override is a persisted setting beside the receipt
 test('delivery exception: the settings page sends the override on save, not only on load', () => {
   // Hydration and saving are separate code paths. A key wired into the read but
   // not the write hydrates the switch and then does nothing when it is flipped,
-  // which is the failure this catches. It happened once: a merge into this branch
-  // dropped the save-side edit and left the load-side one in place.
   const page = fs.readFileSync(path.join(__dirname, '../frontend/src/app/(dashboard)/settings/page.tsx'), 'utf8');
   // Take the whole handler body by brace depth, not to the next `const`: the
   // body opens several `const` declarations of its own.
@@ -291,8 +279,6 @@ test('delivery exception: the settings page sends the override on save, not only
 test('delivery exception: the Settings panel states the consequence next to the toggle', () => {
   // Placement and copy, at the only level available without a DOM harness: the
   // panel must carry all three strings, and the warning must sit in the same
-  // block as the Customer Number toggle and its override, not somewhere else in
-  // the page where a merchant turning the toggle off would never see it.
   const panel = fs.readFileSync(path.join(__dirname, '../frontend/src/components/settings/PrintersSettingsTab.tsx'), 'utf8');
 
   assert.ok(panel.includes('deliveryCustomerPhoneWarning'), 'the panel states what delivery orders and slips will do');
@@ -307,7 +293,6 @@ test('delivery exception: the Settings panel states the consequence next to the 
   assert.ok(overrideAt > warningAt, 'the override sits with the warning, not elsewhere on the page');
   // The warning must land inside the same bill-content block as the toggle, so a
   // merchant reading down that column meets it. The block ends at its closing
-  // div, which is what the override and warning sit inside.
   const listAt = panel.lastIndexOf('billContentHint', toggleAt);
   assert.ok(listAt > 0, 'the bill-content block is identifiable');
   const blockEnd = panel.indexOf('</div>', warningAt);

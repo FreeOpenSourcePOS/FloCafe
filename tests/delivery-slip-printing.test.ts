@@ -148,7 +148,6 @@ test('delivery slip: prints the number even when the receipt hides the customer 
 test('delivery slip: the customer block builder exposes no show/mask gate at all', () => {
   // The structural half of "the two do not share a default". buildDeliverySlipDocument
   // takes only a snapshot and a context; there is no PrintContext flag, no
-  // options bag, and no mask parameter it could honour.
   const printData = buildDeliverySlipPrintData(ORDER, ORDER.items, CONTACT);
   const document = buildDeliverySlipDocument(printData, {
     columns: 42,
@@ -182,8 +181,6 @@ test('delivery exception: a delivery slip prints the full number with the overri
 test('delivery exception: the slip keeps the number whenever either setting allows it', () => {
   // The rule is an OR, not the override alone. A merchant who has turned the
   // number off on receipts but left the delivery exception on gets the number,
-  // and a merchant who turns the exception off still gets it if Customer Number
-  // is on. The slip goes blank only when both say hide.
   const shown = escPosToText(renderSlip(42, { showCustomerPhone: true }).data);
   assert.ok(shown.includes(FULL_PHONE), 'override on: the slip prints the full number');
 
@@ -244,7 +241,6 @@ test('delivery exception: a receipt still masks the number in both override stat
     if (shouldShow) {
       // Visible, and masked: decision 2 keeps the last-four mask on receipts.
       // Visibility and the mask are independent, which is the point of this
-      // test - the exception turns visibility on, it does not lift the mask.
       assert.ok(text.includes(MASKED_PHONE), `override=${alwaysForDeliveryOrders}: the delivery receipt shows the masked number`);
       assert.ok(!text.includes(FULL_PHONE), `override=${alwaysForDeliveryOrders}: the receipt never prints the full number`);
     } else {
@@ -303,7 +299,6 @@ test('receipt encoder: every mask application goes through the named option', ()
   );
   // A new bare maskPhoneOnReceipt(...) call at a render site is how a fourth
   // divergent path would appear. The only permitted direct application is inside
-  // resolveReceiptPhone itself.
   const directApplications = receiptEncoderSource
     .split('\n')
     .map((line, index) => ({ line: line.trim(), number: index + 1 }))
@@ -326,7 +321,6 @@ test('slip and receipt: no shared mask default exists between the two renderers'
   const slipSource = fs.readFileSync(path.join(__dirname, '../main/printers/document-delivery-slip.ts'), 'utf8');
   // The structural property, checked against the render surface rather than the
   // prose: the slip's options type carries no mask field, and the slip imports
-  // neither the mask helper nor the shared option name.
   const slipRendererOptions = slipSource.match(/export interface DeliverySlipDocumentRenderOptions \{([\s\S]*?)\}/)?.[1] ?? '';
   assert.ok(slipRendererOptions.length > 0, 'the slip renderer declares its options type');
   assert.ok(!/mask/i.test(slipRendererOptions), 'the slip render options carry no mask field');
@@ -338,7 +332,6 @@ test('slip and receipt: no shared mask default exists between the two renderers'
 test('slip and receipt: the same contact data renders differently by document, not by accident', () => {
   // End to end: the slip renderer emits the full number, and the receipt
   // renderer over the same customer still emits the masked one. If these ever
-  // agree, the full number has leaked into a receipt.
   const slipText = escPosToText(renderSlip(42).data);
   const receiptText = escPosToText(
     formatReceipt(RECEIPT_ORDER, RECEIPT_BILL, RECEIPT_BUSINESS, 'classic', 42, false, false, undefined, []),
@@ -394,11 +387,6 @@ test('delivery slip: no font-A line overflows the width it laid out for', () => 
 test('delivery slip: rendered lines match the golden fixture', () => {
   // Split on the block header, never on '===': the measured body contains
   // full-width rules made of '=' characters, so a body split on the delimiter
-  // would silently truncate at the first rule.
-  // Line endings are normalised on read, so a working tree that was checked out
-  // with CRLF still compares byte for byte against the LF output measured here.
-  // The `.gitattributes` rule keeps the checked-out file LF as well; both
-  // together mirror what the receipt column oracle does for its golden.
   const goldenBlocks = new Map(
     fs.readFileSync(GOLDEN_PATH, 'utf8')
       .replace(/\r\n/g, '\n')
@@ -531,7 +519,6 @@ test('delivery slip: the local paths carry the selected add-ons, like the backen
 test('delivery slip: the byte encoder passes a locale, not a timezone, to the shared formatter', () => {
   // `formatTime(iso, locale, options)`. Passing an IANA zone as the locale makes
   // Intl throw, the helper swallows it, and the slip prints a raw database
-  // timestamp while silently ignoring the store timezone.
   const encoder = fs.readFileSync(path.join(__dirname, '../frontend/src/lib/printer/delivery-slip-encoder.ts'), 'utf8');
   const call = encoder.match(/formatTime\(([^)]*)\)/)?.[1] ?? '';
   assert.ok(call.length > 0, 'the encoder calls the shared formatter');
@@ -543,7 +530,6 @@ test('delivery slip: the byte encoder passes a locale, not a timezone, to the sh
 test('delivery slip: the store country is read by key, not off an arbitrary settings row', () => {
   // The settings table is key/value, so `SELECT * FROM settings LIMIT 1` returns
   // one {key,value} pair and has no `country` property. Reading it that way
-  // silently pins every store's slip date to en-US.
   const thermal = fs.readFileSync(path.join(__dirname, '../main/printers/thermal.ts'), 'utf8');
   const slip = thermal.slice(thermal.indexOf('export async function printDeliverySlip('));
   assert.ok(
@@ -556,7 +542,6 @@ test('delivery slip: the store country is read by key, not off an arbitrary sett
 test('delivery slip: warnings from the render that is dispatched are never dropped', () => {
   // If a printer cannot represent the address, the slip must not report success
   // without saying so: the warnings belong to whichever render produced the bytes
-  // that went to the printer.
   const thermal = fs.readFileSync(path.join(__dirname, '../main/printers/thermal.ts'), 'utf8');
   const slip = thermal.slice(thermal.indexOf('export async function printDeliverySlip('));
   assert.ok(
@@ -572,7 +557,6 @@ test('delivery slip: warnings from the render that is dispatched are never dropp
 test('delivery slip: a legacy over-long address is visibly marked, never silently cut', () => {
   // A legacy customer row written before the boundary existed can be any length.
   // Printing a partial address with no signal hands the courier a sheet that
-  // looks complete and is not, which is the one outcome that is unacceptable.
   const legacy = `Flat 4B, ${'very long street name '.repeat(24)}end of the address`;
   assert.ok(legacy.length > MAX_DELIVERY_SLIP_ADDRESS_CHARS);
 
@@ -604,8 +588,6 @@ test('delivery slip: a legacy over-long address is visibly marked, never silentl
 test('delivery slip: the address budget holds for supplementary-plane text, and still warns', () => {
   // The write-time boundary counts UTF-16 units, so the print clamp has to use the
   // same unit. Measuring the budget in code points while slicing code points let a
-  // supplementary-plane address exceed the cap while reporting nothing dropped,
-  // which left the courier with an over-long sheet and no marker.
   const emoji = '\u{1F600}'.repeat(150);
   const address = `Flat 4B, ${emoji}A`;
   assert.ok(address.length > MAX_DELIVERY_SLIP_ADDRESS_CHARS, 'the fixture exceeds the budget in the boundary unit');
@@ -639,8 +621,6 @@ test('delivery slip: the address budget holds for supplementary-plane text, and 
 test('delivery slip: an order-recorded address reaches the slip, and an order without one falls back', () => {
   // Finding: the WebUSB and browser paths build the slip from the contact the
   // caller resolved, so the order's own address has to survive that resolution
-  // and the customer's standing address has to be what an order created before
-  // the column existed gets. The fallback is the common case, not the rare one.
   const withOrderAddress = buildDeliverySlipPrintData(
     { ...ORDER, delivery_address: 'Flat 9, Per Order Street, Sector 4' },
     ORDER.items,

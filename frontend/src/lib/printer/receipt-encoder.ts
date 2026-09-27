@@ -56,21 +56,11 @@ export interface ReceiptOptions {
   /** Show the customer phone when available. Default: true */
   showCustomerPhone?: boolean;
   /**
-   * Whether to shorten the customer number to its last four digits.
-   *
-   * Default `true`, which is what every receipt has always done. This is a
-   * named value rather than an ambient default so a caller that wants the full
-   * number has to say so. The delivery slip does not go through this encoder at
-   * all: it has its own document and its own renderer, so the receipt's mask
-   * and the slip's full number cannot drift into sharing one default.
+   * Whether to shorten the customer number to its last four digits. Default
+   * `true`, so a caller wanting the full number has to say so out loud.
    */
   maskCustomerPhone?: boolean;
-  /**
-   * Delivery-order customer-number exception. Default on, matching the shipped
-   * setting. Resolved by the shared `shouldShowCustomerNumber` rule inside the
-   * document builder, so this surface and the backend print route cannot
-   * disagree about the same merchant setting.
-   */
+  /** Default on. Resolved by `shouldShowCustomerNumber`, the shared rule. */
   deliveryShowCustomerPhoneAlways?: boolean;
   /** Show the table number when available. Default: true */
   showTableNumber?: boolean;
@@ -175,14 +165,7 @@ function maskPhoneOnReceipt(phone: string): string {
   return 'x'.repeat(phone.length - 4) + phone.slice(-4);
 }
 
-/**
- * Resolve the customer number a receipt renders.
- *
- * Masked unless a caller explicitly opts out. Keeping the default masked is what
- * preserves every existing receipt byte for byte; the option exists so the
- * choice is visible at the call site rather than implied by which function you
- * happened to call.
- */
+/** Masked unless a caller opts out, so existing receipt bytes do not move. */
 function resolveReceiptPhone(phone: string, maskCustomerPhone?: boolean): string {
   return maskCustomerPhone === false ? phone : maskPhoneOnReceipt(phone);
 }

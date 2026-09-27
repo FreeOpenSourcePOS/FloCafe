@@ -1,11 +1,4 @@
-/**
- * Delivery slip HTML renderer for the browser print dialog.
- *
- * The browser path is the full-Unicode path, so an address in any script
- * survives it. Like the byte encoder, the customer number is printed in full
- * and there is no mask option here: the receipt's masking lives on the receipt
- * renderer so the two documents cannot share a default.
- */
+/** No mask option here either, so the two documents cannot share a default. */
 
 import { createTranslator } from 'use-intl/core';
 import { getCachedMessages } from '@/lib/i18n/loader';

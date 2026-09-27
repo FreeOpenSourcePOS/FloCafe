@@ -1045,11 +1045,8 @@ export function PrintersSettingsTab({
                   </div>
                 ))}
 
-                {/* Delivery-order exception, immediately beside the toggle it
-                    contradicts. Always present, not only when Customer Number is
-                    off, so a merchant turning it off sees what the slip will do
-                    next. Reads as a consequence of the slip feature, not as an
-                    error state. */}
+                {/* Unconditional: a merchant turning Customer Number off must
+                    still see what the slip will do. Beside the toggle it contradicts. */}
                 <div className="col-span-full mt-1 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                   <div className="flex items-start gap-2">
                     <AlertTriangle size={14} className="shrink-0 mt-0.5" />

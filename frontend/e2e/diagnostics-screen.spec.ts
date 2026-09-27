@@ -212,31 +212,48 @@ test('a settings read that started before a save cannot put the switch back to o
     headers: { Authorization: `Bearer ${token}` },
     data: { value },
   });
-  // Fetch now, fulfil after the save: the server must answer before it and
-  // deliver after, or there is no race to reproduce.
-  await page.route('**/api/settings', async (route) => {
-    if (route.request().method() !== 'GET') { await route.continue(); return; }
-    const response = await route.fetch();
-    await new Promise((r) => setTimeout(r, 4000));
-    await route.fulfill({ response });
-  });
+  let markReadFetched = () => {};
+  let markReadDelivered = () => {};
+  let releaseRead = () => {};
+  const readFetched = new Promise<void>((resolve) => { markReadFetched = resolve; });
+  const readDelivered = new Promise<void>((resolve) => { markReadDelivered = resolve; });
+  const readRelease = new Promise<void>((resolve) => { releaseRead = resolve; });
 
   try {
     await loginAs(page, 'owner@flo.local');
     await page.goto(`${BASE}/support?tab=diagnostics`);
 
     const transmission = page.getByRole('switch', { name: 'Send diagnostics automatically' });
+    await expect(transmission, 'the initial setting read enables the switch').toBeEnabled();
+    await expect(transmission).toHaveAttribute('aria-checked', 'false');
+
+    // Hold a refresh response after reading the old value, then save before it arrives.
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() !== 'GET') { await route.continue(); return; }
+      const response = await route.fetch();
+      markReadFetched();
+      await readRelease;
+      await route.fulfill({ response });
+      markReadDelivered();
+    });
+
+    const refresh = page.getByRole('button', { name: 'Refresh', exact: true });
+    await refresh.click();
+    await readFetched;
     await transmission.click();
     await expect(transmission, 'the save is reflected in the switch').toHaveAttribute('aria-checked', 'true');
     await expect(page.getByText('Automatic transmission is on', { exact: false })).toBeVisible();
 
-    await page.waitForTimeout(5000);
+    releaseRead();
+    await readDelivered;
+    await expect(refresh, 'the delayed refresh has been applied').toBeEnabled();
     await expect(transmission, 'a stale read must not put the switch back to off').toHaveAttribute('aria-checked', 'true');
     await expect(
       page.getByText('Nothing here leaves the till automatically', { exact: false }),
       'the screen must not claim nothing is sent while the backend can transmit',
     ).toHaveCount(0);
   } finally {
+    releaseRead();
     await page.unroute('**/api/settings');
     await setTransmission('false');
   }
@@ -313,22 +330,23 @@ test('a settings manager cannot change transmission when its value cannot be rea
     headers: { Authorization: `Bearer ${token}` },
     data: { value },
   });
-  await page.route('**/api/settings', async (route) => {
-    if (route.request().method() !== 'GET') { await route.continue(); return; }
-    await route.fulfill({
-      status: 403,
-      contentType: 'application/json',
-      body: JSON.stringify({ error: 'permission_denied' }),
-    });
-  });
   try {
     expect((await setTransmission('true')).status(), 'precondition: the manager can change the setting').toBe(200);
     await loginAs(page, 'manager@flo.local');
-    await page.goto(`${BASE}/support?tab=diagnostics`);
-    await expect(page.getByRole('heading', { name: DIAGNOSTICS_TAB })).toBeVisible();
-    await page.waitForResponse((response) => (
+    await page.route('**/api/settings', async (route) => {
+      if (route.request().method() !== 'GET') { await route.continue(); return; }
+      await route.fulfill({
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'permission_denied' }),
+      });
+    });
+    const settingsRead = page.waitForResponse((response) => (
       response.url().endsWith('/api/settings') && response.request().method() === 'GET'
     ));
+    await page.goto(`${BASE}/support?tab=diagnostics`);
+    await expect(page.getByRole('heading', { name: DIAGNOSTICS_TAB })).toBeVisible();
+    await settingsRead;
 
     // A refused read must not take the failures and the bundle down with it.
     await expect(page.getByTestId('diagnostics-bundle-preview'), 'the bundle is still readable').toBeVisible();

@@ -494,12 +494,12 @@ frontend/src/
 │   ├── providers/              I18nProvider
 │   ├── settings/               The settings screen's building blocks:
 │   │   BetaChannelToggle, CurrencyResetDialog, DatabaseSettingsTab,
-│   │   DiagnosticsSettingsTab, GeneralSettingsTab, HealthCheckDialog,
+│   │   GeneralSettingsTab, HealthCheckDialog,
 │   │   InitializeDatabaseDialog, LocalePreferencesPanel, MasterPinPrompt,
 │   │   PaymentMethodsSettings, PermissionAuditLog, PermissionMatrix,
 │   │   PrintersSettingsTab, SettingsTabShell, TaxConfigurationPanel,
 │   │   Toggle, WhatsAppEnableCard
-│   ├── support/                Support ticket form
+│   ├── support/                The support hub: SupportTicketForm, DiagnosticsPanel
 │   ├── tables/                 Floorplan editor, table turnover badge
 │   ├── ui/                     shadcn/ui primitives
 │   └── updates/                Update install guard dialog

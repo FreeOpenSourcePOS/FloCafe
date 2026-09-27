@@ -52,20 +52,27 @@ interface SupportTicketFormProps {
   /** Diagnostics JSON preview needs an authenticated endpoint; skip it pre-login. */
   showDiagnosticsPreview?: boolean;
   onSubmitted?: () => void;
+  /** Pre-fill from a captured failure; a new draft needs a new `key` to replace what is typed. */
+  initialCategory?: string;
+  initialSubject?: string;
+  initialMessage?: string;
 }
 
 export function SupportTicketForm({
   endpoints = AUTHENTICATED_SUPPORT_ENDPOINTS,
   showDiagnosticsPreview = true,
   onSubmitted,
+  initialCategory,
+  initialSubject,
+  initialMessage,
 }: SupportTicketFormProps) {
   const t = useTranslations('support');
   const fmtNum = useFormatNumber();
   const [profile, setProfile] = useState<SupportProfile>(EMPTY_PROFILE);
-  const [category, setCategory] = useState('general');
+  const [category, setCategory] = useState(initialCategory || 'general');
   const [severity, setSeverity] = useState('normal');
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
+  const [subject, setSubject] = useState(initialSubject || '');
+  const [message, setMessage] = useState(initialMessage || '');
   const [attachLog, setAttachLog] = useState(true);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);

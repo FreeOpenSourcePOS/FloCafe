@@ -49,7 +49,6 @@ import {
 } from '@/components/settings/DatabaseSettingsTab';
 import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
-import { DiagnosticsSettingsTab } from '@/components/settings/DiagnosticsSettingsTab';
 import type { HealthCheckReport } from '@/types/electron';
 import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -3000,7 +2999,6 @@ export default function SettingsPage() {
             </div>
             <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={handleSettingsTabChange} attention={cloudDeletionNeedsAction || (cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))} />
             <SettingsNavItem label={t('privacy')} value="privacy" active={activeTab} onClick={handleSettingsTabChange} />
-            <SettingsNavItem label={t('tabDiagnostics')} value="diagnostics" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabUpdates')} value="updates" active={activeTab} onClick={handleSettingsTabChange} />
             <SettingsNavItem label={t('tabAbout')} value="about" active={activeTab} onClick={handleSettingsTabChange} />
 
@@ -4037,10 +4035,6 @@ export default function SettingsPage() {
               </div>
             )}
           </SettingsTabShell>
-        </TabsContent>
-
-        <TabsContent value="diagnostics">
-          <DiagnosticsSettingsTab isAdmin={isAdmin} />
         </TabsContent>
 
         <TabsContent value="receipts-printers" forceMount hidden={activeTab !== 'receipts-printers'}>

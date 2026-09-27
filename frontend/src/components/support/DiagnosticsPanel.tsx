@@ -2,15 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'use-intl';
-import { AlertTriangle, Copy, RefreshCw, ScrollText, Trash2 } from 'lucide-react';
+import { AlertTriangle, Copy, RefreshCw, ScrollText, Ticket, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Toggle } from '@/components/settings/Toggle';
 import { SettingsTabShell } from '@/components/settings/SettingsTabShell';
 import { Ltr } from '@/components/layout/Ltr';
+import { useAuthStore } from '@/store/auth';
+import { tenantCan } from '@/lib/permissions';
 
-type LocalFailure = {
+export type LocalFailure = {
   id: number;
   event_code: string;
   severity: string;
@@ -18,6 +20,7 @@ type LocalFailure = {
   signature: string;
   summary: string;
   occurred_at: string;
+  metadata?: Record<string, unknown> | null;
 };
 
 type SupportBundle = {
@@ -37,21 +40,45 @@ type DiagnosticsSnapshot = {
   settings: Record<string, string>;
 };
 
+function readSettings(canViewSettings: boolean): Promise<Record<string, string>> {
+  if (!canViewSettings) return Promise.resolve({});
+  return api.get('/settings')
+    .then(({ data }) => data.settings || {})
+    // A read the staff member is not allowed to make must not take the failures
+    // and the bundle down with it; any other failure is a real one to report.
+    .catch((error: { response?: { status?: number } }) => {
+      if (error?.response?.status === 401 || error?.response?.status === 403) return {};
+      throw error;
+    });
+}
+
 /** Read-only; the screen's state is applied by the caller so no effect sets state synchronously. */
-function readDiagnostics(): Promise<DiagnosticsSnapshot> {
+function readDiagnostics(canViewSettings: boolean): Promise<DiagnosticsSnapshot> {
   return Promise.all([
     api.get('/diagnostics/recent'),
     api.get('/diagnostics/support-bundle'),
-    api.get('/settings'),
+    readSettings(canViewSettings),
   ]).then(([recent, bundleData, settings]) => ({
     failures: recent.data.failures || [],
     bundle: bundleData.data.bundle || null,
-    settings: settings.data.settings || {},
+    settings,
   }));
 }
 
-export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
+export function DiagnosticsPanel({ onCreateTicket }: { onCreateTicket?: (failure: LocalFailure) => void }) {
   const t = useTranslations('settings');
+  const tSupport = useTranslations('support');
+  const { currentTenant } = useAuthStore();
+  // Reading local failures only needs support.use, so every staff member may
+  // open this panel; the destructive and transmitting controls need
+  // settings.manage, which the backend enforces on both endpoints. The role
+  // lives on the tenant, which carries the signed-in user's role.
+  const isOwner = currentTenant?.role === 'owner';
+  const isAdmin = isOwner || tenantCan(currentTenant, 'settings.manage');
+  // The transmission switch reads its state from /settings, which needs
+  // settings.view; without it the value is unconfirmed and the hint says neither
+  // claim rather than guessing that transmission is off.
+  const canViewSettings = isOwner || tenantCan(currentTenant, 'settings.view');
   const [failures, setFailures] = useState<LocalFailure[]>([]);
   const [bundle, setBundle] = useState<SupportBundle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,8 +103,8 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
 
   const runRead = useCallback(() => {
     readStartedAtSaveRef.current = savesRef.current;
-    return readDiagnostics();
-  }, []);
+    return readDiagnostics(canViewSettings);
+  }, [canViewSettings]);
 
   const reportLoadFailure = useCallback(() => toast.error(t('diagnosticsLoadFailed')), [t]);
 
@@ -153,11 +180,11 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
   }
 
   return (
-    <SettingsTabShell>
+    <SettingsTabShell maxWidth="wide">
       <div className="bg-card rounded-xl border border-border p-6 space-y-4">
         <div className="flex items-center gap-2">
           <AlertTriangle size={20} className="text-muted-foreground" />
-          <h2 className="font-semibold text-foreground">{t('tabDiagnostics')}</h2>
+          <h2 className="font-semibold text-foreground">{tSupport('tabDiagnostics')}</h2>
         </div>
         {/* Either claim is only true once the server has confirmed the setting,
             so an unconfirmed state gets a sentence that asserts neither. */}
@@ -192,7 +219,19 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
           <ul className="space-y-2">
             {failures.map((failure) => (
               <li key={failure.id} className="rounded-lg border border-border p-3 text-sm">
-                <p className="text-foreground">{failure.summary}</p>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-foreground">{failure.summary}</p>
+                  {onCreateTicket && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => onCreateTicket(failure)}
+                    >
+                      <Ticket size={16} className="me-2" />{tSupport('diagnosticsCreateTicket')}
+                    </Button>
+                  )}
+                </div>
                 <p className="mt-1 font-mono text-xs text-muted-foreground ltr-island">{failure.signature}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   <Ltr>{failure.occurred_at}</Ltr> · <Ltr>{failure.event_code}</Ltr>

@@ -51,7 +51,7 @@ and a transmission tier, and only the second one can send anything.
 
 **Local capture is not consent-gated.** Every accepted failure is written to the `local_diagnostics`
 table, whether or not the merchant has agreed to anything, because nothing there leaves the till.
-Settings → Diagnostics renders that table, and the copy-for-support bundle is built from
+Support → Diagnostics renders that table, and the copy-for-support bundle is built from
 `buildSystemDiagnostics()` - the same builder the support-ticket path uses - plus the recent
 failures. The raw log tail is deliberately **not** part of that bundle: the log contains whatever
 the application logged, including order and customer detail, so it is a separate, visibly labelled

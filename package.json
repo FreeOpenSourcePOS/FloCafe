@@ -20,7 +20,7 @@
     "docs:check": "npm run docs:check:structure && npm run docs:check:policy",
     "docs:check:structure": "markdownlint-cli2 && node scripts/docs/check-docs.cjs --links --index",
     "docs:check:policy": "node scripts/docs/check-docs.cjs --policy",
-    "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop npm run build",
+    "build:frontend": "node scripts/build-frontend.cjs",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",
     "verify:electron": "node scripts/verify-electron-runtime.cjs",

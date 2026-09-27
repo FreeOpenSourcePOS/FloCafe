@@ -57,7 +57,7 @@ Draft PRs are welcome for sharing early prototypes, demonstrating bug reproducti
 
 ## Set up a development copy
 
-FloCafe requires **Node.js 22 or later** and npm.
+FloCafe requires **Node.js 22 or later** and npm. On Windows, [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (with the "Desktop development with C++" workload) is recommended for compiling native modules such as SQLite.
 
 ```sh
 # Clone your fork

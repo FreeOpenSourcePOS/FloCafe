@@ -26,9 +26,7 @@ const { settingsRoutes } = require('../main/routes/settings');
 const DELIVERY_ADDRESS = 'Flat 4B, 123A-Anecacuilco 04330, Colonia Naucalpan';
 const OVER_CAP_ADDRESS = 'x'.repeat(400);
 
-/** The shared factory, not a hand-rolled app.
- * `createApp` mounts the same middleware production mounts, in the same order,
- */
+/** `createApp` mounts the middleware production mounts, so the chain matches. */
 function testApp(): any {
   return createApp({ '/api/orders': orderRoutes, '/api/settings': settingsRoutes });
 }

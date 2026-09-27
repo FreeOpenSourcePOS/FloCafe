@@ -126,7 +126,11 @@ function rootFiles() {
     .map((e) => path.join(ROOT, e.name));
 }
 
-// Every page the link and policy checks read, not just the ones under docs/.
+/**
+ * Every page the link and policy checks read: the docs/ tree, the Markdown at the
+ * repository root, and the extra roots listed above. Index completeness is the
+ * one check that stays scoped to docs/, so it reads docFiles() directly.
+ */
 function checkedFiles() {
   return [...docFiles(), ...rootFiles(), ...EXTRA_DOC_ROOTS.flatMap((dir) => listMarkdown(dir))];
 }

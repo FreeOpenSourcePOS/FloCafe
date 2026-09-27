@@ -38,12 +38,13 @@ shipped build, and a file that uses them compiles without complaint and is dead 
 ships. [What does not exist in the desktop build](desktop-build.md#what-does-not-exist-in-the-desktop-build)
 enumerates the absences and why the build stays quiet about them.
 
-**A new screen cannot call the backend the way a web app would.** There are two routes out of the
-renderer and no third:
+**A new screen cannot call the backend the way a web app would.** There are three routes out of the
+renderer:
 
 1. **HTTP**, through the axios client in [`frontend/src/lib/api.ts`](../../frontend/src/lib/api.ts).
-   The KDS live feed rides the same route as a WebSocket upgrade on the same ports.
-2. **Native capability**, through the `window.electronAPI` bridge described in
+2. **WebSocket**, on the same ports, for live updates. Two screens use one today, and they are not
+   the same client; see [the KDS live feed](#the-kds-live-feed-is-a-websocket-not-a-request).
+3. **Native capability**, through the `window.electronAPI` bridge described in
    [the interface contract](#the-interface-contract).
 
 Anything that needs a database row, an authorization decision, a tax calculation, or a print job is
@@ -51,7 +52,7 @@ an Express route on the backend, not renderer code. See
 [Backend-authoritative security and tax](../decisions/0002-backend-authoritative-security-and-tax.md).
 
 The KDS window and the Server App page load without a preload bridge, so on those two surfaces the
-IPC route does not exist at all.
+native route does not exist at all.
 
 ### The HTTP client
 
@@ -82,18 +83,25 @@ client.
 
 ### The KDS live feed is a WebSocket, not a request
 
-[`useKdsConnection`](../../frontend/src/hooks/useKdsConnection.ts) opens a socket to
-`<ws|wss>://<host>/kds`, deriving the host from the axios `baseURL` so a dev proxy reaches the
-right backend, and falling back to the page origin. The same path is upgraded on both `:3001` and
-`:3002`.
+Two surfaces open a socket, both to the same `/kds` path and both upgraded on `:3001` and `:3002`,
+and they are not interchangeable.
 
-Authentication is a message, not a header. The client sends `{ type: 'auth', token }` after `open`
+[`useKdsConnection`](../../frontend/src/hooks/useKdsConnection.ts) is the streaming one. The KDS
+views use it. It derives the host from the axios `baseURL` so a dev proxy reaches the right backend
+and falls back to the page origin, and it carries the order list in the frames themselves.
+Authentication is a message, not a header: the client sends `{ type: 'auth', token }` after `open`
 and must be authenticated within 5 seconds, or the server sends `auth_error` and closes with code
 `1008`. A socket that is refused, times out, or drops does not become a dead screen: the hook falls
 back to REST polling on a 5-second interval and reports which mode it is in through
 `connectionMode`. Reconnect uses exponential backoff from 1 to 30 seconds.
 
-Which REST route it polls depends on the surface, because the hook takes its endpoints as a
+The orders screen writes its own client inside the page effect instead. It connects to
+`window.location.host`, sends the same `auth` message, and uses the socket only as a signal: on
+`order_updated`, `orders`, or `initial_data` it refetches over HTTP rather than consuming the
+frame. It reconnects on a flat 3-second timer, not the hook's backoff, and a 10-second HTTP poll
+runs alongside it so a socket that never opens still refreshes the list.
+
+Which REST route a poll hits depends on the surface, because the hook takes its endpoints as a
 parameter. The in-dashboard KDS polls `GET /api/kitchen/orders`; `/kds-standalone` passes
 `orders: '/api/kds/orders'` and the rest of the `:3002` REST surface to the same hook.
 

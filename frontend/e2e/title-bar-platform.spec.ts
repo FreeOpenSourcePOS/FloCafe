@@ -318,7 +318,6 @@ test('Windows title-bar menu never overlaps the identity from the minimum window
   });
   await expect.poll(() => visibleMenuItems.count()).toBeLessThan(initialVisibleMenuItemCount);
 
-  // At 1024px, the menu adapts to prevent overlapping the dead-center identity
   const titleBar = page.getByTestId('desktop-title-bar');
   const [titleBarBox, menuBox1024, identityBox1024] = await Promise.all([
     titleBar.boundingBox(),
@@ -330,7 +329,6 @@ test('Windows title-bar menu never overlaps the identity from the minimum window
     'menu row ends before the centered identity starts at 1024px',
   ).toBeLessThanOrEqual(identityBox1024!.x + 1);
 
-  // Identity is vertically centered with clearance from top and bottom edges
   expect(identityBox1024!.y, 'identity is not pushed up out of title bar').toBeGreaterThanOrEqual(titleBarBox!.y + 2);
   expect(
     identityBox1024!.y + identityBox1024!.height,
@@ -350,7 +348,6 @@ test('Windows title-bar menu never overlaps the identity from the minimum window
   await hamburgerBtn.click();
   await expect.poll(async () => (await readOpenedMenuEntries(page)).some((entry) => entry.key === 'hamburger')).toBe(true);
 
-  // Above the minimum width the full menu returns and coexists without overlapping
   await identity.evaluate((element) => {
     (element as HTMLElement).style.removeProperty('inline-size');
   });

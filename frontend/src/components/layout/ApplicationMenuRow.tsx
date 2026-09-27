@@ -149,8 +149,8 @@ export default function ApplicationMenuRow() {
         <button
           type="button"
           role="menuitem"
-          aria-label="Menu"
-          title="Menu"
+          aria-label={tCommon('menu')}
+          title={tCommon('menu')}
           data-testid="desktop-application-menu-hamburger"
           className="flo-title-bar__menu-button flex items-center justify-center px-1.5"
           onClick={(event) => {
@@ -184,8 +184,8 @@ export default function ApplicationMenuRow() {
             <button
               type="button"
               role="menuitem"
-              aria-label="More"
-              title="More"
+              aria-label={tCommon('more')}
+              title={tCommon('more')}
               data-testid="desktop-application-menu-overflow"
               className="flo-title-bar__menu-button flex items-center justify-center px-1.5"
               onClick={(event) => {

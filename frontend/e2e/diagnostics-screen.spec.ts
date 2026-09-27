@@ -142,10 +142,8 @@ test('a settings read that started before a save cannot put the switch back to o
     headers: { Authorization: `Bearer ${token}` },
     data: { value },
   });
-  // The server must ANSWER the settings read before the save and DELIVER it
-  // after, so the response is fetched at request time and held before being
-  // fulfilled. Holding the request instead would just make the server answer
-  // after the save, which is not the race.
+  // Fetch now, fulfil after the save: the server must answer before it and
+  // deliver after, or there is no race to reproduce.
   await page.route('**/api/settings', async (route) => {
     if (route.request().method() !== 'GET') { await route.continue(); return; }
     const response = await route.fetch();
@@ -179,7 +177,7 @@ test('a settings read that started before a save cannot put the switch back to o
   }
 });
 
-test('a refresh started after a save returns the new value', async ({ page }) => {
+test('a refresh started after a save applies the value it read', async ({ page }) => {
   const token = getE2eToken();
   const setTransmission = (value: string) => page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -197,13 +195,21 @@ test('a refresh started after a save returns the new value', async ({ page }) =>
     await transmission.click();
     await expect(transmission).toHaveAttribute('aria-checked', 'true');
 
+    // Asserting the switch after the refresh would prove nothing: the save
+    // already set it. So the server is changed behind the screen's back, and
+    // only a refresh can bring the new value on screen.
+    expect((await setTransmission('false')).status(), 'the server value is changed directly').toBe(200);
+    await expect(transmission, 'precondition: the screen still shows the saved value').toHaveAttribute('aria-checked', 'true');
+
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await expect(transmission, 'the refresh read returns the value just saved').toHaveAttribute('aria-checked', 'true');
-    await expect(page.getByText('Automatic transmission is on', { exact: false })).toBeVisible();
+    await expect(
+      transmission,
+      'the refresh applied its own response rather than leaving the earlier state',
+    ).toHaveAttribute('aria-checked', 'false');
     await expect(
       page.getByText('Nothing here leaves the till automatically', { exact: false }),
-      'a post-save refresh must not fall back to the off-state claim',
-    ).toHaveCount(0);
+      'and the wording matches the value the refresh read',
+    ).toBeVisible();
   } finally {
     await setTransmission('false');
   }

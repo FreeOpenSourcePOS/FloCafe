@@ -61,9 +61,8 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
   // either claim on a state it has not been told.
   const [transmissionEnabled, setTransmissionEnabled] = useState<boolean | null>(null);
   const [savingTransmission, setSavingTransmission] = useState(false);
-  // A read that started before a save must not overwrite the saved value: the
-  // settings response can arrive after the save and put the switch back to off
-  // while the backend is in fact transmitting.
+  // A read that started before a save must not overwrite the saved value, or a
+  // late response puts the switch back to off while the backend transmits.
   const savesRef = useRef(0);
   const readStartedAtSaveRef = useRef(0);
 

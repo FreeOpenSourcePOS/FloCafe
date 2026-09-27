@@ -309,6 +309,15 @@ test('Windows title-bar menu never overlaps the identity from the minimum window
   // Dead-center identity remains visible across all breakpoints
   await expect(identity).toBeVisible();
 
+  // A hydrated long store name can widen the centered identity after the
+  // title-bar observer is mounted, so the menu must recalculate its width.
+  const visibleMenuItems = menu.locator('button:not([data-testid])');
+  const initialVisibleMenuItemCount = await visibleMenuItems.count();
+  await identity.evaluate((element) => {
+    (element as HTMLElement).style.inlineSize = '24rem';
+  });
+  await expect.poll(() => visibleMenuItems.count()).toBeLessThan(initialVisibleMenuItemCount);
+
   // At 1024px, the menu adapts to prevent overlapping the dead-center identity
   const titleBar = page.getByTestId('desktop-title-bar');
   const [titleBarBox, menuBox1024, identityBox1024] = await Promise.all([
@@ -328,12 +337,11 @@ test('Windows title-bar menu never overlaps the identity from the minimum window
     'identity is not pushed down out of title bar',
   ).toBeLessThanOrEqual(titleBarBox!.y + titleBarBox!.height - 2);
 
-  // If overflow mode is triggered, clicking More opens the overflow menu
+  // At this width the long identity requires overflow, which opens the hidden submenus.
   const overflowBtn = page.getByTestId('desktop-application-menu-overflow');
-  if (await overflowBtn.isVisible()) {
-    await overflowBtn.click();
-    await expect.poll(async () => (await readOpenedMenuEntries(page)).some((entry) => entry.key.startsWith('overflow:'))).toBe(true);
-  }
+  await expect(overflowBtn).toBeVisible();
+  await overflowBtn.click();
+  await expect.poll(async () => (await readOpenedMenuEntries(page)).some((entry) => entry.key.startsWith('overflow:'))).toBe(true);
 
   // At a very compact width (e.g. 360px), it collapses into the hamburger menu
   await page.setViewportSize({ width: 360, height: 768 });
@@ -343,6 +351,9 @@ test('Windows title-bar menu never overlaps the identity from the minimum window
   await expect.poll(async () => (await readOpenedMenuEntries(page)).some((entry) => entry.key === 'hamburger')).toBe(true);
 
   // Above the minimum width the full menu returns and coexists without overlapping
+  await identity.evaluate((element) => {
+    (element as HTMLElement).style.removeProperty('inline-size');
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(identity).toBeVisible();
   await expect(menu.locator('button')).toHaveCount(8);

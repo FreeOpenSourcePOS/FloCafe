@@ -41,18 +41,43 @@ assert.deepEqual(entries, [
 assert.deepEqual(listApplicationMenuEntries([]), []);
 
 let popupCalls: unknown[] = [];
-const popupMenu = {
-  items: [
-    { label: 'File', type: 'submenu', submenu: { popup: (options: unknown) => popupCalls.push(options) } },
-    { label: 'Edit', type: 'submenu', submenu: { popup: (options: unknown) => popupCalls.push(options) } },
-  ],
-  popup: (options: unknown) => popupCalls.push(options),
-  createOverflowMenu: () => ({
-    items: [] as any[],
-    append(it: any) { this.items.push(it); },
-    popup(options: unknown) { popupCalls.push(options); },
-  }),
-};
+type TestMenuSubmenu = { popup: (options: unknown) => void };
+class TestMenuItem {
+  label: string;
+  type: string;
+  submenu: TestMenuSubmenu;
+
+  constructor(options: { label: string; type: string; submenu: TestMenuSubmenu }) {
+    this.label = options.label;
+    this.type = options.type;
+    this.submenu = options.submenu;
+  }
+}
+
+let overflowMenu: TestMenu | null = null;
+class TestMenu {
+  items: TestMenuItem[];
+
+  constructor(items: TestMenuItem[] = []) {
+    this.items = items;
+    if (items.length === 0) overflowMenu = this;
+  }
+
+  append(item: TestMenuItem): void {
+    this.items.push(item);
+  }
+
+  popup(options: unknown): void {
+    popupCalls.push(options);
+  }
+}
+
+const fileSubmenu = { popup: (options: unknown) => popupCalls.push(options) };
+const editSubmenu = { popup: (options: unknown) => popupCalls.push(options) };
+const popupMenu = new TestMenu([
+  new TestMenuItem({ label: 'File', type: 'submenu', submenu: fileSubmenu }),
+  new TestMenuItem({ label: 'Edit', type: 'submenu', submenu: editSubmenu }),
+]);
 const liveWindow = { isDestroyed: () => false };
 const destroyedWindow = { isDestroyed: () => true };
 
@@ -81,9 +106,18 @@ assert.deepEqual(popupCalls[2], { window: liveWindow, x: 10, y: 20 });
 assert.deepEqual(open('overflow:1', liveWindow, 45.1, 40), { success: true });
 assert.equal(popupCalls.length, 4);
 assert.deepEqual(popupCalls[3], { window: liveWindow, x: 45, y: 40 });
+assert.deepEqual(
+  overflowMenu?.items.map(({ label, submenu }) => ({ label, submenu })),
+  [{ label: 'Edit', submenu: editSubmenu }],
+  'the production constructor fallback copies the hidden submenu into the overflow menu',
+);
 
 assert.deepEqual(open('overflow:99', liveWindow, 0, 0), { error: 'Unknown menu entry' });
 assert.deepEqual(open('overflow:-1', liveWindow, 0, 0), { error: 'Unknown menu entry' });
+assert.deepEqual(open('overflow:', liveWindow, 0, 0), { error: 'Unknown menu entry' });
+assert.deepEqual(open('overflow: 1', liveWindow, 0, 0), { error: 'Unknown menu entry' });
+assert.deepEqual(open('overflow:0x1', liveWindow, 0, 0), { error: 'Unknown menu entry' });
+assert.deepEqual(open('overflow:1.0', liveWindow, 0, 0), { error: 'Unknown menu entry' });
 assert.equal(popupCalls.length, 4);
 
 assert.deepEqual(open('99', liveWindow, 0, 0), { error: 'Unknown menu entry' });

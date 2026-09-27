@@ -33,11 +33,6 @@ const TITLEBAR_COLLISION_SAFETY_MARGIN = 20;
  * matching submenu; the entries, roles, accelerators, and click handlers are
  * still the ones the native application menu uses. macOS keeps its
  * authoritative native menu bar and renders nothing.
- *
- * Adapts to available width similar to modern desktop editors (e.g. VS Code):
- * - Full menubar when ample space is available.
- * - Overflow menubar with trailing items collapsed into '...' when space fights with the centered identity.
- * - Compact menubar with a single hamburger icon '☰' when space is very tight.
  */
 export default function ApplicationMenuRow() {
   const tCommon = useTranslations('common');
@@ -98,6 +93,8 @@ export default function ApplicationMenuRow() {
         updateAvailableWidth();
       });
       resizeObserver.observe(titleBar);
+      const identityEl = document.querySelector('.flo-title-bar__identity');
+      if (identityEl) resizeObserver.observe(identityEl);
     }
     window.addEventListener('resize', updateAvailableWidth);
 

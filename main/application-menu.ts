@@ -91,8 +91,10 @@ export function openApplicationMenuSubmenu(
     }
 
     if (key.startsWith('overflow:')) {
-      const startIndex = Number(key.slice('overflow:'.length));
-      if (!Number.isInteger(startIndex) || startIndex < 0 || startIndex >= menu.items.length) {
+      const match = /^overflow:(\d+)$/.exec(key);
+      if (!match) return { error: 'Unknown menu entry' };
+      const startIndex = Number(match[1]);
+      if (!Number.isSafeInteger(startIndex) || startIndex >= menu.items.length) {
         return { error: 'Unknown menu entry' };
       }
 

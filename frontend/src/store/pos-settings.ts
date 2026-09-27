@@ -44,7 +44,6 @@ export interface PosSettingsState {
   billShowTaxBreakdown: boolean;
   billShowCustomerName: boolean;
   billShowCustomerPhone: boolean;
-  /** Delivery-order customer-number exception; see docs/reference/product-invariants.md. */
   billDeliveryShowCustomerPhoneAlways: boolean;
   billShowTableNumber: boolean;
   // Thermal printer unicode support

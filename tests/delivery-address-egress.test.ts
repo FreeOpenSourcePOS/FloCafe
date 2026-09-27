@@ -33,7 +33,6 @@ function testApp(): any {
   return createApp({ '/api/orders': orderRoutes, '/api/settings': settingsRoutes });
 }
 
-/** Wait for the outbox row that cloud sync would transmit. */
 async function waitForOutboxRow(db: any, timeoutMs = 5000): Promise<any> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -228,7 +227,6 @@ test('delivery exception: the override is a persisted setting beside the receipt
     );
     assert.equal(readBack.data.bill_show_customer_phone, false, 'and the receipt toggle round-trips beside it');
 
-    // And it survives a restart, because the merchant's choice is persisted.
     const reopened = initTestDb();
     assert.equal(
       reopened.prepare("SELECT value FROM settings WHERE key = 'bill_delivery_show_customer_phone_always'").get().value,

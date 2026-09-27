@@ -78,7 +78,6 @@ export interface WebPrintOptions {
   showTaxBreakdown?: boolean;
   showCustomerName?: boolean;
   showCustomerPhone?: boolean;
-  /** Delivery-order customer-number exception; see docs/reference/product-invariants.md. */
   deliveryShowCustomerPhoneAlways?: boolean;
   showTableNumber?: boolean;
   /** Ignored for browser receipts: HTML uses locale currency formatting and code fallback. */

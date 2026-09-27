@@ -1,4 +1,3 @@
-/** A separate document kind from the receipt, so the two cannot share a default. */
 
 import { parseDbTimestamp } from '../db';
 import { printLabel } from '../print/print-labels.generated';
@@ -35,7 +34,6 @@ import {
   type SemanticLabel,
 } from '../../shared/print';
 
-/** Bounds one delivery to a sane number of paper lines. */
 export const MAX_DELIVERY_SLIP_ADDRESS_CHARS = 300;
 
 function parseSlipAddons(value: unknown): Array<{ name: string; quantity?: number }> {
@@ -59,7 +57,6 @@ function parseSlipAddons(value: unknown): Array<{ name: string; quantity?: numbe
     }));
 }
 
-/** Phone arrives country-code prefixed; address resolves order-first. */
 /** The order fields the slip reads. Rows arrive from SQLite, so all are optional. */
 export interface DeliverySlipOrderRow {
   readonly order_number?: unknown;
@@ -70,7 +67,6 @@ export interface DeliverySlipOrderRow {
   readonly customer?: { readonly name?: unknown } | null;
 }
 
-/** The item fields the slip reads. */
 export interface DeliverySlipItemRow {
   readonly product_name?: unknown;
   readonly quantity?: unknown;
@@ -116,7 +112,6 @@ export function buildDeliverySlipPrintData(
   };
 }
 
-/** Budget and count use the boundary's unit; the slice breaks on clusters. */
 function clampAddress(address: string): { text: string; truncatedChars: number } {
   if (address.length <= MAX_DELIVERY_SLIP_ADDRESS_CHARS) return { text: address, truncatedChars: 0 };
   const kept: string[] = [];
@@ -133,7 +128,6 @@ function clampAddress(address: string): { text: string; truncatedChars: number }
 
 export function buildDeliverySlipPrintContext(opts: {
   columns: number;
-  /** Slip label language, already resolved by the caller. */
   language: string;
   timezone?: string;
 }): PrintContext {
@@ -241,7 +235,6 @@ function slipHeaderLines(
   return lines;
 }
 
-/** No `maskCustomerPhone` here: it would reintroduce the receipt's redaction. */
 function slipContactLines(
   contact: DeliverySlipContactBlock,
   options: DeliverySlipDocumentRenderOptions,

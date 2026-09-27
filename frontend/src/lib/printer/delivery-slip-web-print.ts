@@ -28,7 +28,6 @@ function translatorFor(lang: Language): ((key: string) => string) {
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
 }
 
-/** Render one delivery slip as a printable HTML fragment. */
 export function generateDeliverySlipHtml(
   order: DeliverySlipOrder,
   items: DeliverySlipItem[],

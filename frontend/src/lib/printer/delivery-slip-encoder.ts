@@ -44,7 +44,6 @@ export interface DeliverySlipItem {
 // `columns`. The number itself lives in `columnsForReceiptPaperSize`.
 const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
 
-/** Build a delivery slip byte array for the WebUSB transport. */
 export function buildDeliverySlipBytes(
   order: DeliverySlipOrder,
   items: DeliverySlipItem[],
@@ -83,7 +82,6 @@ export function buildDeliverySlipBytes(
     safePrinterText(enc, contact.name, warnings, false, arabicShaping, undefined, cols, language).newline();
     enc.bold(false);
   }
-  // The full number, in full. This line is the reason the document exists.
   if (contact.phone) {
     safePrinterText(enc, `${label('print.numberShort')}: ${contact.phone}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }

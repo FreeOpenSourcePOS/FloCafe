@@ -109,7 +109,6 @@ interface OrderCardProps {
   onConvertToTakeaway: (order: Order) => void;
   onCancelOrder: (order: Order) => void;
   onPrint: (billId: number) => void;
-  /** Print the courier slip. Available on delivery orders whether or not a bill exists. */
   onPrintDeliverySlip?: (order: Order) => void;
   printingSlipOrderId?: number | null;
   onSendWhatsApp: (order: Order) => void;

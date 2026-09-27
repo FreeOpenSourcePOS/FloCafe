@@ -33,7 +33,6 @@ export interface TaxBillOptions {
   showCustomerName?: boolean;
   /** Show the customer phone when available. Default: true */
   showCustomerPhone?: boolean;
-  /** Delivery-order customer-number exception; see docs/reference/product-invariants.md. */
   deliveryShowCustomerPhoneAlways?: boolean;
   /** Show the table number when available. Default: true */
   showTableNumber?: boolean;

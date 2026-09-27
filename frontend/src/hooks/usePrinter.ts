@@ -111,10 +111,6 @@ interface PrinterState {
   printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
   printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
   printKot: (order: Order, opts?: KotOptions & { items?: OrderItem[] }) => Promise<PrintWarning[]>;
-  /**
-   * Print the courier slip for one delivery order. Carries the full customer
-   * number and the delivery address; never a receipt and never a bill.
-   */
   printDeliverySlip: (order: Order, contact: DeliverySlipContact, opts?: DeliverySlipWebUsbOptions) => Promise<PrintWarning[]>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;
@@ -586,7 +582,6 @@ export const usePrinterStore = create<PrinterState>()(
         }
       },
 
-      /** Transport selection mirrors printKot: hardware, then WebUSB, then browser. */
       printDeliverySlip: async (order, contact, opts) => {
         set({ lastError: null });
         try {
@@ -603,8 +598,6 @@ export const usePrinterStore = create<PrinterState>()(
           // Same rule as the backend route: the delivery override, or the
           // receipt setting when the override is off.
           const slipContact = (billDeliveryShowCustomerPhoneAlways || billShowCustomerPhone) ? contact : { ...contact, phone: '' };
-          // The backend slip route prints add-ons, so dropping them here would
-          // hand the courier a different order than the kitchen.
           const slipItems = (orderForPrint.items ?? []).map((item) => ({
             product_name: item.product_name,
             quantity: Number(item.quantity) || 0,
@@ -683,8 +676,6 @@ export const usePrinterStore = create<PrinterState>()(
             slipContact,
             {
               paperWidth,
-              // Same language the WebUSB encoder uses, so the slip's language no
-              // longer depends on which transport the shop happens to have.
               language: resolveBillPrintLanguages()[0] as Language,
               ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
             },

@@ -571,7 +571,6 @@ export default function OrdersPage() {
     }
   };
 
-  /** No bill is needed, so this works before the customer pays. */
   const handlePrintDeliverySlip = async (order: Order) => {
     const customer = order.customer;
     const phone = customer?.phone

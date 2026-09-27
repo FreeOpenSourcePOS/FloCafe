@@ -41,7 +41,6 @@ export interface BillBusinessOptions {
   showBusinessName?: boolean;
   showCustomerName?: boolean;
   showCustomerPhone?: boolean;
-  /** Default on, matching the shipped setting. Resolved by the shared rule. */
   deliveryShowCustomerPhoneAlways?: boolean;
   showTableNumber?: boolean;
   isReprint?: boolean;

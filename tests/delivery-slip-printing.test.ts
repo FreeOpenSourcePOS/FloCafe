@@ -248,7 +248,6 @@ test('delivery exception: a receipt still masks the number in both override stat
       assert.ok(!text.includes(FULL_PHONE), `override=${alwaysForDeliveryOrders}: and never the full one`);
     }
   }
-  // With receipts on, the masked value is what prints, in both override states.
   for (const alwaysForDeliveryOrders of [true, false]) {
     const text = escPosToText(Buffer.from(fe.receiptEncoder.buildClassicReceiptBytes(
       { ...bill, order: { ...bill.order, type: 'dine_in' } } as any,
@@ -287,7 +286,6 @@ test('receipt encoder: masking is a named option that defaults to masked', () =>
   assert.ok(compact.includes(MASKED_PHONE), 'the compact receipt encoder still masks by default');
   assert.ok(!compact.includes(FULL_PHONE), 'the compact receipt encoder must not print the full number by default');
 
-  // Opting out is explicit, not accidental.
   const optedOut = escPosToText(Buffer.from(fe.receiptEncoder.buildClassicReceiptBytes(bill, tenant, { paperWidth: 80, maskCustomerPhone: false }, [])));
   assert.ok(optedOut.includes(FULL_PHONE), 'an explicit opt-out is the only way to the full number, and it works');
 });
@@ -344,7 +342,6 @@ test('slip and receipt: the same contact data renders differently by document, n
 // Column reality: the rungs the shipped profiles declare.
 // ---------------------------------------------------------------------------
 
-/** The measured body of one slip configuration, without the block header. */
 function slipGoldenBody(columns: number): string {
   const measurement = measureEscPos(renderSlip(columns).data);
   const body = measurement.lines
@@ -633,12 +630,10 @@ test('delivery slip: an order-recorded address reaches the slip, and an order wi
     'the number is unaffected by which address was chosen',
   );
 
-  // An order with no address of its own falls back to the customer's record.
   const fallback = buildDeliverySlipPrintData(ORDER, ORDER.items, CONTACT);
   assert.equal(fallback.contact.address, FULL_ADDRESS, 'the standing customer address is the fallback');
   assert.equal(fallback.contact.addressSource, 'customer');
 
-  // An order with neither prints no address and claims no source.
   const neither = buildDeliverySlipPrintData(ORDER, ORDER.items, { name: '', phone: '', address: '' });
   assert.equal(neither.contact.address, '');
   assert.equal(neither.contact.addressSource, null);

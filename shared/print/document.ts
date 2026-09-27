@@ -878,7 +878,6 @@ export interface KotDocument {
 // Delivery slip document v1
 // ---------------------------------------------------------------------------
 
-/** `order` is this delivery's address, `customer` the standing one. */
 export type DeliverySlipAddressSource = 'order' | 'customer';
 
 /** Inputs to the customer-number visibility rule, all caller-resolved. */
@@ -891,13 +890,11 @@ export interface CustomerNumberVisibility {
   readonly orderType: string;
 }
 
-/** One rule, so a receipt and a delivery order cannot disagree. It ships on. */
 export function shouldShowCustomerNumber(visibility: CustomerNumberVisibility): boolean {
   if (visibility.showOnReceipts) return true;
   return visibility.alwaysForDeliveryOrders && visibility.orderType.trim() === 'delivery';
 }
 
-/** Courier-facing contact block: who to call and where to go. */
 export interface DeliverySlipContactBlock {
   readonly kind: 'delivery-slip-contact';
   readonly direction: TextDirection;
@@ -907,14 +904,12 @@ export interface DeliverySlipContactBlock {
   readonly address: DirectionalText | null;
   /** Which record the printed address came from, when an address is present. */
   readonly addressSource: DeliverySlipAddressSource | null;
-  /** Characters dropped from a legacy over-long address; the slip marks it. */
   readonly addressTruncatedChars: number;
   readonly nameLabel: SemanticLabel;
   readonly phoneLabel: SemanticLabel;
   readonly addressLabel: SemanticLabel;
 }
 
-/** One item row on the slip: quantity, name, and add-ons. */
 export interface DeliverySlipItemRow {
   readonly direction: TextDirection;
   readonly name: DirectionalText;
@@ -927,14 +922,12 @@ export interface DeliverySlipItemAddon extends DirectionalText {
   readonly quantity?: number;
 }
 
-/** Items block: what the courier is delivering, in order. */
 export interface DeliverySlipItemsBlock {
   readonly kind: 'delivery-slip-items';
   readonly direction: TextDirection;
   readonly rows: readonly DeliverySlipItemRow[];
 }
 
-/** Ticket header: banner, order number, order type, and timestamp. */
 export interface DeliverySlipHeaderBlock {
   readonly kind: 'delivery-slip-header';
   readonly direction: TextDirection;
@@ -947,13 +940,11 @@ export interface DeliverySlipHeaderBlock {
   readonly timestamp: DirectionalText;
 }
 
-/** Ordered union of delivery-slip v1 block kinds. */
 export type DeliverySlipDocumentBlock =
   | DeliverySlipHeaderBlock
   | DeliverySlipContactBlock
   | DeliverySlipItemsBlock;
 
-/** Normalized authoritative values for one courier slip. Pure snapshot. */
 export interface DeliverySlipPrintData {
   readonly order: {
     readonly orderNumber: string;
@@ -1282,7 +1273,6 @@ export function isDeliverySlipDocument(value: unknown): value is DeliverySlipDoc
     && value.blocks.every(isDeliverySlipDocumentBlock);
 }
 
-/** The contact block never consults the receipt's visibility setting. */
 export function buildDeliverySlipDocument(
   printData: DeliverySlipPrintData,
   printContext: PrintContext,

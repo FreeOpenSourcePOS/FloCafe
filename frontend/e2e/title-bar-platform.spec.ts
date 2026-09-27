@@ -310,11 +310,23 @@ test('Windows title-bar menu never overlaps the identity from the minimum window
   await expect(identity).toBeVisible();
 
   // At 1024px, the menu adapts to prevent overlapping the dead-center identity
-  const [menuBox1024, identityBox1024] = await Promise.all([menu.boundingBox(), identity.boundingBox()]);
+  const titleBar = page.getByTestId('desktop-title-bar');
+  const [titleBarBox, menuBox1024, identityBox1024] = await Promise.all([
+    titleBar.boundingBox(),
+    menu.boundingBox(),
+    identity.boundingBox(),
+  ]);
   expect(
     menuBox1024!.x + menuBox1024!.width,
     'menu row ends before the centered identity starts at 1024px',
   ).toBeLessThanOrEqual(identityBox1024!.x + 1);
+
+  // Identity is vertically centered with clearance from top and bottom edges
+  expect(identityBox1024!.y, 'identity is not pushed up out of title bar').toBeGreaterThanOrEqual(titleBarBox!.y + 2);
+  expect(
+    identityBox1024!.y + identityBox1024!.height,
+    'identity is not pushed down out of title bar',
+  ).toBeLessThanOrEqual(titleBarBox!.y + titleBarBox!.height - 2);
 
   // If overflow mode is triggered, clicking More opens the overflow menu
   const overflowBtn = page.getByTestId('desktop-application-menu-overflow');
@@ -323,8 +335,8 @@ test('Windows title-bar menu never overlaps the identity from the minimum window
     await expect.poll(async () => (await readOpenedMenuEntries(page)).some((entry) => entry.key.startsWith('overflow:'))).toBe(true);
   }
 
-  // At a compact width (e.g. 500px), it collapses into the hamburger menu
-  await page.setViewportSize({ width: 500, height: 768 });
+  // At a very compact width (e.g. 360px), it collapses into the hamburger menu
+  await page.setViewportSize({ width: 360, height: 768 });
   const hamburgerBtn = page.getByTestId('desktop-application-menu-hamburger');
   await expect(hamburgerBtn).toBeVisible();
   await hamburgerBtn.click();

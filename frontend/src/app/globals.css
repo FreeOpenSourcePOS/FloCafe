@@ -212,6 +212,13 @@ body:has(.flo-title-bar__fallback-controls) .flo-title-bar__safe-area {
   transform: translate(-50%, -50%);
   max-inline-size: min(45vw, 24rem);
   pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.15;
+  text-align: center;
+  user-select: none;
 }
 
 .flo-title-bar--root-drag {

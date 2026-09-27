@@ -26,11 +26,20 @@ build the application ships.
 `trailingSlash` to true, and sets `images.unoptimized` to true. The result is static HTML, CSS, and
 JavaScript in `frontend/out/`, served as files by three local servers:
 
-| Server | Port | Serves |
+| Server | Default port | Serves |
 | --- | --- | --- |
-| [`main/server.ts`](../../main/server.ts) | 3001 | the API under `/api` and the exported pages |
-| [`main/kds-server.ts`](../../main/kds-server.ts) | 3002 | the standalone KDS |
-| [`main/server-app.ts`](../../main/server-app.ts) | 3003 | the standalone Server App |
+| [`main/server.ts`](../../main/server.ts) | `PORT`, else 3001 | the API under `/api` and the exported pages |
+| [`main/kds-server.ts`](../../main/kds-server.ts) | `KDS_PORT`, else 3002 | the standalone KDS |
+| [`main/server-app.ts`](../../main/server-app.ts) | `SERVER_APP_PORT`, else 3003 | the standalone Server App |
+
+Those are the base ports, not the addresses to code against. Each server resolves its port at bind
+time, and on `EADDRINUSE` or `EACCES` it increments and retries rather than failing. **Derive a
+client target from what the page was served from, never from a literal port.** The shared `api`
+client already does this with `` `${window.location.origin}/api` ``, the KDS socket derives its host
+from that `baseURL`, and a client that needs the KDS or Server App port asks for it: `get-kds-info`
+over IPC returns the bound KDS port and the machine's LAN address. See
+[the port retry ladder](../architecture/overview.md#the-port-retry-ladder) for the accessors and
+the ten-attempt bound.
 
 A page is a file, not a request that runs code. The export has no Next.js server runtime behind
 it, so there are no route handlers, no server actions, no middleware, and no server cookies in the
@@ -42,8 +51,8 @@ enumerates the absences and why the build stays quiet about them.
 renderer:
 
 1. **HTTP**, through the axios client in [`frontend/src/lib/api.ts`](../../frontend/src/lib/api.ts).
-2. **WebSocket**, on the same ports, for live updates. Two screens use one today, and they are not
-   the same client; see [the KDS live feed](#the-kds-live-feed-is-a-websocket-not-a-request).
+2. **WebSocket**, on the same ports, for live updates. Two screens open one today, through two
+   different clients; see [the KDS live feed](#the-kds-live-feed-is-a-websocket-not-a-request).
 3. **Native capability**, through the `window.electronAPI` bridge described in
    [the interface contract](#the-interface-contract).
 
@@ -134,7 +143,7 @@ for why the split exists.
 than being an owner-editable id. The renderer does not read it. Reach for
 `PERMISSION_DEFINITIONS` and a permission id when writing renderer code.
 
-### The administrative floor
+### The administrative floor and the two refusals
 
 Being protected and being administrative are different things. `configurable: false` marks the two
 permissions that always resolve to the active owner. Separately, the backend refuses a save that
@@ -150,10 +159,24 @@ settings.manage
 ```
 
 `PermissionMatrix` keeps its own copy of that list, mirroring the backend constant, and marks the
-row when a pending change would take one of the four away from the actor who is making it. A save
-in that state goes through a Master PIN prompt and sends the value as `override_pin`, the same
-request field bills, orders, and refunds use. The server refuses the save regardless; the
-renderer's copy is there so the cost is named before it is paid, not only in a refusal afterwards.
+row when a pending change would take one of the four away from the actor who is making it. It is a
+warning, not a block: the save goes out, and the server applies two separate guards that need to be
+told apart.
+
+| Guard | Refuses | Status | Can a PIN satisfy it |
+| --- | --- | --- | --- |
+| `assertAdministrationReachable` | a write that would leave the install with no account that can administer it | 400 `administration_unreachable` | no, nothing rescues a stranded store |
+| `assertActorKeepsOwnAdministration` | a write that would take any of the four away from the actor making it | 428 `self_privilege_change_requires_factor`, 403 if the factor is wrong, 409 if the actor has no PIN set | yes |
+
+The second guard's factor is the **actor's own staff PIN**, verified against `users.pin_hash` from
+the request body's `override_pin` and rate-limited per client IP. It is not the Master PIN, and the
+component that collects it is named `MasterPinPrompt` because the same component drives the
+Master PIN flows. **When another account can still administer the store, a confirmed self-access
+change succeeds**; the 400 is the case no factor can rescue. The store check runs first, so a
+stranded install is refused as a 400 naming the remedy rather than as a 428 naming a PIN.
+
+`preflightOverrides` in [`main/routes/authorization.ts`](../../main/routes/authorization.ts) runs
+both before the write, so a refusal stores nothing.
 
 ### How the renderer reads a permission
 
@@ -173,8 +196,10 @@ call behind it will succeed, and a renderer that hides one is not a security con
 
 Route gating lives in `AuthGuard`:
 
-- `getLandingPage` picks the first page in a fixed list the tenant can reach, so a cashier lands
-  on the POS and an owner lands on the dashboard.
+- `getLandingPage` returns the first page in a fixed list the tenant can reach. The list is ordered,
+  not role-aware: `pos.use` is checked before `dashboard.view`, and `pos.use` ships to owners, so
+  an owner lands on the POS like anyone else. The list is a fallback order for whichever surfaces
+  are available, not a statement about what a role prefers.
 - `PAGE_PERMISSIONS` maps a guarded route to the single permission id it needs. `/staff` and
   `/settings` are the two exceptions and carry an any-of list instead, because either screen
   aggregates several permissions. Adding a route means adding it to one of those three; a route in
@@ -196,10 +221,25 @@ defaults.
 
 [`main/preload.ts`](../../main/preload.ts) exposes one object, `window.electronAPI`, through
 `contextBridge`. Its type is `ElectronAPI` in
-[`frontend/src/types/electron.d.ts`](../../frontend/src/types/electron.d.ts), and
-[`electron-api-contract.ts`](../../frontend/src/types/electron-api-contract.ts) pins a set of those
-signatures with type-level assertions, so a change on one side of the bridge that misses the other
-side does not compile.
+[`frontend/src/types/electron.d.ts`](../../frontend/src/types/electron.d.ts).
+
+**The compile-time checks over that boundary are partial, so verify both sides by hand.**
+[`electron-api-contract.ts`](../../frontend/src/types/electron-api-contract.ts) makes two different
+kinds of assertion:
+
+- `ElectronApiContractChecks` pins twelve exact signatures with `Equal<>`: `dbApplySafeFixes`,
+  `getMasterPinStatus`, `getSettings`, `setSetting`, `setThemeEffective`, `getKdsInfo`,
+  `openKdsWindow`, `openWhatsAppShare`, `getAppInfo`, `getPrinters`, `getStatus`, `onUpdateStatus`.
+- `ElectronApiMethodPresence` is a `Pick<>`, so the other listed members including
+  `backupDatabase`, `restoreBackup`, `pickRestoreFile`, `dbHealthCheck`, `dbInitialize`,
+  `getUpdateStatus`, `checkForUpdates`, and `restartAndInstall` are checked for **presence only**.
+
+On top of that, `preload.ts` is CommonJS and never mentions `ElectronAPI`, so it is not
+type-bound to the renderer declaration at all. A preload signature change can therefore compile
+with the renderer still expecting the old shape, and a presence-only member can have its arguments
+change without anything failing to build. `npm run test:electron-api-contract` is the check to run
+for the channel list and the absence assertions; argument and return-type changes on a
+presence-only member need a look at both files.
 
 Every privileged channel in [`main/ipc.ts`](../../main/ipc.ts) is registered through the `handle`
 wrapper, which calls `isTrustedSender` before the listener runs and returns
@@ -243,10 +283,19 @@ native file picker and returns a path bound to a single-use token; it performs n
 The restore that path feeds is authorised over HTTP by a session holding `database.manage`, so the
 origin check is the right gate for the picker and adding a PIN prompt to it would be theatre.
 
-The settings screen runs the same repairs over HTTP, where the acting user is known: the
- `/api/db-tools` routes all require `database.manage`, and `POST /api/db-tools/apply-safe-fixes` and
- `POST /api/db-tools/initialize` add the Master PIN and, for initialise, the same `INITIALIZE`
- phrase.
+The HTTP twins of those repairs are gated separately, and not uniformly, by
+[`main/routes/database-tools.ts`](../../main/routes/database-tools.ts). Every `/api/db-tools` route
+requires `database.manage`. Beyond that:
+
+| Route | Extra requirement |
+| --- | --- |
+| `POST /api/db-tools/apply-safe-fixes` | none. A permission, not a Master PIN, exactly as the IPC channel it mirrors differs |
+| `POST /api/db-tools/initialize` | `requireMasterPin` on `master_pin`, then the `INITIALIZE` phrase |
+| `POST /api/db-tools/currency-reset`, `POST /api/db-tools/backups/:fileName/delete` | `requireMasterPin` |
+
+So `apply-safe-fixes` is the one database write that a manager with `database.manage` can perform
+without a PIN, on both planes, while the neighbouring `db-apply-safe-fixes` IPC channel demands
+one. That asymmetry is real; do not read either gate as implying the other.
 
 ### Two privileged channels are absent
 
@@ -331,14 +380,24 @@ delivery orders and hidden for cancelled ones. The slip prefers the address conf
 order and falls back to the customer's standing address, which is what every order created before
 the column existed resolves to.
 
-Whether the customer's phone number appears on the slip is a deliberate divergence from the
-receipt, and the rule is a product decision rather than an implementation detail: the slip is a
-separate document kind with its own builder, so it resolves the number through
-`shouldShowCustomerNumber` in the shared kernel instead of passing through `buildBillDocument`.
-The renderer and the backend call the same function, so a slip and a delivery receipt cannot
-disagree. The setting behind the override is `bill_delivery_show_customer_phone_always`; see
-[product invariants](../reference/product-invariants.md#a-receipt-and-a-courier-slip-are-not-secure-artefacts)
-for the rule and the panel text that states it.
+Whether the customer's phone number appears is the one place where the two slip paths are **not**
+reading a shared rule, and the duplication is load-bearing to know about. The bill paths call the
+kernel's `shouldShowCustomerNumber`: the renderer bill document in
+[`print-document.ts`](../../frontend/src/lib/printer/print-document.ts), the renderer tax-bill
+encoder, and the backend bill route in
+[`main/routes/printers.ts`](../../main/routes/printers.ts). The slip paths each re-implement the
+rule inline instead, with no call into the kernel:
+
+| Path | How it decides |
+| --- | --- |
+| renderer slip, `printDeliverySlip` in [`usePrinter.ts`](../../frontend/src/hooks/usePrinter.ts) | `billDeliveryShowCustomerPhoneAlways \|\| billShowCustomerPhone` |
+| backend slip, `main/routes/printers.ts` | the same boolean, read from the settings table directly |
+
+The two agree today because the rule is two settings wide. They are separate code, so a change to
+one does not reach the other, and this is the duplication that let a slip lose the number when the
+delivery override was off. Treat a change to this rule as a change in four places, or fix the
+duplication first. [Product invariants](../reference/product-invariants.md#a-receipt-and-a-courier-slip-are-not-secure-artefacts)
+owns the rule itself.
 
 Warnings travel with every result. `hasFinancialPrintWarning` refuses the whole receipt rather than
 print a total the printer cannot represent, which is why a capability failure is a thrown error and
@@ -426,10 +485,11 @@ frontend/src/
 │   ├── providers/              I18nProvider
 │   ├── settings/               The settings screen's building blocks:
 │   │   BetaChannelToggle, CurrencyResetDialog, DatabaseSettingsTab,
-│   │   GeneralSettingsTab, HealthCheckDialog, InitializeDatabaseDialog,
-│   │   LocalePreferencesPanel, MasterPinPrompt, PaymentMethodsSettings,
-│   │   PermissionAuditLog, PermissionMatrix, PrintersSettingsTab,
-│   │   SettingsTabShell, TaxConfigurationPanel, Toggle, WhatsAppEnableCard
+│   │   DiagnosticsSettingsTab, GeneralSettingsTab, HealthCheckDialog,
+│   │   InitializeDatabaseDialog, LocalePreferencesPanel, MasterPinPrompt,
+│   │   PaymentMethodsSettings, PermissionAuditLog, PermissionMatrix,
+│   │   PrintersSettingsTab, SettingsTabShell, TaxConfigurationPanel,
+│   │   Toggle, WhatsAppEnableCard
 │   ├── support/                Support ticket form
 │   ├── tables/                 Floorplan editor, table turnover badge
 │   ├── ui/                     shadcn/ui primitives

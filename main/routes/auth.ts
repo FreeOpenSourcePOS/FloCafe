@@ -13,7 +13,7 @@ import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '..
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { isSupportedCurrencyCode } from '../../shared/currencies';
-import { effectivePermissionRevision, resolveEffectivePermissions } from '../services/authorization';
+import { effectivePermissionRevision, hasActiveAdministrator, resolveEffectivePermissions } from '../services/authorization';
 
 const router = Router();
 
@@ -512,20 +512,29 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       return res.status(pinResult.status).json({ error: pinResult.error });
     }
 
-    const activeOwnerCount = (db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'owner' AND is_active = 1").get() as { count: number }).count;
-    const user = activeOwnerCount === 0
+    // An install is stranded when no active account can reach administration,
+    // not when no active owner is left. Owners are the only identity that can
+    // hold the two protected permissions, so a store whose active owners have
+    // all been denied the configurable administrative capabilities has nobody
+    // who can reach the permission editor to undo it, and only this endpoint
+    // can promote someone back. Counting owners misses exactly that store.
+    const stranded = !hasActiveAdministrator();
+    const user = stranded
       ? db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any
       : db.prepare('SELECT * FROM users WHERE email = ? AND role = ? AND is_active = 1').get(email, INITIAL_ADMIN_ROLE) as any;
     if (!user) {
-      return res.status(404).json({ error: 'No active owner account found with that email on this install' });
+      return res.status(404).json({ error: stranded
+        ? 'No active account found with that email on this install'
+        : 'No active owner account found with that email on this install' });
     }
 
     const hashedPassword = bcrypt.hashSync(new_password, 10);
     const changedAt = now();
     let restoredOwnerAccess = false;
     const updated = db.transaction(() => {
-      const currentOwnerCount = (db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'owner' AND is_active = 1").get() as { count: number }).count;
-      if (currentOwnerCount > 0) {
+      // Re-evaluated inside the transaction, so a write that landed between the
+      // lookup above and this one cannot turn a plain reset into a promotion.
+      if (hasActiveAdministrator()) {
         return db.prepare('UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND role = ? AND is_active = 1')
           .run(hashedPassword, changedAt, changedAt, user.id, INITIAL_ADMIN_ROLE);
       }
@@ -534,7 +543,6 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       return db.prepare(`
         UPDATE users SET password = ?, role = ?, tokens_valid_after = ?, updated_at = ?
         WHERE id = ? AND is_active = 1
-          AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'owner' AND is_active = 1)
       `).run(hashedPassword, INITIAL_ADMIN_ROLE, changedAt, changedAt, user.id);
     })();
     if (updated.changes === 0) {

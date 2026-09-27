@@ -42,6 +42,7 @@ enumerates the absences and why the build stays quiet about them.
 renderer and no third:
 
 1. **HTTP**, through the axios client in [`frontend/src/lib/api.ts`](../../frontend/src/lib/api.ts).
+   The KDS live feed rides the same route as a WebSocket upgrade on the same ports.
 2. **Native capability**, through the `window.electronAPI` bridge described in
    [the interface contract](#the-interface-contract).
 
@@ -50,11 +51,11 @@ an Express route on the backend, not renderer code. See
 [Backend-authoritative security and tax](../decisions/0002-backend-authoritative-security-and-tax.md).
 
 The KDS window and the Server App page load without a preload bridge, so on those two surfaces the
-IPC route does not exist at all and every call is HTTP or a WebSocket.
+IPC route does not exist at all.
 
 ### The HTTP client
 
-`api` is the single axios instance, and every request in the renderer goes through it.
+`api` is the axios instance the authenticated pages share, and the default way to reach the API.
 
 - `baseURL` is `` `${window.location.origin}/api` ``, resolved at module load, so a page served
   from a LAN host reaches that host's API rather than a hard-coded address.
@@ -66,6 +67,38 @@ IPC route does not exist at all and every call is HTTP or a WebSocket.
   event. [`AuthGuard`](../../frontend/src/components/layout/AuthGuard.tsx) listens for it and calls
   `refreshAuthContext`, so an owner tightening a permission takes effect on the next request
   instead of at the next sign-in.
+
+Four things do not use it, and a new screen has to notice which kind it is:
+
+| Path | How it reaches the API |
+| --- | --- |
+| [`kds-standalone/page.tsx`](../../frontend/src/app/kds-standalone/page.tsx) | builds its own axios instance on its own origin, because it runs on the `:3002` server without the POS window, and on a `401` clears the token and reloads instead of redirecting |
+| [`server-standalone/page.tsx`](../../frontend/src/app/server-standalone/page.tsx) | the same, against the filtered `:3003` proxy |
+| [`i18n/server-language.ts`](../../frontend/src/lib/i18n/server-language.ts) | bare `fetch`, because it reads the tenant's language before a session exists |
+| the KDS live feed | a WebSocket, described below |
+
+The other `axios` imports in the renderer are `axios.isAxiosError` for error shape, not a second
+client.
+
+### The KDS live feed is a WebSocket, not a request
+
+[`useKdsConnection`](../../frontend/src/hooks/useKdsConnection.ts) opens a socket to
+`<ws|wss>://<host>/kds`, deriving the host from the axios `baseURL` so a dev proxy reaches the
+right backend, and falling back to the page origin. The same path is upgraded on both `:3001` and
+`:3002`.
+
+Authentication is a message, not a header. The client sends `{ type: 'auth', token }` after `open`
+and must be authenticated within 5 seconds, or the server sends `auth_error` and closes with code
+`1008`. A socket that is refused, times out, or drops does not become a dead screen: the hook falls
+back to REST polling on a 5-second interval and reports which mode it is in through
+`connectionMode`. Reconnect uses exponential backoff from 1 to 30 seconds.
+
+Which REST route it polls depends on the surface, because the hook takes its endpoints as a
+parameter. The in-dashboard KDS polls `GET /api/kitchen/orders`; `/kds-standalone` passes
+`orders: '/api/kds/orders'` and the rest of the `:3002` REST surface to the same hook.
+
+The frames, the handshake, and the server-side conditions live in
+[the API reference](../reference/api.md#kds-websocket-kds).
 
 ## The permission model
 
@@ -92,6 +125,27 @@ for why the split exists.
 `PERMISSION_CAPABILITIES` is a third, older shape: each row names an `allowedRoles` group rather
 than being an owner-editable id. The renderer does not read it. Reach for
 `PERMISSION_DEFINITIONS` and a permission id when writing renderer code.
+
+### The administrative floor
+
+Being protected and being administrative are different things. `configurable: false` marks the two
+permissions that always resolve to the active owner. Separately, the backend refuses a save that
+would leave no account able to manage staff, permissions, or store settings, using
+`ADMINISTRATIVE_PERMISSION_IDS` in
+[`main/services/authorization.ts`](../../main/services/authorization.ts):
+
+```text
+authorization.manage
+staff.privileged.manage
+staff.operational.manage
+settings.manage
+```
+
+`PermissionMatrix` keeps its own copy of that list, mirroring the backend constant, and marks the
+row when a pending change would take one of the four away from the actor who is making it. A save
+in that state goes through a Master PIN prompt and sends the value as `override_pin`, the same
+request field bills, orders, and refunds use. The server refuses the save regardless; the
+renderer's copy is there so the cost is named before it is paid, not only in a refusal afterwards.
 
 ### How the renderer reads a permission
 
@@ -139,11 +193,16 @@ defaults.
 signatures with type-level assertions, so a change on one side of the bridge that misses the other
 side does not compile.
 
-Every handler registered through the `handle` wrapper in
-[`main/ipc.ts`](../../main/ipc.ts) calls `isTrustedSender` first, which requires the calling frame's
-URL to be `http:` on `localhost` or `127.0.0.1`. That establishes **which window is calling**. It
-does not establish **who is signed in**, and the single POS window serves every role from chef to
-owner. The contract follows from that gap.
+Every privileged channel in [`main/ipc.ts`](../../main/ipc.ts) is registered through the `handle`
+wrapper, which calls `isTrustedSender` before the listener runs and returns
+`{ error: 'Unauthorized sender' }` to anything else. `isTrustedSender` requires the calling
+frame's URL to be `http:` on `localhost` or `127.0.0.1`. That establishes **which window is
+calling**. It does not establish **who is signed in**, and the single POS window serves every role
+from chef to owner. Everything else in this section follows from that gap.
+
+Registering a privileged channel with a bare `ipcMain.handle` skips the check. `pick-restore-file`,
+`backup-database`, `restore-backup`, and `db-initialize` did that once; they go through the wrapper
+now, and a new channel does too or it has not been reviewed.
 
 ### What the settings channel may write
 
@@ -159,12 +218,27 @@ The renderer writes the theme over HTTP too, with `PUT /api/settings/theme_mode`
 calls it today. Widening `ALLOWED_IPC_KEYS` means moving an authorization decision from a
 permission-gated route onto a window-origin check, which is a different and weaker boundary.
 
-### The database repair channel sits behind the Master PIN
+### The database channels
 
-`db-apply-safe-fixes` calls `authorizeMasterPin(pin, 'ipc:apply-safe-fixes')` before it touches
-anything, and fails closed on a missing or wrong PIN, in the same way `backup-database`,
-`restore-backup`, and `db-initialize` do. The settings screen runs the same repair over
-`POST /api/db-tools/apply-safe-fixes`, which requires `database.manage`.
+Five channels do database work, and they are gated two different ways on purpose.
+
+| Channel | Gate |
+| --- | --- |
+| `db-health-check` | sender check only; it reports, it does not write |
+| `db-apply-safe-fixes` | sender check, then `authorizeMasterPin(pin, 'ipc:apply-safe-fixes')`, failing closed on a missing or wrong PIN |
+| `backup-database` | sender check, then `authorizeMasterPin(pin, 'ipc:backup')` |
+| `restore-backup` | sender check, then `authorizeMasterPin(pin, 'ipc:restore')` |
+| `db-initialize` | sender check, then `authorizeMasterPin(pin, 'ipc:initialize')` **and** the exact confirmation phrase `INITIALIZE` |
+
+`pick-restore-file` is the odd one out and is deliberately not Master-PIN gated. It opens the
+native file picker and returns a path bound to a single-use token; it performs no destructive step.
+The restore that path feeds is authorised over HTTP by a session holding `database.manage`, so the
+origin check is the right gate for the picker and adding a PIN prompt to it would be theatre.
+
+The settings screen runs the same repairs over HTTP, where the acting user is known: the
+ `/api/db-tools` routes all require `database.manage`, and `POST /api/db-tools/apply-safe-fixes` and
+ `POST /api/db-tools/initialize` add the Master PIN and, for initialise, the same `INITIALIZE`
+ phrase.
 
 ### Two privileged channels are absent
 
@@ -193,9 +267,9 @@ hook because it carries the transport:
 | [`auth.ts`](../../frontend/src/store/auth.ts) | `user`, `token`, `tenants`, `currentTenant`, `loading`, and the locales that failed to warm at bootstrap | token and tenant in `localStorage`; throws `StorageUnavailableError` when storage is unavailable |
 | [`cart.ts`](../../frontend/src/store/cart.ts) | cart items with their addons and instructions, order type, table, customer, guest count, delivery details, and the subtotal and item count selectors | none |
 | [`held-orders.ts`](../../frontend/src/store/held-orders.ts) | suspended orders keyed by table, and the fetch, hold, restore, remove, and lookup actions over `/held-orders` | none |
-| [`pos-settings.ts`](../../frontend/src/store/pos-settings.ts) | the tenant's POS configuration, printer defaults, bill template and provenance, receipt and kitchen-ticket language policy | `persist` under the `pos-settings` key, version 3, with backend-synced fields excluded by `partialize` |
+| [`pos-settings.ts`](../../frontend/src/store/pos-settings.ts) | the tenant's POS configuration, printer defaults, bill template and provenance, receipt and kitchen-ticket language policy | `persist` under the `pos-settings` key, version 4, with backend-synced fields excluded by `partialize` |
 | [`theme.ts`](../../frontend/src/store/theme.ts) | `mode` and whether this session made an explicit choice | none; `useThemeModeToggle` writes through the API and rolls the store back when the write fails |
-| [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts) | connection status, the hardware and WebUSB printer records, the print method, the last emitted bytes, and the print actions | `persist` |
+| [`usePrinterStore`](../../frontend/src/hooks/usePrinter.ts) | connection status, the hardware and WebUSB printer records, the print method, the last emitted bytes, and the print actions: `printBill`, `printTaxBill`, `printKot`, `printDeliverySlip` | `persist` |
 
 `held-orders.ts` exports `createHeldOrdersStore(apiClient)`, so a test can pass its own client
 instead of the shared one.
@@ -224,16 +298,50 @@ For a bill or a kitchen ticket, in the order the store tries them:
 4. **Browser printing.** `lib/printer/web-print.ts` and `kot-web-print.ts` render HTML and open the
    system print dialog. This is also the fallback whenever no thermal transport is connected.
 
-Warnings travel with the result. `hasFinancialPrintWarning` refuses the whole receipt rather than
+### The courier slip takes a shorter path
+
+`printDeliverySlip` is the fourth print action, and it has no raster path. A delivery slip carries
+the address, the full contact block, and the order lines, and it resolves through three routes:
+
+1. `POST /api/printers/print-delivery-slip` when a hardware printer is configured.
+2. `buildDeliverySlipBytes` in
+   [`delivery-slip-encoder.ts`](../../frontend/src/lib/printer/delivery-slip-encoder.ts) over
+   WebUSB.
+3. `generateDeliverySlipHtml` in
+   [`delivery-slip-web-print.ts`](../../frontend/src/lib/printer/delivery-slip-web-print.ts) for
+   the system print dialog.
+
+Both renderer-side slip files build the slip from a small order projection rather than from the
+kernel's `DeliverySlipDocument`. That model and `buildDeliverySlipDocument` exist in
+`shared/print/document.ts` and are consumed by the backend renderer
+[`main/printers/document-delivery-slip.ts`](../../main/printers/document-delivery-slip.ts), so the
+rule that a renderer consumes a document does not hold for the WebUSB and browser slip paths.
+
+The action is reachable on an unpaid delivery order, because that is the workflow: the courier
+leaves before the customer settles. `OrderCard` renders it outside the payment branches, limited to
+delivery orders and hidden for cancelled ones. The slip prefers the address confirmed on that
+order and falls back to the customer's standing address, which is what every order created before
+the column existed resolves to.
+
+Whether the customer's phone number appears on the slip is a deliberate divergence from the
+receipt, and the rule is a product decision rather than an implementation detail: the slip is a
+separate document kind with its own builder, so it resolves the number through
+`shouldShowCustomerNumber` in the shared kernel instead of passing through `buildBillDocument`.
+The renderer and the backend call the same function, so a slip and a delivery receipt cannot
+disagree. The setting behind the override is `bill_delivery_show_customer_phone_always`; see
+[product invariants](../reference/product-invariants.md#a-receipt-and-a-courier-slip-are-not-secure-artefacts)
+for the rule and the panel text that states it.
+
+Warnings travel with every result. `hasFinancialPrintWarning` refuses the whole receipt rather than
 print a total the printer cannot represent, which is why a capability failure is a thrown error and
 not a toast.
 
 Print locales are warmed at authentication, not lazily at render time. `syncPrintPoliciesAtBootstrap`
 applies the tenant's receipt and kitchen-ticket language policy and loads the bundles it selects,
-and the auth store keeps the languages that failed. The print path calls `ensurePrintLanguagesLoaded`
-again before it encodes, and a locale that still will not load becomes a receipt warning saying
-English labels were used. A receipt that renders in the wrong language is a financial document, not
-a cosmetic bug.
+and the auth store keeps the languages that failed. Every print action calls
+`ensurePrintLanguagesLoaded` again before it encodes, and a locale that still will not load becomes
+a receipt warning saying English labels were used. A receipt that renders in the wrong language is
+a financial document, not a cosmetic bug.
 
 ## Internationalization: 24 locales
 
@@ -321,9 +429,10 @@ frontend/src/
 ├── hooks/                      Printer, KDS, theme, update, cash, and formatting hooks
 ├── lib/
 │   ├── i18n/                   Language registry, loader, and the 24 message files
-│   ├── printer/                Encoders, document builders, warnings, WebUSB bridge
+│   ├── printer/                Encoders, document builders, warnings, WebUSB bridge,
+│   │                           and the delivery-slip encoder and browser renderer
 │   ├── updates/                Beta channel and restart-and-install helpers
-│   ├── api.ts                  The axios client every request goes through
+│   ├── api.ts                  The shared axios client for the authenticated pages
 │   ├── api-error.ts            Localized text for a backend error
 │   └── permissions.ts          tenantCan
 ├── store/                      auth, cart, held-orders, pos-settings, theme
@@ -338,7 +447,9 @@ frontend/src/
 | A message key, a new locale, or a changed label | `npm run i18n:check` |
 | A permission the renderer gates on | `npm run test:authorization-permissions` and `npm run test:auth-ui-deterministic` |
 | A new or renamed IPC channel | `npm run test:electron-api-contract` and `npm run test:printer-ipc` |
+| The sender check on a database channel | `npm run test:kds-window-hardening`, which drives `pick-restore-file`, `backup-database`, `restore-backup`, and `db-initialize` from an untrusted sender |
 | A print path, template, or column width | `npm run test:receipt-column-oracle` |
+| The courier slip | `npm run test:delivery-slip` |
 | A user-facing flow | `npm run test:e2e:browser` from the repository root |
 
 `npm run build:frontend` is the check that catches a server-side construct: it is the only build

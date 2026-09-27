@@ -48,8 +48,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 process.env.JWT_SECRET = 'test-secret-for-issue-127';
 // This suite exercises more /recover-password calls than the production auth
-// ceiling of 10 per window. The limiter under test here is the Master PIN one,
-// which keeps its own counter; raising the auth ceiling leaves that covered.
+// ceiling of 10 per window; the limiter under test is the Master PIN one.
 process.env.FLO_AUTH_RATE_LIMIT_MAX = '100';
 
 const express = require('express');
@@ -92,6 +91,14 @@ try {
 const app = express();
 app.use(express.json());
 app.use('/api/auth', authRoutes);
+// Mounted so the recovery test can prove a promoted owner really can drive the
+// permission editor, rather than inferring it from a permission set.
+const { authorizationRoutes } = require('../main/routes/authorization');
+app.use('/api/authorization', (req: any, _res: any, next: any) => {
+  const userId = req.header('x-test-user');
+  if (userId) req.user = { userId };
+  next();
+}, authorizationRoutes);
 
 async function runTests() {
   console.log('Issue #127: Password Recovery API (supertest)');
@@ -231,10 +238,8 @@ async function runTests() {
     });
     assert(healthy.status === 404, `a non-owner is not recoverable while the store can still administer itself (got ${healthy.status}, ${JSON.stringify(healthy.body)})`);
 
-    // Strand the install the way a store stranded before the administration
-    // floor exists: an active owner is still on the books, but an override has
-    // taken both configurable administrative capabilities away from them, so
-    // nobody can reach the permission editor that would undo it.
+    // Stranded by a user override: nobody can reach the editor that would
+    // undo it, which is the state the administration floor now refuses to create.
     for (const permissionId of ['settings.manage', 'staff.operational.manage']) {
       db.prepare(`
         INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
@@ -273,11 +278,8 @@ async function runTests() {
   {
     const { reachesAdministration, resolveEffectivePermissions } = require('../main/services/authorization');
     const bcrypt = require('bcryptjs');
-    // The same failure one level up: the owner role itself is denied the two
-    // configurable administrative capabilities, so promoting anyone to owner
-    // does not make that person an administrator. The install is still
-    // recoverable, because the promoted owner holds the protected permissions
-    // and can therefore open the editor that undoes the role default.
+    // The same failure one level up: promoting to owner cannot undo a role
+    // default, so only the protected editor entry point makes this a recovery.
     for (const permissionId of ['settings.manage', 'staff.operational.manage']) {
       db.prepare(`
         INSERT INTO role_permission_overrides (role, permission_id, effect, updated_by, created_at, updated_at)
@@ -313,6 +315,24 @@ async function runTests() {
       });
     assert(afterPromotion.length === 0,
       'the role default still denies the two capabilities, which is why the editor entry point is what makes this a recovery');
+
+    // Holding authorization.manage is only half the claim. Drive the editor as
+    // the promoted owner and restore the role defaults, which is the step that
+    // actually makes the install administrable again.
+    const cashierAuth = { 'x-test-user': 'cashier-1' };
+    const roleRevision = (await request(app).get('/api/authorization/roles').set(cashierAuth))
+      .body.roles.find((entry: any) => entry.role === 'owner').revision;
+    const repair = await request(app).put('/api/authorization/roles/owner').set(cashierAuth).send({
+      revision: roleRevision,
+      overrides: [],
+    });
+    assert(repair.status === 200, `the promoted owner restores the role defaults through the editor (got ${repair.status})`);
+    const afterRepair = (db.prepare('SELECT id FROM users WHERE is_active = 1').all() as Array<{ id: string }>)
+      .filter(({ id }) => {
+        const effective = resolveEffectivePermissions(id);
+        return effective !== null && reachesAdministration(effective.permissionIds);
+      });
+    assert(afterRepair.length > 0, 'the install is administrable again once the promoted owner has driven the editor');
     const login = await request(app).post('/api/auth/login').send({
       email: 'cashier@example.com', password: 'RoleStrandPass123',
     });

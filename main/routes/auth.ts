@@ -512,12 +512,8 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       return res.status(pinResult.status).json({ error: pinResult.error });
     }
 
-    // An install is stranded when no active account can reach administration,
-    // not when no active owner is left. Owners are the only identity that can
-    // hold the two protected permissions, so a store whose active owners have
-    // all been denied the configurable administrative capabilities has nobody
-    // who can reach the permission editor to undo it, and only this endpoint
-    // can promote someone back. Counting owners misses exactly that store.
+    // Owners alone can hold the protected permissions, so a store whose active
+    // owners are all denied the configurable administrative capabilities strands.
     const stranded = !hasActiveAdministrator();
     const user = stranded
       ? db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any
@@ -532,8 +528,8 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     const changedAt = now();
     let restoredOwnerAccess = false;
     const updated = db.transaction(() => {
-      // Re-evaluated inside the transaction, so a write that landed between the
-      // lookup above and this one cannot turn a plain reset into a promotion.
+      // Re-checked in the transaction, so a concurrent write cannot turn a
+      // plain reset into a promotion.
       if (hasActiveAdministrator()) {
         return db.prepare('UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND role = ? AND is_active = 1')
           .run(hashedPassword, changedAt, changedAt, user.id, INITIAL_ADMIN_ROLE);

@@ -81,7 +81,8 @@ async function main() {
   assertEqualOrThrow(bundleRes.status, 200, 'the bundle endpoint answers 200');
   const bundle = bundleRes.data.bundle;
   assertEqualOrThrow(bundle.system.app_version, require('../package.json').version, 'the bundle carries the application version');
-  assertEqualOrThrow(bundle.system.schema_version, 94, 'the bundle carries the current schema version');
+  // Floor, not a pin: this change's own migration moves the number over time.
+  assertOrThrow(Number(bundle.system.schema_version) >= 95, 'the bundle carries the current schema version');
   assertEqualOrThrow(bundle.system.platform, process.platform, 'the bundle carries the platform');
   assertEqualOrThrow(bundle.system.arch, process.arch, 'the bundle carries the architecture');
   assertEqualOrThrow(bundle.system.restaurant_name, 'Screen Test Cafe', 'the bundle carries the business profile of the signed-in operator');

@@ -5383,8 +5383,10 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         'true',
         now(),
       );
+    },
   },
   {
+    version: 95,
     name: 'add_local_diagnostics_log',
     up: () => {
       // Local, operator-readable failure log. Nothing here is transmitted; the

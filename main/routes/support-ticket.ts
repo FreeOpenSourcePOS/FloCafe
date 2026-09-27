@@ -68,12 +68,8 @@ export function resolveCategory(value: unknown): string {
   return ALLOWED_CATEGORIES.has(String(value || '')) ? String(value) : 'general';
 }
 
-/**
- * System state for a diagnostics bundle. Shared with the support-ticket path so
- * the diagnostics screen and a raised ticket always report the same fields.
- * Exported rather than duplicated: the in-app screen is a presentation change
- * over this builder, not a second system-inspection implementation.
- */
+// Shared with the diagnostics screen so both report the same system state,
+// rather than the screen carrying a second implementation.
 export function buildSystemDiagnostics(req: Request, category: string) {
   const db = getDatabase();
   const schemaVersion = db.pragma('user_version', { simple: true }) as number;

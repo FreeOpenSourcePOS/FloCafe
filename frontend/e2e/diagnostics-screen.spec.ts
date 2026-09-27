@@ -2,15 +2,12 @@ import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken } from './helpers/test-auth';
 
-// The in-app diagnostics screen as an operator meets it: the captured failure,
-// the copy action, the exact clipboard text, and the separate log-tail control.
-// The failure is produced through a real intake call, so these assert what is on
-// the page rather than that a function ran.
+// These assert what the operator sees, not that a function ran, so the failure
+// under test is produced through the real intake endpoint rather than injected.
 test('operator sees a captured failure and the copy-for-support action', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const token = getE2eToken();
 
-  // A real failure on this till, through the real intake endpoint.
   const eventResponse = await page.request.post(`${BASE}/api/diagnostics/event`, {
     headers: { Authorization: `Bearer ${token}` },
     data: {
@@ -35,13 +32,11 @@ test('operator sees a captured failure and the copy-for-support action', async (
   await expect(page).toHaveURL(/\/settings\/?\?tab=diagnostics$/);
   await expect(page.getByRole('heading', { name: 'Diagnostics', exact: true })).toBeVisible();
 
-  // The failure the operator could not otherwise describe is on the page.
   const failure = page.getByText('The order could not be completed on this device', { exact: false });
   await expect(failure.first(), 'the captured failure is visible to the operator').toBeVisible();
   await expect(page.getByText('server.internal_error').first()).toBeVisible();
   await expect(page.getByText('/api/orders').first()).toBeVisible();
 
-  // The copy-for-support action exists and shows exactly what it will copy.
   const copyButton = page.getByRole('button', { name: 'Copy for support', exact: true });
   await expect(copyButton, 'the copy-for-support action is offered').toBeVisible();
   const preview = page.getByTestId('diagnostics-bundle-preview');
@@ -55,7 +50,6 @@ test('operator sees a captured failure and the copy-for-support action', async (
   const clipboard = await page.evaluate(() => navigator.clipboard.readText());
   expect(clipboard, 'the clipboard holds exactly the text shown on screen').toBe(await preview.innerText());
 
-  // The log tail is a separate, deliberately-labelled control.
   const logTailToggle = page.getByRole('switch', { name: 'Also include the log file' });
   await expect(logTailToggle, 'the log tail is a separate control').toBeVisible();
   await expect(logTailToggle).toHaveAttribute('aria-checked', 'false');
@@ -82,13 +76,11 @@ test('nothing is transmitted automatically', async ({ page }) => {
   await page.goto(`${BASE}/settings?tab=diagnostics`);
   await expect(page.getByRole('heading', { name: 'Diagnostics', exact: true })).toBeVisible();
 
-  // Reading the screen must not queue anything for transmission.
   const after = await page.request.get(`${BASE}/api/diagnostics/recent`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(await after.text()).toBe(beforeBody);
 
-  // The transmission switch is off by default, so nothing captured here is sent.
   const settings = await page.request.get(`${BASE}/api/settings`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -109,7 +101,6 @@ test('the privacy hint stops claiming nothing is sent once transmission is on', 
 
   await page.goto(`${BASE}/settings?tab=diagnostics`);
   const hint = page.getByText('Nothing here leaves the till automatically', { exact: false });
-  // The off-state claim is only shown once the server has confirmed the setting.
   await expect(hint, 'with transmission confirmed off the absolute claim is shown').toBeVisible();
 
   const setTransmission = (value: string) => page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
@@ -164,7 +155,6 @@ test('a settings read that started before a save cannot put the switch back to o
     await expect(transmission, 'the save is reflected in the switch').toHaveAttribute('aria-checked', 'true');
     await expect(page.getByText('Automatic transmission is on', { exact: false })).toBeVisible();
 
-    // The delayed, now stale, settings response lands after the save.
     await page.waitForTimeout(5000);
     await expect(transmission, 'a stale read must not put the switch back to off').toHaveAttribute('aria-checked', 'true');
     await expect(
@@ -195,9 +185,8 @@ test('a refresh started after a save applies the value it read', async ({ page }
     await transmission.click();
     await expect(transmission).toHaveAttribute('aria-checked', 'true');
 
-    // Asserting the switch after the refresh would prove nothing: the save
-    // already set it. So the server is changed behind the screen's back, and
-    // only a refresh can bring the new value on screen.
+    // The save already set the switch, so asserting it after the refresh would
+    // prove nothing: the server is changed out of band instead.
     expect((await setTransmission('false')).status(), 'the server value is changed directly').toBe(200);
     await expect(transmission, 'precondition: the screen still shows the saved value').toHaveAttribute('aria-checked', 'true');
 
@@ -227,9 +216,6 @@ test('an operator without the settings permission cannot use the transmission sw
   await page.goto(`${BASE}/settings?tab=diagnostics`);
   await expect(page.getByRole('heading', { name: 'Diagnostics', exact: true })).toBeVisible();
 
-  // A manager has the support permission that opens this screen but not the
-  // settings permission the write endpoint enforces, so the switch is offered
-  // visibly unavailable rather than apparently broken.
   const transmission = page.getByRole('switch', { name: 'Send diagnostics automatically' });
   await expect(transmission, 'the control is still shown, so its state is legible').toBeVisible();
   await expect(transmission, 'the control is visibly unavailable').toBeDisabled();

@@ -255,11 +255,8 @@ function recordLocalDiagnostic(db: BetterSqlite3.Database, entry: Omit<LocalDiag
   evictOldestDiagnostics(db, 'local_diagnostics', DIAGNOSTIC_LOG_MAX_ROWS);
 }
 
-/**
- * Enforces the cap on write by dropping rows, so neither log can grow without
- * bound between reads. `rowid` is the implicit SQLite insertion order and exists
- * on both tables (`event_id` is the outbox primary key but is not a rowid alias).
- */
+// Enforced on write, not on read, so neither log can grow between reads. `rowid`
+// is insertion order on both tables; the outbox's `event_id` key is not a rowid alias.
 function evictOldestDiagnostics(db: BetterSqlite3.Database, table: 'local_diagnostics' | 'store_diagnostics_outbox', max: number): void {
   db.prepare(`DELETE FROM ${table} WHERE rowid NOT IN (SELECT rowid FROM ${table} ORDER BY rowid DESC LIMIT ?)`)
     .run(max);
@@ -1058,13 +1055,9 @@ export class CloudSyncService {
     return this.supportFlushPromise;
   }
 
-  /**
-   * Capture a failure locally, and queue it for transmission only when the store
-   * has explicitly turned transmission on and a cloud key could deliver it.
-   *
-   * `error` is the thrown value when the call site has it: the stored message is
-   * a signature derived from it, never the raw exception text.
-   */
+  // Local capture always; queueing only when transmission is on and a cloud key
+  // could deliver it. `error` is the thrown value, from which the signature is
+  // derived, so the raw exception text is never stored.
   reportDiagnostic(input: DiagnosticEventInput, error?: unknown): void {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     if (!isAllowedDiagnosticEventCode(input.event_code)) return;

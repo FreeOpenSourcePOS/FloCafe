@@ -95,32 +95,21 @@ router.post('/event', requirePermission('support.use'), diagnosticsWriteRateLimi
   res.status(202).json({ queued: true });
 });
 
-/**
- * Recently captured failures for the in-app diagnostics screen. Local read only:
- * nothing here is transmitted, and the screen is the only consumer.
- */
+// Local read for the diagnostics screen; nothing here is transmitted.
 router.get('/recent', requirePermission('support.use'), (req: Request, res: Response) => {
   const limitRaw = Number(req.query.limit);
   const limit = Number.isSafeInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, DIAGNOSTIC_LOG_MAX_ROWS) : 50;
   res.json({ failures: cloudSync.listLocalDiagnostics(limit) });
 });
 
-/**
- * Remove every locally captured failure. The read path is support.use so any
- * staff member can read out a failure, but erasing the evidence is destructive
- * and must not be something a cashier can do to the record an operator needs;
- * it takes the same permission as changing the transmission setting.
- */
+// Erasing the evidence is destructive, so it takes the same permission as
+// changing the transmission setting rather than the read path's support.use.
 router.delete('/recent', requirePermission('settings.manage'), (req: Request, res: Response) => {
   res.json({ removed: cloudSync.clearLocalDiagnostics() });
 });
 
-/**
- * The exact text the operator's copy action will put on the clipboard: the shared
- * system-diagnostics builder plus the recent failures. The raw log tail is
- * deliberately absent - it can carry order and customer detail, so the operator
- * adds it deliberately on the screen after seeing what it is.
- */
+// The raw log tail is deliberately absent: it can carry order and customer
+// detail, so the operator adds it on the screen after seeing what it is.
 router.get('/support-bundle', requirePermission('support.use'), (req: Request, res: Response) => {
   const limitRaw = Number(req.query.limit);
   const limit = Number.isSafeInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, DIAGNOSTIC_LOG_MAX_ROWS) : 50;

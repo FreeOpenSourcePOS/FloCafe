@@ -47,11 +47,8 @@ function event(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
-/**
- * reportDiagnostic writes in the background, so a previous section's inserts can
- * still be landing - and evicting - while the next section builds a fixture.
- * Wait until the outbox count stops moving.
- */
+// A previous section's background writes can still be landing and evicting while
+// the next builds a fixture, so wait until the count stops moving.
 async function drain(db: any, timeoutMs = 10000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let previous = -1;

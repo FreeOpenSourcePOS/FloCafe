@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "外送單",
       "banner": "外送單",
-      "address": "外送地址"
+      "address": "外送地址",
+      "addressTruncated": "... 另有 {count} 個字元未顯示，請核對訂單"
     },
     "hsn": "HSN",
     "zReport": {

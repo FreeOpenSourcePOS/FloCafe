@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "FLETË DËRGIMI",
       "banner": "FLETË DËRGIMI",
-      "address": "Adresa e dorëzimit"
+      "address": "Adresa e dorëzimit",
+      "addressTruncated": "... {count} karaktere te tjera nuk u shfaqen, kontrolloni porosinë"
     },
     "hsn": "HSN",
     "zReport": {

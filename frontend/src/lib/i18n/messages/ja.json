@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "配達伝票",
       "banner": "配達伝票",
-      "address": "配達先住所"
+      "address": "配達先住所",
+      "addressTruncated": "... 他 {count} 文字は表示されていません。注文を確認してください"
     },
     "hsn": "HSN",
     "zReport": {

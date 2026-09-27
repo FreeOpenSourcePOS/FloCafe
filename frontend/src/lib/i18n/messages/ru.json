@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "НАКЛАДНАЯ ДОСТАВКИ",
       "banner": "НАКЛАДНАЯ ДОСТАВКИ",
-      "address": "Адрес доставки"
+      "address": "Адрес доставки",
+      "addressTruncated": "... {count} символов не показано, проверьте заказ"
     },
     "hsn": "HSN",
     "zReport": {

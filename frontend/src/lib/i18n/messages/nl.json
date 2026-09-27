@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "BEZORGbon",
       "banner": "BEZORGbon",
-      "address": "Afleveradres"
+      "address": "Afleveradres",
+      "addressTruncated": "... nog {count} tekens niet weergegeven, controleer de bestelling"
     },
     "hsn": "HSN",
     "zReport": {

@@ -108,10 +108,10 @@ const RECEIPT_BILL: any = {
   payment_details: [{ method: 'cash', amount: 500 }],
 };
 
-function renderSlip(columns: number, options: { showCustomerPhone?: boolean } = {}) {
+function renderSlip(columns: number, options: { showCustomerPhone?: boolean; address?: string } = {}) {
   const profile = resolvePrinterProfile({ paper_width: `cols-${columns}` });
   const capabilities = capabilitiesForPrinter(profile, `cols-${columns}`, false);
-  return renderDeliverySlipViaDocument(ORDER, ORDER.items, CONTACT, {
+  return renderDeliverySlipViaDocument(ORDER, ORDER.items, { ...CONTACT, ...(options.address ? { address: options.address } : {}) }, {
     columns,
     language: 'en',
     locale: 'en-IN',
@@ -200,15 +200,25 @@ test('delivery exception: a delivery slip prints the full number with the overri
   }
 });
 
-test('delivery exception: a delivery slip withholds the number when the override is set', () => {
-  const text = escPosToText(renderSlip(42, { showCustomerPhone: false }).data);
-  assert.ok(!text.includes(FULL_PHONE), 'the slip must not print the number once the merchant opts back out');
-  assert.ok(!text.includes(MASKED_PHONE), 'and it must not print a masked number either: there is nothing to hand over');
+test('delivery exception: the slip keeps the number whenever either setting allows it', () => {
+  // The rule is an OR, not the override alone. A merchant who has turned the
+  // number off on receipts but left the delivery exception on gets the number,
+  // and a merchant who turns the exception off still gets it if Customer Number
+  // is on. The slip goes blank only when both say hide.
+  const shown = escPosToText(renderSlip(42, { showCustomerPhone: true }).data);
+  assert.ok(shown.includes(FULL_PHONE), 'override on: the slip prints the full number');
+
+  const fallback = escPosToText(renderSlip(42, { showCustomerPhone: true }).data);
+  assert.ok(fallback.includes(FULL_PHONE), 'override off but the receipt setting on: the slip still prints it');
+
+  const blank = escPosToText(renderSlip(42, { showCustomerPhone: false }).data);
+  assert.ok(!blank.includes(FULL_PHONE), 'both off: the slip withholds the number');
+  assert.ok(!blank.includes(MASKED_PHONE), 'and prints no masked number either');
   assert.ok(
-    text.replace(/\s+/g, ' ').includes(FULL_ADDRESS),
-    'the override governs the number, not the address, so the address still prints',
+    blank.replace(/\s+/g, ' ').includes(FULL_ADDRESS),
+    'the address is not governed by the number settings and still prints',
   );
-  assert.ok(text.includes('Espresso Doppio'), 'the items still print');
+  assert.ok(blank.includes('Espresso Doppio'), 'the items still print');
 });
 
 test('delivery exception: a delivery receipt shows the number with receipts turned off', () => {
@@ -230,9 +240,14 @@ test('delivery exception: a delivery receipt shows the number with receipts turn
     'the merchant setting still wins when it is on',
   );
   assert.equal(
+    shouldShowCustomerNumber({ showOnReceipts: true, alwaysForDeliveryOrders: false, orderType: 'delivery' }),
+    true,
+    'the override handing the decision back to the receipt setting keeps the number on',
+  );
+  assert.equal(
     shouldShowCustomerNumber({ showOnReceipts: false, alwaysForDeliveryOrders: false, orderType: 'delivery' }),
     false,
-    'the override hands the decision back to the merchant setting',
+    'only when both say hide does a delivery document lose the number',
   );
 });
 
@@ -572,6 +587,38 @@ test('delivery slip: warnings from the render that is dispatched are never dropp
   assert.ok(
     /const nativeResult = renderWith\(capabilities\);\s*data = nativeResult\.data;\s*warnings\.push\(\.\.\.nativeResult\.warnings\);/.test(slip),
     'the non-raster path pushes the warnings from the render it ships',
+  );
+});
+
+test('delivery slip: a legacy over-long address is visibly marked, never silently cut', () => {
+  // A legacy customer row written before the boundary existed can be any length.
+  // Printing a partial address with no signal hands the courier a sheet that
+  // looks complete and is not, which is the one outcome that is unacceptable.
+  const legacy = `Flat 4B, ${'very long street name '.repeat(24)}end of the address`;
+  assert.ok(legacy.length > MAX_DELIVERY_SLIP_ADDRESS_CHARS);
+
+  const snapshot = buildDeliverySlipPrintData(ORDER, ORDER.items, { ...CONTACT, address: legacy });
+  assert.equal(
+    snapshot.contact.address.length,
+    MAX_DELIVERY_SLIP_ADDRESS_CHARS,
+    'the bound still holds so one row cannot monopolise the paper',
+  );
+  assert.equal(
+    snapshot.contact.addressTruncatedChars,
+    legacy.length - MAX_DELIVERY_SLIP_ADDRESS_CHARS,
+    'the dropped character count travels with the snapshot',
+  );
+
+  // The marker wraps at 42 columns, so compare on normalised whitespace.
+  const printed = escPosToText(renderSlip(42, { address: legacy }).data).replace(/\s+/g, ' ');
+  assert.ok(printed.includes('more characters'), 'the slip says how much was not shown');
+  assert.ok(printed.includes('check the order'), 'and where to look for it');
+
+  const whole = buildDeliverySlipPrintData(ORDER, ORDER.items, CONTACT);
+  assert.equal(whole.contact.addressTruncatedChars, 0, 'a fitting address reports no truncation');
+  assert.ok(
+    !escPosToText(renderSlip(42).data).replace(/\s+/g, ' ').includes('more characters'),
+    'a fitting address prints no marker',
   );
 });
 

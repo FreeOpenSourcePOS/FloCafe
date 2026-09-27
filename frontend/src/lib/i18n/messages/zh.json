@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "配送单",
       "banner": "配送单",
-      "address": "送货地址"
+      "address": "送货地址",
+      "addressTruncated": "... 另有 {count} 个字符未显示，请核对订单"
     },
     "hsn": "HSN",
     "zReport": {

@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "DELIVERY SLIP",
       "banner": "DELIVERY SLIP",
-      "address": "Delivery address"
+      "address": "Delivery address",
+      "addressTruncated": "... {count} more characters not shown, check the order"
     },
     "hsn": "HSN",
     "zReport": {

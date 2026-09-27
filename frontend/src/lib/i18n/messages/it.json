@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "RICEVUTA DI CONSEGNA",
       "banner": "RICEVUTA DI CONSEGNA",
-      "address": "Indirizzo di consegna"
+      "address": "Indirizzo di consegna",
+      "addressTruncated": "... altri {count} caratteri non mostrati, controlla lordine"
     },
     "hsn": "HSN",
     "zReport": {

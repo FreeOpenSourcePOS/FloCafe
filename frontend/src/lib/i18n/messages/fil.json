@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "SLIP NG DELIVERY",
       "banner": "SLIP NG DELIVERY",
-      "address": "Address ng Delivery"
+      "address": "Address ng Delivery",
+      "addressTruncated": "... {count} pang karagdagang karakter na ipinapakita, tingnan ang order"
     },
     "hsn": "HSN/SAC",
     "zReport": {

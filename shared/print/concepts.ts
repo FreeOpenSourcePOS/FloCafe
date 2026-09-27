@@ -34,6 +34,7 @@ export const PRINT_CONCEPT_IDS = [
   'print.deliverySlip.title',
   'print.deliverySlip.banner',
   'print.deliverySlip.address',
+  'print.deliverySlip.addressTruncated',
   'print.hsn',
   'print.zReport.title',
   'print.zReport.businessDate',

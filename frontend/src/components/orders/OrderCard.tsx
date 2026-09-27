@@ -853,11 +853,8 @@ export function OrderCard({
           </div>
         )}
 
-        {/* Courier slip: a delivery order's contact sheet for the rider. It
-            carries the customer number and the delivery address, and it is a
-            separate document from the receipt. Deliberately outside the
-            payment branches above: a courier is handed the slip before the
-            customer has paid, which is the whole workflow this exists for. */}
+        {/* Outside the payment branches: the courier is handed the slip before
+            the customer pays, which is why this exists. */}
         {onPrintDeliverySlip && order.type === 'delivery' && order.status !== 'cancelled' && (
           <Button
             variant="outline"

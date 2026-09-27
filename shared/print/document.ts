@@ -480,6 +480,11 @@ function kotOrderTypeValue(labels: LabelContext, value: string): string {
   return resolveSemanticLabel(labels, conceptId).primary;
 }
 
+function toTruncatedCount(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : 0;
+}
+
 function optionalDirectional(text: string | undefined | null, base: TextDirection): DirectionalText | null {
   if (text === undefined || text === null || String(text).length === 0) return null;
   return directionalText(String(text), base);
@@ -923,6 +928,12 @@ export interface DeliverySlipContactBlock {
   readonly address: DirectionalText | null;
   /** Which record the printed address came from, when an address is present. */
   readonly addressSource: DeliverySlipAddressSource | null;
+  /**
+   * Characters dropped from a legacy over-long address, 0 when it printed whole.
+   * The slip prints a marker rather than handing a courier a partial address
+   * that looks complete.
+   */
+  readonly addressTruncatedChars: number;
   readonly nameLabel: SemanticLabel;
   readonly phoneLabel: SemanticLabel;
   readonly addressLabel: SemanticLabel;
@@ -980,6 +991,8 @@ export interface DeliverySlipPrintData {
     readonly phone: string;
     readonly address: string;
     readonly addressSource: DeliverySlipAddressSource | null;
+    /** Characters dropped from a legacy over-long address, 0 when it printed whole. */
+    readonly addressTruncatedChars?: number;
   };
   readonly items: readonly {
     readonly productName: string;
@@ -1252,6 +1265,7 @@ function isDeliverySlipDocumentBlock(value: unknown): value is DeliverySlipDocum
       && (value.phone === null || isDirectionalText(value.phone))
       && (value.address === null || isDirectionalText(value.address))
       && (value.addressSource === null || value.addressSource === 'order' || value.addressSource === 'customer')
+      && isFiniteNumber(value.addressTruncatedChars)
       && isSemanticLabel(value.nameLabel)
       && isSemanticLabel(value.phoneLabel)
       && isSemanticLabel(value.addressLabel);
@@ -1339,6 +1353,7 @@ export function buildDeliverySlipDocument(
     phone: optionalDirectional(printData.contact?.phone, base),
     address: optionalDirectional(address, base),
     addressSource: address.length > 0 ? (printData.contact?.addressSource ?? 'customer') : null,
+    addressTruncatedChars: address.length > 0 ? toTruncatedCount(printData.contact?.addressTruncatedChars) : 0,
     nameLabel: resolveSemanticLabel(labels, 'pos.customer'),
     phoneLabel: resolveSemanticLabel(labels, 'print.numberShort'),
     addressLabel: resolveSemanticLabel(labels, 'print.deliverySlip.address'),

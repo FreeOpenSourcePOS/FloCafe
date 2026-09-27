@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "COMPROVANTE DE ENTREGA",
       "banner": "COMPROVANTE DE ENTREGA",
-      "address": "Endereço de entrega"
+      "address": "Endereço de entrega",
+      "addressTruncated": "... {count} caracteres restantes nao exibidos, confira o pedido"
     },
     "hsn": "HSN",
     "zReport": {

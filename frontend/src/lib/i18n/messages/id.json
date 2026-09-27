@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "SLIP PENGANTARAN",
       "banner": "SLIP PENGANTARAN",
-      "address": "Alamat pengantaran"
+      "address": "Alamat pengantaran",
+      "addressTruncated": "... {count} karakter lain tidak ditampilkan, periksa pesanan"
     },
     "hsn": "HSN",
     "zReport": {

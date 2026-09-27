@@ -749,9 +749,14 @@ router.post('/print-delivery-slip', requirePermission('printing.execute'), async
     // Customer Number setting governs delivery orders and slips too, so the
     // slip withholds the number as well. See
     // docs/reference/product-invariants.md.
-    const showCustomerPhone = (db.prepare(
-      "SELECT value FROM settings WHERE key = 'bill_delivery_show_customer_phone_always'",
-    ).get() as { value?: string } | undefined)?.value !== 'false';
+    // The override, or the receipt setting when the override is off. Blank only
+    // when the merchant has asked for the number to be hidden on receipts AND
+    // turned the delivery exception off; a slip that silently loses the number
+    // while the receipt shows it is the case the reviewer is right about.
+    const showCustomerPhone = (
+      db.prepare("SELECT value FROM settings WHERE key = 'bill_delivery_show_customer_phone_always'").get() as { value?: string } | undefined
+    )?.value !== 'false'
+      || (db.prepare("SELECT value FROM settings WHERE key = 'bill_show_customer_phone'").get() as { value?: string } | undefined)?.value !== 'false';
     const result = await printDeliverySlipDetailed(
       order,
       items,

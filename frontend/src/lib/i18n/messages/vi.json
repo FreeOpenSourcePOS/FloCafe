@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "PHIẾU GIAO HÀNG",
       "banner": "PHIẾU GIAO HÀNG",
-      "address": "Địa chỉ giao hàng"
+      "address": "Địa chỉ giao hàng",
+      "addressTruncated": "... {count} ký tự nữa không hiển thị, hãy kiểm tra đơn hàng"
     },
     "hsn": "HSN",
     "zReport": {

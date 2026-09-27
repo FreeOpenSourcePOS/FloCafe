@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "BON DE LIVRAISON",
       "banner": "BON DE LIVRAISON",
-      "address": "Adresse de livraison"
+      "address": "Adresse de livraison",
+      "addressTruncated": "... {count} caracteres supplementaires non affiches, verifiez la commande"
     },
     "hsn": "HSN",
     "zReport": {
@@ -1295,9 +1296,9 @@
     "backupSchemaVersion": "schéma v{version}",
     "billContent": "Contenu de la facture",
     "billContentHint": "Les détails activés ne sont imprimés que lorsque les données sont disponibles.",
-    "deliveryCustomerPhoneWarning": "Quand cette option est activee, les commandes a domicile et les bons de livraison affichent le numéro du client même si Numéro du client est désactivé. Le livreur en a besoin pour appeler le client.",
-    "deliveryShowCustomerPhoneAlways": "Afficher le numéro du client sur les commandes a domicile et les bons de livraison",
-    "deliveryShowCustomerPhoneAlwaysHint": "S'applique aux commandes a domicile et aux bons de livraison. Desactivez-la pour que Numéro du client decide aussi pour les commandes a domicile.",
+    "deliveryCustomerPhoneWarning": "Quand cette option est activée, les commandes à domicile et les bons de livraison affichent le numéro du client même si Numéro du client est désactivé. Le livreur en a besoin pour appeler le client.",
+    "deliveryShowCustomerPhoneAlways": "Afficher le numéro du client sur les commandes à domicile et les bons de livraison",
+    "deliveryShowCustomerPhoneAlwaysHint": "S'applique aux commandes à domicile et aux bons de livraison. Désactivez-la pour que Numéro du client décide aussi pour les commandes à domicile.",
     "billTemplate": "Modèle de facture",
     "billTemplateClassicDesc": "Mise en page personnalisée avec le nom et le numéro de téléphone du client, le détail des options, les remises ainsi que les points de fidélité gagnés et leur solde. Idéale pour le service sur place.",
     "billTemplateClassicName": "Classique",

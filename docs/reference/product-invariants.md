@@ -311,13 +311,17 @@ Two consequences follow, and they are separate decisions:
 2. **The receipt keeps masking the customer number**, shortening it to its last four digits. This
    is privacy hygiene for a page the customer carries away, not an access control.
 
-The slip's number follows exactly one setting, `bill_delivery_show_customer_phone_always`, which
-ships **on**. With it on, a delivery order and its courier slip show the number even when
-`bill_show_customer_phone` is off. With it off, `bill_show_customer_phone` decides for delivery
-orders too, and the slip withholds the number as well so the two documents cannot disagree. The
-Printers settings panel, under Bill Content, states this beside the toggle it contradicts, and
-the warning is always present rather than appearing only once the merchant has turned the number
-off.
+A delivery document shows the number when **either** setting allows it. `bill_delivery_show
+_customer_phone_always` ships **on**, so out of the box a delivery order and its courier slip show
+the number even when `bill_show_customer_phone` is off. Turning the delivery override off hands
+delivery documents back to `bill_show_customer_phone`, which is the point of the override: a
+merchant who wants the number hidden on receipts has one control to reach for, and one control to
+undo. The number is withheld only when both say hide. The two documents are resolved by the same
+rule, so a delivery receipt and its courier slip cannot disagree.
+
+The Printers settings panel, under Bill Content, states this beside the toggle it contradicts,
+and the warning is always present rather than appearing only once the merchant has turned the
+number off.
 
 **Reason:** the masking is inconsistent by construction and never was a boundary. The
 backend-native receipt path and the browser-HTML path both print the full number today, and
@@ -346,6 +350,11 @@ defaults to masked. The slip's route is `POST /api/printers/print-delivery-slip`
 ```sh
 npm run test:delivery-slip   # slip prints the full number; receipt still masks; no shared default
 ```
+
+A legacy customer address written before the length boundary existed can be any length. The slip
+bounds it so one row cannot monopolise the paper, and it prints how many characters were not shown
+and where to look. Truncating in silence is not an available outcome: a courier holding a partial
+address that looks complete is worse than one holding a marked one.
 
 **Change policy:** making either document confidential is a product migration, not a flag.
 `shared/permissions.ts` states the rule in the file: changing a shipped default is reviewed as a

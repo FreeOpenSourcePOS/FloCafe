@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "ใบส่งของ",
       "banner": "ใบส่งของ",
-      "address": "ที่อยู่จัดส่ง"
+      "address": "ที่อยู่จัดส่ง",
+      "addressTruncated": "... แสดงอักขระอีก {count} ตัวไม่ได้แสดง กรุณาตรวจสอบคำสั่งซื้อ"
     },
     "hsn": "HSN",
     "zReport": {

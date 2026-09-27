@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "डिलीवरी स्लिप",
       "banner": "डिलीवरी स्लिप",
-      "address": "डिलीवरी का पता"
+      "address": "डिलीवरी का पता",
+      "addressTruncated": "... {count} और वर्ण नहीं दिखाए गए, ऑर्डर जाँचें"
     },
     "hsn": "HSN",
     "zReport": {

@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "배달전표",
       "banner": "배달전표",
-      "address": "배달 주소"
+      "address": "배달 주소",
+      "addressTruncated": "... {count} 자가 더 표시되지 않았습니다. 주문을 확인하세요"
     },
     "hsn": "HSN",
     "zReport": {

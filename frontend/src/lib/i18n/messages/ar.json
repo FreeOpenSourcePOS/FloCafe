@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "قسيمة التوصيل",
       "banner": "قسيمة التوصيل",
-      "address": "عنوان التوصيل"
+      "address": "عنوان التوصيل",
+      "addressTruncated": "... لم يتم عرض {count} حرفا إضافيا، راجع الطلب"
     },
     "hsn": "HSN",
     "zReport": {

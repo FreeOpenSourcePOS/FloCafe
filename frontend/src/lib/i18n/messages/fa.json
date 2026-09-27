@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "رسید تحویل",
       "banner": "رسید تحویل",
-      "address": "نشانی تحویل"
+      "address": "نشانی تحویل",
+      "addressTruncated": "... {count} نویسه دیگر نمایش داده نشده، سفارش را بررسی کنید"
     },
     "hsn": "کد کالا",
     "zReport": {

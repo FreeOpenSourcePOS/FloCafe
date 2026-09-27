@@ -104,6 +104,7 @@ const PRINT_NAMESPACE_KEYS = [
   'print.deliverySlip.title',
   'print.deliverySlip.banner',
   'print.deliverySlip.address',
+  'print.deliverySlip.addressTruncated',
   'print.hsn',
   'print.zReport.title',
   'print.zReport.businessDate',

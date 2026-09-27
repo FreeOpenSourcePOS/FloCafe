@@ -922,7 +922,8 @@
     "deliverySlip": {
       "title": "ڈیلیوری سلپ",
       "banner": "ڈیلیوری سلپ",
-      "address": "ڈیلیوری کا پتہ"
+      "address": "ڈیلیوری کا پتہ",
+      "addressTruncated": "... {count} مزید حروف دکھائے نہیں گئے، آرڈر دیکھیں"
     },
     "hsn": "HSN",
     "zReport": {

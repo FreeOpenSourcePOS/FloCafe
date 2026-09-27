@@ -586,26 +586,19 @@ export const usePrinterStore = create<PrinterState>()(
         }
       },
 
-      /**
-       * Print one courier slip.
-       *
-       * Transport selection mirrors printKot: hardware first, then WebUSB, then
-       * the browser dialog. The contact number is passed through unmasked on
-       * every transport — that is the point of the document — and there is no
-       * mask option here by design.
-       */
+      /** Transport selection mirrors printKot: hardware, then WebUSB, then browser. */
       printDeliverySlip: async (order, contact, opts) => {
         set({ lastError: null });
         try {
-          const { printerUseUnicode, printerArabicShaping, billDeliveryShowCustomerPhoneAlways } = usePosSettingsStore.getState();
+          const { printerUseUnicode, printerArabicShaping, billDeliveryShowCustomerPhoneAlways, billShowCustomerPhone } = usePosSettingsStore.getState();
           const tenant = useAuthStore.getState().currentTenant;
           const tenantTimezone = tenant?.timezone;
           const orderForPrint = (opts as { items?: OrderItem[] } | undefined)?.items
             ? { ...order, items: (opts as { items?: OrderItem[] }).items }
             : order;
-          // Same override as the backend route, so the two transports cannot
-          // disagree about the merchant's choice.
-          const slipContact = billDeliveryShowCustomerPhoneAlways ? contact : { ...contact, phone: '' };
+          // Same rule as the backend route: the delivery override, or the
+          // receipt setting when the override is off.
+          const slipContact = (billDeliveryShowCustomerPhoneAlways || billShowCustomerPhone) ? contact : { ...contact, phone: '' };
           // Add-ons are carried through, because the backend slip route prints
           // them and a local slip that silently dropped the customer's selected
           // add-ons would hand the courier a different order than the kitchen.
@@ -657,7 +650,7 @@ export const usePrinterStore = create<PrinterState>()(
                 paperWidth,
                 columns,
                 arabicShaping: printerArabicShaping,
-                language: resolveBillPrintLanguages()[0],
+                language: resolveBillPrintLanguages()[0] as Language,
                 ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
               },
               encoderWarnings,
@@ -676,7 +669,13 @@ export const usePrinterStore = create<PrinterState>()(
             },
             slipItems,
             slipContact,
-            { paperWidth, ...(tenantTimezone ? { timezone: tenantTimezone } : {}) },
+            {
+              paperWidth,
+              // Same language the WebUSB encoder uses, so the slip's language no
+              // longer depends on which transport the shop happens to have.
+              language: resolveBillPrintLanguages()[0] as Language,
+              ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
+            },
           );
           await printerService.printViaBrowser(html, paperWidth);
           return [];

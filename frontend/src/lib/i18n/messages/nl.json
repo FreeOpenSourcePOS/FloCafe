@@ -2038,7 +2038,8 @@
     "diagnosticsTransmission": "Diagnostiek automatisch verzenden",
     "diagnosticsSendAutomatically": "Diagnostiek automatisch verzenden",
     "diagnosticsSendAutomaticallyHint": "Standaard uit. Staat dit uit, dan blijven vastgelegde problemen op dit apparaat en worden ze nooit verzonden. Supportvragen die je zelf stuurt blijven werken.",
-    "diagnosticsTicketUnaffected": "Een supportaanvraag die je zelf stuurt werkt altijd, ongeacht of dit aanstaat."
+    "diagnosticsTicketUnaffected": "Een supportaanvraag die je zelf stuurt werkt altijd, ongeacht of dit aanstaat.",
+    "diagnosticsLocalOnlyHintTransmitting": "Dit scherm toont recente problemen op dit apparaat in begrijpelijke taal. Automatische verzending staat aan, dus vastgelegde problemen kunnen naar je FloCafe-cloudaccount worden gestuurd."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",

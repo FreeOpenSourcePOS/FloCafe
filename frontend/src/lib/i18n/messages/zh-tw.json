@@ -2038,7 +2038,8 @@
     "diagnosticsTransmission": "自動傳送診斷資訊",
     "diagnosticsSendAutomatically": "自動傳送診斷資訊",
     "diagnosticsSendAutomaticallyHint": "預設為關閉。關閉時，記錄的問題只保留在本裝置上，絕不會傳送。您自己送出的支援請求不受影響。",
-    "diagnosticsTicketUnaffected": "您自己送出的支援請求一律有效，不論此設定是否開啟。"
+    "diagnosticsTicketUnaffected": "您自己送出的支援請求一律有效，不論此設定是否開啟。",
+    "diagnosticsLocalOnlyHintTransmitting": "此畫面以淺白文字顯示本裝置最近的問題。已開啟自動傳送，因此記錄的問題可能會傳送到您的 FloCafe 雲端帳戶。"
   },
   "setup": {
     "alreadyCompleted": "此安裝已完成設定。正在跳轉到登入…",

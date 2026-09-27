@@ -107,6 +107,43 @@ test('nothing is transmitted automatically', async ({ page }) => {
   await expect(ownerSwitch, 'an owner who holds the settings permission can use it').toBeEnabled();
 });
 
+test('the privacy hint stops claiming nothing is sent once transmission is on', async ({ page }) => {
+  const token = getE2eToken();
+  await page.goto(`${BASE}/auth/login`);
+  await page.getByLabel('Email').fill('owner@flo.local');
+  await page.getByLabel('Password').fill(E2E_PASSWORD);
+  await page.getByRole('button', { name: 'Sign In' }).click();
+  await page.waitForURL('**/pos/**', { timeout: 20000 });
+
+  await page.goto(`${BASE}/settings?tab=diagnostics`);
+  const hint = page.getByText('Nothing here leaves the till automatically', { exact: false });
+  await expect(hint, 'with transmission off the absolute claim is shown').toBeVisible();
+
+  const enable = await page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { value: 'true' },
+  });
+  expect(enable.status(), 'the owner can turn transmission on').toBe(200);
+
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Diagnostics', exact: true })).toBeVisible();
+  // The claim is no longer true once transmission is enabled, so the screen must
+  // stop making it rather than tell the owner their data stays on the till.
+  await expect(
+    page.getByText('Nothing here leaves the till automatically', { exact: false }),
+    'the absolute claim is withdrawn when transmission is on',
+  ).toHaveCount(0);
+  await expect(
+    page.getByText('Automatic transmission is on', { exact: false }),
+    'the screen says recorded problems may be sent instead',
+  ).toBeVisible();
+
+  await page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { value: 'false' },
+  });
+});
+
 test('an operator without the settings permission cannot use the transmission switch', async ({ page }) => {
   // A server holds the support permission that opens this screen but not
   // settings.manage, which is what PUT /settings/:key enforces.

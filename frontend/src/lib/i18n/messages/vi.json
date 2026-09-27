@@ -2038,7 +2038,8 @@
     "diagnosticsTransmission": "Tự động gửi chẩn đoán",
     "diagnosticsSendAutomatically": "Tự động gửi chẩn đoán",
     "diagnosticsSendAutomaticallyHint": "Tắt theo mặc định. Khi tắt, các sự cố đã ghi nhận vẫn ở trên thiết bị này và không bao giờ được gửi đi. Các yêu cầu hỗ trợ do bạn tự gửi không bị ảnh hưởng.",
-    "diagnosticsTicketUnaffected": "Yêu cầu hỗ trợ do bạn tự gửi luôn hoạt động, bất kể cài đặt này bật hay tắt."
+    "diagnosticsTicketUnaffected": "Yêu cầu hỗ trợ do bạn tự gửi luôn hoạt động, bất kể cài đặt này bật hay tắt.",
+    "diagnosticsLocalOnlyHintTransmitting": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu. Đã bật gửi tự động, nên các sự cố đã ghi nhận có thể được gửi tới tài khoản FloCafe cloud của bạn."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

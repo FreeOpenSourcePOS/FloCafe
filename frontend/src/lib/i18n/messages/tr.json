@@ -2038,7 +2038,8 @@
     "diagnosticsTransmission": "Tanılamayı otomatik gönder",
     "diagnosticsSendAutomatically": "Tanılamayı otomatik gönder",
     "diagnosticsSendAutomaticallyHint": "Varsayılan olarak kapalı. Kapalıyken kaydedilen sorunlar bu cihazda kalır ve hiçbir zaman gönderilmez. Kendi gönderdiğiniz destek talepleri etkilenmez.",
-    "diagnosticsTicketUnaffected": "Kendi gönderdiğiniz bir destek talebi, bu ayar açık da kapalı da olsa her zaman çalışır."
+    "diagnosticsTicketUnaffected": "Kendi gönderdiğiniz bir destek talebi, bu ayar açık da kapalı da olsa her zaman çalışır.",
+    "diagnosticsLocalOnlyHintTransmitting": "Bu ekran, bu cihazdaki son sorunları sade bir dille gösterir. Otomatik gönderim açık, bu yüzden kaydedilen sorunlar FloCafe bulut hesabınıza gönderilebilir."
   },
   "setup": {
     "alreadyCompleted": "Kurulum bu cihazda zaten tamamlandı. Giriş ekranına yönlendiriliyorsunuz…",

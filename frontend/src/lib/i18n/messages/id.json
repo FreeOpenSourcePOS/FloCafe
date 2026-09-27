@@ -2038,7 +2038,8 @@
     "diagnosticsTransmission": "Kirim diagnostik secara otomatis",
     "diagnosticsSendAutomatically": "Kirim diagnostik secara otomatis",
     "diagnosticsSendAutomaticallyHint": "Mati secara bawaan. Saat mati, masalah yang tercatat tetap di perangkat ini dan tidak pernah dikirim. Permintaan dukungan yang Anda kirim sendiri tidak terpengaruh.",
-    "diagnosticsTicketUnaffected": "Permintaan dukungan yang Anda kirim sendiri selalu berfungsi, apa pun status pengaturan ini."
+    "diagnosticsTicketUnaffected": "Permintaan dukungan yang Anda kirim sendiri selalu berfungsi, apa pun status pengaturan ini.",
+    "diagnosticsLocalOnlyHintTransmitting": "Layar ini menampilkan masalah terbaru di perangkat ini dengan bahasa yang mudah dipahami. Pengiriman otomatis aktif, sehingga masalah yang tercatat dapat dikirim ke akun FloCafe cloud Anda."
   },
   "setup": {
     "alreadyCompleted": "Pengaturan awal sudah selesai dilakukan pada instalasi ini. Mengalihkan ke layar masuk…",

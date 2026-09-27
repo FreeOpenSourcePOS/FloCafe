@@ -2038,7 +2038,8 @@
     "diagnosticsTransmission": "Envoi automatique du diagnostic",
     "diagnosticsSendAutomatically": "Envoyer le diagnostic automatiquement",
     "diagnosticsSendAutomaticallyHint": "Désactivé par défaut. Désactivé, les problèmes enregistrés restent sur cet appareil et ne sont jamais envoyés. Les demandes d’assistance que vous envoyez vous-même ne sont pas affectées.",
-    "diagnosticsTicketUnaffected": "Une demande d’assistance que vous envoyez vous-même fonctionne toujours, que ce réglage soit activé ou non."
+    "diagnosticsTicketUnaffected": "Une demande d’assistance que vous envoyez vous-même fonctionne toujours, que ce réglage soit activé ou non.",
+    "diagnosticsLocalOnlyHintTransmitting": "Cet écran affiche en langage clair les problèmes récents sur cet appareil. La transmission automatique est activée, les problèmes enregistrés peuvent donc être envoyés à votre compte FloCafe Cloud."
   },
   "setup": {
     "alreadyCompleted": "La configuration a déjà été effectuée sur cette installation. Redirection vers la connexion…",

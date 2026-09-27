@@ -2038,7 +2038,8 @@
     "diagnosticsTransmission": "진단 정보 자동 전송",
     "diagnosticsSendAutomatically": "진단 정보를 자동으로 보내기",
     "diagnosticsSendAutomaticallyHint": "기본값은 꺼짐입니다. 꺼져 있으면 기록된 문제는 이 기기에 남고 전송되지 않습니다. 직접 보내는 지원 요청에는 영향이 없습니다.",
-    "diagnosticsTicketUnaffected": "직접 보내는 지원 요청은 이 설정의 켜짐 여부와 관계없이 항상 작동합니다."
+    "diagnosticsTicketUnaffected": "직접 보내는 지원 요청은 이 설정의 켜짐 여부와 관계없이 항상 작동합니다.",
+    "diagnosticsLocalOnlyHintTransmitting": "이 화면은 이 기기에서 발생한 최근 문제를 쉬운 말로 보여줍니다. 자동 전송이 켜져 있어 기록된 문제가 FloCafe 클라우드 계정으로 전송될 수 있습니다."
   },
   "setup": {
     "alreadyCompleted": "이 설치에서는 초기 설정이 이미 완료되었습니다. 로그인으로 이동합니다…",

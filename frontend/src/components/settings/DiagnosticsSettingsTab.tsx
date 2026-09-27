@@ -136,7 +136,13 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
           <AlertTriangle size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('tabDiagnostics')}</h2>
         </div>
-        <p className="text-sm text-muted-foreground">{t('diagnosticsLocalOnlyHint')}</p>
+        {/* The absolute "nothing leaves the till" claim is only true while
+            automatic transmission is off. Rendering it unconditionally would
+            tell a shop owner something false about their own data at the
+            exact moment they decide whether to turn transmission on. */}
+        <p className="text-sm text-muted-foreground">
+          {t(transmissionEnabled ? 'diagnosticsLocalOnlyHintTransmitting' : 'diagnosticsLocalOnlyHint')}
+        </p>
 
         <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
           <h3 className="text-sm font-semibold text-foreground">{t('diagnosticsRecentFailures')}</h3>

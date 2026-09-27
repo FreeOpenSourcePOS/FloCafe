@@ -2038,7 +2038,8 @@
     "diagnosticsTransmission": "Envio automático do diagnóstico",
     "diagnosticsSendAutomatically": "Enviar o diagnóstico automaticamente",
     "diagnosticsSendAutomaticallyHint": "Desativado por predefinição. Quando está desativado, os problemas registados permanecem neste dispositivo e nunca são enviados. Os pedidos de suporte que enviar não são afetados.",
-    "diagnosticsTicketUnaffected": "Um pedido de suporte que envie você próprio funciona sempre, esteja esta opção ligada ou não."
+    "diagnosticsTicketUnaffected": "Um pedido de suporte que envie você próprio funciona sempre, esteja esta opção ligada ou não.",
+    "diagnosticsLocalOnlyHintTransmitting": "Este ecrã mostra os problemas recentes deste dispositivo em linguagem simples. O envio automático está ativado, pelo que os problemas registados podem ser enviados para a sua conta FloCafe na nuvem."
   },
   "setup": {
     "alreadyCompleted": "A configuração já foi concluída nesta instalação. Redirecionando para o login…",

@@ -77,7 +77,7 @@ export default function TitleBar() {
   return (
     <header
       data-testid="desktop-title-bar"
-      className="flo-title-bar hidden shrink-0 md:flex"
+      className="flo-title-bar flex shrink-0"
       aria-label={businessName}
     >
       <div className="flo-title-bar__safe-area pointer-events-none flex w-full items-center justify-between">
@@ -100,7 +100,7 @@ export default function TitleBar() {
       </div>
 
       {/* Centered business name and user identity */}
-      <div className="flo-title-bar__identity pointer-events-none absolute inset-0 m-auto flex h-fit w-fit flex-col items-center justify-center leading-tight text-center max-w-[min(60vw,32rem)] select-none">
+      <div className="flo-title-bar__identity pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center leading-tight text-center max-w-[min(45vw,24rem)] select-none">
         <span className="truncate text-xs font-semibold text-foreground max-w-full" title={businessName}>
           {businessName}
         </span>

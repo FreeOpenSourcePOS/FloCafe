@@ -44,7 +44,14 @@ let popupCalls: unknown[] = [];
 const popupMenu = {
   items: [
     { label: 'File', type: 'submenu', submenu: { popup: (options: unknown) => popupCalls.push(options) } },
+    { label: 'Edit', type: 'submenu', submenu: { popup: (options: unknown) => popupCalls.push(options) } },
   ],
+  popup: (options: unknown) => popupCalls.push(options),
+  createOverflowMenu: () => ({
+    items: [] as any[],
+    append(it: any) { this.items.push(it); },
+    popup(options: unknown) { popupCalls.push(options); },
+  }),
 };
 const liveWindow = { isDestroyed: () => false };
 const destroyedWindow = { isDestroyed: () => true };
@@ -61,6 +68,24 @@ assert.equal(
   'a successful open pops the submenu main built, so roles/accelerators/click handlers stay intact',
 );
 
+// Fractional coordinates from getBoundingClientRect() must round to integers for native popups
+assert.deepEqual(open('0', liveWindow, 89.515625, 31.8), { success: true });
+assert.equal(popupCalls.length, 2);
+assert.deepEqual(popupCalls[1], { window: liveWindow, x: 90, y: 32 });
+
+// Hamburger root menu and overflow menu popup support
+assert.deepEqual(open('hamburger', liveWindow, 10.2, 20.4), { success: true });
+assert.equal(popupCalls.length, 3);
+assert.deepEqual(popupCalls[2], { window: liveWindow, x: 10, y: 20 });
+
+assert.deepEqual(open('overflow:1', liveWindow, 45.1, 40), { success: true });
+assert.equal(popupCalls.length, 4);
+assert.deepEqual(popupCalls[3], { window: liveWindow, x: 45, y: 40 });
+
+assert.deepEqual(open('overflow:99', liveWindow, 0, 0), { error: 'Unknown menu entry' });
+assert.deepEqual(open('overflow:-1', liveWindow, 0, 0), { error: 'Unknown menu entry' });
+assert.equal(popupCalls.length, 4);
+
 assert.deepEqual(open('99', liveWindow, 0, 0), { error: 'Unknown menu entry' });
 assert.deepEqual(open('../0', liveWindow, 0, 0), { error: 'Unknown menu entry' });
 assert.deepEqual(open('abc', liveWindow, 0, 0), { error: 'Unknown menu entry' });
@@ -72,14 +97,14 @@ assert.deepEqual(
   openApplicationMenuSubmenu(null, '0', liveWindow as never, 0, 0),
   { error: 'Application menu unavailable' },
 );
-assert.equal(popupCalls.length, 1, 'rejected requests never pop anything');
+assert.equal(popupCalls.length, 4, 'rejected requests never pop anything');
 
 // Electron reads a negative pair as "open at the cursor"; the renderer always
 // sends a measured button rect, so a negative coordinate is a client bug.
 for (const [x, y] of [[-1, 0], [0, -1], [Number.NaN, 0], ['0', 0], [null, 0], [0, undefined]]) {
   assert.deepEqual(open('0', liveWindow, x, y), { error: 'Invalid menu position' });
 }
-assert.equal(popupCalls.length, 1);
+assert.equal(popupCalls.length, 4);
 
 // The submenu popup is a privileged native surface on the main window, so it
 // is bound to that window's own current renderer frame. The trusted-sender
@@ -132,6 +157,6 @@ assert.equal(
   false,
   'a destroyed main window is refused',
 );
-assert.equal(popupCalls.length, 1, 'refused senders never pop anything');
+assert.equal(popupCalls.length, 4, 'refused senders never pop anything');
 
 console.log('menu-surface: application menu surface contract OK');

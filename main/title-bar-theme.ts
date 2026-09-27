@@ -11,7 +11,7 @@ export interface TitleBarOverlayColors {
 
 export const TITLE_BAR_OVERLAY_COLORS: Readonly<Record<'light' | 'dark', TitleBarOverlayColors>> = {
   light: { color: '#ffffff', symbolColor: '#0a0a0a' },
-  dark: { color: '#0a0a0a', symbolColor: '#fafafa' },
+  dark: { color: '#0f0f0f', symbolColor: '#fafafa' },
 };
 
 export function resolveTitleBarOverlayColors(isDark: boolean): TitleBarOverlayColors {

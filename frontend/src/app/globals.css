@@ -89,7 +89,6 @@ input[type="number"] {
   min-block-size: var(--flo-titlebar-height);
   align-items: center;
   overflow: hidden;
-  border-block-end: 1px solid var(--border);
   background: var(--background);
   color: var(--foreground);
   -webkit-app-region: drag;
@@ -205,18 +204,14 @@ body:has(.flo-title-bar__fallback-controls) .flo-title-bar__safe-area {
   color: var(--accent-foreground);
 }
 
-/* Keep the centered business identity clear of the menu row. */
-.flo-title-bar:has(.flo-title-bar__menu) .flo-title-bar__identity {
-  max-inline-size: min(38vw, 20rem);
-}
-
-/* At the 64rem minimum window width the non-wrapping menu row and the
- * absolutely centered identity would overlap. The menu is the restored
- * surface, so the identity yields there and only there. */
-@media (max-width: 64rem) {
-  .flo-title-bar:has(.flo-title-bar__menu) .flo-title-bar__identity {
-    display: none;
-  }
+/* Dead-center business identity similar to modern desktop title bars (e.g. VS Code). */
+.flo-title-bar__identity {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-inline-size: min(45vw, 24rem);
+  pointer-events: none;
 }
 
 .flo-title-bar--root-drag {

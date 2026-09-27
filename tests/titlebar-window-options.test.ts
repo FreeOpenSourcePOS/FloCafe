@@ -38,7 +38,7 @@ assert.deepEqual(macMainWindow.options.titleBarOverlay, {
   height: 40,
 });
 assert.deepEqual(darkMainWindow.options.titleBarOverlay, {
-  color: '#0a0a0a',
+  color: '#0f0f0f',
   symbolColor: '#fafafa',
   height: 40,
 });
@@ -201,7 +201,7 @@ console.log('Title-bar main-window options and popup/KDS exclusions are preserve
 assert.deepEqual(resolveTitleBarOverlayColors(false), TITLE_BAR_OVERLAY_COLORS.light);
 assert.deepEqual(resolveTitleBarOverlayColors(true), TITLE_BAR_OVERLAY_COLORS.dark);
 assert.deepEqual(TITLE_BAR_OVERLAY_COLORS.light, { color: '#ffffff', symbolColor: '#0a0a0a' });
-assert.deepEqual(TITLE_BAR_OVERLAY_COLORS.dark, { color: '#0a0a0a', symbolColor: '#fafafa' });
+assert.deepEqual(TITLE_BAR_OVERLAY_COLORS.dark, { color: '#0f0f0f', symbolColor: '#fafafa' });
 assert.equal(TITLE_BAR_HEIGHT, 40);
 
 // Platform gating: overlay updates only where setTitleBarOverlay works.
@@ -223,7 +223,7 @@ function makeOverlaySpy(): { calls: unknown[]; win: unknown } {
 
 const darkCall = makeOverlaySpy();
 assert.equal(applyTitleBarOverlayTheme(darkCall.win, true, 'darwin'), true);
-assert.deepEqual(darkCall.calls, [{ color: '#0a0a0a', symbolColor: '#fafafa', height: 40 }]);
+assert.deepEqual(darkCall.calls, [{ color: '#0f0f0f', symbolColor: '#fafafa', height: 40 }]);
 
 const lightCall = makeOverlaySpy();
 assert.equal(applyTitleBarOverlayTheme(lightCall.win, false, 'win32'), true);
@@ -270,7 +270,7 @@ const synced = makeOverlaySpy();
 const unsubscribe = attachTitleBarThemeSync(syncTheme, () => synced.win, 'darwin');
 syncTheme.shouldUseDarkColors = true;
 syncTheme.emitUpdated();
-assert.deepEqual(synced.calls, [{ color: '#0a0a0a', symbolColor: '#fafafa', height: 40 }]);
+assert.deepEqual(synced.calls, [{ color: '#0f0f0f', symbolColor: '#fafafa', height: 40 }]);
 syncTheme.shouldUseDarkColors = false;
 syncTheme.emitUpdated();
 assert.deepEqual(synced.calls[1], { color: '#ffffff', symbolColor: '#0a0a0a', height: 40 });

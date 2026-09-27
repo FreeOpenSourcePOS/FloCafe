@@ -121,9 +121,7 @@ test('the diagnostics half of the hub opens from a deep link', async ({ page }) 
 
 test('a captured failure can be reported as a ticket', async ({ page }) => {
   // The card shows the derived summary, not the submitted message, so the text
-  // the operator would report is read back from the screen. The message is a
-  // fixed phrase the template can keep in full, not free text that degrades to
-  // redacted fragments such as "The receipt printer the.".
+  // the operator would report is read back from the screen. A fixed phrase.
   await recordFailure(page, 'The printer is offline');
   await loginAs(page, 'owner@flo.local');
   await page.goto(`${BASE}/support?tab=diagnostics`);

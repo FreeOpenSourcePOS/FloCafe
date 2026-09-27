@@ -258,8 +258,7 @@ function main() {
   assertEqualOrThrow(errorClassOf({ name: 'SQLiteError', message: 'x' }), 'SQLiteError', 'an error-shaped object reports its name');
 
   // PowerShell wraps a .NET method-call exception in its own text, so the whole
-  // informative payload arrives as one quoted span and redacts to a placeholder.
-  // No allowlist can rescue that, which is why degeneracy is measured, not reworded.
+  // payload is one quoted span and redacts to a placeholder.
   const POWERSHELL_WRAPPED = 'Exception calling "SendRaw" with "1" argument(s): "printer is offline"';
 
   console.log('\n10. A template with no real words in it is reported as uninformative');
@@ -268,8 +267,8 @@ function main() {
   assertOrThrow(wrapped.is_informative === false, 'a template made only of placeholders is not informative');
   const cupsGone = deriveDiagnosticSignature({ errorClass: 'Error', message: 'lp: No such file or directory' });
   assertOrThrow(cupsGone.is_informative === false, 'a two-word fragment is not informative');
-  // What the operator gets is the floor, because `is_informative` is false; the
-  // stored summary is pinned end to end in tests/diagnostics-screen.test.ts.
+  // The operator gets the floor, because `is_informative` is false; the stored
+  // summary is pinned end to end in tests/diagnostics-screen.test.ts.
   assertOrThrow(!classClauseSummary(cupsGone.error_class).includes('No such'), 'the operator is not shown the two-word fragment');
   assertEqualOrThrow(deriveDiagnosticSignature({ errorClass: 'Error', message: 'getaddrinfo ENOTFOUND api.stripe.com' }).is_informative, false, 'a bare redacted host is not informative');
   assertEqualOrThrow(deriveDiagnosticSignature({ errorClass: 'Error', message: 'IPP status 0x409' }).is_informative, false, 'an empty template is not informative');
@@ -281,6 +280,8 @@ function main() {
   assertEqualOrThrow(classClauseSummary('SQLiteError'), 'The database rejected a request.', 'the class clause is per error class');
 
   console.log('\n11. The floor is the plain-language line, and it carries no source text at all');
+  // The customer data arrives inside one quoted span, so it is the degenerate
+  // case the new fallback exists for.
   const DEGENERATE_WITH_CUSTOMER_DATA = `Exception calling "SendRaw" with "1" argument(s): "Failed to settle bill for '${CUSTOMER_NAME}' at +91 ${PHONE} amount ${AMOUNT} from ${FILE_PATH}"`;
   const leakyDegenerate = deriveDiagnosticSignature({ errorClass: 'Error', message: DEGENERATE_WITH_CUSTOMER_DATA });
   assertOrThrow(leakyDegenerate.is_informative === false, 'customer data wrapped in one quoted span is degenerate');

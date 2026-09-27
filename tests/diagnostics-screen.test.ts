@@ -170,7 +170,7 @@ async function main() {
     await settle(() => (db.prepare('SELECT COUNT(*) AS c FROM local_diagnostics').get() as { c: number }).c >= 1);
     assertEqualOrThrow(cloudSync.listLocalDiagnostics(1)[0].summary, reason, `${failureClass} reads as a reason`);
   }
-  // `WritePrinter failed` accepts no bytes at all, so its reason must not claim
+  // A failed WritePrinter call accepts nothing, so its reason must not claim
   // the printer took part of the job.
   assertOrThrow(
     !cloudSync.listLocalDiagnostics(1)[0].summary.toLowerCase().includes('part of'),

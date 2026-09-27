@@ -401,8 +401,13 @@ test('delivery slip: rendered lines match the golden fixture', () => {
   // Split on the block header, never on '===': the measured body contains
   // full-width rules made of '=' characters, so a body split on the delimiter
   // would silently truncate at the first rule.
+  // Line endings are normalised on read, so a working tree that was checked out
+  // with CRLF still compares byte for byte against the LF output measured here.
+  // The `.gitattributes` rule keeps the checked-out file LF as well; both
+  // together mirror what the receipt column oracle does for its golden.
   const goldenBlocks = new Map(
     fs.readFileSync(GOLDEN_PATH, 'utf8')
+      .replace(/\r\n/g, '\n')
       .split(/^=== /m)
       .filter((block) => block.includes('==='))
       .map((block) => {

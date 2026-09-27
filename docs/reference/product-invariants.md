@@ -305,9 +305,9 @@ on the belief that the printed page is controlled.
 
 Two consequences follow, and they are separate decisions:
 
-1. **The delivery slip prints the customer's full phone number and delivery address regardless of
-   the receipt's customer-number setting** (`bill_show_customer_phone`). A courier who cannot
-   call the customer, or cannot find the house, is the failure this document exists to prevent.
+1. **The delivery slip prints the customer's full phone number and delivery address whenever
+   either of the two number settings allows it.** A courier who cannot call the customer, or
+   cannot find the house, is the failure this document exists to prevent.
 2. **The receipt keeps masking the customer number**, shortening it to its last four digits. This
    is privacy hygiene for a page the customer carries away, not an access control.
 
@@ -332,23 +332,23 @@ therefore already read every customer phone number and address in the shop on on
 in a room with three open ones while claiming a protection that does not exist.
 
 **The divergence is deliberate and visible, not accidental.** The slip is a separate document kind
-with its own builder, so it never passes through `buildBillDocument` and never consults
-`bill_show_customer_phone`. A merchant who hides the number on receipts will get a slip that
-behaves differently by default; that difference is the feature, and the merchant can turn it off
-from the same panel. Do not "fix" it by routing the slip through the receipt document, which would
-make the two documents share one default and reopen the question.
+with its own builder, so it never passes through `buildBillDocument`; it resolves the number
+through `shouldShowCustomerNumber` instead, which is why a slip and a delivery receipt can never
+disagree. A merchant who hides the number on receipts gets a slip that differs by default, and can
+change that from the same panel. Do not "fix" it by routing the slip through the receipt document,
+which would make the two documents share one default and reopen the question.
 
-**Enforced by:** `buildDeliverySlipDocument` in `shared/print/document.ts`, which has no visibility
-or mask parameter to flip; `main/printers/document-delivery-slip.ts`, which imports neither the
-mask helper nor the shared option name; `resolveReceiptPhone()` in
-`frontend/src/lib/printer/receipt-encoder.ts`, where the receipt's mask is a named option that
-defaults to masked. The slip's route is `POST /api/printers/print-delivery-slip` in
+**Enforced by:** `shouldShowCustomerNumber()` in `shared/print/document.ts`, the one rule both
+delivery surfaces resolve; `buildDeliverySlipDocument`, which has no mask parameter to flip;
+`main/printers/document-delivery-slip.ts`, which imports neither the mask helper nor the shared
+option name; `resolveReceiptPhone()` in `frontend/src/lib/printer/receipt-encoder.ts`, where the
+receipt's mask is a named option that defaults to masked. The slip's route is `POST /api/printers/print-delivery-slip` in
 `main/routes/printers.ts`, gated on the same `printing.execute` permission as every other print.
 
 **How to verify:**
 
 ```sh
-npm run test:delivery-slip   # slip prints the full number; receipt still masks; no shared default
+npm run test:delivery-slip   # both settings allow it, receipt still masks, no shared default
 ```
 
 A legacy customer address written before the length boundary existed can be any length. The slip

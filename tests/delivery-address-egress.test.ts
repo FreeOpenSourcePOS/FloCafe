@@ -1,25 +1,6 @@
-/**
- * Order-level delivery address persistence and egress contract (#830 S4, #694).
- *
- * Three things this suite holds, and the middle one is the one that matters:
- *
- *   1. `orders.delivery_address` exists, is written from the order payload, is
- *      capped at the boundary, and is not written for a non-delivery order.
- *   2. **It never leaves the machine.** The cloud-sync order snapshot is a
- *      `SELECT *` spread, so a new free-text address column leaves the shop
- *      unless it is named in the strip list. `cloud_sync_enabled` ships ON, so
- *      getting this wrong is a customer-data incident, not a code smell. This
- *      test reads the actual outbox row that would be transmitted.
- *   3. The merchant's delivery customer-number override is a real, persisted
- *      setting beside `bill_show_customer_phone`, writable through the same
- *      batch route, and the Settings panel states what it does.
- *
- * ASSERTIONS: every check here throws, via `node:assert/strict`. The shared
- * helper's `assert`/`assertEqual` variants only print and count, and a suite
- * that never reads `getResults()` exits 0 with failing assertions. That is not
- * hypothetical here: it is how the inert override switch was reported as
- * passing. Do not reintroduce the counting helpers into this file.
- */
+// Delivery-address contract: the column exists and is bounded, the address never
+// reaches the cloud outbox, and the merchant's number override is a real setting.
+// Asserts through node:assert/strict: the counting helpers exit 0 while red.
 
 const Module = require('module');
 const originalLoad = Module._load;

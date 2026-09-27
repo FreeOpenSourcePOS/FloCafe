@@ -591,6 +591,12 @@ export const usePrinterStore = create<PrinterState>()(
         set({ lastError: null });
         try {
           const { printerUseUnicode, printerArabicShaping, billDeliveryShowCustomerPhoneAlways, billShowCustomerPhone } = usePosSettingsStore.getState();
+          // The renderers read cached messages, and a settings change can swap the
+          // receipt language without loading its bundle, so load it first rather
+          // than printing an English slip with no warning. printBill and printKot
+          // do the same.
+          const slipLanguages = resolveBillPrintLanguages();
+          const failedSlipLanguages = await ensurePrintLanguagesLoaded(slipLanguages);
           const tenant = useAuthStore.getState().currentTenant;
           const tenantTimezone = tenant?.timezone;
           const orderForPrint = (opts as { items?: OrderItem[] } | undefined)?.items
@@ -650,14 +656,23 @@ export const usePrinterStore = create<PrinterState>()(
                 paperWidth,
                 columns,
                 arabicShaping: printerArabicShaping,
-                language: resolveBillPrintLanguages()[0] as Language,
+                language: slipLanguages[0] as Language,
                 ...(tenantTimezone ? { timezone: tenantTimezone } : {}),
               },
               encoderWarnings,
             );
             set({ lastPrintedBytes: bytes });
             await printerService.print(bytes);
-            return [...warnings, ...encoderWarnings];
+            return [
+              ...failedSlipLanguages.map((language) => ({
+                field: 'slip language',
+                text: language,
+                message: `Slip language "${language}" could not be loaded, so English labels were used.`,
+                kind: 'locale' as const,
+              })),
+              ...warnings,
+              ...encoderWarnings,
+            ] as PrintWarning[];
           }
 
           const { generateDeliverySlipHtml } = await import('@/lib/printer/delivery-slip-web-print');
@@ -678,7 +693,12 @@ export const usePrinterStore = create<PrinterState>()(
             },
           );
           await printerService.printViaBrowser(html, paperWidth);
-          return [];
+          return failedSlipLanguages.map((language) => ({
+            field: 'slip language',
+            text: language,
+            message: `Slip language "${language}" could not be loaded, so English labels were used.`,
+            kind: 'locale' as const,
+          })) as PrintWarning[];
         } catch (err) {
           set({ lastError: (err as Error).message });
           throw err;

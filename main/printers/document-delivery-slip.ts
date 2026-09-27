@@ -30,7 +30,7 @@ import {
   thermalTextFallback,
 } from '../../shared/print/thermal-capabilities';
 import { detectPrintLanguageDirection } from './document-classic';
-import { displayCellWidth } from '../../shared/print/width';
+import { displayCellWidth, graphemeSegments } from '../../shared/print/width';
 import {
   buildDeliverySlipDocument,
   type DeliverySlipAddressSource,
@@ -140,18 +140,24 @@ export function buildDeliverySlipPrintData(
 }
 
 /**
- * Cap address text at the slip ceiling, on grapheme boundaries, and report how
- * many characters were dropped.
+ * Cap address text at the slip ceiling and report how much was dropped.
  *
- * A legacy customer row written before the boundary existed can be any length.
- * Truncating without a signal would hand the person driving to the customer's
- * house a partial address that looks complete, so the count travels with the
- * snapshot and the renderer prints a marker.
+ * The budget and the count are in the same unit the write-time boundary uses,
+ * UTF-16 code units, so a supplementary-plane address cannot slip past the cap
+ * the customer write enforces. The slice breaks on grapheme clusters, so a
+ * combining mark or an emoji sequence is never cut in half.
  */
 function clampAddress(address: string): { text: string; truncatedChars: number } {
   if (address.length <= MAX_DELIVERY_SLIP_ADDRESS_CHARS) return { text: address, truncatedChars: 0 };
-  const segments = Array.from(address);
-  const text = segments.slice(0, MAX_DELIVERY_SLIP_ADDRESS_CHARS).join('');
+  const kept: string[] = [];
+  let units = 0;
+  for (const cluster of graphemeSegments(address)) {
+    const size = cluster.length;
+    if (units + size > MAX_DELIVERY_SLIP_ADDRESS_CHARS) break;
+    kept.push(cluster);
+    units += size;
+  }
+  const text = kept.join('');
   return { text, truncatedChars: address.length - text.length };
 }
 

@@ -1,27 +1,5 @@
-/**
- * Delivery slip printing contract (#830 S4, #694).
- *
- * Three properties this suite exists to hold, in order of how much damage it
- * does if they regress:
- *
- *   1. The slip prints the FULL customer number and the delivery address. A
- *      courier who cannot call the customer, or cannot find the house, is the
- *      whole problem the document exists to solve.
- *   2. The receipt still prints the MASKED number, exactly as it always has.
- *      Lifting the mask everywhere would visibly change every receipt in every
- *      existing install, which nobody asked for.
- *   3. The two do not share a mask default. This is the property that makes
- *      (1) and (2) safe to hold at the same time: if the slip had reached the
- *      full number by flipping a shared default, then satisfying (1) would
- *      silently break (2). The assertion below is that the slip renderer has no
- *      mask parameter at all, and that the receipt's mask is a named option that
- *      defaults to masked rather than an ambient behaviour.
- *
- * Red before green: on the parent commit every slip import fails, so the file
- * cannot even load. Property 2 is the one that guards an existing behaviour, so
- * it is written to pass both before and after, and property 3 is written so it
- * fails if anyone later reaches the full number by sharing a default.
- */
+// Delivery slip against receipt: the slip prints the full contact block, the
+// receipt keeps its mask, and neither can reach the full number by a shared default.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -33,6 +11,7 @@ import { buildDeliverySlipDocument, isDeliverySlipDocument, shouldShowCustomerNu
 import { buildDeliverySlipPrintData, renderDeliverySlipViaDocument, MAX_DELIVERY_SLIP_ADDRESS_CHARS } from '../main/printers/document-delivery-slip';
 import { formatReceipt, escPosToText } from '../main/printers/thermal';
 import { capabilitiesForPrinter, getSupportedPrinterProfiles, resolvePrinterProfile } from '../main/printers/profiles';
+import { graphemeSegments } from '../shared/print/width';
 import { validateCustomerAddress } from '../main/routes/orders-validation';
 import { measureEscPos, loadFrontendPrintModules } from './helpers/receipt-column-measure';
 
@@ -619,6 +598,41 @@ test('delivery slip: a legacy over-long address is visibly marked, never silentl
   assert.ok(
     !escPosToText(renderSlip(42).data).replace(/\s+/g, ' ').includes('more characters'),
     'a fitting address prints no marker',
+  );
+});
+
+test('delivery slip: the address budget holds for supplementary-plane text, and still warns', () => {
+  // The write-time boundary counts UTF-16 units, so the print clamp has to use the
+  // same unit. Measuring the budget in code points while slicing code points let a
+  // supplementary-plane address exceed the cap while reporting nothing dropped,
+  // which left the courier with an over-long sheet and no marker.
+  const emoji = '\u{1F600}'.repeat(150);
+  const address = `Flat 4B, ${emoji}A`;
+  assert.ok(address.length > MAX_DELIVERY_SLIP_ADDRESS_CHARS, 'the fixture exceeds the budget in the boundary unit');
+
+  const snapshot = buildDeliverySlipPrintData(ORDER, ORDER.items, { ...CONTACT, address });
+  assert.ok(
+    snapshot.contact.address.length <= MAX_DELIVERY_SLIP_ADDRESS_CHARS,
+    `the printed address must stay within the budget, got ${snapshot.contact.address.length} units`,
+  );
+  assert.equal(
+    snapshot.contact.addressTruncatedChars,
+    address.length - snapshot.contact.address.length,
+    'the omitted count is measured in the same unit as the budget',
+  );
+  assert.ok(snapshot.contact.addressTruncatedChars > 0, 'and it is non-zero, so the marker prints');
+
+  const printed = escPosToText(renderSlip(42, { address }).data).replace(/\s+/g, ' ');
+  assert.ok(printed.includes('more characters'), 'the slip says the address was cut');
+
+  // A combining mark or a joined sequence is never cut in half.
+  const joined = `Flat 4B, ${'\u{1F468}\u200D\u{1F469}\u200D\u{1F467}'.repeat(60)}tail`;
+  const joinedSnapshot = buildDeliverySlipPrintData(ORDER, ORDER.items, { ...CONTACT, address: joined });
+  const clusters = graphemeSegments(joinedSnapshot.contact.address);
+  assert.ok(clusters.length > 0, 'the kept text is still well formed');
+  assert.ok(
+    !joinedSnapshot.contact.address.endsWith('\u200D'),
+    'the kept address never ends mid-sequence',
   );
 });
 

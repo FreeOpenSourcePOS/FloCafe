@@ -2039,7 +2039,8 @@
     "diagnosticsSendAutomatically": "Send diagnostics automatically",
     "diagnosticsSendAutomaticallyHint": "Off by default. When off, recorded problems stay on this device and are never sent. Support requests you send yourself are unaffected.",
     "diagnosticsTicketUnaffected": "A support request you raise and send yourself always works, whether or not this is on.",
-    "diagnosticsLocalOnlyHintTransmitting": "This screen shows recent problems on this device in plain language. Automatic transmission is on, so recorded problems may be sent to your FloCafe cloud account."
+    "diagnosticsLocalOnlyHintTransmitting": "This screen shows recent problems on this device in plain language. Automatic transmission is on, so recorded problems may be sent to your FloCafe cloud account.",
+    "diagnosticsLocalOnlyHintPending": "This screen shows recent problems on this device in plain language."
   },
   "setup": {
     "alreadyCompleted": "Setup has already been completed on this install. Redirecting to login…",

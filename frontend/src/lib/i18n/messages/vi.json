@@ -2015,7 +2015,7 @@
     "restoreFromFileHint": "Bạn đã có tệp sao lưu trên máy này? Hãy chọn tại đây thay vì chép tay lên cơ sở dữ liệu.",
     "restoreReplacesDetail": "Khôi phục sẽ thay thế mọi đơn hàng, hóa đơn, sản phẩm và hồ sơ khách hàng đã thêm kể từ khi bản sao lưu này được tạo.",
     "restoreKeepsDetail": "Tài khoản nhân viên, mã PIN, máy in, cài đặt thuế và tài khoản đám mây của máy này đều được giữ nguyên.",
-    "restoreSafetyCopyDetail": "Trước khi ada perubahan, Flo lưu một bản sao dữ liệu hiện tại của bạn để bạn có thể hoàn tác thao tác khôi phục này.",
+    "restoreSafetyCopyDetail": "Trước khi có bất kỳ thay đổi nào, Flo lưu một bản sao dữ liệu hiện tại của bạn để bạn có thể hoàn tác thao tác khôi phục này.",
     "tabDiagnostics": "Chẩn đoán",
     "diagnosticsLocalOnlyHint": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu. Không có gì tự động rời khỏi máy tính tiền.",
     "diagnosticsRecentFailures": "Lỗi gần đây",
@@ -2039,7 +2039,8 @@
     "diagnosticsSendAutomatically": "Tự động gửi chẩn đoán",
     "diagnosticsSendAutomaticallyHint": "Tắt theo mặc định. Khi tắt, các sự cố đã ghi nhận vẫn ở trên thiết bị này và không bao giờ được gửi đi. Các yêu cầu hỗ trợ do bạn tự gửi không bị ảnh hưởng.",
     "diagnosticsTicketUnaffected": "Yêu cầu hỗ trợ do bạn tự gửi luôn hoạt động, bất kể cài đặt này bật hay tắt.",
-    "diagnosticsLocalOnlyHintTransmitting": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu. Đã bật gửi tự động, nên các sự cố đã ghi nhận có thể được gửi tới tài khoản FloCafe cloud của bạn."
+    "diagnosticsLocalOnlyHintTransmitting": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu. Đã bật gửi tự động, nên các sự cố đã ghi nhận có thể được gửi tới tài khoản FloCafe cloud của bạn.",
+    "diagnosticsLocalOnlyHintPending": "Màn hình này hiển thị các sự cố gần đây trên thiết bị này bằng ngôn ngữ dễ hiểu."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",

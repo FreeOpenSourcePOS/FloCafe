@@ -2039,7 +2039,8 @@
     "diagnosticsSendAutomatically": "Ipadala nang awtomatiko ang diagnostics",
     "diagnosticsSendAutomaticallyHint": "Naka-off sa pagiging default. Kapag naka-off, nananatili sa device na ito ang mga naitalang problema at hindi kailanman ipinapadala. Hindi apektado ang mga kahilingan ng suporta na ipinapadala mo mismo.",
     "diagnosticsTicketUnaffected": "Laging gumagana ang kahilingan ng suporta na ipinapadala mo mismo, may pagkaka-on o wala man ito.",
-    "diagnosticsLocalOnlyHintTransmitting": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika. Naka-on ang awtomatikong pagpapadala, kaya ang mga naitalang problema ay maaaring ipadala sa iyong FloCafe cloud account."
+    "diagnosticsLocalOnlyHintTransmitting": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika. Naka-on ang awtomatikong pagpapadala, kaya ang mga naitalang problema ay maaaring ipadala sa iyong FloCafe cloud account.",
+    "diagnosticsLocalOnlyHintPending": "Ipinapakita ang screen na ito ang mga kamakailang problema sa device na ito sa payak na wika."
   },
   "setup": {
     "alreadyCompleted": "Nakumpleto na ang setup sa installation na ito. Nireredirect sa pag-login…",

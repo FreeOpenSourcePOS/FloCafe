@@ -2039,7 +2039,8 @@
     "diagnosticsSendAutomatically": "自动发送诊断信息",
     "diagnosticsSendAutomaticallyHint": "默认关闭。关闭时，记录的问题只保留在本设备上，绝不会发送。您自己发送的支持请求不受影响。",
     "diagnosticsTicketUnaffected": "您自己发送的支持请求始终有效，无论此设置是否开启。",
-    "diagnosticsLocalOnlyHintTransmitting": "此界面以通俗语言显示本设备最近的问题。已开启自动发送，因此记录的问题可能会发送到您的 FloCafe 云端账户。"
+    "diagnosticsLocalOnlyHintTransmitting": "此界面以通俗语言显示本设备最近的问题。已开启自动发送，因此记录的问题可能会发送到您的 FloCafe 云端账户。",
+    "diagnosticsLocalOnlyHintPending": "此界面以通俗语言显示本设备最近的问题。"
   },
   "setup": {
     "alreadyCompleted": "此安装已完成设置。正在跳转到登录…",

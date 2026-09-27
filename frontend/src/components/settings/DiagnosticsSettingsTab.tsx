@@ -57,7 +57,10 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
   const [loading, setLoading] = useState(true);
   const [includeLogTail, setIncludeLogTail] = useState(false);
   const [logTail, setLogTail] = useState('');
-  const [transmissionEnabled, setTransmissionEnabled] = useState(false);
+  // null until the server has confirmed the value, so the screen never asserts
+  // either claim on a state it has not been told.
+  const [transmissionEnabled, setTransmissionEnabled] = useState<boolean | null>(null);
+  const [savingTransmission, setSavingTransmission] = useState(false);
 
   const applySnapshot = useCallback((snapshot: DiagnosticsSnapshot) => {
     setFailures(snapshot.failures);
@@ -108,20 +111,27 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
     }
   }
 
-  async function saveSetting(key: string, value: boolean, apply: (next: boolean) => void) {
-    apply(value);
+  async function setTransmission(next: boolean) {
+    setSavingTransmission(true);
     try {
-      await api.put(`/settings/${key}`, { value: value ? 'true' : 'false' });
+      await api.put('/settings/diagnostics_transmission_enabled', { value: next ? 'true' : 'false' });
+      // Only now is the state known, so the hint may make a claim again.
+      setTransmissionEnabled(next);
       toast.success(t('diagnosticsSettingSaved'));
     } catch {
-      apply(!value);
       toast.error(t('diagnosticsSaveFailed'));
+    } finally {
+      setSavingTransmission(false);
     }
   }
 
   async function clearFailures() {
     try {
       await api.delete('/diagnostics/recent');
+      // Drop the snapshot immediately: a failed refresh must not leave deleted
+      // failures on screen under a "cleared" message.
+      setFailures([]);
+      setBundle((current) => (current ? { ...current, recent_failures: [] } : current));
       await refresh();
       toast.success(t('diagnosticsCleared'));
     } catch {
@@ -136,12 +146,12 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
           <AlertTriangle size={20} className="text-muted-foreground" />
           <h2 className="font-semibold text-foreground">{t('tabDiagnostics')}</h2>
         </div>
-        {/* The absolute "nothing leaves the till" claim is only true while
-            automatic transmission is off. Rendering it unconditionally would
-            tell a shop owner something false about their own data at the
-            exact moment they decide whether to turn transmission on. */}
+        {/* Either claim is only true once the server has confirmed the setting,
+            so an unconfirmed state gets a sentence that asserts neither. */}
         <p className="text-sm text-muted-foreground">
-          {t(transmissionEnabled ? 'diagnosticsLocalOnlyHintTransmitting' : 'diagnosticsLocalOnlyHint')}
+          {t(savingTransmission || transmissionEnabled === null
+            ? 'diagnosticsLocalOnlyHintPending'
+            : transmissionEnabled ? 'diagnosticsLocalOnlyHintTransmitting' : 'diagnosticsLocalOnlyHint')}
         </p>
 
         <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
@@ -211,11 +221,11 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
 
         <div className="flex items-start gap-3">
           <Toggle
-            value={transmissionEnabled}
+            value={transmissionEnabled === true}
             // PUT /settings/:key requires settings.manage; a support
             // permission without it would show a working switch that 403s.
             disabled={!isAdmin}
-            onChange={(next) => void saveSetting('diagnostics_transmission_enabled', next, setTransmissionEnabled)}
+            onChange={(next) => void setTransmission(next)}
             label={t('diagnosticsSendAutomatically')}
           />
           <p className="text-xs text-muted-foreground">{t('diagnosticsSendAutomaticallyHint')}</p>

@@ -2039,7 +2039,8 @@
     "diagnosticsSendAutomatically": "Dërgo diagnostikën automatikisht",
     "diagnosticsSendAutomaticallyHint": "Fikur që në fillim. Kur është i fikur, problemet e regjistruara mbeten në këtë pajisje dhe nuk dërgohen kurrë. Kërkesat që i dërgoni vetë nuk preken.",
     "diagnosticsTicketUnaffected": "Një kërkesë mbështetëse që e dërgoni ju vetë funksionon gjithmonë, pavarësisht nëse kjo cilësim është i ndezur apo jo.",
-    "diagnosticsLocalOnlyHintTransmitting": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë. Dërgimi automatik është i ndezur, prandaj problemet e regjistruara mund të dërgohen në llogarinë tuaj FloCafe cloud."
+    "diagnosticsLocalOnlyHintTransmitting": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë. Dërgimi automatik është i ndezur, prandaj problemet e regjistruara mund të dërgohen në llogarinë tuaj FloCafe cloud.",
+    "diagnosticsLocalOnlyHintPending": "Ky ekran tregon problemet e fundit të këtij pajisjeje në gjuhë të thjeshtë."
   },
   "setup": {
     "alreadyCompleted": "Konfigurimi në këtë instalim është përfunduar. Po ridrejtohemi te hyrja...",

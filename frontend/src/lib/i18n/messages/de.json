@@ -2039,7 +2039,8 @@
     "diagnosticsSendAutomatically": "Diagnose automatisch senden",
     "diagnosticsSendAutomaticallyHint": "Standardmäßig aus. Ist die Einstellung aus, bleiben aufgezeichnete Probleme auf diesem Gerät und werden nie gesendet. Von dir selbst gesendete Support-Anfragen sind nicht betroffen.",
     "diagnosticsTicketUnaffected": "Eine selbst gesendete Support-Anfrage funktioniert immer, unabhängig davon, ob diese Einstellung aktiv ist.",
-    "diagnosticsLocalOnlyHintTransmitting": "Dieser Bildschirm zeigt aktuelle Probleme auf diesem Gerät in klarer Sprache an. Die automatische Übertragung ist aktiv, daher können aufgezeichnete Probleme an dein FloCafe-Cloudkonto gesendet werden."
+    "diagnosticsLocalOnlyHintTransmitting": "Dieser Bildschirm zeigt aktuelle Probleme auf diesem Gerät in klarer Sprache an. Die automatische Übertragung ist aktiv, daher können aufgezeichnete Probleme an dein FloCafe-Cloudkonto gesendet werden.",
+    "diagnosticsLocalOnlyHintPending": "Dieser Bildschirm zeigt aktuelle Probleme auf diesem Gerät in klarer Sprache an."
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",

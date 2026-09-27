@@ -109,7 +109,8 @@ test('the privacy hint stops claiming nothing is sent once transmission is on', 
 
   await page.goto(`${BASE}/settings?tab=diagnostics`);
   const hint = page.getByText('Nothing here leaves the till automatically', { exact: false });
-  await expect(hint, 'with transmission off the absolute claim is shown').toBeVisible();
+  // The off-state claim is only shown once the server has confirmed the setting.
+  await expect(hint, 'with transmission confirmed off the absolute claim is shown').toBeVisible();
 
   const setTransmission = (value: string) => page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
     headers: { Authorization: `Bearer ${token}` },

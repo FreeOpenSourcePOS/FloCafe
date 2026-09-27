@@ -2039,7 +2039,8 @@
     "diagnosticsSendAutomatically": "Invia automaticamente la diagnostica",
     "diagnosticsSendAutomaticallyHint": "Disattivato per impostazione predefinita. Quando è disattivato, i problemi registrati restano su questo dispositivo e non vengono mai inviati. Le richieste di assistenza che invii tu non sono interessate.",
     "diagnosticsTicketUnaffected": "Una richiesta di assistenza che invii tu funziona sempre, che questa opzione sia attiva o no.",
-    "diagnosticsLocalOnlyHintTransmitting": "Questa schermata mostra in modo semplice i problemi recenti di questo dispositivo. La trasmissione automatica è attiva, quindi i problemi registrati possono essere inviati al tuo account FloCafe cloud."
+    "diagnosticsLocalOnlyHintTransmitting": "Questa schermata mostra in modo semplice i problemi recenti di questo dispositivo. La trasmissione automatica è attiva, quindi i problemi registrati possono essere inviati al tuo account FloCafe cloud.",
+    "diagnosticsLocalOnlyHintPending": "Questa schermata mostra in modo semplice i problemi recenti di questo dispositivo."
   },
   "setup": {
     "alreadyCompleted": "La configurazione è già stata completata su questa installazione. Reindirizzamento all'accesso…",

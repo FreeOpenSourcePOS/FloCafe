@@ -38,6 +38,7 @@ import {
   formatCompactReceiptLegacy,
 } from './helpers/legacy-thermal-oracle';
 import { printLabel } from '../main/print/print-labels.generated';
+import { displayCellWidth } from '../shared/print/width';
 import {
   buildBillPrintContext,
   buildBillPrintData,
@@ -775,6 +776,39 @@ function run(): void {
       warn(wrapRows.length > 1, 'wrapPrinterText splits a long address across rows at the column budget');
       warn(wrapRows.every((row) => row.length <= 32), 'every wrapped row fits the column budget');
       warn(wrapRows.join(' ') === `${ADDRESS_LABEL}: ${LONG_ADDRESS}`, 'wrapping loses none of the address text');
+    }
+
+    // The column budget is display cells, not characters. A full-width script
+    // costs two cells a character, so measuring by character count lets a
+    // Japanese, Chinese, Korean or Thai line run to double the paper width.
+    {
+      const cases: Array<[string, string]> = [
+        ['32 full-width characters', '漢'.repeat(32)],
+        ['mixed ASCII and full-width', `Delivery 住所 Tokyo ${'KT'.repeat(20)}`],
+        ['Thai with no spaces', 'กรุงเทพมหานคร'.repeat(4)],
+      ];
+      for (const [label, text] of cases) {
+        const rows = fe.warnings.wrapPrinterText(text, 32);
+        warn(displayCellWidth(text) > 32, `width: ${label} really is wider than 32 cells (${displayCellWidth(text)})`);
+        warn(rows.length > 1, `width: ${label} is split into more than one row`);
+        warn(
+          rows.every((row) => displayCellWidth(row) <= 32),
+          `width: no row of ${label} exceeds 32 display cells (widest ${Math.max(...rows.map(displayCellWidth))})`,
+        );
+      }
+
+      // Centring pads from the same cell measure. A CJK name cannot reach
+      // the centring path (it is Arabic-shaping-safe only), so drive that path
+      // directly and pin the pad it derives.
+      const centringEnc = { text: (value: string) => centringEnc, raw: (data: Uint8Array) => { emitted.push(new TextDecoder().decode(data)); return centringEnc; }, align: () => centringEnc };
+      const emitted: string[] = [];
+      const centered = 'مقهى شارع';
+      fe.warnings.safePrinterText(centringEnc as any, centered, undefined, false, true, 32, undefined, 'ar');
+      const pad = emitted[0]?.length - emitted[0]?.trimStart().length;
+      warn(
+        pad === Math.floor((32 - displayCellWidth(centered)) / 2),
+        `width: centring pads from displayCellWidth, not a character count (${pad} cells)`,
+      );
     }
 
     // Absent: nothing about the delivery section may leak into an in-store receipt.

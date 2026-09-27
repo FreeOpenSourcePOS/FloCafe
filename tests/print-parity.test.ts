@@ -778,9 +778,8 @@ function run(): void {
       warn(wrapRows.join(' ') === `${ADDRESS_LABEL}: ${LONG_ADDRESS}`, 'wrapping loses none of the address text');
     }
 
-    // The column budget is display cells, not characters. A full-width script
-    // costs two cells a character, so measuring by character count lets a
-    // Japanese, Chinese, Korean or Thai line run to double the paper width.
+    // A full-width script costs two cells a character, so a character count
+    // lets a Japanese, Chinese, Korean or Thai line run to double the width.
     {
       const cases: Array<[string, string]> = [
         ['32 full-width characters', '漢'.repeat(32)],
@@ -797,11 +796,10 @@ function run(): void {
         );
       }
 
-      // Centring pads from the same cell measure. A CJK name cannot reach
-      // the centring path (it is Arabic-shaping-safe only), so drive that path
-      // directly and pin the pad it derives.
-      const centringEnc = { text: (value: string) => centringEnc, raw: (data: Uint8Array) => { emitted.push(new TextDecoder().decode(data)); return centringEnc; }, align: () => centringEnc };
+      // The centring path is Arabic-shaping-safe only, so a CJK name never
+      // reaches it; drive it directly and pin the pad it derives.
       const emitted: string[] = [];
+      const centringEnc = { text: (value: string) => centringEnc, raw: (data: Uint8Array) => { emitted.push(new TextDecoder().decode(data)); return centringEnc; }, align: () => centringEnc };
       const centered = 'مقهى شارع';
       fe.warnings.safePrinterText(centringEnc as any, centered, undefined, false, true, 32, undefined, 'ar');
       const pad = emitted[0]?.length - emitted[0]?.trimStart().length;

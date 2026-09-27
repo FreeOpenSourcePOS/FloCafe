@@ -273,9 +273,8 @@ export function DiagnosticsPanel({ onCreateTicket }: { onCreateTicket?: (failure
         <div className="flex items-start gap-3">
           <Toggle
             value={transmissionEnabled === true}
-            // PUT /settings/:key requires settings.manage; a support
-            // permission without it would show a working switch that 403s.
-            disabled={!isAdmin}
+            // Do not let an unconfirmed value masquerade as off in the switch.
+            disabled={!isAdmin || transmissionEnabled === null}
             onChange={(next) => void setTransmission(next)}
             label={t('diagnosticsSendAutomatically')}
           />

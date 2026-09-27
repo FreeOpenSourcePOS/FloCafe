@@ -305,10 +305,10 @@ test('an operator without the settings permission can read diagnostics but not c
   ).toBeDisabled();
 });
 
-test('an operator who cannot read the setting is never told nothing is sent', async ({ page }) => {
-  // A configurable settings.view can be denied, so the read is refused while
-  // the support.use reads still succeed; transmission is on underneath.
-  const token = getE2eToken();
+test('a settings manager cannot change transmission when its value cannot be read', async ({ page }) => {
+  // A configurable settings.view can be denied independently of settings.manage,
+  // so the value can be refused while transmission is on underneath.
+  const token = getE2eToken('e2e-manager', 'manager@flo.local', 'manager');
   const setTransmission = (value: string) => page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
     headers: { Authorization: `Bearer ${token}` },
     data: { value },
@@ -322,10 +322,13 @@ test('an operator who cannot read the setting is never told nothing is sent', as
     });
   });
   try {
-    expect((await setTransmission('true')).status(), 'precondition: transmission is on').toBe(200);
-    await loginAs(page, 'server@flo.local');
+    expect((await setTransmission('true')).status(), 'precondition: the manager can change the setting').toBe(200);
+    await loginAs(page, 'manager@flo.local');
     await page.goto(`${BASE}/support?tab=diagnostics`);
     await expect(page.getByRole('heading', { name: DIAGNOSTICS_TAB })).toBeVisible();
+    await page.waitForResponse((response) => (
+      response.url().endsWith('/api/settings') && response.request().method() === 'GET'
+    ));
 
     // A refused read must not take the failures and the bundle down with it.
     await expect(page.getByTestId('diagnostics-bundle-preview'), 'the bundle is still readable').toBeVisible();
@@ -337,6 +340,10 @@ test('an operator who cannot read the setting is never told nothing is sent', as
       page.getByText('This screen shows recent problems on this device in plain language.', { exact: true }),
       'the wording that asserts neither state is used instead',
     ).toBeVisible();
+    await expect(
+      page.getByRole('switch', { name: 'Send diagnostics automatically' }),
+      'a manager cannot toggle a value that the server did not confirm',
+    ).toBeDisabled();
   } finally {
     await page.unroute('**/api/settings');
     // Shared test database: a failed assertion must not leave it transmitting.

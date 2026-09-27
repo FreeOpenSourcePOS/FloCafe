@@ -12,6 +12,7 @@ const YAML = require('js-yaml') as { load: (text: string) => unknown };
 const rootDir = path.resolve(__dirname, '..');
 const resetScript = path.join(rootDir, 'scripts/dev/nuclear-reset.sh');
 const i18nAddScript = path.join(rootDir, 'scripts/i18n-add.cjs');
+const buildFrontendScript = path.join(rootDir, 'scripts/build-frontend.cjs');
 
 function mkdirp(target: string) {
   fs.mkdirSync(target, { recursive: true });
@@ -64,6 +65,102 @@ function runTest() {
   assert.strictEqual(extensionLanguage.status, 1, 'i18n:add must reject Unicode-extension locale keys');
   assert.match(extensionLanguage.stderr, /Invalid language code/);
   console.log('✓ i18n:add validation, regional keys, and no-overwrite guard verified');
+
+  console.log('Testing build:frontend dependency validation...');
+  const buildFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-build-frontend-test-'));
+  try {
+    const fixtureFrontend = path.join(buildFixture, 'frontend');
+    const fixtureScripts = path.join(buildFixture, 'scripts');
+    const mockBin = path.join(buildFixture, 'bin');
+    const fixtureBuildScript = path.join(fixtureScripts, 'build-frontend.cjs');
+    const mockNpmScript = path.join(mockBin, 'mock-npm.cjs');
+    const mockNpmPath = path.join(mockBin, process.platform === 'win32' ? 'npm.cmd' : 'npm');
+    const npmLog = path.join(buildFixture, 'npm.log');
+    const lockfilePath = path.join(fixtureFrontend, 'package-lock.json');
+
+    fs.mkdirSync(fixtureFrontend, { recursive: true });
+    fs.mkdirSync(fixtureScripts, { recursive: true });
+    fs.mkdirSync(mockBin, { recursive: true });
+    fs.copyFileSync(buildFrontendScript, fixtureBuildScript);
+
+    const lockfile = {
+      lockfileVersion: 3,
+      packages: {
+        '': { name: 'frontend', version: '0.1.0' },
+        'node_modules/example': {
+          version: '1.0.0',
+          resolved: 'https://registry.npmjs.org/example/-/example-1.0.0.tgz',
+          integrity: 'sha512-example',
+        },
+      },
+    };
+    fs.writeFileSync(lockfilePath, JSON.stringify(lockfile));
+
+    const mockNpmSource = `'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.FLO_TEST_NPM_LOG, args.join(' ') + '\\n');
+if (args[0] === 'ls') {
+  process.exitCode = Number(process.env.FLO_TEST_NPM_LS_STATUS || 0);
+} else if (args[0] === 'ci') {
+  const lockfile = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+  const packages = { ...lockfile.packages };
+  delete packages[''];
+  fs.rmSync('node_modules', { recursive: true, force: true });
+  fs.mkdirSync('node_modules', { recursive: true });
+  fs.writeFileSync(path.join('node_modules', '.package-lock.json'), JSON.stringify({ lockfileVersion: lockfile.lockfileVersion, packages }));
+} else if (args[0] !== 'run' || args[1] !== 'build') {
+  process.exitCode = 9;
+}
+`;
+
+    fs.writeFileSync(mockNpmScript, mockNpmSource);
+    if (process.platform === 'win32') {
+      fs.writeFileSync(mockNpmPath, `@echo off\r\n"${process.execPath}" "${mockNpmScript}" %*\r\n`);
+    } else {
+      fs.writeFileSync(mockNpmPath, `#!/usr/bin/env node\n${mockNpmSource}`, { mode: 0o755 });
+    }
+
+    const buildEnv = {
+      ...process.env,
+      PATH: `${mockBin}${path.delimiter}${process.env.PATH || ''}`,
+      FLO_TEST_NPM_LOG: npmLog,
+      FLO_TEST_NPM_LS_STATUS: '0',
+    };
+    const runFrontendBuild = (env: NodeJS.ProcessEnv = buildEnv) =>
+      spawnSync(process.execPath, [fixtureBuildScript], {
+        encoding: 'utf8',
+        cwd: buildFixture,
+        env,
+      });
+    const npmCalls = () => fs.readFileSync(npmLog, 'utf8').trim().split(/\r?\n/);
+
+    const firstBuild = runFrontendBuild();
+    assert.strictEqual(firstBuild.status, 0, `Expected missing dependencies to install: ${firstBuild.stderr}`);
+    assert.deepStrictEqual(npmCalls(), ['ci', 'run build'], 'Missing dependencies must be installed before building');
+
+    const currentBuild = runFrontendBuild();
+    assert.strictEqual(currentBuild.status, 0, `Expected current dependencies to build: ${currentBuild.stderr}`);
+    assert.deepStrictEqual(
+      npmCalls().slice(2),
+      ['ls --all --json', 'run build'],
+      'A complete installation matching the lockfile must skip npm ci',
+    );
+
+    lockfile.packages['node_modules/example'].version = '1.0.1';
+    fs.writeFileSync(lockfilePath, JSON.stringify(lockfile));
+    const staleBuild = runFrontendBuild();
+    assert.strictEqual(staleBuild.status, 0, `Expected stale dependencies to reinstall: ${staleBuild.stderr}`);
+    assert.deepStrictEqual(npmCalls().slice(-2), ['ci', 'run build'], 'A lockfile change must trigger npm ci');
+
+    const incompleteBuild = runFrontendBuild({ ...buildEnv, FLO_TEST_NPM_LS_STATUS: '1' });
+    assert.strictEqual(incompleteBuild.status, 0, `Expected incomplete dependencies to reinstall: ${incompleteBuild.stderr}`);
+    assert.deepStrictEqual(npmCalls().slice(-3), ['ls --all --json', 'ci', 'run build']);
+  } finally {
+    fs.rmSync(buildFixture, { recursive: true, force: true });
+  }
+  console.log('✓ build:frontend lockfile drift and incomplete installation checks verified');
 
   console.log('Testing kill-ports.js process identity matching...');
 

@@ -11,6 +11,7 @@ export const PRINT_CONCEPT_IDS = [
   'print.time',
   'print.customerShort',
   'print.numberShort',
+  'print.customerDetails',
   'print.address',
   'print.call',
   'print.note',

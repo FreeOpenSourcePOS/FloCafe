@@ -68,7 +68,7 @@ function isPopupCoordinate(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-/** Pops the submenu behind a title-bar entry label. */
+/** Pops the submenu behind a title-bar entry label, an overflow menu, or the root hamburger menu. */
 export function openApplicationMenuSubmenu(
   menu: Menu | null,
   key: unknown,
@@ -78,11 +78,77 @@ export function openApplicationMenuSubmenu(
 ): { success: true } | { error: string } {
   if (!menu) return { error: 'Application menu unavailable' };
   if (!window || window.isDestroyed()) return { error: 'Window unavailable' };
-  if (typeof key !== 'string' || !/^\d+$/.test(key)) return { error: 'Unknown menu entry' };
-  const item = menu.items[Number(key)];
-  if (!item) return { error: 'Unknown menu entry' };
-  if (!item.submenu) return { error: 'Menu entry has no submenu' };
+  if (typeof key !== 'string') return { error: 'Unknown menu entry' };
   if (!isPopupCoordinate(x) || !isPopupCoordinate(y)) return { error: 'Invalid menu position' };
-  item.submenu.popup({ window, x, y });
-  return { success: true };
+
+  const roundX = Math.round(x);
+  const roundY = Math.round(y);
+
+  try {
+    if (key === 'hamburger' || key === 'all' || key === 'root') {
+      menu.popup({ window, x: roundX, y: roundY });
+      return { success: true };
+    }
+
+    if (key.startsWith('overflow:')) {
+      const match = /^overflow:(\d+)$/.exec(key);
+      if (!match) return { error: 'Unknown menu entry' };
+      const startIndex = Number(match[1]);
+      if (!Number.isSafeInteger(startIndex) || startIndex >= menu.items.length) {
+        return { error: 'Unknown menu entry' };
+      }
+
+      const createOverflow = (menu as unknown as { createOverflowMenu?: () => Menu }).createOverflowMenu;
+      let overflowMenu: Menu;
+      let MenuItemClass: (new (options: unknown) => MenuItem) | undefined;
+      if (typeof createOverflow === 'function') {
+        overflowMenu = createOverflow();
+      } else {
+        let MenuClass: (new () => Menu) | undefined;
+        try {
+          const electron = require('electron');
+          if (electron) {
+            if (typeof electron.Menu === 'function') MenuClass = electron.Menu;
+            if (typeof electron.MenuItem === 'function') MenuItemClass = electron.MenuItem;
+          }
+        } catch {
+          // Pure node environment fallback
+        }
+        overflowMenu = MenuClass ? new MenuClass() : new (menu.constructor as new () => Menu)();
+        if (!MenuItemClass && menu.items.length > 0) {
+          MenuItemClass = menu.items[0]?.constructor as (new (options: unknown) => MenuItem) | undefined;
+        }
+      }
+
+      for (let i = startIndex; i < menu.items.length; i++) {
+        const item = menu.items[i];
+        if (!item || item.type === 'separator' || !item.submenu) continue;
+        if (MenuItemClass) {
+          overflowMenu.append(
+            new MenuItemClass({
+              label: item.label,
+              type: 'submenu',
+              submenu: item.submenu,
+            }),
+          );
+        } else {
+          overflowMenu.append(item);
+        }
+      }
+
+      if (overflowMenu.items.length === 0) return { error: 'Menu entry has no submenu' };
+      overflowMenu.popup({ window, x: roundX, y: roundY });
+      return { success: true };
+    }
+
+    if (!/^\d+$/.test(key)) return { error: 'Unknown menu entry' };
+    const item = menu.items[Number(key)];
+    if (!item) return { error: 'Unknown menu entry' };
+    if (!item.submenu) return { error: 'Menu entry has no submenu' };
+
+    item.submenu.popup({ window, x: roundX, y: roundY });
+    return { success: true };
+  } catch (err: unknown) {
+    return { error: (err as Error)?.message || 'Menu popup failed' };
+  }
 }

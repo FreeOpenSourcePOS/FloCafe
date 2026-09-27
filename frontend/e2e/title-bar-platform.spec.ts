@@ -268,6 +268,16 @@ test('browser Electron fixture restores the Windows title-bar application menu',
   const [opened] = await readOpenedMenuEntries(page);
   expect(opened.x).toBeCloseTo(fileBox!.x, 0);
   expect(opened.y).toBeCloseTo(fileBox!.y + fileBox!.height, 0);
+  expect(Number.isInteger(opened.x), 'popup x coordinate is integer').toBe(true);
+  expect(Number.isInteger(opened.y), 'popup y coordinate is integer').toBe(true);
+
+  // Clicking Edit opens with integer coordinates (guards against Windows float coordinate regression)
+  const editButton = menu.getByRole('menuitem', { name: 'Edit' });
+  await editButton.click();
+  await expect.poll(async () => (await readOpenedMenuEntries(page)).map((entry) => entry.key)).toEqual(['0', '1']);
+  const [, editOpened] = await readOpenedMenuEntries(page);
+  expect(Number.isInteger(editOpened.x), 'Edit popup x coordinate is integer').toBe(true);
+  expect(Number.isInteger(editOpened.y), 'Edit popup y coordinate is integer').toBe(true);
 
   // The row lives inside the title bar's safe area, so the native caption
   // buttons on the trailing edge stay clear of it.
@@ -282,11 +292,10 @@ test('browser Electron fixture restores the Windows title-bar application menu',
   expect([...new Set(regions)], 'every menu label is a no-drag region').toEqual(['no-drag']);
 });
 
-test('Windows title-bar menu never overlaps the identity from the minimum window width up', async ({ page }) => {
+test('Windows title-bar menu never overlaps the identity from the minimum window width up and adapts responsively', async ({ page }) => {
   await injectElectronFixture(page, { platform: 'win32', focused: true });
   // 1024 is the Electron minWidth, so the narrowest a real window can get is
-  // the tightest case for the non-wrapping menu row against the centered
-  // identity.
+  // the tightest case for the menu row against the dead-centered identity.
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('owner@flo.local');
@@ -297,18 +306,58 @@ test('Windows title-bar menu never overlaps the identity from the minimum window
   const menu = page.getByTestId('desktop-application-menu');
   const identity = page.locator('.flo-title-bar__identity');
   await expect(menu).toBeVisible();
-  await expect(menu.locator('button')).toHaveCount(8);
-  // Too narrow for both, so the identity yields and the restored menu stays.
-  await expect(identity).toBeHidden();
+  // Dead-center identity remains visible across all breakpoints
+  await expect(identity).toBeVisible();
 
-  // Above the minimum width the identity comes back and the two coexist
-  // without overlapping.
+  // A hydrated long store name can widen the centered identity after the
+  // title-bar observer is mounted, so the menu must recalculate its width.
+  const visibleMenuItems = menu.locator('button:not([data-testid])');
+  const initialVisibleMenuItemCount = await visibleMenuItems.count();
+  await identity.evaluate((element) => {
+    (element as HTMLElement).style.inlineSize = '24rem';
+  });
+  await expect.poll(() => visibleMenuItems.count()).toBeLessThan(initialVisibleMenuItemCount);
+
+  const titleBar = page.getByTestId('desktop-title-bar');
+  const [titleBarBox, menuBox1024, identityBox1024] = await Promise.all([
+    titleBar.boundingBox(),
+    menu.boundingBox(),
+    identity.boundingBox(),
+  ]);
+  expect(
+    menuBox1024!.x + menuBox1024!.width,
+    'menu row ends before the centered identity starts at 1024px',
+  ).toBeLessThanOrEqual(identityBox1024!.x + 1);
+
+  expect(identityBox1024!.y, 'identity is not pushed up out of title bar').toBeGreaterThanOrEqual(titleBarBox!.y + 2);
+  expect(
+    identityBox1024!.y + identityBox1024!.height,
+    'identity is not pushed down out of title bar',
+  ).toBeLessThanOrEqual(titleBarBox!.y + titleBarBox!.height - 2);
+
+  // At this width the long identity requires overflow, which opens the hidden submenus.
+  const overflowBtn = page.getByTestId('desktop-application-menu-overflow');
+  await expect(overflowBtn).toBeVisible();
+  await overflowBtn.click();
+  await expect.poll(async () => (await readOpenedMenuEntries(page)).some((entry) => entry.key.startsWith('overflow:'))).toBe(true);
+
+  // At a very compact width (e.g. 360px), it collapses into the hamburger menu
+  await page.setViewportSize({ width: 360, height: 768 });
+  const hamburgerBtn = page.getByTestId('desktop-application-menu-hamburger');
+  await expect(hamburgerBtn).toBeVisible();
+  await hamburgerBtn.click();
+  await expect.poll(async () => (await readOpenedMenuEntries(page)).some((entry) => entry.key === 'hamburger')).toBe(true);
+
+  await identity.evaluate((element) => {
+    (element as HTMLElement).style.removeProperty('inline-size');
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(identity).toBeVisible();
+  await expect(menu.locator('button')).toHaveCount(8);
   const [menuBox, identityBox] = await Promise.all([menu.boundingBox(), identity.boundingBox()]);
   expect(
     menuBox!.x + menuBox!.width,
-    'menu row ends before the centered identity starts',
+    'menu row ends before the centered identity starts at 1440px',
   ).toBeLessThanOrEqual(identityBox!.x + 1);
 });
 

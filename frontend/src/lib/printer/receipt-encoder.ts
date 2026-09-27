@@ -8,7 +8,7 @@ import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolve
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { parseDbTimestamp } from '@/lib/utils';
-import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME } from './branding';
 import {
   buildFrontendBillDocument,
@@ -470,11 +470,21 @@ export function buildClassicReceiptBytes(
     safePrinterText(enc, meta.table.label.primary.replace('{name}', meta.table.name.text), warnings, false, arabicShaping, cols);
     enc.bold(false).newline();
   }
+  if (customer?.heading) {
+    enc.bold(true);
+    safePrinterText(enc, labelOf(customer.heading), warnings, false, arabicShaping, cols);
+    enc.bold(false).newline();
+  }
   if (customer?.name) {
     safePrinterText(enc, customer.name.text, warnings, false, arabicShaping, cols).newline();
   }
   if (customer?.phone) {
     enc.text(resolveReceiptPhone(customer.phone.text, opts?.maskCustomerPhone)).newline();
+  }
+  if (customer?.address) {
+    for (const row of wrapPrinterText(`${labelOf(customer.addressLabel)}: ${customer.address.text}`, cols)) {
+      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols).newline();
+    }
   }
 
   if (meta) {
@@ -710,11 +720,19 @@ export function buildCompactReceiptBytes(
       safePrinterText(enc, meta.table.label.primary.replace('{name}', meta.table.name.text), warnings, false, arabicShaping, undefined, cols).newline();
     }
   }
+  if (customer?.heading) {
+    safePrinterText(enc, labelOf(customer.heading), warnings, false, arabicShaping, undefined, cols).newline();
+  }
   if (customer?.name) {
     safePrinterText(enc, `${printLabelResolver('print.customerShort', primaryLang)}: ${truncate(customer.name.text, cols - 6)}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
   if (customer?.phone) {
     safePrinterText(enc, `${printLabelResolver('print.numberShort', primaryLang)}: ${resolveReceiptPhone(customer.phone.text, opts?.maskCustomerPhone)}`, warnings, false, arabicShaping).newline();
+  }
+  if (customer?.address) {
+    for (const row of wrapPrinterText(`${labelOf(customer.addressLabel)}: ${customer.address.text}`, cols)) {
+      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols).newline();
+    }
   }
 
   enc.rule({ style: 'single' });

@@ -243,6 +243,7 @@ export function loadFrontendPrintModules(): {
   receiptEncoder: typeof import('../../frontend/src/lib/printer/receipt-encoder');
   webPrint: typeof import('../../frontend/src/lib/printer/web-print');
   printDocument: typeof import('../../frontend/src/lib/printer/print-document');
+  taxBillEncoder: typeof import('../../frontend/src/lib/printer/tax-bill-encoder');
   warnings: typeof import('../../frontend/src/lib/printer/warnings');
 } {
   const nodePath = require('path') as typeof import('path');
@@ -266,6 +267,7 @@ export function loadFrontendPrintModules(): {
       receiptEncoder: require('../../frontend/src/lib/printer/receipt-encoder'),
       webPrint: require('../../frontend/src/lib/printer/web-print'),
       printDocument: require('../../frontend/src/lib/printer/print-document'),
+      taxBillEncoder: require('../../frontend/src/lib/printer/tax-bill-encoder'),
       warnings: require('../../frontend/src/lib/printer/warnings'),
     };
   } finally {

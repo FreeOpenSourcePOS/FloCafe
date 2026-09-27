@@ -9,6 +9,7 @@ import {
   type ThermalPrinterCapabilities,
 } from '@print/thermal-capabilities';
 import type { PrintWarning } from '@print/warnings';
+import { displayCellWidth, wrapToDisplayCells } from '@print/width';
 import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES } from '@/lib/i18n/languages';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -84,27 +85,30 @@ export function makeBillTemplateFallbackWarning(value: unknown): PrintWarning | 
 
 /** C0 controls and DEL must never reach raw ESC/POS output (#437 review). */
 const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;
-/** Arabic combining marks and bidi/format controls consume no print column. */
-const SHAPING_ZERO_WIDTH_RE = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u200B-\u200F]/g;
-
-function shapedDisplayWidth(text: string): number {
-  return [...text.replace(SHAPING_ZERO_WIDTH_RE, '')].length;
-}
 
 function boundShapedText(text: string, maxCols?: number): string {
-  if (!maxCols || maxCols <= 0 || shapedDisplayWidth(text) <= maxCols) return text;
+  if (!maxCols || maxCols <= 0 || displayCellWidth(text) <= maxCols) return text;
 
   const ellipsis = '…';
-  const targetCols = Math.max(0, maxCols - shapedDisplayWidth(ellipsis));
+  const targetCols = Math.max(0, maxCols - displayCellWidth(ellipsis));
   let bounded = '';
   let width = 0;
   for (const character of text) {
-    const characterWidth = shapedDisplayWidth(character);
+    const characterWidth = displayCellWidth(character);
     if (width + characterWidth > targetCols) break;
     bounded += character;
     width += characterWidth;
   }
   return bounded + ellipsis;
+}
+
+/**
+ * Rows of at most `maxCols` display cells. A shaped printer never wraps
+ * its own raw bytes, so an over-wide line must become rows here or be cut.
+ */
+export function wrapPrinterText(text: string, maxCols: number): string[] {
+  if (maxCols <= 0) return [text];
+  return wrapToDisplayCells(text, maxCols);
 }
 
 /** Writes value to an encoder if characters are representable, recording a warning otherwise. */
@@ -146,7 +150,7 @@ export function safePrinterText<T extends { text(value: string): T }>(
         const alignableEnc = enc as T & { align?: (alignment: 'left' | 'center') => T };
         const centerRawLine = centerCols !== undefined && centerCols > 0 && typeof alignableEnc.align === 'function';
         if (centerRawLine) {
-          const pad = Math.max(0, Math.floor((centerCols - shapedDisplayWidth(payloadText)) / 2));
+          const pad = Math.max(0, Math.floor((centerCols - displayCellWidth(payloadText)) / 2));
           payloadText = ' '.repeat(pad) + payloadText;
           alignableEnc.align?.('left');
         }

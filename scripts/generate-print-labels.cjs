@@ -81,6 +81,7 @@ const PRINT_NAMESPACE_KEYS = [
   'print.time',
   'print.customerShort',
   'print.numberShort',
+  'print.customerDetails',
   'print.address',
   'print.call',
   'print.note',

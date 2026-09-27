@@ -38,6 +38,7 @@ import {
   formatCompactReceiptLegacy,
 } from './helpers/legacy-thermal-oracle';
 import { printLabel } from '../main/print/print-labels.generated';
+import { displayCellWidth } from '../shared/print/width';
 import {
   buildBillPrintContext,
   buildBillPrintData,
@@ -704,6 +705,115 @@ function run(): void {
         !normalized.includes(normalizeSemanticContent(tenderedLabel)) && !normalized.includes(normalizeSemanticContent(changeLabel)),
         `${renderer}: legacy payments print no tendered/change row`,
       );
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // 2e. Delivery customer details — every receipt path prints the order's
+  //     delivery address under one heading that names the block as the
+  //     customer's, and prints nothing extra when there is no address.
+  // ------------------------------------------------------------------
+  section('Delivery customer details across receipt paths');
+  {
+    const ADDRESS = 'Flat 4B, 123A-Anecacuilco 04330, Colonia Naucalpan';
+    const HEADING = printLabel('en', 'print.customerDetails');
+    const ADDRESS_LABEL = printLabel('en', 'print.deliverySlip.address');
+    // Short enough that no path wraps it, so one substring probe covers all of them.
+    const SHORT_ADDRESS = '12 Marine Road';
+    const deliveryFixtures = (deliveryAddress: string) => {
+      const deliveryOrder = { ...order, type: 'delivery', delivery_address: deliveryAddress };
+      return { deliveryOrder, deliveryBill: { ...bill, order: deliveryOrder } };
+    };
+    const renderAll = (deliveryAddress: string): Array<[string, string]> => {
+      const { deliveryOrder, deliveryBill } = deliveryFixtures(deliveryAddress);
+      const fixture = { ...deliveryBill, order: { ...deliveryOrder, customer: { name: 'Asha Kumar', phone: '+91 98765 43210' } } };
+      return [
+        ['backend/classic', escPosToText(formatReceipt(deliveryOrder, fixture, { ...business, customer_name: 'Asha Kumar', customer_phone: '+91 98765 43210' }, 'classic', 42, true, false, 'full', [], false, 'en'))],
+        ['backend/compact', escPosToText(formatReceipt(deliveryOrder, fixture, { ...business, customer_name: 'Asha Kumar', customer_phone: '+91 98765 43210' }, 'compact', 42, true, false, 'full', [], false, 'en'))],
+        ['webusb/classic', new TextDecoder().decode(fe.receiptEncoder.buildClassicReceiptBytes(fixture, tenant as any, { paperWidth: 80, useUnicode: true, languages: ['en'] }, []))],
+        ['webusb/compact', new TextDecoder().decode(fe.receiptEncoder.buildCompactReceiptBytes(fixture, tenant as any, { paperWidth: 80, useUnicode: true, languages: ['en'] }, []))],
+        ['browser/html', fe.webPrint.generateBillHtml(fixture, tenant as any, { paperSize: 'thermal80', businessName: business.name, address: business.address, showCustomerName: true, showCustomerPhone: true, languages: ['en'] })],
+        ['tax-bill', new TextDecoder().decode(fe.taxBillEncoder.buildTaxBillBytes(fixture, tenant as any, { paperWidth: 80, rawEscPos: true, language: 'en' } as any))],
+      ];
+    };
+
+    for (const [renderer, text] of renderAll(SHORT_ADDRESS)) {
+      const normalized = normalizeSemanticContent(text);
+      warn(normalized.includes(normalizeSemanticContent(SHORT_ADDRESS)), `${renderer}: prints the order delivery address`);
+      warn(normalized.includes(normalizeSemanticContent(HEADING)), `${renderer}: prints the customer-details heading`);
+      warn(normalized.includes(normalizeSemanticContent(ADDRESS_LABEL)), `${renderer}: labels the address line`);
+      warn(normalized.includes(normalizeSemanticContent('Asha Kumar')), `${renderer}: keeps the customer name in the block`);
+    }
+
+    // Two addresses on one receipt: the store address and the customer's must
+    // never read as two business addresses, so the heading has to be there.
+    {
+      const { deliveryOrder, deliveryBill } = deliveryFixtures(SHORT_ADDRESS);
+      const classic = escPosToText(formatReceipt(deliveryOrder, deliveryBill, { ...business, customer_name: 'Asha Kumar' }, 'classic', 42, true, false, 'full', [], false, 'en'));
+      const headingAt = classic.indexOf(HEADING);
+      const storeAt = classic.indexOf(business.address);
+      warn(headingAt > 0 && storeAt > headingAt, 'backend/classic: the customer block is headed and precedes the store address');
+    }
+
+    // A shaped printer writes raw bytes and never wraps on its own, so a long
+    // address has to arrive as rows rather than as one ellipsised row.
+    {
+      const LONG_ADDRESS = `${SHORT_ADDRESS}, Naucalpan de Juarez, Estado de Mexico 05370`;
+      const { deliveryOrder, deliveryBill } = deliveryFixtures(LONG_ADDRESS);
+      const fixture = { ...deliveryBill, order: { ...deliveryOrder, customer: { name: 'Asha Kumar', phone: '+91 98765 43210' } } };
+      const shaped = { paperWidth: 58 as const, useUnicode: true, arabicShaping: true, languages: ['en'] };
+      for (const [renderer, text] of [
+        ['webusb/classic', new TextDecoder().decode(fe.receiptEncoder.buildClassicReceiptBytes(fixture, tenant as any, shaped, []))],
+        ['webusb/compact', new TextDecoder().decode(fe.receiptEncoder.buildCompactReceiptBytes(fixture, tenant as any, shaped, []))],
+      ] as const) {
+        const addressRows = contentRows(text).filter((row) => row.includes(ADDRESS_LABEL) || row.includes('Naucalpan de Juarez') || row.includes('Estado de Mexico 05370'));
+        warn(
+          addressRows.join(' ').replace(/\s+/g, ' ').includes(LONG_ADDRESS),
+          `${renderer}: a shaped printer still receives the whole address, wrapped not cut`,
+        );
+      }
+      const wrapRows = fe.warnings.wrapPrinterText(`${ADDRESS_LABEL}: ${LONG_ADDRESS}`, 32);
+      warn(wrapRows.length > 1, 'wrapPrinterText splits a long address across rows at the column budget');
+      warn(wrapRows.every((row) => row.length <= 32), 'every wrapped row fits the column budget');
+      warn(wrapRows.join(' ') === `${ADDRESS_LABEL}: ${LONG_ADDRESS}`, 'wrapping loses none of the address text');
+    }
+
+    // A full-width script costs two cells a character, so a character count
+    // lets a Japanese, Chinese, Korean or Thai line run to double the width.
+    {
+      const cases: Array<[string, string]> = [
+        ['32 full-width characters', '漢'.repeat(32)],
+        ['mixed ASCII and full-width', `Delivery 住所 Tokyo ${'KT'.repeat(20)}`],
+        ['Thai with no spaces', 'กรุงเทพมหานคร'.repeat(4)],
+      ];
+      for (const [label, text] of cases) {
+        const rows = fe.warnings.wrapPrinterText(text, 32);
+        warn(displayCellWidth(text) > 32, `width: ${label} really is wider than 32 cells (${displayCellWidth(text)})`);
+        warn(rows.length > 1, `width: ${label} is split into more than one row`);
+        warn(
+          rows.every((row) => displayCellWidth(row) <= 32),
+          `width: no row of ${label} exceeds 32 display cells (widest ${Math.max(...rows.map(displayCellWidth))})`,
+        );
+      }
+
+      // The centring path is Arabic-shaping-safe only, so a CJK name never
+      // reaches it; drive it directly and pin the pad it derives.
+      const emitted: string[] = [];
+      const centringEnc = { text: (value: string) => centringEnc, raw: (data: Uint8Array) => { emitted.push(new TextDecoder().decode(data)); return centringEnc; }, align: () => centringEnc };
+      const centered = 'مقهى شارع';
+      fe.warnings.safePrinterText(centringEnc as any, centered, undefined, false, true, 32, undefined, 'ar');
+      const pad = emitted[0]?.length - emitted[0]?.trimStart().length;
+      warn(
+        pad === Math.floor((32 - displayCellWidth(centered)) / 2),
+        `width: centring pads from displayCellWidth, not a character count (${pad} cells)`,
+      );
+    }
+
+    // Absent: nothing about the delivery section may leak into an in-store receipt.
+    for (const [renderer, text] of renderAll('')) {
+      const normalized = normalizeSemanticContent(text);
+      warn(!normalized.includes(normalizeSemanticContent(HEADING)), `${renderer}: no customer-details heading without an address`);
+      warn(!normalized.includes(normalizeSemanticContent(ADDRESS_LABEL)), `${renderer}: no address label without an address`);
     }
   }
 

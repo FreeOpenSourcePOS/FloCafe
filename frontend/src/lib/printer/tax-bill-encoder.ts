@@ -7,7 +7,7 @@ import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolve
 import { formatDate } from './format-date';
 import { shouldShowCustomerNumber } from '@print/document';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
-import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME } from './branding';
 import { printLabelResolver } from './print-document';
 import { GENERIC_THERMAL_CAPABILITIES, isThermalTextRepresentable, selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
@@ -226,6 +226,12 @@ export function buildTaxBillBytes(
   if (showTableNumber && order?.table?.name) {
     safePrinterText(enc, labelFor('pos.tableLabel').replace('{name}', String(order.table.name)), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
+  // The heading marks the block as the customer's details, so a bill that also
+  // prints the store address cannot read as carrying a second business address.
+  const deliveryAddress = String(order?.delivery_address ?? '').trim();
+  if (deliveryAddress.length > 0) {
+    safePrinterText(enc, labelFor('print.customerDetails'), warnings, false, arabicShaping, undefined, cols, language).newline();
+  }
   if (showCustomerName && order?.customer?.name) {
     safePrinterText(enc, `${labelFor('pos.customer')}: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
@@ -238,6 +244,13 @@ export function buildTaxBillBytes(
   });
   if (phoneVisible && order?.customer?.phone) {
     safePrinterText(enc, `${labelFor('print.numberShort')}: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  }
+  if (deliveryAddress.length > 0) {
+    // Wrapped, not truncated: a shaped printer writes raw bytes and would
+    // otherwise cut a long address to one row and drop the destination.
+    for (const row of wrapPrinterText(`${labelFor('print.deliverySlip.address')}: ${deliveryAddress}`, cols)) {
+      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+    }
   }
 
   enc.rule({ style: 'single' });

@@ -47,8 +47,8 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 process.env.JWT_SECRET = 'test-secret-for-issue-127';
-// This suite exercises more /recover-password calls than the production auth
-// ceiling of 10 per window; the limiter under test is the Master PIN one.
+// This suite exceeds the production auth ceiling of 10 per window; the
+// limiter under test is the Master PIN one.
 process.env.FLO_AUTH_RATE_LIMIT_MAX = '100';
 
 const express = require('express');
@@ -91,8 +91,7 @@ try {
 const app = express();
 app.use(express.json());
 app.use('/api/auth', authRoutes);
-// Mounted so the recovery test can prove a promoted owner really can drive the
-// permission editor, rather than inferring it from a permission set.
+// Mounted so the recovery test can drive the editor instead of inferring it.
 const { authorizationRoutes } = require('../main/routes/authorization');
 app.use('/api/authorization', (req: any, _res: any, next: any) => {
   const userId = req.header('x-test-user');
@@ -231,15 +230,13 @@ async function runTests() {
       VALUES ('manager-1', 'Manager', 'manager@example.com', ?, 'manager', 1, datetime('now'), datetime('now'))
     `).run(bcrypt.hashSync('ManagerPass123', 10));
 
-    // Baseline: this install can still administer itself, so a non-owner stays
-    // unrecoverable. Widening must not turn recovery into a role promotion.
+    // Baseline: a healthy install must not turn recovery into a role promotion.
     const healthy = await request(app).post('/api/auth/recover-password').send({
       email: 'manager@example.com', master_pin: '1234', new_password: 'RecoveredManagerPass123',
     });
     assert(healthy.status === 404, `a non-owner is not recoverable while the store can still administer itself (got ${healthy.status}, ${JSON.stringify(healthy.body)})`);
 
-    // Stranded by a user override: nobody can reach the editor that would
-    // undo it, which is the state the administration floor now refuses to create.
+    // A user-override strand: nobody can reach the editor that would undo it.
     for (const permissionId of ['settings.manage', 'staff.operational.manage']) {
       db.prepare(`
         INSERT INTO user_permission_overrides (user_id, permission_id, effect, updated_by, created_at, updated_at)
@@ -278,8 +275,8 @@ async function runTests() {
   {
     const { reachesAdministration, resolveEffectivePermissions } = require('../main/services/authorization');
     const bcrypt = require('bcryptjs');
-    // The same failure one level up: promoting to owner cannot undo a role
-    // default, so only the protected editor entry point makes this a recovery.
+    // A role-default strand: promotion alone cannot undo it, so the protected
+    // editor entry point is what makes this a recovery.
     for (const permissionId of ['settings.manage', 'staff.operational.manage']) {
       db.prepare(`
         INSERT INTO role_permission_overrides (role, permission_id, effect, updated_by, created_at, updated_at)
@@ -316,9 +313,8 @@ async function runTests() {
     assert(afterPromotion.length === 0,
       'the role default still denies the two capabilities, which is why the editor entry point is what makes this a recovery');
 
-    // Holding authorization.manage is only half the claim. Drive the editor as
-    // the promoted owner and restore the role defaults, which is the step that
-    // actually makes the install administrable again.
+    // Drive the editor as the promoted owner to restore the role defaults
+    // and make the install administrable again.
     const cashierAuth = { 'x-test-user': 'cashier-1' };
     const roleRevision = (await request(app).get('/api/authorization/roles').set(cashierAuth))
       .body.roles.find((entry: any) => entry.role === 'owner').revision;

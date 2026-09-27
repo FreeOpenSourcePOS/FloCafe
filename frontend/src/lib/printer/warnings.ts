@@ -107,6 +107,41 @@ function boundShapedText(text: string, maxCols?: number): string {
   return bounded + ellipsis;
 }
 
+/**
+ * Rows of at most `maxCols` print cells. A shaped printer writes raw
+ * bytes with no wrap of its own, so an over-wide line is emitted as rows
+ * here rather than cut down to one ellipsised row that drops the rest.
+ */
+export function wrapPrinterText(text: string, maxCols: number): string[] {
+  if (maxCols <= 0) return [text];
+  const rows: string[] = [];
+  let row = '';
+  let width = 0;
+  const commit = (): void => {
+    const trimmed = row.trimEnd();
+    if (trimmed.length > 0) rows.push(trimmed);
+    row = '';
+    width = 0;
+  };
+  const append = (chunk: string): void => {
+    for (const cluster of [...chunk]) {
+      const cells = shapedDisplayWidth(cluster);
+      if (width + cells > maxCols && row.length > 0) commit();
+      row += cluster;
+      width += cells;
+    }
+  };
+  text.split(' ').forEach((word, index) => {
+    if (index > 0) append(' ');
+    // A single word wider than the budget gets rows of its own.
+    if (shapedDisplayWidth(word) > maxCols) { commit(); append(word); commit(); return; }
+    if (width + shapedDisplayWidth(word) > maxCols) commit();
+    append(word);
+  });
+  commit();
+  return rows;
+}
+
 /** Writes value to an encoder if characters are representable, recording a warning otherwise. */
 export function safePrinterText<T extends { text(value: string): T }>(
   enc: T,

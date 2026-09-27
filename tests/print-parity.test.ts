@@ -754,6 +754,29 @@ function run(): void {
       warn(headingAt > 0 && storeAt > headingAt, 'backend/classic: the customer block is headed and precedes the store address');
     }
 
+    // A shaped printer writes raw bytes and never wraps on its own, so a long
+    // address has to arrive as rows rather than as one ellipsised row.
+    {
+      const LONG_ADDRESS = `${SHORT_ADDRESS}, Naucalpan de Juarez, Estado de Mexico 05370`;
+      const { deliveryOrder, deliveryBill } = deliveryFixtures(LONG_ADDRESS);
+      const fixture = { ...deliveryBill, order: { ...deliveryOrder, customer: { name: 'Asha Kumar', phone: '+91 98765 43210' } } };
+      const shaped = { paperWidth: 58 as const, useUnicode: true, arabicShaping: true, languages: ['en'] };
+      for (const [renderer, text] of [
+        ['webusb/classic', new TextDecoder().decode(fe.receiptEncoder.buildClassicReceiptBytes(fixture, tenant as any, shaped, []))],
+        ['webusb/compact', new TextDecoder().decode(fe.receiptEncoder.buildCompactReceiptBytes(fixture, tenant as any, shaped, []))],
+      ] as const) {
+        const addressRows = contentRows(text).filter((row) => row.includes(ADDRESS_LABEL) || row.includes('Naucalpan de Juarez') || row.includes('Estado de Mexico 05370'));
+        warn(
+          addressRows.join(' ').replace(/\s+/g, ' ').includes(LONG_ADDRESS),
+          `${renderer}: a shaped printer still receives the whole address, wrapped not cut`,
+        );
+      }
+      const wrapRows = fe.warnings.wrapPrinterText(`${ADDRESS_LABEL}: ${LONG_ADDRESS}`, 32);
+      warn(wrapRows.length > 1, 'wrapPrinterText splits a long address across rows at the column budget');
+      warn(wrapRows.every((row) => row.length <= 32), 'every wrapped row fits the column budget');
+      warn(wrapRows.join(' ') === `${ADDRESS_LABEL}: ${LONG_ADDRESS}`, 'wrapping loses none of the address text');
+    }
+
     // Absent: nothing about the delivery section may leak into an in-store receipt.
     for (const [renderer, text] of renderAll('')) {
       const normalized = normalizeSemanticContent(text);

@@ -3,7 +3,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
-import { safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
 
 export interface DeliverySlipWebUsbOptions {
@@ -87,7 +87,10 @@ export function buildDeliverySlipBytes(
   }
   // Wrapped, not truncated: a wrapped address stays readable at 32 columns.
   if (contact.address) {
-    safePrinterText(enc, `${label('print.deliverySlip.address')}: ${contact.address}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+    const labeled = `${label('print.deliverySlip.address')}: ${contact.address}`;
+    for (const row of wrapPrinterText(labeled, cols)) {
+      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+    }
   }
 
   enc.align('left').newline();

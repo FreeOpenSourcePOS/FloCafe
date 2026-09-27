@@ -280,11 +280,7 @@ export interface DocumentMetaBlock {
 export interface CustomerBlock {
   readonly kind: 'customer';
   readonly direction: TextDirection;
-  /**
-   * Section heading, present only when the order carries a delivery address.
-   * It names the block as the customer's details so a receipt that also prints
-   * the store address cannot read as carrying a second business address.
-   */
+  /** Section heading, present only for a delivery block, so it reads as the customer's details. */
   readonly heading: SemanticLabel | null;
   readonly name: DirectionalText | null;
   readonly phone: DirectionalText | null;
@@ -621,8 +617,7 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       : null,
   });
 
-  // A delivery address is the one fact that makes this a customer-details block
-  // rather than a bare customer line, so it drives the heading too.
+  // A delivery address is what makes this a customer-details block, so it drives the heading too.
   const deliveryAddress = order.deliveryAddress.trim();
   const customer: CustomerBlock = Object.freeze({
     kind: 'customer',

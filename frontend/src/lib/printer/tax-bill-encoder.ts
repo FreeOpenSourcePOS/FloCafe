@@ -7,7 +7,7 @@ import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolve
 import { formatDate } from './format-date';
 import { shouldShowCustomerNumber } from '@print/document';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
-import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
+import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME } from './branding';
 import { printLabelResolver } from './print-document';
 import { GENERIC_THERMAL_CAPABILITIES, isThermalTextRepresentable, selectThermalCodePage, type ThermalPrinterCapabilities } from '@print/thermal-capabilities';
@@ -246,7 +246,11 @@ export function buildTaxBillBytes(
     safePrinterText(enc, `${labelFor('print.numberShort')}: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
   if (deliveryAddress.length > 0) {
-    safePrinterText(enc, `${labelFor('print.deliverySlip.address')}: ${deliveryAddress}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+    // Wrapped, not truncated: a shaped printer writes raw bytes and would
+    // otherwise cut a long address to one row and drop the destination.
+    for (const row of wrapPrinterText(`${labelFor('print.deliverySlip.address')}: ${deliveryAddress}`, cols)) {
+      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+    }
   }
 
   enc.rule({ style: 'single' });

@@ -204,11 +204,28 @@ export class AdministrationUnreachableError extends Error {
   }
 }
 
+export class SelfPrivilegeChangeError extends Error {
+  constructor() {
+    super(
+      'This change would remove your own access to staff, permissions, or store settings. '
+      + 'Confirm your owner PIN to apply it.',
+    );
+    this.name = 'SelfPrivilegeChangeError';
+  }
+}
+
 /** The one post-write state a permission-changing write may propose. */
 export type AdministrationCandidate =
   | { kind: 'role_overrides'; role: Role; overrides: ReadonlyMap<PermissionId, PermissionEffect> }
   | { kind: 'user_overrides'; userId: string; overrides: ReadonlyMap<PermissionId, PermissionEffect> }
   | { kind: 'user_state'; userId: string; role: Role; isActive: boolean };
+
+/**
+ * The override shapes alone. An account's role and active flag are a different
+ * kind of write, and a guard that only reads override tables must not accept
+ * one and quietly evaluate the state already on disk.
+ */
+export type PermissionOverrideCandidate = Extract<AdministrationCandidate, { kind: 'role_overrides' | 'user_overrides' }>;
 
 export function reachesAdministration(permissionIds: ReadonlySet<PermissionId>): boolean {
   return ADMINISTRATIVE_PERMISSION_IDS.every((permissionId) => permissionIds.has(permissionId));
@@ -281,4 +298,44 @@ export function assertAdministrationReachable(
   }
 
   throw new AdministrationUnreachableError();
+}
+
+/**
+ * Whether any active account can still reach the administrative surface. The
+ * counterpart to assertAdministrationReachable: the guard asks this to refuse
+ * stranding an install, and recovery asks it whether the install is stranded.
+ */
+export function hasActiveAdministrator(): boolean {
+  const rows = getDatabase().prepare('SELECT id FROM users WHERE is_active = 1').all() as Array<{ id: string }>;
+  return rows.some(({ id }) => {
+    const effective = resolveEffectivePermissions(id);
+    return effective !== null && reachesAdministration(effective.permissionIds);
+  });
+}
+
+/**
+ * Guards a write that would take an administrative capability away from the
+ * actor making it. Same four capabilities and the same post-write evaluation
+ * assertAdministrationReachable performs, scoped to one account: the store may
+ * survive the actor's self-lockout, but the actor still has to prove who they
+ * are before removing their own way back in.
+ */
+export function assertActorKeepsOwnAdministration(
+  actorUserId: string,
+  candidate: PermissionOverrideCandidate,
+): void {
+  const actor = resolveEffectivePermissions(actorUserId);
+  if (!actor) return;
+
+  const roleOverrides = candidate.kind === 'role_overrides' && candidate.role === actor.role
+    ? candidate.overrides
+    : readRoleOverrides(actor.role);
+  const userOverrides = candidate.kind === 'user_overrides' && candidate.userId === actorUserId
+    ? candidate.overrides
+    : readUserPermissionOverrides(actorUserId);
+
+  const losesOwnAccess = ADMINISTRATIVE_PERMISSION_IDS.some((permissionId) =>
+    actor.permissionIds.has(permissionId)
+    && !effectiveAllows(permissionId, actor.role, userOverrides, roleOverrides));
+  if (losesOwnAccess) throw new SelfPrivilegeChangeError();
 }

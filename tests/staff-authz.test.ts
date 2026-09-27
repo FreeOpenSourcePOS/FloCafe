@@ -241,7 +241,8 @@ async function main() {
   // Denying staff.operational.manage is legal while another active owner still
   // reaches administration, and it is exactly the state that used to make the
   // protected staff.privileged.manage gate inert: every staff mutation was
-  // gated on the outer, configurable permission only.
+  // gated on the outer, configurable permission only. The save costs A their
+  // own administrative access, so it carries the owner PIN seedUser stored.
   const ownerAPayload = await request(app).get('/api/permissions/users/admin-owner-a').set(adminOwnerA);
   const stripOperational = await request(app)
     .put('/api/permissions/users/admin-owner-a')
@@ -252,6 +253,7 @@ async function main() {
         { permission_id: 'staff.operational.manage', effect: 'deny' },
         { permission_id: 'settings.manage', effect: 'deny' },
       ],
+      override_pin: '1234',
     });
   assertEqual(stripOperational.status, 200, 'an owner may self-limit while a second active owner still administers');
 

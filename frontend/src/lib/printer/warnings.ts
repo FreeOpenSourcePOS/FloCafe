@@ -108,9 +108,8 @@ function boundShapedText(text: string, maxCols?: number): string {
 }
 
 /**
- * Rows of at most `maxCols` print cells. A shaped printer writes raw
- * bytes with no wrap of its own, so an over-wide line is emitted as rows
- * here rather than cut down to one ellipsised row that drops the rest.
+ * Rows of at most `maxCols` print cells. A shaped printer never wraps
+ * its own raw bytes, so an over-wide line must become rows here or be cut.
  */
 export function wrapPrinterText(text: string, maxCols: number): string[] {
   if (maxCols <= 0) return [text];

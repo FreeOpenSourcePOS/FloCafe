@@ -209,17 +209,18 @@ export function sanitizePowerShellStderr(stderr?: string): string {
     .trim();
 }
 
-// A network printer that refuses the socket is as gone as an unplugged one, and
-// neither `offline` nor `disconnected` appears in Node's errno text.
-const NETWORK_UNREACHABLE_RE = /\bconnect (?:ECONNREFUSED|EHOSTUNREACH|ENETUNREACH)\b/;
+// A network printer that refuses the socket is as gone as an unplugged one; the
+// errnos are matched lowercased because `value` is.
+const NETWORK_UNREACHABLE_RE = /\bconnect (?:econnrefused|ehostunreach|enetunreach)\b/;
 
 /** Stable, privacy-safe classification for fleet telemetry. */
 export function classifyPrintFailure(detail?: string): PrintFailureClass {
   const value = sanitizePowerShellStderr(detail).toLowerCase();
   if (!value) return 'unknown';
   if (value.includes('no printer configured') || value.includes('no windows printer configured')) return 'not_configured';
-  // The queue the till was told to use is gone: `lp` cannot even name it.
-  if (value.includes('no such file or directory') || value.includes('printer or class does not exist') || value.includes('no default destination')) return 'not_configured';
+  // The queue the till was told to use is gone: `lp` cannot even name it. Anchored
+  // on `lp:` so a Node filesystem ENOENT is not blamed on the printer.
+  if (value.includes('lp: no such file or directory') || value.includes('printer or class does not exist') || value.includes('no default destination')) return 'not_configured';
   if (value.includes('offline') || value.includes('use printer offline') || value.includes('disconnected') || value.includes('printer is not available') || NETWORK_UNREACHABLE_RE.test(value)) return 'offline';
   // The printer is present but needs a person: paper, cover, or a vendor error flag.
   if (value.includes('out of paper') || value.includes('paper jam') || value.includes('cover is open') || value.includes('needs attention') || value.includes('reported an error')) return 'needs_attention';

@@ -78,20 +78,21 @@ export type DiagnosticSignature = {
   summary: string;
   /**
    * Whether the template still carries real words. A message that arrives as one
-   * quoted span, a bare host, or a few stray prepositions derives a template with
-   * nothing an operator can act on, and `summary` should not be shown for it.
+   * quoted span or a bare host leaves nothing an operator can act on.
    */
   is_informative: boolean;
 };
 
-// Real words a template must keep before it says anything. Below this the
-// derived text is placeholders and stray prepositions, which read as noise and
+// A template below three real words is placeholders and stray punctuation, which
 // would be copied verbatim into a support ticket.
 const INFORMATIVE_TEMPLATE_WORDS = 3;
 const PLACEHOLDER_RE = /<(?:string|number|id|path|url)>/g;
 
 function countTemplateWords(template: string): number {
-  return template.replace(PLACEHOLDER_RE, ' ').split(/\s+/).filter(Boolean).length;
+  return template
+    .replace(PLACEHOLDER_RE, ' ')
+    .split(/\s+/)
+    .filter((word) => /[\p{L}\p{N}]/u.test(word)).length;
 }
 
 function classClause(errorClass: string): string {

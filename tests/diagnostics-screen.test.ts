@@ -148,7 +148,37 @@ async function main() {
   );
   db.prepare('DELETE FROM local_diagnostics').run();
 
-  console.log('\n7. Only a settings-permission holder may erase the failure history');
+  console.log('\n7. Every print class the classifier can produce reads as a reason, not a claim');
+  for (const [failureClass, reason] of [
+    ['not_configured', 'No printer is configured.'],
+    ['offline', 'The printer was offline or disconnected.'],
+    ['needs_attention', 'The printer needs attention - check its paper, cover and consumables.'],
+    ['queue_unavailable', 'The print queue was not accepting jobs.'],
+    ['spooler_error', 'The print spooler rejected the job.'],
+    ['write_error', 'The printer failed while writing the job.'],
+  ] as const) {
+    db.prepare('DELETE FROM local_diagnostics').run();
+    cloudSync.reportDiagnostic({
+      event_id: crypto.randomUUID(),
+      event_code: 'print.receipt.failed',
+      severity: 'error',
+      // Degenerate whatever the class, so the reason is always what is stored.
+      message: '(<url>) (<url>) (<url>)',
+      metadata: { connection_type: 'usb', kind: 'receipt', os_platform: 'win32', failure_class: failureClass },
+      occurred_at: new Date().toISOString(),
+    });
+    await settle(() => (db.prepare('SELECT COUNT(*) AS c FROM local_diagnostics').get() as { c: number }).c >= 1);
+    assertEqualOrThrow(cloudSync.listLocalDiagnostics(1)[0].summary, reason, `${failureClass} reads as a reason`);
+  }
+  // `WritePrinter failed` accepts no bytes at all, so its reason must not claim
+  // the printer took part of the job.
+  assertOrThrow(
+    !cloudSync.listLocalDiagnostics(1)[0].summary.toLowerCase().includes('part of'),
+    'a write failure does not claim the printer accepted part of the job',
+  );
+  db.prepare('DELETE FROM local_diagnostics').run();
+
+  console.log('\n8. Only a settings-permission holder may erase the failure history');
   const { getJWTSecret } = require('../main/routes/auth');
   const jwt = require('jsonwebtoken');
   db.prepare(

@@ -273,6 +273,10 @@ function main() {
   assertOrThrow(!classClauseSummary(cupsGone.error_class).includes('No such'), 'the operator is not shown the two-word fragment');
   assertEqualOrThrow(deriveDiagnosticSignature({ errorClass: 'Error', message: 'getaddrinfo ENOTFOUND api.stripe.com' }).is_informative, false, 'a bare redacted host is not informative');
   assertEqualOrThrow(deriveDiagnosticSignature({ errorClass: 'Error', message: 'IPP status 0x409' }).is_informative, false, 'an empty template is not informative');
+  // Punctuation left behind by a redacted placeholder is not a word.
+  const punctuationOnly = deriveDiagnosticSignature({ errorClass: 'Error', message: '(api.stripe.com) (backup.stripe.com) (third.stripe.com)' });
+  assertEqualOrThrow(punctuationOnly.signature, 'Error: (<url>) (<url>) (<url>)', 'each redacted host keeps its own placeholder');
+  assertOrThrow(punctuationOnly.is_informative === false, 'punctuation-only fragments do not count as real words');
   assertEqualOrThrow(classClauseSummary('Error'), 'An unexpected problem occurred.', 'the floor for a non-print event is the class clause alone');
   assertEqualOrThrow(classClauseSummary('SQLiteError'), 'The database rejected a request.', 'the class clause is per error class');
 

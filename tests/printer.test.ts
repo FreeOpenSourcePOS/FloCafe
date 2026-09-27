@@ -1046,6 +1046,12 @@ console.log('\n✅ Test 10: Print failure telemetry classification');
   assert('classifies raw write failure', classifyPrintFailure('WritePrinter failed (Win32 error 1722)') === 'write_error');
   assert('classifies timeout', classifyPrintFailure('Timed out connecting to 192.168.1.10:9100') === 'timeout');
   assert('does not expose unknown detail as a new telemetry class', classifyPrintFailure('some vendor-specific failure') === 'unknown');
+  assert('classifies a refused network printer as offline', classifyPrintFailure('Network error: connect ECONNREFUSED 127.0.0.1:9') === 'offline');
+  assert('classifies an unreachable network host as offline', classifyPrintFailure('Network error: connect EHOSTUNREACH 192.168.1.10:9100') === 'offline');
+  assert('classifies a missing CUPS queue as not configured', classifyPrintFailure('lp: No such file or directory') === 'not_configured');
+  assert('does not blame the printer for a missing temp directory', classifyPrintFailure("ENOENT: no such file or directory, open '/tmp/flo_print_1_2.bin'") === 'unknown');
+  assert('classifies a Windows paper jam as needing attention', classifyPrintFailure('Exception calling "SendRaw" with "1" argument(s): "printer has a paper jam"') === 'needs_attention');
+  assert('classifies a disabled CUPS queue as unavailable', classifyPrintFailure("disabled since 'Fri 26 Sep 2026 10:00:00 BST'") === 'queue_unavailable');
 }
 
 console.log('\n✅ Test 11: IR country thermal receipt financial-line preservation & currency safety');

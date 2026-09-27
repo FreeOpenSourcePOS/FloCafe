@@ -227,11 +227,7 @@ type DateRange = {
   to: string;
 };
 
-/**
- * Fixed operator reason per print failure class. Keyed to a value the classifier
- * already produced, so the phrase carries no source text at all and reads the
- * same on every till. A class with no phrase here falls back to the class clause.
- */
+/** Fixed operator reason per print failure class. Every one is a source-controlled phrase carrying no source text. */
 const PRINT_FAILURE_REASON: Record<string, string> = {
   not_configured: 'No printer is configured',
   offline: 'The printer was offline or disconnected',
@@ -241,15 +237,13 @@ const PRINT_FAILURE_REASON: Record<string, string> = {
   driver_error: 'The printer driver failed',
   permission_denied: 'Access to the printer was denied',
   timeout: 'The printer did not respond in time',
-  write_error: 'The printer accepted only part of the job',
+  write_error: 'The printer failed while writing the job',
   unsupported: 'This print is not supported on the current setup',
 };
 
 /**
- * The line an operator reads when the derived template has nothing real in it.
- * A degenerate template is the rule working, not a failure of it: a whole
- * PowerShell exception arriving as one quoted span redacts to a bare placeholder,
- * so the summary is rebuilt from data the till already stored.
+ * The line an operator reads when the template has nothing real in it, rebuilt
+ * from the projected metadata. A class with no reason falls back to the clause.
  */
 function describeDiagnosticFailure(eventCode: DiagnosticEventCode, metadata: Record<string, unknown> | undefined, errorClass: string): string {
   const failureClass = metadata?.failure_class;

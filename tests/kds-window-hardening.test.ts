@@ -314,9 +314,8 @@ async function run(): Promise<void> {
     'db-apply-safe-fixes ran the repairs for a valid master PIN');
   log('  ✓ db-apply-safe-fixes: sender-checked and protected by master PIN');
 
-  // restore-backup and db-initialize are the two remaining database-management
-  // channels. Both carry a master PIN, which is a credential and not a substitute
-  // for the origin check, so the sender gate is asserted separately here.
+  // A master PIN does not replace the origin check for restore-backup or
+  // db-initialize, so assert each sender gate separately.
   const restoreListener = registered.get('restore-backup')!;
   assert.deepEqual(
     await restoreListener(untrustedExternal, '1234'),

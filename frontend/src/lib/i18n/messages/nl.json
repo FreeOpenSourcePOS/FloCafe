@@ -1996,10 +1996,16 @@
     "yes": "Ja",
     "zeroNoLimit": "(0 = geen limiet)",
     "tabAppearance": "Verschijning",
+    "viewOnlyNotice": "U bekijkt deze instellingen zonder rechten om ze te wijzigen, dus de bedieningselementen hier zijn alleen-lezen. Een eigenaar kan u het recht Instellingen geven als u een wijziging moet aanbrengen.",
     "themeTitle": "Thema",
     "themeLight": "Licht",
     "themeDark": "Donker",
-    "themeSystem": "Systeem"
+    "themeSystem": "Systeem",
+    "restoreFromFile": "Back-up terugzetten uit bestand...",
+    "restoreFromFileHint": "Heb je al een back-upbestand op deze computer? Kies het hier in plaats van het handmatig over de database te kopiëren.",
+    "restoreReplacesDetail": "Terugzetten vervangt alle bestellingen, facturen, producten en klantgegevens die zijn toegevoegd sinds deze back-up is gemaakt.",
+    "restoreKeepsDetail": "Je medewerkersaccounts, pincodes, printers, belastinginstellingen en de cloudaccount van deze computer blijven behouden.",
+    "restoreSafetyCopyDetail": "Voordat er iets verandert, bewaart Flo een kopie van je huidige gegevens zodat je dit terugzetten kunt ongedaan maken."
   },
   "setup": {
     "alreadyCompleted": "De installatie is bij deze installatie al voltooid. Omleiden naar inloggen…",
@@ -2225,6 +2231,14 @@
     "allow": "Toestaan",
     "deny": "Weigeren",
     "protected": "Beschermd",
+    "selfAccessWarningAuthorization": "Opslaan verwijdert uw eigen toegang tot de personeelsrechten.",
+    "selfAccessWarningStaffPrivileged": "Opslaan verwijdert uw eigen toegang tot eigenaars- en manageraccounts.",
+    "selfAccessWarningStaffOperational": "Opslaan verwijdert uw eigen toegang tot personeelsaccounts.",
+    "selfAccessWarningSettings": "Opslaan verwijdert uw eigen toegang tot de winkelinstellingen.",
+    "administrationUnreachable": "Deze wijziging zou geen account overlaten dat personeel, rechten of winkelinstellingen kan beheren. Geef deze rechten eerst aan een andere actieve eigenaar.",
+    "selfPrivilegeChangeTitle": "Bevestig deze wijziging aan uw eigen toegang",
+    "selfPrivilegeChangePrompt": "Deze wijziging verandert uw eigen toegang tot personeel, rechten of winkelinstellingen. Voer uw PIN-code in om door te gaan, of vraag een andere eigenaar om deze wijziging te maken.",
+    "selfPrivilegeNotConfirmed": "Deze wijziging aan uw eigen toegang kon niet worden bevestigd, dus er is niets opgeslagen. Stel een PIN-code in voor uw account of vraag een andere eigenaar om deze wijziging te maken.",
     "editorFooterNote": "Gevoelige bedrijfsregels zoals goedkeuringspincodes, de laatste actieve eigenaar, terugbettaanvallen en keukenstationtoewijzingen blijven gelden."
   },
   "permissionAudit": {

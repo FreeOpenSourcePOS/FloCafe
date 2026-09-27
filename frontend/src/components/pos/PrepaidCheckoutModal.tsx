@@ -77,7 +77,7 @@ interface Payment {
 
 type AmountTarget = { kind: 'payment'; index: number } | { kind: 'wallet' } | { kind: 'discount' } | null;
 
-export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: Props) {
+export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const cart = useCartStore();
   const customer = cart.customer;
   const t = useTranslations('pos');
@@ -235,7 +235,6 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
   const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
   const totalPaymentMinor = payments.reduce((s, p) => s + toMinorUnits(toStoredUnit(parseFloat(p.amount) || 0)), 0) + toMinorUnits(walletAmt);
-  const totalPayment = totalPaymentMinor / minorFactor;
   const remainingMinor = toMinorUnits(remaining);
 
   const updatePaymentAmount = (idx: number, value: string) => {

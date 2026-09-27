@@ -2209,15 +2209,21 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       }
     }
 
+    // An unpaid, unsplit bill's items are the order's active items, so the fresh
+    // sum is the only basis: the tax it rescales is a sum over those same items.
+    // The read and the recomputation below sit outside `withTxn` on purpose, and
+    // are safe only because no `await` separates them: adding one opens a window
+    // where the items change between what was summed and what is written.
+    const totals = calculateOrderTotals(db, bill.order_id);
     let discountAmount = 0;
     if (type === 'percentage') {
-      discountAmount = (bill.subtotal * Number(value)) / 100;
+      discountAmount = (totals.subtotal * Number(value)) / 100;
     } else {
       discountAmount = Number(value);
     }
     const currency = getTenantCurrency();
     const decimals = getCurrencyFractionDigits(currency);
-    discountAmount = Math.min(discountAmount, bill.subtotal);
+    discountAmount = Math.min(discountAmount, totals.subtotal);
     discountAmount = Number(discountAmount.toFixed(decimals));
 
     // Derive undiscounted tax basis directly from active items to prevent compounding discounts.
@@ -2231,9 +2237,9 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
     const customer = bill.customer_id
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id) as any
       : null;
-    // The bill is the settlement boundary: it scales tax on its own stored
-    // subtotal and its own charges, and rounds the tax even with no discount
-    // applied, which is why this site passes 'always' and its own subtotal.
+    // The bill is the settlement boundary: it rounds the tax even with no discount
+    // applied, which is why this site passes 'always'. Payable rounding is applied
+    // once, below, to the bill total only.
     const { taxRollup, total: exactTotal } = recomputeOrderTotals({
       tenantInfo,
       chargeContext: {
@@ -2243,9 +2249,7 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
         service_charge: bill.service_charge || 0,
       },
       customer,
-      totals: calculateOrderTotals(db, bill.order_id),
-      subtotalBasis: 'stored-order',
-      storedSubtotal: bill.subtotal,
+      totals,
       discountAmount,
       taxScaling: 'always',
     });
@@ -2256,11 +2260,12 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
 
     const updatedBill = withTxn(() => {
       db.prepare(`
-        UPDATE bills SET discount_amount = ?, discount_type = ?, discount_value = ?,
+        UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
           total = ?, round_off = ?, balance = ?, updated_at = ?
         WHERE id = ?
       `).run(
+        totals.subtotal,
         discountAmount, type, value, reason || null, taxRollup.taxAmount, taxBreakdownJson,
         taxRollup.snapshotJson, newTotal, newRoundOff, newBalance, now(), req.params.id,
       );
@@ -2268,11 +2273,12 @@ router.post('/:id/applyDiscount', requirePermission('bills.discount.apply'), (re
       // orders.total stays the exact, unrounded amount — only the bill (the
       // settlement boundary) holds the pack-rounded payable total (#170).
       db.prepare(`
-        UPDATE orders SET discount_amount = ?, discount_type = ?, discount_value = ?,
+        UPDATE orders SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
           total = ?, round_off = ?, updated_at = ?
         WHERE id = ?
       `).run(
+        totals.subtotal,
         discountAmount, type, value, reason || null, taxRollup.taxAmount, taxBreakdownJson,
         taxRollup.snapshotJson, exactTotal, 0, now(), bill.order_id,
       );

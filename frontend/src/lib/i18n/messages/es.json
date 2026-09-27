@@ -1996,10 +1996,16 @@
     "yes": "Sí",
     "zeroNoLimit": "(0 = sin límite)",
     "tabAppearance": "Apariencia",
+    "viewOnlyNotice": "Estás viendo esta configuración sin permiso para modificarla, así que los controles aquí son de solo lectura. Un propietario puede concederte el permiso de Ajustes si necesitas hacer un cambio.",
     "themeTitle": "Tema",
     "themeLight": "Claro",
     "themeDark": "Oscuro",
-    "themeSystem": "Sistema"
+    "themeSystem": "Sistema",
+    "restoreFromFile": "Restaurar copia de seguridad desde un archivo...",
+    "restoreFromFileHint": "¿Ya tienes un archivo de copia de seguridad en este equipo? Selecciónalo aquí en lugar de copiarlo sobre la base de datos a mano.",
+    "restoreReplacesDetail": "Restaurar reemplaza todos los pedidos, facturas, productos y fichas de clientes añadidos desde que se creó esta copia de seguridad.",
+    "restoreKeepsDetail": "Se conservan las cuentas del personal, los PIN, las impresoras, la configuración de impuestos y la cuenta en la nube de este equipo.",
+    "restoreSafetyCopyDetail": "Antes de cambiar nada, Flo guarda una copia de tus datos actuales para que puedas deshacer esta restauración."
   },
   "setup": {
     "alreadyCompleted": "La configuración ya se completó en esta instalación. Redirigiendo al inicio de sesión…",
@@ -2225,6 +2231,14 @@
     "allow": "Permitir",
     "deny": "Denegar",
     "protected": "Protegido",
+    "selfAccessWarningAuthorization": "Al guardar esto se pierde tu propio acceso a los permisos del personal.",
+    "selfAccessWarningStaffPrivileged": "Al guardar esto se pierde tu propio acceso a las cuentas de propietario y gerente.",
+    "selfAccessWarningStaffOperational": "Al guardar esto se pierde tu propio acceso a las cuentas del personal.",
+    "selfAccessWarningSettings": "Al guardar esto se pierde tu propio acceso a la configuración de la tienda.",
+    "administrationUnreachable": "Este cambio dejaría sin ninguna cuenta capaz de gestionar al personal, los permisos o la configuración de la tienda. Concede primero esos permisos a otro propietario activo.",
+    "selfPrivilegeChangeTitle": "Confirma este cambio en tu propio acceso",
+    "selfPrivilegeChangePrompt": "Este cambio modifica tu propio acceso al personal, los permisos o la configuración de la tienda. Introduce tu PIN para continuar, o pide a otro propietario que haga este cambio.",
+    "selfPrivilegeNotConfirmed": "No se pudo confirmar este cambio en tu propio acceso, así que no se guardó nada. Configura un PIN para tu cuenta o pide a otro propietario que haga este cambio.",
     "editorFooterNote": "Las reglas de negocio sensibles, como los PIN de aprobación, el último propietario activo, los plazos de reembolso y las asignaciones de estaciones de cocina, siguen aplicándose."
   },
   "permissionAudit": {

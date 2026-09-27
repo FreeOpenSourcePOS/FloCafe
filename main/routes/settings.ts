@@ -30,7 +30,15 @@ import {
 import { isThemeMode } from '../title-bar-theme';
 
 const router = Router();
-const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const configuredSettingsReadLimit = Number.parseInt(process.env.FLO_SETTINGS_READ_RATE_LIMIT_MAX || '', 10);
+const settingsReadRateLimit = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: Number.isFinite(configuredSettingsReadLimit) && configuredSettingsReadLimit > 0
+    ? configuredSettingsReadLimit
+    : 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 const configuredSettingsWriteLimit = Number.parseInt(process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX || '', 10);
 const settingsWriteRateLimit = expressRateLimit({
   windowMs: 60 * 1000,

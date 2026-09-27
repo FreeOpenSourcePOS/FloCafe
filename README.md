@@ -47,11 +47,22 @@ installation and support](docs/linux.md).
 
 | Requirement | Minimum |
 | --- | --- |
-| Operating system | Windows 10+, macOS 12+, or a current supported Linux distribution |
+| Operating system | Windows 10+, macOS 12+, or a current supported Linux distribution — 64-bit only (x64 or arm64) |
 | Memory | 4 GB RAM |
 | Storage | 500 MB free space, plus room for local backups |
 
 Node.js is only required to develop FloCafe, not to run a packaged release.
+
+FloCafe does not build or publish 32-bit installers. A terminal that can only
+run a 32-bit OS can still be used from a lightweight browser, without
+installing the desktop app locally:
+
+- **Companion screen or POS terminal:** open the Server App or the browser POS,
+  both served over LAN.
+- **KDS station:** open the KDS URL listed in the app's About dialog (macOS:
+  the application menu; Windows and Linux: **Help**). The KDS is a separate
+  LAN-served display on its own port, configurable through `KDS_PORT`; it is
+  not served from the Server App or the browser POS.
 
 <details>
 <summary>Uninstall a direct-download build</summary>

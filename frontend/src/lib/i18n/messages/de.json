@@ -1996,10 +1996,16 @@
     "yes": "Ja",
     "zeroNoLimit": "(0 = kein Limit)",
     "tabAppearance": "Erscheinungsbild",
+    "viewOnlyNotice": "Sie sehen diese Einstellungen ohne Änderungsberechtigung, die Bedienelemente hier sind daher schreibgeschützt. Ein Inhaber kann Ihnen die Berechtigung Einstellungen gewähren, wenn Sie eine Änderung vornehmen müssen.",
     "themeTitle": "Design",
     "themeLight": "Hell",
     "themeDark": "Dunkel",
-    "themeSystem": "System"
+    "themeSystem": "System",
+    "restoreFromFile": "Sicherung aus Datei wiederherstellen...",
+    "restoreFromFileHint": "Sie haben bereits eine Sicherungsdatei auf diesem Computer? Wählen Sie sie hier aus, statt sie manuell über die Datenbank zu kopieren.",
+    "restoreReplacesDetail": "Die Wiederherstellung ersetzt alle Bestellungen, Rechnungen, Produkte und Kundendatensätze, die seit dieser Sicherung hinzugekommen sind.",
+    "restoreKeepsDetail": "Ihre Mitarbeiterkonten, PINs, Drucker, Steuereinstellungen und das Cloud-Konto dieses Computers bleiben erhalten.",
+    "restoreSafetyCopyDetail": "Bevor sich etwas ändert, legt Flo eine Kopie Ihrer aktuellen Daten an, damit Sie diese Wiederherstellung rückgängig machen können."
   },
   "setup": {
     "alreadyCompleted": "Die Ersteinrichtung wurde bereits abgeschlossen. Weiterleitung zur Anmeldung…",
@@ -2225,6 +2231,14 @@
     "allow": "Erlauben",
     "deny": "Verweigern",
     "protected": "Geschützt",
+    "selfAccessWarningAuthorization": "Beim Speichern verlieren Sie Ihren eigenen Zugriff auf die Personalberechtigungen.",
+    "selfAccessWarningStaffPrivileged": "Beim Speichern verlieren Sie Ihren eigenen Zugriff auf Inhaber- und Managerkonten.",
+    "selfAccessWarningStaffOperational": "Beim Speichern verlieren Sie Ihren eigenen Zugriff auf Personalkonten.",
+    "selfAccessWarningSettings": "Beim Speichern verlieren Sie Ihren eigenen Zugriff auf die Einstellungen des Ladens.",
+    "administrationUnreachable": "Diese Änderung würde kein Konto übrig lassen, das Personal, Berechtigungen oder Ladeeinstellungen verwalten kann. Erteilen Sie zuerst einem anderen aktiven Inhaber diese Berechtigungen.",
+    "selfPrivilegeChangeTitle": "Bestätigen Sie diese Änderung an Ihrem eigenen Zugriff",
+    "selfPrivilegeChangePrompt": "Diese Änderung betrifft Ihren eigenen Zugriff auf Personal, Berechtigungen oder Ladeeinstellungen. Geben Sie Ihre PIN ein, um fortzufahren, oder bitten Sie einen anderen Inhaber, diese Änderung vorzunehmen.",
+    "selfPrivilegeNotConfirmed": "Diese Änderung an Ihrem eigenen Zugriff konnte nicht bestätigt werden, daher wurde nichts gespeichert. Richten Sie eine PIN für Ihr Konto ein oder bitten Sie einen anderen Inhaber, diese Änderung vorzunehmen.",
     "editorFooterNote": "Sensible Geschäftsregeln wie Freigabe-PINs, der letzte aktive Eigentümer, Rückerstattungsfristen und Küchenstationszuweisungen gelten weiterhin."
   },
   "permissionAudit": {

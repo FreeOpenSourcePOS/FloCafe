@@ -1369,37 +1369,36 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
       const currency = getTenantCurrency();
       const decimals = getCurrencyFractionDigits(currency);
 
+      // Recalculate tax from item-level data to avoid compounding on repeated discount edits.
+      // The fresh item sum is the only basis: it describes exactly the items the
+      // tax is summed over, and the write below heals the stored column to match.
+      const totals = calculateOrderTotals(db, req.params.id as string);
+
       // Calculate discount amount
       let discountAmount = 0;
       if (discount_value > 0) {
         if (discount_type === 'percentage') {
-          discountAmount = (currentOrder.subtotal * discount_value) / 100;
+          discountAmount = (totals.subtotal * discount_value) / 100;
         } else {
-          discountAmount = Math.min(discount_value, currentOrder.subtotal);
+          discountAmount = Math.min(discount_value, totals.subtotal);
         }
         discountAmount = Number(discountAmount.toFixed(decimals));
       }
 
-      // Recalculate tax from item-level data to avoid compounding on repeated discount edits.
-      // This site has always scaled tax against the STORED orders.subtotal rather
-      // than a freshly summed one, and unlike every other site it does not rewrite
-      // that column. The shared recomputation keeps that denominator; changing it
-      // is a money-formula decision, not a refactor.
       const { taxRollup, total: newTotal, roundOff } = recomputeOrderTotals({
         tenantInfo,
         chargeContext: currentOrder,
         customer,
-        totals: calculateOrderTotals(db, req.params.id as string),
-        subtotalBasis: 'stored-order',
-        storedSubtotal: currentOrder.subtotal,
+        totals,
         discountAmount,
         taxScaling: 'when-discounted',
       });
 
       db.prepare(`
-        UPDATE orders SET discount_amount = ?, discount_type = ?, discount_value = ?,
+        UPDATE orders SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
       `).run(
+        totals.subtotal,
         discountAmount,
         discount_value > 0 ? discount_type : null,
         discount_value > 0 ? discount_value : null,
@@ -1415,10 +1414,11 @@ router.patch('/:id/discount', orderWriteRateLimit, requirePermission('orders.dis
         const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(newTotal, pack, currency);
         const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`
-          UPDATE bills SET discount_amount = ?, discount_type = ?, discount_value = ?,
+          UPDATE bills SET subtotal = ?, discount_amount = ?, discount_type = ?, discount_value = ?,
             discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?, service_charge = ?, round_off = ?, updated_at = ?
           WHERE id = ?
         `).run(
+          totals.subtotal,
           discountAmount,
           discount_value > 0 ? discount_type : null,
           discount_value > 0 ? discount_value : null,

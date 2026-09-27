@@ -1996,10 +1996,16 @@
     "yes": "Có",
     "zeroNoLimit": "(0 = không giới hạn)",
     "tabAppearance": "Giao diện",
+    "viewOnlyNotice": "Bạn đang xem các cài đặt này mà không có quyền thay đổi, nên các nút điều khiển ở đây chỉ để đọc. Một chủ cửa hàng có thể cấp cho bạn quyền Cài đặt nếu bạn cần thay đổi.",
     "themeTitle": "Giao diện",
     "themeLight": "Sáng",
     "themeDark": "Tối",
-    "themeSystem": "Theo hệ thống"
+    "themeSystem": "Theo hệ thống",
+    "restoreFromFile": "Khôi phục bản sao lưu từ tệp...",
+    "restoreFromFileHint": "Bạn đã có tệp sao lưu trên máy này? Hãy chọn tại đây thay vì chép tay lên cơ sở dữ liệu.",
+    "restoreReplacesDetail": "Khôi phục sẽ thay thế mọi đơn hàng, hóa đơn, sản phẩm và hồ sơ khách hàng đã thêm kể từ khi bản sao lưu này được tạo.",
+    "restoreKeepsDetail": "Tài khoản nhân viên, mã PIN, máy in, cài đặt thuế và tài khoản đám mây của máy này đều được giữ nguyên.",
+    "restoreSafetyCopyDetail": "Trước khi ada perubahan, Flo lưu một bản sao dữ liệu hiện tại của bạn để bạn có thể hoàn tác thao tác khôi phục này."
   },
   "setup": {
     "alreadyCompleted": "Bản cài đặt này đã hoàn tất thiết lập. Đang chuyển đến đăng nhập…",
@@ -2225,6 +2231,14 @@
     "allow": "Cho phép",
     "deny": "Từ chối",
     "protected": "Được bảo vệ",
+    "selfAccessWarningAuthorization": "Lưu thay đổi này sẽ khiến bạn mất quyền truy cập vào phân quyền của nhân viên.",
+    "selfAccessWarningStaffPrivileged": "Lưu thay đổi này sẽ khiến bạn mất quyền truy cập vào tài khoản chủ và quản lý.",
+    "selfAccessWarningStaffOperational": "Lưu thay đổi này sẽ khiến bạn mất quyền truy cập vào tài khoản nhân viên.",
+    "selfAccessWarningSettings": "Lưu thay đổi này sẽ khiến bạn mất quyền truy cập vào cài đặt cửa hàng.",
+    "administrationUnreachable": "Thay đổi này sẽ khiến không còn tài khoản nào quản lý được nhân viên, phân quyền hoặc cài đặt cửa hàng. Hãy cấp các quyền này cho một chủ cửa hàng đang hoạt động khác trước.",
+    "selfPrivilegeChangeTitle": "Xác nhận thay đổi đối với quyền truy cập của chính bạn",
+    "selfPrivilegeChangePrompt": "Thay đổi này làm thay đổi quyền truy cập của chính bạn vào nhân viên, phân quyền hoặc cài đặt cửa hàng. Nhập mã PIN của bạn để tiếp tục, hoặc nhờ một chủ cửa hàng khác thực hiện thay đổi này.",
+    "selfPrivilegeNotConfirmed": "Không thể xác nhận thay đổi đối với quyền truy cập của chính bạn nên không có gì được lưu. Hãy đặt mã PIN cho tài khoản của bạn, hoặc nhờ một chủ cửa hàng khác thực hiện thay đổi này.",
     "editorFooterNote": "Các quy tắc kinh doanh nhạy cảm như mã PIN phê duyệt, chủ sở hữu đang hoạt động cuối cùng, hạn chót hoàn tiền và phân công bếp vẫn được áp dụng."
   },
   "permissionAudit": {

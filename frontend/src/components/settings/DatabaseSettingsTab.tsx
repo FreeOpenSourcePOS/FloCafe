@@ -128,6 +128,7 @@ export interface DatabaseSettingsTabProps {
   onCreateBackup: () => void;
   onChooseBackupLocation: () => void;
   onRestoreFromHistory: (backup: BackupInfo) => void;
+  onRestoreFromFile: () => void;
   onDeleteBackup: (backup: BackupInfo) => void;
   onConnectGoogleDrive: () => void;
   onDisconnectGoogleDrive: () => void;
@@ -198,6 +199,7 @@ export function DatabaseSettingsTab({
   onCreateBackup,
   onChooseBackupLocation,
   onRestoreFromHistory,
+  onRestoreFromFile,
   onDeleteBackup,
   onConnectGoogleDrive,
   onDisconnectGoogleDrive,
@@ -295,7 +297,17 @@ export function DatabaseSettingsTab({
             >
               {t('chooseBackupLocation')}
             </button>
+            <button
+              onClick={onRestoreFromFile}
+              data-testid="restore-backup-from-file"
+              className="px-5 py-2 text-sm bg-muted text-foreground rounded-lg hover:bg-muted font-medium"
+            >
+              {t('restoreFromFile')}
+            </button>
           </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            {t('restoreFromFileHint')}
+          </p>
         </div>
 
         {/* Backup History */}

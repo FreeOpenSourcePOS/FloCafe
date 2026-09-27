@@ -897,6 +897,35 @@ test('Save All stops when printing hydration fails', async ({ page }) => {
   expect(writes).toEqual([]);
 });
 
+test('Save All persists when a settings read is rate limited', async ({ page }) => {
+  await startMockedSettingsSession(page);
+  let throttledAttempts = 0;
+  // A 429 is throttling, not unavailability, so the read must be retried. Treating it
+  // as a failed hydration used to make Save Changes discard the whole edit set.
+  await page.route('**/api/settings/z_report_language_policy', async (route) => {
+    throttledAttempts += 1;
+    if (throttledAttempts === 1) {
+      await route.fulfill({ status: 429, contentType: 'application/json', body: JSON.stringify({ error: 'Too many requests' }) });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`${BASE}/settings?tab=store`);
+  await expect(page.getByRole('heading', { name: 'Store Details', exact: true })).toBeVisible();
+  await page.locator('input[type="text"]').first().fill('Should Save');
+  // Wait on the response, not on the request being dispatched, so a rejected save
+  // cannot pass unnoticed.
+  const businessSave = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/settings/business' && response.request().method() === 'PUT';
+  });
+  await page.getByRole('button', { name: /^(Save Changes|Saving\.\.\.)$/ }).click();
+  expect((await businessSave).ok()).toBe(true);
+
+  expect(throttledAttempts).toBeGreaterThan(1);
+});
+
 test('Health-check deep link loads from the existing store URL', async ({ page }) => {
   await startMockedSettingsSession(page);
   const apiPaths = collectApiPaths(page);

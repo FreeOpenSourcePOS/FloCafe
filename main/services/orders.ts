@@ -57,27 +57,17 @@ export function calculateOrderTotals(db: Database, orderId: string | number): Or
   return { subtotal, totalTax, exclusiveTax, allTaxBreakdowns, allTaxSnapshots, activeItems };
 }
 
-/**
- * Which subtotal a recomputation scales tax against.
- *
- * `fresh-items` is the sum of the order's non-terminal items, which is what
- * `calculateOrderTotals` returns. `stored-order` is the persisted
- * `orders.subtotal` column, which the order-level discount site uses and which
- * only the order-level discount site uses. The two disagree whenever the stored
- * column is stale, and the order-level discount site has always scaled tax on
- * the stored one. That divergence is preserved here on purpose: deciding which
- * number is authoritative is a money-formula change, not a refactor.
- */
-export type OrderSubtotalBasis =
-  | { subtotalBasis?: 'fresh-items' }
-  | { subtotalBasis: 'stored-order'; storedSubtotal: number };
-
-export type RecomputeOrderTotalsInput = OrderSubtotalBasis & {
+export type RecomputeOrderTotalsInput = {
   tenantInfo: TenantInfo;
   /** Row the packaging/delivery/service charges are read from, for charge tax and the total. */
   chargeContext: ChargeTaxContext;
   customer: Customer | null;
-  /** Fresh per-item sums from `calculateOrderTotals`. */
+  /**
+   * Fresh per-item sums from `calculateOrderTotals`. Its `subtotal` is the only
+   * basis the discount and the rescaling are computed from: the tax being
+   * rescaled is a sum over these same items, so a basis describing any other set
+   * of items produces a ratio that is not defensible.
+   */
   totals: OrderTotals;
   /** Effective order-level discount, already resolved by the caller. */
   discountAmount: number;
@@ -90,7 +80,7 @@ export type RecomputeOrderTotalsInput = OrderSubtotalBasis & {
 };
 
 export interface RecomputedOrderTotals {
-  /** The subtotal the discount was deducted from, per `subtotalBasis`. */
+  /** The subtotal the discount was deducted from: always the fresh item sum. */
   subtotal: number;
   discountedSubtotal: number;
   taxRatio: number;
@@ -114,8 +104,11 @@ export function recomputeOrderTotals(input: RecomputeOrderTotalsInput): Recomput
   const { tenantInfo, chargeContext, customer, totals, discountAmount, taxScaling } = input;
   const decimals = getCurrencyFractionDigits(tenantInfo.currency || '');
   const minorFactor = getCurrencyMinorUnitFactor(tenantInfo.currency || '');
-  const subtotal = input.subtotalBasis === 'stored-order' ? input.storedSubtotal : totals.subtotal;
-  const discountedSubtotal = Math.max(0, subtotal - discountAmount);
+  const subtotal = totals.subtotal;
+  // The discount can never exceed the subtotal it is deducted from, so a
+  // caller-supplied figure cannot drive the discounted share outside 0..1.
+  const effectiveDiscount = Math.max(0, Math.min(discountAmount, subtotal));
+  const discountedSubtotal = Math.max(0, subtotal - effectiveDiscount);
 
   let taxRatio = 1;
   let taxAmount = totals.totalTax;

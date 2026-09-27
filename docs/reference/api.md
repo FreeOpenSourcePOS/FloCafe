@@ -633,6 +633,7 @@ Router: `main/routes/database.ts`. Full path: `/api/db`.
 | `POST` | `/backup` | `ROLE_ACCESS.owner` + Master PIN | none | - |
 | `GET` | `/download` | `ROLE_ACCESS.owner` + Master PIN | none | - |
 | `GET` | `/tables` | `ROLE_ACCESS.owner` | none | `{ tables: [ ... ] }`, every non-internal SQLite table name. |
+| `POST` | `/restore` | `ROLE_ACCESS.owner` (`database.manage`) | body: `confirmation`, `selection_token` | Restores a backup file the operator picked in the native dialog. `confirmation` must equal `RESTORE BACKUP`, and `selection_token` must be the single-use token the main process issued for that dialog; a path with no outstanding selection is refused with `400`, so the route never accepts a path the renderer invented. A backup whose schema version differs from the live database is imported data-only. Returns `422` with the reason when the mechanism refuses the file. The pre-restore data is retained as a listed `flo-backup-*-pre-restore-*.db` copy. |
 
 ### Database tools
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
@@ -60,6 +60,8 @@ import { tenantCan } from '@/lib/permissions';
 const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
 const GOOGLE_DRIVE_JOB_POLL_INTERVAL_MS = 500;
 const GOOGLE_DRIVE_JOB_STATUS_RETRY_WINDOW_MS = 30_000;
+// Must match RESTORE_CONFIRMATION in main/routes/database.ts.
+const RESTORE_CONFIRMATION = 'RESTORE BACKUP';
 
 function isRequestCancelled(error: unknown): boolean {
   return axios.isCancel(error);
@@ -123,6 +125,27 @@ const TEMPLATE_CARDS: TemplateCard[] = [
   { id: 'classic', nameKey: 'billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core', selectionSource: 'core' },
   { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core', selectionSource: 'core' },
 ];
+
+// Bounded backoff for settings reads the server rate-limited. Long enough to ride out a
+// shared per-IP read limit, short enough that a merchant does not notice the pause.
+const THROTTLED_READ_RETRIES = 3;
+const THROTTLED_READ_BACKOFF_MS = 300;
+
+/** A tab fires its reads together, so a fixed delay would retry them all in lockstep
+ * and collide again. Jitter spreads the batch, and the abort listener stops the timer
+ * as soon as the merchant leaves the tab. */
+function waitBeforeRetryRead(signal: AbortSignal, baseMs: number): Promise<void> {
+  const delayMs = baseMs / 2 + Math.random() * (baseMs / 2);
+  return new Promise<void>((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, delayMs);
+    signal.addEventListener('abort', finish, { once: true });
+  });
+}
 
 // Sanitize prefix on load to alphanumeric characters so legacy values pass save validation.
 function sanitizeStoredNumberPrefix(value: string | null | undefined): string {
@@ -1541,7 +1564,21 @@ export default function SettingsPage() {
   };
 
   const loadSettingsTab = async (tab: string, signal: AbortSignal, includeStatusOnly = true): Promise<void> => {
-    const get = (path: string) => api.get(path, { signal });
+    const get = async (path: string) => {
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          return await api.get(path, { signal });
+        } catch (error) {
+          // A 429 means throttled, not unavailable: the stored value is unknown but
+          // readable. Letting it fail hydration makes Save Changes discard every
+          // edit, so back off and read again. A genuinely unavailable read still
+          // throws, which is what keeps an unhydrated tab from being written back.
+          const throttled = axios.isAxiosError(error) && error.response?.status === 429;
+          if (!throttled || attempt >= THROTTLED_READ_RETRIES || signal.aborted) throw error;
+          await waitBeforeRetryRead(signal, THROTTLED_READ_BACKOFF_MS * 2 ** attempt);
+        }
+      }
+    };
     const active = () => !signal.aborted;
     const hydrationTouchSnapshot = new Map(hydrationTouchVersions.current);
     const readOptional = async (path: string) => {
@@ -2191,6 +2228,51 @@ export default function SettingsPage() {
     });
     return () => controller.abort();
   }, [activeTab, currentTenant?.id, requestedAction, t]);
+
+  // Restore a backup file the operator picks from anywhere on disk. This is the
+  // path a shop on Windows needs so nobody has to hand-copy flo.db over the live
+  // database; the app closes and reopens the database itself.
+  const handleRestoreFromFile = useCallback(async () => {
+    if (!window.electronAPI?.pickRestoreFile) {
+      toast.error(tCommon('notAvailable'));
+      return;
+    }
+    const picked = await window.electronAPI.pickRestoreFile();
+    if (picked.canceled || !picked.path || !picked.token) return;
+
+    const fileName = picked.path.split(/[\\/]/).pop() || picked.path;
+    const ok = await confirm(
+      `${t('restoreConfirm', { fileName })}\n\n${t('restoreReplacesDetail')}\n\n${t('restoreKeepsDetail')}\n\n${t('restoreSafetyCopyDetail')}`,
+      { title: t('confirmRestoreTitle'), confirmLabel: t('restoreBackup'), destructive: true },
+    );
+    if (!ok) return;
+
+    try {
+      const { data } = await api.post('/db/restore', {
+        confirmation: RESTORE_CONFIRMATION,
+        selection_token: picked.token,
+      });
+      toast.success(tRestore('success'));
+      setTimeout(() => window.location.reload(), 1500);
+      return data;
+    } catch (error) {
+      const detail = axios.isAxiosError(error)
+        ? (error.response?.data as { error?: string } | undefined)?.error
+        : undefined;
+      toast.error(detail || t('restoreFailedGeneric'));
+    }
+  }, [confirm, t, tCommon, tRestore]);
+
+  useEffect(() => {
+    if (requestedAction !== 'restore-from-file') return;
+    // Consume the deep link exactly once, before the work runs. Stripping the
+    // parameter first is what keeps a finished restore from reopening the picker
+    // when the page reloads, and it leaves no armed parameter behind when the
+    // operator cancels, so the next menu click lands on a different address and
+    // fires the action again.
+    router.replace(`/settings?tab=${activeTabRef.current || 'data'}`, { scroll: false });
+    void handleRestoreFromFile();
+  }, [requestedAction, handleRestoreFromFile, router]);
 
   const saveCloud = async (silent = false) => {
     setSavingCloud(true);
@@ -2917,6 +2999,13 @@ export default function SettingsPage() {
         </div>
 
         <div className={`flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-8 md:pb-12 ${isDirty ? 'pb-32 md:pb-32' : ''}`}>
+
+        {!isAdmin && (
+          <p data-testid="settings-read-only-notice" className="mb-5 flex items-start gap-2 rounded-lg border border-border bg-muted p-3 text-sm text-muted-foreground">
+            <Lock size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
+            <span>{t('viewOnlyNotice')}</span>
+          </p>
+        )}
 
         <TabsContent value="store">
           <GeneralSettingsTab
@@ -3984,6 +4073,7 @@ export default function SettingsPage() {
             onCreateBackup={handleCreateBackup}
             onChooseBackupLocation={handleChooseBackupLocation}
             onRestoreFromHistory={handleRestoreFromHistory}
+            onRestoreFromFile={handleRestoreFromFile}
             onDeleteBackup={handleDeleteBackup}
             onConnectGoogleDrive={connectGoogleDrive}
             onDisconnectGoogleDrive={disconnectGoogleDrive}

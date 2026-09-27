@@ -2,18 +2,10 @@ import { test, expect } from '@playwright/test';
 import { E2E_BASE_URL as BASE } from './helpers/urls';
 import { E2E_PASSWORD, getE2eToken } from './helpers/test-auth';
 
-/**
- * The in-app diagnostics screen, as an operator actually meets it.
- *
- * A customer who cannot describe a failure reads the screen down the phone, so
- * this asserts what is *on the page*: the captured failure and its plain-language
- * summary, the copy-for-support action, the exact text the copy action puts on
- * the clipboard, and the deliberately separate log-tail control.
- *
- * The failure is produced through a real product path - POST /api/diagnostics/event -
- * so the assertion is not that a function was called but that the operator can
- * see a failure that actually happened on this till.
- */
+// The in-app diagnostics screen as an operator meets it: the captured failure,
+// the copy action, the exact clipboard text, and the separate log-tail control.
+// The failure is produced through a real intake call, so these assert what is on
+// the page rather than that a function ran.
 test('operator sees a captured failure and the copy-for-support action', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const token = getE2eToken();
@@ -119,29 +111,28 @@ test('the privacy hint stops claiming nothing is sent once transmission is on', 
   const hint = page.getByText('Nothing here leaves the till automatically', { exact: false });
   await expect(hint, 'with transmission off the absolute claim is shown').toBeVisible();
 
-  const enable = await page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
+  const setTransmission = (value: string) => page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
     headers: { Authorization: `Bearer ${token}` },
-    data: { value: 'true' },
+    data: { value },
   });
-  expect(enable.status(), 'the owner can turn transmission on').toBe(200);
-
-  await page.reload();
-  await expect(page.getByRole('heading', { name: 'Diagnostics', exact: true })).toBeVisible();
-  // The claim is no longer true once transmission is enabled, so the screen must
-  // stop making it rather than tell the owner their data stays on the till.
-  await expect(
-    page.getByText('Nothing here leaves the till automatically', { exact: false }),
-    'the absolute claim is withdrawn when transmission is on',
-  ).toHaveCount(0);
-  await expect(
-    page.getByText('Automatic transmission is on', { exact: false }),
-    'the screen says recorded problems may be sent instead',
-  ).toBeVisible();
-
-  await page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data: { value: 'false' },
-  });
+  try {
+    expect((await setTransmission('true')).status(), 'the owner can turn transmission on').toBe(200);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Diagnostics', exact: true })).toBeVisible();
+    // The claim is false once transmission is on, so the screen must stop making
+    // it rather than tell the owner their data stays on the till.
+    await expect(
+      page.getByText('Nothing here leaves the till automatically', { exact: false }),
+      'the absolute claim is withdrawn when transmission is on',
+    ).toHaveCount(0);
+    await expect(
+      page.getByText('Automatic transmission is on', { exact: false }),
+      'the screen says recorded problems may be sent instead',
+    ).toBeVisible();
+  } finally {
+    // Shared test database: a failed assertion must not leave it transmitting.
+    await setTransmission('false');
+  }
 });
 
 test('an operator without the settings permission cannot use the transmission switch', async ({ page }) => {
@@ -162,8 +153,13 @@ test('an operator without the settings permission cannot use the transmission sw
   const transmission = page.getByRole('switch', { name: 'Send diagnostics automatically' });
   await expect(transmission, 'the control is still shown, so its state is legible').toBeVisible();
   await expect(transmission, 'the control is visibly unavailable').toBeDisabled();
+  // Erasing the failure history is the destructive one, so it is gated too.
+  await expect(
+    page.getByRole('button', { name: 'Clear', exact: true }),
+    'clearing the failure history is visibly unavailable without the settings permission',
+  ).toBeDisabled();
   await expect(
     page.getByRole('button', { name: 'Copy for support', exact: true }),
-    'the parts of the screen a manager may use still work',
+    'the parts of the screen a server may use still work',
   ).toBeEnabled();
 });

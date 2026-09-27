@@ -251,18 +251,39 @@ function recordLocalDiagnostic(db: BetterSqlite3.Database, entry: Omit<LocalDiag
     entry.occurred_at,
     timestamp,
   );
+  // No delivery state here, so oldest-first is the only sensible eviction.
   evictOldestDiagnostics(db, 'local_diagnostics', DIAGNOSTIC_LOG_MAX_ROWS);
 }
 
 /**
- * Enforces the row cap on write by dropping the oldest rows, so neither the log
- * nor the outbox can grow without bound between reads. `rowid` is the implicit
- * SQLite insertion order and exists on both tables (`event_id` is the outbox
- * primary key but is not a rowid alias).
+ * Enforces the cap on write by dropping rows, so neither log can grow without
+ * bound between reads. `rowid` is the implicit SQLite insertion order and exists
+ * on both tables (`event_id` is the outbox primary key but is not a rowid alias).
  */
 function evictOldestDiagnostics(db: BetterSqlite3.Database, table: 'local_diagnostics' | 'store_diagnostics_outbox', max: number): void {
   db.prepare(`DELETE FROM ${table} WHERE rowid NOT IN (SELECT rowid FROM ${table} ORDER BY rowid DESC LIMIT ?)`)
     .run(max);
+}
+
+/**
+ * Outbox eviction evicts DELIVERED rows first, oldest-first within each group,
+ * and only falls back to undelivered rows when there are not enough delivered
+ * rows to make room. During an outage the oldest pending or failed rows are
+ * exactly the failures still waiting to be sent, so evicting by insertion order
+ * alone would discard the queue's whole purpose. If an undelivered row does
+ * have to go, the oldest is chosen: the newest is the one most likely to
+ * duplicate something already delivered.
+ */
+function evictOutboxDiagnostics(db: BetterSqlite3.Database, max: number): void {
+  const overflow = ((db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count) - max;
+  if (overflow <= 0) return;
+  db.prepare(`
+    DELETE FROM store_diagnostics_outbox WHERE rowid IN (
+      SELECT rowid FROM store_diagnostics_outbox
+       ORDER BY CASE status WHEN 'delivered' THEN 0 ELSE 1 END, rowid ASC
+       LIMIT ?
+    )
+  `).run(overflow);
 }
 
 function safeParseMetadata(json: string): Record<string, unknown> | undefined {
@@ -1104,7 +1125,7 @@ export class CloudSyncService {
           (event_id, payload, status, created_at, updated_at)
         VALUES (?, ?, 'pending', ?, ?)
       `).run(sanitized.event_id, JSON.stringify(sanitized), timestamp, timestamp);
-      evictOldestDiagnostics(db, 'store_diagnostics_outbox', DIAGNOSTIC_LOG_MAX_ROWS);
+      evictOutboxDiagnostics(db, DIAGNOSTIC_LOG_MAX_ROWS);
       this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
     }), 'diagnostic enqueue', (enqueueError) => this.markError((enqueueError as Error).message));
   }

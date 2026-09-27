@@ -150,7 +150,14 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
             <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
               <RefreshCw size={16} className="me-2" />{t('diagnosticsRefresh')}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => void clearFailures()} disabled={loading || failures.length === 0}>
+            <Button
+              variant="outline"
+              size="sm"
+              // The endpoint requires settings.manage; without it the control
+              // would be a button that 403s and looks broken.
+              disabled={!isAdmin || loading || failures.length === 0}
+              onClick={() => void clearFailures()}
+            >
               <Trash2 size={16} className="me-2" />{t('diagnosticsClear')}
             </Button>
           </div>

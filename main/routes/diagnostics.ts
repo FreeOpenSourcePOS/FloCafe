@@ -105,8 +105,13 @@ router.get('/recent', requirePermission('support.use'), (req: Request, res: Resp
   res.json({ failures: cloudSync.listLocalDiagnostics(limit) });
 });
 
-/** Remove every locally captured failure. */
-router.delete('/recent', requirePermission('support.use'), (req: Request, res: Response) => {
+/**
+ * Remove every locally captured failure. The read path is support.use so any
+ * staff member can read out a failure, but erasing the evidence is destructive
+ * and must not be something a cashier can do to the record an operator needs;
+ * it takes the same permission as changing the transmission setting.
+ */
+router.delete('/recent', requirePermission('settings.manage'), (req: Request, res: Response) => {
   res.json({ removed: cloudSync.clearLocalDiagnostics() });
 });
 

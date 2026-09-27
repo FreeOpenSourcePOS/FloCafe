@@ -1,15 +1,7 @@
-/**
- * Derived diagnostic signatures.
- *
- * A stored diagnostic never carries the raw exception message: that message is
- * exactly where customer data appears (names, phone numbers, amounts, file
- * paths). Instead the message is reduced to a template in which every
- * confidently classified literal becomes a typed placeholder and everything
- * that cannot be classified is dropped, so the same failure on two different
- * tills - or on two different customers' tills - yields identical text.
- *
- * This is the single place that decides what a stored diagnostic says.
- */
+// Stored diagnostics never carry the raw exception message - that is where
+// customer data appears. Literals become typed placeholders and the rest is
+// dropped, so the same failure yields identical text on any till. This is the
+// single code path that decides what a stored diagnostic says.
 
 const MAX_SOURCE_MESSAGE_CHARS = 400;
 const MAX_TEMPLATE_CHARS = 240;
@@ -23,38 +15,18 @@ const QUOTED_RE = /^(["'`])([\s\S]*)\1$/;
 const LEADING_PUNCTUATION_RE = /^[({\[]+/;
 const TRAILING_PUNCTUATION_RE = /[)\]},.:;!?]+$/;
 
-/**
- * A URL is a structure, not a substring. A host can stand before or after
- * anything else in a message, so the whole value is recognised and replaced with
- * a single placeholder rather than one known host being matched out of it.
- *
- * The pattern matches the WHOLE token (after surrounding punctuation), which is
- * what makes it safe: it cannot leave part of a host standing, and it cannot be
- * defeated by adjacency. It is deliberately over-inclusive - a dotted name that
- * is not really a host is redacted too - because over-redacting is the safe
- * direction and under-redacting is the failure this module exists to prevent.
- *
- * Underscore is not a host-label character, so a SQL reference such as
- * `orders.customer_id` is not caught here and stays a schema reference.
- */
+// A URL is a structure, not a substring: a host can sit before or after anything
+// else, so the whole token is matched and replaced by one placeholder. Matching
+// the whole token is what makes that safe. Over-inclusive on purpose - a dotted
+// name that is not a host is redacted too, since under-redacting is the failure
+// this exists to prevent. Underscore is not a host-label character, so
+// `orders.customer_id` is not caught here and stays a schema reference.
 const URL_LIKE_RE = /^(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/)?[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d{1,5})?(?:\/\S*)?$/;
 const HOST_PORT_RE = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*:\d{1,5}$/;
 
-/**
- * Structural words that belong to a fixed error phrase rather than to a value.
- *
- * The list is derived from the repository's own diagnostic strings (the
- * approved event phrases, the POS order-failure text, the printer refusal
- * text) plus the SQLite phrase words, because those are words this application
- * chose. Everything absent from this list is dropped, which is the safe
- * default: a bare word that is not known to be structural may be a customer
- * name.
- *
- * This is a real, bounded leak surface and is not a filter that makes free
- * text impossible: a value composed entirely of these words - "Order Only",
- * "Table Key" - survives, because the derivation cannot tell it from the fixed
- * phrase around it. The guarantee is per token, not per message.
- */
+// Structural words from this app's own diagnostic strings. Anything absent is
+// dropped. Known limit: a value made only of these words ("Order Only") cannot
+// be told from the fixed phrase, so the guarantee is per token, not per message.
 const SAFE_WORDS = new Set([
   'a', 'aborted', 'all', 'an', 'and', 'any', 'app', 'are', 'at', 'attempted',
   'available', 'be', 'been', 'blank', 'browser', 'browsers', 'busy', 'by', 'can', 'canceled',
@@ -75,22 +47,15 @@ const SAFE_WORDS = new Set([
   'validation', 'value', 'values', 'view', 'was', 'webusb', 'were', 'with', 'within',
 ]);
 
-/**
- * Words after which a bare token is a schema reference rather than a value, e.g.
- * the `orders` in `no such table: orders`.
- */
+// Words after which a bare token is a schema reference, e.g. the `orders` in
+// `no such table: orders`.
 const SCHEMA_SLOT_INTRODUCERS = new Set(['table', 'column', 'index', 'view', 'trigger', 'constraint']);
 
-/**
- * Words after which a *qualified* name (`orders.customer_id`) is a schema
- * reference. Deliberately tiny and deliberately NOT the structural-word
- * vocabulary: an ordinary preposition or verb - "to", "by", "at", "found" - is
- * not evidence that the dotted token that follows it is a database object, and
- * treating it as evidence is what let a hostname or a username survive here.
- * A schema reference that does not match this shape is dropped, which is the
- * safe direction: losing a table name costs a little detail, keeping a host
- * costs the privacy guarantee.
- */
+// Words after which a qualified name is a schema reference. Deliberately tiny
+// and deliberately NOT the structural vocabulary: "to", "by" or "found" is not
+// evidence that the dotted token after it is a database object, and treating it
+// as evidence is what once let a hostname survive here. Non-matching shapes are
+// dropped: losing a table name costs detail, keeping a host costs the guarantee.
 const SCHEMA_QUALIFIED_NAME_INTRODUCERS = new Set(['table', 'column', 'index', 'view', 'trigger', 'constraint', 'failed']);
 
 /** Plain-language opening clause per error class, so the operator reads a sentence. */
@@ -154,14 +119,12 @@ function classifyToken(token: string, previousWord: string): string {
   const core = token.slice(prefix.length, token.length - suffix.length);
   if (!core) return '';
 
-  // Before the path and identifier rules: a host is matched whole, so where it
-  // sits in the message cannot help it survive.
+  // Before the path and identifier rules, so adjacency cannot help a host survive.
   if (URL_LIKE_RE.test(core) || HOST_PORT_RE.test(core)) return `${prefix}<url>${suffix}`;
   if (ABSOLUTE_PATH_RE.test(token)) return '<path>';
   if (UUID_RE.test(token)) return '<id>';
 
-  // Checked before the hex rule so an all-digit value (a phone number, a
-  // count) is typed as a number rather than as an opaque identifier.
+  // Before the hex rule so an all-digit value is a number, not an opaque id.
   if (NUMBER_RE.test(core)) return `${prefix}<number>${suffix}`;
   if (HEX_RE.test(core)) return `${prefix}<id>${suffix}`;
 
@@ -200,12 +163,7 @@ export function deriveDiagnosticTemplate(rawMessage: unknown): string {
     .slice(0, MAX_TEMPLATE_CHARS);
 }
 
-/**
- * The one code path that decides what a stored diagnostic says.
- *
- * `errorClass` comes from the thrown error's constructor; `message` is the raw
- * exception message and is never stored, only templated.
- */
+// `message` is the raw exception text and is never stored, only templated.
 export function deriveDiagnosticSignature(source: { errorClass?: unknown; message?: unknown } | null | undefined): DiagnosticSignature {
   const errorClass = normaliseErrorClass(source?.errorClass);
   const template = deriveDiagnosticTemplate(source?.message);

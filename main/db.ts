@@ -2115,6 +2115,8 @@ export type RestoreOutboxState = {
   cloud: Record<string, unknown>[];
   support: Record<string, unknown>[];
   diagnostics: Record<string, unknown>[];
+  /** Device-local failure log; present on restores that predate it. */
+  local?: Record<string, unknown>[];
 };
 const RESTORE_PROTECTED_SETTING_KEYS = [
   'jwt_secret', 'cloud_api_key', 'cloud_device_secret', 'cloud_pos_hash',
@@ -2158,11 +2160,15 @@ export function mergeRestoreProtectedSettings(dbInstance: Database.Database, sta
 
 export function captureRestoreOutboxState(dbInstance: Database.Database): RestoreOutboxState {
   const pending = (table: string) => dbInstance.prepare(`SELECT * FROM ${table} WHERE status IN ('pending', 'failed', 'sending')`).all() as Record<string, unknown>[];
-  return { cloud: pending('cloud_sync_outbox'), support: pending('support_ticket_outbox'), diagnostics: pending('store_diagnostics_outbox') };
+  // A SQLite backup copies the whole file, so local_diagnostics travels with it.
+  // Those rows describe the till that produced them, so the receiving device
+  // keeps its own and drops the incoming one.
+  const local = dbInstance.prepare('SELECT * FROM local_diagnostics ORDER BY id ASC').all() as Record<string, unknown>[];
+  return { cloud: pending('cloud_sync_outbox'), support: pending('support_ticket_outbox'), diagnostics: pending('store_diagnostics_outbox'), local };
 }
 
 export function mergeRestoreOutboxState(dbInstance: Database.Database, state: RestoreOutboxState): void {
-  dbInstance.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox');
+  dbInstance.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox; DELETE FROM local_diagnostics');
   const cloud = dbInstance.prepare(`INSERT OR REPLACE INTO cloud_sync_outbox
     (id, event_type, entity_type, entity_id, payload, status, attempt_count, next_attempt_at, last_error, delivered_at, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -2175,6 +2181,12 @@ export function mergeRestoreOutboxState(dbInstance: Database.Database, state: Re
     (event_id, payload, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   for (const row of state.diagnostics) diagnostics.run(row.event_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.created_at || now(), row.updated_at || now(), row.delivered_at || null);
+  const local = dbInstance.prepare(`INSERT INTO local_diagnostics
+    (event_code, severity, error_class, signature, summary, metadata_json, occurred_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const row of state.local || []) local.run(row.event_code, row.severity, row.error_class, row.signature, row.summary, row.metadata_json || null, row.occurred_at, row.created_at);
+  // Re-cap in case this device was already at the limit before the restore.
+  dbInstance.prepare('DELETE FROM local_diagnostics WHERE id NOT IN (SELECT id FROM local_diagnostics ORDER BY id DESC LIMIT ?)').run(200);
 }
 
 export function captureKdsEnabledSetting(dbInstance: Database.Database): KdsEnabledSettingState {

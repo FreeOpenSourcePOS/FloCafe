@@ -135,26 +135,30 @@ async function main() {
   db.prepare('DELETE FROM store_diagnostics_outbox').run();
   const totalWrites = DIAGNOSTIC_LOG_MAX_ROWS + 25;
   const writtenIds: string[] = [];
-  const report = (message: string) => {
+  // Every write is awaited on a unique marker rather than on a row count: the
+  // local log always keeps the newest rows, so a marker is present exactly once
+  // this write's background task has run. Settling on a count would pass
+  // immediately when the count is already at the cap, proving nothing.
+  for (let i = 0; i < DIAGNOSTIC_LOG_MAX_ROWS; i++) {
     const eventId = crypto.randomUUID();
     writtenIds.push(eventId);
-    cloudSync.reportDiagnostic(event({ event_id: eventId, message }));
-  };
-  // Each write is awaited individually so completion is proven, not guessed: the
-  // local log grows monotonically to its cap, and past the cap each write must
-  // evict exactly one outbox row.
-  for (let i = 0; i < DIAGNOSTIC_LOG_MAX_ROWS; i++) {
-    report(`failure ${i} of ${totalWrites}`);
-    assertOrThrow(await settle(() => countRows(db, 'local_diagnostics') === i + 1), `write ${i + 1} completed`);
+    cloudSync.reportDiagnostic(event({ event_id: eventId, message: `failure ${i}`, metadata: { route: `/probe/failure-${i}` } }));
+    assertOrThrow(
+      await settle(() => (db.prepare("SELECT COUNT(*) AS c FROM local_diagnostics WHERE metadata_json LIKE ?").get('%"\/probe\/failure-' + i + '"%') as { c: number }).c === 1),
+      `write ${i + 1} completed its background work`,
+    );
   }
   assertOrThrow(countRows(db, 'store_diagnostics_outbox') === DIAGNOSTIC_LOG_MAX_ROWS, 'the outbox reaches exactly its cap');
   for (let i = 0; i < 25; i++) {
-    report(`failure ${DIAGNOSTIC_LOG_MAX_ROWS + i} of ${totalWrites}`);
+    const eventId = crypto.randomUUID();
+    writtenIds.push(eventId);
+    cloudSync.reportDiagnostic(event({ event_id: eventId, message: `overflow ${i}`, metadata: { route: `/probe/overflow-${i}` } }));
     assertOrThrow(
-      await settle(() => countRows(db, 'store_diagnostics_outbox') === DIAGNOSTIC_LOG_MAX_ROWS),
-      `overflow write ${i + 1} evicted exactly one row, so the outbox never exceeds the cap`,
+      await settle(() => (db.prepare("SELECT COUNT(*) AS c FROM local_diagnostics WHERE metadata_json LIKE ?").get('%"\/probe\/overflow-' + i + '"%') as { c: number }).c === 1),
+      `overflow write ${i + 1} completed its background work`,
     );
   }
+  assertOrThrow(countRows(db, 'store_diagnostics_outbox') === DIAGNOSTIC_LOG_MAX_ROWS, 'after 25 overflow writes the outbox is still exactly at its cap, so none exceeded it');
   assertEqualOrThrow(countRows(db, 'local_diagnostics'), DIAGNOSTIC_LOG_MAX_ROWS, 'the local failure log is capped at 200 rows');
 
   // Eviction policy: oldest first among rows that are equally eligible.
@@ -196,12 +200,13 @@ async function main() {
   for (let i = 0; i < 10; i++) fixture(`delivered-${i}`, 'delivered');
   assertEqualOrThrow(countRows(db, 'store_diagnostics_outbox'), DIAGNOSTIC_LOG_MAX_ROWS, 'the fixture fills the outbox to the cap');
   for (let i = 0; i < 25; i++) {
-    cloudSync.reportDiagnostic(event({ message: `eviction probe ${i}` }));
+    cloudSync.reportDiagnostic(event({ event_code: 'server.internal_error', message: `eviction probe ${i}`, metadata: { route: `/probe/eviction-${i}` } }));
     assertOrThrow(
-      await settle(() => countRows(db, 'store_diagnostics_outbox') === DIAGNOSTIC_LOG_MAX_ROWS),
-      `probe ${i + 1} evicted exactly one row`,
+      await settle(() => (db.prepare("SELECT COUNT(*) AS c FROM local_diagnostics WHERE metadata_json LIKE ?").get('%"\/probe\/eviction-' + i + '"%') as { c: number }).c === 1),
+      `probe ${i + 1} completed its background work`,
     );
   }
+  assertOrThrow(countRows(db, 'store_diagnostics_outbox') === DIAGNOSTIC_LOG_MAX_ROWS, 'the outbox stayed at its cap through 25 probes');
   const countPrefix = (prefix: string) => (db.prepare(
     "SELECT COUNT(*) AS count FROM store_diagnostics_outbox WHERE event_id LIKE ?",
   ).get(prefix) as { count: number }).count;

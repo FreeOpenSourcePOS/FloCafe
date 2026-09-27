@@ -265,15 +265,9 @@ function evictOldestDiagnostics(db: BetterSqlite3.Database, table: 'local_diagno
     .run(max);
 }
 
-/**
- * Outbox eviction evicts DELIVERED rows first, oldest-first within each group,
- * and only falls back to undelivered rows when there are not enough delivered
- * rows to make room. During an outage the oldest pending or failed rows are
- * exactly the failures still waiting to be sent, so evicting by insertion order
- * alone would discard the queue's whole purpose. If an undelivered row does
- * have to go, the oldest is chosen: the newest is the one most likely to
- * duplicate something already delivered.
- */
+// Evicts delivered rows first, oldest-first within each group, falling back to
+// the oldest undelivered rows: during an outage the oldest pending rows are the
+// ones still waiting to be sent, and they are the whole point of the queue.
 function evictOutboxDiagnostics(db: BetterSqlite3.Database, max: number): void {
   const overflow = ((db.prepare('SELECT COUNT(*) AS count FROM store_diagnostics_outbox').get() as { count: number }).count) - max;
   if (overflow <= 0) return;

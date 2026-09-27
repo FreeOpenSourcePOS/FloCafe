@@ -63,11 +63,18 @@ function resolveProfile(req: Request) {
   return isAuthenticatedRequest(req) ? supportProfile(req) : BLANK_PROFILE;
 }
 
-function resolveCategory(value: unknown): string {
+/** Shared with the diagnostics screen so both surfaces classify a category identically. */
+export function resolveCategory(value: unknown): string {
   return ALLOWED_CATEGORIES.has(String(value || '')) ? String(value) : 'general';
 }
 
-function buildSystemDiagnostics(req: Request, category: string) {
+/**
+ * System state for a diagnostics bundle. Shared with the support-ticket path so
+ * the diagnostics screen and a raised ticket always report the same fields.
+ * Exported rather than duplicated: the in-app screen is a presentation change
+ * over this builder, not a second system-inspection implementation.
+ */
+export function buildSystemDiagnostics(req: Request, category: string) {
   const db = getDatabase();
   const schemaVersion = db.pragma('user_version', { simple: true }) as number;
   const profile = resolveProfile(req);

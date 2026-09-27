@@ -46,20 +46,49 @@ Posts anonymous usage and error events to `https://telemetry.flopos.com/collect`
 
 ## Store-attributed diagnostics
 
-A second, separate channel that attaches store identity to a diagnostic report, including system
-diagnostics, optional device details, and a log tail.
+A second, separate channel that attaches store identity to a diagnostic report. It has a local tier
+and a transmission tier, and only the second one can send anything.
 
-**Enabled by** the `diagnostics_consent` setting, which is independent of the anonymous telemetry
-toggle and ships **on**. A fresh install writes `diagnostics_consent` as `'true'`, and
-`isDiagnosticsConsentEnabled()` treats anything other than the literal string `'false'` as consent.
-It is surfaced in Settings, so a merchant can turn it off, but it is on unless they act.
+**Local capture is not consent-gated.** Every accepted failure is written to the `local_diagnostics`
+table, whether or not the merchant has agreed to anything, because nothing there leaves the till.
+Settings → Diagnostics renders that table, and the copy-for-support bundle is built from
+`buildSystemDiagnostics()` - the same builder the support-ticket path uses - plus the recent
+failures. The raw log tail is deliberately **not** part of that bundle: the log contains whatever
+the application logged, including order and customer detail, so it is a separate, visibly labelled
+control the operator turns on after seeing what it is.
 
-This default is deliberate rather than a leftover, and it is the opposite of what an earlier
-planning document in this repository claimed. Do not treat it as a bug to be fixed without a product
-decision: changing it changes what a merchant sends by default.
+**What is stored is a derived signature, never the raw exception message.** The message is customer
+data's most likely hiding place, so
+[`main/lib/diagnostic-signature.ts`](../../main/lib/diagnostic-signature.ts) reduces it to a
+template: the error class, plus the message with literal values replaced by typed placeholders
+(`<string>`, `<number>`, `<id>`, `<path>`) and anything that cannot be confidently classified
+dropped. Two tills failing the same way therefore produce byte-identical text, which is what makes
+grouping possible. `deriveDiagnosticSignature()` is the only code path that decides what a stored
+diagnostic says; there is no per-event-code phrase table any more.
 
-**Offline behaviour.** Diagnostics are queued in the `store_diagnostics_outbox` table and flushed in
-the background, so a diagnostic raised while offline is delivered when connectivity returns.
+**Transmission is off by default.** Two settings gate it and both must hold:
+
+- `diagnostics_consent` - the merchant's privacy decision, unchanged, and shipped on.
+- `diagnostics_transmission_enabled` - whether captured failures are sent automatically. Shipped
+  **off**, and no release in this series turns it on.
+
+**A support ticket is not diagnostics.** A ticket the merchant raises and sends is a separate
+outbox, a separate code path, and unaffected by either setting above.
+
+**Known limits of the derivation, stated rather than hidden.** The guarantee is per token, not per
+message. A token survives if it is a quoted string, a number, an identifier, a path, a known
+structural word, or a schema reference inside a SQL phrase. Two consequences: a value made
+*entirely* of structural words ("Table Key", "Order Only") cannot be told apart from the fixed
+phrase around it and survives; and the projected `metadata` (for example `route`) is copied into
+the bundle as the existing allowlist already projects it, so a client that supplies its own
+`server.internal_error` metadata controls that one field.
+
+**Offline behaviour.** With transmission on, diagnostics are queued in the
+`store_diagnostics_outbox` table and flushed in the background. With no cloud key or with cloud
+sync off, nothing is enqueued at all: such a till can never deliver the row, so queueing it would
+only accumulate rows nothing will ever send. Both the local log and the outbox are capped at
+`DIAGNOSTIC_LOG_MAX_ROWS` (200) on write, evicting the oldest row first, so neither can grow without
+bound between reads.
 
 ## WhatsApp receipt delivery
 
@@ -112,7 +141,8 @@ best-effort basis. A cloud failure cannot fail a sale.
 
 **Offline behaviour.** `reload()` starts three interval flushers, for the sync outbox, the support
 ticket outbox, and the diagnostics outbox. They are independent timers; one failing does not stop
-the others, and each is a no-op without a configured API key.
+the others, and each is a no-op without a configured API key. The diagnostics flusher additionally
+refuses to send unless `diagnostics_transmission_enabled` is on.
 
 **Deletion and recovery.** A deletion request puts the store into `deletion_pending` or `deleted`.
 `isCloudDeletionBlocking()` reports whether the current status blocks normal cloud work, and while

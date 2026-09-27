@@ -140,7 +140,7 @@ export function registerIpcHandlers(
   // path; the restore itself is authorised over HTTP by the session that holds
   // database.manage, so this handler performs no destructive step and is not
   // Master-PIN gated. The picked path is bound to a single-use token.
-  ipcMain.handle('pick-restore-file', async () => {
+  handle('pick-restore-file', async () => {
     const result = await dialog.showOpenDialog({
       filters: [{ name: 'SQLite Database', extensions: ['db'] }],
       properties: ['openFile'],
@@ -151,7 +151,7 @@ export function registerIpcHandlers(
   });
 
   // Database backup/restore
-  ipcMain.handle('backup-database', async (event, pin?: string) => {
+  handle('backup-database', async (event, pin?: string) => {
     const auth = authorizeMasterPin(pin, 'ipc:backup');
     if (!auth.ok) return { success: false, error: auth.error };
 
@@ -183,7 +183,7 @@ export function registerIpcHandlers(
     }
   });
 
-  ipcMain.handle('restore-backup', async (event, pin?: string, presetBackupPath?: string) => {
+  handle('restore-backup', async (event, pin?: string, presetBackupPath?: string) => {
     clearRestoreFileSelection();
     const auth = authorizeMasterPin(pin, 'ipc:restore');
     if (!auth.ok) return { success: false, error: auth.error };
@@ -315,7 +315,7 @@ export function registerIpcHandlers(
     return { available: isMasterPinAvailable(), isSet: isMasterPinSet() };
   });
 
-  ipcMain.handle('db-initialize', async (event, { pin, confirmationPhrase }: { pin?: string; confirmationPhrase?: string }) => {
+  handle('db-initialize', async (event, { pin, confirmationPhrase }: { pin?: string; confirmationPhrase?: string }) => {
     const auth = authorizeMasterPin(pin, 'ipc:initialize');
     if (!auth.ok) return { success: false, error: auth.error };
     if (confirmationPhrase !== 'INITIALIZE') {

@@ -8,6 +8,6 @@
     "MD046": { "style": "fenced" },
     "MD060": { "style": "fenced" }
   },
-  "globs": ["docs/**/*.md", "*.md"],
-  "ignores": ["CHANGELOG.md", "node_modules/**", "frontend/.next/**", "frontend/out/**", "dist/**"]
+  "globs": ["docs/**/*.md", "*.md", "frontend/**/*.md"],
+  "ignores": ["CHANGELOG.md", "node_modules/**", "frontend/node_modules/**", "frontend/.next/**", "frontend/out/**", "dist/**"]
 }

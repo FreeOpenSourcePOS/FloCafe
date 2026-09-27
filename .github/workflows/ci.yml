@@ -55,7 +55,7 @@ jobs:
             kds: ['main/kds-server.ts', 'main/services/kds.ts', 'main/routes/kds.ts', 'tests/kds-*.test.ts']
             db: ['main/db.ts', 'main/migrations/**', 'tests/fixtures/upgrade-snapshots/**', 'tests/upgrade-path.test.ts']
             uninstaller: ['scripts/uninstallers/**', 'tests/windows-uninstaller.Tests.ps1', 'tests/run-windows-uninstaller-tests.cjs', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']
-            docs: ['docs/**', '*.md', 'DOCUMENTATION.md', '.markdownlint-cli2.jsonc', 'scripts/docs/**', '.github/pull_request_template.md']
+            docs: ['docs/**', '*.md', 'DOCUMENTATION.md', '.markdownlint-cli2.jsonc', 'scripts/docs/**', 'frontend/*.md', '.github/pull_request_template.md']
 
   # 3. Tax Safety Net
   # This deliberately runs independently of path filtering so every push to

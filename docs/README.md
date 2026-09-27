@@ -31,6 +31,7 @@ How the system is put together and why its boundaries sit where they do.
 | [overview.md](architecture/overview.md) | Processes, ports, the window set, the KDS WebSocket, and the Server App proxy. |
 | [runtime-and-lifecycle.md](architecture/runtime-and-lifecycle.md) | Startup and shutdown order, the relaunch gate, and the `dev-server.js` divergence. |
 | [desktop-build.md](architecture/desktop-build.md) | The static-export boundary, the IPC surface, and native title-bar behaviour. |
+| [frontend.md](architecture/frontend.md) | The renderer: what a screen may reach, how it reads permissions, the interface contract, and its state, printing, and locales. |
 | [data-and-migrations.md](architecture/data-and-migrations.md) | Database path, the migration array, the two fail-closed rules, and backups. |
 | [business-time.md](architecture/business-time.md) | UTC storage, business-local presentation, and day and shift boundaries. |
 | [authentication-and-authorization.md](architecture/authentication-and-authorization.md) | Roles, JWT lifecycle, the route-level authorization surface, and the boundaries the product does not harden. |

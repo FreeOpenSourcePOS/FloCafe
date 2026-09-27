@@ -899,6 +899,7 @@
     "time": "Время",
     "customerShort": "Клиент",
     "numberShort": "Номер клиента",
+    "customerDetails": "Данные клиента",
     "address": "Адрес",
     "call": "Телефон",
     "note": "Примечание",

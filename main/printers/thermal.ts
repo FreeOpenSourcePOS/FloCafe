@@ -1691,8 +1691,16 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   lines.push(normalize(printLabel(lang, 'receipt.date')) + ': ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions));
   lines.push(normalize(printLabel(lang, 'print.time')) + ': ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
   if (biz.show_table_number !== false && order.table?.name) lines.push(truncateShapedLine(formatTableLabel(order.table.name, lang), cols, arabicShaping, lang, capabilities));
+  // The heading marks these as the customer's details, so a receipt that also
+  // prints the store address cannot read as carrying a second business address.
+  const deliveryAddress = String(order?.delivery_address ?? '').trim();
+  if (deliveryAddress.length > 0) lines.push(normalize(printLabel(lang, 'print.customerDetails')));
   if (biz.show_customer_name !== false && biz.customer_name) lines.push(truncateShapedLine(printLabel(lang, 'pos.customer') + ': ' + biz.customer_name, cols, arabicShaping, lang, capabilities));
   if (biz.show_customer_phone !== false && biz.customer_phone) lines.push(normalize(printLabel(lang, 'print.numberShort')) + ': ' + biz.customer_phone);
+  if (deliveryAddress.length > 0) {
+    // Wrapped, not truncated, so the courier reads the whole address.
+    pushWrapped(lines, normalize(printLabel(lang, 'print.deliverySlip.address')) + ': ' + deliveryAddress, cols, lang, capabilities);
+  }
   lines.push(dash);
   lines.push(pluginItemHeader(layout, cols, lang, capabilities));
   lines.push(dash);

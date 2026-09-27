@@ -122,6 +122,8 @@ export interface OrderSnapshot {
   readonly onlinePlatform: string;
   /** The platform's own order id (#284), printed alongside the online-order banner. */
   readonly externalOrderId: string;
+  /** Address confirmed for this delivery; empty on every order that is not a delivery. */
+  readonly deliveryAddress: string;
   readonly items: readonly OrderItemSnapshot[];
 }
 
@@ -274,15 +276,24 @@ export interface DocumentMetaBlock {
   readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
 }
 
-/** Customer identity lines (name / phone), when present and shown. */
+/** Customer identity lines (name / number / delivery address), when present and shown. */
 export interface CustomerBlock {
   readonly kind: 'customer';
   readonly direction: TextDirection;
+  /**
+   * Section heading, present only when the order carries a delivery address.
+   * It names the block as the customer's details so a receipt that also prints
+   * the store address cannot read as carrying a second business address.
+   */
+  readonly heading: SemanticLabel | null;
   readonly name: DirectionalText | null;
   readonly phone: DirectionalText | null;
+  /** The order's delivery address, the only address a customer block prints. */
+  readonly address: DirectionalText | null;
   /** Labels for layouts that render labeled customer lines (compact). */
   readonly nameLabel: SemanticLabel;
   readonly phoneLabel: SemanticLabel;
+  readonly addressLabel: SemanticLabel;
 }
 
 /** One add-on under an item row; price is its extended printed amount. */
@@ -610,13 +621,19 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       : null,
   });
 
+  // A delivery address is the one fact that makes this a customer-details block
+  // rather than a bare customer line, so it drives the heading too.
+  const deliveryAddress = order.deliveryAddress.trim();
   const customer: CustomerBlock = Object.freeze({
     kind: 'customer',
     direction: base,
+    heading: deliveryAddress.length > 0 ? resolveSemanticLabel(labels, 'print.customerDetails') : null,
     name: business.showCustomerName ? optionalDirectional(business.customerName, base) : null,
     phone: business.showCustomerPhone ? optionalDirectional(business.customerPhone, base) : null,
+    address: deliveryAddress.length > 0 ? directionalText(deliveryAddress, base) : null,
     nameLabel: resolveSemanticLabel(labels, 'pos.customer'),
     phoneLabel: resolveSemanticLabel(labels, 'print.numberShort'),
+    addressLabel: resolveSemanticLabel(labels, 'print.deliverySlip.address'),
   });
 
   const items: ItemTableBlock = Object.freeze({
@@ -1039,10 +1056,13 @@ function isPrintDocumentBlock(value: unknown): value is PrintDocumentBlock {
         && isDirectionalText(value.timestamp)
         && (value.table === null || (isRecord(value.table) && isSemanticLabel(value.table.label) && isDirectionalText(value.table.name)));
     case 'customer':
-      return isOptionalDirectionalText(value.name)
+      return (value.heading === null || isSemanticLabel(value.heading))
+        && isOptionalDirectionalText(value.name)
         && isOptionalDirectionalText(value.phone)
+        && isOptionalDirectionalText(value.address)
         && isSemanticLabel(value.nameLabel)
-        && isSemanticLabel(value.phoneLabel);
+        && isSemanticLabel(value.phoneLabel)
+        && isSemanticLabel(value.addressLabel);
     case 'item-table':
       return isRecord(value.header)
         && isSemanticLabel(value.header.item)

@@ -210,6 +210,11 @@ export function renderBillDocumentToCompactLines(
   const customerStart = lines.length;
   const customerSourceLines: string[] = [];
   const customerSourceControlLines: string[] = [];
+  if (customer?.heading) {
+    lines.push(normalize(labelOf(customer.heading)));
+    customerSourceLines.push(labelOf(customer.heading));
+    customerSourceControlLines.push(lines.at(-1) ?? '');
+  }
   if (customer?.name) {
     lines.push(truncateShapedLine(labelOf(customer.nameLabel) + ': ' + customer.name.text, cols, options.arabicShaping, options.language, options.capabilities));
     customerSourceLines.push(labelOf(customer.nameLabel) + ': ' + customer.name.text);
@@ -220,6 +225,14 @@ export function renderBillDocumentToCompactLines(
     lines.push(normalize(labelOf(customer.phoneLabel) + ': ' + phone));
     customerSourceLines.push(labelOf(customer.phoneLabel) + ': ' + phone);
     customerSourceControlLines.push(lines.at(-1) ?? '');
+  }
+  if (customer?.address) {
+    // Wrapped, not truncated: the compact layout still has to carry a full address.
+    const labeled = labelOf(customer.addressLabel) + ': ' + customer.address.text;
+    const addressStart = lines.length;
+    pushWrapped(lines, labeled, cols, options.language, options.capabilities);
+    customerSourceLines.push(labeled);
+    customerSourceControlLines.push(lines[addressStart] ?? '');
   }
   if (options.rasterGroups && lines.length > customerStart) options.rasterGroups.push({ groupId: 'customer', lineIndex: customerStart, lineCount: lines.length - customerStart, sourceLines: customerSourceLines, sourceControlLines: customerSourceControlLines });
   lines.push(dash);

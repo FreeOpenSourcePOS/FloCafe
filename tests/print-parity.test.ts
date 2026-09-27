@@ -708,6 +708,61 @@ function run(): void {
   }
 
   // ------------------------------------------------------------------
+  // 2e. Delivery customer details — every receipt path prints the order's
+  //     delivery address under one heading that names the block as the
+  //     customer's, and prints nothing extra when there is no address.
+  // ------------------------------------------------------------------
+  section('Delivery customer details across receipt paths');
+  {
+    const ADDRESS = 'Flat 4B, 123A-Anecacuilco 04330, Colonia Naucalpan';
+    const HEADING = printLabel('en', 'print.customerDetails');
+    const ADDRESS_LABEL = printLabel('en', 'print.deliverySlip.address');
+    // Short enough that no path wraps it, so one substring probe covers all of them.
+    const SHORT_ADDRESS = '12 Marine Road';
+    const deliveryFixtures = (deliveryAddress: string) => {
+      const deliveryOrder = { ...order, type: 'delivery', delivery_address: deliveryAddress };
+      return { deliveryOrder, deliveryBill: { ...bill, order: deliveryOrder } };
+    };
+    const renderAll = (deliveryAddress: string): Array<[string, string]> => {
+      const { deliveryOrder, deliveryBill } = deliveryFixtures(deliveryAddress);
+      const fixture = { ...deliveryBill, order: { ...deliveryOrder, customer: { name: 'Asha Kumar', phone: '+91 98765 43210' } } };
+      return [
+        ['backend/classic', escPosToText(formatReceipt(deliveryOrder, fixture, { ...business, customer_name: 'Asha Kumar', customer_phone: '+91 98765 43210' }, 'classic', 42, true, false, 'full', [], false, 'en'))],
+        ['backend/compact', escPosToText(formatReceipt(deliveryOrder, fixture, { ...business, customer_name: 'Asha Kumar', customer_phone: '+91 98765 43210' }, 'compact', 42, true, false, 'full', [], false, 'en'))],
+        ['webusb/classic', new TextDecoder().decode(fe.receiptEncoder.buildClassicReceiptBytes(fixture, tenant as any, { paperWidth: 80, useUnicode: true, languages: ['en'] }, []))],
+        ['webusb/compact', new TextDecoder().decode(fe.receiptEncoder.buildCompactReceiptBytes(fixture, tenant as any, { paperWidth: 80, useUnicode: true, languages: ['en'] }, []))],
+        ['browser/html', fe.webPrint.generateBillHtml(fixture, tenant as any, { paperSize: 'thermal80', businessName: business.name, address: business.address, showCustomerName: true, showCustomerPhone: true, languages: ['en'] })],
+        ['tax-bill', new TextDecoder().decode(fe.taxBillEncoder.buildTaxBillBytes(fixture, tenant as any, { paperWidth: 80, rawEscPos: true, language: 'en' } as any))],
+      ];
+    };
+
+    for (const [renderer, text] of renderAll(SHORT_ADDRESS)) {
+      const normalized = normalizeSemanticContent(text);
+      warn(normalized.includes(normalizeSemanticContent(SHORT_ADDRESS)), `${renderer}: prints the order delivery address`);
+      warn(normalized.includes(normalizeSemanticContent(HEADING)), `${renderer}: prints the customer-details heading`);
+      warn(normalized.includes(normalizeSemanticContent(ADDRESS_LABEL)), `${renderer}: labels the address line`);
+      warn(normalized.includes(normalizeSemanticContent('Asha Kumar')), `${renderer}: keeps the customer name in the block`);
+    }
+
+    // Two addresses on one receipt: the store address and the customer's must
+    // never read as two business addresses, so the heading has to be there.
+    {
+      const { deliveryOrder, deliveryBill } = deliveryFixtures(SHORT_ADDRESS);
+      const classic = escPosToText(formatReceipt(deliveryOrder, deliveryBill, { ...business, customer_name: 'Asha Kumar' }, 'classic', 42, true, false, 'full', [], false, 'en'));
+      const headingAt = classic.indexOf(HEADING);
+      const storeAt = classic.indexOf(business.address);
+      warn(headingAt > 0 && storeAt > headingAt, 'backend/classic: the customer block is headed and precedes the store address');
+    }
+
+    // Absent: nothing about the delivery section may leak into an in-store receipt.
+    for (const [renderer, text] of renderAll('')) {
+      const normalized = normalizeSemanticContent(text);
+      warn(!normalized.includes(normalizeSemanticContent(HEADING)), `${renderer}: no customer-details heading without an address`);
+      warn(!normalized.includes(normalizeSemanticContent(ADDRESS_LABEL)), `${renderer}: no address label without an address`);
+    }
+  }
+
+  // ------------------------------------------------------------------
   // 3. Browser HTML — full Unicode path (Persian MUST be present here)
   // ------------------------------------------------------------------
   for (const paperSize of ['thermal58', 'thermal80'] as const) {

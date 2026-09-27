@@ -152,6 +152,7 @@ export function buildBillPrintData(bill: Bill, opts: BillBusinessOptions = {}): 
       tableName: String(order?.table?.name ?? ''),
       onlinePlatform: String(order?.online_platform ?? ''),
       externalOrderId: String(order?.external_order_id ?? ''),
+      deliveryAddress: String(order?.delivery_address ?? ''),
       items: items.map((item) => ({
         productName: String(item?.product_name ?? ''),
         quantity: Number(item?.quantity) || 0,

@@ -226,6 +226,12 @@ export function buildTaxBillBytes(
   if (showTableNumber && order?.table?.name) {
     safePrinterText(enc, labelFor('pos.tableLabel').replace('{name}', String(order.table.name)), warnings, false, arabicShaping, undefined, cols, language).newline();
   }
+  // The heading marks the block as the customer's details, so a bill that also
+  // prints the store address cannot read as carrying a second business address.
+  const deliveryAddress = String(order?.delivery_address ?? '').trim();
+  if (deliveryAddress.length > 0) {
+    safePrinterText(enc, labelFor('print.customerDetails'), warnings, false, arabicShaping, undefined, cols, language).newline();
+  }
   if (showCustomerName && order?.customer?.name) {
     safePrinterText(enc, `${labelFor('pos.customer')}: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
@@ -238,6 +244,9 @@ export function buildTaxBillBytes(
   });
   if (phoneVisible && order?.customer?.phone) {
     safePrinterText(enc, `${labelFor('print.numberShort')}: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  }
+  if (deliveryAddress.length > 0) {
+    safePrinterText(enc, `${labelFor('print.deliverySlip.address')}: ${deliveryAddress}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 
   enc.rule({ style: 'single' });

@@ -899,6 +899,7 @@
     "time": "Uhrzeit",
     "customerShort": "Kunde",
     "numberShort": "Kundennummer",
+    "customerDetails": "Kundendaten",
     "address": "Adresse",
     "call": "Anrufen",
     "note": "Notiz",

@@ -899,6 +899,7 @@
     "time": "时间",
     "customerShort": "顾客",
     "numberShort": "顾客编号",
+    "customerDetails": "顾客信息",
     "address": "地址",
     "call": "电话",
     "note": "备注",

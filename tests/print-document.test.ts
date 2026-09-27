@@ -403,6 +403,65 @@ console.log('\n▶ Backend PrintData normalization (main layer)');
 }
 
 // ---------------------------------------------------------------------------
+// 4a. Delivery customer-details block
+// ---------------------------------------------------------------------------
+
+console.log('\n▶ Delivery customer details (address present / absent)');
+{
+  const DELIVERY_ADDRESS = 'Flat 4B, 123A-Anecacuilco 04330, Colonia Naucalpan';
+
+  const withAddress = (deliveryAddress: string) => {
+    const { order, bill, business } = buildParityFixtures();
+    const deliveryOrder = { ...order, type: 'delivery', delivery_address: deliveryAddress };
+    const printData = buildBillPrintData(deliveryOrder, { ...bill, order: deliveryOrder }, {
+      ...business,
+      customer_name: 'Asha Kumar',
+      customer_phone: '+91 98765 43210',
+    }, false);
+    return buildBillDocument(printData, makeContext());
+  };
+
+  // Present: the order's own address, under a heading that names the block as
+  // the customer's, so it cannot read as a second business address.
+  const delivery = blockOf(withAddress(DELIVERY_ADDRESS), 'customer');
+  assert.equal(delivery.address?.text, DELIVERY_ADDRESS, 'the block carries the order delivery address');
+  assert.equal(delivery.heading?.conceptId, 'print.customerDetails', 'a delivery block is headed');
+  assert.equal(delivery.addressLabel.conceptId, 'print.deliverySlip.address', 'the address line is labelled');
+  assert.equal(delivery.name?.text, 'Asha Kumar', 'the name stays in the same block');
+  assert.equal(delivery.phone?.text, '+91 98765 43210', 'the customer number stays in the same block');
+  ok('delivery order: address, heading and labels all land in one customer block');
+
+  // Absent: nothing about the delivery section changes the existing output.
+  const inStore = blockOf(withAddress(''), 'customer');
+  assert.equal(inStore.address, null, 'no address without a delivery address');
+  assert.equal(inStore.heading, null, 'no heading without a delivery address');
+  ok('no delivery address: no address and no heading');
+
+  // A whitespace-only address is no address.
+  assert.equal(blockOf(withAddress('   '), 'customer').address, null, 'a blank address is not an address');
+  ok('blank delivery address is treated as absent');
+
+  // Rendered lines: the heading precedes the address, on both backend layouts.
+  const deliveryLines = renderBillDocumentToClassicLines(withAddress(DELIVERY_ADDRESS), {
+    columns: 42, language: 'en', locale: 'en-IN', currency: 'INR', currencySymbol: '₹',
+    trimDecimals: false, useUnicode: false, arabicShaping: false, cutMode: 'full',
+  });
+  const headingAt = deliveryLines.findIndex((line) => line.includes('print.customerDetails[en]'));
+  const addressAt = deliveryLines.findIndex((line) => line.includes('print.deliverySlip.address[en]'));
+  assert.ok(headingAt > 0, 'the classic layout renders the heading');
+  assert.ok(addressAt > headingAt, 'the heading comes before the address it labels');
+  ok('classic layout: heading, then the labelled address');
+
+  const compactLines = renderBillDocumentToCompactLines(withAddress(DELIVERY_ADDRESS), {
+    columns: 42, language: 'en', locale: 'en-IN', currency: 'INR', currencySymbol: '₹',
+    trimDecimals: false, useUnicode: false, arabicShaping: false, cutMode: 'full',
+  });
+  assert.ok(compactLines.findIndex((line) => line.includes('print.customerDetails[en]')) > 0, 'the compact layout renders the heading');
+  assert.ok(compactLines.some((line) => line.includes('print.deliverySlip.address[en]')), 'the compact layout renders the address');
+  ok('compact layout: heading and address');
+}
+
+// ---------------------------------------------------------------------------
 // 4b. Cash tendered & change projection (#770)
 // ---------------------------------------------------------------------------
 

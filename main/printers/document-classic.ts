@@ -25,6 +25,7 @@ import {
   normalizePrintLanguage,
   maskPhoneOnReceipt,
   pushCenteredWrapped,
+  pushWrapped,
   resolveCurrencyPrefix,
   truncate,
   truncateShapedLine,
@@ -104,6 +105,7 @@ export function buildBillPrintData(order: any, bill: any, business: any, isRepri
       tableName: String(order?.table?.name ?? ''),
       onlinePlatform: String(order?.online_platform ?? ''),
       externalOrderId: String(order?.external_order_id ?? ''),
+      deliveryAddress: String(order?.delivery_address ?? ''),
       items: items.map((item: any) => ({
         productName: String(item?.product_name ?? ''),
         quantity: Number(item?.quantity) || 0,
@@ -386,6 +388,13 @@ export function renderBillDocumentToClassicLines(
       case 'customer': {
         const segment = segmentOf('customer');
         const start = segment.main.length;
+        // The heading is what keeps a receipt that also prints the store address
+        // from reading as carrying a second business address.
+        if (block.heading) {
+          segment.main.push('{CENTER}{BOLD}' + truncateShapedLine(labelOf(block.heading), cols, options.arabicShaping, options.language, options.capabilities) + '{/BOLD}{/CENTER}');
+          segment.sourceLines.main.push(labelOf(block.heading));
+          segment.sourceControlLines.main.push(segment.main.at(-1) ?? '');
+        }
         if (block.name) {
           segment.main.push('{CENTER}{FONT_B}' + truncateShapedLine(block.name.text, cols, options.arabicShaping, options.language, options.capabilities) + '{/FONT_B}{/CENTER}');
           segment.sourceLines.main.push(block.name.text);
@@ -396,6 +405,14 @@ export function renderBillDocumentToClassicLines(
           segment.main.push('{CENTER}' + phone + '{/CENTER}');
           segment.sourceLines.main.push(phone);
           segment.sourceControlLines.main.push(segment.main.at(-1) ?? '');
+        }
+        if (block.address) {
+          const labeled = labelOf(block.addressLabel) + ': ' + block.address.text;
+          // Wrapped, not truncated, so a long address stays readable end to end.
+          const addressStart = segment.main.length;
+          pushWrapped(segment.main, labeled, cols, options.language, options.capabilities);
+          segment.sourceLines.main.push(labeled);
+          segment.sourceControlLines.main.push(segment.main[addressStart] ?? '');
         }
         if (segment.main.length > start) segment.groups.push({ groupId: 'customer', start, count: segment.main.length - start, sourceLines: segment.sourceLines.main.slice(start), sourceControlLines: segment.sourceControlLines.main.slice(start) });
         break;

@@ -5,6 +5,7 @@ import { normalizeCurrencyToAscii, normalizeThermalText, padCurrencyPrefix } fro
 import { columnsForReceiptPaperSize, displayCellWidth, fitThermalLine, graphemeSegments, truncateToDisplayCells, truncateToDisplayCellsFromEnd } from '@print/width';
 import { getCountryByCode, getCurrencyFractionDigits, getCurrencySymbol, resolveTenantCurrency } from '@/lib/countries';
 import { formatDate } from './format-date';
+import { shouldShowCustomerNumber } from '@print/document';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { hasUnsupportedPrinterChars, isArabicShapingSafeLine, safePrinterText as writeSafePrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME } from './branding';
@@ -147,6 +148,7 @@ export function buildTaxBillBytes(
     showTaxBreakdown = true,
     showCustomerName = true,
     showCustomerPhone = true,
+    deliveryShowCustomerPhoneAlways,
     showTableNumber = true,
     useUnicode = false,
     trimDecimals = false,
@@ -228,7 +230,14 @@ export function buildTaxBillBytes(
   if (showCustomerName && order?.customer?.name) {
     safePrinterText(enc, `${labelFor('pos.customer')}: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
-  if (showCustomerPhone && order?.customer?.phone) {
+  // Visibility and the last-four mask are separate decisions: the delivery
+  // exception governs visibility, the mask is unchanged.
+  const phoneVisible = shouldShowCustomerNumber({
+    showOnReceipts: showCustomerPhone,
+    alwaysForDeliveryOrders: deliveryShowCustomerPhoneAlways !== false,
+    orderType: String(order?.type ?? ''),
+  });
+  if (phoneVisible && order?.customer?.phone) {
     safePrinterText(enc, `${labelFor('print.numberShort')}: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
 

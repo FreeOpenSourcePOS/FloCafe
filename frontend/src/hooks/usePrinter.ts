@@ -606,9 +606,16 @@ export const usePrinterStore = create<PrinterState>()(
           // Same override as the backend route, so the two transports cannot
           // disagree about the merchant's choice.
           const slipContact = billDeliveryShowCustomerPhoneAlways ? contact : { ...contact, phone: '' };
+          // Add-ons are carried through, because the backend slip route prints
+          // them and a local slip that silently dropped the customer's selected
+          // add-ons would hand the courier a different order than the kitchen.
           const slipItems = (orderForPrint.items ?? []).map((item) => ({
             product_name: item.product_name,
             quantity: Number(item.quantity) || 0,
+            addons: (item.addons ?? []).map((addon) => ({
+              name: addon.name,
+              ...(typeof addon.quantity === 'number' && addon.quantity > 0 ? { quantity: addon.quantity } : {}),
+            })),
             special_instructions: item.special_instructions ?? null,
           }));
 

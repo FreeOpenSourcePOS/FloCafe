@@ -1002,9 +1002,13 @@ export async function printDeliverySlip(
 
     const { profile, columns: cols, capabilities } = resolvePrinterContext(printer, arabicShapingOverride);
     const db = getDatabase();
-    const settings = db.prepare('SELECT * FROM settings LIMIT 1').get() as { language?: string; country?: string } | undefined;
-    const biz: { language?: string; country?: string } = settings ?? {};
-    const locale = biz.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
+    // The settings table is key/value, so a `SELECT * LIMIT 1` row is an
+    // arbitrary {key, value} pair and carries no `country` or `language`
+    // property. Read the keys this render actually needs, or the slip's date
+    // silently falls back to en-US for every store.
+    const countryCode = getSettingValue('country') ?? '';
+    const storeLanguage = getSettingValue('language') ?? undefined;
+    const locale = countryCode ? getCountryByCode(countryCode)?.locale ?? 'en-US' : 'en-US';
     const timezone = resolveRegionalSnapshot({
       country: getSettingValue('country') ?? undefined,
       currency: getSettingValue('currency') ?? undefined,
@@ -1015,7 +1019,7 @@ export async function printDeliverySlip(
     const nativeCapabilities = nativeFallbackCapabilities(capabilities);
     const renderWith = (caps: ThermalPrinterCapabilities) => renderDeliverySlipViaDocument(order, items, contact, {
       columns: cols,
-      language: normalizePrintLanguage(language ?? biz?.language),
+      language: normalizePrintLanguage(language ?? storeLanguage),
       locale,
       timezone,
       useUnicode,
@@ -1034,15 +1038,24 @@ export async function printDeliverySlip(
         cutMode: profile.cutMode,
         arabicShaping: capabilities.shaping.arabic,
         columns: cols,
-        language: normalizePrintLanguage(language ?? biz?.language),
+        language: normalizePrintLanguage(language ?? storeLanguage),
         capabilities,
         requestPrefix: 'delivery-slip',
       }, documentResult.rasterGroups);
-      data = rasterized.rasterSelected && !rasterized.rasterFailed ? rasterized.data : nativeResult.data;
-      if (rasterized.rasterFailed) warnings.push(...nativeResult.warnings);
-      warnings.push(...rasterized.warnings);
+      if (rasterized.rasterSelected && !rasterized.rasterFailed) {
+        data = rasterized.data;
+        warnings.push(...rasterized.warnings);
+      } else {
+        // The native bytes are the ones going to the printer, so the native
+        // render's warnings are the ones staff must see. Dropping them lets a
+        // slip whose address the printer cannot represent report success.
+        data = nativeResult.data;
+        warnings.push(...nativeResult.warnings, ...rasterized.warnings);
+      }
     } else {
-      data = renderWith(capabilities).data;
+      const nativeResult = renderWith(capabilities);
+      data = nativeResult.data;
+      warnings.push(...nativeResult.warnings);
     }
 
     if (hasFinancialPrintWarning(warnings)) {

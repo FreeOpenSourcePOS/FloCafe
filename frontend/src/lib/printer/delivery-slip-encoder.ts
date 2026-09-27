@@ -42,6 +42,8 @@ export interface DeliverySlipOrder {
 export interface DeliverySlipItem {
   product_name: string;
   quantity: number;
+  /** Selected add-ons, printed under the item as the kitchen ticket does. */
+  addons?: Array<{ name: string; quantity?: number }>;
   special_instructions?: string | null;
 }
 
@@ -79,7 +81,7 @@ export function buildDeliverySlipBytes(
   if (order.type) {
     safePrinterText(enc, `${label('print.kot.type')}: ${order.type.replace(/_/g, ' ').toUpperCase()}`, warnings, false, arabicShaping, undefined, cols, language).newline();
   }
-  safePrinterText(enc, `${label('print.time')}: ${formatTime(order.created_at, timezone)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+  safePrinterText(enc, `${label('print.time')}: ${formatTime(order.created_at, 'en-US', timezone ? { timeZone: timezone } : undefined)}`, warnings, false, arabicShaping, undefined, cols, language).newline();
 
   enc.newline();
   enc.align('center');
@@ -105,6 +107,10 @@ export function buildDeliverySlipBytes(
     enc.bold(true);
     safePrinterText(enc, prefix + item.product_name, warnings, false, arabicShaping, undefined, cols, language).newline();
     enc.bold(false);
+    for (const addon of item.addons ?? []) {
+      const suffix = addon.quantity && addon.quantity > 1 ? ` x${addon.quantity}` : '';
+      safePrinterText(enc, `  + ${addon.name}${suffix}`, warnings, false, arabicShaping, undefined, cols, language).newline();
+    }
     if (item.special_instructions) {
       safePrinterText(enc, `  >> ${item.special_instructions}`, warnings, false, arabicShaping, undefined, cols, language).newline();
     }

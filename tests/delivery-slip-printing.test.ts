@@ -498,6 +498,83 @@ test('delivery slip: the normaliser caps a legacy over-long address instead of t
   assert.equal(printData.contact.addressSource, 'customer');
 });
 
+test('delivery slip: the action is reachable before payment', () => {
+  // Printing the slip before the customer pays is the workflow this feature
+  // exists for, so the action must not sit inside a payment-gated branch.
+  const card = fs.readFileSync(path.join(__dirname, '../frontend/src/components/orders/OrderCard.tsx'), 'utf8');
+  const slipAt = card.indexOf('onPrintDeliverySlip(order)');
+  assert.ok(slipAt > 0, 'the slip action is rendered');
+  assert.ok(
+    /order\.type === 'delivery'/.test(card.slice(slipAt - 700, slipAt)),
+    'the slip action stays limited to delivery orders',
+  );
+  assert.ok(
+    /order\.status !== 'cancelled'/.test(card.slice(slipAt - 700, slipAt)),
+    'and it is guarded by its own cancelled check rather than by the payment ternary, so an unpaid delivery order reaches it',
+  );
+});
+
+test('delivery slip: the local paths carry the selected add-ons, like the backend path does', () => {
+  // The backend slip route prints add-ons. If the renderer's projection dropped
+  // them, a local slip would hand the courier a different order than the kitchen.
+  const usePrinter = fs.readFileSync(path.join(__dirname, '../frontend/src/hooks/usePrinter.ts'), 'utf8');
+  const start = usePrinter.indexOf('const slipItems');
+  const projection = usePrinter.slice(start, start + 700);
+  assert.ok(/addons:/.test(projection), 'the item projection carries add-ons through to the encoders');
+
+  const byteEncoder = fs.readFileSync(path.join(__dirname, '../frontend/src/lib/printer/delivery-slip-encoder.ts'), 'utf8');
+  assert.ok(
+    byteEncoder.includes('for (const addon of item.addons ?? [])'),
+    'the WebUSB encoder renders the add-ons',
+  );
+  const browser = fs.readFileSync(path.join(__dirname, '../frontend/src/lib/printer/delivery-slip-web-print.ts'), 'utf8');
+  assert.ok(
+    browser.includes('(item.addons ?? []).map'),
+    'the browser renderer renders the add-ons',
+  );
+});
+
+test('delivery slip: the byte encoder passes a locale, not a timezone, to the shared formatter', () => {
+  // `formatTime(iso, locale, options)`. Passing an IANA zone as the locale makes
+  // Intl throw, the helper swallows it, and the slip prints a raw database
+  // timestamp while silently ignoring the store timezone.
+  const encoder = fs.readFileSync(path.join(__dirname, '../frontend/src/lib/printer/delivery-slip-encoder.ts'), 'utf8');
+  const call = encoder.match(/formatTime\(([^)]*)\)/)?.[1] ?? '';
+  assert.ok(call.length > 0, 'the encoder calls the shared formatter');
+  const args = call.split(',').map((part) => part.trim());
+  assert.ok(!/timezone/.test(args[1] ?? ''), `the second argument must be a locale, not the timezone (got "${args[1] ?? ''}")`);
+  assert.ok(/timeZone: timezone/.test(call), 'the store timezone is passed as the timeZone option');
+});
+
+test('delivery slip: the store country is read by key, not off an arbitrary settings row', () => {
+  // The settings table is key/value, so `SELECT * FROM settings LIMIT 1` returns
+  // one {key,value} pair and has no `country` property. Reading it that way
+  // silently pins every store's slip date to en-US.
+  const thermal = fs.readFileSync(path.join(__dirname, '../main/printers/thermal.ts'), 'utf8');
+  const slip = thermal.slice(thermal.indexOf('export async function printDeliverySlip('));
+  assert.ok(
+    !/SELECT \* FROM settings LIMIT 1/.test(slip),
+    'the delivery slip path must not read settings as if they were a single row object',
+  );
+  assert.ok(/getSettingValue\('country'\)/.test(slip), 'it reads the country by key, so the slip date uses the store locale');
+});
+
+test('delivery slip: warnings from the render that is dispatched are never dropped', () => {
+  // If a printer cannot represent the address, the slip must not report success
+  // without saying so: the warnings belong to whichever render produced the bytes
+  // that went to the printer.
+  const thermal = fs.readFileSync(path.join(__dirname, '../main/printers/thermal.ts'), 'utf8');
+  const slip = thermal.slice(thermal.indexOf('export async function printDeliverySlip('));
+  assert.ok(
+    /data = nativeResult\.data;\s*warnings\.push\(\.\.\.nativeResult\.warnings/.test(slip),
+    'the raster-fallback path pushes the native render warnings it ships',
+  );
+  assert.ok(
+    /const nativeResult = renderWith\(capabilities\);\s*data = nativeResult\.data;\s*warnings\.push\(\.\.\.nativeResult\.warnings\);/.test(slip),
+    'the non-raster path pushes the warnings from the render it ships',
+  );
+});
+
 test('delivery slip: an order-recorded address reaches the slip, and an order without one falls back', () => {
   // Finding: the WebUSB and browser paths build the slip from the contact the
   // caller resolved, so the order's own address has to survive that resolution

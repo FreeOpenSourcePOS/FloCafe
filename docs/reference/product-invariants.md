@@ -305,13 +305,18 @@ on the belief that the printed page is controlled.
 
 Two consequences follow, and they are separate decisions:
 
-1. **The delivery slip always prints the customer's full phone number and delivery address**,
-   even when the merchant has turned the customer number off on receipts
-   (`bill_show_customer_phone`). A courier who cannot call the customer, or cannot find the house,
-   is the failure this document exists to prevent, so the slip does not read the receipt's
-   visibility setting.
+1. **The delivery slip prints the customer's full phone number and delivery address regardless of
+   the receipt's customer-number setting** (`bill_show_customer_phone`). A courier who cannot
+   call the customer, or cannot find the house, is the failure this document exists to prevent.
 2. **The receipt keeps masking the customer number**, shortening it to its last four digits. This
    is privacy hygiene for a page the customer carries away, not an access control.
+
+The slip's number follows exactly one setting, `bill_delivery_show_customer_phone_always`, which
+ships **on**. With it on, a delivery order and its courier slip show the number even when
+`bill_show_customer_phone` is off. With it off, `bill_show_customer_phone` decides for delivery
+orders too, and the slip withholds the number as well so the two documents cannot disagree. The
+Shipments panel states this beside the toggle it contradicts, and the warning is always present
+rather than appearing only once the merchant has turned the number off.
 
 **Reason:** the masking is inconsistent by construction and never was a boundary. The
 backend-native receipt path and the browser-HTML path both print the full number today, and
@@ -324,8 +329,9 @@ in a room with three open ones while claiming a protection that does not exist.
 **The divergence is deliberate and visible, not accidental.** The slip is a separate document kind
 with its own builder, so it never passes through `buildBillDocument` and never consults
 `bill_show_customer_phone`. A merchant who hides the number on receipts will get a slip that
-behaves differently; that difference is the feature. Do not "fix" it by routing the slip through
-the receipt document, which would silently make the slip obey the receipt setting.
+behaves differently by default; that difference is the feature, and the merchant can turn it off
+from the same panel. Do not "fix" it by routing the slip through the receipt document, which would
+make the two documents share one default and reopen the question.
 
 **Enforced by:** `buildDeliverySlipDocument` in `shared/print/document.ts`, which has no visibility
 or mask parameter to flip; `main/printers/document-delivery-slip.ts`, which imports neither the

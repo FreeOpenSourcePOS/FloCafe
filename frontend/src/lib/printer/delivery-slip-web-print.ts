@@ -55,6 +55,7 @@ export function generateDeliverySlipHtml(
 
   const itemRows = (items ?? []).map((item) => `
     <div style="margin:${padding} 0;font-weight:bold;">${escapeHtml(`${item.quantity}x ${item.product_name}`)}</div>
+    ${(item.addons ?? []).map((addon) => `<div style="padding-inline-start:1em;">+ ${escapeHtml(addon.name)}${addon.quantity && addon.quantity > 1 ? ` x${addon.quantity}` : ''}</div>`).join('')}
     ${item.special_instructions ? `<div style="padding-inline-start:1em;font-style:italic;">&gt;&gt; ${escapeHtml(item.special_instructions)}</div>` : ''}
   `).join('');
 

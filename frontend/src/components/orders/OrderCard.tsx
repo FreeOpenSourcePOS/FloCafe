@@ -815,25 +815,6 @@ export function OrderCard({
               </Button>
             )}
 
-            {/* Courier slip: a delivery order's contact sheet for the rider. It
-                carries the full customer number and address, works before payment,
-                and is a separate document from the receipt. */}
-            {onPrintDeliverySlip && order.type === 'delivery' && (
-              <Button
-                variant="outline"
-                onClick={() => onPrintDeliverySlip(order)}
-                disabled={printingSlipOrderId === order.id}
-                className="flex-1 h-10 border-border text-foreground hover:bg-muted active:scale-95 touch-manipulation font-semibold text-xs"
-              >
-                {printingSlipOrderId === order.id ? (
-                  <Loader2 size={15} className="animate-spin me-1.5" />
-                ) : (
-                  <Bike size={15} className="me-1.5 text-muted-foreground" />
-                )}
-                {tOrders('printDeliverySlip')}
-              </Button>
-            )}
-
             {/* Refund button (neutral outline, no purple) */}
             {canRefund && hasEligibleRefund && (
               <Button
@@ -870,6 +851,27 @@ export function OrderCard({
               {tOrders('addItem')}
             </Button>
           </div>
+        )}
+
+        {/* Courier slip: a delivery order's contact sheet for the rider. It
+            carries the customer number and the delivery address, and it is a
+            separate document from the receipt. Deliberately outside the
+            payment branches above: a courier is handed the slip before the
+            customer has paid, which is the whole workflow this exists for. */}
+        {onPrintDeliverySlip && order.type === 'delivery' && order.status !== 'cancelled' && (
+          <Button
+            variant="outline"
+            onClick={() => onPrintDeliverySlip(order)}
+            disabled={printingSlipOrderId === order.id}
+            className="mt-2 w-full h-10 border-border text-foreground hover:bg-muted active:scale-95 touch-manipulation font-semibold text-xs"
+          >
+            {printingSlipOrderId === order.id ? (
+              <Loader2 size={15} className="animate-spin me-1.5" />
+            ) : (
+              <Bike size={15} className="me-1.5 text-muted-foreground" />
+            )}
+            {tOrders('printDeliverySlip')}
+          </Button>
         )}
       </div>
     </div>

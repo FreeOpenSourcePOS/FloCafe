@@ -66,7 +66,21 @@ dropped. A URL is matched as a whole structure rather than as a substring, so a 
 standing before or after other text; the pattern is deliberately over-inclusive, and a dotted name that
 is not really a host is redacted too. Two tills failing the same way therefore produce byte-identical
 text, which is what makes grouping possible. `deriveDiagnosticSignature()` is the only code path that
-decides what a stored diagnostic says; there is no per-event-code phrase table any more.
+derives the stored text, and it derives it only; it never reads the metadata.
+
+**The operator summary is not the signature.** `signature` is the grouping key and is whatever the
+template reduced to, placeholder stack included. `summary` is what an operator and a support ticket
+read, and a template with fewer than three real words is not shown: on Windows, PowerShell wraps a
+whole .NET exception in `Exception calling "SendRaw" ...: "..."`, so the informative payload is one
+quoted span and redacts to `<string> with <string> <string>`, and no widening of the allowlist can
+change that. For such a case the summary is rebuilt from the already projected `metadata` - a fixed
+reason per print `failure_class` in `PRINT_FAILURE_REASON`
+([`main/services/cloud-sync.ts`](../../main/services/cloud-sync.ts)), otherwise the per-error-class
+clause on its own. There is still no per-event-code phrase table; the print reasons are keyed to a
+closed enum the classifier already produces and already persists, every reason is a fixed
+source-controlled phrase, and none of them carries source text, so the guarantee is strictly stronger
+than the template it replaces. The signature is deliberately left alone: deriving it from
+`failure_class` too would churn the grouping of every till that has already reported.
 
 **Transmission is off by default.** Two settings gate it and both must hold:
 
@@ -83,7 +97,12 @@ structural word, or a schema reference inside a SQL phrase. Two consequences: a 
 *entirely* of structural words ("Table Key", "Order Only") cannot be told apart from the fixed
 phrase around it and survives; and the projected `metadata` (for example `route`) is copied into
 the bundle as the existing allowlist already projects it, so a client that supplies its own
-`server.internal_error` metadata controls that one field.
+`server.internal_error` metadata controls that one field. A third: redaction can succeed so
+completely that nothing readable is left - a message that arrives as one quoted span, a bare host, or
+a couple of stray prepositions - which is why the summary falls back to a fixed reason instead of
+showing the fragments. That costs detail, never safety. The reasons are English, as every summary
+and class clause already was; storing a code and translating at render time remains the better long-term
+design and is deliberately not done here, because it changes the stored contract.
 **Offline behaviour.** With transmission on, diagnostics are queued in the
 `store_diagnostics_outbox` table and flushed in the background. With no cloud key or with cloud
 sync off, nothing is enqueued at all: such a till can never deliver the row, so queueing it would

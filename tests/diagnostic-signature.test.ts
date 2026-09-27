@@ -23,7 +23,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const {
-  deriveDiagnosticSignature, deriveDiagnosticTemplate, errorClassOf,
+  deriveDiagnosticSignature, deriveDiagnosticTemplate, errorClassOf, classClauseSummary,
 } = require('../main/lib/diagnostic-signature');
 const {
   assertOrThrow, assertEqualOrThrow, getResults, closeDatabase,
@@ -256,6 +256,60 @@ function main() {
   assertEqualOrThrow(errorClassOf('a string'), 'Error', 'a non-error value reports the unknown class');
   assertEqualOrThrow(errorClassOf(null), 'Error', 'null reports the unknown class');
   assertEqualOrThrow(errorClassOf({ name: 'SQLiteError', message: 'x' }), 'SQLiteError', 'an error-shaped object reports its name');
+
+  // PowerShell wraps a .NET method-call exception in its own text, so the whole
+  // informative payload arrives as one quoted span and redacts to a placeholder.
+  // No allowlist can rescue that, which is why degeneracy is measured, not reworded.
+  const POWERSHELL_WRAPPED = 'Exception calling "SendRaw" with "1" argument(s): "printer is offline"';
+
+  console.log('\n10. A template with no real words in it is reported as uninformative');
+  const wrapped = deriveDiagnosticSignature({ errorClass: 'Error', message: POWERSHELL_WRAPPED });
+  assertEqualOrThrow(wrapped.signature, 'Error: <string> with <string> <string>', 'the reported Windows case keeps its existing grouping key');
+  assertOrThrow(wrapped.is_informative === false, 'a template made only of placeholders is not informative');
+  const cupsGone = deriveDiagnosticSignature({ errorClass: 'Error', message: 'lp: No such file or directory' });
+  assertOrThrow(cupsGone.is_informative === false, 'a two-word fragment is not informative');
+  // What the operator gets is the floor, because `is_informative` is false; the
+  // stored summary is pinned end to end in tests/diagnostics-screen.test.ts.
+  assertOrThrow(!classClauseSummary(cupsGone.error_class).includes('No such'), 'the operator is not shown the two-word fragment');
+  assertEqualOrThrow(deriveDiagnosticSignature({ errorClass: 'Error', message: 'getaddrinfo ENOTFOUND api.stripe.com' }).is_informative, false, 'a bare redacted host is not informative');
+  assertEqualOrThrow(deriveDiagnosticSignature({ errorClass: 'Error', message: 'IPP status 0x409' }).is_informative, false, 'an empty template is not informative');
+  assertEqualOrThrow(classClauseSummary('Error'), 'An unexpected problem occurred.', 'the floor for a non-print event is the class clause alone');
+  assertEqualOrThrow(classClauseSummary('SQLiteError'), 'The database rejected a request.', 'the class clause is per error class');
+
+  console.log('\n11. The floor is the plain-language line, and it carries no source text at all');
+  const DEGENERATE_WITH_CUSTOMER_DATA = `Exception calling "SendRaw" with "1" argument(s): "Failed to settle bill for '${CUSTOMER_NAME}' at +91 ${PHONE} amount ${AMOUNT} from ${FILE_PATH}"`;
+  const leakyDegenerate = deriveDiagnosticSignature({ errorClass: 'Error', message: DEGENERATE_WITH_CUSTOMER_DATA });
+  assertOrThrow(leakyDegenerate.is_informative === false, 'customer data wrapped in one quoted span is degenerate');
+  const floorSummary = leakyDegenerate.is_informative ? leakyDegenerate.summary : classClauseSummary(leakyDegenerate.error_class);
+  assertEqualOrThrow(floorSummary, 'An unexpected problem occurred.', 'the floor is a fixed phrase, so the reason holds no source text');
+  for (const secret of [CUSTOMER_NAME, 'Rajesh', PHONE, AMOUNT, FILE_PATH, 'SendRaw']) {
+    assertOrThrow(!leakyDegenerate.signature.includes(secret), `the signature carries none of ${secret}`);
+    assertOrThrow(!floorSummary.includes(secret), `the summary carries none of ${secret}`);
+  }
+
+  console.log('\n12. Two tills failing the same way store byte-identical text');
+  const tillOne = deriveDiagnosticSignature({ errorClass: 'Error', message: POWERSHELL_WRAPPED });
+  const tillTwo = deriveDiagnosticSignature({ errorClass: 'Error', message: 'Exception calling "SendRaw" with "2" argument(s): "printer is offline for FRONTDESK-LASER-01"' });
+  assertEqualOrThrow(tillTwo.signature, tillOne.signature, 'the grouping key does not depend on the till or the argument count');
+  assertEqualOrThrow(tillTwo.summary, tillOne.summary, 'the summary does not depend on the till or the argument count');
+  assertOrThrow(!tillTwo.signature.includes('FRONTDESK'), 'the printer name is absent from the signature');
+  assertOrThrow(tillTwo.is_informative === false, 'the printer name does not make the template informative');
+
+  console.log('\n13. Cases that already read well are untouched by the new signal');
+  for (const good of ['no such table: orders', 'UNIQUE constraint failed: orders.customer_id', 'printer is offline']) {
+    const derived = deriveDiagnosticSignature({ errorClass: 'SQLiteError', message: good });
+    assertOrThrow(derived.is_informative === true, `a readable message stays informative: ${good}`);
+    assertEqualOrThrow(derived.summary, `The database rejected a request: ${good}.`, `a readable message keeps today's summary: ${good}`);
+  }
+  const stillGood = deriveDiagnosticSignature({ errorClass: 'Error', message: 'printer is offline' });
+  assertEqualOrThrow(stillGood.summary, 'An unexpected problem occurred: printer is offline.', 'the reported unwrapped case keeps today\'s summary');
+  assertEqualOrThrow(stillGood.signature, 'Error: printer is offline', 'the reported unwrapped case keeps today\'s signature');
+
+  console.log('\n14. Every placeholder a template can carry is lowercased');
+  for (const message of [POWERSHELL_WRAPPED, 'lp: No such file or directory', 'getaddrinfo ENOTFOUND api.stripe.com', 'IPP status 0x409', `<String>`, 'String <String>']) {
+    const template = deriveDiagnosticTemplate(message);
+    assertOrThrow(!/<[A-Z]/.test(template), `no placeholder can start with a capital letter: ${template}`);
+  }
 
   console.log('\n' + '='.repeat(56));
   const results = getResults();

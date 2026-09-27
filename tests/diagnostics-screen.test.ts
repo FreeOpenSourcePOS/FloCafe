@@ -109,7 +109,46 @@ async function main() {
     'the transmission setting is still off after the operator used the screen',
   );
 
-  console.log('\n5. Only a settings-permission holder may erase the failure history');
+  console.log('\n5. A print failure whose message redacts to a placeholder still reads as a reason');
+  db.prepare('DELETE FROM local_diagnostics').run();
+  cloudSync.reportDiagnostic({
+    event_id: '0f2c1d9e-2222-4a4a-9a4a-222222222222',
+    event_code: 'print.receipt.failed',
+    severity: 'error',
+    // The reported Windows shape: PowerShell wraps the whole payload in quotes.
+    message: 'Exception calling "SendRaw" with "1" argument(s): "printer is offline"',
+    metadata: { connection_type: 'usb', kind: 'receipt', os_platform: 'win32', failure_class: 'offline' },
+    occurred_at: new Date().toISOString(),
+  });
+  await settle(() => (db.prepare('SELECT COUNT(*) AS c FROM local_diagnostics').get() as { c: number }).c >= 1);
+  const printRow = cloudSync.listLocalDiagnostics(1)[0];
+  assertEqualOrThrow(printRow.summary, 'The printer was offline or disconnected.', 'the operator reads why the printer failed');
+  assertEqualOrThrow(printRow.signature, 'Error: <string> with <string> <string>', 'the grouping key is unchanged, so existing fleet grouping still matches');
+  assertEqualOrThrow(printRow.metadata?.failure_class, 'offline', 'the classifier output the reason came from is still stored');
+  assertOrThrow(!printRow.summary.includes('<string>'), 'no placeholder reaches the operator summary');
+  assertOrThrow(!printRow.summary.includes('SendRaw'), 'no source text reaches the operator summary');
+  const printRecent = await api(baseUrl, '/api/diagnostics/recent', { headers: owner.authHeader });
+  assertEqualOrThrow(printRecent.data.failures[0].summary, 'The printer was offline or disconnected.', 'the screen shows the reason, not the placeholder stack');
+  db.prepare('DELETE FROM local_diagnostics').run();
+
+  console.log('\n6. A print failure the classifier could not narrow falls back to the class clause');
+  cloudSync.reportDiagnostic({
+    event_id: '0f2c1d9e-3333-4a4a-9a4a-333333333333',
+    event_code: 'print.receipt.failed',
+    severity: 'error',
+    message: 'getaddrinfo ENOTFOUND api.stripe.com',
+    metadata: { connection_type: 'network', kind: 'receipt', os_platform: 'darwin', failure_class: 'unknown' },
+    occurred_at: new Date().toISOString(),
+  });
+  await settle(() => (db.prepare('SELECT COUNT(*) AS c FROM local_diagnostics').get() as { c: number }).c >= 1);
+  assertEqualOrThrow(
+    cloudSync.listLocalDiagnostics(1)[0].summary,
+    'An unexpected problem occurred.',
+    'an unclassified print failure is honest rather than a bare placeholder',
+  );
+  db.prepare('DELETE FROM local_diagnostics').run();
+
+  console.log('\n7. Only a settings-permission holder may erase the failure history');
   const { getJWTSecret } = require('../main/routes/auth');
   const jwt = require('jsonwebtoken');
   db.prepare(

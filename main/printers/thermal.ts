@@ -153,6 +153,7 @@ export type DispatchResult = {
 export type PrintFailureClass =
   | 'not_configured'
   | 'offline'
+  | 'needs_attention'
   | 'queue_unavailable'
   | 'spooler_error'
   | 'driver_error'
@@ -208,13 +209,21 @@ export function sanitizePowerShellStderr(stderr?: string): string {
     .trim();
 }
 
+// A network printer that refuses the socket is as gone as an unplugged one, and
+// neither `offline` nor `disconnected` appears in Node's errno text.
+const NETWORK_UNREACHABLE_RE = /\bconnect (?:ECONNREFUSED|EHOSTUNREACH|ENETUNREACH)\b/;
+
 /** Stable, privacy-safe classification for fleet telemetry. */
 export function classifyPrintFailure(detail?: string): PrintFailureClass {
   const value = sanitizePowerShellStderr(detail).toLowerCase();
   if (!value) return 'unknown';
   if (value.includes('no printer configured') || value.includes('no windows printer configured')) return 'not_configured';
-  if (value.includes('offline') || value.includes('use printer offline') || value.includes('disconnected')) return 'offline';
-  if (value.includes('not accepting') || value.includes('queue') && value.includes('unavailable') || value.includes('cannot open printer')) return 'queue_unavailable';
+  // The queue the till was told to use is gone: `lp` cannot even name it.
+  if (value.includes('no such file or directory') || value.includes('printer or class does not exist') || value.includes('no default destination')) return 'not_configured';
+  if (value.includes('offline') || value.includes('use printer offline') || value.includes('disconnected') || value.includes('printer is not available') || NETWORK_UNREACHABLE_RE.test(value)) return 'offline';
+  // The printer is present but needs a person: paper, cover, or a vendor error flag.
+  if (value.includes('out of paper') || value.includes('paper jam') || value.includes('cover is open') || value.includes('needs attention') || value.includes('reported an error')) return 'needs_attention';
+  if (value.includes('not accepting') || value.includes('queue is disabled') || value.includes('disabled since') || value.includes('queue') && value.includes('unavailable') || value.includes('cannot open printer')) return 'queue_unavailable';
   if (value.includes('spool') || value.includes('startdocprinter') || value.includes('startpageprinter')) return 'spooler_error';
   if (value.includes('driver') || value.includes('no driver')) return 'driver_error';
   if (value.includes('access denied') || value.includes('permission')) return 'permission_denied';

@@ -7,7 +7,7 @@ import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
 import { readCountryProvenance } from './country-provenance';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDiagnosticsTransmissionEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
-import { deriveDiagnosticSignature, errorClassOf } from '../lib/diagnostic-signature';
+import { classClauseSummary, deriveDiagnosticSignature, errorClassOf } from '../lib/diagnostic-signature';
 import { getTenantCurrency } from './refund';
 import { getCurrencyMinorUnitFactor } from '../countries';
 
@@ -168,7 +168,7 @@ const ALLOWED_DIAGNOSTIC_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELE
 const ALLOWED_PRINT_CONNECTION_TYPES = new Set(['network', 'usb', 'webusb', 'unknown']);
 const ALLOWED_PRINT_KINDS = new Set(['receipt', 'kot']);
 const ALLOWED_PRINT_FAILURE_CLASSES = new Set([
-  'not_configured', 'offline', 'queue_unavailable', 'spooler_error', 'driver_error',
+  'not_configured', 'offline', 'needs_attention', 'queue_unavailable', 'spooler_error', 'driver_error',
   'permission_denied', 'timeout', 'write_error', 'unsupported', 'unknown',
 ]);
 const ALLOWED_PRINT_PLATFORMS = new Set(['aix', 'android', 'darwin', 'freebsd', 'linux', 'openbsd', 'win32']);
@@ -226,6 +226,38 @@ type DateRange = {
   from: string;
   to: string;
 };
+
+/**
+ * Fixed operator reason per print failure class. Keyed to a value the classifier
+ * already produced, so the phrase carries no source text at all and reads the
+ * same on every till. A class with no phrase here falls back to the class clause.
+ */
+const PRINT_FAILURE_REASON: Record<string, string> = {
+  not_configured: 'No printer is configured',
+  offline: 'The printer was offline or disconnected',
+  needs_attention: 'The printer needs attention - check its paper, cover and consumables',
+  queue_unavailable: 'The print queue was not accepting jobs',
+  spooler_error: 'The print spooler rejected the job',
+  driver_error: 'The printer driver failed',
+  permission_denied: 'Access to the printer was denied',
+  timeout: 'The printer did not respond in time',
+  write_error: 'The printer accepted only part of the job',
+  unsupported: 'This print is not supported on the current setup',
+};
+
+/**
+ * The line an operator reads when the derived template has nothing real in it.
+ * A degenerate template is the rule working, not a failure of it: a whole
+ * PowerShell exception arriving as one quoted span redacts to a bare placeholder,
+ * so the summary is rebuilt from data the till already stored.
+ */
+function describeDiagnosticFailure(eventCode: DiagnosticEventCode, metadata: Record<string, unknown> | undefined, errorClass: string): string {
+  const failureClass = metadata?.failure_class;
+  const reason = eventCode.startsWith('print.') && typeof failureClass === 'string'
+    ? PRINT_FAILURE_REASON[failureClass]
+    : undefined;
+  return reason ? `${reason}.` : classClauseSummary(errorClass);
+}
 
 function sha256Hex(value: string): string {
   return crypto.createHash('sha256').update(value).digest('hex');
@@ -1076,6 +1108,9 @@ export class CloudSyncService {
     const derived = deriveDiagnosticSignature(
       error ? { errorClass: errorClassOf(error), message: thrown } : { message: thrown },
     );
+    const summary = derived.is_informative
+      ? derived.summary
+      : describeDiagnosticFailure(input.event_code, metadata, derived.error_class);
     const sanitized: DiagnosticEventInput = {
       event_id: input.event_id,
       event_code: input.event_code,
@@ -1098,7 +1133,7 @@ export class CloudSyncService {
         severity: sanitized.severity,
         error_class: derived.error_class,
         signature: derived.signature,
-        summary: derived.summary,
+        summary,
         metadata,
         occurred_at: sanitized.occurred_at,
       }, timestamp);

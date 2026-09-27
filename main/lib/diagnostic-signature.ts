@@ -76,7 +76,32 @@ export type DiagnosticSignature = {
   signature: string;
   /** Plain-language line for the operator, e.g. `The database rejected a request: no such table: orders.` */
   summary: string;
+  /**
+   * Whether the template still carries real words. A message that arrives as one
+   * quoted span, a bare host, or a few stray prepositions derives a template with
+   * nothing an operator can act on, and `summary` should not be shown for it.
+   */
+  is_informative: boolean;
 };
+
+// Real words a template must keep before it says anything. Below this the
+// derived text is placeholders and stray prepositions, which read as noise and
+// would be copied verbatim into a support ticket.
+const INFORMATIVE_TEMPLATE_WORDS = 3;
+const PLACEHOLDER_RE = /<(?:string|number|id|path|url)>/g;
+
+function countTemplateWords(template: string): number {
+  return template.replace(PLACEHOLDER_RE, ' ').split(/\s+/).filter(Boolean).length;
+}
+
+function classClause(errorClass: string): string {
+  return CLASS_PHRASE[errorClass.toLowerCase()] || CLASS_PHRASE.error;
+}
+
+/** The plain-language clause on its own, for a template with nothing readable in it. */
+export function classClauseSummary(errorClass: unknown): string {
+  return `${classClause(normaliseErrorClass(errorClass))}.`;
+}
 
 function normaliseErrorClass(value: unknown): string {
   const candidate = typeof value === 'string' ? value.trim() : '';
@@ -168,9 +193,14 @@ export function deriveDiagnosticSignature(source: { errorClass?: unknown; messag
   const errorClass = normaliseErrorClass(source?.errorClass);
   const template = deriveDiagnosticTemplate(source?.message);
   const signature = template ? `${errorClass}: ${template}` : errorClass;
-  const phrase = CLASS_PHRASE[errorClass.toLowerCase()] || CLASS_PHRASE.error;
+  const phrase = classClause(errorClass);
   const summary = template ? `${phrase}: ${template}.` : `${phrase}.`;
-  return { error_class: errorClass, signature, summary };
+  return {
+    error_class: errorClass,
+    signature,
+    summary,
+    is_informative: countTemplateWords(template) >= INFORMATIVE_TEMPLATE_WORDS,
+  };
 }
 
 /** Class name of a thrown value, or `Error` when it is not an Error instance. */

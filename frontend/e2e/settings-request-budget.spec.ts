@@ -777,6 +777,7 @@ test('Save All preserves printing edits during business hydration', async ({ pag
     bill_show_customer_name: true,
     bill_show_customer_phone: true,
     bill_show_table_number: true,
+    bill_delivery_show_customer_phone_always: true,
   });
 });
 

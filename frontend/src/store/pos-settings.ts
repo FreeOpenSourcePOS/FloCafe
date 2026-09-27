@@ -191,7 +191,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
         Object.entries(s).filter(([k]) => k !== 'whatsappEnabled' && k !== 'billLanguagePolicy' && k !== 'kotLanguagePolicy'),
       ) as PosSettingsState,
       // Migrates legacy store keys (GSTIN rename, removed A4/A5 paper sizes).
-      version: 3,
+      version: 4,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
@@ -216,8 +216,13 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           state.billShowTaxBreakdown ??= true;
           state.billShowCustomerName ??= true;
           state.billShowCustomerPhone ??= true;
-          state.billDeliveryShowCustomerPhoneAlways ??= true;
           state.billShowTableNumber ??= true;
+        }
+        if (version < 4) {
+          // Added after v3 shipped, so a store already persisted at v3 never
+          // runs the v3 block above and would keep this field undefined. That
+          // made the toggle render unset and made the save send nothing for it.
+          state.billDeliveryShowCustomerPhoneAlways ??= true;
         }
         return state as unknown as PosSettingsState;
       },

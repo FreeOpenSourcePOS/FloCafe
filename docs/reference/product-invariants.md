@@ -315,8 +315,9 @@ The slip's number follows exactly one setting, `bill_delivery_show_customer_phon
 ships **on**. With it on, a delivery order and its courier slip show the number even when
 `bill_show_customer_phone` is off. With it off, `bill_show_customer_phone` decides for delivery
 orders too, and the slip withholds the number as well so the two documents cannot disagree. The
-Shipments panel states this beside the toggle it contradicts, and the warning is always present
-rather than appearing only once the merchant has turned the number off.
+Printers settings panel, under Bill Content, states this beside the toggle it contradicts, and
+the warning is always present rather than appearing only once the merchant has turned the number
+off.
 
 **Reason:** the masking is inconsistent by construction and never was a boundary. The
 backend-native receipt path and the browser-HTML path both print the full number today, and

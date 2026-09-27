@@ -32,8 +32,7 @@ async function recordFailure(page: Page, message: string) {
   expect(eventResponse.status(), 'the diagnostic event is accepted').toBe(202);
 }
 
-// These assert what the operator sees, not that a function ran, so the failure
-// under test is produced through the real intake endpoint rather than injected.
+// Assert what the operator sees, not that a function ran.
 test('operator sees a captured failure and the copy-for-support action', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await recordFailure(page, 'The order could not be completed on this device');
@@ -96,6 +95,11 @@ test('an old settings diagnostics link lands on the support hub', async ({ page 
 test('the diagnostics half of the hub opens from a deep link', async ({ page }) => {
   await loginAs(page, 'owner@flo.local');
 
+  const profileRequests: string[] = [];
+  page.on('request', (request) => {
+    if (request.url().includes('/api/support-ticket/profile')) profileRequests.push(request.url());
+  });
+
   await page.goto(`${BASE}/support?tab=diagnostics`);
   await expect(page.getByRole('tab', { name: DIAGNOSTICS_TAB })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('heading', { name: DIAGNOSTICS_TAB })).toBeVisible();
@@ -103,6 +107,16 @@ test('the diagnostics half of the hub opens from a deep link', async ({ page }) 
     page.getByTestId('diagnostics-bundle-preview'),
     'the deep link is not a ticket form with the panel hidden behind it',
   ).toBeVisible();
+  expect(
+    profileRequests,
+    'the ticket form does not load, and cannot report a failure, for a tab nobody opened',
+  ).toHaveLength(0);
+
+  await page.getByRole('tab', { name: TICKET_TAB }).click();
+  await expect(page.locator('#support-subject'), 'opening the tab shows the form').toBeVisible();
+  await expect
+    .poll(() => profileRequests.length, { message: 'the form loads its contact details once shown' })
+    .toBe(1);
 });
 
 test('a captured failure can be reported as a ticket', async ({ page }) => {
@@ -262,9 +276,8 @@ test('a refresh started after a save applies the value it read', async ({ page }
 });
 
 test('an operator without the settings permission can read diagnostics but not change them', async ({ page }) => {
-  // A server holds the support permission that opens this hub but not
-  // settings.manage, which is what PUT /settings/:key and DELETE
-  // /diagnostics/recent enforce.
+  // A server holds support.use but not settings.manage, which both destructive
+  // endpoints enforce.
   await loginAs(page, 'server@flo.local');
 
   await page.goto(`${BASE}/support?tab=diagnostics`);
@@ -293,10 +306,8 @@ test('an operator without the settings permission can read diagnostics but not c
 });
 
 test('an operator who cannot read the setting is never told nothing is sent', async ({ page }) => {
-  // settings.view is configurable, so an owner can leave a role without it: the
-  // settings read is then refused while the support.use reads still succeed.
-  // Transmission is on underneath, so a "nothing leaves the till" claim would be
-  // the screen guessing from a value it never read.
+  // A configurable settings.view can be denied, so the read is refused while
+  // the support.use reads still succeed; transmission is on underneath.
   const token = getE2eToken();
   const setTransmission = (value: string) => page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
     headers: { Authorization: `Bearer ${token}` },

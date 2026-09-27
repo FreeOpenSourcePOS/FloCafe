@@ -13,6 +13,13 @@ const DIAGNOSTICS_TAB = 'diagnostics';
 
 type TicketDraft = { id: number; category: string; subject: string; message: string };
 
+type HubState = {
+  tab: string;
+  /** The ticket form mounts the first time its tab is shown and stays mounted
+   * after, so it never loads for a tab nobody opened but survives a switch. */
+  ticketTabSeen: boolean;
+};
+
 const EMPTY_DRAFT: TicketDraft = { id: 0, category: '', subject: '', message: '' };
 
 export default function SupportPage() {
@@ -21,7 +28,10 @@ export default function SupportPage() {
   const searchParams = useSearchParams();
   // Deep-linkable so a link can open straight into the requested half of the hub.
   const requestedTab = searchParams?.get('tab') === DIAGNOSTICS_TAB ? DIAGNOSTICS_TAB : TICKET_TAB;
-  const [activeTab, setActiveTab] = useState(requestedTab);
+  const [hub, setHub] = useState<HubState>({
+    tab: requestedTab,
+    ticketTabSeen: requestedTab === TICKET_TAB,
+  });
   const [draft, setDraft] = useState<TicketDraft>(EMPTY_DRAFT);
 
   // Sync the active tab when the query string changes while mounted, so back
@@ -29,11 +39,17 @@ export default function SupportPage() {
   useEffect(() => {
     // This is navigation state arriving from Next.js, not an async data effect.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setActiveTab(requestedTab);
+    setHub((current) => (current.tab === requestedTab ? current : {
+      tab: requestedTab,
+      ticketTabSeen: current.ticketTabSeen || requestedTab === TICKET_TAB,
+    }));
   }, [requestedTab]);
 
   const handleTabChange = useCallback((value: string) => {
-    setActiveTab(value);
+    setHub((current) => ({
+      tab: value,
+      ticketTabSeen: current.ticketTabSeen || value === TICKET_TAB,
+    }));
     const next = value === TICKET_TAB ? '' : `?tab=${value}`;
     router.replace(`/support${next}`);
   }, [router]);
@@ -70,19 +86,21 @@ export default function SupportPage() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={handleTabChange}>
+      <Tabs value={hub.tab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value={TICKET_TAB}>{t('menuSubmitTicket')}</TabsTrigger>
           <TabsTrigger value={DIAGNOSTICS_TAB}>{t('tabDiagnostics')}</TabsTrigger>
         </TabsList>
-        <TabsContent value={TICKET_TAB} forceMount hidden={activeTab !== TICKET_TAB}>
-          <SupportTicketForm
-            key={draft.id}
-            initialCategory={draft.category || undefined}
-            initialSubject={draft.subject}
-            initialMessage={draft.message}
-          />
-        </TabsContent>
+        {hub.ticketTabSeen && (
+          <TabsContent value={TICKET_TAB} forceMount hidden={hub.tab !== TICKET_TAB}>
+            <SupportTicketForm
+              key={draft.id}
+              initialCategory={draft.category || undefined}
+              initialSubject={draft.subject}
+              initialMessage={draft.message}
+            />
+          </TabsContent>
+        )}
         <TabsContent value={DIAGNOSTICS_TAB}>
           <DiagnosticsPanel onCreateTicket={handleCreateTicket} />
         </TabsContent>

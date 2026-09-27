@@ -51,8 +51,8 @@ enumerates the absences and why the build stays quiet about them.
 renderer:
 
 1. **HTTP**, through the axios client in [`frontend/src/lib/api.ts`](../../frontend/src/lib/api.ts).
-2. **WebSocket**, on the same ports, for live updates. Two screens open one today, through two
-   different clients; see [the KDS live feed](#the-kds-live-feed-is-a-websocket-not-a-request).
+2. **WebSocket**, on the same base ports, for live updates. Two screens open one today, through
+   two different clients; see [the KDS live feed](#the-kds-live-feed-is-a-websocket-not-a-request).
 3. **Native capability**, through the `window.electronAPI` bridge described in
    [the interface contract](#the-interface-contract).
 
@@ -82,7 +82,7 @@ Four things do not use it, and a new screen has to notice which kind it is:
 
 | Path | How it reaches the API |
 | --- | --- |
-| [`kds-standalone/page.tsx`](../../frontend/src/app/kds-standalone/page.tsx) | builds its own axios instance on its own origin, because it runs on the `:3002` server without the POS window, and on a `401` clears the token and reloads instead of redirecting |
+| [`kds-standalone/page.tsx`](../../frontend/src/app/kds-standalone/page.tsx) | builds its own axios instance on its own origin, because it runs on the `:3002` base port rather than the POS window's `:3001`, and on a `401` clears the token and reloads instead of redirecting |
 | [`server-standalone/page.tsx`](../../frontend/src/app/server-standalone/page.tsx) | the same, against the filtered `:3003` proxy |
 | [`i18n/server-language.ts`](../../frontend/src/lib/i18n/server-language.ts) | bare `fetch`, because it reads the tenant's language before a session exists |
 | the KDS live feed | a WebSocket, described below |
@@ -92,8 +92,10 @@ client.
 
 ### The KDS live feed is a WebSocket, not a request
 
-Two surfaces open a socket, both to the same `/kds` path and both upgraded on `:3001` and `:3002`,
-and they are not interchangeable.
+Two surfaces open a socket to the same `/kds` path. The base ports for that path are `:3001` and
+`:3002`, and the retry ladder can change either bound port, so neither client may name a literal.
+Both derive the host from the origin they were served from. The two clients are not
+interchangeable.
 
 [`useKdsConnection`](../../frontend/src/hooks/useKdsConnection.ts) is the streaming one. The KDS
 views use it. It derives the host from the axios `baseURL` so a dev proxy reaches the right backend
@@ -112,7 +114,7 @@ runs alongside it so a socket that never opens still refreshes the list.
 
 Which REST route a poll hits depends on the surface, because the hook takes its endpoints as a
 parameter. The in-dashboard KDS polls `GET /api/kitchen/orders`; `/kds-standalone` passes
-`orders: '/api/kds/orders'` and the rest of the `:3002` REST surface to the same hook.
+`orders: '/api/kds/orders'` and the rest of that base port's REST surface to the same hook.
 
 The frames, the handshake, and the server-side conditions live in
 [the API reference](../reference/api.md#kds-websocket-kds).
@@ -284,18 +286,25 @@ The restore that path feeds is authorised over HTTP by a session holding `databa
 origin check is the right gate for the picker and adding a PIN prompt to it would be theatre.
 
 The HTTP twins of those repairs are gated separately, and not uniformly, by
-[`main/routes/database-tools.ts`](../../main/routes/database-tools.ts). Every `/api/db-tools` route
-requires `database.manage`. Beyond that:
+[`main/routes/database-tools.ts`](../../main/routes/database-tools.ts). Every one of its nine routes
+requires `database.manage`. Three of them add `requireMasterPin` on a `master_pin` body field:
 
 | Route | Extra requirement |
 | --- | --- |
-| `POST /api/db-tools/apply-safe-fixes` | none. A permission, not a Master PIN, exactly as the IPC channel it mirrors differs |
-| `POST /api/db-tools/initialize` | `requireMasterPin` on `master_pin`, then the `INITIALIZE` phrase |
-| `POST /api/db-tools/currency-reset`, `POST /api/db-tools/backups/:fileName/delete` | `requireMasterPin` |
+| `POST /api/db-tools/initialize` | the Master PIN, then the `INITIALIZE` phrase |
+| `POST /api/db-tools/currency-reset` | the Master PIN |
+| `POST /api/db-tools/backups/:fileName/delete` | the Master PIN |
 
-So `apply-safe-fixes` is the one database write that a manager with `database.manage` can perform
-without a PIN, on both planes, while the neighbouring `db-apply-safe-fixes` IPC channel demands
-one. That asymmetry is real; do not read either gate as implying the other.
+Of the remaining six, one matters here because its IPC twin is gated the other way:
+
+| Interface | Gate |
+| --- | --- |
+| `db-apply-safe-fixes` over IPC | sender check, then the Master PIN, failing closed without it |
+| `POST /api/db-tools/apply-safe-fixes` over HTTP | `database.manage`, and no PIN of any kind |
+
+A caller holding `database.manage` can run the repair over HTTP with no second factor, and cannot
+run it over IPC without one. Neither gate implies the other; do not reason about one from the
+other.
 
 ### Two privileged channels are absent
 
@@ -472,8 +481,8 @@ frontend/src/
 │   │   ├── settings/  staff/  support/  tables/  whatsapp/
 │   ├── auth/                   login, register, recover
 │   ├── customer-display/       Customer-facing second display
-│   ├── kds-standalone/         Standalone KDS, served by the :3002 server
-│   ├── server-standalone/      Standalone Server App, served by the :3003 server
+│   ├── kds-standalone/         Standalone KDS, served by the :3002 base port
+│   ├── server-standalone/      Standalone Server App, on the :3003 base port
 │   └── setup/                  First-run setup wizard
 ├── components/
 │   ├── dashboard/              Cash close, cash drawer movement, shift open and close

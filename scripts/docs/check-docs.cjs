@@ -11,9 +11,8 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const DOCS = path.join(ROOT, 'docs');
 const INDEX = path.join(DOCS, 'README.md');
 
-// Developer documentation that lives outside docs/ but answers the same
-// questions, so the link and policy checks cover it too. Index completeness
-// stays scoped to docs/, which owns that tree.
+// Documentation outside docs/ that still answers the same questions, so the
+// link and policy checks cover it. Index completeness stays scoped to docs/.
 const EXTRA_DOC_ROOTS = [path.join(ROOT, 'frontend')];
 
 // Skipped everywhere: generated trees, vendored output, and machine-owned
@@ -126,11 +125,8 @@ function rootFiles() {
     .map((e) => path.join(ROOT, e.name));
 }
 
-/**
- * Every page the link and policy checks read: the docs/ tree, the Markdown at the
- * repository root, and the extra roots listed above. Index completeness is the
- * one check that stays scoped to docs/, so it reads docFiles() directly.
- */
+// Link and policy scope. Index completeness reads docFiles() directly, since
+// only docs/ owns the index.
 function checkedFiles() {
   return [...docFiles(), ...rootFiles(), ...EXTRA_DOC_ROOTS.flatMap((dir) => listMarkdown(dir))];
 }

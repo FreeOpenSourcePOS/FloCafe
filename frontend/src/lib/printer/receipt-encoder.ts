@@ -472,7 +472,7 @@ export function buildClassicReceiptBytes(
   }
   if (customer?.heading) {
     enc.bold(true);
-    safePrinterText(enc, labelOf(customer.heading), warnings, false, arabicShaping, cols).newline();
+    safePrinterText(enc, labelOf(customer.heading), warnings, false, arabicShaping, cols);
     enc.bold(false).newline();
   }
   if (customer?.name) {

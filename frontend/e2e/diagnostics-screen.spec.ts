@@ -136,6 +136,79 @@ test('the privacy hint stops claiming nothing is sent once transmission is on', 
   }
 });
 
+test('a settings read that started before a save cannot put the switch back to off', async ({ page }) => {
+  const token = getE2eToken();
+  const setTransmission = (value: string) => page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { value },
+  });
+  // The server must ANSWER the settings read before the save and DELIVER it
+  // after, so the response is fetched at request time and held before being
+  // fulfilled. Holding the request instead would just make the server answer
+  // after the save, which is not the race.
+  await page.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'GET') { await route.continue(); return; }
+    const response = await route.fetch();
+    await new Promise((r) => setTimeout(r, 4000));
+    await route.fulfill({ response });
+  });
+
+  try {
+    await page.goto(`${BASE}/auth/login`);
+    await page.getByLabel('Email').fill('owner@flo.local');
+    await page.getByLabel('Password').fill(E2E_PASSWORD);
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await page.goto(`${BASE}/settings?tab=diagnostics`);
+
+    const transmission = page.getByRole('switch', { name: 'Send diagnostics automatically' });
+    await transmission.click();
+    await expect(transmission, 'the save is reflected in the switch').toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByText('Automatic transmission is on', { exact: false })).toBeVisible();
+
+    // The delayed, now stale, settings response lands after the save.
+    await page.waitForTimeout(5000);
+    await expect(transmission, 'a stale read must not put the switch back to off').toHaveAttribute('aria-checked', 'true');
+    await expect(
+      page.getByText('Nothing here leaves the till automatically', { exact: false }),
+      'the screen must not claim nothing is sent while the backend can transmit',
+    ).toHaveCount(0);
+  } finally {
+    await page.unroute('**/api/settings');
+    await setTransmission('false');
+  }
+});
+
+test('a refresh started after a save returns the new value', async ({ page }) => {
+  const token = getE2eToken();
+  const setTransmission = (value: string) => page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { value },
+  });
+  try {
+    await page.goto(`${BASE}/auth/login`);
+    await page.getByLabel('Email').fill('owner@flo.local');
+    await page.getByLabel('Password').fill(E2E_PASSWORD);
+    await page.getByRole('button', { name: 'Sign In' }).click();
+    await page.waitForURL('**/pos/**', { timeout: 20000 });
+    await page.goto(`${BASE}/settings?tab=diagnostics`);
+
+    const transmission = page.getByRole('switch', { name: 'Send diagnostics automatically' });
+    await transmission.click();
+    await expect(transmission).toHaveAttribute('aria-checked', 'true');
+
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await expect(transmission, 'the refresh read returns the value just saved').toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByText('Automatic transmission is on', { exact: false })).toBeVisible();
+    await expect(
+      page.getByText('Nothing here leaves the till automatically', { exact: false }),
+      'a post-save refresh must not fall back to the off-state claim',
+    ).toHaveCount(0);
+  } finally {
+    await setTransmission('false');
+  }
+});
+
 test('an operator without the settings permission cannot use the transmission switch', async ({ page }) => {
   // A server holds the support permission that opens this screen but not
   // settings.manage, which is what PUT /settings/:key enforces.

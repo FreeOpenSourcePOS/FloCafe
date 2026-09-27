@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { AlertTriangle, Copy, RefreshCw, ScrollText, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -61,26 +61,38 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
   // either claim on a state it has not been told.
   const [transmissionEnabled, setTransmissionEnabled] = useState<boolean | null>(null);
   const [savingTransmission, setSavingTransmission] = useState(false);
+  // A read that started before a save must not overwrite the saved value: the
+  // settings response can arrive after the save and put the switch back to off
+  // while the backend is in fact transmitting.
+  const savesRef = useRef(0);
+  const readStartedAtSaveRef = useRef(0);
 
   const applySnapshot = useCallback((snapshot: DiagnosticsSnapshot) => {
     setFailures(snapshot.failures);
     setBundle(snapshot.bundle);
-    setTransmissionEnabled(snapshot.settings.diagnostics_transmission_enabled === 'true');
+    if (readStartedAtSaveRef.current === savesRef.current) {
+      setTransmissionEnabled(snapshot.settings.diagnostics_transmission_enabled === 'true');
+    }
+  }, []);
+
+  const runRead = useCallback(() => {
+    readStartedAtSaveRef.current = savesRef.current;
+    return readDiagnostics();
   }, []);
 
   const reportLoadFailure = useCallback(() => toast.error(t('diagnosticsLoadFailed')), [t]);
 
   const refresh = useCallback(() => {
     setLoading(true);
-    return readDiagnostics().then(applySnapshot).catch(reportLoadFailure).finally(() => setLoading(false));
-  }, [applySnapshot, reportLoadFailure]);
+    return runRead().then(applySnapshot).catch(reportLoadFailure).finally(() => setLoading(false));
+  }, [applySnapshot, reportLoadFailure, runRead]);
 
   useEffect(() => {
-    void readDiagnostics()
+    void runRead()
       .then(applySnapshot)
       .catch(reportLoadFailure)
       .finally(() => setLoading(false));
-  }, [applySnapshot, reportLoadFailure]);
+  }, [applySnapshot, reportLoadFailure, runRead]);
 
   async function toggleLogTail(next: boolean) {
     setIncludeLogTail(next);
@@ -115,7 +127,9 @@ export function DiagnosticsSettingsTab({ isAdmin }: { isAdmin: boolean }) {
     setSavingTransmission(true);
     try {
       await api.put('/settings/diagnostics_transmission_enabled', { value: next ? 'true' : 'false' });
-      // Only now is the state known, so the hint may make a claim again.
+      // Only now is the state known, so the hint may make a claim again, and any
+      // read already in flight loses to the value just confirmed.
+      savesRef.current += 1;
       setTransmissionEnabled(next);
       toast.success(t('diagnosticsSettingSaved'));
     } catch {

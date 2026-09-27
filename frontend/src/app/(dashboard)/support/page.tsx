@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LifeBuoy } from 'lucide-react';
 import { useTranslations } from 'use-intl';
@@ -20,10 +20,17 @@ export default function SupportPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   // Deep-linkable so a link can open straight into the requested half of the hub.
-  const [activeTab, setActiveTab] = useState(
-    searchParams?.get('tab') === DIAGNOSTICS_TAB ? DIAGNOSTICS_TAB : TICKET_TAB,
-  );
+  const requestedTab = searchParams?.get('tab') === DIAGNOSTICS_TAB ? DIAGNOSTICS_TAB : TICKET_TAB;
+  const [activeTab, setActiveTab] = useState(requestedTab);
   const [draft, setDraft] = useState<TicketDraft>(EMPTY_DRAFT);
+
+  // Sync the active tab when the query string changes while mounted, so back
+  // and forward and an in-app link to a deep link land on the right half.
+  useEffect(() => {
+    // This is navigation state arriving from Next.js, not an async data effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveTab(requestedTab);
+  }, [requestedTab]);
 
   const handleTabChange = useCallback((value: string) => {
     setActiveTab(value);
@@ -39,7 +46,9 @@ export default function SupportPage() {
     setDraft((current) => ({
       id: current.id + 1,
       category: 'bug',
-      subject: `[Failure] ${failure.event_code}: ${failure.signature}`,
+      // The backend keeps 255 characters; the full signature stays in the
+      // message, so bound the subject here instead of losing its tail on save.
+      subject: `[Failure] ${failure.event_code}: ${failure.signature}`.slice(0, 255),
       message: `${t('diagnosticsFailureReport')}\n`
         + `occurred_at: ${failure.occurred_at}\n`
         + `summary: ${failure.summary}\n`
@@ -66,7 +75,7 @@ export default function SupportPage() {
           <TabsTrigger value={TICKET_TAB}>{t('menuSubmitTicket')}</TabsTrigger>
           <TabsTrigger value={DIAGNOSTICS_TAB}>{t('tabDiagnostics')}</TabsTrigger>
         </TabsList>
-        <TabsContent value={TICKET_TAB}>
+        <TabsContent value={TICKET_TAB} forceMount hidden={activeTab !== TICKET_TAB}>
           <SupportTicketForm
             key={draft.id}
             initialCategory={draft.category || undefined}

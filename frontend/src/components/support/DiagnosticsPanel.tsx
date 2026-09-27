@@ -69,16 +69,12 @@ export function DiagnosticsPanel({ onCreateTicket }: { onCreateTicket?: (failure
   const t = useTranslations('settings');
   const tSupport = useTranslations('support');
   const { currentTenant } = useAuthStore();
-  // Reading local failures only needs support.use, so every staff member may
-  // open this panel; the destructive and transmitting controls need
-  // settings.manage, which the backend enforces on both endpoints. The role
-  // lives on the tenant, which carries the signed-in user's role.
-  const isOwner = currentTenant?.role === 'owner';
-  const isAdmin = isOwner || tenantCan(currentTenant, 'settings.manage');
-  // The transmission switch reads its state from /settings, which needs
-  // settings.view; without it the value is unconfirmed and the hint says neither
-  // claim rather than guessing that transmission is off.
-  const canViewSettings = isOwner || tenantCan(currentTenant, 'settings.view');
+  // Clear Failures and the transmission toggle need settings.manage, which the
+  // backend re-resolves live, overrides on an owner included, so that is the gate.
+  const isAdmin = tenantCan(currentTenant, 'settings.manage');
+  // The switch reads its state from /settings, which needs settings.view; without
+  // it the value stays unconfirmed rather than guessed to be off.
+  const canViewSettings = tenantCan(currentTenant, 'settings.view');
   const [failures, setFailures] = useState<LocalFailure[]>([]);
   const [bundle, setBundle] = useState<SupportBundle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,7 +93,10 @@ export function DiagnosticsPanel({ onCreateTicket }: { onCreateTicket?: (failure
     setFailures(snapshot.failures);
     setBundle(snapshot.bundle);
     if (readStartedAtSaveRef.current === savesRef.current) {
-      setTransmissionEnabled(snapshot.settings.diagnostics_transmission_enabled === 'true');
+      // Absent means the read was refused or not permitted, and null keeps the
+      // hint off both claims; false would claim nothing is sent while it is.
+      const raw = snapshot.settings.diagnostics_transmission_enabled;
+      setTransmissionEnabled(typeof raw === 'string' ? raw === 'true' : null);
     }
   }, []);
 

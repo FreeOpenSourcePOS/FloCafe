@@ -404,10 +404,16 @@ export default function SettingsPage() {
 
   // Sync active settings tab when query string changes while mounted.
   useEffect(() => {
+    // Diagnostics moved to the Support hub, so an old link lands there instead
+    // of on a tab Settings no longer has.
+    if (requestedTab === 'diagnostics') {
+      router.replace('/support?tab=diagnostics');
+      return;
+    }
     // This is navigation state arriving from Next.js, not an async data effect.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveTab(requestedTab);
-  }, [requestedTab]);
+  }, [requestedTab, router]);
 
   const handleSettingsTabChange = (value: string) => {
     setActiveTab(value);

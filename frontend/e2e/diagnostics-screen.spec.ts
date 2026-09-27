@@ -39,14 +39,8 @@ test('operator sees a captured failure and the copy-for-support action', async (
   await recordFailure(page, 'The order could not be completed on this device');
 
   await loginAs(page, 'owner@flo.local');
-
-  await page.getByRole('button', { name: 'E2E owner' }).click();
-  await page.getByRole('menuitem', { name: 'Support' }).click();
-  await expect(page).toHaveURL(/\/support\/?$/);
-  await expect(
-    page.getByRole('tab', { name: TICKET_TAB }),
-    'the hub opens on ticket submission',
-  ).toHaveAttribute('aria-selected', 'true');
+  await page.goto(`${BASE}/support`);
+  await page.getByLabel('Subject').fill('A report I started by hand');
 
   await page.getByRole('tab', { name: DIAGNOSTICS_TAB }).click();
   await expect(page).toHaveURL(/\/support\/?\?tab=diagnostics$/);
@@ -82,9 +76,21 @@ test('operator sees a captured failure and the copy-for-support action', async (
   await expect(page).toHaveURL(/\/support\/?$/);
   await expect(page.getByRole('tab', { name: TICKET_TAB })).toHaveAttribute('aria-selected', 'true');
   await expect(
-    page.getByLabel('Subject'),
-    'switching back reaches the ticket form',
-  ).toBeVisible();
+    page.locator('#support-subject'),
+    'a report in progress survives an ordinary tab switch',
+  ).toHaveValue('A report I started by hand');
+});
+
+test('an old settings diagnostics link lands on the support hub', async ({ page }) => {
+  await loginAs(page, 'owner@flo.local');
+
+  await page.goto(`${BASE}/settings?tab=diagnostics`);
+  await expect(
+    page,
+    'a link from before the move is sent to the panel that replaced it',
+  ).toHaveURL(/\/support\/?\?tab=diagnostics$/);
+  await expect(page.getByRole('tab', { name: DIAGNOSTICS_TAB })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('heading', { name: DIAGNOSTICS_TAB })).toBeVisible();
 });
 
 test('the diagnostics half of the hub opens from a deep link', async ({ page }) => {
@@ -284,6 +290,47 @@ test('an operator without the settings permission can read diagnostics but not c
     page.getByRole('button', { name: 'Clear', exact: true }),
     'clearing the failure history is visibly unavailable without the settings permission',
   ).toBeDisabled();
+});
+
+test('an operator who cannot read the setting is never told nothing is sent', async ({ page }) => {
+  // settings.view is configurable, so an owner can leave a role without it: the
+  // settings read is then refused while the support.use reads still succeed.
+  // Transmission is on underneath, so a "nothing leaves the till" claim would be
+  // the screen guessing from a value it never read.
+  const token = getE2eToken();
+  const setTransmission = (value: string) => page.request.put(`${BASE}/api/settings/diagnostics_transmission_enabled`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { value },
+  });
+  await page.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'GET') { await route.continue(); return; }
+    await route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'permission_denied' }),
+    });
+  });
+  try {
+    expect((await setTransmission('true')).status(), 'precondition: transmission is on').toBe(200);
+    await loginAs(page, 'server@flo.local');
+    await page.goto(`${BASE}/support?tab=diagnostics`);
+    await expect(page.getByRole('heading', { name: DIAGNOSTICS_TAB })).toBeVisible();
+
+    // A refused read must not take the failures and the bundle down with it.
+    await expect(page.getByTestId('diagnostics-bundle-preview'), 'the bundle is still readable').toBeVisible();
+    await expect(
+      page.getByText('Nothing here leaves the till automatically', { exact: false }),
+      'an unreadable setting must not become a claim that nothing is sent',
+    ).toHaveCount(0);
+    await expect(
+      page.getByText('This screen shows recent problems on this device in plain language.', { exact: true }),
+      'the wording that asserts neither state is used instead',
+    ).toBeVisible();
+  } finally {
+    await page.unroute('**/api/settings');
+    // Shared test database: a failed assertion must not leave it transmitting.
+    await setTransmission('false');
+  }
 });
 
 test('a failure can be reported as a ticket by a staff member without the settings permission', async ({ page }) => {

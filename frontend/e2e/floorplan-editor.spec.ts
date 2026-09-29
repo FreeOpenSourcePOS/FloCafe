@@ -53,6 +53,18 @@ async function login(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Floor plan' }).click();
 }
 
+test('floorplan service actions open from an unplaced table by keyboard', async ({ page }) => {
+  await login(page);
+
+  const trayChip = page.getByTestId('floorplan-tray-T1');
+  await trayChip.focus();
+  await page.keyboard.press('Enter');
+
+  const actionSheet = page.getByRole('dialog', { name: 'T1' });
+  await expect(actionSheet).toBeVisible();
+  await expect(actionSheet.getByRole('button', { name: 'Reserve Table' })).toBeVisible();
+});
+
 test('floorplan editor: drag table onto map, save, persist after reload', async ({ page }) => {
   await login(page);
 

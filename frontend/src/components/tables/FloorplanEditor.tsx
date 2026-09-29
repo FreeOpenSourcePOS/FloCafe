@@ -466,18 +466,18 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
   const onChipKeyDown = (tb: Table, fromTray: boolean) => (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      if (fromTray) {
+      if (!edit) {
+        openActionSheet(tb);
+      } else if (fromTray) {
         const canvas = canvasRef.current;
-        if (canvas && edit) {
+        if (canvas) {
           clamp(tb.id, 50, 50, 0, 0);
           requestAnimationFrame(() => {
             canvas.querySelector<HTMLElement>(`[data-testid="floorplan-chip-${CSS.escape(tb.name)}"]`)?.focus();
           });
         }
-      } else if (edit) {
-        openEdit(tb);
       } else {
-        openActionSheet(tb);
+        openEdit(tb);
       }
       return;
     }

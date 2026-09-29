@@ -251,9 +251,12 @@ for (const dbPath of targets) {
   }
 
   if (tableExists('bills')) {
+    const serviceChargeTerm = columns('bills').includes('service_charge')
+      ? ' + COALESCE(service_charge,0)'
+      : '';
     const badTotals = count(`
       SELECT COUNT(*) FROM bills
-      WHERE ABS(COALESCE(total,0) - (COALESCE(subtotal,0) + COALESCE(tax_amount,0) + COALESCE(packaging_charge,0) + COALESCE(delivery_charge,0) + COALESCE(service_charge,0) - COALESCE(discount_amount,0) + COALESCE(round_off,0))) > 0.02
+      WHERE ABS(COALESCE(total,0) - (COALESCE(subtotal,0) + COALESCE(tax_amount,0) + COALESCE(packaging_charge,0) + COALESCE(delivery_charge,0)${serviceChargeTerm} - COALESCE(discount_amount,0) + COALESCE(round_off,0))) > 0.02
     `);
     if (badTotals > 0) warn(badTotals + ' bills where total ≠ subtotal+tax+charges-discount+round_off');
     else ok('bill totals match component sums');

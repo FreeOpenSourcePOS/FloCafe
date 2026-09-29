@@ -208,6 +208,7 @@ export default function TablesPage() {
   const tOrders = useTranslations('orders');
   const { currentTenant } = useAuthStore();
   const canManageTables = tenantCan(currentTenant, 'tables.manage');
+  const canReadOrders = tenantCan(currentTenant, 'orders.read');
   const [tables, setTables] = useState<Table[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -258,6 +259,8 @@ export default function TablesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutMode]);
 
+  const displaysOrderDetails = canReadOrders && showDetails;
+
   // Clear stale order list immediately when details panel is hidden.
   const [syncedShowDetails, setSyncedShowDetails] = useState(showDetails);
   if (showDetails !== syncedShowDetails) {
@@ -266,7 +269,7 @@ export default function TablesPage() {
   }
 
   useEffect(() => {
-    if (view !== 'plan' && !showDetails) return;
+    if (!canReadOrders || (view !== 'plan' && !showDetails)) return;
     const fetchOrders = () => {
       api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
         .then(({ data }) => setOrders(data.orders || []))
@@ -277,12 +280,12 @@ export default function TablesPage() {
     fetchOrders();
     const interval = setInterval(fetchOrders, 10000);
     return () => clearInterval(interval);
-  }, [showDetails, layoutMode, view]);
+  }, [canReadOrders, showDetails, layoutMode, view]);
 
   // Group active orders by table_id — always built so both the floorplan
   // editor and the list view can read active orders per table.
   const ordersByTable = new Map<string, Order[]>();
-  for (const order of orders) {
+  for (const order of canReadOrders ? orders : []) {
     if (!order.table_id) continue;
     const tableKey = String(order.table_id);
     const existing = ordersByTable.get(tableKey);
@@ -430,7 +433,7 @@ export default function TablesPage() {
               {tTables('backToPlan')}
             </Button>
           )}
-          {view === 'list' && (
+          {view === 'list' && canReadOrders && (
             <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -459,7 +462,7 @@ export default function TablesPage() {
           ordersByTable={ordersByTable}
           onSaved={fetchTables}
           onReserve={(tb) => setReservingTable(tb)}
-          onViewOrder={() => router.push('/orders')}
+          onViewOrder={canReadOrders ? () => router.push('/orders') : undefined}
         />
       </div>
 
@@ -482,7 +485,7 @@ export default function TablesPage() {
         </div>
       )}
 
-      {view === 'list' ? (showDetails ? (
+      {view === 'list' ? (displaysOrderDetails ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibleTables.map((table) => {
             const tableOrders = ordersByTable.get(table.id) || [];

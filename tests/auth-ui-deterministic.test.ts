@@ -56,9 +56,11 @@ async function run() {
   assert.equal(getLandingPage(tenantWith('whatsapp.use')), '/whatsapp', 'WhatsApp-only staff land on WhatsApp');
   assert.equal(getLandingPage(tenantWith('unknown.permission')), '/auth/login', 'staff without a page permission fall back to login');
 
-  const landingRoutes = new Set(LANDING_PAGE_CANDIDATES.map((candidate: readonly [string, string]) => candidate[1]));
-  for (const [route] of PAGE_PERMISSIONS) {
-    assert.ok(landingRoutes.has(route), `${route} has a landing-page candidate`);
+  const landingPermissions = new Map<string, string>(
+    LANDING_PAGE_CANDIDATES.map(([permission, route]: readonly [string, string]) => [route, permission]),
+  );
+  for (const [route, permission] of PAGE_PERMISSIONS) {
+    assert.equal(landingPermissions.get(route), permission, `${route} has a landing-page candidate with matching permission`);
   }
 
   // ── 3. Storage-write failure surfaces StorageUnavailableError and leaves state logged out ──

@@ -366,6 +366,9 @@ jobs:
         # already-fresh entry and skips. Safe to run on both.
         run: node scripts/update-metainfo.js
 
+      - name: Prepare Snapcraft desktop entry
+        run: node scripts/prepare-snap-build.cjs
+
       - name: Build Linux artifacts
         # Builds AppImage + deb + rpm + snap for the host arch. The release
         # overrides below use the safe x64/arm64 matrix label rather than

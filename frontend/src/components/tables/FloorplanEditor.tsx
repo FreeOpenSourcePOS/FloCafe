@@ -704,17 +704,17 @@ export default function FloorplanEditor({ mode, canManage = false, tables, order
 
   const sheetActionsFor = (tb: Table) => {
     const actions: Array<{ label: string; icon: React.ReactNode; run: () => void }> = [];
-    if (tb.status === 'available') {
-      actions.push({ label: t('reserveTable'), icon: <Users size={15} />, run: () => { setActionTable(null); onReserve?.(tb); } });
-      actions.push({ label: t('markCleaning'), icon: <Sparkles size={15} />, run: () => setTableStatus(tb, 'cleaning') });
-    }
     if (tb.status === 'occupied' && onViewOrder) {
       actions.push({ label: t('viewOrder'), icon: <Eye size={15} />, run: () => { setActionTable(null); onViewOrder(); } });
     }
-    if (tb.status !== 'available' && tb.status !== 'occupied') {
-      actions.push({ label: t('markAvailable'), icon: <Table2 size={15} />, run: () => setTableStatus(tb, 'available') });
-    }
     if (canManage) {
+      if (tb.status === 'available') {
+        actions.push({ label: t('reserveTable'), icon: <Users size={15} />, run: () => { setActionTable(null); onReserve?.(tb); } });
+        actions.push({ label: t('markCleaning'), icon: <Sparkles size={15} />, run: () => setTableStatus(tb, 'cleaning') });
+      }
+      if (tb.status !== 'available' && tb.status !== 'occupied') {
+        actions.push({ label: t('markAvailable'), icon: <Table2 size={15} />, run: () => setTableStatus(tb, 'available') });
+      }
       actions.push({ label: t('editTable'), icon: <Pencil size={15} />, run: () => { setActionTable(null); openEdit(tb); } });
       if (posOf(tb) !== null) {
         actions.push({

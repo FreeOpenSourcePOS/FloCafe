@@ -37,7 +37,31 @@ async function run() {
   assert.equal(parseLoginFailure({ response: { status: 429, data: { error: 'Too many attempts' } } }).status, 429, '429 status parsed');
   assert.equal(parseLoginFailure({ response: { status: 500, data: { error: 'Internal server error' } } }).status, 500, '500 status parsed');
 
-  // ── 2. Storage-write failure surfaces StorageUnavailableError and leaves state logged out ──
+  // ── 2. Restricted staff land on an authorized page ──
+  Module._load = function (request: string, parent: unknown, isMain: boolean) {
+    if (request === 'next/navigation') return { usePathname: () => '/', useRouter: () => ({}) };
+    if (request === 'use-intl') return { useTranslations: () => () => '' };
+    if (request === '@/store/auth') return { useAuthStore: () => ({}) };
+    if (request === '@/lib/api') return {};
+    if (request === '@/lib/printer/warnings-toast') return { showPrintLanguageLoadErrorsToast: () => {} };
+    if (request === '@/lib/permissions') {
+      return { tenantCan: (tenant: { permission_ids?: string[] } | null | undefined, permission: string) => tenant?.permission_ids?.includes(permission) === true };
+    }
+    return originalLoad.apply(this, arguments as any);
+  };
+
+  const { getLandingPage, LANDING_PAGE_CANDIDATES, PAGE_PERMISSIONS } = require('../frontend/src/components/layout/AuthGuard');
+  const tenantWith = (permission: string) => ({ permission_ids: [permission] });
+  assert.equal(getLandingPage(tenantWith('tables.view')), '/tables', 'tables-only staff land on Tables');
+  assert.equal(getLandingPage(tenantWith('whatsapp.use')), '/whatsapp', 'WhatsApp-only staff land on WhatsApp');
+  assert.equal(getLandingPage(tenantWith('unknown.permission')), '/auth/login', 'staff without a page permission fall back to login');
+
+  const landingRoutes = new Set(LANDING_PAGE_CANDIDATES.map((candidate: readonly [string, string]) => candidate[1]));
+  for (const [route] of PAGE_PERMISSIONS) {
+    assert.ok(landingRoutes.has(route), `${route} has a landing-page candidate`);
+  }
+
+  // ── 3. Storage-write failure surfaces StorageUnavailableError and leaves state logged out ──
   const serverApi = {
     post: async (url: string) => {
       if (url === '/auth/login') {
@@ -82,7 +106,7 @@ async function run() {
   assert.equal(useAuthStore.getState().tenants.length, 0, 'tenants stay empty after storage failure');
   assert.equal(useAuthStore.getState().currentTenant, null, 'currentTenant stays null after storage failure');
 
-  // ── 3. Successful login persists the session when storage is available ──
+  // ── 4. Successful login persists the session when storage is available ──
   const workingStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
   (globalThis as any).localStorage = workingStorage;
   await useAuthStore.getState().login('owner@cafe.local', 'Pass123!');

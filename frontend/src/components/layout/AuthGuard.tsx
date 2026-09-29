@@ -9,25 +9,28 @@ import { showPrintLanguageLoadErrorsToast } from '@/lib/printer/warnings-toast';
 import { tenantCan } from '@/lib/permissions';
 import type { Tenant } from '@/lib/types';
 
+export const LANDING_PAGE_CANDIDATES = [
+  ['pos.use', '/pos'],
+  ['dashboard.view', '/dashboard'],
+  ['orders.read', '/orders'],
+  ['kitchen.use', '/kds'],
+  ['tables.view', '/tables'],
+  ['whatsapp.use', '/whatsapp'],
+  ['catalog.manage', '/products'],
+  ['inventory.view', '/inventory'],
+  ['customers.view', '/customers'],
+  ['staff.view', '/staff'],
+  ['settings.view', '/settings'],
+  ['support.use', '/support'],
+] as const;
+
 export function getLandingPage(tenant?: Tenant | null): string {
-  const candidates = [
-    ['pos.use', '/pos'],
-    ['dashboard.view', '/dashboard'],
-    ['orders.read', '/orders'],
-    ['kitchen.use', '/kds'],
-    ['catalog.manage', '/products'],
-    ['inventory.view', '/inventory'],
-    ['customers.view', '/customers'],
-    ['staff.view', '/staff'],
-    ['settings.view', '/settings'],
-    ['support.use', '/support'],
-  ] as const;
-  return candidates.find(([permission]) => tenantCan(tenant, permission))?.[1] ?? '/auth/login';
+  return LANDING_PAGE_CANDIDATES.find(([permission]) => tenantCan(tenant, permission))?.[1] ?? '/auth/login';
 }
 
 const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/server-standalone', '/auth/login', '/auth/register', '/auth/recover', '/setup'];
 
-const PAGE_PERMISSIONS = [
+export const PAGE_PERMISSIONS = [
   ['/pos', 'pos.use'],
   ['/dashboard', 'dashboard.view'],
   ['/orders', 'orders.read'],

@@ -561,29 +561,29 @@ export default function TablesPage() {
                 )}
 
                 {/* Actions */}
-                <div className="px-4 py-2 border-t border-border flex justify-end gap-2">
-                  {canManageTables && (
+                {canManageTables && (
+                  <div className="px-4 py-2 border-t border-border flex justify-end gap-2">
                     <button onClick={() => openEdit(table)} className="text-xs text-brand hover:text-brand-hover font-medium inline-flex items-center gap-1">
                       <Pencil size={12} /> {tTables('editTable')}
                     </button>
-                  )}
-                  {(table.status === 'occupied' || table.status === 'reserved') && (
-                    <button onClick={() => updateStatus(table.id, 'available')}
-                      className="text-xs text-brand hover:text-brand-hover font-medium">
-                      {tTables('markAvailable')}
+                    {(table.status === 'occupied' || table.status === 'reserved') && (
+                      <button onClick={() => updateStatus(table.id, 'available')}
+                        className="text-xs text-brand hover:text-brand-hover font-medium">
+                        {tTables('markAvailable')}
+                      </button>
+                    )}
+                    {table.status === 'available' && (
+                      <button onClick={() => setReservingTable(table)}
+                        className="text-xs text-yellow-600 hover:text-yellow-700 font-medium">
+                        {tTables('reserve')}
+                      </button>
+                    )}
+                    <button onClick={() => toggleActive(table)}
+                      className={`text-xs font-medium flex items-center gap-1 ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
+                      {!table.is_active ? <><RotateCcw size={12} /> {tTables('reactivate')}</> : tTables('deactivate')}
                     </button>
-                  )}
-                  {table.status === 'available' && (
-                    <button onClick={() => setReservingTable(table)}
-                      className="text-xs text-yellow-600 hover:text-yellow-700 font-medium">
-                      {tTables('reserve')}
-                    </button>
-                  )}
-                  <button onClick={() => toggleActive(table)}
-                    className={`text-xs font-medium flex items-center gap-1 ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                    {!table.is_active ? <><RotateCcw size={12} /> {tTables('reactivate')}</> : tTables('deactivate')}
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -608,27 +608,29 @@ export default function TablesPage() {
                 <p className="text-xs text-yellow-600 mt-0.5"><Ltr>{table.reservation_customer_phone}</Ltr></p>
               )}
 
-              {(table.status === 'occupied' || table.status === 'reserved') && (
-                <button onClick={() => updateStatus(table.id, 'available')}
-                  className="mt-3 text-xs text-brand hover:text-brand-hover font-medium">
-                  {tTables('markAvailable')}
-                </button>
-              )}
-              {table.status === 'available' && (
-                <button onClick={() => setReservingTable(table)}
-                  className="mt-3 text-xs text-yellow-600 hover:text-yellow-700 font-medium">
-                  {tTables('reserve')}
-                </button>
-              )}
               {canManageTables && (
-                <button onClick={() => openEdit(table)} className="mt-2 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1">
-                  <Pencil size={12} /> {tTables('editTable')}
-                </button>
+                <>
+                  {(table.status === 'occupied' || table.status === 'reserved') && (
+                    <button onClick={() => updateStatus(table.id, 'available')}
+                      className="mt-3 text-xs text-brand hover:text-brand-hover font-medium">
+                      {tTables('markAvailable')}
+                    </button>
+                  )}
+                  {table.status === 'available' && (
+                    <button onClick={() => setReservingTable(table)}
+                      className="mt-3 text-xs text-yellow-600 hover:text-yellow-700 font-medium">
+                      {tTables('reserve')}
+                    </button>
+                  )}
+                  <button onClick={() => openEdit(table)} className="mt-2 mx-auto text-xs text-brand hover:text-brand-hover font-medium flex items-center gap-1">
+                    <Pencil size={12} /> {tTables('editTable')}
+                  </button>
+                  <button onClick={() => toggleActive(table)}
+                    className={`mt-2 block mx-auto text-xs font-medium ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
+                    {!table.is_active ? tTables('reactivate') : tTables('deactivate')}
+                  </button>
+                </>
               )}
-              <button onClick={() => toggleActive(table)}
-                className={`mt-2 block mx-auto text-xs font-medium ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                {!table.is_active ? tTables('reactivate') : tTables('deactivate')}
-              </button>
             </div>
           ))}
         </div>

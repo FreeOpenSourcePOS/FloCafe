@@ -22,7 +22,7 @@
     "docs:check:policy": "node scripts/docs/check-docs.cjs --policy",
     "build:frontend": "node scripts/build-frontend.cjs",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
-    "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",
+    "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron && node scripts/prepare-snap-build.cjs",
     "verify:electron": "node scripts/verify-electron-runtime.cjs",
     "verify:release-artifacts": "node scripts/assert-release-artifact-names.cjs",
     "changelog": "npx --yes git-cliff@2.8.0 --unreleased",

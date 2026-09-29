@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Flo Cafe
+Comment=Free, open-source POS for cafes and restaurants
+GenericName=Point of Sale
+Exec=flocafe %U
+Icon=flocafe
+Terminal=false
+Type=Application
+Categories=Office;
+Keywords=pos;point of sale;restaurant;cafe;billing;invoice;
+StartupWMClass=flo-desktop

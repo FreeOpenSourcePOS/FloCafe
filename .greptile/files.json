@@ -1,0 +1,17 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Core project guidelines, architecture boundaries, operational rules, and development practices"
+    },
+    {
+      "path": "docs/reference/product-invariants.md",
+      "description": "Authoritative product invariants including order visibility rules, configurable permissions, and data safety"
+    },
+    {
+      "path": "docs/reference/roles-and-permissions.md",
+      "description": "Staff roles catalog, permissions matrix, and authorization resolution behavior",
+      "scope": ["main/**", "shared/**"]
+    }
+  ]
+}

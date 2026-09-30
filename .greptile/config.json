@@ -1,0 +1,30 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic"],
+  "autoReview": [],
+  "statusCheck": true,
+  "disabledLabels": ["wip*", "draft*"],
+  "excludeAuthors": ["dependabot[bot]", "*-bot"],
+  "ignorePatterns": "dist/**\nfrontend/.next/**\nfrontend/out/**\nnode_modules/**\npackage-lock.json\npackage.json",
+  "summarySection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": true
+  },
+  "issuesTableSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": true
+  },
+  "confidenceScoreSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": true
+  },
+  "sequenceDiagramSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": true
+  },
+  "instructions": "Review PRs against FloCafe core architectural invariants and guidelines documented in AGENTS.md and docs/reference/product-invariants.md. Pay particular attention to offline-first invariants, ensuring orders are never ownership-gated by user_id, respecting configurable permissions without hardcoding roles, preserving customer data across migrations, and honoring the static export boundary for desktop frontend."
+}

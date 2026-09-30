@@ -10,6 +10,7 @@ import type {
   DeliverySlipItem,
   DeliverySlipOrder,
 } from './delivery-slip-encoder';
+import { MAX_DELIVERY_SLIP_NOTE_CHARS } from '@print/document';
 
 export interface DeliverySlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -28,15 +29,12 @@ function translatorFor(lang: Language): ((key: string) => string) {
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
 }
 
-/**
- * Mirrors MAX_DELIVERY_SLIP_NOTE_CHARS in main/printers/document-delivery-slip.ts so
- * all three render paths print the same note, and states the cut the same way.
- */
-const MAX_NOTE_CHARS = 200;
-
 function clampNote(note: string): { text: string; truncated: number } {
-  if (note.length <= MAX_NOTE_CHARS) return { text: note, truncated: 0 };
-  return { text: Array.from(note).slice(0, MAX_NOTE_CHARS).join(''), truncated: note.length - MAX_NOTE_CHARS };
+  if (note.length <= MAX_DELIVERY_SLIP_NOTE_CHARS) return { text: note, truncated: 0 };
+  return {
+    text: Array.from(note).slice(0, MAX_DELIVERY_SLIP_NOTE_CHARS).join(''),
+    truncated: note.length - MAX_DELIVERY_SLIP_NOTE_CHARS,
+  };
 }
 
 function slipNoteHtml(raw: string | null | undefined, tr: (key: string) => string): string {

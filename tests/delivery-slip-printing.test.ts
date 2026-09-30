@@ -744,6 +744,65 @@ test('delivery slip: a note longer than the paper wraps instead of being cut', (
   }
 });
 
+test('delivery slip: all three render paths spend the same note budget, from one constant', () => {
+  // The slip renders three ways: the backend ESC/POS pipeline, the browser WebUSB
+  // encoder, and the browser web-print fragment. A merchant must get the same
+  // courier sheet whichever printer they own, so the budget is declared once in
+  // the shared document contract and imported by the browser paths. Duplicating the
+  // number lets a later change land on one path and not the others, which is a bug
+  // a merchant only sees on one printer.
+  const shared = fs.readFileSync(path.join(__dirname, '../shared/print/document.ts'), 'utf8');
+  assert.ok(
+    /export const MAX_DELIVERY_SLIP_NOTE_CHARS = \d+;/.test(shared),
+    'the note budget is declared and exported by the shared document contract',
+  );
+  assert.ok(
+    !/MAX_DELIVERY_SLIP_NOTE_CHARS\s*=/.test(fs.readFileSync(path.join(__dirname, '../main/printers/document-delivery-slip.ts'), 'utf8').replace(/export const MAX_DELIVERY_SLIP_NOTE_CHARS[\s\S]*?\n/, '')),
+    'the backend does not redeclare the budget it can import',
+  );
+
+  for (const file of [
+    '../frontend/src/lib/printer/delivery-slip-encoder.ts',
+    '../frontend/src/lib/printer/delivery-slip-web-print.ts',
+  ]) {
+    const source = fs.readFileSync(path.join(__dirname, file), 'utf8');
+    assert.ok(
+      /import\s*\{[^}]*MAX_DELIVERY_SLIP_NOTE_CHARS[^}]*\}\s*from\s*'@print\/document'/.test(source),
+      `${file} imports the budget from the shared contract`,
+    );
+    assert.ok(
+      !/const MAX_NOTE_CHARS\s*=/.test(source),
+      `${file} declares no local copy of the budget`,
+    );
+  }
+
+  // And the imported number is the number all three actually apply, so a renamed
+  // export or an unused import cannot pass this test.
+  const budget = Number(shared.match(/export const MAX_DELIVERY_SLIP_NOTE_CHARS = (\d+);/)![1]);
+  const note = 'leave the parcel with the neighbour at number 42 '.repeat(20);
+  const backend = buildDeliverySlipPrintData({ ...ORDER, special_instructions: note }, ORDER.items, CONTACT);
+  assert.ok(backend.note.length <= budget, 'the backend clamps to the shared budget');
+
+  const webusb = fe.deliverySlipEncoder.buildDeliverySlipBytes(
+    { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00', type: 'delivery', special_instructions: note },
+    [],
+    CONTACT,
+    { paperWidth: 80, columns: 42, language: 'en' },
+    [],
+  );
+  const html = fe.deliverySlipWebPrint.generateDeliverySlipHtml(
+    { order_number: 'ORD-DEL-001', created_at: '2026-08-21 18:42:00', type: 'delivery', special_instructions: note },
+    [],
+    CONTACT,
+    { paperWidth: 80, language: 'en' },
+  );
+  assert.ok(
+    !html.includes(note.slice(budget + 40)),
+    'the web-print path does not print past the shared budget',
+  );
+  assert.ok(webusb.byteLength > 0, 'the WebUSB path still renders');
+});
+
 test('delivery slip: an over-long order note is bounded and visibly marked, never silently cut', () => {
   // max_order_notes_length is a tenant setting, so a raised limit or a legacy row
   // can carry more than a courier sheet should spend. A note that ends without

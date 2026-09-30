@@ -966,6 +966,20 @@ export interface DeliverySlipNotesBlock {
   readonly noteTruncatedChars: number;
 }
 
+/**
+ * The order note is bounded on the way in by `max_order_notes_length` (a tenant
+ * setting, 200 by default), so a raised setting or a legacy row can carry more than
+ * a slip should spend. The address clamps for the same reason: an unbounded field
+ * turns a courier sheet into a roll, and text that ends without saying so reads as
+ * the whole instruction.
+ *
+ * Declared here, not in a renderer, because the slip renders three ways — the
+ * backend ESC/POS pipeline, the browser WebUSB encoder, and the browser web-print
+ * fragment. All three import this number, so a merchant gets the same courier sheet
+ * whichever printer they own.
+ */
+export const MAX_DELIVERY_SLIP_NOTE_CHARS = 200;
+
 export type DeliverySlipBlockKind = DeliverySlipDocumentBlock['kind'];
 
 export type DeliverySlipDocumentBlock =

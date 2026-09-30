@@ -5,6 +5,7 @@ import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
 import { safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
+import { MAX_DELIVERY_SLIP_NOTE_CHARS } from '@print/document';
 
 export interface DeliverySlipWebUsbOptions {
   /** 58 mm (32 cols) or 80 mm (42 cols). Default: 58 */
@@ -46,16 +47,12 @@ export interface DeliverySlipItem {
 // `columns`. The number itself lives in `columnsForReceiptPaperSize`.
 const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
 
-/**
- * Mirrors MAX_DELIVERY_SLIP_NOTE_CHARS in main/printers/document-delivery-slip.ts.
- * The three render paths have to spend the same paper on the same note, or a
- * merchant gets a different courier sheet depending on which printer they own.
- */
-const MAX_NOTE_CHARS = 200;
-
 function clampNote(note: string): { text: string; truncated: number } {
-  if (note.length <= MAX_NOTE_CHARS) return { text: note, truncated: 0 };
-  return { text: Array.from(note).slice(0, MAX_NOTE_CHARS).join(''), truncated: note.length - MAX_NOTE_CHARS };
+  if (note.length <= MAX_DELIVERY_SLIP_NOTE_CHARS) return { text: note, truncated: 0 };
+  return {
+    text: Array.from(note).slice(0, MAX_DELIVERY_SLIP_NOTE_CHARS).join(''),
+    truncated: note.length - MAX_DELIVERY_SLIP_NOTE_CHARS,
+  };
 }
 
 export function buildDeliverySlipBytes(

@@ -24,6 +24,7 @@ import { detectPrintLanguageDirection } from './document-classic';
 import { displayCellWidth, graphemeSegments } from '../../shared/print/width';
 import {
   buildDeliverySlipDocument,
+  MAX_DELIVERY_SLIP_NOTE_CHARS,
   type DeliverySlipAddressSource,
   type DeliverySlipContactBlock,
   type DeliverySlipDocument,
@@ -36,15 +37,9 @@ import {
   type SemanticLabel,
 } from '../../shared/print';
 
+export { MAX_DELIVERY_SLIP_NOTE_CHARS };
+
 export const MAX_DELIVERY_SLIP_ADDRESS_CHARS = 300;
-/**
- * The order note is bounded on the way in by `max_order_notes_length` (a tenant
- * setting, 200 by default), so a raised setting or a legacy row can carry more
- * than a slip should spend. The address beside it clamps for the same reason: an
- * unbounded field turns a courier sheet into a roll, and text that ends without
- * saying so reads as the whole instruction.
- */
-export const MAX_DELIVERY_SLIP_NOTE_CHARS = 200;
 
 function parseSlipAddons(value: unknown): Array<{ name: string; quantity?: number }> {
   let candidates = value;

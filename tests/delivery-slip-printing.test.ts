@@ -973,12 +973,11 @@ test('delivery slip: an over-long order note is bounded and visibly marked, neve
 });
 
 test('delivery slip: a control token in free text prints as text, never as a command', () => {
-  // The renderer dispatches {CUT}, {BOLD} and friends on the whole line, so a token
-  // inside a customer-typed field used to reach the printer as a real command: a note
-  // containing {CUT} cut the paper mid-slip. Braces are neutralised at the boundary.
+  // Printer commands occupy a whole trimmed line. A command spelling embedded in
+  // free text must not run, and unrelated curly braces must survive unchanged.
   const profile = resolvePrinterProfile({ paper_width: 'cols-42' });
   const capabilities = capabilitiesForPrinter(profile, 'cols-42', false);
-  const hostile = '{CUT} ring twice {BOLD} loudly {INIT}';
+  const hostile = '{CUT} ring {tag} twice {BOLD} loudly {INIT}';
 
   for (const [field, apply] of [
     ['note', (o: any, c: any) => [{ ...o, special_instructions: hostile }, c]],
@@ -1003,10 +1002,12 @@ test('delivery slip: a control token in free text prints as text, never as a com
       cutMode: profile.cutMode,
       capabilities,
     });
-    // GS is the paper-cut lead byte. One for the trailing {CUT}, and no more.
+    // GS is the paper-cut lead byte. Only the trailing standalone {CUT} cuts.
     const cuts = [...result.data].filter((byte) => byte === 0x1d).length;
     assert.equal(cuts, 1, `a {CUT} in the ${field} must not cut the paper (found ${cuts} cuts)`);
-    assert.ok(escPosToText(result.data).includes('ring twice'), `the ${field} still prints its text`);
+    const printedText = escPosToText(result.data);
+    assert.ok(printedText.includes('ring'), `the ${field} still prints its text`);
+    assert.ok(printedText.includes('{tag}'), `the ${field} keeps user curly braces`);
   }
 
   // The renderer keeps writing its own tokens: a real bold item line still bolds.

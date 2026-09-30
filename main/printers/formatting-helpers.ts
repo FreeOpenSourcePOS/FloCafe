@@ -2,7 +2,6 @@
 
 import CodepageEncoder from '@point-of-sale/codepage-encoder';
 import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii } from '../../shared/print/currency';
-import { escapeControlTokens } from '../../shared/print/document';
 import { displayCellWidth, fitThermalLine, padToDisplayCells, truncateToDisplayCells, wrapToDisplayCells } from '../../shared/print/width';
 import {
   escPosCodePageId,
@@ -80,11 +79,7 @@ export function itemAmountWidth(
 
 export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, _language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
   const qtyW = 4;
-  // These two build their lines directly rather than through a semantic document,
-  // so they never pass through directionalText and have to neutralise control
-  // tokens themselves. Width-neutral: '{' and '(' are both one cell, so the
-  // receipt's column budget and its golden fixture are unaffected.
-  const productName = normalizeThermalText(escapeControlTokens(String(item.product_name ?? '')), capabilities);
+  const productName = normalizeThermalText(String(item.product_name ?? ''), capabilities);
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
   const qty = padToDisplayCells(String(item.quantity), qtyW);
   const maxLine1Name = Math.max(1, nameLen - 1);
@@ -107,7 +102,7 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
 }
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, _language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
-  const addonName = normalizeThermalText(escapeControlTokens(String(addon.name ?? '')), capabilities);
+  const addonName = normalizeThermalText(String(addon.name ?? ''), capabilities);
   const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
   const fullName = '  + ' + addonName + quantity;
 
@@ -202,7 +197,7 @@ export function wrapText(text: string, cols: number): string[] {
 }
 
 export function pushWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
-  const normalized = normalizeThermalText(escapeControlTokens(text), capabilities);
+  const normalized = normalizeThermalText(text, capabilities);
   if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalized, capabilities)) {
     lines.push(normalized);
     return;
@@ -210,9 +205,9 @@ export function pushWrapped(lines: string[], text: string, cols: number, _langua
   for (const line of wrapText(normalized, cols)) lines.push(line);
 }
 
-/** Centred counterpart of {@link pushWrapped}, escaping free text the same way. */
+/** Centred counterpart of {@link pushWrapped}. */
 export function pushCenteredWrapped(lines: string[], text: string, cols: number, _language: string = 'en', capabilities?: ThermalPrinterCapabilities): void {
-  const normalized = normalizeThermalText(escapeControlTokens(text), capabilities);
+  const normalized = normalizeThermalText(text, capabilities);
   if (capabilities?.raster.enabled === true && !isThermalTextRepresentable(normalized, capabilities)) {
     lines.push('{CENTER}' + normalized + '{/CENTER}');
     return;
@@ -352,7 +347,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       continue;
     }
     if (rasterRanges.some((range) => range.start < lineIndex && lineIndex < range.end)) continue;
-    if (line.includes('{INIT}')) {
+    if (line.trim() === '{INIT}') {
       buf.push(0x1B, 0x40);
       resetAllStyles();
       if (!useLegacyUnicode && activeCodePage !== 'ascii') {
@@ -361,12 +356,12 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       continue;
     }
 
-    if (line.includes('{FEED}')) {
+    if (line.trim() === '{FEED}') {
       buf.push(0x1B, 0x64, 0x05);
       continue;
     }
 
-    if (line.includes('{CUT}')) {
+    if (line.trim() === '{CUT}') {
       buf.push(0x1B, 0x64, 0x05);
       if (options.cutMode === 'partial') {
         buf.push(0x1D, 0x56, 0x42, 0x00);

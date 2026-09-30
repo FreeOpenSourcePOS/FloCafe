@@ -87,31 +87,8 @@ export interface DirectionalText {
 }
 
 /** Annotate `text` with its value-scope direction for a document base direction. */
-/**
- * Neutralise the brace spelling of a control token in free text.
- *
- * `buildEscPos` dispatches `{CUT}`, `{FEED}`, `{INIT}` and friends by whole-line
- * substring test, so a token inside customer-typed text became a real printer
- * command. ASCII parentheses are used rather than the fullwidth brace because the
- * fullwidth brace is absent from a CP437 code page: substituting it would make the
- * line unrepresentable and drop the whole field instead. Both are display width 1,
- * so no column reflows.
- */
-const CONTROL_TOKEN_BRACE_RE = /[{}]/g;
-export function escapeControlTokens(text: string): string {
-  return text.replace(CONTROL_TOKEN_BRACE_RE, (brace) => (brace === '{' ? '(' : ')'));
-}
-
 export function directionalText(text: string, base: TextDirection): DirectionalText {
-  // Free text reaches the printer through this factory, and `buildEscPos`
-  // dispatches control tokens by whole-line substring test — so a "{CUT}" typed
-  // into a field that bypasses the wrapping helpers used to cut the paper and
-  // delete that line from the document. Escaping here rather than at each render
-  // site means a field added later is safe without anyone remembering.
-  //
-  // Direction is resolved from the ORIGINAL text: '{' is bidi-mirrored, so the
-  // substituted '(' must not be what decides the run direction.
-  return Object.freeze({ text: escapeControlTokens(text), direction: resolveValueDirection(text, base) });
+  return Object.freeze({ text, direction: resolveValueDirection(text, base) });
 }
 
 // ---------------------------------------------------------------------------

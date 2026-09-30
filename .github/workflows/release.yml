@@ -610,8 +610,10 @@ jobs:
         run: |
           MANIFEST_PREFIX="${{ needs.create-release.outputs.manifest_prefix }}"
           test -f "release/${MANIFEST_PREFIX}-mac.yml" || { echo "::error::release/${MANIFEST_PREFIX}-mac.yml is missing — macOS auto-update would be broken for this release"; exit 1; }
-          find release -maxdepth 1 -type f -name '*.zip' -print -quit | grep -q . || { echo "::error::no .zip in release/ — macOS auto-update would be broken for this release"; exit 1; }
-          find release -maxdepth 1 -type f -name '*.zip.blockmap' -print -quit | grep -q . || { echo "::error::no .zip.blockmap in release/ — macOS auto-update would be broken for this release"; exit 1; }
+          ZIP_FILES=(release/*.zip)
+          ZIP_BLOCKMAP_FILES=(release/*.zip.blockmap)
+          [ -f "${ZIP_FILES[0]}" ] || { echo "::error::no .zip in release/ — macOS auto-update would be broken for this release"; exit 1; }
+          [ -f "${ZIP_BLOCKMAP_FILES[0]}" ] || { echo "::error::no .zip.blockmap in release/ — macOS auto-update would be broken for this release"; exit 1; }
           # Guards against a regression back to #199/#178: this should list one
           # `files:` entry per .zip built (both archs), not just exist.
           #
@@ -623,7 +625,7 @@ jobs:
           # entries were being counted as if they were missing zip entries).
           # electron-updater's MacUpdater only ever selects a `.zip` entry, so
           # only those need to be counted here.
-          ZIP_COUNT=$(find release -maxdepth 1 -type f -name '*.zip' | wc -l | tr -d ' ')
+          ZIP_COUNT=${#ZIP_FILES[@]}
           MANIFEST_COUNT=$(grep -cE '^\s*- url: .*\.zip$' "release/${MANIFEST_PREFIX}-mac.yml" || true)
           if [ "$MANIFEST_COUNT" -ne "$ZIP_COUNT" ]; then
             echo "::error::latest-mac.yml lists $MANIFEST_COUNT .zip file(s) but $ZIP_COUNT .zip(s) were built — auto-update would be broken for whichever architecture's entry is missing"
@@ -635,7 +637,7 @@ jobs:
             APP_DIR="$VERIFY_DIR/$(basename "$ZIP" .zip)"
             mkdir -p "$APP_DIR"
             ditto -x -k "$ZIP" "$APP_DIR"
-            APP=$(find "$APP_DIR" -maxdepth 2 -type d -name '*.app' -print -quit)
+            APP=$(find "$APP_DIR" -type d -name '*.app' -print -quit)
             [ -n "$APP" ] || { echo "::error::no app bundle in $ZIP"; exit 1; }
             codesign --verify --deep --strict --verbose=2 "$APP"
             spctl --assess --type execute --verbose=4 "$APP"
@@ -678,7 +680,7 @@ jobs:
             APP_DIR="$VERIFY_DIR/$(basename "$ZIP" .zip)"
             mkdir -p "$APP_DIR"
             ditto -x -k "$ZIP" "$APP_DIR"
-            APP=$(find "$APP_DIR" -maxdepth 2 -type d -name '*.app' -print -quit)
+            APP=$(find "$APP_DIR" -type d -name '*.app' -print -quit)
             [ -n "$APP" ] || { echo "::error::no app bundle in downloaded $ZIP"; exit 1; }
             codesign --verify --deep --strict --verbose=2 "$APP"
             spctl --assess --type execute --verbose=4 "$APP"

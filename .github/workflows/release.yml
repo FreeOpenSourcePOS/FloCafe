@@ -561,6 +561,14 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
 
+      - name: Isolate macOS signing keychain
+        # electron-builder imports MAC_CERTS into a temporary keychain. The
+        # self-hosted Mac also has the same Developer ID identity in login.keychain-db;
+        # leaving both in the search list makes codesign report an ambiguous identity.
+        run: |
+          security list-keychains -d user > "$RUNNER_TEMP/user-keychains.before"
+          security list-keychains -d user -s /Library/Keychains/System.keychain
+
       - name: Build macOS
         # Both archs in one electron-builder invocation (#199, #178): package.json's
         # build.mac.target already declares arch: [x64, arm64] for dmg/zip, and
@@ -586,6 +594,17 @@ jobs:
           APPLE_TEAM_ID: BKDY677XJA
           GOOGLE_DRIVE_CLIENT_ID: ${{ secrets.GOOGLE_DRIVE_CLIENT_ID }}
           GOOGLE_DRIVE_CLIENT_SECRET: ${{ secrets.GOOGLE_DRIVE_CLIENT_SECRET }}
+
+      - name: Restore macOS signing keychain
+        if: always()
+        run: |
+          KEYCHAINS=()
+          while IFS= read -r LINE; do
+            KEYCHAIN="${LINE#\"}"
+            KEYCHAIN="${KEYCHAIN%\"}"
+            [ -n "$KEYCHAIN" ] && KEYCHAINS+=("$KEYCHAIN")
+          done < "$RUNNER_TEMP/user-keychains.before"
+          [ ${#KEYCHAINS[@]} -gt 0 ] && security list-keychains -d user -s "${KEYCHAINS[@]}"
 
       - name: Verify macOS release assets
         run: |

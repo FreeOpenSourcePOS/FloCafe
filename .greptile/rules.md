@@ -34,7 +34,7 @@ When running in desktop mode (`NEXT_BUILD_MODE=desktop`), the Next.js frontend i
 
 FloCafe stores customer business data in SQLite via `better-sqlite3`.
 
-- Upgrades must never lose customer data. Never drop, truncate, or reset SQLite database tables in migrations, runtime code, or shortcuts.
+- Upgrades must never lose customer data. Never drop, truncate, or reset SQLite database tables in migrations or shortcuts, or in runtime code except through the approved currency reset flow below.
 - The only approved database reset is the owner-only, Master-PIN-gated currency reset flow at `POST /api/db-tools/currency-reset`.
 - Migrations must be forward-compatible, safe, and testable on upgrade paths.
 

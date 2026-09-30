@@ -27,7 +27,7 @@ reviews:
         2. Configurable permissions: Staff permissions are owner-configurable. Use `requirePermission` or `requireAnyPermission` middleware; do not introduce `requireRole(...)` runtime gates.
         3. Offline-first operation: Core POS operations (orders, billing, KDS, printing) must function offline. Optional external integrations must degrade gracefully without crashing or blocking core workflows.
         4. Desktop static export boundary: When built for desktop (`NEXT_BUILD_MODE=desktop`), `frontend/` is exported as static HTML/CSS/JS (`output: 'export'`). There is no Next.js server runtime, API routes, or server cookies; all dynamic backend logic belongs in Express (`:3001`) or Electron IPC.
-        5. Data safety: Customer data survives upgrades. Never drop, truncate, or reset SQLite databases in migrations or runtime code (the only approved database reset is the owner Master-PIN currency-reset flow at `POST /api/db-tools/currency-reset`).
+        5. Data safety: Customer data survives upgrades. Never drop, truncate, or reset SQLite databases in migrations or shortcuts, or in runtime code except through the approved currency reset flow at `POST /api/db-tools/currency-reset`.
         6. Backend authority: Financial calculations, discounts, payment records, taxes, and security decisions must always be backend-authoritative.
 
 knowledge_base:

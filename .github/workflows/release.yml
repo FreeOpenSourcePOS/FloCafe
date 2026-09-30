@@ -391,7 +391,6 @@ jobs:
 
       - name: Verify Linux release assets
         run: |
-          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
           MANIFEST_PREFIX="${{ needs.create-release.outputs.manifest_prefix }}"
           MANIFEST_NAME="${MANIFEST_PREFIX}-linux.yml"
           if [ "${{ matrix.arch }}" = "arm64" ]; then MANIFEST_NAME="${MANIFEST_PREFIX}-linux-arm64.yml"; fi
@@ -406,7 +405,6 @@ jobs:
         # override uses the safe x64/arm64 matrix labels, so entries never
         # collide on the same GitHub release and no post-build rename is needed.
         run: |
-          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
           VERSION=$(node -p "require('./package.json').version")
           mapfile -t FILES < <(find release -maxdepth 1 -type f \( -name '*.appimage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.snap' \) -print)
           MANIFEST_PREFIX="${{ needs.create-release.outputs.manifest_prefix }}"
@@ -610,6 +608,7 @@ jobs:
 
       - name: Verify macOS release assets
         run: |
+          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
           MANIFEST_PREFIX="${{ needs.create-release.outputs.manifest_prefix }}"
           test -f "release/${MANIFEST_PREFIX}-mac.yml" || { echo "::error::release/${MANIFEST_PREFIX}-mac.yml is missing — macOS auto-update would be broken for this release"; exit 1; }
           ZIP_FILES=(release/*.zip)
@@ -671,6 +670,7 @@ jobs:
         # checks against that, so a "clean" local build can't mask a broken
         # published release.
         run: |
+          export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
           VERSION=$(node -p "require('./package.json').version")
           DOWNLOAD_DIR=$(mktemp -d)
           VERIFY_DIR=$(mktemp -d)

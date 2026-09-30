@@ -193,7 +193,20 @@ test('real main-process application menu is intact and the title-bar row mirrors
     await expect(row).toHaveCount(0);
   } else {
     await expect(row).toBeVisible();
-    await expect(row.locator('button')).toHaveText(labels);
+    const layoutMode = await row.getAttribute('data-layout-mode');
+    if (layoutMode === 'compact') {
+      await expect(row.getByTestId('desktop-application-menu-hamburger')).toBeVisible();
+    } else {
+      const visibleLabels = await row
+        .locator('button:not([data-testid="desktop-application-menu-overflow"])')
+        .allTextContents();
+      expect(visibleLabels).toEqual(labels.slice(0, visibleLabels.length));
+      if (layoutMode === 'overflow') {
+        await expect(row.getByTestId('desktop-application-menu-overflow')).toBeVisible();
+      } else {
+        expect(visibleLabels).toEqual(labels);
+      }
+    }
   }
 });
 

@@ -183,7 +183,7 @@ test('real main-process application menu is intact and the title-bar row mirrors
   // macOS prepends the app-name menu and a dev build appends Developer; the
   // shared top-level surface must be identical on every platform.
   expect(labels.filter((label) => label !== menu!.appName && label !== 'Developer')).toEqual([
-    'File', 'Edit', 'Orders', 'Reports', 'Settings', 'Window', 'Help',
+    'File', 'Edit', 'View', 'Orders', 'Reports', 'Settings', 'Window', 'Help',
   ]);
 
   const row = harness.page.getByTestId('desktop-application-menu');

@@ -1,11 +1,39 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
 reviews:
+  profile: "chill"
+  high_level_summary: true
+  sequence_diagrams: true
+  poem: false
+  in_progress_fortune: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: false
+    drafts: false
   path_filters:
-    # Version bumps only ever touch these two files, and neither carries
-    # reviewable logic: package-lock.json is fully generated, and
-    # package.json's `version` field is a plain string bump. Excluding them
-    # from review scope (rather than skipping review by PR title) means a
-    # release PR that also carries an unrelated functional change still gets
-    # that change fully reviewed — title text alone can't bypass review.
+    # Lockfiles are generated; exclude from review to avoid noise while
+    # keeping package.json manifests included for dependency and script review.
     - "!package-lock.json"
-    - "!package.json"
+    - "!dist/**"
+    - "!frontend/.next/**"
+    - "!frontend/out/**"
+    - "!node_modules/**"
+  path_instructions:
+    - path: "**/*"
+      instructions: |
+        Review code against FloCafe core architectural invariants and guidelines documented in AGENTS.md and docs/reference/product-invariants.md:
+        1. Orders are never ownership-gated: Any staff role with order access can view and act on every order. Never introduce checks like `order.user_id !== user.userId` or `role === 'server' && order.user_id !== ...`.
+        2. Configurable permissions: Staff permissions are owner-configurable. Use `requirePermission` or `requireAnyPermission` middleware; do not introduce `requireRole(...)` runtime gates.
+        3. Offline-first operation: Core POS operations (orders, billing, KDS, printing) must function offline. Optional external integrations must degrade gracefully without crashing or blocking core workflows.
+        4. Desktop static export boundary: When built for desktop (`NEXT_BUILD_MODE=desktop`), `frontend/` is exported as static HTML/CSS/JS (`output: 'export'`). There is no Next.js server runtime, API routes, or server cookies; all dynamic backend logic belongs in Express (`:3001`) or Electron IPC.
+        5. Data safety: Customer data survives upgrades. Never drop, truncate, or reset SQLite databases in migrations or shortcuts, or in runtime code except through the approved currency reset flow at `POST /api/db-tools/currency-reset`.
+        6. Backend authority: Financial calculations, discounts, payment records, taxes, and security decisions must always be backend-authoritative.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "**/AGENTS.md"
+      - "docs/reference/product-invariants.md"
+      - "docs/reference/roles-and-permissions.md"

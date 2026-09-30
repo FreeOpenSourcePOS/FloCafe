@@ -98,6 +98,7 @@ export default function SetupPage() {
     password: '',
     confirmPassword: '',
     business_name: '',
+    instagram_handle: '',
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [productUpdates, setProductUpdates] = useState(false);
@@ -276,6 +277,7 @@ export default function SetupPage() {
         password: form.password,
         business_type: 'restaurant',
         business_name: form.business_name || undefined,
+        instagram_handle: form.instagram_handle.trim() || undefined,
         setup_profile: profile,
         service_model: serviceModel,
         terms_accepted: termsAccepted,
@@ -720,6 +722,18 @@ export default function SetupPage() {
                       onChange={(e) => setForm({ ...form, business_name: e.target.value })}
                       placeholder={t('businessNamePlaceholder')}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="instagram_handle">{tSettings('instagramHandle')}</Label>
+                    <Input
+                      id="instagram_handle"
+                      value={form.instagram_handle}
+                      onChange={(e) => setForm({ ...form, instagram_handle: e.target.value })}
+                      placeholder="@yourstore"
+                      dir="ltr"
+                      maxLength={100}
+                    />
+                    <p className="text-xs text-muted-foreground">{tSettings('instagramHandleHint')}</p>
                   </div>
 
                   <label className="flex items-start gap-2 text-sm text-muted-foreground">

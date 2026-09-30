@@ -5,7 +5,7 @@ import { columnsForReceiptPaperSize } from '@print/width';
 import { formatTime } from './format-date';
 import { safePrinterText as writeSafePrinterText, wrapPrinterText, type PrintWarning } from './warnings';
 import { printLabelResolver } from './print-document';
-import { MAX_DELIVERY_SLIP_NOTE_CHARS } from '@print/document';
+import { clampDeliverySlipText } from '@print/document';
 
 export interface DeliverySlipWebUsbOptions {
   /** 58 mm (32 cols) or 80 mm (42 cols). Default: 58 */
@@ -46,14 +46,6 @@ export interface DeliverySlipItem {
 // Paper-size fallback only; callers that know the configured printer pass
 // `columns`. The number itself lives in `columnsForReceiptPaperSize`.
 const CHARS: Record<58 | 80, number> = { 58: columnsForReceiptPaperSize(58), 80: columnsForReceiptPaperSize(80) };
-
-function clampNote(note: string): { text: string; truncated: number } {
-  if (note.length <= MAX_DELIVERY_SLIP_NOTE_CHARS) return { text: note, truncated: 0 };
-  return {
-    text: Array.from(note).slice(0, MAX_DELIVERY_SLIP_NOTE_CHARS).join(''),
-    truncated: note.length - MAX_DELIVERY_SLIP_NOTE_CHARS,
-  };
-}
 
 export function buildDeliverySlipBytes(
   order: DeliverySlipOrder,
@@ -106,7 +98,7 @@ export function buildDeliverySlipBytes(
   // The order note, once for the whole delivery, wrapped like the address: a
   // courier instruction cut mid-sentence is worse than one that runs long. A note
   // over the budget is bounded, and the cut is stated on the paper.
-  const { text: orderNote, truncated: noteTruncated } = clampNote((order.special_instructions ?? '').trim());
+  const { text: orderNote, truncatedChars: noteTruncated } = clampDeliverySlipText((order.special_instructions ?? '').trim());
   if (orderNote) {
     const labeled = `${label('print.note')}: ${orderNote}`;
     for (const row of wrapPrinterText(labeled, cols)) {

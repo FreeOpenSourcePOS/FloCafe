@@ -2,6 +2,7 @@
 
 import CodepageEncoder from '@point-of-sale/codepage-encoder';
 import { CURRENCY_ASCII_MAP, normalizeCurrencyToAscii } from '../../shared/print/currency';
+import { escapeControlTokens } from '../../shared/print/document';
 import { displayCellWidth, fitThermalLine, padToDisplayCells, truncateToDisplayCells, wrapToDisplayCells } from '../../shared/print/width';
 import {
   escPosCodePageId,
@@ -37,19 +38,6 @@ const CURRENCY_TOKEN_RE = new RegExp(
 );
 
 const ESC_POS_CONTROL_TOKEN_RE = /\{\/?(?:CENTER|BOLD|DOUBLE_HEIGHT|DOUBLE_WIDTH|FONT_B)\}|\{(?:CUT|FEED|INIT|STORE_NAME|FINANCIAL)\}/g;
-/**
- * Free text (a customer address, an order note, an item instruction) reaches the
- * same lines the renderer's own control tokens do, and a token in that text is
- * dispatched as a real command: `{CUT}` in a note emitted a paper cut mid-slip.
- *
- * The brace is replaced with an ASCII lookalike rather than a fullwidth one: the
- * fullwidth brace is not in a CP437 printer's code page, so substituting it would
- * make the line unrepresentable and drop the whole field. ASCII always prints.
- */
-const CONTROL_TOKEN_BRACE_RE = /[{}]/g;
-function escapeControlTokens(text: string): string {
-  return text.replace(CONTROL_TOKEN_BRACE_RE, (brace) => (brace === '{' ? '(' : ')'));
-}
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
 const ARABIC_SHAPING_ALLOWED_GLOBAL_RE = /[\u200C\u200D\u200F\u2026]/g;
 const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;
@@ -92,7 +80,11 @@ export function itemAmountWidth(
 
 export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, _language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
   const qtyW = 4;
-  const productName = normalizeThermalText(item.product_name, capabilities);
+  // These two build their lines directly rather than through a semantic document,
+  // so they never pass through directionalText and have to neutralise control
+  // tokens themselves. Width-neutral: '{' and '(' are both one cell, so the
+  // receipt's column budget and its golden fixture are unaffected.
+  const productName = normalizeThermalText(escapeControlTokens(String(item.product_name ?? '')), capabilities);
   const amount = formatCurrency(item.total, prefix, locale, trimDecimals, fractionDigits);
   const qty = padToDisplayCells(String(item.quantity), qtyW);
   const maxLine1Name = Math.max(1, nameLen - 1);
@@ -115,7 +107,7 @@ export function itemRows(item: any, nameLen: number, amtLen: number, cols: numbe
 }
 
 export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false, _language: string = 'en', fractionDigits: number = 2, capabilities?: ThermalPrinterCapabilities): string[] {
-  const addonName = normalizeThermalText(addon.name, capabilities);
+  const addonName = normalizeThermalText(escapeControlTokens(String(addon.name ?? '')), capabilities);
   const quantity = typeof addon.quantity === 'number' && addon.quantity > 1 ? ` x${addon.quantity}` : '';
   const fullName = '  + ' + addonName + quantity;
 
@@ -278,8 +270,6 @@ export interface RasterLineUnit {
   readonly unit: RasterSemanticUnit;
 }
 
-export { escapeControlTokens };
-
 export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number; language?: string; capabilities?: ThermalPrinterCapabilities; rasterUnits?: readonly RasterLineUnit[]; rasterFailures?: readonly { lineIndex: number; lineCount: number; financial: boolean }[]; financialLineRanges?: readonly { lineIndex: number; lineCount: number }[] } = {}, warnings?: PrintWarning[]): Buffer<ArrayBuffer> {
   const buf: number[] = [];
   const useLegacyUnicode = options.capabilities === undefined && _useUnicode;
@@ -394,6 +384,13 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       && Number.isSafeInteger(range.lineCount)
       && range.lineIndex <= lineIndex
       && lineIndex < range.lineIndex + range.lineCount);
+    // A printer command is a byte sequence, so the C0 range is stripped from every
+    // line before anything else looks at it. It used to sit inside the non-ASCII
+    // branch below, which meant a pure-ASCII line — an English order note, say —
+    // never reached it and its ESC/GS bytes went to the wire. The renderer's own
+    // sequences are unaffected: they are pushed straight to `buf`, never carried
+    // in a line.
+    line = line.replace(ESCPOS_TEXT_CONTROL_RE, '');
     line = line.replace(/\{STORE_NAME\}/g, '');
     let printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
     const lineBold = line.includes('{BOLD}');
@@ -434,7 +431,6 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         }
         continue;
       }
-      line = line.replace(ESCPOS_TEXT_CONTROL_RE, '');
       printableLine = line.replace(ESC_POS_CONTROL_TOKEN_RE, '');
       if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
         const maxCols = lineDW ? Math.floor((options.columns as number) / 2) : (options.columns as number);

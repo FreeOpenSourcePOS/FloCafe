@@ -7,7 +7,7 @@ import type { ThermalPrinterCapabilities } from '../../shared/print/thermal-capa
 import type { RasterSemanticLineGroup } from '../../shared/print/raster';
 import {
   buildEscPos,
-  escapeControlTokens,
+
   pushWrapped,
   truncate,
   truncateShapedLine,
@@ -24,6 +24,7 @@ import { detectPrintLanguageDirection } from './document-classic';
 import { displayCellWidth, graphemeSegments } from '../../shared/print/width';
 import {
   buildDeliverySlipDocument,
+  clampDeliverySlipText,
   MAX_DELIVERY_SLIP_NOTE_CHARS,
   type DeliverySlipAddressSource,
   type DeliverySlipContactBlock,
@@ -93,9 +94,8 @@ export function buildDeliverySlipPrintData(
   const addressSource: DeliverySlipAddressSource | null = address.length === 0
     ? null
     : (orderAddress.length > 0 ? 'order' : (contact?.addressSource ?? 'customer'));
-  const { text: note, truncatedChars: noteTruncatedChars } = clampToGraphemes(
+  const { text: note, truncatedChars: noteTruncatedChars } = clampDeliverySlipText(
     String(order?.special_instructions ?? '').trim(),
-    MAX_DELIVERY_SLIP_NOTE_CHARS,
   );
 
   const ticketItems = Array.isArray(items) ? items : [];
@@ -127,22 +127,8 @@ export function buildDeliverySlipPrintData(
   };
 }
 
-function clampToGraphemes(text: string, maxChars: number): { text: string; truncatedChars: number } {
-  if (text.length <= maxChars) return { text, truncatedChars: 0 };
-  const kept: string[] = [];
-  let units = 0;
-  for (const cluster of graphemeSegments(text)) {
-    const size = cluster.length;
-    if (units + size > maxChars) break;
-    kept.push(cluster);
-    units += size;
-  }
-  const keptText = kept.join('');
-  return { text: keptText, truncatedChars: text.length - keptText.length };
-}
-
 function clampAddress(address: string): { text: string; truncatedChars: number } {
-  return clampToGraphemes(address, MAX_DELIVERY_SLIP_ADDRESS_CHARS);
+  return clampDeliverySlipText(address, MAX_DELIVERY_SLIP_ADDRESS_CHARS);
 }
 
 export function buildDeliverySlipPrintContext(opts: {
@@ -331,15 +317,17 @@ function slipNoteLines(
 function slipItemLines(row: DeliverySlipItemsBlock['rows'][number], cols: number, arabicShaping: boolean, language: string, capabilities?: ThermalPrinterCapabilities): string[] {
   const lines: string[] = [];
   const itemPrefix = row.quantity + 'x  ';
-  lines.push('{BOLD}' + itemPrefix + escapeControlTokens(truncateShapedLine(row.name.text, Math.max(1, cols - displayCellWidth(itemPrefix)), arabicShaping, language, capabilities)) + '{/BOLD}');
+  // These all arrive through directionalText, which already neutralised control
+  // tokens, so the renderer only has to fit them to the column.
+  lines.push('{BOLD}' + itemPrefix + truncateShapedLine(row.name.text, Math.max(1, cols - displayCellWidth(itemPrefix)), arabicShaping, language, capabilities) + '{/BOLD}');
   for (const addon of row.addons) {
     const quantity = addon.quantity ?? 1;
     const quantitySuffix = quantity > 1 ? ` x${quantity}` : '';
     const name = truncate(addon.text, Math.max(1, cols - 4 - displayCellWidth(quantitySuffix)), language, capabilities);
-    lines.push('  + ' + escapeControlTokens(name) + quantitySuffix);
+    lines.push('  + ' + name + quantitySuffix);
   }
   if (row.specialInstructions) {
-    lines.push('  >> ' + escapeControlTokens(truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language, capabilities)));
+    lines.push('  >> ' + truncateShapedLine(row.specialInstructions.text, Math.max(1, cols - 8), arabicShaping, language, capabilities));
   }
   return lines;
 }

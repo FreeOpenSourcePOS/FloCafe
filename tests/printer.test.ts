@@ -448,7 +448,13 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   const asciiControlLine = 'No onions\x07\nNo garlic\x7f';
   const asciiShaped = buildEscPos([asciiControlLine], true, { arabicShaping: true });
   const asciiUnshaped = buildEscPos([asciiControlLine], true, { arabicShaping: false });
-  assert('ASCII output stays byte-identical with shaping enabled', asciiShaped.equals(asciiUnshaped) && bytesContain(asciiShaped, Array.from(Buffer.from(asciiControlLine))));
+  // Shaping must not change ASCII output. Control bytes are stripped from every
+  // line, not only the non-ASCII ones — an ASCII order note used to reach the
+  // printer with its ESC/GS bytes intact, because the strip sat inside the
+  // non-ASCII branch.
+  assert('ASCII output stays byte-identical with shaping enabled', asciiShaped.equals(asciiUnshaped));
+  assert('ASCII control bytes are stripped like non-ASCII ones', !bytesContain(asciiShaped, [0x07]) && !bytesContain(asciiShaped, [0x7f]));
+  assert('the words around the stripped bytes still print', asciiShaped.toString('utf8').includes('No onions') && asciiShaped.toString('utf8').includes('No garlic'));
 
   // Mixed-script lines (Persian + Latin é) are still skipped even with the flag,
   // so the flag cannot be used to emit unshapeable mixed text.

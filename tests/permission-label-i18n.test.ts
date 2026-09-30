@@ -28,6 +28,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const { assertOrThrow, assertEqualOrThrow, assertGreaterThanOrThrow } = require('./helpers/test-setup');
+import type { PermissionArea, PermissionId } from '../shared/permissions';
 
 const ROOT = path.resolve(__dirname, '..');
 const ENUMS = path.join(ROOT, 'frontend/src/lib/i18n/enums.ts');
@@ -144,30 +145,49 @@ function run(): void {
     + `${labelKeys.size} + ${areaKeys.size} keys in all ${locales.length} locales`,
   );
 
-  // 4. The renderer must not fall back to de-slugifying the id. The split form is
-  //    still the fallback for an unmapped id, but it must not be the normal path.
-  const matrix = fs.readFileSync(path.join(ROOT, 'frontend/src/components/settings/PermissionMatrix.tsx'), 'utf8');
-  for (const surface of [
-    { file: 'frontend/src/components/settings/PermissionMatrix.tsx', source: matrix },
-    { file: 'frontend/src/components/settings/PermissionAuditLog.tsx', source: fs.readFileSync(path.join(ROOT, 'frontend/src/components/settings/PermissionAuditLog.tsx'), 'utf8') },
-  ]) {
+  // 4. The renderer must not fall back to de-slugifying the id. This is asserted by
+  //    calling the real functions with a stub translator, not by grepping the
+  //    component: a `permissionLabel` that accepts a translator and ignores it used
+  //    to satisfy the previous source-regex version of this check, which is the exact
+  //    defect this file was written to prevent.
+  const { permissionLabel, permissionAreaLabel } = require('../frontend/src/lib/i18n/permission-labels');
+  // A `useTranslations('permissionMatrix')` translator receives namespace-relative
+  // keys, so the stub does too.
+  const enMessages = new Map<string, string>([
+    ...Object.entries(capabilities).map(([key, value]) => [`capabilities.${key}`, value]),
+    ...Object.entries(areas).map(([key, value]) => [`areas.${key}`, value]),
+  ]);
+  const translator = (key: string): string => enMessages.get(key) ?? `UNMAPPED:${key}`;
+
+  for (const id of ids) {
+    const label = permissionLabel(id as PermissionId, translator as never);
     assertOrThrow(
-      !/\{area\.replace\(\/-\/g, ' '\)\}/.test(surface.source),
-      `${surface.file} renders the area through the translator, not the raw id`,
+      typeof label === 'string' && label.length > 0,
+      `permissionLabel returns text for ${id}`,
     );
     assertOrThrow(
-      /permissionLabel\(permission\.id, t\)|permissionLabel\(row\.permission_id, tMatrix\)/.test(surface.source),
-      `${surface.file} passes a translator to permissionLabel`,
+      !label.startsWith('UNMAPPED:'),
+      `permissionLabel resolves ${id} to a real translated key`,
     );
+    // The old defect printed the de-slugified id, e.g. "orders · status · update".
+    assertOrThrow(
+      label !== id.split('.').join(' · '),
+      `permissionLabel does not de-slugify ${id}`,
+    );
+  }
+  for (const area of areaNames) {
+    const heading = permissionAreaLabel(area as PermissionArea, translator as never);
+    assertOrThrow(!heading.startsWith('UNMAPPED:'), `permissionAreaLabel resolves ${area} to a real key`);
+    assertOrThrow(heading !== area.replace(/-/g, ' '), `permissionAreaLabel does not de-slugify ${area}`);
   }
 
   // 5. The fallback is retained, deliberately: a bad catalog response must not crash a row.
   assertOrThrow(
-    /permissionId\.split\('\.'\)/.test(matrix),
+    permissionLabel('not.a.real.permission' as PermissionId, translator as never).includes('·'),
     'permissionLabel keeps the id-splitting fallback for an unmapped id',
   );
   assertOrThrow(
-    /area\.replace\(\/-\/g, ' '\)/.test(matrix),
+    permissionAreaLabel('not-a-real-area' as PermissionArea, translator as never) === 'not a real area',
     'permissionAreaLabel keeps the id-splitting fallback for an unmapped area',
   );
 

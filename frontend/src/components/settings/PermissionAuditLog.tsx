@@ -10,7 +10,7 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import type { Staff } from '@/lib/types';
 import type { PermissionEffect, PermissionId } from '@shared/permissions';
 import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
-import { permissionLabel } from '@/components/settings/PermissionMatrix';
+import { permissionLabel } from '@/lib/i18n/permission-labels';
 
 type AuditRow = {
   id: number;

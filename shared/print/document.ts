@@ -32,6 +32,7 @@
 import type { BilingualLabel } from './bilingual';
 import type { DirectionSpec } from './direction';
 import { resolveDirectionSpec, resolveValueDirection } from './direction';
+import { graphemeSegments } from './width';
 import type {
   PrintLanguageCode,
   ResolvedPrintLanguages,
@@ -86,8 +87,31 @@ export interface DirectionalText {
 }
 
 /** Annotate `text` with its value-scope direction for a document base direction. */
+/**
+ * Neutralise the brace spelling of a control token in free text.
+ *
+ * `buildEscPos` dispatches `{CUT}`, `{FEED}`, `{INIT}` and friends by whole-line
+ * substring test, so a token inside customer-typed text became a real printer
+ * command. ASCII parentheses are used rather than the fullwidth brace because the
+ * fullwidth brace is absent from a CP437 code page: substituting it would make the
+ * line unrepresentable and drop the whole field instead. Both are display width 1,
+ * so no column reflows.
+ */
+const CONTROL_TOKEN_BRACE_RE = /[{}]/g;
+export function escapeControlTokens(text: string): string {
+  return text.replace(CONTROL_TOKEN_BRACE_RE, (brace) => (brace === '{' ? '(' : ')'));
+}
+
 export function directionalText(text: string, base: TextDirection): DirectionalText {
-  return Object.freeze({ text, direction: resolveValueDirection(text, base) });
+  // Free text reaches the printer through this factory, and `buildEscPos`
+  // dispatches control tokens by whole-line substring test — so a "{CUT}" typed
+  // into a field that bypasses the wrapping helpers used to cut the paper and
+  // delete that line from the document. Escaping here rather than at each render
+  // site means a field added later is safe without anyone remembering.
+  //
+  // Direction is resolved from the ORIGINAL text: '{' is bidi-mirrored, so the
+  // substituted '(' must not be what decides the run direction.
+  return Object.freeze({ text: escapeControlTokens(text), direction: resolveValueDirection(text, base) });
 }
 
 // ---------------------------------------------------------------------------
@@ -979,6 +1003,33 @@ export interface DeliverySlipNotesBlock {
  * whichever printer they own.
  */
 export const MAX_DELIVERY_SLIP_NOTE_CHARS = 200;
+
+/**
+ * Clamp free text to a print budget, walking whole grapheme clusters so a cut never
+ * lands inside a surrogate pair or a combining sequence.
+ *
+ * This lives beside the budget rather than in a renderer because the slip has three
+ * of them. When each clamped for itself they disagreed: the backend counted UTF-16
+ * units, the browser paths counted code points, and any note containing an emoji
+ * printed twice as long on the browser while a truncation marker claimed otherwise.
+ * The number and the algorithm that applies it have to travel together.
+ */
+export function clampDeliverySlipText(
+  text: string,
+  maxChars: number = MAX_DELIVERY_SLIP_NOTE_CHARS,
+): { text: string; truncatedChars: number } {
+  if (text.length <= maxChars) return { text, truncatedChars: 0 };
+  const kept: string[] = [];
+  let units = 0;
+  for (const cluster of graphemeSegments(text)) {
+    const size = cluster.length;
+    if (units + size > maxChars) break;
+    kept.push(cluster);
+    units += size;
+  }
+  const keptText = kept.join('');
+  return { text: keptText, truncatedChars: text.length - keptText.length };
+}
 
 export type DeliverySlipBlockKind = DeliverySlipDocumentBlock['kind'];
 

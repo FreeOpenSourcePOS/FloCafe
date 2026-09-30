@@ -111,6 +111,11 @@ test('A customer address typed once is saved, reloaded into the editor, and reac
   expect(put.status()).toBe(400);
   const body = await put.json();
   expect(String(body.error || body.message || '')).toMatch(/address/i);
+  // The merchant has to SEE the refusal. The response body proves the server said
+  // it; this proves the editor surfaced it rather than swallowing it into a
+  // generic "could not update" toast, which is the half of the fix that was
+  // previously untested.
+  await expect(page.getByText(/address/i).first()).toBeVisible({ timeout: 5000 });
   // The editor stays open with the text intact rather than discarding the edit.
   await expect(editModal).toBeVisible();
   await expect(editModal.getByLabel('Customer address')).toHaveValue(overLong);

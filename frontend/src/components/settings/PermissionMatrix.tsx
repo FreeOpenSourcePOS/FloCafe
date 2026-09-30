@@ -12,13 +12,8 @@ import { MasterPinPrompt } from './MasterPinPrompt';
 import toast from 'react-hot-toast';
 import type { PermissionArea, PermissionEffect, PermissionId, PermissionRisk } from '@shared/permissions';
 import { ROLE_KEYS, type Role } from '@shared/role-permissions';
-import {
-  PERMISSION_AREA_KEYS,
-  PERMISSION_LABEL_KEYS,
-  ROLE_LABEL_KEYS,
-  type PermissionAreaKey,
-  type PermissionCapabilityKey,
-} from '@/lib/i18n-enums';
+import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
+import { permissionAreaLabel, permissionLabel } from '@/lib/i18n/permission-labels';
 
 type PermissionDefinition = {
   id: PermissionId;
@@ -82,21 +77,10 @@ function refusalCode(error: unknown): { status?: number; code?: RefusalCode; req
 }
 
 /**
- * The capability label, translated. The id-splitting form stays as the fallback for
- * an id the catalog gains without a map entry, so a bad response cannot crash a row.
+ * The capability and area labels live in `@/lib/i18n/permission-labels` so the
+ * coverage test can import them; see that module for why.
  */
-export function permissionLabel(permissionId: PermissionId, t: (key: PermissionCapabilityKey) => string): string {
-  const key = PERMISSION_LABEL_KEYS[permissionId];
-  if (key) return t(`capabilities.${key}` as PermissionCapabilityKey);
-  return permissionId.split('.').map((part) => part.replace(/-/g, ' ')).join(' · ');
-}
-
-/** The area heading, translated, with the same id-splitting fallback. */
-export function permissionAreaLabel(area: PermissionArea, t: (key: PermissionAreaKey) => string): string {
-  const key = PERMISSION_AREA_KEYS[area];
-  if (key) return t(`areas.${key}` as PermissionAreaKey);
-  return area.replace(/-/g, ' ');
-}
+export { permissionAreaLabel, permissionLabel } from '@/lib/i18n/permission-labels';
 
 export function PermissionMatrix({ staff }: { staff: Staff[] }) {
   const t = useTranslations('permissionMatrix');

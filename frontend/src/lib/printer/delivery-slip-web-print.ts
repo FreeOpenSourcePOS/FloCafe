@@ -10,7 +10,7 @@ import type {
   DeliverySlipItem,
   DeliverySlipOrder,
 } from './delivery-slip-encoder';
-import { MAX_DELIVERY_SLIP_NOTE_CHARS } from '@print/document';
+import { clampDeliverySlipText } from '@print/document';
 
 export interface DeliverySlipWebPrintOptions {
   /** 58 mm or 80mm paper. Controls font sizing. Default: 58 */
@@ -29,16 +29,8 @@ function translatorFor(lang: Language): ((key: string) => string) {
   return createTranslator({ locale, messages }) as unknown as (key: string) => string;
 }
 
-function clampNote(note: string): { text: string; truncated: number } {
-  if (note.length <= MAX_DELIVERY_SLIP_NOTE_CHARS) return { text: note, truncated: 0 };
-  return {
-    text: Array.from(note).slice(0, MAX_DELIVERY_SLIP_NOTE_CHARS).join(''),
-    truncated: note.length - MAX_DELIVERY_SLIP_NOTE_CHARS,
-  };
-}
-
 function slipNoteHtml(raw: string | null | undefined, tr: (key: string) => string): string {
-  const { text, truncated } = clampNote((raw ?? '').trim());
+  const { text, truncatedChars: truncated } = clampDeliverySlipText((raw ?? '').trim());
   if (!text) return '';
   const marker = truncated > 0
     ? `<p style="margin:2px 0;font-style:italic;">${escapeHtml(tr('print.deliverySlip.addressTruncated').replace('{count}', String(truncated)))}</p>`

@@ -31,11 +31,14 @@ function translatorFor(lang: Language): ((key: string) => string) {
 
 function slipNoteHtml(raw: string | null | undefined, tr: (key: string) => string): string {
   const { text, truncatedChars: truncated } = clampDeliverySlipText((raw ?? '').trim());
-  if (!text) return '';
+  if (!text && truncated <= 0) return '';
   const marker = truncated > 0
     ? `<p style="margin:2px 0;font-style:italic;">${escapeHtml(tr('print.deliverySlip.addressTruncated').replace('{count}', String(truncated)))}</p>`
     : '';
-  return `<p style="margin:2px 0;">${escapeHtml(tr('print.note'))}: ${escapeHtml(text)}</p>${marker}`;
+  const noteHtml = text
+    ? `<p style="margin:2px 0;">${escapeHtml(tr('print.note'))}: ${escapeHtml(text)}</p>`
+    : '';
+  return `${noteHtml}${marker}`;
 }
 
 export function generateDeliverySlipHtml(

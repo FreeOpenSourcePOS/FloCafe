@@ -1414,7 +1414,7 @@ export function buildDeliverySlipDocument(
     direction: base,
     note: optionalDirectional(note, base),
     label: resolveSemanticLabel(labels, 'print.note'),
-    noteTruncatedChars: note.length > 0 ? toTruncatedCount(printData.noteTruncatedChars) : 0,
+    noteTruncatedChars: toTruncatedCount(printData.noteTruncatedChars),
   });
 
   const items: DeliverySlipItemsBlock = Object.freeze({
@@ -1441,7 +1441,7 @@ export function buildDeliverySlipDocument(
     direction: resolveDirectionSpec(base),
     languages: printContext.languages,
     blocks: Object.freeze(
-      (note.length > 0
+      (note.length > 0 || notes.noteTruncatedChars > 0
         ? [header, contact, notes, items]
         : [header, contact, items]) as readonly DeliverySlipDocumentBlock[],
     ),

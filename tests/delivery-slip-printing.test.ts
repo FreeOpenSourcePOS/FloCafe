@@ -793,6 +793,7 @@ test('delivery slip: all three render paths apply the same note clamp, not just 
     '\u{1F4E6}'.repeat(150),
     'e' + '\u{0301}'.repeat(300),
     'leave the parcel with the neighbour at number 42 '.repeat(20),
+    'a' + '\u{0301}'.repeat(MAX_DELIVERY_SLIP_NOTE_CHARS),
   ];
 
   for (const note of overLong) {
@@ -806,7 +807,12 @@ test('delivery slip: all three render paths apply the same note clamp, not just 
     const backend = buildDeliverySlipPrintData({ ...ORDER, special_instructions: note }, ORDER.items, CONTACT);
     assert.equal(backend.note, clamped.text, 'the backend retains the shared clamp\'s text');
     assert.equal(backend.noteTruncatedChars, clamped.truncatedChars, 'the backend reports the honest count');
-    assert.ok(renderBackend(note).data.length > 0, 'the backend still renders');
+    const backendText = escPosToText(renderBackend(note).data).replace(/\s+/g, ' ');
+    assert.ok(backendText.includes('more characters not shown'), 'the backend marks an over-long note as cut');
+    assert.ok(
+      backendText.includes(` ${clamped.truncatedChars} more characters`),
+      `the backend states the honest count (${clamped.truncatedChars})`,
+    );
 
     // Web print: the fragment must carry the clamped text and nothing past it, and
     // the marker must state the count actually withheld. This is the assertion that
@@ -816,24 +822,20 @@ test('delivery slip: all three render paths apply the same note clamp, not just 
     const retained = clamped.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     assert.ok(html.includes(retained), 'the web-print fragment carries the shared clamp\'s text');
 
-    // A note whose every cluster exceeds the budget retains nothing, and there is
-    // no cut to mark. Every other over-long note must say it was cut.
-    if (clamped.text.length > 0) {
-      const claimed = html.match(/(\d+) more characters not shown/);
-      assert.ok(claimed, 'an over-long note is marked as cut on the paper');
-      assert.equal(Number(claimed![1]), clamped.truncatedChars, 'the printed count is what was withheld');
+    const claimed = html.match(/(\d+) more characters not shown/);
+    assert.ok(claimed, 'an over-long note is marked as cut on the paper');
+    assert.equal(Number(claimed![1]), clamped.truncatedChars, 'the printed count is what was withheld');
 
-      // WebUSB: the encoder marks the cut too, and states the same honest count.
-      const asText = Buffer.from(webusb(note)).toString('latin1');
-      assert.ok(
-        asText.includes('more characters not shown'),
-        'the WebUSB encoder marks an over-long note as cut',
-      );
-      assert.ok(
-        asText.includes(` ${clamped.truncatedChars} more characters`),
-        `the WebUSB encoder states the honest count (${clamped.truncatedChars})`,
-      );
-    }
+    // WebUSB: the encoder marks the cut too, and states the same honest count.
+    const asText = Buffer.from(webusb(note)).toString('latin1');
+    assert.ok(
+      asText.includes('more characters not shown'),
+      'the WebUSB encoder marks an over-long note as cut',
+    );
+    assert.ok(
+      asText.includes(` ${clamped.truncatedChars} more characters`),
+      `the WebUSB encoder states the honest count (${clamped.truncatedChars})`,
+    );
   }
 });
 

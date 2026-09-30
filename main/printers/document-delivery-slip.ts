@@ -289,19 +289,21 @@ function slipNoteLines(
   sourceControlLines: string[],
 ): string[] {
   const lines: string[] = [];
-  if (!notes.note) return lines;
+  if (!notes.note && notes.noteTruncatedChars <= 0) return lines;
   // Wrapped, never truncated: a courier instruction cut mid-sentence is worse
   // than one that runs long. pushWrapped is the same helper the address uses.
-  const labeled = thermalSafeText(
-    `${labelOf(notes.label)}: `,
-    'Note: ',
-    options.arabicShaping,
-    options.capabilities,
-  ) + notes.note.text;
-  const start = lines.length;
-  pushWrapped(lines, labeled, options.columns, options.language, options.capabilities);
-  sourceLines.push(labeled);
-  sourceControlLines.push(lines[start] ?? '');
+  if (notes.note) {
+    const labeled = thermalSafeText(
+      `${labelOf(notes.label)}: `,
+      'Note: ',
+      options.arabicShaping,
+      options.capabilities,
+    ) + notes.note.text;
+    const start = lines.length;
+    pushWrapped(lines, labeled, options.columns, options.language, options.capabilities);
+    sourceLines.push(labeled);
+    sourceControlLines.push(lines[start] ?? '');
+  }
   // A courier instruction that ends without saying it was cut reads as the whole
   // instruction, so the drop is stated on the paper rather than only in the data.
   if (notes.noteTruncatedChars > 0) {

@@ -99,10 +99,12 @@ export function buildDeliverySlipBytes(
   // courier instruction cut mid-sentence is worse than one that runs long. A note
   // over the budget is bounded, and the cut is stated on the paper.
   const { text: orderNote, truncatedChars: noteTruncated } = clampDeliverySlipText((order.special_instructions ?? '').trim());
-  if (orderNote) {
-    const labeled = `${label('print.note')}: ${orderNote}`;
-    for (const row of wrapPrinterText(labeled, cols)) {
-      safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+  if (orderNote || noteTruncated > 0) {
+    if (orderNote) {
+      const labeled = `${label('print.note')}: ${orderNote}`;
+      for (const row of wrapPrinterText(labeled, cols)) {
+        safePrinterText(enc, row, warnings, false, arabicShaping, undefined, cols, language).newline();
+      }
     }
     if (noteTruncated > 0) {
       const marker = label('print.deliverySlip.addressTruncated').replace('{count}', String(noteTruncated));
